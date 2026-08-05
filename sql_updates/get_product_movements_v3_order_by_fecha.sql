@@ -4,6 +4,7 @@
 --  - movimientos de productos servicio/elaborado (extracciones sin inventario)
 --  - controles de Apertura (16) y Cierre (17) de caja (solo en control_productos)
 --  - filtro de almacén con resolución unificada (layout → inventario → TPV)
+-- Orden final: id_operacion ASC, inv_id ASC (no por fecha).
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION public.get_product_movements_v3(
@@ -626,7 +627,7 @@ BEGIN
     ORDER BY est.id DESC
     LIMIT 1
   ) eo ON TRUE
-  ORDER BY COALESCE(t.rp_created_at, t.ep_created_at, t.cp_created_at, t.inv_created_at) ASC NULLS LAST,
+  ORDER BY t.id_op ASC NULLS LAST,
            t.inv_id ASC
   LIMIT  p_limit
   OFFSET p_offset;

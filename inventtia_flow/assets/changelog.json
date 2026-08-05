@@ -1,8 +1,40 @@
 {
   "app_name": "inventtia_flow",
-  "current_version": "1.4.6",
-  "build": 14,
+  "current_version": "1.4.7",
+  "build": 15,
   "changelogs": [
+    {
+      "version": "1.4.7",
+      "date": "2026-08-03",
+      "title": "🚌 PDF de reservas ómnibus y listado más claro",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "PDF de transporte ómnibus",
+          "description": "El PDF muestra Nombre, CI, Teléfono, Tipo de viaje, Recogida, Destino, Notas y Precio a cobrar. Ida y Regreso van en una sola fila; no se incluyen canceladas."
+        },
+        {
+          "type": "improvement",
+          "title": "Total a cobrar y número de página",
+          "description": "Se quitaron las tablas de resumen del PDF. Debajo del detalle aparece el total a cobrar y en el pie de cada página: Página X de Y."
+        },
+        {
+          "type": "improvement",
+          "title": "Resumen de cantidades por tramo",
+          "description": "En el listado, el panel de Totales muestra solo Ida y Regreso (sin dinero ni puntos Recogida/Destino). El filtro de estado por defecto es Todos."
+        },
+        {
+          "type": "improvement",
+          "title": "Precio visible en cada reserva",
+          "description": "En administración y trabajador vuelve a mostrarse en la tarjeta lo que se debe cobrar por cada reserva."
+        },
+        {
+          "type": "fix",
+          "title": "Etiquetas Regreso / Ida y Regreso",
+          "description": "Se renombraron «Vuelta» y «Ida y vuelta» a «Regreso» e «Ida y Regreso» en listados, totales y exportaciones."
+        }
+      ]
+    },
     {
       "version": "1.4.6",
       "date": "2026-08-01",
