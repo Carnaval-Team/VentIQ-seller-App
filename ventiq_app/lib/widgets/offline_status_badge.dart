@@ -79,7 +79,8 @@ class _OfflineStatusBadgeState extends State<OfflineStatusBadge> {
       final orders = await _prefs.getPendingOrdersCount();
       final egresos = await _prefs.getEgresosOfflineCount();
       final ops = (await _prefs.getPendingOperations()).length;
-      final total = orders + egresos + ops;
+      final turnos = await _prefs.getPendingOfflineTurnosCount();
+      final total = orders + egresos + ops + turnos;
       if (mounted) setState(() => _pendingCount = total);
     } catch (_) {
       // Silencioso: el badge no debe romper la UI.

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/offline_dialog_service.dart';
 import '../services/smart_offline_manager.dart';
+import '../services/user_preferences_service.dart';
 import '../utils/global_navigator.dart';
 
 /// Overlay global que escucha los eventos del SmartOfflineManager
@@ -83,6 +84,12 @@ class _OfflineDialogOverlayState extends State<OfflineDialogOverlay> {
   }
 
   Future<void> _showRestoredDialog() async {
+    // Defensa extra: no molestar si el dispositivo está en full offline.
+    if (await UserPreferencesService().shouldStayFullyOffline()) {
+      await _manager.userChoseStayOffline();
+      return;
+    }
+
     final result = await _dialogService.showConnectionRestoredDialog();
 
     if (result == null) return;

@@ -69,6 +69,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _redirectIfInventoryOnly();
     _checkForChangelog();
     _loadCategories();
     _loadUsdRate();
@@ -87,6 +88,13 @@ class _CategoriesScreenState extends State<CategoriesScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkForUpdatesAfterNavigation();
     });
+  }
+
+  Future<void> _redirectIfInventoryOnly() async {
+    final only = await _preferencesService.isInventoryOnlySession();
+    if (only && mounted) {
+      Navigator.of(context).pushReplacementNamed('/admin-home');
+    }
   }
 
   Future<void> _loadDataUsageSettings() async {
@@ -193,6 +201,14 @@ class _CategoriesScreenState extends State<CategoriesScreen>
   /// Verificar conexión después de que la app se reanuda
   Future<void> _checkConnectionAfterResume() async {
     try {
+      // Full offline: no forzar chequeos que disparen diálogo / servidor.
+      if (await _preferencesService.shouldStayFullyOffline()) {
+        print(
+          '📦 Full offline: omitiendo chequeo de conexión al reanudar',
+        );
+        return;
+      }
+
       // Esperar un poco para que el sistema restaure la conexión
       await Future.delayed(const Duration(seconds: 2));
 
@@ -260,14 +276,14 @@ class _CategoriesScreenState extends State<CategoriesScreen>
         _errorMessage = null;
       });
 
-      // Verificar si el modo offline está activado
-      final isOfflineModeEnabled =
-          await _preferencesService.isOfflineModeEnabled();
+      // Offline o dispositivo full-offline: siempre datos locales (sin sync/red).
+      final useLocalData =
+          await _preferencesService.shouldUseLocalData();
 
       List<Category> categories = [];
 
-      if (isOfflineModeEnabled) {
-        print('🔌 Modo offline - Cargando categorías desde cache...');
+      if (useLocalData) {
+        print('🔌 Offline/full-offline - Cargando categorías desde cache...');
 
         final offlineData = await _preferencesService.getOfflineData();
         final categoriesData = offlineData?['categories'];

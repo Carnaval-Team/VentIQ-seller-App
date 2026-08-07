@@ -1403,13 +1403,22 @@ class CarnavalService {
   }
 
   /// Actualiza el status de una orden
-  static Future<bool> updateOrderStatus(int orderId, String newStatus) async {
+  static Future<bool> updateOrderStatus(
+    int orderId,
+    String newStatus, {
+    String? changedBy,
+  }) async {
     try {
       await _supabase
           .schema('carnavalapp')
           .from('Orders')
           .update({'status': newStatus})
           .eq('id', orderId);
+      await _logOrderStatusChange(
+        orderId,
+        newStatus,
+        changedBy: changedBy,
+      );
       return true;
     } catch (e) {
       print('❌ Error al actualizar status de orden: $e');
@@ -1417,22 +1426,67 @@ class CarnavalService {
     }
   }
 
-  /// Asigna un repartidor a una orden. Si es recogida, marca Completado.
+  /// True si el método de entrega es recogida en tienda (no requiere repartidor).
+  static bool isMetodoRecogida(String? metodoEntrega) {
+    final m = (metodoEntrega ?? '').trim().toLowerCase();
+    return m == 'recogida' || m == 'entrega cliente';
+  }
+
+  /// Completa una orden de recogida y guarda quién la completó.
+  static Future<bool> completePickupOrder(
+    int orderId, {
+    String? completedBy,
+  }) async {
+    try {
+      final updates = <String, dynamic>{
+        'status': 'Completado',
+        'completado_en': DateTime.now().toUtc().toIso8601String(),
+      };
+      if (completedBy != null && completedBy.trim().isNotEmpty) {
+        updates['completado_por'] = completedBy.trim();
+      }
+      await _supabase
+          .schema('carnavalapp')
+          .from('Orders')
+          .update(updates)
+          .eq('id', orderId);
+      await _logOrderStatusChange(
+        orderId,
+        'Completado',
+        changedBy: completedBy,
+      );
+      return true;
+    } catch (e) {
+      print('❌ Error al completar orden de recogida: $e');
+      return false;
+    }
+  }
+
+  /// Asigna un repartidor a una orden de domicilio (status → Asignado).
   static Future<bool> assignDelivery(
     int orderId,
     int repartidorId, {
     String metodoEntrega = 'Domicilio',
+    String? changedBy,
   }) async {
     try {
-      final isRecogida = metodoEntrega == 'Entrega Cliente';
+      // Recogida ya no usa este flujo; se completa con [completePickupOrder].
+      if (isMetodoRecogida(metodoEntrega)) {
+        return completePickupOrder(orderId, completedBy: changedBy);
+      }
       await _supabase
           .schema('carnavalapp')
           .from('Orders')
           .update({
-            'status': isRecogida ? 'Completado' : 'Asignado',
+            'status': 'Asignado',
             'repartidor': repartidorId,
           })
           .eq('id', orderId);
+      await _logOrderStatusChange(
+        orderId,
+        'Asignado',
+        changedBy: changedBy,
+      );
       return true;
     } catch (e) {
       print('❌ Error al asignar repartidor: $e');
@@ -1447,6 +1501,7 @@ class CarnavalService {
     int orderId,
     int repartidorId, {
     bool resetToAsignado = false,
+    String? changedBy,
   }) async {
     try {
       final updates = <String, dynamic>{'repartidor': repartidorId};
@@ -1456,10 +1511,70 @@ class CarnavalService {
           .from('Orders')
           .update(updates)
           .eq('id', orderId);
+      if (resetToAsignado) {
+        await _logOrderStatusChange(
+          orderId,
+          'Asignado',
+          changedBy: changedBy,
+        );
+      }
       return true;
     } catch (e) {
       print('❌ Error al reasignar repartidor: $e');
       return false;
+    }
+  }
+
+  static Future<void> _logOrderStatusChange(
+    int orderId,
+    String status, {
+    String? changedBy,
+  }) async {
+    try {
+      await _supabase.schema('carnavalapp').from('order_status_history').insert({
+        'order_id': orderId,
+        'status': status,
+        if (changedBy != null && changedBy.trim().isNotEmpty)
+          'changed_by': changedBy.trim(),
+      });
+    } catch (e) {
+      // Tabla puede no existir aún si no se aplicó la migración; no bloquear.
+      print('⚠️ No se pudo registrar historial de status: $e');
+    }
+  }
+
+  /// Historial de status de la orden Carnaval (si la tabla existe).
+  static Future<List<Map<String, dynamic>>> getOrderStatusHistory(
+    int orderId,
+  ) async {
+    try {
+      final response = await _supabase
+          .schema('carnavalapp')
+          .from('order_status_history')
+          .select('id, order_id, status, changed_by, created_at')
+          .eq('order_id', orderId)
+          .order('created_at', ascending: true);
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('⚠️ Historial Carnaval no disponible: $e');
+      return [];
+    }
+  }
+
+  /// Historial de estados Inventtia ligado a la operación de venta de la orden.
+  static Future<List<Map<String, dynamic>>> getVentiqEstadoHistory(
+    int operationId,
+  ) async {
+    try {
+      final response = await _supabase
+          .from('app_dat_estado_operacion')
+          .select('id, id_operacion, estado, created_at, comentario, uuid')
+          .eq('id_operacion', operationId)
+          .order('created_at', ascending: true);
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('⚠️ Historial Inventtia no disponible: $e');
+      return [];
     }
   }
 
@@ -1800,15 +1915,31 @@ class CarnavalService {
     }
   }
 
-  /// Elimina un detalle de orden
+  /// Elimina un detalle de orden y devuelve stock en Carnaval e Inventtia.
+  /// Usa RPC `fn_eliminar_order_detail_con_devolucion` (aplicar SQL en Supabase).
   static Future<bool> deleteOrderDetail(int detailId) async {
     try {
-      await _supabase
-          .schema('carnavalapp')
-          .from('OrderDetails')
-          .delete()
-          .eq('id', detailId);
-      return true;
+      final response = await _supabase.rpc(
+        'fn_eliminar_order_detail_con_devolucion',
+        params: {'p_detail_id': detailId},
+      );
+
+      final result = response is Map
+          ? Map<String, dynamic>.from(response)
+          : <String, dynamic>{};
+
+      if (result['success'] == true) {
+        print(
+          '✅ Producto eliminado y stock devuelto '
+          '(carnaval: ${result['carnaval_stock_antes']} → '
+          '${result['carnaval_stock_despues']}, '
+          'operacion: ${result['operacion_id']})',
+        );
+        return true;
+      }
+
+      print('❌ Error al eliminar detalle: ${result['message']}');
+      return false;
     } catch (e) {
       print('❌ Error al eliminar detalle: $e');
       return false;

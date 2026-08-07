@@ -1861,13 +1861,29 @@ class OrderService {
                     OrderStatus.pendienteDeSincronizacion
                 : OrderStatus.pendienteDeSincronizacion;
 
-        // Crear orden respetando el estado guardado
+        // Crear orden respetando el estado guardado.
+        // Tras sync, mostrar ORD-{id_operacion} como en el flujo online.
+        final rawOpId = orderData['id_operacion'];
+        final int? opId = rawOpId is int
+            ? rawOpId
+            : (rawOpId is num ? rawOpId.toInt() : null);
+        final localId = orderData['id']?.toString() ?? '';
+        final displayId = opId != null ? 'ORD-$opId' : localId;
+
         final order = Order(
-          id: orderData['id'] as String,
+          id: displayId.isNotEmpty ? displayId : localId,
           fechaCreacion: DateTime.parse(orderData['fecha_creacion'] as String),
           items: items,
           total: (orderData['total'] as num).toDouble(),
           status: storedStatus,
+          buyerName:
+              orderData['buyer_name']?.toString() ??
+              orderData['buyerName']?.toString(),
+          buyerPhone:
+              orderData['buyer_phone']?.toString() ??
+              orderData['buyerPhone']?.toString(),
+          notas: orderData['notas']?.toString(),
+          operationId: opId,
           pagos:
               (orderData['pagos'] ?? orderData['desglose_pagos'])
                   as List<
@@ -1906,10 +1922,19 @@ class OrderService {
       // 2. Verificar si la orden está en órdenes pendientes de sincronización
       final pendingOrders = await userPrefs.getPendingOrders();
       bool isOrderPending = false;
+      // Tras sync el UI muestra ORD-{id_operacion}; en prefs sigue el id local.
+      var pendingLocalId = orderId;
 
       for (var pendingOrder in pendingOrders) {
-        if (pendingOrder['id'] == orderId) {
+        final pendingId = pendingOrder['id']?.toString();
+        final pendingOp = pendingOrder['id_operacion'];
+        final pendingDisplay =
+            pendingOp is int
+                ? 'ORD-$pendingOp'
+                : (pendingOp is num ? 'ORD-${pendingOp.toInt()}' : null);
+        if (pendingId == orderId || pendingDisplay == orderId) {
           isOrderPending = true;
+          pendingLocalId = pendingId ?? orderId;
           break;
         }
       }
@@ -1917,7 +1942,7 @@ class OrderService {
       if (isOrderPending) {
         // 3. Si es una orden pendiente, actualizar su estado en las órdenes pendientes
         await userPrefs.updatePendingOrderStatus(
-          orderId,
+          pendingLocalId,
           _orderStatusToString(newStatus),
           {
             'updated_offline_at': DateTime.now().toIso8601String(),
@@ -1926,7 +1951,7 @@ class OrderService {
         );
 
         print(
-          '📝 Estado actualizado en órdenes pendientes: $orderId -> ${newStatus.toString()}',
+          '📝 Estado actualizado en órdenes pendientes: $pendingLocalId -> ${newStatus.toString()}',
         );
       } else {
         // 4. Si no es una orden pendiente, crear operación de cambio de estado

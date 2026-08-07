@@ -53,12 +53,11 @@ class CurrencyService {
 
     try {
       try {
-        final isOfflineModeEnabled =
-            await userPreferencesService.isOfflineModeEnabled();
-        if (isOfflineModeEnabled) {
+        final useLocal = await userPreferencesService.shouldUseLocalData();
+        if (useLocal) {
           final cached = await userPreferencesService.getCambioCupUsd();
           print(
-            '🔌 Modo offline activado - Usando tipo de cambio desde cache: $cached',
+            '🔌 Offline/full-offline - Usando tipo de cambio desde cache: $cached',
           );
           return cached;
         }

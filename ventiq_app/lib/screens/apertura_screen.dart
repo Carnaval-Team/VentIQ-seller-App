@@ -27,12 +27,15 @@ class _AperturaScreenState extends State<AperturaScreen> {
   bool _isProcessing = false;
   bool _isLoadingPreviousShift = true;
   bool _manejaInventario = false; // Se cargará desde configuración de tienda
+  bool _mostrarDebeHaberEnConteo = false;
   bool _isLoadingStoreConfig = true;
   String _userName = 'Cargando...';
 
   // Inventory management
   List<InventoryProduct> _inventoryProducts = [];
   Map<int, TextEditingController> _inventoryControllers = {};
+  /// Stock real por producto (RPC batch / offline). Key = id_producto.
+  Map<int, _StockRealProductoApertura> _stockRealByProduct = {};
   bool _isLoadingInventory = false;
   bool _inventorySet = false;
 
@@ -342,17 +345,22 @@ class _AperturaScreenState extends State<AperturaScreen> {
   Future<void> _checkExistingShift() async {
     try {
       final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
-      final hasPendingApertura = await _hasPendingAperturaTurno();
-      if (hasPendingApertura) {
-        await _triggerPendingAperturaSync();
+
+      // Solo bloquear si hay un turno OPEN local (cerrados pendientes no impiden
+      // abrir uno nuevo tras el cierre offline).
+      final hasOpenOffline = await _userPrefs.hasOfflineTurnoAbierto();
+      if (hasOpenOffline) {
         if (isOfflineModeEnabled) {
           if (mounted) {
-            _showPendingAperturaAlert();
+            _showExistingShiftAlert();
           }
           return;
         }
+        // Online: intentar sync del open pendiente, pero no bloquear por
+        // aperturas históricas cerradas.
+        await _triggerPendingAperturaSync();
         print(
-          'ℹ️ Turno offline pendiente detectado en modo online. Se permitirá crear turno online.',
+          'ℹ️ Turno offline abierto detectado en modo online. Se permitirá crear turno online si el servidor no tiene uno.',
         );
       }
 
@@ -383,48 +391,12 @@ class _AperturaScreenState extends State<AperturaScreen> {
     }
   }
 
-  Future<bool> _hasPendingAperturaTurno() async {
-    final operations = await _userPrefs.getPendingOperations();
-    for (final operation in operations) {
-      if (operation['type'] == 'apertura_turno') {
-        return true;
-      }
-    }
-    return false;
-  }
-
   Future<void> _triggerPendingAperturaSync() async {
     try {
       await AutoSyncService().performImmediateSync();
     } catch (e) {
       print('⚠️ No se pudo iniciar la sincronización del turno: $e');
     }
-  }
-
-  void _showPendingAperturaAlert() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Creando turno online'),
-            content: const Text(
-              'Hay un turno pendiente creado en modo offline. En cuanto haya conexión, se sincronizará automáticamente. Si ya estás online, espera unos segundos y vuelve a intentarlo.',
-            ),
-            actions: [
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  Navigator.pop(context);
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4A90E2),
-                ),
-                child: const Text('Volver'),
-              ),
-            ],
-          ),
-    );
   }
 
   void _showExistingShiftAlert() {
@@ -703,13 +675,17 @@ class _AperturaScreenState extends State<AperturaScreen> {
 
       if (storeConfig != null) {
         final manejaInventario = storeConfig['maneja_inventario'] ?? false;
+        final mostrarDebeHaber =
+            storeConfig['mostrar_debe_haber_en_conteo_inventario'] ?? false;
         print(
-          '🏪 Configuración de tienda cargada - Maneja inventario: $manejaInventario',
+          '🏪 Configuración de tienda cargada - Maneja inventario: $manejaInventario, '
+          'Mostrar debe haber: $mostrarDebeHaber',
         );
 
         if (mounted) {
           setState(() {
             _manejaInventario = manejaInventario;
+            _mostrarDebeHaberEnConteo = mostrarDebeHaber;
             _isLoadingStoreConfig = false;
           });
 
@@ -734,6 +710,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
         print('⚠️ No se encontró configuración de tienda');
         setState(() {
           _manejaInventario = false;
+          _mostrarDebeHaberEnConteo = false;
           _isLoadingStoreConfig = false;
           _checkingInventoryStatus = false;
         });
@@ -742,6 +719,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
       print('❌ Error cargando configuración de tienda: $e');
       setState(() {
         _manejaInventario = false;
+        _mostrarDebeHaberEnConteo = false;
         _isLoadingStoreConfig = false;
         _checkingInventoryStatus = false;
       });
@@ -867,126 +845,39 @@ class _AperturaScreenState extends State<AperturaScreen> {
   }
 
   /// Obtener todas las ubicaciones de un producto con sus cantidades
-  Future<List<Map<String, dynamic>>> _getProductLocations(int productId) async {
-    try {
-      final isOffline = await _userPrefs.isOfflineModeEnabled();
-      if (isOffline) {
-        final offlineData = await _userPrefs.getOfflineData();
-        if (offlineData == null || offlineData['products'] == null) return [];
-        final productsData = Map<String, dynamic>.from(
-          offlineData['products'] as Map,
-        );
-
-        final Map<String, Map<String, dynamic>> locationsMap = {};
-
-        for (final categoryProducts in productsData.values) {
-          final productList = List<dynamic>.from(categoryProducts as List);
-          for (final prodDataRaw in productList) {
-            final prodData = Map<String, dynamic>.from(prodDataRaw as Map);
-            final detalles =
-                prodData['detalles_completos'] as Map<String, dynamic>?;
-            if (detalles == null) continue;
-            final productoInfo = detalles['producto'] as Map<String, dynamic>?;
-            if (productoInfo == null) continue;
-            final pid = (productoInfo['id'] ?? prodData['id']) as int;
-            if (pid != productId) continue;
-
-            final inventarioList =
-                detalles['inventario'] as List<dynamic>? ?? [];
-            for (final invRaw in inventarioList) {
-              final inv = Map<String, dynamic>.from(invRaw as Map);
-              final ubicacion = Map<String, dynamic>.from(
-                inv['ubicacion'] ?? {},
-              );
-              final almacen = Map<String, dynamic>.from(
-                ubicacion['almacen'] ?? {},
-              );
-              final locationKey =
-                  '${almacen['id'] ?? 0}_${ubicacion['id'] ?? 0}';
-              final cantidad =
-                  (inv['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
-              locationsMap[locationKey] = {
-                'ubicacion': ubicacion['denominacion'] ?? 'Ubicación',
-                'almacen': almacen['denominacion'] ?? 'Almacén',
-                'cantidad': cantidad,
-                'reservado_carnaval': 0.0,
-                'pendiente_carnaval': 0.0,
-              };
-            }
-          }
-        }
-
-        return locationsMap.values.toList();
-      }
-
-      final userData = await _userPrefs.getUserData();
-      final idTiendaRaw = userData['idTienda'];
-      final idTienda =
-          idTiendaRaw is int
-              ? idTiendaRaw
-              : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
-
-      if (idTienda == null) return [];
-      print(
-        '📦 Obteniendo ubicaciones del producto $productId para tienda $idTienda (todos los almacenes)...',
-      );
-      final response = await Supabase.instance.client.rpc(
-        'fn_listar_inventario_productos_paged2',
-        params: {
-          'p_id_tienda': idTienda,
-          'p_id_producto': productId,
-          'p_limite': 9999,
-          'p_mostrar_sin_stock': true,
-          'p_pagina': 1,
-        },
-      );
-
-      if (response != null && response is List) {
-        // Agrupar por ubicación única para evitar duplicados por presentaciones
-        final Map<String, Map<String, dynamic>> locationsMap = {};
-
-        for (var item in response) {
-          try {
-            final product = InventoryProduct.fromSupabaseRpc(item);
-
-            // Crear clave única por ubicación (almacén + ubicación)
-            final locationKey = '${product.idAlmacen}_${product.idUbicacion}';
-
-            // Solo agregar la primera vez que vemos esta ubicación
-            if (!locationsMap.containsKey(locationKey)) {
-              locationsMap[locationKey] = {
-                'ubicacion': product.ubicacion,
-                'almacen': product.almacen,
-                'cantidad': product.cantidadFinal,
-                'reservado_carnaval': product.reservadoCarnaval,
-                'pendiente_carnaval': product.pendienteCarnaval,
-              };
-            }
-          } catch (e) {
-            print('❌ Error procesando ubicación: $e');
-          }
-        }
-
-        return locationsMap.values.toList();
-      }
-
-      return [];
-    } catch (e) {
-      print('❌ Error obteniendo ubicaciones del producto: $e');
-      return [];
-    }
-  }
-
   /// Mostrar modal de conteo de inventario
   Future<void> _showInventoryCountModal() async {
-    // Cargar productos ANTES de mostrar el modal
-    if (_inventoryProducts.isEmpty && !_isLoadingInventory) {
-      print('📦 Cargando productos antes de mostrar modal...');
-      final isOffline = await _userPrefs.isOfflineModeEnabled();
-      if (isOffline) {
-        await _loadInventoryProductsOffline();
-      } else {
-        await _loadInventoryProducts();
+    if (_isLoadingInventory) return;
+
+    setState(() {
+      _isLoadingInventory = true;
+    });
+
+    try {
+      // Cargar productos ANTES de mostrar el modal
+      if (_inventoryProducts.isEmpty) {
+        print('📦 Cargando productos antes de mostrar modal...');
+        final isOffline = await _userPrefs.isOfflineModeEnabled();
+        if (isOffline) {
+          await _loadInventoryProductsOffline();
+        } else {
+          await _loadInventoryProducts();
+        }
+      }
+
+      await _loadStockRealProductos();
+
+      // Campos en 0: el usuario cuenta a ciegas; las diferencias van a observaciones.
+      for (final product in _inventoryProducts) {
+        final controller = _inventoryControllers[product.id];
+        if (controller == null) continue;
+        controller.text = '0';
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingInventory = false;
+        });
       }
     }
 
@@ -998,6 +889,143 @@ class _AperturaScreenState extends State<AperturaScreen> {
       backgroundColor: Colors.transparent,
       builder: (context) => _buildInventoryCountModal(),
     );
+  }
+
+  /// Una sola llamada: stock_sistema + pendiente + en_camino + debe_haber.
+  Future<void> _loadStockRealProductos() async {
+    _stockRealByProduct = {};
+    if (_inventoryProducts.isEmpty) return;
+
+    try {
+      final isOffline = await _userPrefs.isOfflineModeEnabled();
+      if (isOffline) {
+        await _loadStockRealProductosOffline();
+        return;
+      }
+
+      final idTienda = await _userPrefs.getIdTienda();
+      if (idTienda == null) return;
+
+      final idAlmacen = await _userPrefs.getIdAlmacen();
+      final productIds = _inventoryProducts.map((p) => p.id).toList();
+      print(
+        '📦 RPC fn_stock_real_productos_cierre '
+        '(tienda=$idTienda, almacen=$idAlmacen, ${productIds.length} productos)...',
+      );
+
+      final response = await Supabase.instance.client.rpc(
+        'fn_stock_real_productos_cierre',
+        params: {
+          'p_id_tienda': idTienda,
+          'p_id_almacen': idAlmacen,
+          'p_ids_producto': productIds,
+        },
+      );
+
+      final map = <int, _StockRealProductoApertura>{};
+      if (response is List) {
+        for (final raw in response) {
+          if (raw is! Map) continue;
+          final row = Map<String, dynamic>.from(raw);
+          final id = (row['id_producto'] as num?)?.toInt();
+          if (id == null) continue;
+          map[id] = _StockRealProductoApertura(
+            stockSistema: (row['stock_sistema'] as num?)?.toDouble() ?? 0,
+            pendienteCarnaval:
+                (row['pendiente_carnaval'] as num?)?.toDouble() ?? 0,
+            enCamino: (row['en_camino'] as num?)?.toDouble() ?? 0,
+            debeHaber: (row['debe_haber'] as num?)?.toDouble() ?? 0,
+          );
+        }
+      }
+
+      for (final p in _inventoryProducts) {
+        map.putIfAbsent(
+          p.id,
+          () => const _StockRealProductoApertura(
+            stockSistema: 0,
+            pendienteCarnaval: 0,
+            enCamino: 0,
+            debeHaber: 0,
+          ),
+        );
+      }
+
+      _stockRealByProduct = map;
+      print('✅ Stock real cargado para ${map.length} productos');
+    } catch (e) {
+      print('⚠️ Error cargando stock real batch: $e');
+      _stockRealByProduct = {
+        for (final p in _inventoryProducts)
+          p.id: _StockRealProductoApertura(
+            stockSistema: p.cantidadFinal,
+            pendienteCarnaval: 0,
+            enCamino: 0,
+            debeHaber: p.cantidadFinal,
+          ),
+      };
+    }
+  }
+
+  Future<void> _loadStockRealProductosOffline() async {
+    final idAlmacen = await _userPrefs.getIdAlmacen();
+    final offlineData = await _userPrefs.getOfflineData();
+    if (offlineData == null || offlineData['products'] == null) {
+      _stockRealByProduct = {
+        for (final p in _inventoryProducts)
+          p.id: _StockRealProductoApertura(
+            stockSistema: p.cantidadFinal,
+            pendienteCarnaval: 0,
+            enCamino: 0,
+            debeHaber: p.cantidadFinal,
+          ),
+      };
+      return;
+    }
+
+    final productsData = Map<String, dynamic>.from(
+      offlineData['products'] as Map,
+    );
+    final qtyByProduct = <int, double>{};
+
+    for (final categoryProducts in productsData.values) {
+      final productList = List<dynamic>.from(categoryProducts as List);
+      for (final prodDataRaw in productList) {
+        final prodData = Map<String, dynamic>.from(prodDataRaw as Map);
+        final detalles =
+            prodData['detalles_completos'] as Map<String, dynamic>?;
+        if (detalles == null) continue;
+        final productoInfo = detalles['producto'] as Map<String, dynamic>?;
+        if (productoInfo == null) continue;
+        final pid = (productoInfo['id'] ?? prodData['id']) as int;
+        final inventarioList = detalles['inventario'] as List<dynamic>? ?? [];
+        final seenUbic = <String>{};
+        var sum = qtyByProduct[pid] ?? 0.0;
+        for (final invRaw in inventarioList) {
+          final inv = Map<String, dynamic>.from(invRaw as Map);
+          final ubicacion = Map<String, dynamic>.from(inv['ubicacion'] ?? {});
+          final almacen = Map<String, dynamic>.from(ubicacion['almacen'] ?? {});
+          final almId = (almacen['id'] as num?)?.toInt();
+          if (idAlmacen != null && almId != null && almId != idAlmacen) {
+            continue;
+          }
+          final locationKey = '${almId ?? 0}_${ubicacion['id'] ?? 0}';
+          if (!seenUbic.add(locationKey)) continue;
+          sum += (inv['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
+        }
+        qtyByProduct[pid] = sum;
+      }
+    }
+
+    _stockRealByProduct = {
+      for (final p in _inventoryProducts)
+        p.id: _StockRealProductoApertura(
+          stockSistema: qtyByProduct[p.id] ?? p.cantidadFinal,
+          pendienteCarnaval: 0,
+          enCamino: 0,
+          debeHaber: qtyByProduct[p.id] ?? p.cantidadFinal,
+        ),
+    };
   }
 
   @override
@@ -1615,8 +1643,10 @@ class _AperturaScreenState extends State<AperturaScreen> {
                 'cantidad': cantidadContada,
               });
 
-              // Calcular diferencia con cantidad del sistema (descontando reservas Carnaval)
-              final cantidadSistema = product.cantidadFinalReal;
+              // Diferencia vs debe-haber (oculto al usuario; va a observaciones)
+              final cantidadSistema =
+                  _stockRealByProduct[product.id]?.debeHaber ??
+                      product.cantidadFinalReal;
               final diferencia = cantidadContada - cantidadSistema;
 
               if (diferencia > 0) {
@@ -2044,7 +2074,9 @@ class _AperturaScreenState extends State<AperturaScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Ingresa la cantidad real de cada producto del turno anterior',
+                      _mostrarDebeHaberEnConteo
+                          ? 'Compara el "debe haber" e ingresa la cantidad real de cada producto'
+                          : 'Ingresa la cantidad real de cada producto del turno anterior',
                       style: TextStyle(fontSize: 13, color: Colors.grey[600]),
                     ),
                   ],
@@ -2104,280 +2136,83 @@ class _AperturaScreenState extends State<AperturaScreen> {
                             final product = _inventoryProducts[index];
                             final controller =
                                 _inventoryControllers[product.id]!;
-
-                            return FutureBuilder<List<Map<String, dynamic>>>(
-                              future: _getProductLocations(product.id),
-                              builder: (context, snapshot) {
-                                final locations = snapshot.data ?? [];
-                                final totalQuantity = locations.fold<double>(
-                                  0.0,
-                                  (sum, loc) =>
-                                      sum + (loc['cantidad'] as double),
-                                );
-                                final totalReservadoCarnaval = locations.fold<double>(
-                                  0.0,
-                                  (sum, loc) =>
-                                      sum + ((loc['reservado_carnaval'] as num?)?.toDouble() ?? 0.0),
-                                );
-                                final totalPendienteCarnaval = locations.fold<double>(
-                                  0.0,
-                                  (sum, loc) =>
-                                      sum + ((loc['pendiente_carnaval'] as num?)?.toDouble() ?? 0.0),
-                                );
-                                final totalSistema = totalQuantity;
-                                final totalReal = totalQuantity + totalPendienteCarnaval;
-
-                                if (snapshot.connectionState ==
-                                        ConnectionState.done &&
-                                    controller.text.trim().isEmpty) {
-                                  controller.text = _formatInventoryCount(
-                                    totalReal,
-                                  );
-                                }
-
-                                return Container(
-                                  margin: const EdgeInsets.only(bottom: 12),
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey[50],
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: Colors.grey[200]!,
-                                    ),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  product.nombreProducto,
-                                                  style: const TextStyle(
-                                                    fontSize: 14,
-                                                    fontWeight: FontWeight.w500,
-                                                    color: Color(0xFF1F2937),
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 4),
-                                                // Mostrar cantidad total del sistema
-                                                Wrap(
-                                                  spacing: 6,
-                                                  runSpacing: 4,
-                                                  children: [
-                                                    Container(
-                                                      padding:
-                                                          const EdgeInsets.symmetric(
-                                                            horizontal: 8,
-                                                            vertical: 4,
-                                                          ),
-                                                      decoration: BoxDecoration(
-                                                        color: Colors.blue[50],
-                                                        borderRadius:
-                                                            BorderRadius.circular(
-                                                              4,
-                                                            ),
-                                                        border: Border.all(
-                                                          color: Colors.blue[200]!,
-                                                        ),
-                                                      ),
-                                                      child: Text(
-                                                        'Sistema: ${totalSistema.toStringAsFixed(2)} unidades',
-                                                        style: TextStyle(
-                                                          fontSize: 11,
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                          color: Colors.blue[700],
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    if (totalReservadoCarnaval > 0)
-                                                      Container(
-                                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                                                        decoration: BoxDecoration(
-                                                          color: Colors.orange[50],
-                                                          borderRadius: BorderRadius.circular(4),
-                                                          border: Border.all(color: Colors.orange[300]!),
-                                                        ),
-                                                        child: Text(
-                                                          'Reservado: ${totalReservadoCarnaval.toStringAsFixed(0)}',
-                                                          style: TextStyle(
-                                                            fontSize: 10,
-                                                            fontWeight: FontWeight.w600,
-                                                            color: Colors.orange[800],
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    if (totalPendienteCarnaval > 0)
-                                                      Container(
-                                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                                                        decoration: BoxDecoration(
-                                                          color: Colors.green[50],
-                                                          borderRadius: BorderRadius.circular(4),
-                                                          border: Border.all(color: Colors.green[300]!),
-                                                        ),
-                                                        child: Text(
-                                                          'Pendiente: ${totalPendienteCarnaval.toStringAsFixed(0)}',
-                                                          style: TextStyle(
-                                                            fontSize: 10,
-                                                            fontWeight: FontWeight.w600,
-                                                            color: Colors.green[800],
-                                                          ),
-                                                        ),
-                                                      ),
-                                                  ],
-                                                ),
-                                              ],
-                                            ),
+                            final debeHaber =
+                                _stockRealByProduct[product.id]?.debeHaber ??
+                                    product.cantidadFinalReal;
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.grey[50],
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: Colors.grey[200]!,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          product.nombreProducto,
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500,
+                                            color: Color(0xFF1F2937),
                                           ),
-                                          const SizedBox(width: 12),
-                                          SizedBox(
-                                            width: 100,
-                                            child: TextFormField(
-                                              controller: controller,
-                                              keyboardType:
-                                                  const TextInputType.numberWithOptions(
-                                                    decimal: true,
-                                                  ),
-                                              inputFormatters: [
-                                                FilteringTextInputFormatter.allow(
-                                                  RegExp(r'^\d+\.?\d{0,2}'),
-                                                ),
-                                              ],
-                                              decoration: InputDecoration(
-                                                labelText: 'Real',
-                                                hintText: '0',
-                                                border: OutlineInputBorder(
-                                                  borderRadius:
-                                                      BorderRadius.circular(8),
-                                                ),
-                                                contentPadding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 12,
-                                                      vertical: 8,
-                                                    ),
-                                                isDense: true,
-                                              ),
-                                              style: const TextStyle(
-                                                fontSize: 14,
-                                              ),
+                                        ),
+                                        if (_mostrarDebeHaberEnConteo) ...[
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            'Debe haber: ${_formatInventoryQty(debeHaber)}',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.blue[700],
                                             ),
                                           ),
                                         ],
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  SizedBox(
+                                    width: 100,
+                                    child: TextFormField(
+                                      controller: controller,
+                                      keyboardType:
+                                          const TextInputType.numberWithOptions(
+                                        decimal: true,
                                       ),
-                                      // Desglose por ubicación (muy pequeño)
-                                      if (locations.isNotEmpty) ...[
-                                        const SizedBox(height: 8),
-                                        Container(
-                                          padding: const EdgeInsets.all(6),
-                                          decoration: BoxDecoration(
-                                            color: Colors.grey[100],
-                                            borderRadius: BorderRadius.circular(
-                                              4,
-                                            ),
-                                          ),
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                'Desglose por ubicación:',
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.grey[700],
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              ...locations
-                                                  .map(
-                                                    (loc) {
-                                                      final locCantidad = loc['cantidad'] as double;
-                                                      final locReservado = ((loc['reservado_carnaval'] as num?)?.toDouble() ?? 0.0);
-                                                      final locPendiente = ((loc['pendiente_carnaval'] as num?)?.toDouble() ?? 0.0);
-                                                      final locReal = locCantidad;
-                                                      return Padding(
-                                                        padding:
-                                                            const EdgeInsets.only(
-                                                              bottom: 2,
-                                                            ),
-                                                        child: Row(
-                                                          mainAxisAlignment:
-                                                              MainAxisAlignment
-                                                                  .spaceBetween,
-                                                          children: [
-                                                            Expanded(
-                                                              child: Text(
-                                                                '${loc['almacen']} - ${loc['ubicacion']}',
-                                                                style: TextStyle(
-                                                                  fontSize: 11,
-                                                                  color:
-                                                                      Colors
-                                                                          .grey[700],
-                                                                ),
-                                                                overflow:
-                                                                    TextOverflow
-                                                                        .ellipsis,
-                                                              ),
-                                                            ),
-                                                            Row(
-                                                              mainAxisSize: MainAxisSize.min,
-                                                              children: [
-                                                                Text(
-                                                                  locReal.toStringAsFixed(2),
-                                                                  style: TextStyle(
-                                                                    fontSize: 11,
-                                                                    fontWeight:
-                                                                        FontWeight
-                                                                            .w600,
-                                                                    color:
-                                                                        Colors
-                                                                            .grey[900],
-                                                                  ),
-                                                                ),
-                                                                if (locReservado > 0) ...[
-                                                                  const SizedBox(width: 3),
-                                                                  Text(
-                                                                    '(res: ${locReservado.toStringAsFixed(0)})',
-                                                                    style: TextStyle(
-                                                                      fontSize: 10,
-                                                                      fontWeight: FontWeight.w600,
-                                                                      color: Colors.orange[700],
-                                                                    ),
-                                                                  ),
-                                                                ],
-                                                                if (locPendiente > 0) ...[
-                                                                  const SizedBox(width: 3),
-                                                                  Text(
-                                                                    '(pend: +${locPendiente.toStringAsFixed(0)})',
-                                                                    style: TextStyle(
-                                                                      fontSize: 10,
-                                                                      fontWeight: FontWeight.w600,
-                                                                      color: Colors.green[700],
-                                                                    ),
-                                                                  ),
-                                                                ],
-                                                              ],
-                                                            ),
-                                                          ],
-                                                        ),
-                                                      );
-                                                    },
-                                                  )
-                                                  .toList(),
-                                            ],
-                                          ),
+                                      inputFormatters: [
+                                        FilteringTextInputFormatter.allow(
+                                          RegExp(r'^\d+\.?\d{0,2}'),
                                         ),
                                       ],
-                                    ],
+                                      decoration: InputDecoration(
+                                        labelText: 'Real',
+                                        hintText: '0',
+                                        border: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                        ),
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 8,
+                                        ),
+                                        isDense: true,
+                                      ),
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                      ),
+                                    ),
                                   ),
-                                );
-                              },
+                                ],
+                              ),
                             );
                           },
                         ),
@@ -2455,15 +2290,15 @@ class _AperturaScreenState extends State<AperturaScreen> {
     List<Map<String, dynamic>>? productos,
   }) async {
     try {
-      // Generar ID único para la apertura offline
-      final aperturaId = '${DateTime.now().millisecondsSinceEpoch}';
-
       // client_uuid estable para idempotencia al sincronizar la apertura.
       final clientUuid = UuidGenerator.v4();
+      final localId = UuidGenerator.v4();
 
       // Crear estructura de apertura offline
       final aperturaData = {
-        'id': aperturaId,
+        'id': localId,
+        'local_id': localId,
+        'local_turno_id': localId,
         'client_uuid': clientUuid,
         'id_tpv': idTpv,
         'id_vendedor': idVendedor,
@@ -2477,14 +2312,8 @@ class _AperturaScreenState extends State<AperturaScreen> {
         'created_offline_at': DateTime.now().toIso8601String(),
       };
 
-      // Guardar turno offline
-      await _userPrefs.saveOfflineTurno(aperturaData);
-
-      // Guardar operación pendiente
-      await _userPrefs.savePendingOperation({
-        'type': 'apertura_turno',
-        'data': aperturaData,
-      });
+      // Cola multi-turno: crea entrada status=open (no sobrescribe cerrados).
+      await _userPrefs.createOpenOfflineTurno(aperturaPayload: aperturaData);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2499,7 +2328,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
         Navigator.of(context).pop(true);
       }
 
-      print('✅ Apertura offline creada: $aperturaId');
+      print('✅ Apertura offline creada: $localId');
     } catch (e, stackTrace) {
       print('❌ Error creando apertura offline: $e');
       print('Stack trace: $stackTrace');
@@ -2514,4 +2343,26 @@ class _AperturaScreenState extends State<AperturaScreen> {
       }
     }
   }
+
+  String _formatInventoryQty(double value) {
+    if (value == value.roundToDouble()) {
+      return value.toInt().toString();
+    }
+    return value.toStringAsFixed(2);
+  }
+}
+
+/// Totales de stock real por producto para el control de inventario (apertura).
+class _StockRealProductoApertura {
+  final double stockSistema;
+  final double pendienteCarnaval;
+  final double enCamino;
+  final double debeHaber;
+
+  const _StockRealProductoApertura({
+    required this.stockSistema,
+    required this.pendienteCarnaval,
+    required this.enCamino,
+    required this.debeHaber,
+  });
 }

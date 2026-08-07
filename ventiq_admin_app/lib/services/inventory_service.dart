@@ -24,6 +24,16 @@ class InventoryService {
   static final UserPreferencesService _prefsService = UserPreferencesService();
   static final FinancialService _financialService = FinancialService();
 
+  /// Fecha calendario local `yyyy-MM-dd` para RPCs con parámetro DATE.
+  static String? _toDateParam(DateTime? date) {
+    if (date == null) return null;
+    final local = date.isUtc ? date.toLocal() : date;
+    final y = local.year.toString().padLeft(4, '0');
+    final m = local.month.toString().padLeft(2, '0');
+    final d = local.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
   /// Get motivo reception options from app_nom_motivo_recepcion table
   static Future<List<Map<String, dynamic>>> getMotivoRecepcionOptions() async {
     try {
@@ -251,8 +261,10 @@ class InventoryService {
           'p_id_tpv': null,
           'p_id_tipo_operacion': tipoOperacionId,
           'p_estados': null,
-          'p_fecha_desde': fechaDesde?.toIso8601String().split('T')[0],
-          'p_fecha_hasta': fechaHasta?.toIso8601String().split('T')[0],
+          // Usar componentes locales (yyyy-MM-dd); toIso8601String puede
+          // correr el día por zona horaria (sobre todo en web).
+          'p_fecha_desde': _toDateParam(fechaDesde),
+          'p_fecha_hasta': _toDateParam(fechaHasta),
           'p_uuid_usuario_operador': null,
           'p_busqueda': busqueda,
           'p_limite': limite,
@@ -747,7 +759,8 @@ class InventoryService {
   }
 
   /// Transferencia atómica entre layouts vía RPC en Supabase.
-  /// Extracción + recepción + vínculo + cierre en una sola transacción.
+  /// Extracción (tipo 7) + recepción (tipo 8) + vínculo.
+  /// Por defecto deja ambas operaciones en pendiente (sin autoconfirmar).
   ///
   /// Personas:
   /// - [entregadoPor]: entrega en origen → extracción.entregado_por
@@ -761,7 +774,7 @@ class InventoryService {
     required String transportadoPor,
     required String recibidoPor,
     required String observaciones,
-    bool completarOperaciones = true,
+    bool completarOperaciones = false,
     @Deprecated('Usar entregadoPor') String? autorizadoPor,
     @Deprecated('Usar completarOperaciones') int? estadoInicial,
   }) async {
@@ -997,7 +1010,7 @@ class InventoryService {
           await _supabase
               .from('app_dat_operacion_transferencia')
               .select('id_extraccion, id_recepcion')
-              .eq('id_operacion_general', idOperacionGeneral)
+              .eq('id_operacion', idOperacionGeneral)
               .single();
 
       if (operationsResponse.isEmpty) {
@@ -2637,6 +2650,43 @@ class InventoryService {
       print('   - p_id_operacion: $idOperacion');
       print('   - p_comentario: $comentario');
       print('   - p_uuid: $uuid');
+
+      // =====================================================
+      // TRANSFERENCIA (salida/entrada): el stock ya se movió al crear.
+      // Solo cambiar estado a Completada — no recontabilizar.
+      // =====================================================
+      try {
+        final transferLink = await _supabase
+            .from('app_dat_operacion_transferencia')
+            .select('id_operacion, id_extraccion, id_recepcion')
+            .or('id_extraccion.eq.$idOperacion,id_recepcion.eq.$idOperacion')
+            .maybeSingle();
+
+        if (transferLink != null) {
+          print(
+            '🔄 Operación de transferencia detectada ($idOperacion) — '
+            'completando solo estado (inventario ya aplicado)',
+          );
+          final response = await _supabase.rpc(
+            'fn_registrar_cambio_estado_operacion',
+            params: {
+              'p_id_operacion': idOperacion,
+              'p_nuevo_estado': 2,
+              'p_uuid_usuario': uuid,
+            },
+          );
+          if (response is Map && response['status'] == 'error') {
+            return Map<String, dynamic>.from(response);
+          }
+          return {
+            'status': 'success',
+            'success': true,
+            'message': 'Operación de transferencia completada',
+          };
+        }
+      } catch (e) {
+        print('⚠️ Error detectando transferencia: $e — flujo normal');
+      }
 
       // =====================================================
       // VALIDAR Y ASIGNAR PRESENTACIONES FALTANTES

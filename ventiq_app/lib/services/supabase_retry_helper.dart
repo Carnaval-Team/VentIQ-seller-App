@@ -16,11 +16,9 @@ Future<T> withNetworkRetry<T>(
   Future<T> Function() request, {
   required String description,
 }) async {
-  // Si ya estamos en modo offline, no interceptar — dejar que el caller
-  // maneje el error como hoy (cache fallback, mensaje, etc.)
-  final isOfflineModeEnabled =
-      await UserPreferencesService().isOfflineModeEnabled();
-  if (isOfflineModeEnabled) {
+  // Offline o dispositivo full-offline: no interceptar ni disparar SmartOffline/sync.
+  final prefs = UserPreferencesService();
+  if (await prefs.shouldUseLocalData()) {
     return request();
   }
 

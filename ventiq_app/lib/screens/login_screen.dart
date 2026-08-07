@@ -9,6 +9,8 @@ import '../services/auto_sync_service.dart';
 import '../services/connectivity_service.dart';
 import '../services/subscription_guard_service.dart';
 import '../services/subscription_service.dart';
+import '../services/admin_access_service.dart';
+import '../services/smart_offline_manager.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 
@@ -34,12 +36,19 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   bool _obscure = true;
   bool _rememberMe = false;
+  bool _deviceFullOfflineReady = false;
   String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
     _loadSavedCredentials();
+    _checkFullOffline();
+  }
+
+  Future<void> _checkFullOffline() async {
+    final ready = await _userPreferencesService.isDeviceFullOfflineReady();
+    if (mounted) setState(() => _deviceFullOfflineReady = ready);
   }
 
   @override
@@ -70,6 +79,21 @@ class _LoginScreenState extends State<LoginScreen> {
 
       FocusScope.of(context).unfocus();
 
+      // Full offline locked: nunca autenticar contra el servidor aunque haya red.
+      if (await _userPreferencesService.shouldStayFullyOffline()) {
+        print('📦 Full offline activo: login solo local (sin servidor)');
+        final offlineOk = await _attemptOfflineLogin();
+        if (!offlineOk && mounted) {
+          setState(() {
+            _errorMessage =
+                'No se pudo iniciar sesión offline. Verifica usuario/contraseña '
+                'registrados en este dispositivo.';
+            _isLoading = false;
+          });
+        }
+        return;
+      }
+
       // PASO 1: Verificar si hay conexión real a internet
       print('🔍 Verificando conexión a internet...');
       final hasInternetConnection =
@@ -84,10 +108,19 @@ class _LoginScreenState extends State<LoginScreen> {
             await _userPreferencesService.isOfflineModeEnabled();
 
         if (wasOfflineModeEnabled) {
-          print(
-            '🔄 Desactivando modo offline automáticamente (hay conexión disponible)',
-          );
-          await _userPreferencesService.setOfflineMode(false);
+          final fullOfflineReady =
+              await _userPreferencesService.isDeviceFullOfflineReady();
+          if (fullOfflineReady) {
+            print(
+              '📦 Dispositivo full-offline: se mantiene el modo offline '
+              '(no se desactiva por tener conexión)',
+            );
+          } else {
+            print(
+              '🔄 Desactivando modo offline automáticamente (hay conexión disponible)',
+            );
+            await _userPreferencesService.setOfflineMode(false);
+          }
         }
 
         // Continuar con login online normal
@@ -162,48 +195,72 @@ class _LoginScreenState extends State<LoginScreen> {
             print('⚠️ No se pudo verificar superadmin: $e');
           }
 
-          // Verificar si el usuario es un vendedor válido
+          // Gate Admin Lite: solo gerente (mismo uuid) sin segundo login.
+          // Se cachea después de guardar id_tienda (más abajo); aquí solo
+          // preparamos el clear de memoria por si cambia de cuenta.
+          try {
+            AdminAccessService().clearMemoryCache();
+          } catch (_) {}
+
+          // Verificar acceso a Caja: vendedor, gerente o supervisor
           try {
             final sellerProfile = await _sellerService
                 .verifySellerAndGetProfile(response.user!.id);
 
             final sellerData = sellerProfile['seller'] as Map<String, dynamic>;
             final workerData = sellerProfile['worker'] as Map<String, dynamic>;
+            final entryRole = sellerProfile['entryRole']?.toString() ?? 'vendedor';
 
             // Extraer IDs por separado
-            final idTpv =
-                sellerProfile['idTpv'] as int; // Desde app_dat_vendedor
-            final idTienda =
-                sellerProfile['idTienda'] as int; // Desde app_dat_trabajadores
-            final idSeller =
-                sellerData['id']
-                    as int; // ID del vendedor desde app_dat_vendedor
-            final idAlmacen = sellerProfile['idAlmacen'];
+            final idTpv = (sellerProfile['idTpv'] as num).toInt();
+            final idTienda = (sellerProfile['idTienda'] as num).toInt();
+            final idSeller = (sellerData['id'] as num?)?.toInt() ?? 0;
+            final idAlmacen = (sellerProfile['idAlmacen'] as num?)?.toInt();
+            final idTrabajador =
+                (sellerData['id_trabajador'] as num?)?.toInt() ?? 0;
             print('🔍 IDs extraídos por separado:');
-            print('  - ID TPV (app_dat_vendedor): $idTpv');
-            print('  - ID Tienda (app_dat_trabajadores): $idTienda');
-            print('  - ID Seller (app_dat_vendedor): $idSeller');
-            print('  - ID Almacen (app_dat_tpv): $idAlmacen');
+            print('  - Entry role: $entryRole');
+            print('  - ID TPV: $idTpv');
+            print('  - ID Tienda: $idTienda');
+            print('  - ID Seller: $idSeller');
+            print('  - ID Almacen: $idAlmacen');
 
-            // Guardar datos del vendedor
+            // Guardar datos operativos (TPV/trabajador). Gerente/supervisor
+            // sin fila de vendedor usan TPV por defecto de la tienda.
             await _userPreferencesService.saveSellerData(
               idTpv: idTpv,
-              idTrabajador: sellerData['id_trabajador'] as int,
+              idTrabajador: idTrabajador,
               permitirCustomizarPrecioVenta:
                   sellerData['permitir_customizar_precio_venta'] == true,
             );
-            await _userPreferencesService.saveIdAlmacen(idAlmacen);
+            if (idAlmacen != null) {
+              await _userPreferencesService.saveIdAlmacen(idAlmacen);
+            }
 
-            // Guardar ID del vendedor
-            await _userPreferencesService.saveIdSeller(idSeller);
+            if (idSeller > 0) {
+              await _userPreferencesService.saveIdSeller(idSeller);
+            }
 
             // Guardar perfil del trabajador
             await _userPreferencesService.saveWorkerProfile(
-              nombres: workerData['nombres'] as String,
-              apellidos: workerData['apellidos'] as String,
+              nombres: (workerData['nombres'] ?? '').toString(),
+              apellidos: (workerData['apellidos'] ?? '').toString(),
               idTienda: idTienda,
-              idRoll: workerData['id_roll'] as int,
+              idRoll: (workerData['id_roll'] as num?)?.toInt() ?? 4,
             );
+
+            // Misma tienda = mismo inventario local (vendedor + admin).
+            await _userPreferencesService.ensureOfflineStoreScope(idTienda);
+
+            await _userPreferencesService.setCajaEntryRole(entryRole);
+
+            // Cachear rol admin (gerente/supervisor) para menú offline.
+            try {
+              final adminRole = await AdminAccessService().refreshAndCache();
+              print('  - Admin Lite role: $adminRole');
+            } catch (e) {
+              print('⚠️ No se pudo cachear rol admin: $e');
+            }
 
             // Guardar credenciales si el usuario marcó "Recordarme"
             if (_rememberMe) {
@@ -215,7 +272,7 @@ class _LoginScreenState extends State<LoginScreen> {
               await _userPreferencesService.clearSavedCredentials();
             }
 
-            print('✅ Perfil completo del vendedor guardado');
+            print('✅ Perfil de acceso a Caja guardado ($entryRole)');
 
             // Buscar promoción global para la tienda
             try {
@@ -320,8 +377,13 @@ class _LoginScreenState extends State<LoginScreen> {
                 // Verificar si la suscripción está próxima a vencer
                 await _checkAndShowSubscriptionWarning(idTienda);
 
-                // Login exitoso con suscripción activa - ir al catálogo
-                Navigator.of(context).pushReplacementNamed('/categories');
+                // Gerente/supervisor → solo gestión; vendedor → catálogo
+                final inventoryOnly = entryRole == 'gerente' ||
+                    entryRole == 'supervisor' ||
+                    sellerProfile['inventoryOnly'] == true;
+                Navigator.of(context).pushReplacementNamed(
+                  inventoryOnly ? '/admin-home' : '/categories',
+                );
               } else {
                 // Sin suscripción activa - ir a detalles de suscripción
                 Navigator.of(
@@ -434,14 +496,42 @@ class _LoginScreenState extends State<LoginScreen> {
           idTienda: offlineUser['idTienda'],
           idRoll: offlineUser['idRoll'],
         );
+        final storeId = offlineUser['idTienda'];
+        if (storeId is int) {
+          await _userPreferencesService.ensureOfflineStoreScope(storeId);
+        } else if (storeId is num) {
+          await _userPreferencesService.ensureOfflineStoreScope(storeId.toInt());
+        }
+      }
+
+      final entryRole = offlineUser['entryRole']?.toString();
+      if (entryRole != null && entryRole.isNotEmpty) {
+        await _userPreferencesService.setCajaEntryRole(entryRole);
+        final storeId = offlineUser['idTienda'];
+        if (storeId != null) {
+          final sid = storeId is int ? storeId : (storeId as num).toInt();
+          final adminRole =
+              (entryRole == 'gerente' || entryRole == 'supervisor')
+                  ? entryRole
+                  : 'none';
+          await _userPreferencesService.setCachedAdminRoleRaw(sid, adminRole);
+        }
+        AdminAccessService().clearMemoryCache();
       }
 
       print('✅ Login offline exitoso - Todos los datos restaurados');
       print('🔌 Trabajando en modo offline');
       await _userPreferencesService.setOfflineMode(true);
 
-      // Inicializar servicios inteligentes en segundo plano (también funciona en offline)
-      _initializeSmartServices();
+      // En full offline no inicializar auto-sync; en offline temporal sí
+      // (initialize respeta el flag offline y no arranca sync).
+      if (!await _userPreferencesService.isDeviceFullOfflineReady()) {
+        _initializeSmartServices();
+      } else {
+        try {
+          await SmartOfflineManager().onOfflineModeManuallyEnabled();
+        } catch (_) {}
+      }
 
       // Verificar suscripción antes de navegar (modo offline)
       if (mounted) {
@@ -449,15 +539,18 @@ class _LoginScreenState extends State<LoginScreen> {
           _isLoading = false;
         });
 
-        // En modo offline, verificar desde preferencias guardadas
+        // En modo offline, validar licencia firmada (no solo caché de 5 min)
         final hasActiveSubscription =
-            await _userPreferencesService.hasActiveSubscriptionStored();
+            await _subscriptionGuard.hasActiveSubscription();
 
         if (hasActiveSubscription) {
-          // Login offline exitoso con suscripción activa - ir al catálogo
-          Navigator.of(context).pushReplacementNamed('/categories');
+          final inventoryOnly =
+              await _userPreferencesService.isInventoryOnlySession();
+          Navigator.of(context).pushReplacementNamed(
+            inventoryOnly ? '/admin-home' : '/categories',
+          );
         } else {
-          // Sin suscripción activa - ir a detalles de suscripción
+          // Sin licencia válida - bloquear app en detalles de suscripción
           Navigator.of(context).pushReplacementNamed('/subscription-detail');
         }
       }
@@ -876,6 +969,20 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             ),
                             const SizedBox(height: 16),
+                            if (_deviceFullOfflineReady) ...[
+                              OutlinedButton.icon(
+                                onPressed: () {
+                                  Navigator.of(context).pushReplacementNamed(
+                                    '/offline-user-switch',
+                                  );
+                                },
+                                icon: const Icon(Icons.people_outline),
+                                label: const Text(
+                                  'Usuarios offline del dispositivo',
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                            ],
                             // Remember me checkbox
                             Row(
                               children: [

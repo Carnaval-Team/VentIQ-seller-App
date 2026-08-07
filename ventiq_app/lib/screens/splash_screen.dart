@@ -5,6 +5,7 @@ import '../services/auth_service.dart';
 import '../services/settings_integration_service.dart';
 import '../services/auto_sync_service.dart';
 import '../services/update_service.dart';
+import '../services/subscription_guard_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -34,20 +35,51 @@ class _SplashScreenState extends State<SplashScreen> {
       final hasValidSession = await _userPreferencesService.hasValidSession();
 
       if (hasValidSession) {
-        // User has valid session, initialize smart services and go to categories
-        print(
-          '✅ Sesión válida encontrada - Inicializando servicios inteligentes...',
-        );
-        _initializeSmartServices();
+        // Full offline: forzar modo offline y no disparar sync al reabrir la app.
+        final fullOfflineReady =
+            await _userPreferencesService.isDeviceFullOfflineReady();
+        if (fullOfflineReady) {
+          await _userPreferencesService.setOfflineMode(true);
+          print(
+            '📦 Sesión + full offline: se mantiene offline sin auto-sync',
+          );
+        } else {
+          // User has valid session, initialize smart services and go to categories
+          print(
+            '✅ Sesión válida encontrada - Inicializando servicios inteligentes...',
+          );
+          _initializeSmartServices();
+        }
+
+        // Actualizar anti-rollback y verificar licencia antes de entrar
+        await _userPreferencesService.updateLastSeenTimestamp();
+        final hasLicense =
+            await SubscriptionGuardService().hasActiveSubscription();
 
         if (mounted) {
-          Navigator.of(context).pushReplacementNamed('/categories');
-          // Verificar actualizaciones después de que el frame esté completamente renderizado
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _checkForUpdatesAfterNavigation();
-          });
+          final inventoryOnly =
+              await _userPreferencesService.isInventoryOnlySession();
+          final home = !hasLicense
+              ? '/subscription-detail'
+              : inventoryOnly
+                  ? '/admin-home'
+                  : '/categories';
+          Navigator.of(context).pushReplacementNamed(home);
+          if (hasLicense && !fullOfflineReady) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _checkForUpdatesAfterNavigation();
+            });
+          }
         }
       } else {
+        // Dispositivo preparado full offline → selector local
+        final fullOffline =
+            await _userPreferencesService.isDeviceFullOfflineReady();
+        if (fullOffline && mounted) {
+          Navigator.of(context).pushReplacementNamed('/offline-user-switch');
+          return;
+        }
+
         // Check if user has saved credentials for auto-login
         final shouldRemember = await _userPreferencesService.shouldRememberMe();
 
@@ -100,12 +132,19 @@ class _SplashScreenState extends State<SplashScreen> {
         print('✅ Auto-login exitoso - Inicializando servicios inteligentes...');
         _initializeSmartServices();
 
+        await _userPreferencesService.updateLastSeenTimestamp();
+        final hasLicense = await SubscriptionGuardService()
+            .hasActiveSubscription(forceRefresh: true);
+
         if (mounted) {
-          Navigator.of(context).pushReplacementNamed('/categories');
-          // Verificar actualizaciones después de que el frame esté completamente renderizado
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _checkForUpdatesAfterNavigation();
-          });
+          Navigator.of(context).pushReplacementNamed(
+            hasLicense ? '/categories' : '/subscription-detail',
+          );
+          if (hasLicense) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _checkForUpdatesAfterNavigation();
+            });
+          }
         }
       } else {
         // Auto-login failed, go to login screen

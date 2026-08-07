@@ -38,6 +38,10 @@ import '../services/currency_service.dart';
 
 import '../services/restaurant_service.dart';
 
+import '../services/product_image_download_service.dart';
+
+import 'package:flutter/foundation.dart';
+
 
 
 class ProductDetailScreen extends StatefulWidget {
@@ -656,11 +660,23 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
         actions: [
 
+          if (_product.imageUrl.isNotEmpty)
+
+            IconButton(
+
+              icon: const Icon(Icons.download),
+
+              tooltip: 'Descargar imagen',
+
+              onPressed: _downloadProductImage,
+
+            ),
+
           if (_canEditProduct)
 
             IconButton(icon: const Icon(Icons.edit), onPressed: _editProduct),
 
-          if (_canEditProduct || _canDeleteProduct)
+          if (_canEditProduct || _canDeleteProduct || _product.imageUrl.isNotEmpty)
 
             PopupMenuButton<String>(
 
@@ -680,6 +696,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
                     break;
 
+                  case 'download_image':
+
+                    _downloadProductImage();
+
+                    break;
+
                   case 'delete':
 
                     _showDeleteConfirmation();
@@ -693,6 +715,36 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               itemBuilder: (context) {
 
                 final items = <PopupMenuEntry<String>>[];
+
+
+
+                if (_product.imageUrl.isNotEmpty) {
+
+                  items.add(
+
+                    const PopupMenuItem(
+
+                      value: 'download_image',
+
+                      child: Row(
+
+                        children: [
+
+                          Icon(Icons.download, size: 20),
+
+                          SizedBox(width: 8),
+
+                          Text('Descargar imagen'),
+
+                        ],
+
+                      ),
+
+                    ),
+
+                  );
+
+                }
 
 
 
@@ -2457,6 +2509,44 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                     color: Colors.white,
 
                                     size: 12,
+
+                                  ),
+
+                                ),
+
+                              ),
+
+                              Positioned(
+
+                                bottom: 2,
+
+                                right: 2,
+
+                                child: GestureDetector(
+
+                                  onTap: _downloadProductImage,
+
+                                  child: Container(
+
+                                    padding: const EdgeInsets.all(2),
+
+                                    decoration: BoxDecoration(
+
+                                      color: Colors.black.withOpacity(0.6),
+
+                                      borderRadius: BorderRadius.circular(8),
+
+                                    ),
+
+                                    child: const Icon(
+
+                                      Icons.download,
+
+                                      color: Colors.white,
+
+                                      size: 12,
+
+                                    ),
 
                                   ),
 
@@ -7370,6 +7460,110 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   /// Muestra la imagen del producto en pantalla completa
 
+  Future<void> _downloadProductImage() async {
+
+    if (_product.imageUrl.isEmpty) {
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+
+        const SnackBar(
+
+          content: Text('Este producto no tiene imagen'),
+
+          backgroundColor: Colors.orange,
+
+        ),
+
+      );
+
+      return;
+
+    }
+
+
+
+    showDialog(
+
+      context: context,
+
+      barrierDismissible: false,
+
+      builder:
+
+          (_) => const Center(
+
+            child: CircularProgressIndicator(color: AppColors.primary),
+
+          ),
+
+    );
+
+
+
+    try {
+
+      await ProductImageDownloadService.downloadProductImage(
+
+        imageUrl: _product.imageUrl,
+
+        productName:
+
+            _product.name.isNotEmpty ? _product.name : _product.denominacion,
+
+        sku: _product.sku,
+
+      );
+
+      if (!mounted) return;
+
+      Navigator.of(context, rootNavigator: true).pop();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+
+        SnackBar(
+
+          content: Text(
+
+            kIsWeb
+
+                ? 'Imagen descargada'
+
+                : 'Imagen lista para guardar/compartir',
+
+          ),
+
+          backgroundColor: AppColors.success,
+
+        ),
+
+      );
+
+    } catch (e) {
+
+      if (!mounted) return;
+
+      Navigator.of(context, rootNavigator: true).pop();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+
+        SnackBar(
+
+          content: Text('Error al descargar imagen: $e'),
+
+          backgroundColor: AppColors.error,
+
+        ),
+
+      );
+
+    }
+
+  }
+
+
+
   void _showFullScreenImage(String imageUrl) {
 
     showDialog(
@@ -7491,6 +7685,52 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       );
 
                     },
+
+                  ),
+
+                ),
+
+              ),
+
+              // Botón descargar
+
+              Positioned(
+
+                top: 40,
+
+                right: 80,
+
+                child: GestureDetector(
+
+                  onTap: () async {
+
+                    Navigator.of(context).pop();
+
+                    await _downloadProductImage();
+
+                  },
+
+                  child: Container(
+
+                    padding: const EdgeInsets.all(8),
+
+                    decoration: BoxDecoration(
+
+                      color: Colors.black.withOpacity(0.6),
+
+                      borderRadius: BorderRadius.circular(20),
+
+                    ),
+
+                    child: const Icon(
+
+                      Icons.download,
+
+                      color: Colors.white,
+
+                      size: 24,
+
+                    ),
 
                   ),
 

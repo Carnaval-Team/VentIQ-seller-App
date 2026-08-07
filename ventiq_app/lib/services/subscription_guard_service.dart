@@ -1,28 +1,43 @@
 import 'package:flutter/material.dart';
+import 'connectivity_service.dart';
+import 'offline_license_service.dart';
+import 'store_config_service.dart';
 import 'subscription_service.dart';
 import 'user_preferences_service.dart';
 import '../models/subscription.dart';
 
 class SubscriptionGuardService {
-  static final SubscriptionGuardService _instance = SubscriptionGuardService._internal();
+  static final SubscriptionGuardService _instance =
+      SubscriptionGuardService._internal();
   factory SubscriptionGuardService() => _instance;
   SubscriptionGuardService._internal();
 
   final SubscriptionService _subscriptionService = SubscriptionService();
-  final UserPreferencesService _userPreferencesService = UserPreferencesService();
-  
+  final UserPreferencesService _userPreferencesService =
+      UserPreferencesService();
+  final OfflineLicenseService _offlineLicenseService = OfflineLicenseService();
+  final ConnectivityService _connectivityService = ConnectivityService();
+
   Subscription? _cachedSubscription;
   int? _cachedStoreId;
   DateTime? _lastCheck;
-  
-  // Rutas que están permitidas sin suscripción activa
+  OfflineLicenseStatus? _lastOfflineStatus;
+
+  // Rutas que están permitidas sin suscripción/licencia activa
   static const List<String> _allowedRoutesWithoutSubscription = [
     '/subscription-detail',
     '/login',
     '/',
   ];
 
-  /// Verifica si el usuario tiene una suscripción activa válida
+  OfflineLicenseStatus? get lastOfflineStatus => _lastOfflineStatus;
+
+  /// Verifica si el usuario tiene una suscripción/licencia activa válida.
+  ///
+  /// - Online: consulta servidor + renueva token firmado.
+  /// - Offline con modo completo: valida token firmado local (fecha_fin,
+  ///   ventana dias_max, anti-rollback, firma HMAC).
+  /// - Offline sin modo completo: falla (requiere conexión).
   Future<bool> hasActiveSubscription({bool forceRefresh = false}) async {
     try {
       final currentStoreId = await _userPreferencesService.getIdTienda();
@@ -31,11 +46,61 @@ class SubscriptionGuardService {
         return false;
       }
 
-      // Verificar primero en preferencias si no es refresh forzado
+      final stayFullyOffline =
+          await _userPreferencesService.shouldStayFullyOffline();
+      // Con full offline activo tratamos la app como offline aunque haya red.
+      final isOnline =
+          _connectivityService.isConnected && !stayFullyOffline;
+      final offlineCompleto =
+          await StoreConfigService.getPermitirModoOfflineCompleto(
+            currentStoreId,
+          );
+
+      // Camino offline: no dependemos del refresh de 5 min
+      if (!isOnline) {
+        if (!offlineCompleto) {
+          print('❌ Sin conexión y modo offline completo deshabilitado');
+          _lastOfflineStatus = OfflineLicenseStatus.blocked(
+            reason: OfflineLicenseBlockReason.offlineNotAllowed,
+            message:
+                'Se requiere conexión a internet. El modo offline completo '
+                'no está habilitado para esta tienda.',
+          );
+          return false;
+        }
+
+        final status = await _offlineLicenseService.validateLocalLicense(
+          storeId: currentStoreId,
+        );
+        _lastOfflineStatus = status;
+        if (status.isValid) {
+          print('✅ Licencia offline firmada válida');
+          return true;
+        }
+        print('❌ Licencia offline inválida: ${status.message}');
+        return false;
+      }
+
+      // Online: caché corta si no se fuerza refresh
       if (!forceRefresh) {
-        final shouldRefresh = await _userPreferencesService.shouldRefreshSubscription();
+        final shouldRefresh =
+            await _userPreferencesService.shouldRefreshSubscription();
         if (!shouldRefresh) {
-          final hasStoredActive = await _userPreferencesService.hasActiveSubscriptionStored();
+          // Preferir token firmado si existe
+          final signed = await _userPreferencesService.getSignedOfflineLicense();
+          if (signed != null) {
+            final status = await _offlineLicenseService.validateLocalLicense(
+              storeId: currentStoreId,
+            );
+            _lastOfflineStatus = status;
+            if (status.isValid) {
+              print('✅ Licencia firmada válida desde caché');
+              return true;
+            }
+          }
+
+          final hasStoredActive =
+              await _userPreferencesService.hasActiveSubscriptionStored();
           if (hasStoredActive) {
             print('✅ Suscripción válida desde preferencias (caché)');
             return true;
@@ -44,31 +109,49 @@ class SubscriptionGuardService {
       }
 
       // Obtener suscripción del servidor
-      _cachedSubscription = await _subscriptionService.getActiveSubscription(currentStoreId);
+      _cachedSubscription = await _subscriptionService.getActiveSubscription(
+        currentStoreId,
+      );
       _cachedStoreId = currentStoreId;
       _lastCheck = DateTime.now();
 
       if (_cachedSubscription == null) {
-        print('❌ No se encontró suscripción activa para tienda: $currentStoreId');
-        // Limpiar datos obsoletos de preferencias
+        print(
+          '❌ No se encontró suscripción activa para tienda: $currentStoreId',
+        );
         await _userPreferencesService.clearSubscriptionData();
+        await _userPreferencesService.clearSignedOfflineLicense();
+        _lastOfflineStatus = OfflineLicenseStatus.blocked(
+          reason: OfflineLicenseBlockReason.subscriptionExpired,
+          message: 'No se encontró suscripción activa para esta tienda.',
+        );
         return false;
       }
 
       final isValid = _cachedSubscription!.isActive;
       print('🔍 Suscripción verificada: ${isValid ? 'VÁLIDA' : 'INVÁLIDA'}');
-      
+
       if (isValid) {
-        // Actualizar datos en preferencias
         await _userPreferencesService.saveSubscriptionData(
           subscriptionId: _cachedSubscription!.id,
           state: _cachedSubscription!.estado,
           planId: _cachedSubscription!.idPlan,
-          planName: _cachedSubscription!.planDenominacion ?? 'Plan desconocido',
+          planName:
+              _cachedSubscription!.planDenominacion ?? 'Plan desconocido',
           startDate: _cachedSubscription!.fechaInicio,
           endDate: _cachedSubscription!.fechaFin,
           features: _cachedSubscription!.planFuncionesHabilitadas,
         );
+        await _userPreferencesService.updateLastSeenTimestamp();
+
+        // Renovar token firmado (obligatorio para operar offline después)
+        final fetched = await _offlineLicenseService.fetchAndStoreSignedLicense(
+          currentStoreId,
+        );
+        if (fetched) {
+          _lastOfflineStatus = await _offlineLicenseService
+              .validateLocalLicense(storeId: currentStoreId);
+        }
       } else {
         print('  - Estado: ${_cachedSubscription!.estadoText}');
         print('  - Es activa: ${_cachedSubscription!.estado == 1}');
@@ -77,19 +160,39 @@ class SubscriptionGuardService {
           print('  - Fecha fin: ${_cachedSubscription!.fechaFin}');
           print('  - Fecha actual: ${DateTime.now()}');
         }
-        // Limpiar datos obsoletos de preferencias
         await _userPreferencesService.clearSubscriptionData();
+        await _userPreferencesService.clearSignedOfflineLicense();
+        _lastOfflineStatus = OfflineLicenseStatus.blocked(
+          reason: OfflineLicenseBlockReason.subscriptionExpired,
+          message: getSubscriptionStatusMessage(),
+        );
       }
 
       return isValid;
     } catch (e) {
       print('❌ Error verificando suscripción activa: $e');
+
+      // Si falló la red pero hay modo offline completo, intentar licencia local
+      final storeId = await _userPreferencesService.getIdTienda();
+      if (storeId != null) {
+        final offlineCompleto =
+            await StoreConfigService.getPermitirModoOfflineCompleto(storeId);
+        if (offlineCompleto) {
+          final status = await _offlineLicenseService.validateLocalLicense(
+            storeId: storeId,
+          );
+          _lastOfflineStatus = status;
+          return status.isValid;
+        }
+      }
       return false;
     }
   }
 
   /// Obtiene la suscripción actual (puede ser inactiva)
-  Future<Subscription?> getCurrentSubscription({bool forceRefresh = false}) async {
+  Future<Subscription?> getCurrentSubscription({
+    bool forceRefresh = false,
+  }) async {
     await hasActiveSubscription(forceRefresh: forceRefresh);
     return _cachedSubscription;
   }
@@ -99,14 +202,16 @@ class SubscriptionGuardService {
     return _allowedRoutesWithoutSubscription.contains(route);
   }
 
-  /// Redirige al usuario a la vista de suscripción si no tiene suscripción activa
-  Future<bool> checkAndRedirectIfNeeded(BuildContext context, String currentRoute) async {
-    // Si ya está en una ruta permitida, no hacer nada
+  /// Redirige al usuario a la vista de suscripción si no tiene suscripción activa.
+  /// Bloqueo total de la app (decisión A del plan).
+  Future<bool> checkAndRedirectIfNeeded(
+    BuildContext context,
+    String currentRoute,
+  ) async {
     if (isRouteAllowedWithoutSubscription(currentRoute)) {
       return true;
     }
 
-    // Verificar si hay usuario logueado (tiene ID de tienda)
     final currentStoreId = await _userPreferencesService.getIdTienda();
     if (currentStoreId == null) {
       print('⚠️ No hay usuario logueado, permitiendo acceso a $currentRoute');
@@ -115,24 +220,24 @@ class SubscriptionGuardService {
 
     final hasActive = await hasActiveSubscription();
     if (!hasActive) {
-      print('🚫 Acceso denegado a $currentRoute - Redirigiendo a detalles de suscripción');
-      
+      print(
+        '🚫 Acceso denegado a $currentRoute - Redirigiendo a detalles de suscripción',
+      );
+
       if (context.mounted) {
-        // Solo mostrar SnackBar si NO estamos ya en la pantalla de subscription-detail
-        // Esto evita que el mensaje persista cuando se recarga la pantalla
         if (currentRoute != '/subscription-detail') {
+          final msg =
+              _lastOfflineStatus?.message ??
+              'Tu suscripción/licencia no está activa. Redirigiendo...';
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Tu suscripción no está activa. Redirigiendo...',
-              ),
+            SnackBar(
+              content: Text(msg),
               backgroundColor: Colors.orange,
-              duration: Duration(milliseconds: 1500),
+              duration: const Duration(milliseconds: 2000),
             ),
           );
         }
 
-        // Redirigir a detalles de suscripción
         Navigator.pushNamedAndRemoveUntil(
           context,
           '/subscription-detail',
@@ -159,17 +264,31 @@ class SubscriptionGuardService {
     _cachedSubscription = null;
     _cachedStoreId = null;
     _lastCheck = null;
+    _lastOfflineStatus = null;
     await _userPreferencesService.clearSubscriptionData();
+    await _userPreferencesService.clearSignedOfflineLicense();
     print('🧹 Caché de suscripción limpiado');
   }
 
-  /// Fuerza una verificación de suscripción
+  /// Fuerza una verificación de suscripción / revalidación de licencia
   Future<bool> forceCheck() async {
     return await hasActiveSubscription(forceRefresh: true);
   }
 
+  /// Días restantes hasta forzar reconexión (null si no aplica).
+  Future<int?> getDaysUntilForcedReconnect() async {
+    final status =
+        _lastOfflineStatus ??
+        await _offlineLicenseService.validateLocalLicense();
+    return status.daysUntilForcedReconnect;
+  }
+
   /// Obtiene el mensaje apropiado según el estado de la suscripción
   String getSubscriptionStatusMessage() {
+    if (_lastOfflineStatus != null && !_lastOfflineStatus!.isValid) {
+      return _lastOfflineStatus!.message;
+    }
+
     if (_cachedSubscription == null) {
       return 'No se encontró información de suscripción para esta tienda.';
     }
@@ -182,7 +301,8 @@ class SubscriptionGuardService {
       return 'Tu suscripción está ${_cachedSubscription!.estadoText.toLowerCase()}. Contacta al administrador para activarla.';
     }
 
-    if (_cachedSubscription!.diasRestantes > 0 && _cachedSubscription!.diasRestantes <= 30) {
+    if (_cachedSubscription!.diasRestantes > 0 &&
+        _cachedSubscription!.diasRestantes <= 30) {
       return 'Tu suscripción vence en ${_cachedSubscription!.diasRestantes} días. Contacta al administrador para renovarla.';
     }
 
@@ -191,11 +311,18 @@ class SubscriptionGuardService {
 
   /// Obtiene el color apropiado según el estado de la suscripción
   Color getSubscriptionStatusColor() {
-    if (_cachedSubscription == null || !_cachedSubscription!.isActive || _cachedSubscription!.isExpired) {
+    if (_lastOfflineStatus != null && !_lastOfflineStatus!.isValid) {
       return Colors.red;
     }
 
-    if (_cachedSubscription!.diasRestantes > 0 && _cachedSubscription!.diasRestantes <= 30) {
+    if (_cachedSubscription == null ||
+        !_cachedSubscription!.isActive ||
+        _cachedSubscription!.isExpired) {
+      return Colors.red;
+    }
+
+    if (_cachedSubscription!.diasRestantes > 0 &&
+        _cachedSubscription!.diasRestantes <= 30) {
       return Colors.orange;
     }
 

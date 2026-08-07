@@ -72,6 +72,9 @@ dependencies:
 
   # Image picker for package photos
   image_picker: ^1.1.2
+  sqflite: ^2.4.3
+  path: ^1.9.1
+  sqflite_common_ffi: ^2.4.2
   
 dev_dependencies:
   flutter_test:
