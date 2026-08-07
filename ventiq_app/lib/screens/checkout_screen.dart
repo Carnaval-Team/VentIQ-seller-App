@@ -342,12 +342,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return CheckoutWebScreen(
         order: widget.order,
         isProcessing: _isProcessing,
+        modoRestaurante: _modoRestaurante,
+        mesaSeleccionada: _mesaSeleccionada,
+        onSeleccionarMesa: _abrirSelectorMesas,
         onCreateOrder: (buyerName, buyerPhone, breakdown, extraContacts,
             promoCode, promoDiscount) {
-          // Actualizar controladores con los datos de la vista web
-          _buyerNameController.text = buyerName;
-          _buyerPhoneController.text = buyerPhone;
-          _extraContactsController.text = extraContacts;
+          // En modo restaurante NO sobreescribimos los datos del comprador:
+          // _buyerNameController ya contiene la etiqueta 'Mesa X' fijada en
+          // _abrirSelectorMesas y el flujo de venta se asocia por idMesa.
+          if (!_modoRestaurante) {
+            _buyerNameController.text = buyerName;
+            _buyerPhoneController.text = buyerPhone;
+            _extraContactsController.text = extraContacts;
+          }
           if (promoCode != null) {
             _promoCodeController.text = promoCode;
             _promoApplied = true;

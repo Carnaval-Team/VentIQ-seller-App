@@ -6,6 +6,7 @@ import '../services/store_config_service.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/mesa_form_dialog.dart';
+import 'mesas_web_screen.dart';
 
 /// Pantalla principal del modo restaurante: grilla de mesas + métricas globales.
 ///
@@ -293,6 +294,12 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    // Verificar si es vista web (ancho > 600) y delegar a la pantalla web.
+    final bool isWeb = MediaQuery.of(context).size.width > 600;
+    if (isWeb) {
+      return const MesasWebScreen();
+    }
+
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(

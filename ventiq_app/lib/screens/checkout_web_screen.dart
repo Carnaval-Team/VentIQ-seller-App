@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/order.dart';
+import '../models/mesa.dart';
 import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
 import '../services/promotion_service.dart';
@@ -10,11 +11,25 @@ class CheckoutWebScreen extends StatefulWidget {
   final Function(String buyerName, String buyerPhone, Map<String, double> breakdown, String extraContacts, String? promoCode, double promoDiscount) onCreateOrder;
   final bool isProcessing;
 
+  /// Modo restaurante: si es true, en lugar de pedir datos del comprador se
+  /// muestra el selector de mesa. El estado de la mesa vive en el padre
+  /// (CheckoutScreen), que es quien registra la venta con el idMesa.
+  final bool modoRestaurante;
+
+  /// Mesa actualmente seleccionada en el padre (null si aún no se elige).
+  final Mesa? mesaSeleccionada;
+
+  /// Abre el selector de mesas del padre (_abrirSelectorMesas).
+  final VoidCallback? onSeleccionarMesa;
+
   const CheckoutWebScreen({
     Key? key,
     required this.order,
     required this.onCreateOrder,
     required this.isProcessing,
+    this.modoRestaurante = false,
+    this.mesaSeleccionada,
+    this.onSeleccionarMesa,
   }) : super(key: key);
 
   @override
@@ -322,6 +337,26 @@ class _CheckoutWebScreenState extends State<CheckoutWebScreen> {
             return;
           }
 
+          // En modo restaurante exigimos mesa seleccionada; el formulario de
+          // comprador está oculto, así que no se valida.
+          if (widget.modoRestaurante) {
+            if (widget.mesaSeleccionada == null) {
+              _showErrorMessage(
+                'Debes seleccionar una mesa antes de crear la cuenta',
+              );
+              return;
+            }
+            widget.onCreateOrder(
+              _buyerNameController.text.trim(),
+              _buyerPhoneController.text.trim(),
+              breakdown,
+              _extraContactsController.text.trim(),
+              _promoApplied ? _promoCodeController.text.trim() : null,
+              _promoDiscount,
+            );
+            return;
+          }
+
           // Validar el formulario local antes de llamar al callback
           if (_formKey.currentState!.validate()) {
             widget.onCreateOrder(
@@ -573,6 +608,11 @@ class _CheckoutWebScreenState extends State<CheckoutWebScreen> {
   }
 
   Widget _buildBuyerInfoSection() {
+    // En modo restaurante mostramos el selector de mesa en lugar del
+    // formulario de datos del comprador.
+    if (widget.modoRestaurante) {
+      return _buildMesaSelectorSection();
+    }
     if (_noSolicitarCliente) {
       return const SizedBox.shrink();
     }
@@ -639,6 +679,162 @@ class _CheckoutWebScreenState extends State<CheckoutWebScreen> {
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  /// Selector de mesa para modo restaurante (portado de CheckoutScreen).
+  /// El estado (mesa elegida y lista de mesas) vive en el padre; aquí solo
+  /// renderizamos y disparamos onSeleccionarMesa.
+  Widget _buildMesaSelectorSection() {
+    final mesa = widget.mesaSeleccionada;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: mesa == null
+              ? Colors.orange.shade300
+              : const Color(0xFF4A90E2).withOpacity(0.4),
+          width: mesa == null ? 1.5 : 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.table_restaurant,
+                  color: Color(0xFFE65100), size: 22),
+              const SizedBox(width: 8),
+              const Text(
+                'Mesa de la cuenta',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1F2937),
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE65100).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Text(
+                  'Modo Restaurante',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFE65100),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (mesa == null) ...[
+            Text(
+              'Selecciona una mesa para asociar esta cuenta',
+              style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: widget.onSeleccionarMesa,
+                icon: const Icon(Icons.search),
+                label: const Text('Seleccionar mesa'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF4A90E2),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  side: const BorderSide(color: Color(0xFF4A90E2)),
+                ),
+              ),
+            ),
+          ] else ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF4A90E2).withOpacity(0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: const Color(0xFF4A90E2).withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF4A90E2),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      mesa.numero,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Mesa ${mesa.numero}',
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1F2937),
+                          ),
+                        ),
+                        Row(
+                          children: [
+                            if (mesa.zona != null && mesa.zona!.isNotEmpty) ...[
+                              Icon(Icons.location_on_outlined,
+                                  size: 12, color: Colors.grey[600]),
+                              const SizedBox(width: 2),
+                              Text(
+                                mesa.zona!,
+                                style: TextStyle(
+                                    fontSize: 12, color: Colors.grey[600]),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                            Icon(Icons.people_alt_outlined,
+                                size: 12, color: Colors.grey[600]),
+                            const SizedBox(width: 2),
+                            Text(
+                              'Cap: ${mesa.capacidad}',
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.grey[600]),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.swap_horiz),
+                    color: const Color(0xFF4A90E2),
+                    tooltip: 'Cambiar mesa',
+                    onPressed: widget.onSeleccionarMesa,
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
