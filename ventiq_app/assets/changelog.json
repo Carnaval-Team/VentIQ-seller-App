@@ -1,9 +1,26 @@
 {
-  "current_version": "2.3.9",
-  "build": 841,
+  "current_version": "2.4.0",
+  "build": 842,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.4.0",
+      "date": "2026-08-07",
+      "title": "📋 Conteo de inventario con \"debe haber\" opcional",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Ver la cantidad esperada al confirmar inventario",
+          "description": "Si en la configuración de la tienda activan mostrar \"debe haber\", en el conteo de apertura y cierre verás junto a cada producto la cantidad esperada para compararla con lo que cuentas. Si está desactivado, solo ingresas la cantidad real, como hasta ahora."
+        },
+        {
+          "type": "improvement",
+          "title": "El conteo respeta la configuración de la tienda al iniciar sesión",
+          "description": "Al abrir o cerrar turno, la app usa la configuración guardada de la tienda para decidir si muestra o no el \"debe haber\", sin pasos extra por tu parte."
+        }
+      ]
+    },
     {
       "version": "2.3.9",
       "date": "2026-07-28",

@@ -1,9 +1,26 @@
 {
-  "current_version": "2.5.0",
-  "build": 250,
+  "current_version": "2.5.1",
+  "build": 251,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.5.1",
+      "date": "2026-08-07",
+      "title": "📦 Stock al quitar productos Carnaval y \"debe haber\" en el conteo",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Al quitar un producto de una orden Carnaval se restaura el inventario",
+          "description": "Si eliminas un producto del detalle de una orden Carnaval, se quita de la orden y el stock vuelve tanto a Carnaval como a Inventtia (incluye ajuste de la venta vinculada). En órdenes de paquetería solo se restaura el stock de Carnaval."
+        },
+        {
+          "type": "feature",
+          "title": "Opción para mostrar el \"debe haber\" en el conteo del vendedor",
+          "description": "En Configuración Global, cuando el control de inventario en turnos está activo, aparece una subopción para decidir si el vendedor ve la cantidad esperada (\"debe haber\") al contar inventario en apertura y cierre."
+        }
+      ]
+    },
     {
       "version": "2.5.0",
       "date": "2026-08-07",
