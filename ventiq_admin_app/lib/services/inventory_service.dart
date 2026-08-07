@@ -748,13 +748,21 @@ class InventoryService {
 
   /// Transferencia atómica entre layouts vía RPC en Supabase.
   /// Extracción + recepción + vínculo + cierre en una sola transacción.
+  ///
+  /// Personas:
+  /// - [entregadoPor]: entrega en origen → extracción.entregado_por
+  /// - [transportadoPor]: transporta → extracción.recibido_por y recepción.entregado_por
+  /// - [recibidoPor]: recibe en destino → recepción.recibido_por
   static Future<Map<String, dynamic>> transferBetweenLayouts({
     required int idLayoutOrigen,
     required int idLayoutDestino,
     required List<Map<String, dynamic>> productos,
-    required String autorizadoPor,
+    required String entregadoPor,
+    required String transportadoPor,
+    required String recibidoPor,
     required String observaciones,
     bool completarOperaciones = true,
+    @Deprecated('Usar entregadoPor') String? autorizadoPor,
     @Deprecated('Usar completarOperaciones') int? estadoInicial,
   }) async {
     try {
@@ -787,6 +795,27 @@ class InventoryService {
       final completar =
           estadoInicial != null ? estadoInicial == 2 : completarOperaciones;
 
+      final quienEntrega =
+          entregadoPor.trim().isNotEmpty
+              ? entregadoPor.trim()
+              : (autorizadoPor?.trim().isNotEmpty == true
+                  ? autorizadoPor!.trim()
+                  : '');
+      final quienTransporta =
+          transportadoPor.trim().isNotEmpty
+              ? transportadoPor.trim()
+              : quienEntrega;
+      final quienRecibe =
+          recibidoPor.trim().isNotEmpty ? recibidoPor.trim() : quienTransporta;
+
+      if (quienEntrega.isEmpty ||
+          quienTransporta.isEmpty ||
+          quienRecibe.isEmpty) {
+        throw Exception(
+          'Debe indicar quién entrega, quién transporta y quién recibe',
+        );
+      }
+
       final productosRpc = productos.map((p) {
         final map = <String, dynamic>{
           'id_producto': p['id_producto'],
@@ -808,7 +837,10 @@ class InventoryService {
           'p_id_layout_origen': idLayoutOrigen,
           'p_id_layout_destino': idLayoutDestino,
           'p_productos': productosRpc,
-          'p_autorizado_por': autorizadoPor,
+          'p_autorizado_por': quienEntrega,
+          'p_entregado_por': quienEntrega,
+          'p_transportado_por': quienTransporta,
+          'p_recibido_por': quienRecibe,
           'p_observaciones': observaciones,
           'p_id_tienda': idTienda,
           'p_uuid': userUuid,

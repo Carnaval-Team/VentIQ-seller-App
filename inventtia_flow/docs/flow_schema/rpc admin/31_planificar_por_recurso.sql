@@ -337,9 +337,20 @@ grant execute on function flow.admin_generar_plan_mensual(uuid, integer, integer
 -- 4) admin_get_plan_dias: resumen por dia para pintar el calendario del admin,
 --    unificado para servicios con y sin recursos.
 --      Sin recursos -> suma de plan_servicios por dia.
---      Con recursos -> suma de plan_tramo por dia + detalle por recurso.
+--      Con recursos -> plan_tramo + conteo real desde agenda por recurso.
+--
+--    Con recursos (importante):
+--      cantidad       = MIN(plan_tramo.cantidad) del recurso (capacidad configurada)
+--      agendados      = SUM(agenda.cantidad) activa (Reservado/Completado) del recurso
+--                       ← NO usar MAX/SUM de plan_tramo.agendados: Ida y Regreso
+--                         son buckets distintos; MAX subcuenta y SUM puede
+--                         doblar paquetes ida+vuelta.
+--      ocupacion_max  = MAX(plan_tramo.agendados) → piso al bajar capacidad
+--      disponibles    = SUM(cantidad - agendados) sobre tramos (plazas libres)
+--
 --    Devuelve { ok, con_recursos, dias: [{ fecha, cantidad, agendados,
---               disponibles, recursos:[{id_recurso,recurso,cantidad,agendados}] }] }
+--               disponibles, recursos:[{id_recurso,recurso,cantidad,agendados,
+--               ocupacion_max,disponibles}] }] }
 -- ----------------------------------------------------------------------------
 create or replace function flow.admin_get_plan_dias(
   p_uuid_usuario      uuid,
@@ -391,17 +402,16 @@ begin
     return jsonb_build_object('ok', true, 'con_recursos', false, 'dias', v_data);
   end if;
 
-  -- Con recursos: la "capacidad del recurso ese dia" es el MIN de sus tramos
-  -- (todos deberian ser iguales, pero min es lo correcto para disponibilidad);
-  -- agendados del recurso = MAX de agendados de sus tramos.
-  with por_recurso_dia as (
+  -- Capacidad / ocupacion de cupo por tramo (plan_tramo).
+  with por_recurso_plan as (
     select
       (pt.fecha at time zone 'America/Havana')::date as dia,
       r.id     as id_recurso,
       r.nombre as recurso,
       r.orden  as r_orden,
-      min(pt.cantidad)  as cantidad,
-      max(pt.agendados) as agendados
+      min(pt.cantidad) as cantidad,
+      max(pt.agendados) as ocupacion_max,
+      sum(pt.cantidad - pt.agendados) as disponibles
     from flow.recurso r
     join flow.tramo tr      on tr.id_recurso = r.id and tr.activo
     join flow.plan_tramo pt on pt.id_tramo = tr.id
@@ -409,16 +419,47 @@ begin
       and (pt.fecha at time zone 'America/Havana')::date between v_desde and v_hasta
     group by dia, r.id, r.nombre, r.orden
   ),
+  -- Conteo real de reservas por recurso/dia (una fila agenda = un pasaje).
+  por_recurso_agenda as (
+    select
+      a.fecha_hora_reserva::date as dia,
+      t.id_recurso,
+      coalesce(sum(a.cantidad), 0)::integer as agendados
+    from flow.agenda a
+    join flow.turno t on t.id = a.id_turno
+    where a.id_local_servicio = p_id_local_servicio
+      and a.id_turno is not null
+      and a.id_estado in (1, 3) -- Reservado, Completado (ocupan cupo)
+      and a.fecha_hora_reserva::date between v_desde and v_hasta
+    group by a.fecha_hora_reserva::date, t.id_recurso
+  ),
+  por_recurso_dia as (
+    select
+      p.dia,
+      p.id_recurso,
+      p.recurso,
+      p.r_orden,
+      p.cantidad,
+      p.ocupacion_max,
+      p.disponibles,
+      coalesce(a.agendados, 0) as agendados
+    from por_recurso_plan p
+    left join por_recurso_agenda a
+      on a.dia = p.dia and a.id_recurso = p.id_recurso
+  ),
   por_dia as (
     select
       dia,
-      sum(cantidad)  as cantidad,
-      sum(agendados) as agendados,
+      sum(cantidad)    as cantidad,
+      sum(agendados)   as agendados,
+      sum(disponibles) as disponibles,
       jsonb_agg(jsonb_build_object(
-        'id_recurso', id_recurso,
-        'recurso',    recurso,
-        'cantidad',   cantidad,
-        'agendados',  agendados
+        'id_recurso',    id_recurso,
+        'recurso',       recurso,
+        'cantidad',      cantidad,
+        'agendados',     agendados,
+        'ocupacion_max', ocupacion_max,
+        'disponibles',   disponibles
       ) order by r_orden, id_recurso) as recursos
     from por_recurso_dia
     group by dia
@@ -427,7 +468,7 @@ begin
            'fecha',       to_char(pd.dia, 'YYYY-MM-DD'),
            'cantidad',    pd.cantidad,
            'agendados',   pd.agendados,
-           'disponibles', pd.cantidad - pd.agendados,
+           'disponibles', pd.disponibles,
            'recursos',    pd.recursos
          ) order by pd.dia), '[]'::jsonb)
     into v_data

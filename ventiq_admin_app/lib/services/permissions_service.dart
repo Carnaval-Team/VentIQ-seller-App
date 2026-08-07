@@ -469,7 +469,7 @@ class PermissionsService {
       case UserRole.almacenero:
         return 'Almacenero';
       case UserRole.vendedor:
-        return 'Vendedor';
+        return 'Dependiente';
       case UserRole.recursosHumanos:
         return 'Recursos Humanos';
       case UserRole.none:
@@ -589,7 +589,12 @@ class PermissionsService {
     ],
 
     // Personal
-    '/workers': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
+    '/workers': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.auditor,
+      UserRole.recursosHumanos,
+    ],
     '/tpv-management': [
       UserRole.gerente,
       UserRole.supervisor,
@@ -693,10 +698,27 @@ class PermissionsService {
     ],
 
     // Trabajadores
-    'worker.create': [UserRole.gerente, UserRole.supervisor],
-    'worker.edit': [UserRole.gerente, UserRole.supervisor],
-    'worker.delete': [UserRole.gerente, UserRole.supervisor],
-    'worker.view': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
+    'worker.create': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
+    'worker.edit': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
+    'worker.delete': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
+    'worker.view': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.auditor,
+      UserRole.recursosHumanos,
+    ],
 
     // Ventas
     'sales.view': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],

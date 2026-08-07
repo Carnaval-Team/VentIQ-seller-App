@@ -487,6 +487,7 @@ class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
 
   void _mostrarOpcionesDia(DateTime dia, PlanDia? plan) {
     final tienePlan = plan != null && plan.cantidad > 0;
+    final puedeReservar = plan != null && plan.disponibles > 0;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -495,19 +496,32 @@ class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
       builder: (_) => _DayOptionsSheet(
         dia: dia,
         tienePlan: tienePlan,
+        puedeReservar: puedeReservar,
         onVerPlanificacion: () {
           Navigator.pop(context);
           _mostrarPlanificarDia(dia, plan);
         },
         onReservar: () {
           Navigator.pop(context);
-          _mostrarReservarCapacidad(dia);
+          _mostrarReservarCapacidad(dia, plan);
         },
       ),
     );
   }
 
-  void _mostrarReservarCapacidad(DateTime dia) {
+  void _mostrarReservarCapacidad(DateTime dia, PlanDia? plan) {
+    if (plan == null || plan.disponibles <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No hay capacidad disponible para este día. '
+            'Planifica el día o elige uno con cupo.',
+          ),
+          backgroundColor: AppTheme.warning,
+        ),
+      );
+      return;
+    }
     if (widget.ls.esTransporteOmnibus) {
       showModalBottomSheet(
         context: context,
@@ -518,7 +532,16 @@ class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
         builder: (_) => AdminReservaTransporteSheet(
           localServicio: widget.ls,
           diaInicial: dia,
-          onCreated: () => _cargarPlanes(),
+          onCreated: () {
+            _cargarPlanes();
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Reserva creada exitosamente'),
+                backgroundColor: AppTheme.success,
+              ),
+            );
+          },
         ),
       );
       return;
@@ -533,7 +556,16 @@ class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
         dia: dia,
         entidadId: widget.entidadId,
         localServicio: widget.ls,
-        onReservationCreated: () => _cargarPlanes(),
+        onReservationCreated: () {
+          _cargarPlanes();
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Reserva creada exitosamente'),
+              backgroundColor: AppTheme.success,
+            ),
+          );
+        },
       ),
     );
   }
@@ -714,6 +746,15 @@ class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
 }
 
 // ── Calendario con marcadores ─────────────────────────────────
+bool _planCasiLleno(PlanDia plan) {
+  if (plan.recursos.isNotEmpty) {
+    // Con recursos: "casi lleno" si algún tramo pico ≥ 80% de la capacidad.
+    return plan.recursos.any((r) =>
+        r.cantidad > 0 && r.ocupacionMax >= (r.cantidad * 0.8).ceil());
+  }
+  return plan.disponibles < (plan.cantidad * 0.2).ceil();
+}
+
 class _CalendarioConPlanes extends StatelessWidget {
   final DateTime focusedDay;
   final List<PlanDia> Function(DateTime) planesDelDia;
@@ -761,7 +802,7 @@ class _CalendarioConPlanes extends StatelessWidget {
               if (plan.cantidad <= 0) return null;
               final color = plan.estaLleno
                   ? AppTheme.error
-                  : plan.disponibles < (plan.cantidad * 0.2).ceil()
+                  : _planCasiLleno(plan)
                       ? AppTheme.warning
                       : AppTheme.success;
               return Positioned(
@@ -855,8 +896,9 @@ class _PlanificarDiaSheetState extends State<_PlanificarDiaSheet> {
   late final TextEditingController _cantidadCtrl;
   // Modo CON recursos: un controlador por recurso.
   final Map<int, TextEditingController> _recCtrls = {};
-  // Agendados actuales por recurso (mínimo permitido al bajar la capacidad).
+  // Agendados reales (display) y ocupación máxima de tramo (piso al bajar capacidad).
   final Map<int, int> _recAgendados = {};
+  final Map<int, int> _recOcupacionMax = {};
   int _agendadosSimple = 0;
   bool _saving = false;
 
@@ -875,6 +917,7 @@ class _PlanificarDiaSheetState extends State<_PlanificarDiaSheet> {
         _recCtrls[r.id] = TextEditingController(
             text: actual != null ? actual.cantidad.toString() : '');
         _recAgendados[r.id] = actual?.agendados ?? 0;
+        _recOcupacionMax[r.id] = actual?.minimoCapacidad ?? 0;
       }
     } else {
       final actual = widget.planActual;
@@ -911,9 +954,9 @@ class _PlanificarDiaSheetState extends State<_PlanificarDiaSheet> {
           _err('Capacidad inválida en "${r.nombre}" (usa un número ≥ 0)');
           return;
         }
-        final min = _recAgendados[r.id] ?? 0;
+        final min = _recOcupacionMax[r.id] ?? 0;
         if (v > 0 && v < min) {
-          _err('"${r.nombre}": no puedes bajar de $min ya reservado(s)');
+          _err('"${r.nombre}": no puedes bajar de $min ya ocupado(s) en un tramo');
           return;
         }
         caps[r.id] = v;
@@ -1579,12 +1622,14 @@ class _ConfigCapacidadesSheetState extends State<_ConfigCapacidadesSheet> {
 class _DayOptionsSheet extends StatelessWidget {
   final DateTime dia;
   final bool tienePlan;
+  final bool puedeReservar;
   final VoidCallback onVerPlanificacion;
   final VoidCallback onReservar;
 
   const _DayOptionsSheet({
     required this.dia,
     required this.tienePlan,
+    required this.puedeReservar,
     required this.onVerPlanificacion,
     required this.onReservar,
   });
@@ -1636,15 +1681,30 @@ class _DayOptionsSheet extends StatelessWidget {
           
           // Reservar Capacidad
           ElevatedButton.icon(
-            onPressed: onReservar,
+            onPressed: puedeReservar ? onReservar : null,
             icon: const Icon(Icons.add_circle_outline),
             label: const Text('Reservar Capacidad'),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppTheme.accent,
               foregroundColor: Colors.white,
+              disabledBackgroundColor: Colors.grey.shade300,
+              disabledForegroundColor: Colors.grey.shade600,
               padding: const EdgeInsets.symmetric(vertical: 12),
             ),
           ),
+          if (!puedeReservar) ...[
+            const SizedBox(height: 8),
+            Text(
+              tienePlan
+                  ? 'No hay capacidad disponible este día (cupo agotado).'
+                  : 'No hay capacidad planificada para este día.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 12.5,
+                color: AppTheme.textSecondary,
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
         ],
       ),
@@ -1695,6 +1755,10 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
 
   bool get _servicioPreseleccionado => widget.localServicio != null;
   bool get _usaRecursos => _dispDia?.tieneTurnos ?? false;
+  bool get _sinCupoDia =>
+      !_loadingDisp &&
+      _selectedLocalServicio != null &&
+      (_dispDia == null || _dispDia!.disponibles <= 0);
 
   @override
   void initState() {
@@ -1797,6 +1861,16 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate() || _selectedLocalServicio == null) return;
 
+    if (_sinCupoDia) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No hay capacidad disponible para esta fecha'),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+      return;
+    }
+
     // Servicios con recursos: exigir turno elegido.
     if (_usaRecursos && _turnoSel == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1838,12 +1912,6 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
       );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Reserva creada exitosamente'),
-            backgroundColor: AppTheme.success,
-          ),
-        );
         Navigator.pop(context);
         widget.onReservationCreated();
       }
@@ -1852,12 +1920,13 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
         final msg = e.toString().replaceFirst('Exception: ', '');
         showDialog<void>(
           context: context,
-          builder: (_) => AlertDialog(
+          useRootNavigator: true,
+          builder: (dialogContext) => AlertDialog(
             title: const Text('Error al crear reserva'),
             content: Text(msg),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(context),
+                onPressed: () => Navigator.pop(dialogContext),
                 child: const Text('Aceptar'),
               ),
             ],
@@ -1871,20 +1940,25 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 24,
-        right: 24,
-        top: 24,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-      ),
-      child: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+    // ScaffoldMessenger propio: las SnackBars salen encima del bottom sheet.
+    return ScaffoldMessenger(
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        resizeToAvoidBottomInset: true,
+        body: Padding(
+          padding: EdgeInsets.only(
+            left: 24,
+            right: 24,
+            top: 24,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+          ),
+          child: Form(
+            key: _formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
               Row(
                 children: [
                   const Text(
@@ -1913,6 +1987,32 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
               if (_loading)
                 const Center(child: CircularProgressIndicator())
               else ...[
+                if (_sinCupoDia) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.warning.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: AppTheme.warning.withOpacity(0.4)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.event_busy_outlined,
+                            color: AppTheme.warning, size: 20),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'No hay capacidad disponible para esta fecha. '
+                            'Planifica el día o elige otra fecha.',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 // Local-Servicio: solo dropdown si no viene preseleccionado
                 if (_servicioPreseleccionado) ...[
                   InputDecorator(
@@ -2131,7 +2231,7 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
                 
                 // Submit button
                 ElevatedButton(
-                  onPressed: _saving ? null : _submit,
+                  onPressed: (_saving || _sinCupoDia) ? null : _submit,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.primary,
                     foregroundColor: Colors.white,
@@ -2147,6 +2247,8 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
               ],
             ],
           ),
+        ),
+      ),
         ),
       ),
     );

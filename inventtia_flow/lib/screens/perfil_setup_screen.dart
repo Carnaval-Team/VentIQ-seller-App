@@ -141,6 +141,16 @@ class _PerfilSetupScreenState extends State<PerfilSetupScreen> {
     final auth = context.watch<AuthProvider>();
     final isEdit = auth.hasPerfil;
 
+    if (!auth.isLoggedIn) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
+      });
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppTheme.surface,
       appBar: AppBar(

@@ -4,6 +4,7 @@
 --  - movimientos de productos servicio/elaborado (extracciones sin inventario)
 --  - controles de Apertura (16) y Cierre (17) de caja (solo en control_productos)
 --  - filtro de almacén con resolución unificada (layout → inventario → TPV)
+-- Orden final: id_operacion ASC, inv_id ASC (no por fecha).
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION public.get_product_movements_v3(

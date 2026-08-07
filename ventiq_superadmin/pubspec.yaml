@@ -62,6 +62,11 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
 
+# path_provider_foundation 2.6.0 (FFI/objective_c) rompe el build en Flutter 3.44.
+# 2.5.1 vuelve a la implementación por method channel.
+dependency_overrides:
+  path_provider_foundation: 2.5.1
+
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 

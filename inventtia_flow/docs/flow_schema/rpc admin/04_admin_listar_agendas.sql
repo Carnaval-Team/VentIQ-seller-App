@@ -1,10 +1,18 @@
 -- ============================================================================
 -- RPC ADMIN: listar agendas (reservas) de las entidades del usuario admin.
+-- ESTADO ACTUAL (revisar este archivo como fuente de verdad del RPC).
+--
 -- Join completo: agenda -> local_servicio -> local -> servicio -> entidad
 --                agenda -> nom_estado_agenda
---                agenda.uuid_usuario -> perfil (TODOS los datos del cliente)
+--                agenda.uuid_usuario -> perfil (cliente)
+--                agenda.id_turno -> turno -> recurso  (denominaciones)
 -- SECURITY DEFINER: necesario para leer agenda de terceros cuando hay RLS.
 -- La seguridad la garantiza el JOIN con admin_entidades_de_usuario.
+--
+-- Campos de turno/viaje:
+--   id_turno, id_viaje, tipo_trayecto
+--   turno: { id, nombre, recurso: { id, nombre } }  (null si sin turno)
+--
 -- Filtros opcionales: p_id_entidad, p_id_local, p_id_local_servicio,
 --                     p_id_estado, p_desde, p_hasta (rango de fecha_hora_reserva)
 -- Devuelve: jsonb (array de reservas)
@@ -40,6 +48,14 @@ as $$
         'reservado_por',       a.reservado_por,
         'precio_total',        a.precio_total,
         'moneda',              a.moneda,
+        'id_turno',            a.id_turno,
+        'id_viaje',            a.id_viaje,
+        'tipo_trayecto',       a.tipo_trayecto,
+        'turno', case when t.id is null then null else jsonb_build_object(
+          'id',     t.id,
+          'nombre', t.nombre,
+          'recurso', jsonb_build_object('id', r.id, 'nombre', r.nombre)
+        ) end,
         'estado', jsonb_build_object(
           'id',          es.id,
           'nombre',      es.nombre,
@@ -54,7 +70,6 @@ as $$
           'campos_adicionales', s.campos_adicionales,
           'config_precio',      s.config_precio
         ),
-        'id_turno',            a.id_turno,
         'local', jsonb_build_object(
           'id',               l.id,
           'nombre',           l.nombre,
@@ -71,7 +86,6 @@ as $$
           'direccion',    en.direccion,
           'telefono',     en.telefono
         ),
-        -- Perfil completo del cliente que reservo
         'cliente', case when p.id is null then null else jsonb_build_object(
           'id',           p.id,
           'uuid_usuario', p.uuid_usuario,
@@ -94,7 +108,8 @@ as $$
   join flow.entidad           en on en.id = l.id_entidad
   join flow.nom_estado_agenda es on es.id = a.id_estado
   left join flow.perfil       p  on p.uuid_usuario = a.uuid_usuario
-  -- Seguridad: solo agendas de locales de entidades que administra el usuario
+  left join flow.turno        t  on t.id = a.id_turno
+  left join flow.recurso      r  on r.id = t.id_recurso
   join flow.admin_entidades_de_usuario(p_uuid_usuario) mine on mine.id_entidad = l.id_entidad
   where (p_id_entidad        is null or l.id_entidad         = p_id_entidad)
     and (p_id_local          is null or ls.id_local          = p_id_local)
@@ -104,11 +119,14 @@ as $$
     and (p_hasta             is null or a.fecha_hora_reserva::date <= p_hasta::date);
 $$;
 
-grant execute on function flow.admin_listar_agendas(uuid, integer, integer, integer, integer, timestamp without time zone, timestamp without time zone) to authenticated;
+grant execute on function flow.admin_listar_agendas(
+  uuid, integer, integer, integer, integer,
+  timestamp without time zone, timestamp without time zone
+) to authenticated;
 
 -- Uso:
---   select flow.admin_listar_agendas('00000000-...');                    -- todas sus agendas
---   select flow.admin_listar_agendas('00000000-...', 2);                 -- por entidad
---   select flow.admin_listar_agendas('00000000-...', null, null, 7);     -- por local_servicio
+--   select flow.admin_listar_agendas('00000000-...');
+--   select flow.admin_listar_agendas('00000000-...', 2);
+--   select flow.admin_listar_agendas('00000000-...', null, null, 7);
 --   select flow.admin_listar_agendas('00000000-...', null, null, null, 1,
---            '2026-06-01', '2026-06-30');                                 -- estado + rango fechas
+--            '2026-08-03', '2026-08-03');

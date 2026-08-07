@@ -2,9 +2,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 
-/// Envuelve una tarjeta y le dibuja encima una cinta diagonal roja de esquina a
-/// esquina con el texto "CANCELADO". La tarjeta queda ligeramente atenuada para
-/// comunicar el estado sin perder legibilidad.
+/// Envuelve una tarjeta y le dibuja encima una cinta diagonal de esquina a
+/// esquina con el texto "CANCELADO". Fondo al 20% de opacidad y letras en rojo.
 ///
 /// Uso:
 ///   CanceladoRibbon(child: miCard)
@@ -48,9 +47,10 @@ class _RibbonPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     // Banda diagonal de esquina inferior-izquierda a superior-derecha.
+    // Ancho = 3× el original (26 → 78).
     final diag = math.sqrt(size.width * size.width + size.height * size.height);
     final angle = -math.atan2(size.height, size.width);
-    final bandHeight = 26.0;
+    const bandHeight = 78.0;
 
     canvas.save();
     canvas.translate(size.width / 2, size.height / 2);
@@ -62,34 +62,18 @@ class _RibbonPainter extends CustomPainter {
       height: bandHeight,
     );
 
-    // Franja roja semitransparente con degradado sutil.
+    // Fondo rojo al 20% de opacidad.
     final bandPaint = Paint()
-      ..shader = LinearGradient(
-        colors: [
-          AppTheme.error.withValues(alpha: 0.92),
-          const Color(0xFFB71C1C).withValues(alpha: 0.92),
-        ],
-      ).createShader(rect);
+      ..color = AppTheme.error.withValues(alpha: 0.20);
     canvas.drawRect(rect, bandPaint);
 
-    // Líneas finas de borde para dar acabado.
-    final borderPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.6)
-      ..strokeWidth = 1;
-    canvas.drawLine(
-        Offset(-diag / 2, -bandHeight / 2), Offset(diag / 2, -bandHeight / 2),
-        borderPaint);
-    canvas.drawLine(
-        Offset(-diag / 2, bandHeight / 2), Offset(diag / 2, bandHeight / 2),
-        borderPaint);
-
-    // Texto centrado sobre la franja.
+    // Texto centrado en rojo.
     final tp = TextPainter(
       text: TextSpan(
         text: texto,
         style: const TextStyle(
-          color: Colors.white,
-          fontSize: 13,
+          color: AppTheme.error,
+          fontSize: 18,
           fontWeight: FontWeight.w900,
           letterSpacing: 3,
         ),

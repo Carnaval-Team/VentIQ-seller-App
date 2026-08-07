@@ -79,6 +79,39 @@ class AgendaAdminService {
     }
   }
 
+  /// Todas las agendas del estado (sin filtro de fecha). Para exportación.
+  static Future<List<Agenda>> listarAgendasPorEstado({
+    required String uuidUsuario,
+    int? idEntidad,
+    int? idLocal,
+    int? idLocalServicio,
+    int? idEstado,
+  }) async {
+    try {
+      final params = {
+        'p_uuid_usuario': uuidUsuario,
+        if (idEntidad != null) 'p_id_entidad': idEntidad,
+        if (idLocal != null) 'p_id_local': idLocal,
+        if (idLocalServicio != null) 'p_id_local_servicio': idLocalServicio,
+        if (idEstado != null) 'p_id_estado': idEstado,
+      };
+      print('[flow] listarAgendasPorEstado params=$params');
+      final res = await _supabase.schema(_schema).rpc(
+        'admin_listar_agendas_por_estado',
+        params: params,
+      );
+      final raw = _parseJsonbList(res);
+      final mapped = _mapAgendas(raw);
+      print(
+        '[flow] listarAgendasPorEstado raw=${raw.length} parsed=${mapped.length}',
+      );
+      return mapped;
+    } catch (e, st) {
+      print('[flow] listarAgendasPorEstado ERROR: $e\n$st');
+      rethrow;
+    }
+  }
+
   static Future<Map<String, dynamic>> reservarPasajeOmnibus({
     required int idLocalServicio,
     required String tipoViaje,
@@ -311,6 +344,36 @@ class AgendaAdminService {
       return _mapAgendas(_parseJsonbList(res));
     } catch (e, st) {
       print('[vendedor] listarAgendasVendedor ERROR: $e\n$st');
+      rethrow;
+    }
+  }
+
+  /// Todas las agendas del estado para vendedor (sin filtro de fecha).
+  static Future<List<Agenda>> listarAgendasVendedorPorEstado({
+    required String uuidUsuario,
+    int? idEntidad,
+    int? idLocal,
+    int? idLocalServicio,
+    int? idEstado,
+  }) async {
+    try {
+      final params = {
+        'p_uuid_usuario': uuidUsuario,
+        if (idEntidad != null) 'p_id_entidad': idEntidad,
+        if (idLocal != null) 'p_id_local': idLocal,
+        if (idLocalServicio != null) 'p_id_local_servicio': idLocalServicio,
+        if (idEstado != null) 'p_id_estado': idEstado,
+      };
+      print('[vendedor] listarAgendasVendedorPorEstado params=$params');
+      final res = await _supabase.schema(_schema).rpc(
+        'vendedor_listar_agendas_por_estado',
+        params: params,
+      );
+      final mapped = _mapAgendas(_parseJsonbList(res));
+      print('[vendedor] listarAgendasVendedorPorEstado parsed=${mapped.length}');
+      return mapped;
+    } catch (e, st) {
+      print('[vendedor] listarAgendasVendedorPorEstado ERROR: $e\n$st');
       rethrow;
     }
   }

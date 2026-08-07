@@ -77,6 +77,47 @@ class ProductMovementsService {
     }
   }
 
+  /// Obtiene **todas** las páginas de movimientos según los filtros.
+  /// Usa el mismo RPC paginado y recorre hasta cubrir [total_count].
+  static Future<List<Map<String, dynamic>>> getAllProductMovements({
+    required int productId,
+    DateTime? dateFrom,
+    DateTime? dateTo,
+    int? operationTypeId,
+    int? warehouseId,
+    int pageSize = 500,
+  }) async {
+    final all = <Map<String, dynamic>>[];
+    var offset = 0;
+    var totalCount = 0;
+
+    do {
+      final result = await getProductMovements(
+        productId: productId,
+        dateFrom: dateFrom,
+        dateTo: dateTo,
+        operationTypeId: operationTypeId,
+        warehouseId: warehouseId,
+        offset: offset,
+        limit: pageSize,
+      );
+
+      final batch =
+          List<Map<String, dynamic>>.from(result['movements'] ?? const []);
+      totalCount = (result['total_count'] as int?) ?? 0;
+      all.addAll(batch);
+
+      if (batch.isEmpty) break;
+      offset += pageSize;
+    } while (all.length < totalCount);
+
+    print(
+      '[ProductMovements] Export completo: ${all.length} filas '
+      '(total_count=$totalCount)',
+    );
+    return all;
+  }
+
   /// Obtiene todos los tipos de operacion disponibles
   static Future<List<Map<String, dynamic>>> getOperationTypes() async {
     try {

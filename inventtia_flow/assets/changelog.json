@@ -1,8 +1,72 @@
 {
   "app_name": "inventtia_flow",
-  "current_version": "1.4.5",
-  "build": 13,
+  "current_version": "1.4.7",
+  "build": 15,
   "changelogs": [
+    {
+      "version": "1.4.7",
+      "date": "2026-08-03",
+      "title": "🚌 PDF de reservas ómnibus y listado más claro",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "PDF de transporte ómnibus",
+          "description": "El PDF muestra Nombre, CI, Teléfono, Tipo de viaje, Recogida, Destino, Notas y Precio a cobrar. Ida y Regreso van en una sola fila; no se incluyen canceladas."
+        },
+        {
+          "type": "improvement",
+          "title": "Total a cobrar y número de página",
+          "description": "Se quitaron las tablas de resumen del PDF. Debajo del detalle aparece el total a cobrar y en el pie de cada página: Página X de Y."
+        },
+        {
+          "type": "improvement",
+          "title": "Resumen de cantidades por tramo",
+          "description": "En el listado, el panel de Totales muestra solo Ida y Regreso (sin dinero ni puntos Recogida/Destino). El filtro de estado por defecto es Todos."
+        },
+        {
+          "type": "improvement",
+          "title": "Precio visible en cada reserva",
+          "description": "En administración y trabajador vuelve a mostrarse en la tarjeta lo que se debe cobrar por cada reserva."
+        },
+        {
+          "type": "fix",
+          "title": "Etiquetas Regreso / Ida y Regreso",
+          "description": "Se renombraron «Vuelta» y «Ida y vuelta» a «Regreso» e «Ida y Regreso» en listados, totales y exportaciones."
+        }
+      ]
+    },
+    {
+      "version": "1.4.6",
+      "date": "2026-08-01",
+      "title": "📋 Reservas más claras y sesión estable en la web",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Totales por turno en el resumen",
+          "description": "En administración y trabajador, las cantidades por recurso y turno aparecen dentro del panel de Totales, junto al resumen del día."
+        },
+        {
+          "type": "improvement",
+          "title": "Botón Hoy más a mano",
+          "description": "En la barra de fechas, Hoy queda a la izquierda de la flecha derecha para volver al día actual con un toque."
+        },
+        {
+          "type": "improvement",
+          "title": "Canceladas y completadas más visibles",
+          "description": "Las canceladas muestran el sello de cancelado, borde rojo y no se pueden marcar como consumidas ni editar. Las completadas se destacan con fondo verde suave y tampoco se editan."
+        },
+        {
+          "type": "feature",
+          "title": "Exportar el día o todas desde hoy",
+          "description": "Al exportar a PDF o Excel puedes elegir solo el día que estás viendo, o todas las reservas del estado filtrado desde hoy en adelante."
+        },
+        {
+          "type": "fix",
+          "title": "Navegación admin + trabajador",
+          "description": "Corregida la barra inferior cuando el usuario es administrador y trabajador a la vez, para que las pestañas coincidan con las pantallas."
+        }
+      ]
+    },
     {
       "version": "1.4.5",
       "date": "2026-07-28",

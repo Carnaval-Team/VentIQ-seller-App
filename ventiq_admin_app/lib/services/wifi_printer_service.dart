@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:async';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/ticket_text_utils.dart';
 
 /// Servicio para impresoras conectadas por WiFi/Red
 class WiFiPrinterService {
@@ -490,20 +491,25 @@ class WiFiPrinterService {
     for (int i = 0; i < details.length; i++) {
       var detail = details[i];
       final cantidad = detail['cantidad'] ?? 0;
-      String productName = detail['producto_nombre'] ?? detail['producto']?['denominacion'] ?? 'Producto';
-      
+      final productName = (detail['producto_nombre'] ??
+              detail['producto']?['denominacion'] ??
+              'Producto')
+          .toString();
+
       debugPrint('📋 Producto ${i + 1}: ${cantidad}x $productName');
-      
-      // Truncar nombre si es muy largo
-      if (productName.length > 24) {
-        productName = productName.substring(0, 21) + '...';
+
+      for (final line in formatTicketProductLines(cantidad, productName)) {
+        bytes += generator.text(line, styles: PosStyles(align: PosAlign.left));
       }
-      
-      bytes += generator.text('${cantidad}x $productName', styles: PosStyles(align: PosAlign.left));
-      
+
       // Agregar ubicación si existe
       if (detail['ubicacion'] != null) {
-        bytes += generator.text('  Ubic: ${detail['ubicacion']}', styles: PosStyles(align: PosAlign.left));
+        for (final line in wrapTicketText(
+          '  Ubic: ${detail['ubicacion']}',
+        )) {
+          bytes +=
+              generator.text(line, styles: PosStyles(align: PosAlign.left));
+        }
       }
     }
     

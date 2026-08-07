@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../config/app_theme.dart';
 import '../models/agenda.dart';
 import '../models/campo_adicional.dart';
-import '../utils/precio_reserva.dart';
 import '../utils/reserva_listado.dart';
+import 'totales_recurso_turno.dart';
 
 /// Total calculado para un campo adicional marcado como "contabilizar".
 ///
@@ -35,9 +34,18 @@ bool _asBool(Object? v) {
   return s == 'true' || s == 'sí' || s == 'si' || s == '1';
 }
 
-/// True si la reserva cuenta para los totales: solo las Completadas.
+/// True si la reserva cuenta para campos adicionales: solo Completadas.
 bool _cuentaParaTotales(Agenda r) =>
     r.estado?.esCompletado == true || r.idEstado == 3;
+
+/// True si la reserva cuenta para el monto: Reservado o Completado.
+bool _cuentaParaMonto(Agenda r) {
+  if (r.estado?.esCancelado == true || r.idEstado == 2) return false;
+  return r.estado?.esReservado == true ||
+      r.estado?.esCompletado == true ||
+      r.idEstado == 1 ||
+      r.idEstado == 3;
+}
 
 /// Calcula los totales de los campos contabilizables presentes en [reservas].
 /// Solo se contabilizan las reservas **Completadas**. Ida+vuelta mismo día
@@ -93,33 +101,29 @@ List<TotalCampo> calcularTotales(List<Agenda> reservasTodas) {
   return orden.map((k) => totales[k]!).toList();
 }
 
-/// Panel con totales: conteo agrupado, importes y campos adicionales.
+/// Panel con totales de la vista: solo cantidades por tramo (Ida / Regreso).
+/// Importes, locales (recogida/destino) y detalle fino van en el PDF/Excel.
 class TotalesPanel extends StatelessWidget {
   final List<Agenda> reservas;
   const TotalesPanel({super.key, required this.reservas});
 
-  static final _fmtDia = DateFormat('dd/MM/yyyy');
+  static const _estiloCantidad = TextStyle(
+    fontSize: 22,
+    fontWeight: FontWeight.bold,
+    color: AppTheme.textPrimary,
+  );
 
   @override
   Widget build(BuildContext context) {
-    final completadas = reservas.where(_cuentaParaTotales).toList();
-    final totales = calcularTotales(completadas);
-    final importes = sumarPreciosReservas(reservas);
+    final paraMonto = reservas.where(_cuentaParaMonto).toList();
+    final porTramo = calcularTotalesPorTramo(paraMonto);
     final nReservas =
         contarReservasAgrupadas(reservas, excluirCanceladas: false);
     final nActivas = contarReservasAgrupadas(reservas);
 
-    if (totales.isEmpty && importes.isEmpty) {
+    if (porTramo.tramos.isEmpty && nReservas == 0) {
       return const SizedBox.shrink();
     }
-
-    final porDia = <DateTime, List<Agenda>>{};
-    for (final r in completadas) {
-      final f = r.fechaHoraReserva;
-      final dia = DateTime(f.year, f.month, f.day);
-      porDia.putIfAbsent(dia, () => []).add(r);
-    }
-    final dias = porDia.keys.toList()..sort();
 
     return Card(
       elevation: 0,
@@ -136,67 +140,24 @@ class TotalesPanel extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.functions, size: 16, color: AppTheme.primary),
+                const Icon(Icons.functions, size: 20, color: AppTheme.primary),
                 const SizedBox(width: 6),
                 const Text('Totales',
                     style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        fontSize: 13,
+                        fontSize: 17,
                         color: AppTheme.primary)),
                 const Spacer(),
                 Text(
                   '$nActivas activas · $nReservas total',
                   style: const TextStyle(
-                      fontSize: 11, color: AppTheme.textSecondary),
+                      fontSize: 15, color: AppTheme.textSecondary),
                 ),
               ],
             ),
-            if (importes.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              for (final e in importes.entries)
-                _fila(
-                  'Importe (${e.key})',
-                  PrecioReserva.formatear(e.value, e.key),
-                ),
-            ],
-            if (totales.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              ..._buildTotales(totales),
-            ],
-            if (dias.length > 1 && (totales.isNotEmpty || importes.isNotEmpty)) ...[
-              const SizedBox(height: 4),
-              Theme(
-                data: Theme.of(context)
-                    .copyWith(dividerColor: Colors.transparent),
-                child: ExpansionTile(
-                  tilePadding: EdgeInsets.zero,
-                  childrenPadding: const EdgeInsets.only(bottom: 8),
-                  title: const Text('Ver por día',
-                      style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.primary)),
-                  children: [
-                    for (final dia in dias) ...[
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6, bottom: 2),
-                        child: Text(_fmtDia.format(dia),
-                            style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.textPrimary)),
-                      ),
-                      for (final e
-                          in sumarPreciosReservas(porDia[dia]!).entries)
-                        _fila(
-                          'Importe (${e.key})',
-                          PrecioReserva.formatear(e.value, e.key),
-                        ),
-                      ..._buildTotales(calcularTotales(porDia[dia]!)),
-                    ],
-                  ],
-                ),
-              ),
+            if (porTramo.tramos.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              ..._buildPorTramo(porTramo),
             ],
           ],
         ),
@@ -204,85 +165,30 @@ class TotalesPanel extends StatelessWidget {
     );
   }
 
-  List<Widget> _buildTotales(List<TotalCampo> totales) {
+  List<Widget> _buildPorTramo(TotalesPorTramo porTramo) {
     final out = <Widget>[];
-    for (final t in totales) {
-      switch (t.tipo) {
-        case TipoCampo.numero:
-          out.add(_fila(t.etiqueta, _fmtNum(t.suma)));
-          break;
-        case TipoCampo.booleano:
-          out.add(_fila(t.etiqueta, '${t.conteoSi} Sí'));
-          break;
-        case TipoCampo.select:
-        case TipoCampo.texto:
-          if (t.porOpcion.isEmpty) {
-            out.add(_fila(t.etiqueta, '-'));
-          } else {
-            final entries = t.porOpcion.entries.toList()
-              ..sort((a, b) => b.value.compareTo(a.value));
-            out.add(Padding(
-              padding: const EdgeInsets.symmetric(vertical: 3),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(t.etiqueta,
-                      style: const TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.textSecondary)),
-                  const SizedBox(height: 2),
-                  ...entries.map((e) => Padding(
-                        padding: const EdgeInsets.only(left: 8, top: 1),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(e.key,
-                                  style: const TextStyle(
-                                      fontSize: 12,
-                                      color: AppTheme.textPrimary)),
-                            ),
-                            Text('${e.value}',
-                                style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppTheme.primary)),
-                          ],
-                        ),
-                      )),
-                ],
-              ),
-            ));
-          }
-          break;
-      }
-    }
-    return out;
-  }
-
-  Widget _fila(String label, String value) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 3),
+    for (final t in porTramo.tramos) {
+      out.add(Padding(
+        padding: const EdgeInsets.only(bottom: 6),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            const Icon(Icons.route_outlined,
+                size: 20, color: AppTheme.primary),
+            const SizedBox(width: 6),
             Expanded(
-              child: Text(label,
-                  style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textSecondary)),
+              child: Text(
+                t.tramo,
+                style: _estiloCantidad.copyWith(
+                  fontSize: 18,
+                  color: AppTheme.primary,
+                ),
+              ),
             ),
-            Text(value,
-                style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: AppTheme.primary)),
+            Text('${t.cantidad}', style: _estiloCantidad),
           ],
         ),
-      );
-
-  static String _fmtNum(double n) {
-    if (n == n.roundToDouble()) return n.toInt().toString();
-    return n.toStringAsFixed(2);
+      ));
+    }
+    return out;
   }
 }

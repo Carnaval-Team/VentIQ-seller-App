@@ -23,8 +23,6 @@ import '../../utils/reserva_listado.dart';
 import '../../utils/telefono_contacto.dart';
 import '../../widgets/datos_adicionales_form.dart';
 import '../../widgets/totales_datos_adicionales.dart';
-import '../../widgets/totales_recurso_turno.dart';
-import '../../widgets/cancelado_ribbon.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class ReservasScreen extends StatefulWidget {
@@ -65,19 +63,11 @@ class _ReservasScreenState extends State<ReservasScreen> {
         _fecha.day == now.day;
   }
 
-  /// ¿La reserva se puede confirmar como consumida? Las activas siempre; las
-  /// canceladas solo si su fecha es de hoy o anterior (aún se puede sellar el
-  /// consumo de un servicio ya prestado que se había cancelado).
+  /// Solo las reservas activas (Reservado) se pueden confirmar como consumidas.
+  /// Las canceladas no se pueden completar.
   bool _puedeCompletar(ReservaListItem item) {
-    if (item.esCompletada) return false;
-    if (!item.esCancelada) return true;
-    final now = DateTime.now();
-    final hoy = DateTime(now.year, now.month, now.day);
-    return item.agendas.any((r) {
-      final f = r.fechaHoraReserva;
-      final diaReserva = DateTime(f.year, f.month, f.day);
-      return !diaReserva.isAfter(hoy);
-    });
+    if (item.esCompletada || item.esCancelada) return false;
+    return item.esActiva;
   }
 
   bool _puedeDescancelar(ReservaListItem item) {
@@ -106,16 +96,10 @@ class _ReservasScreenState extends State<ReservasScreen> {
     ]);
     if (!mounted) return;
     final estados = results[1] as List<EstadoAgenda>;
-    final reservado = estados.firstWhere(
-      (e) => e.nombre.toLowerCase() == 'reservado',
-      orElse: () => estados.isNotEmpty
-          ? estados.first
-          : EstadoAgenda(id: 1, nombre: 'reservado'),
-    );
     setState(() {
       _locales = results[0] as List<Local>;
       _estados = estados;
-      _idEstadoFiltro = reservado.id;
+      _idEstadoFiltro = null; // Todos
     });
     await _load();
   }
@@ -189,17 +173,11 @@ class _ReservasScreenState extends State<ReservasScreen> {
 
   void _resetFiltros() {
     if (_loading) return;
-    final reservado = _estados.firstWhere(
-      (e) => e.nombre.toLowerCase() == 'reservado',
-      orElse: () => _estados.isNotEmpty
-          ? _estados.first
-          : EstadoAgenda(id: 1, nombre: 'reservado'),
-    );
     setState(() {
       _localFiltro = null;
       _lsFiltro = null;
       _localServicios = [];
-      _idEstadoFiltro = reservado.id;
+      _idEstadoFiltro = null; // Todos
       _filtrosExpanded = false;
     });
     _load();
@@ -213,7 +191,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
         title: const Text('Cancelar reserva'),
         content: Text(
           item.esIdaVueltaMismoDia
-              ? '¿Cancelar el viaje de ida y vuelta de '
+              ? '¿Cancelar el viaje de ida y regreso de '
                   '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
                   '(se cancelan ambos tramos)?'
               : '¿Estás seguro de cancelar la reserva de '
@@ -248,7 +226,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
           '¿Reactivar la reserva de '
           '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
           'para el servicio ${reserva.localServicio?.servicio?.nombre ?? ''}?'
-          '${item.esIdaVueltaMismoDia ? '\n\nSe reactivarán ambos tramos (ida y vuelta).' : ''}'
+          '${item.esIdaVueltaMismoDia ? '\n\nSe reactivarán ambos tramos (ida y regreso).' : ''}'
           '\n\nVolverá a estado Reservado y ocupará capacidad de nuevo.',
         ),
         actions: [
@@ -374,34 +352,616 @@ class _ReservasScreenState extends State<ReservasScreen> {
   // ──────────────────────────────────────────────────────────────────
   // EXPORT PDF
   // ──────────────────────────────────────────────────────────────────
-  // Agrupa las reservas por nombre de local
-  Map<String, List<Agenda>> _agruparPorLocal() {
+  // Agrupa las reservas por nombre de local (locales y filas ordenados).
+  Map<String, List<Agenda>> _agruparPorLocal([List<Agenda>? lista]) {
     final map = <String, List<Agenda>>{};
-    for (final r in _reservas) {
+    for (final r in _ordenarAgendasParaListado(lista ?? _reservas)) {
       final key = r.localServicio?.local?.nombre ?? 'Sin local';
       map.putIfAbsent(key, () => []).add(r);
     }
-    return map;
+    final keys = map.keys.toList()..sort((a, b) => a.compareTo(b));
+    return {for (final k in keys) k: map[k]!};
+  }
+
+  /// Orden estable: fecha (asc) y dentro de cada día, servicio (asc).
+  List<Agenda> _ordenarAgendasParaListado(List<Agenda> lista) {
+    final out = List<Agenda>.from(lista);
+    out.sort((a, b) {
+      final fa = a.fechaHoraReserva;
+      final fb = b.fechaHoraReserva;
+      final porFecha = DateTime(fa.year, fa.month, fa.day)
+          .compareTo(DateTime(fb.year, fb.month, fb.day));
+      if (porFecha != 0) return porFecha;
+      final sa = a.localServicio?.servicio?.nombre ?? '';
+      final sb = b.localServicio?.servicio?.nombre ?? '';
+      final porServicio = sa.toLowerCase().compareTo(sb.toLowerCase());
+      if (porServicio != 0) return porServicio;
+      return fa.compareTo(fb);
+    });
+    return out;
+  }
+
+  String get _nombreEstadoFiltro {
+    if (_idEstadoFiltro == null) return 'Todos';
+    return _estados
+        .firstWhere(
+          (e) => e.id == _idEstadoFiltro,
+          orElse: () => EstadoAgenda(id: 0, nombre: 'Estado'),
+        )
+        .nombre;
+  }
+
+  Future<_AlcanceExportacion?> _elegirAlcanceExportacion() {
+    return showModalBottomSheet<_AlcanceExportacion>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                '¿Qué deseas exportar?',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                leading: const Icon(Icons.today_outlined, color: AppTheme.primary),
+                title: Text('Día actual (${_fmt.format(_fecha)})'),
+                subtitle: Text(
+                  '${_itemsListado.length} reserva(s) visibles',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                onTap: () =>
+                    Navigator.pop(ctx, _AlcanceExportacion.dia),
+              ),
+              ListTile(
+                leading: const Icon(Icons.filter_list, color: AppTheme.primary),
+                title: Text('Todas · estado $_nombreEstadoFiltro'),
+                subtitle: const Text(
+                  'Desde hoy en adelante (mantiene local/servicio)',
+                  style: TextStyle(fontSize: 12),
+                ),
+                onTap: () =>
+                    Navigator.pop(ctx, _AlcanceExportacion.estado),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<List<Agenda>?> _obtenerReservasParaExportar(
+    _AlcanceExportacion alcance,
+  ) async {
+    if (alcance == _AlcanceExportacion.dia) {
+      if (_reservas.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No hay reservas para exportar en este día'),
+              backgroundColor: AppTheme.warning,
+            ),
+          );
+        }
+        return null;
+      }
+      return _reservas;
+    }
+
+    setState(() => _loading = true);
+    try {
+      final uuid = await AuthService.getCurrentUserId();
+      if (uuid == null) {
+        throw Exception('No se pudo obtener el usuario autenticado');
+      }
+      final data = await AgendaAdminService.listarAgendasPorEstado(
+        uuidUsuario: uuid,
+        idEntidad: widget.entidad.id,
+        idLocal: _localFiltro?.id,
+        idLocalServicio: _lsFiltro?.id,
+        idEstado: _idEstadoFiltro,
+      );
+      if (data.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'No hay reservas con estado $_nombreEstadoFiltro para exportar',
+              ),
+              backgroundColor: AppTheme.warning,
+            ),
+          );
+        }
+        return null;
+      }
+      return data;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al cargar reservas: $e'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+      }
+      return null;
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _buildFiltroDescExport({
+    required List<Agenda> lista,
+    required _AlcanceExportacion alcance,
+  }) {
+    final parts = <String>[];
+    if (_localFiltro != null) parts.add('Local: ${_localFiltro!.nombre}');
+    if (_lsFiltro != null) {
+      parts.add('Servicio: ${_lsFiltro!.servicio?.nombre ?? ''}');
+    }
+    parts.add('Estado: $_nombreEstadoFiltro');
+    if (alcance == _AlcanceExportacion.dia) {
+      parts.add('Fecha: ${_fmt.format(_fecha)}');
+    } else {
+      parts.add(
+        'Desde ${_fmt.format(DateTime.now())} (${lista.length} reservas)',
+      );
+    }
+    return parts.join('  ·  ');
+  }
+
+  Future<void> _iniciarExportPdf() async {
+    if (_loading) return;
+    final alcance = await _elegirAlcanceExportacion();
+    if (alcance == null || !mounted) return;
+    final lista = await _obtenerReservasParaExportar(alcance);
+    if (lista == null || !mounted) return;
+    await _exportPdf(lista, alcance);
+  }
+
+  Future<void> _iniciarExportExcel() async {
+    if (_loading) return;
+    final alcance = await _elegirAlcanceExportacion();
+    if (alcance == null || !mounted) return;
+    final lista = await _obtenerReservasParaExportar(alcance);
+    if (lista == null || !mounted) return;
+    await _exportExcel(lista, alcance);
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // EXPORT PDF
+  // ──────────────────────────────────────────────────────────────────
+  Future<void> _exportPdf(
+    List<Agenda> reservas,
+    _AlcanceExportacion alcance,
+  ) async {
+    final fontRegular = await PdfGoogleFonts.robotoRegular();
+    final fontBold = await PdfGoogleFonts.robotoBold();
+
+    final doc = pw.Document(
+      theme: pw.ThemeData.withFont(base: fontRegular, bold: fontBold),
+    );
+    final filtroDesc =
+        _buildFiltroDescExport(lista: reservas, alcance: alcance);
+    final esOmnibus = _listaEsOmnibus(reservas);
+
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4.landscape,
+        header: (_) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text('Reservas - ${widget.entidad.denominacion}',
+                style: pw.TextStyle(
+                    font: fontBold,
+                    fontSize: 14,
+                    fontWeight: pw.FontWeight.bold)),
+            if (filtroDesc.isNotEmpty)
+              pw.Text(filtroDesc,
+                  style: pw.TextStyle(font: fontRegular, fontSize: 8)),
+            pw.SizedBox(height: 6),
+            pw.Divider(),
+          ],
+        ),
+        footer: (context) => pw.Padding(
+          padding: const pw.EdgeInsets.only(top: 8),
+          child: pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.end,
+            children: [
+              pw.Text(
+                'Página ${context.pageNumber} de ${context.pagesCount}',
+                style: pw.TextStyle(font: fontRegular, fontSize: 9),
+              ),
+            ],
+          ),
+        ),
+        build: (_) {
+          final widgets = <pw.Widget>[];
+
+          if (esOmnibus) {
+            widgets.addAll(_pdfTablaOmnibus(
+              reservas,
+              fontBold: fontBold,
+              fontRegular: fontRegular,
+            ));
+          } else {
+            widgets.addAll(_pdfTablaGeneral(
+              reservas,
+              fontBold: fontBold,
+              fontRegular: fontRegular,
+            ));
+          }
+          widgets.addAll(_pdfFilaTotalCobrar(
+            reservas,
+            fontBold: fontBold,
+            fontRegular: fontRegular,
+          ));
+          return widgets;
+        },
+      ),
+    );
+
+    final bytes = await doc.save();
+    final sufijo = alcance == _AlcanceExportacion.dia
+        ? DateFormat('yyyyMMdd').format(_fecha)
+        : '${_nombreEstadoFiltro.toLowerCase()}_${DateFormat('yyyyMMdd').format(DateTime.now())}';
+    await Printing.sharePdf(
+        bytes: Uint8List.fromList(bytes),
+        filename: 'reservas_$sufijo.pdf');
+  }
+
+  bool _listaEsOmnibus(List<Agenda> lista) {
+    if (_lsFiltro?.esTransporteOmnibus == true) return true;
+    if (lista.any((r) => r.localServicio?.esTransporteOmnibus == true)) {
+      return true;
+    }
+    // Heurística: reservas con trayecto ida/regreso (aunque falte tipo_actividad).
+    return lista.any((r) {
+      final t = r.tipoTrayecto?.toLowerCase();
+      final v =
+          r.datosAdicionales?['tipo_viaje']?.toString().toLowerCase();
+      return t == 'ida' ||
+          t == 'vuelta' ||
+          v == 'ida' ||
+          v == 'vuelta' ||
+          v == 'ida_vuelta';
+    });
+  }
+
+  List<({String clave, String etiqueta})> _columnasDatosPdf(
+      List<Agenda> lista) {
+    const excluir = {
+      'email',
+      'correo',
+      'correo_electronico',
+      'e-mail',
+      'notas',
+      'recogida',
+      'destino',
+    };
+    return _columnasDatos(lista)
+        .where((c) => !excluir.contains(c.clave.toLowerCase()))
+        .toList();
+  }
+
+  /// Fila de total debajo del detalle: suma de precios a cobrar (sin canceladas).
+  List<pw.Widget> _pdfFilaTotalCobrar(
+    List<Agenda> reservas, {
+    required pw.Font fontBold,
+    required pw.Font fontRegular,
+  }) {
+    final importes = sumarPreciosReservas(reservas);
+    if (importes.isEmpty) return const [];
+
+    final texto = importes.entries
+        .map((e) => PrecioReserva.formatear(e.value, e.key))
+        .join('  ·  ');
+
+    return [
+      pw.SizedBox(height: 12),
+      pw.Container(
+        width: double.infinity,
+        padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: const pw.BoxDecoration(
+          color: PdfColors.grey200,
+          border: pw.Border(
+            top: pw.BorderSide(color: PdfColors.grey500, width: 1),
+          ),
+        ),
+        child: pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.end,
+          children: [
+            pw.Text('Total a cobrar: ',
+                style: pw.TextStyle(font: fontRegular, fontSize: 11)),
+            pw.Text(texto,
+                style: pw.TextStyle(
+                    font: fontBold,
+                    fontSize: 11,
+                    fontWeight: pw.FontWeight.bold)),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  String _nombreCompletoPdf(Agenda r) {
+    final n = _datoCliente(r, 'nombre');
+    final a = _datoCliente(r, 'apellidos');
+    final full = '$n $a'.trim();
+    return full.isEmpty || full == '-' ? '-' : full;
+  }
+
+  String _recogidaPdf(ReservaListItem item) {
+    final v = item.principal.datosAdicionales?['recogida']?.toString().trim();
+    if (v != null && v.isNotEmpty) return v;
+    final vPareja = item.pareja?.datosAdicionales?['recogida']?.toString().trim();
+    if (vPareja != null && vPareja.isNotEmpty) return vPareja;
+    return '-';
+  }
+
+  String _destinoPdf(ReservaListItem item) {
+    final v = item.principal.datosAdicionales?['destino']?.toString().trim();
+    if (v != null && v.isNotEmpty) return v;
+    final vPareja = item.pareja?.datosAdicionales?['destino']?.toString().trim();
+    if (vPareja != null && vPareja.isNotEmpty) return vPareja;
+    return '-';
+  }
+
+  String _tipoViajePdf(ReservaListItem item) {
+    if (item.etiquetaTipo.isNotEmpty) return item.etiquetaTipo;
+    final raw = etiquetaTrayectoUi(
+        item.principal.tipoTrayecto ?? item.principal.turnoNombre);
+    return raw.isEmpty ? '-' : raw;
+  }
+
+  List<pw.Widget> _pdfTablaOmnibus(
+    List<Agenda> reservas, {
+    required pw.Font fontBold,
+    required pw.Font fontRegular,
+  }) {
+    final items = agruparReservasParaListado(reservas)
+        .where((i) => !i.esCancelada)
+        .toList()
+      ..sort((a, b) => a.principal.fechaHoraReserva
+          .compareTo(b.principal.fechaHoraReserva));
+
+    return [
+      pw.Text('Detalle',
+          style: pw.TextStyle(
+              font: fontBold, fontSize: 12, fontWeight: pw.FontWeight.bold)),
+      pw.SizedBox(height: 8),
+      pw.TableHelper.fromTextArray(
+        headerStyle: pw.TextStyle(
+            font: fontBold, fontSize: 9, fontWeight: pw.FontWeight.bold),
+        headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
+        cellStyle: pw.TextStyle(font: fontRegular, fontSize: 8),
+        cellAlignment: pw.Alignment.centerLeft,
+        cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+        cellHeight: 22,
+        headers: const [
+          'Nombre',
+          'CI',
+          'Teléfono',
+          'Tipo de viaje',
+          'Recogida',
+          'Destino',
+          'Notas',
+          'Precio a cobrar',
+        ],
+        data: items.map((item) {
+          final r = item.principal;
+          final notas = r.datosAdicionales?['notas']?.toString().trim();
+          final precio = item.precioTotal;
+          return [
+            _nombreCompletoPdf(r),
+            _datoCliente(r, 'ci'),
+            _datoCliente(r, 'telefono'),
+            _tipoViajePdf(item),
+            _recogidaPdf(item),
+            _destinoPdf(item),
+            (notas == null || notas.isEmpty) ? '-' : notas,
+            precio != null && precio > 0
+                ? PrecioReserva.formatear(precio, item.moneda ?? 'USD')
+                : '-',
+          ];
+        }).toList(),
+      ),
+    ];
+  }
+
+  List<pw.Widget> _pdfTablaGeneral(
+    List<Agenda> reservas, {
+    required pw.Font fontBold,
+    required pw.Font fontRegular,
+  }) {
+    final cols = _columnasDatosPdf(reservas);
+    final items = agruparReservasParaListado(reservas)
+        .where((i) => !i.esCancelada)
+        .toList()
+      ..sort((a, b) => a.principal.fechaHoraReserva
+          .compareTo(b.principal.fechaHoraReserva));
+
+    return [
+      pw.Text('Detalle',
+          style: pw.TextStyle(
+              font: fontBold, fontSize: 12, fontWeight: pw.FontWeight.bold)),
+      pw.SizedBox(height: 8),
+      pw.TableHelper.fromTextArray(
+        headerStyle: pw.TextStyle(
+            font: fontBold, fontSize: 9, fontWeight: pw.FontWeight.bold),
+        headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
+        cellStyle: pw.TextStyle(font: fontRegular, fontSize: 8),
+        cellAlignment: pw.Alignment.centerLeft,
+        cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+        cellHeight: 22,
+        headers: [
+          'Servicio',
+          'Tipo',
+          'Fecha',
+          'Nombre',
+          'Apellidos',
+          'CI',
+          'Teléfono',
+          'Cant.',
+          'Precio',
+          ...cols.map((c) => c.etiqueta),
+        ],
+        data: items.map((item) {
+          final r = item.principal;
+          final precio = item.precioTotal;
+          return [
+            r.localServicio?.servicio?.nombre ?? '-',
+            _tipoViajePdf(item),
+            _fmtHora.format(r.fechaHoraReserva),
+            _datoCliente(r, 'nombre'),
+            _datoCliente(r, 'apellidos'),
+            _datoCliente(r, 'ci'),
+            _datoCliente(r, 'telefono'),
+            '${item.pasajeros}',
+            precio != null && precio > 0
+                ? PrecioReserva.formatear(precio, item.moneda ?? 'USD')
+                : '-',
+            ...cols.map((c) => _valorDato(r, c.clave)),
+          ];
+        }).toList(),
+      ),
+    ];
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // EXPORT EXCEL
+  // ──────────────────────────────────────────────────────────────────
+  Future<void> _exportExcel(
+    List<Agenda> reservas,
+    _AlcanceExportacion alcance,
+  ) async {
+    final excel = xl.Excel.createExcel();
+    final sheet = excel['Reservas'];
+
+    final cols = _columnasDatos(reservas);
+
+    final headers = [
+      'Local',
+      'Servicio',
+      'Tipo',
+      'Recurso',
+      'Turno',
+      'Fecha reserva',
+      'Nombre',
+      'Apellidos',
+      'CI',
+      'Telefono',
+      'Cantidad',
+      'Precio',
+      'Para tercero',
+      ...cols.map((c) => c.etiqueta),
+    ];
+    for (var i = 0; i < headers.length; i++) {
+      final cell = sheet
+          .cell(xl.CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0));
+      cell.value = xl.TextCellValue(headers[i]);
+      cell.cellStyle = xl.CellStyle(bold: true);
+    }
+
+    final grupos = _agruparPorLocal(reservas);
+    int rowIdx = 1;
+    grupos.forEach((localNombre, lista) {
+      for (final ag in lista) {
+        final esTercero = ag.reservadoPor != null &&
+            ag.uuidUsuario != null &&
+            ag.reservadoPor != ag.uuidUsuario;
+        final tipo = etiquetaTrayectoUi(
+              ag.tipoTrayecto ?? ag.turnoNombre,
+            ).isNotEmpty
+            ? etiquetaTrayectoUi(ag.tipoTrayecto ?? ag.turnoNombre)
+            : (ag.turnoNombre ?? '');
+        final row = [
+          localNombre,
+          ag.localServicio?.servicio?.nombre ?? '',
+          tipo,
+          ag.recursoNombre ?? '',
+          ag.turnoNombre ?? '',
+          _fmtHora.format(ag.fechaHoraReserva),
+          _datoCliente(ag, 'nombre'),
+          _datoCliente(ag, 'apellidos'),
+          _datoCliente(ag, 'ci'),
+          _datoCliente(ag, 'telefono'),
+          '${ag.cantidad}',
+          _precioExport(ag),
+          esTercero ? 'Sí' : 'No',
+          ...cols.map((c) => _valorDato(ag, c.clave)),
+        ];
+        for (var c = 0; c < row.length; c++) {
+          sheet
+              .cell(xl.CellIndex.indexByColumnRow(
+                  columnIndex: c, rowIndex: rowIdx))
+              .value = xl.TextCellValue(row[c]);
+        }
+        rowIdx++;
+      }
+    });
+
+    final bytes = excel.encode();
+    if (bytes == null) return;
+    final dir = await getTemporaryDirectory();
+    final sufijo = alcance == _AlcanceExportacion.dia
+        ? DateFormat('yyyyMMdd').format(_fecha)
+        : '${_nombreEstadoFiltro.toLowerCase()}_${DateFormat('yyyyMMdd').format(DateTime.now())}';
+    final file = File('${dir.path}/reservas_$sufijo.xlsx');
+    await file.writeAsBytes(bytes);
+    await Share.shareXFiles(
+      [XFile(file.path)],
+      text: 'Reservas exportadas',
+    );
   }
 
   /// Ítems de listado (ida+vuelta mismo día = 1) agrupados por local.
   Map<String, List<ReservaListItem>> _agruparItemsPorLocal() {
     final map = <String, List<ReservaListItem>>{};
-    for (final item in agruparReservasParaListado(_reservas)) {
+    final items = agruparReservasParaListado(_reservas);
+    items.sort((a, b) {
+      final fa = a.principal.fechaHoraReserva;
+      final fb = b.principal.fechaHoraReserva;
+      final porFecha = DateTime(fa.year, fa.month, fa.day)
+          .compareTo(DateTime(fb.year, fb.month, fb.day));
+      if (porFecha != 0) return porFecha;
+      final sa = a.principal.localServicio?.servicio?.nombre ?? '';
+      final sb = b.principal.localServicio?.servicio?.nombre ?? '';
+      final porServicio = sa.toLowerCase().compareTo(sb.toLowerCase());
+      if (porServicio != 0) return porServicio;
+      return fa.compareTo(fb);
+    });
+    for (final item in items) {
       final key =
           item.principal.localServicio?.local?.nombre ?? 'Sin local';
       map.putIfAbsent(key, () => []).add(item);
     }
-    return map;
+    final keys = map.keys.toList()..sort((a, b) => a.compareTo(b));
+    return {for (final k in keys) k: map[k]!};
   }
 
   List<ReservaListItem> get _itemsListado =>
       agruparReservasParaListado(_reservas);
 
-  /// Columnas dinámicas para datos adicionales: unión ordenada de claves que
-  /// aparecen en las reservas listadas. Devuelve pares (clave, etiqueta).
-  /// La etiqueta sale de campos_adicionales del servicio si está disponible.
-  /// Se excluyen las claves que ya se muestran como columnas fijas.
+  /// Columnas dinámicas con orden estable: primero las del servicio (en su
+  /// orden de configuración), luego el resto por etiqueta.
   List<({String clave, String etiqueta})> _columnasDatos(List<Agenda> lista) {
     const clavesFijas = {
       'nombre',
@@ -411,31 +971,41 @@ class _ReservasScreenState extends State<ReservasScreen> {
       'tipo_viaje',
     };
     final etiquetas = <String, String>{};
-    final orden = <String>[];
+    final ordenConfig = <String>[];
+    final extras = <String>{};
+
     for (final r in lista) {
-      // Rotula con la config del servicio (si viene).
       for (final c in r.localServicio?.servicio?.camposAdicionales ??
           const <CampoAdicional>[]) {
-        if (!clavesFijas.contains(c.clave)) {
-          etiquetas[c.clave] = c.etiqueta;
-        }
+        if (clavesFijas.contains(c.clave)) continue;
+        etiquetas[c.clave] = c.etiqueta;
+        if (!ordenConfig.contains(c.clave)) ordenConfig.add(c.clave);
       }
-      // Asegura incluir claves presentes en los valores aunque no haya config.
       final datos = r.datosAdicionales;
-      if (datos != null) {
-        for (final k in datos.keys) {
-          if (clavesFijas.contains(k)) continue;
-          if (!orden.contains(k)) orden.add(k);
-          etiquetas.putIfAbsent(k, () => k);
-        }
+      if (datos == null) continue;
+      for (final k in datos.keys) {
+        if (clavesFijas.contains(k)) continue;
+        etiquetas.putIfAbsent(k, () => k);
+        if (!ordenConfig.contains(k)) extras.add(k);
       }
     }
-    return orden.map((k) => (clave: k, etiqueta: etiquetas[k] ?? k)).toList();
+
+    final extrasOrdenados = extras.toList()
+      ..sort((a, b) =>
+          (etiquetas[a] ?? a).toLowerCase().compareTo(
+                (etiquetas[b] ?? b).toLowerCase(),
+              ));
+
+    return [
+      ...ordenConfig.map((k) => (clave: k, etiqueta: etiquetas[k] ?? k)),
+      ...extrasOrdenados.map((k) => (clave: k, etiqueta: etiquetas[k] ?? k)),
+    ];
   }
 
   /// ¿Alguna reserva de la lista fue hecha para un tercero?
   bool _hayTerceros(List<Agenda> lista) =>
-      lista.any((r) => r.reservadoPor != null &&
+      lista.any((r) =>
+          r.reservadoPor != null &&
           r.uuidUsuario != null &&
           r.reservadoPor != r.uuidUsuario);
 
@@ -474,171 +1044,6 @@ class _ReservasScreenState extends State<ReservasScreen> {
     }
   }
 
-  Future<void> _exportPdf() async {
-    final fontRegular = await PdfGoogleFonts.robotoRegular();
-    final fontBold = await PdfGoogleFonts.robotoBold();
-
-    final doc = pw.Document(
-      theme: pw.ThemeData.withFont(base: fontRegular, bold: fontBold),
-    );
-    final filtroDesc = _buildFiltroDesc();
-    final grupos = _agruparPorLocal();
-
-    doc.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4.landscape,
-        header: (_) => pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            pw.Text('Reservas - ${widget.entidad.denominacion}',
-                style: pw.TextStyle(
-                    font: fontBold,
-                    fontSize: 14,
-                    fontWeight: pw.FontWeight.bold)),
-            if (filtroDesc.isNotEmpty)
-              pw.Text(filtroDesc,
-                  style: pw.TextStyle(font: fontRegular, fontSize: 8)),
-            pw.SizedBox(height: 6),
-            pw.Divider(),
-          ],
-        ),
-        build: (_) {
-          final widgets = <pw.Widget>[];
-          grupos.forEach((localNombre, lista) {
-            final cols = _columnasDatos(lista);
-            final conTerceros = _hayTerceros(lista);
-            widgets.add(
-              pw.Text(localNombre,
-                  style: pw.TextStyle(
-                      font: fontBold,
-                      fontSize: 11,
-                      fontWeight: pw.FontWeight.bold)),
-            );
-            widgets.add(pw.SizedBox(height: 4));
-            widgets.add(
-              pw.TableHelper.fromTextArray(
-                headerStyle: pw.TextStyle(
-                    font: fontBold, fontWeight: pw.FontWeight.bold),
-                headerDecoration:
-                    const pw.BoxDecoration(color: PdfColors.grey300),
-                cellStyle: pw.TextStyle(font: fontRegular, fontSize: 9),
-                cellHeight: 22,
-                headers: [
-                  'Servicio', 'Fecha reserva',
-                  'Nombre', 'Apellidos', 'CI', 'Telefono', 'Cant.', 'Precio',
-                  if (conTerceros) 'Tercero',
-                  ...cols.map((c) => c.etiqueta),
-                ],
-                data: lista.map((r) {
-                  final esTercero = r.reservadoPor != null &&
-                      r.uuidUsuario != null &&
-                      r.reservadoPor != r.uuidUsuario;
-                  return [
-                    r.localServicio?.servicio?.nombre ?? '-',
-                    _fmtHora.format(r.fechaHoraReserva),
-                    _datoCliente(r, 'nombre'),
-                    _datoCliente(r, 'apellidos'),
-                    _datoCliente(r, 'ci'),
-                    _datoCliente(r, 'telefono'),
-                    '${r.cantidad}',
-                    _precioExport(r),
-                    if (conTerceros) (esTercero ? 'Sí' : 'No'),
-                    ...cols.map((c) => _valorDato(r, c.clave)),
-                  ];
-                }).toList(),
-              ),
-            );
-            widgets.add(pw.SizedBox(height: 14));
-          });
-          return widgets;
-        },
-      ),
-    );
-
-    final bytes = await doc.save();
-    await Printing.sharePdf(
-        bytes: Uint8List.fromList(bytes),
-        filename:
-            'reservas_${DateFormat('yyyyMMdd').format(DateTime.now())}.pdf');
-  }
-
-  // ──────────────────────────────────────────────────────────────────
-  // EXPORT EXCEL
-  // ──────────────────────────────────────────────────────────────────
-  Future<void> _exportExcel() async {
-    final excel = xl.Excel.createExcel();
-    final sheet = excel['Reservas'];
-
-    // Columnas dinámicas (datos adicionales) y bandera de terceros sobre TODAS
-    // las reservas, para que la hoja única tenga columnas consistentes.
-    final cols = _columnasDatos(_reservas);
-    final conTerceros = _hayTerceros(_reservas);
-
-    final headers = [
-      'Local', 'Servicio', 'Fecha reserva',
-      'Nombre', 'Apellidos', 'CI', 'Telefono', 'Cantidad', 'Precio',
-      if (conTerceros) 'Para tercero',
-      ...cols.map((c) => c.etiqueta),
-    ];
-    for (var i = 0; i < headers.length; i++) {
-      final cell = sheet
-          .cell(xl.CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0));
-      cell.value = xl.TextCellValue(headers[i]);
-      cell.cellStyle = xl.CellStyle(bold: true);
-    }
-
-    // Agrupar por local para el Excel
-    final grupos = _agruparPorLocal();
-    int rowIdx = 1;
-    grupos.forEach((localNombre, lista) {
-      for (final ag in lista) {
-        final esTercero = ag.reservadoPor != null &&
-            ag.uuidUsuario != null &&
-            ag.reservadoPor != ag.uuidUsuario;
-        final row = [
-          localNombre,
-          ag.localServicio?.servicio?.nombre ?? '',
-          _fmtHora.format(ag.fechaHoraReserva),
-          _datoCliente(ag, 'nombre'),
-          _datoCliente(ag, 'apellidos'),
-          _datoCliente(ag, 'ci'),
-          _datoCliente(ag, 'telefono'),
-          '${ag.cantidad}',
-          _precioExport(ag),
-          if (conTerceros) (esTercero ? 'Sí' : 'No'),
-          ...cols.map((c) => _valorDato(ag, c.clave)),
-        ];
-        for (var c = 0; c < row.length; c++) {
-          sheet
-              .cell(xl.CellIndex.indexByColumnRow(
-                  columnIndex: c, rowIndex: rowIdx))
-              .value = xl.TextCellValue(row[c]);
-        }
-        rowIdx++;
-      }
-    });
-
-    final bytes = excel.encode();
-    if (bytes == null) return;
-    final dir = await getTemporaryDirectory();
-    final file = File(
-        '${dir.path}/reservas_${DateFormat('yyyyMMdd').format(DateTime.now())}.xlsx');
-    await file.writeAsBytes(bytes);
-    await Share.shareXFiles(
-      [XFile(file.path)],
-      text: 'Reservas exportadas',
-    );
-  }
-
-  String _buildFiltroDesc() {
-    final parts = <String>[];
-    if (_localFiltro != null) parts.add('Local: ${_localFiltro!.nombre}');
-    if (_lsFiltro != null)
-      parts.add('Servicio: ${_lsFiltro!.servicio?.nombre ?? ''}');
-    parts.add('Fecha: ${_fmt.format(_fecha)}');
-    return parts.join('  ·  ');
-  }
-
   @override
   Widget build(BuildContext context) {
     return AbsorbPointer(
@@ -659,12 +1064,12 @@ class _ReservasScreenState extends State<ReservasScreen> {
             IconButton(
               icon: const Icon(Icons.picture_as_pdf_outlined),
               tooltip: 'Exportar PDF',
-              onPressed: _reservas.isEmpty || _loading ? null : _exportPdf,
+              onPressed: _loading ? null : _iniciarExportPdf,
             ),
             IconButton(
               icon: const Icon(Icons.table_chart_outlined),
               tooltip: 'Exportar Excel',
-              onPressed: _reservas.isEmpty || _loading ? null : _exportExcel,
+              onPressed: _loading ? null : _iniciarExportExcel,
             ),
             IconButton(
               icon: const Icon(Icons.refresh),
@@ -776,12 +1181,6 @@ class _ReservasScreenState extends State<ReservasScreen> {
               ),
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.chevron_right),
-            tooltip: 'Día siguiente',
-            onPressed: _loading ? null : () => _irDia(1),
-            color: AppTheme.primary,
-          ),
           if (!_esHoy)
             TextButton(
               onPressed: _loading ? null : _irHoy,
@@ -790,6 +1189,12 @@ class _ReservasScreenState extends State<ReservasScreen> {
               child: const Text('Hoy',
                   style: TextStyle(fontSize: 12, color: AppTheme.primary)),
             ),
+          IconButton(
+            icon: const Icon(Icons.chevron_right),
+            tooltip: 'Día siguiente',
+            onPressed: _loading ? null : () => _irDia(1),
+            color: AppTheme.primary,
+          ),
         ],
       ),
     );
@@ -850,15 +1255,12 @@ class _ReservasScreenState extends State<ReservasScreen> {
                       ),
                     ),
                   ),
-                  if (_reservas.isNotEmpty) ...[
-                    TotalesRecursoTurnoBadge(reservas: _reservas),
-                    const SizedBox(width: 8),
+                  if (_reservas.isNotEmpty)
                     Text(
                       '${_itemsListado.length} reserva${_itemsListado.length == 1 ? '' : 's'}',
                       style: const TextStyle(
                           fontSize: 11, color: AppTheme.textSecondary),
                     ),
-                  ],
                   const SizedBox(width: 6),
                   if (hayFiltrosActivos)
                     GestureDetector(
@@ -987,33 +1389,35 @@ class _ReservasScreenState extends State<ReservasScreen> {
   }
 
   Widget _buildTabla() {
-    final grupos = _agruparItemsPorLocal();
+    final items = _itemsListadoOrdenados();
     final cols = _columnasDatos(_reservas);
 
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
         TotalesPanel(reservas: _reservas),
-        for (final entry in grupos.entries) ...[
-          if (grupos.length > 1)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(0, 8, 0, 6),
-              child: Row(
-                children: [
-                  const Icon(Icons.store_outlined, size: 14, color: AppTheme.primary),
-                  const SizedBox(width: 6),
-                  Text(entry.key,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: AppTheme.primary)),
-                ],
-              ),
-            ),
-          ...entry.value.map((item) => _buildReservaCard(item, cols)),
-        ],
+        ...items.map((item) => _buildReservaCard(item, cols)),
       ],
     );
+  }
+
+  /// Listado plano (sin encabezados de local/recogida/destino).
+  /// Esos puntos van detallados en el PDF/Excel.
+  List<ReservaListItem> _itemsListadoOrdenados() {
+    final items = agruparReservasParaListado(_reservas);
+    items.sort((a, b) {
+      final fa = a.principal.fechaHoraReserva;
+      final fb = b.principal.fechaHoraReserva;
+      final porFecha = DateTime(fa.year, fa.month, fa.day)
+          .compareTo(DateTime(fb.year, fb.month, fb.day));
+      if (porFecha != 0) return porFecha;
+      final sa = a.principal.localServicio?.servicio?.nombre ?? '';
+      final sb = b.principal.localServicio?.servicio?.nombre ?? '';
+      final porServicio = sa.toLowerCase().compareTo(sb.toLowerCase());
+      if (porServicio != 0) return porServicio;
+      return fa.compareTo(fb);
+    });
+    return items;
   }
 
   Widget _buildReservaCard(
@@ -1034,14 +1438,18 @@ class _ReservasScreenState extends State<ReservasScreen> {
     final card = Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 8),
+      color: esCompletada
+          ? const Color(0xFFADEBB3).withValues(alpha: 0.10)
+          : null,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
-        // Completada: borde azul sutil. Resto: borde gris tenue.
         side: BorderSide(
           color: esCompletada
-              ? AppTheme.primary.withValues(alpha: 0.55)
-              : Colors.grey.shade200,
-          width: esCompletada ? 1.2 : 1,
+              ? const Color(0xFFADEBB3).withValues(alpha: 0.30)
+              : esCancelada
+                  ? AppTheme.error.withValues(alpha: 0.60)
+                  : Colors.grey.shade200,
+          width: (esCompletada || esCancelada) ? 1.2 : 1,
         ),
       ),
       child: Padding(
@@ -1112,24 +1520,14 @@ class _ReservasScreenState extends State<ReservasScreen> {
               _infoRow('Teléfono', '-'),
             if (item.esIdaVueltaMismoDia) ...[
               if (r.turnoNombre != null)
-                _infoRow(
-                  'Ida',
-                  r.recursoNombre != null
-                      ? '${r.recursoNombre} · ${r.turnoNombre}'
-                      : r.turnoNombre!,
-                ),
+                _infoRow('Ida', r.turnoNombre!),
               if (item.pareja?.turnoNombre != null)
-                _infoRow(
-                  'Vuelta',
-                  item.pareja!.recursoNombre != null
-                      ? '${item.pareja!.recursoNombre} · ${item.pareja!.turnoNombre}'
-                      : item.pareja!.turnoNombre!,
-                ),
+                _infoRow('Regreso', item.pareja!.turnoNombre!),
             ] else if (r.turnoNombre != null)
               _infoRow(
                 'Turno',
-                r.recursoNombre != null
-                    ? '${r.recursoNombre} · ${r.turnoNombre}'
+                etiquetaTrayectoUi(r.turnoNombre).isNotEmpty
+                    ? etiquetaTrayectoUi(r.turnoNombre)
                     : r.turnoNombre!,
               ),
             if (r.cantidad > 1) _infoRow('Cantidad', '${r.cantidad}'),
@@ -1146,16 +1544,17 @@ class _ReservasScreenState extends State<ReservasScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                TextButton.icon(
-                  icon: const Icon(Icons.edit_outlined, size: 16),
-                  label: const Text('Editar'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppTheme.primary,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    textStyle: const TextStyle(fontSize: 12),
+                if (esActiva)
+                  TextButton.icon(
+                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    label: const Text('Editar'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppTheme.primary,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                    onPressed: () => _editarReserva(r),
                   ),
-                  onPressed: () => _editarReserva(r),
-                ),
                 if (_puedeCompletar(item))
                   TextButton.icon(
                     icon: const Icon(Icons.check_circle_outline, size: 16),
@@ -1208,10 +1607,32 @@ class _ReservasScreenState extends State<ReservasScreen> {
       ),
     );
 
-    // Cancelada: cinta diagonal roja "CANCELADO" sobre la tarjeta. Sigue
-    // permitiendo editar y, si es de hoy o antes, confirmar consumo.
+    // Cancelada: mismo tratamiento de fondo/borde que completada, con sello
+    // "CANCELLED" a la derecha (sin cinta diagonal).
     if (esCancelada) {
-      return CanceladoRibbon(child: card);
+      return Stack(
+        children: [
+          card,
+          Positioned(
+            right: 10,
+            top: 0,
+            bottom: 8,
+            child: IgnorePointer(
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Transform.rotate(
+                  angle: -0.22,
+                  child: Image.asset(
+                    'assets/images/cancelled.png',
+                    height: 32,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
     }
     return card;
   }
@@ -1862,3 +2283,5 @@ class _PhoneRow extends StatelessWidget {
     );
   }
 }
+
+enum _AlcanceExportacion { dia, estado }

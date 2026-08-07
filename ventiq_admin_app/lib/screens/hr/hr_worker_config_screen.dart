@@ -6,6 +6,7 @@ import '../../models/hr/hr_audit_log.dart';
 import '../../services/worker_service.dart';
 import '../../services/store_service.dart';
 import '../../services/hr/hr_salary_report_service.dart';
+import '../../utils/navigation_guard.dart';
 import '../../widgets/hr/hr_drawer.dart';
 
 class HRWorkerConfigScreen extends StatefulWidget {
@@ -19,6 +20,7 @@ class _HRWorkerConfigScreenState extends State<HRWorkerConfigScreen> {
   bool _isLoading = true;
   int? _storeId;
   String? _userUuid;
+  bool _canDeleteWorkers = false;
 
   List<WorkerData> _workers = [];
   List<WorkerRole> _roles = [];
@@ -44,9 +46,12 @@ class _HRWorkerConfigScreenState extends State<HRWorkerConfigScreen> {
         if (mounted) setState(() => _isLoading = false);
         return;
       }
+      final canDelete =
+          await NavigationGuard.canPerformAction('worker.delete');
       setState(() {
         _storeId = storeData['storeId'] as int?;
         _userUuid = storeData['userUuid'] as String?;
+        _canDeleteWorkers = canDelete;
       });
       await _loadWorkers();
     } catch (e) {
@@ -94,10 +99,18 @@ class _HRWorkerConfigScreenState extends State<HRWorkerConfigScreen> {
   int? _getRoleIdFromName(String? roleName) {
     if (roleName == null) return null;
     try {
+      final display = _getRoleDisplayName(roleName).toLowerCase();
+      final key = roleName.toLowerCase();
       final role = _roles.firstWhere(
-        (r) =>
-            r.denominacion.toLowerCase() ==
-            _getRoleDisplayName(roleName).toLowerCase(),
+        (r) {
+          final d = r.denominacion.toLowerCase();
+          if (d == display || d == key) return true;
+          if (key == 'vendedor' &&
+              (d.contains('vendedor') || d.contains('dependiente'))) {
+            return true;
+          }
+          return false;
+        },
         orElse: () => WorkerRole(
           id: 0,
           denominacion: '',
@@ -121,7 +134,7 @@ class _HRWorkerConfigScreenState extends State<HRWorkerConfigScreen> {
       case 'auditor':
         return 'Auditor';
       case 'vendedor':
-        return 'Vendedor';
+        return 'Dependiente';
       case 'almacenero':
         return 'Almacenero';
       case 'recursos_humanos':
@@ -336,6 +349,61 @@ class _HRWorkerConfigScreenState extends State<HRWorkerConfigScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _confirmDeleteWorker(WorkerData worker) async {
+    if (_storeId == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Eliminar Trabajador'),
+        content: Text(
+          '¿Estás seguro de que deseas eliminar a ${worker.nombreCompleto}?\n\n'
+          'Se eliminarán todos sus roles en el sistema (gerente, supervisor, '
+          'dependiente, almacenero, recursos humanos, auditor).\n\n'
+          'Esta acción no se puede deshacer.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final success = await WorkerService.deleteWorker(
+        worker.trabajadorId,
+        _storeId!,
+      );
+      if (!mounted) return;
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Trabajador eliminado exitosamente'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        await _loadWorkers();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al eliminar: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
   }
 
   void _showEditSheet(WorkerData worker) {
@@ -751,7 +819,18 @@ class _HRWorkerConfigScreenState extends State<HRWorkerConfigScreen> {
                                     ],
                                   ],
                                 ),
-                                trailing: const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (_canDeleteWorkers)
+                                      IconButton(
+                                        icon: const Icon(Icons.delete_outline, color: Colors.red),
+                                        tooltip: 'Eliminar trabajador',
+                                        onPressed: () => _confirmDeleteWorker(worker),
+                                      ),
+                                    const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+                                  ],
+                                ),
                               ),
                             );
                           },
