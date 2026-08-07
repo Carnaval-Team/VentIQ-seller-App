@@ -1,9 +1,41 @@
 {
-  "current_version": "2.4.0",
-  "build": 240,
+  "current_version": "2.5.0",
+  "build": 250,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.5.0",
+      "date": "2026-08-07",
+      "title": "📅 Recursos Humanos: control de días de trabajo",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Cada entrada cuenta como un día, sin importar las horas",
+          "description": "A partir de ahora, cada vez que registras la entrada de un trabajador se suma automáticamente un día trabajado. Los días y las horas son independientes: el reporte muestra ambos por separado y nunca se calculan días dividiendo las horas entre 24."
+        },
+        {
+          "type": "feature",
+          "title": "Nuevo historial completo de asistencia",
+          "description": "Accede al historial de todos los días trabajados en cualquier período desde el menú de Recursos Humanos. Verás el nombre del trabajador, su rol, la hora de entrada y salida, las horas y el salario de cada registro, con buscador y selector de fechas."
+        },
+        {
+          "type": "feature",
+          "title": "Elimina un día de trabajo si el trabajador se fue antes",
+          "description": "Si necesitas borrar un día registrado por error o porque el trabajador se retiró, ahora puedes eliminarlo directamente desde el historial. Al eliminarlo, se descuenta del reporte de salarios de ese período automáticamente."
+        },
+        {
+          "type": "improvement",
+          "title": "Doble confirmación para evitar borrados accidentales",
+          "description": "Eliminar un día de trabajo requiere dos pasos: primero escribir la palabra ELIMINAR y luego confirmar con Sí. Así se evitan borrados por accidente y cada eliminación es una decisión consciente."
+        },
+        {
+          "type": "improvement",
+          "title": "Reporte de salarios con días trabajados corregido",
+          "description": "La columna Días del reporte de salarios ahora refleja exactamente la cantidad de entradas registradas, en línea con el nuevo comportamiento de días independientes."
+        }
+      ]
+    },
     {
       "version": "2.4.0",
       "date": "2026-07-31",

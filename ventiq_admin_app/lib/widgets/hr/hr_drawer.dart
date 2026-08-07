@@ -204,6 +204,18 @@ class _HRDrawerState extends State<HRDrawer> {
                 const Divider(height: 1),
                 _buildDrawerItem(
                   context,
+                  icon: Icons.history,
+                  title: 'Historial de Asistencia',
+                  subtitle: 'Ver y eliminar días de trabajo',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushReplacementNamed(
+                        context, '/hr-attendance-history');
+                  },
+                ),
+                const Divider(height: 1),
+                _buildDrawerItem(
+                  context,
                   icon: Icons.settings,
                   title: 'Configurar Trabajador',
                   subtitle: 'Salarios y pago por resultado',
