@@ -62,8 +62,11 @@ class _LicenseReconnectBannerState extends State<LicenseReconnectBanner> {
         return;
       }
 
-      final status = await _licenseService.validateLocalLicense(
+      // Con red: renovar/descargar licencia si falta o está inválida.
+      // Antes solo se validaba local y bloqueaba aunque hubiera internet.
+      var status = await _licenseService.validate(
         storeId: storeId,
+        forceOnlineRefresh: _connectivity.isConnected,
       );
 
       final days = status.daysUntilForcedReconnect;

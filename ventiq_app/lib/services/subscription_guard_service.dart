@@ -34,10 +34,10 @@ class SubscriptionGuardService {
 
   /// Verifica si el usuario tiene una suscripción/licencia activa válida.
   ///
-  /// - Online: consulta servidor + renueva token firmado.
-  /// - Offline con modo completo: valida token firmado local (fecha_fin,
-  ///   ventana dias_max, anti-rollback, firma HMAC).
-  /// - Offline sin modo completo: falla (requiere conexión).
+  /// - Con red: consulta servidor + renueva token firmado (también en full
+  ///   offline: la red sirve para obtener/renovar licencia, no para sync).
+  /// - Sin red + modo completo: valida token firmado local.
+  /// - Sin red sin modo completo: falla (requiere conexión).
   Future<bool> hasActiveSubscription({bool forceRefresh = false}) async {
     try {
       final currentStoreId = await _userPreferencesService.getIdTienda();
@@ -46,18 +46,16 @@ class SubscriptionGuardService {
         return false;
       }
 
+      final hasNetwork = _connectivityService.isConnected;
       final stayFullyOffline =
           await _userPreferencesService.shouldStayFullyOffline();
-      // Con full offline activo tratamos la app como offline aunque haya red.
-      final isOnline =
-          _connectivityService.isConnected && !stayFullyOffline;
       final offlineCompleto =
           await StoreConfigService.getPermitirModoOfflineCompleto(
             currentStoreId,
           );
 
-      // Camino offline: no dependemos del refresh de 5 min
-      if (!isOnline) {
+      // Sin red: solo licencia local (full offline no inventa conectividad).
+      if (!hasNetwork) {
         if (!offlineCompleto) {
           print('❌ Sin conexión y modo offline completo deshabilitado');
           _lastOfflineStatus = OfflineLicenseStatus.blocked(
@@ -81,13 +79,46 @@ class SubscriptionGuardService {
         return false;
       }
 
+      // Con red + full offline: priorizar licencia local; si falta/inválida,
+      // descargarla del servidor (no bloquear por stayFullyOffline).
+      if (stayFullyOffline && !forceRefresh) {
+        var status = await _offlineLicenseService.validateLocalLicense(
+          storeId: currentStoreId,
+        );
+        if (!status.isValid) {
+          print(
+            '🔐 Full offline con red pero sin licencia válida — '
+            'intentando descargar...',
+          );
+          final fetched = await _offlineLicenseService
+              .fetchAndStoreSignedLicense(currentStoreId);
+          if (fetched) {
+            status = await _offlineLicenseService.validateLocalLicense(
+              storeId: currentStoreId,
+            );
+          }
+        }
+        _lastOfflineStatus = status;
+        if (status.isValid) {
+          print('✅ Licencia offline válida (full offline + red)');
+          return true;
+        }
+        // Si no se pudo obtener licencia, seguir al flujo online clásico
+        // para al menos validar suscripción activa.
+        print(
+          '⚠️ No se pudo validar licencia offline; '
+          'continuando con verificación online de suscripción',
+        );
+      }
+
       // Online: caché corta si no se fuerza refresh
       if (!forceRefresh) {
         final shouldRefresh =
             await _userPreferencesService.shouldRefreshSubscription();
         if (!shouldRefresh) {
           // Preferir token firmado si existe
-          final signed = await _userPreferencesService.getSignedOfflineLicense();
+          final signed =
+              await _userPreferencesService.getSignedOfflineLicense();
           if (signed != null) {
             final status = await _offlineLicenseService.validateLocalLicense(
               storeId: currentStoreId,
@@ -102,8 +133,21 @@ class SubscriptionGuardService {
           final hasStoredActive =
               await _userPreferencesService.hasActiveSubscriptionStored();
           if (hasStoredActive) {
-            print('✅ Suscripción válida desde preferencias (caché)');
-            return true;
+            // Tienda con offline completo: asegurar token firmado aunque la
+            // suscripción clásica esté en caché (evita el banner de bloqueo).
+            if (offlineCompleto) {
+              final ensured = await _ensureSignedLicense(currentStoreId);
+              if (ensured) {
+                print(
+                  '✅ Suscripción en caché + licencia firmada asegurada',
+                );
+                return true;
+              }
+              // Seguir al refresh de servidor para reintentar licencia
+            } else {
+              print('✅ Suscripción válida desde preferencias (caché)');
+              return true;
+            }
           }
         }
       }
@@ -145,12 +189,11 @@ class SubscriptionGuardService {
         await _userPreferencesService.updateLastSeenTimestamp();
 
         // Renovar token firmado (obligatorio para operar offline después)
-        final fetched = await _offlineLicenseService.fetchAndStoreSignedLicense(
-          currentStoreId,
-        );
-        if (fetched) {
-          _lastOfflineStatus = await _offlineLicenseService
-              .validateLocalLicense(storeId: currentStoreId);
+        final ensured = await _ensureSignedLicense(currentStoreId);
+        if (!ensured && offlineCompleto) {
+          print(
+            '⚠️ Suscripción activa pero no se pudo obtener licencia firmada',
+          );
         }
       } else {
         print('  - Estado: ${_cachedSubscription!.estadoText}');
@@ -187,6 +230,17 @@ class SubscriptionGuardService {
       }
       return false;
     }
+  }
+
+  /// Descarga/renueva la licencia firmada y actualiza [_lastOfflineStatus].
+  Future<bool> _ensureSignedLicense(int storeId) async {
+    final fetched =
+        await _offlineLicenseService.fetchAndStoreSignedLicense(storeId);
+    final status = await _offlineLicenseService.validateLocalLicense(
+      storeId: storeId,
+    );
+    _lastOfflineStatus = status;
+    return fetched && status.isValid;
   }
 
   /// Obtiene la suscripción actual (puede ser inactiva)
@@ -270,8 +324,13 @@ class SubscriptionGuardService {
     print('🧹 Caché de suscripción limpiado');
   }
 
-  /// Fuerza una verificación de suscripción / revalidación de licencia
+  /// Fuerza una verificación de suscripción / revalidación de licencia.
+  /// Con red, siempre intenta descargar la licencia firmada primero.
   Future<bool> forceCheck() async {
+    final storeId = await _userPreferencesService.getIdTienda();
+    if (storeId != null && _connectivityService.isConnected) {
+      await _offlineLicenseService.fetchAndStoreSignedLicense(storeId);
+    }
     return await hasActiveSubscription(forceRefresh: true);
   }
 

@@ -64,6 +64,17 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
       if (_licenseStatus != null) {
         print('🔐 Licencia offline: ${_licenseStatus!.isValid} — ${_licenseStatus!.message}');
       }
+
+      // Si la licencia firmada ya es válida, entrar a la app.
+      if (_licenseStatus?.isValid == true && mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          Navigator.of(context).pushNamedAndRemoveUntil(
+            '/categories',
+            (route) => false,
+          );
+        });
+      }
     } catch (e) {
       print('❌ Error cargando datos de suscripción: $e');
       if (mounted) {
@@ -294,7 +305,14 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
     try {
       final ok = await _subscriptionGuard.forceCheck();
       if (!mounted) return;
-      if (ok) {
+
+      final licenseStatus = _subscriptionGuard.lastOfflineStatus ??
+          await OfflineLicenseService().validateLocalLicense(
+            storeId: _idTienda,
+          );
+      final canEnter = licenseStatus.isValid || ok;
+
+      if (canEnter && licenseStatus.isValid) {
         AppSnackBar.showPersistent(
           context,
           message: 'Licencia revalidada correctamente',
@@ -304,16 +322,35 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
           '/categories',
           (route) => false,
         );
-      } else {
-        setState(() {
-          _licenseStatus = _subscriptionGuard.lastOfflineStatus;
-        });
+        return;
+      }
+
+      // Suscripción online activa pero sin token firmado: permitir entrar
+      // en modo online (el banner ya no redirige tras un fetch fallido
+      // reiterado si no hay offline completo bloqueando).
+      if (ok && _activeSubscription?.isActive == true) {
         AppSnackBar.showPersistent(
           context,
-          message: _licenseStatus?.message ?? 'No se pudo revalidar la licencia',
-          backgroundColor: Colors.red,
+          message:
+              'Suscripción activa. No se pudo guardar licencia offline; '
+              'puedes continuar en línea.',
+          backgroundColor: Colors.orange,
         );
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/categories',
+          (route) => false,
+        );
+        return;
       }
+
+      setState(() {
+        _licenseStatus = licenseStatus;
+      });
+      AppSnackBar.showPersistent(
+        context,
+        message: licenseStatus.message,
+        backgroundColor: Colors.red,
+      );
     } catch (e) {
       if (mounted) {
         AppSnackBar.showPersistent(

@@ -43,8 +43,13 @@ void main() async {
   // Inicializar Supabase
   await AuthService.initialize();
 
-  // Inicializar SQLite offline (migra SharedPreferences → SQLite si hace falta)
-  await OfflineDatabaseService().initialize();
+  // Inicializar almacenamiento offline. En web no usa SQLite (ver
+  // OfflineDatabaseService); un fallo aquí no debe bloquear flutter-first-frame.
+  try {
+    await OfflineDatabaseService().initialize();
+  } catch (e) {
+    print('⚠️ OfflineDatabase init falló (continuando arranque): $e');
+  }
 
   // Pre-cargar preferencias de usuario en caché para acceso sincrónico
   await UserPreferencesService().isShowSkuEnabled();

@@ -112,6 +112,16 @@ class OfflineLicenseService {
   Future<bool> fetchAndStoreSignedLicense(int storeId) async {
     try {
       print('🔐 Solicitando licencia firmada para tienda $storeId...');
+
+      // Sesión local `offline_mode` no sirve para RPC; reautenticar si hace falta.
+      final ready = await _ensureSupabaseSessionForLicenseFetch();
+      if (!ready) {
+        print(
+          '❌ Sin sesión Supabase real: no se puede obtener licencia firmada',
+        );
+        return false;
+      }
+
       final response = await _supabase.rpc(
         'fn_obtener_licencia_firmada',
         params: {'p_id_tienda': storeId},
@@ -151,6 +161,71 @@ class OfflineLicenseService {
       return true;
     } catch (e) {
       print('❌ Error obteniendo licencia firmada: $e');
+      return false;
+    }
+  }
+
+  /// Garantiza un JWT real de Supabase antes del RPC de licencia.
+  Future<bool> _ensureSupabaseSessionForLicenseFetch() async {
+    final session = _supabase.auth.currentSession;
+    if (session != null && !session.isExpired) {
+      return true;
+    }
+
+    // Credenciales del usuario actual (remember me / offline_users / admin prep)
+    String? email = await _prefs.getUserEmail();
+    String? password;
+
+    final saved = await _prefs.getSavedCredentials();
+    if (email == null || email.isEmpty) {
+      email = saved['email'];
+    }
+    password = saved['password'];
+
+    if ((password == null || password.isEmpty) &&
+        email != null &&
+        email.isNotEmpty) {
+      final offlineUsers = await _prefs.getOfflineUsers();
+      for (final user in offlineUsers) {
+        if (user['email']?.toString().toLowerCase() == email.toLowerCase()) {
+          password = user['password']?.toString();
+          break;
+        }
+      }
+    }
+
+    if ((password == null || password.isEmpty) ||
+        email == null ||
+        email.isEmpty) {
+      final admin = await _prefs.getDeviceFullOfflineAdminCredentials();
+      email = admin['email'];
+      password = admin['password'];
+    }
+
+    if (email == null ||
+        password == null ||
+        email.isEmpty ||
+        password.isEmpty) {
+      print('⚠️ No hay credenciales para reautenticar y pedir licencia');
+      return false;
+    }
+
+    try {
+      print('🔑 Reautenticando en Supabase para obtener licencia ($email)...');
+      final response = await _supabase.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
+      if (response.session == null) {
+        print('❌ Reautenticación sin sesión');
+        return false;
+      }
+      // No pisar el token offline_mode de la sesión local de la app:
+      // solo necesitamos JWT en el client de Supabase para este RPC.
+      print('✅ Sesión Supabase lista para licencia firmada');
+      return true;
+    } catch (e) {
+      print('❌ Falló reautenticación para licencia: $e');
       return false;
     }
   }

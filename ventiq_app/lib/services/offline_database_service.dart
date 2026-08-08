@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
@@ -15,6 +14,9 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 /// - Productos: tabla `offline_products` indexada (búsqueda parcial).
 /// - Categorías: tabla `offline_categories`.
 ///
+/// En web, `sqflite` no está disponible: se usa SharedPreferences como
+/// backend para no bloquear el arranque (`flutter-first-frame`).
+///
 /// `getAllAsMap()` / `mergeSections()` mantienen compatibilidad con el API
 /// anterior (`getOfflineData` / `mergeOfflineData`).
 class OfflineDatabaseService {
@@ -28,16 +30,25 @@ class OfflineDatabaseService {
   static const String _prefsMigratedKey = 'offline_sqlite_migrated_v1';
   static const String _prefsOfflineDataKey = 'offline_data';
   static const String _prefsOfflineStagingKey = 'offline_data_staging';
+  static const String _prefsAdminOpsKey = 'offline_admin_pending_ops';
 
   Database? _db;
   Future<void>? _initFuture;
   bool _ffiInitialized = false;
+  bool _webPrefsMode = false;
 
-  bool get isReady => _db != null;
+  bool get isReady => _db != null || _webPrefsMode;
+  bool get usesWebPrefs => _webPrefsMode;
 
   Future<Database> get database async {
     await initialize();
-    return _db!;
+    final db = _db;
+    if (db == null) {
+      throw UnsupportedError(
+        'OfflineDatabase SQLite no disponible en esta plataforma',
+      );
+    }
+    return db;
   }
 
   /// Inicializa la BD (idempotente). Llamar desde `main()` al arrancar.
@@ -46,6 +57,18 @@ class OfflineDatabaseService {
   }
 
   Future<void> _doInitialize() async {
+    // sqflite / path_provider filesystem no funcionan en web: si intentamos
+    // abrir la BD aquí, `main()` nunca llega a `runApp` y la web se queda
+    // eternamente en el loading de index.html.
+    if (kIsWeb) {
+      _webPrefsMode = true;
+      print(
+        '🌐 OfflineDatabase: web detectado — usando SharedPreferences '
+        '(SQLite no soportado en navegador)',
+      );
+      return;
+    }
+
     _ensureFfiIfNeeded();
 
     final dir = await getApplicationDocumentsDirectory();
@@ -70,14 +93,33 @@ class OfflineDatabaseService {
   }
 
   void _ensureFfiIfNeeded() {
-    if (_ffiInitialized) return;
-    if (kIsWeb) return;
-    if (Platform.isWindows || Platform.isLinux) {
+    if (_ffiInitialized || kIsWeb) return;
+    if (defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.linux) {
       sqfliteFfiInit();
       databaseFactory = databaseFactoryFfi;
       _ffiInitialized = true;
       print('🖥️ OfflineDatabase: sqflite_ffi inicializado (desktop)');
     }
+  }
+
+  Future<Map<String, dynamic>?> _readPrefsMap() async {
+    final prefs = await SharedPreferences.getInstance();
+    String? raw = prefs.getString(_prefsOfflineDataKey);
+    raw ??= prefs.getString(_prefsOfflineStagingKey);
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    } catch (e) {
+      print('⚠️ OfflineDatabase (web prefs): JSON corrupto: $e');
+    }
+    return null;
+  }
+
+  Future<void> _writePrefsMap(Map<String, dynamic> data) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefsOfflineDataKey, jsonEncode(data));
   }
 
   Future<void> _createSchema(Database db) async {
@@ -152,11 +194,49 @@ class OfflineDatabaseService {
   // Admin pending ops (gestión inventario/productos offline)
   // --------------------------------------------------------------------------
 
+  Future<List<Map<String, dynamic>>> _readAdminOpsPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_prefsAdminOpsKey);
+    if (raw == null || raw.isEmpty) return [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return [];
+      return decoded
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> _writeAdminOpsPrefs(List<Map<String, dynamic>> ops) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefsAdminOpsKey, jsonEncode(ops));
+  }
+
   Future<void> enqueueAdminOp({
     required String clientUuid,
     required String opType,
     required Map<String, dynamic> payload,
   }) async {
+    await initialize();
+    if (_webPrefsMode) {
+      final ops = await _readAdminOpsPrefs();
+      ops.removeWhere((op) => op['client_uuid'] == clientUuid);
+      ops.add({
+        'id': ops.length + 1,
+        'client_uuid': clientUuid,
+        'op_type': opType,
+        'payload': payload,
+        'synced': 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'last_error': null,
+      });
+      await _writeAdminOpsPrefs(ops);
+      return;
+    }
+
     final db = await database;
     await db.insert(
       'admin_pending_ops',
@@ -172,6 +252,13 @@ class OfflineDatabaseService {
   }
 
   Future<List<Map<String, dynamic>>> getPendingAdminOps() async {
+    await initialize();
+    if (_webPrefsMode) {
+      return (await _readAdminOpsPrefs())
+          .where((op) => op['synced'] != 1 && op['synced'] != true)
+          .toList();
+    }
+
     final db = await database;
     final rows = await db.query(
       'admin_pending_ops',
@@ -191,6 +278,20 @@ class OfflineDatabaseService {
   }
 
   Future<void> markAdminOpSynced(String clientUuid) async {
+    await initialize();
+    if (_webPrefsMode) {
+      final ops = await _readAdminOpsPrefs();
+      for (final op in ops) {
+        if (op['client_uuid'] == clientUuid) {
+          op['synced'] = 1;
+          op['synced_at'] = DateTime.now().toIso8601String();
+          op['last_error'] = null;
+        }
+      }
+      await _writeAdminOpsPrefs(ops);
+      return;
+    }
+
     final db = await database;
     await db.update(
       'admin_pending_ops',
@@ -205,6 +306,18 @@ class OfflineDatabaseService {
   }
 
   Future<void> markAdminOpError(String clientUuid, String error) async {
+    await initialize();
+    if (_webPrefsMode) {
+      final ops = await _readAdminOpsPrefs();
+      for (final op in ops) {
+        if (op['client_uuid'] == clientUuid) {
+          op['last_error'] = error;
+        }
+      }
+      await _writeAdminOpsPrefs(ops);
+      return;
+    }
+
     final db = await database;
     await db.update(
       'admin_pending_ops',
@@ -215,6 +328,13 @@ class OfflineDatabaseService {
   }
 
   Future<int> countPendingAdminOps() async {
+    await initialize();
+    if (_webPrefsMode) {
+      return (await _readAdminOpsPrefs())
+          .where((op) => op['synced'] != 1 && op['synced'] != true)
+          .length;
+    }
+
     final db = await database;
     return Sqflite.firstIntValue(
           await db.rawQuery(
@@ -230,6 +350,11 @@ class OfflineDatabaseService {
 
   /// Reconstruye el mapa completo estilo `offline_data`.
   Future<Map<String, dynamic>?> getAllAsMap() async {
+    await initialize();
+    if (_webPrefsMode) {
+      return _readPrefsMap();
+    }
+
     final db = await database;
     final result = <String, dynamic>{};
 
@@ -263,6 +388,12 @@ class OfflineDatabaseService {
 
   /// Reemplaza todas las secciones (equivalente a saveOfflineData).
   Future<void> saveAllFromMap(Map<String, dynamic> data) async {
+    await initialize();
+    if (_webPrefsMode) {
+      await _writePrefsMap(data);
+      return;
+    }
+
     final db = await database;
     final now = DateTime.now().toIso8601String();
 
@@ -280,6 +411,14 @@ class OfflineDatabaseService {
 
   /// Merge por sección (equivalente a mergeOfflineData).
   Future<void> mergeSections(Map<String, dynamic> newData) async {
+    await initialize();
+    if (_webPrefsMode) {
+      final existing = await _readPrefsMap() ?? <String, dynamic>{};
+      existing.addAll(newData);
+      await _writePrefsMap(existing);
+      return;
+    }
+
     final db = await database;
     final now = DateTime.now().toIso8601String();
 
@@ -374,6 +513,15 @@ class OfflineDatabaseService {
   }
 
   Future<void> clearAll() async {
+    await initialize();
+    if (_webPrefsMode) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_prefsOfflineDataKey);
+      await prefs.remove(_prefsOfflineStagingKey);
+      await prefs.remove(_prefsAdminOpsKey);
+      return;
+    }
+
     final db = await database;
     await db.transaction((txn) async {
       await txn.delete('offline_sections');
@@ -383,6 +531,18 @@ class OfflineDatabaseService {
   }
 
   Future<bool> hasEssentialData() async {
+    await initialize();
+    if (_webPrefsMode) {
+      final data = await _readPrefsMap();
+      if (data == null) return false;
+      final hasCredentials = data['credentials'] != null;
+      final cats = data['categories'];
+      final products = data['products'];
+      final hasCategories = cats is List && cats.isNotEmpty;
+      final hasProducts = products is Map && products.isNotEmpty;
+      return hasCredentials && hasCategories && hasProducts;
+    }
+
     final db = await database;
     final cred = await db.query(
       'offline_sections',
@@ -406,6 +566,17 @@ class OfflineDatabaseService {
   // --------------------------------------------------------------------------
 
   Future<List<Map<String, dynamic>>> getCategories() async {
+    await initialize();
+    if (_webPrefsMode) {
+      final data = await _readPrefsMap();
+      final cats = data?['categories'];
+      if (cats is! List) return [];
+      return cats
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    }
+
     final db = await database;
     final rows = await db.query('offline_categories', orderBy: 'denominacion');
     return rows.map((r) {
@@ -422,6 +593,23 @@ class OfflineDatabaseService {
 
   Future<Map<String, List<Map<String, dynamic>>>>
       getProductsGroupedByCategory() async {
+    await initialize();
+    if (_webPrefsMode) {
+      final data = await _readPrefsMap();
+      final products = data?['products'];
+      if (products is! Map) return {};
+      final result = <String, List<Map<String, dynamic>>>{};
+      for (final entry in products.entries) {
+        final list = entry.value;
+        if (list is! List) continue;
+        result[entry.key.toString()] = list
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+      return result;
+    }
+
     final db = await database;
     final rows = await db.query('offline_products');
     final result = <String, List<Map<String, dynamic>>>{};
@@ -441,6 +629,12 @@ class OfflineDatabaseService {
   Future<List<Map<String, dynamic>>> getProductsByCategory(
     String categoryId,
   ) async {
+    await initialize();
+    if (_webPrefsMode) {
+      final grouped = await getProductsGroupedByCategory();
+      return grouped[categoryId] ?? [];
+    }
+
     final db = await database;
     final rows = await db.query(
       'offline_products',
@@ -466,6 +660,25 @@ class OfflineDatabaseService {
     String query, {
     int limit = 50,
   }) async {
+    await initialize();
+    if (_webPrefsMode) {
+      final q = query.trim().toLowerCase();
+      if (q.isEmpty) return [];
+      final grouped = await getProductsGroupedByCategory();
+      final matches = <Map<String, dynamic>>[];
+      for (final list in grouped.values) {
+        for (final product in list) {
+          final name = product['denominacion']?.toString().toLowerCase() ?? '';
+          final sku = product['sku']?.toString().toLowerCase() ?? '';
+          if (name.contains(q) || sku.contains(q)) {
+            matches.add(product);
+            if (matches.length >= limit) return matches;
+          }
+        }
+      }
+      return matches;
+    }
+
     final db = await database;
     final q = '%${query.trim()}%';
     final rows = await db.query(
@@ -490,6 +703,18 @@ class OfflineDatabaseService {
   }
 
   Future<Map<String, dynamic>?> getProductById(int id) async {
+    await initialize();
+    if (_webPrefsMode) {
+      final grouped = await getProductsGroupedByCategory();
+      for (final list in grouped.values) {
+        for (final product in list) {
+          final productId = _asInt(product['id']);
+          if (productId == id) return product;
+        }
+      }
+      return null;
+    }
+
     final db = await database;
     final rows = await db.query(
       'offline_products',
@@ -508,6 +733,12 @@ class OfflineDatabaseService {
   }
 
   Future<dynamic> getSection(String key) async {
+    await initialize();
+    if (_webPrefsMode) {
+      final data = await _readPrefsMap();
+      return data?[key];
+    }
+
     if (key == 'categories') {
       final cats = await getCategories();
       return cats.isEmpty ? null : cats;
@@ -533,6 +764,24 @@ class OfflineDatabaseService {
   }
 
   Future<Map<String, int>> getStats() async {
+    await initialize();
+    if (_webPrefsMode) {
+      final data = await _readPrefsMap() ?? {};
+      final cats = data['categories'];
+      final products = data['products'];
+      var productCount = 0;
+      if (products is Map) {
+        for (final value in products.values) {
+          if (value is List) productCount += value.length;
+        }
+      }
+      return {
+        'sections': data.keys.length,
+        'categories': cats is List ? cats.length : 0,
+        'products': productCount,
+      };
+    }
+
     final db = await database;
     final sections = Sqflite.firstIntValue(
           await db.rawQuery('SELECT COUNT(*) FROM offline_sections'),
