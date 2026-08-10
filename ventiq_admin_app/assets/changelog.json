@@ -1,9 +1,36 @@
 {
-  "current_version": "2.5.1",
-  "build": 251,
+  "current_version": "2.6.0",
+  "build": 260,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.6.0",
+      "date": "2026-08-10",
+      "title": "💬 Escríbele a tu cliente por WhatsApp con un toque",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Botón de WhatsApp en cada orden",
+          "description": "En el listado de órdenes Carnaval aparece un botón verde de WhatsApp arriba a la derecha de cada orden. Un toque y se abre el chat con tu cliente, sin copiar el número ni buscarlo en la agenda."
+        },
+        {
+          "type": "feature",
+          "title": "También al abrir la orden",
+          "description": "Dentro del detalle de la orden tienes el mismo botón, junto al de imprimir, para contactar al cliente mientras revisas su pedido."
+        },
+        {
+          "type": "improvement",
+          "title": "El mensaje ya viene escrito",
+          "description": "El chat se abre con un saludo listo que menciona el número de la orden, así el cliente sabe de inmediato de qué pedido le hablas. Puedes editarlo antes de enviarlo."
+        },
+        {
+          "type": "improvement",
+          "title": "Solo aparece cuando de verdad se puede llamar",
+          "description": "La app reconoce los teléfonos cubanos y los del exterior, y completa el código de país por ti. Si la orden no tiene teléfono o el dato guardado no sirve, el botón simplemente no se muestra y te ahorras el intento fallido."
+        }
+      ]
+    },
     {
       "version": "2.5.1",
       "date": "2026-08-07",
