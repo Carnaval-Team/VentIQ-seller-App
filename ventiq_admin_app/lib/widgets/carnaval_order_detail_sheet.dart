@@ -697,6 +697,8 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
   Widget _buildHeader() {
     final orderId = _order['id'];
     final createdAt = _order['created_at'] as String?;
+    final clienteTelefono =
+        _userInfo?['telefono'] as String? ?? _order['telefono'];
     String dateStr = '-';
     if (createdAt != null) {
       final dt = DateTime.tryParse(createdAt);
@@ -735,7 +737,13 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
             ),
           ),
         ),
-        const SizedBox(width: 4),
+        const SizedBox(width: 8),
+        // Se auto-oculta si el teléfono del cliente no es contactable.
+        WhatsAppButton(
+          phone: clienteTelefono,
+          size: 30,
+          message: 'Hola, le contactamos por su orden #$orderId.',
+        ),
         IconButton(
           onPressed: _isLoading ? null : _printOrder,
           icon: const Icon(Icons.print, color: Color(0xFF4A90E2)),
@@ -771,27 +779,6 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
           ),
           Expanded(
               child: Text(value, style: const TextStyle(fontSize: 13))),
-        ],
-      ),
-    );
-  }
-
-  /// Igual que [_buildInfoRow] pero con el botón de WhatsApp al final. El botón
-  /// se auto-oculta cuando el número no es contactable, quedando una fila normal.
-  Widget _buildPhoneRow(String label, String value, {String? message}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(label,
-                style: TextStyle(fontSize: 13, color: Colors.grey[600])),
-          ),
-          Expanded(
-              child: Text(value, style: const TextStyle(fontSize: 13))),
-          WhatsAppButton(phone: value, size: 30, message: message),
         ],
       ),
     );
@@ -975,11 +962,7 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
     return Column(
       children: [
         _buildInfoRow('Nombre', persona['nombre']?.toString() ?? '-'),
-        _buildPhoneRow(
-          'Teléfono',
-          persona['telefono']?.toString() ?? '-',
-          message: 'Hola, le contactamos por la orden #${_order['id']}.',
-        ),
+        _buildInfoRow('Teléfono', persona['telefono']?.toString() ?? '-'),
         _buildInfoRow('Dirección', persona['direccion']?.toString() ?? '-'),
         _buildInfoRow('Ciudad',
             (ciudad != null && ciudad.isNotEmpty) ? ciudad : '-'),
@@ -1018,11 +1001,7 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
       children: [
         _buildInfoRow('Nombre', name),
         _buildInfoRow('Email', email),
-        _buildPhoneRow(
-          'Teléfono',
-          telefono,
-          message: 'Hola, le contactamos por su orden #${_order['id']}.',
-        ),
+        _buildInfoRow('Teléfono', telefono),
         _buildInfoRow('Carnet', carnet),
         _buildInfoRow('Destinatario', _order['destinatario'] ?? '-'),
         _buildInfoRow('Notas', _order['notas'] ?? '-'),

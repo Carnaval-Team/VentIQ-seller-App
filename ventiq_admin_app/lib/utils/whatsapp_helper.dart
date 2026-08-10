@@ -37,9 +37,18 @@ class WhatsAppHelper {
     if (digits.isEmpty) return null;
 
     // Prefijo internacional marcado con 00 en vez de +.
+    var hasCountryCode = hadPlus;
     if (!hadPlus && digits.startsWith('00')) {
       digits = digits.substring(2);
-    } else if (!hadPlus && digits.length == 8) {
+      hasCountryCode = true;
+    }
+
+    // Un número de un solo dígito repetido es dato de prueba, no un contacto.
+    // Va antes de anteponer el prefijo: `55555555` dejaría de parecer relleno
+    // una vez convertido en `5355555555`.
+    if (RegExp(r'^(\d)\1+$').hasMatch(digits)) return null;
+
+    if (!hasCountryCode && digits.length == 8) {
       // Caso dominante: móvil cubano sin código de país. Ojo, un `53` inicial
       // aquí es parte del número (los móviles empiezan por 5), no el prefijo.
       digits = '$defaultCountryCode$digits';
@@ -48,9 +57,6 @@ class WhatsAppHelper {
     // E.164: entre 8 y 15 dígitos. Exigimos 10 porque por debajo de eso, ya
     // normalizado, solo quedan los números de relleno tipo 5555555.
     if (digits.length < 10 || digits.length > 15) return null;
-
-    // Un número de un solo dígito repetido es dato de prueba, no un contacto.
-    if (RegExp(r'^(\d)\1+$').hasMatch(digits)) return null;
 
     return digits;
   }

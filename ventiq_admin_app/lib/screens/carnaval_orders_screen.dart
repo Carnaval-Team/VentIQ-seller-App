@@ -742,6 +742,15 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                     ),
                   ],
                   const Spacer(),
+                  // Se auto-oculta si el teléfono no es contactable (vacío o
+                  // relleno tipo 5555555), así que no hace falta condicionarlo.
+                  WhatsAppButton(
+                    phone: clientePhone,
+                    size: 30,
+                    message: 'Hola, le contactamos por su orden #$orderId.',
+                  ),
+                  if (WhatsAppHelper.isContactable(clientePhone))
+                    const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
@@ -898,15 +907,6 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                         ),
                       ),
                     ],
-                    // El botón se auto-oculta si el teléfono no es contactable
-                    // (vacío, o relleno tipo 5555555), así que no hace falta
-                    // condicionarlo aquí.
-                    const Spacer(),
-                    WhatsAppButton(
-                      phone: clientePhone,
-                      size: 30,
-                      message: 'Hola, le contactamos por su orden #$orderId.',
-                    ),
                   ],
                 ),
               ],
