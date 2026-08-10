@@ -7,6 +7,7 @@ import '../services/wifi_printer_service.dart';
 import '../services/export_service.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/ticket_text_utils.dart';
+import '../utils/whatsapp_helper.dart';
 
 class CarnavalOrderDetailSheet extends StatefulWidget {
   final Map<String, dynamic> order;
@@ -775,6 +776,27 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
     );
   }
 
+  /// Igual que [_buildInfoRow] pero con el botón de WhatsApp al final. El botón
+  /// se auto-oculta cuando el número no es contactable, quedando una fila normal.
+  Widget _buildPhoneRow(String label, String value, {String? message}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(label,
+                style: TextStyle(fontSize: 13, color: Colors.grey[600])),
+          ),
+          Expanded(
+              child: Text(value, style: const TextStyle(fontSize: 13))),
+          WhatsAppButton(phone: value, size: 30, message: message),
+        ],
+      ),
+    );
+  }
+
   Map<String, dynamic>? get _paqueteria {
     final p = _order['paqueteria'];
     if (p is Map && p.isNotEmpty) return Map<String, dynamic>.from(p);
@@ -953,7 +975,11 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
     return Column(
       children: [
         _buildInfoRow('Nombre', persona['nombre']?.toString() ?? '-'),
-        _buildInfoRow('Teléfono', persona['telefono']?.toString() ?? '-'),
+        _buildPhoneRow(
+          'Teléfono',
+          persona['telefono']?.toString() ?? '-',
+          message: 'Hola, le contactamos por la orden #${_order['id']}.',
+        ),
         _buildInfoRow('Dirección', persona['direccion']?.toString() ?? '-'),
         _buildInfoRow('Ciudad',
             (ciudad != null && ciudad.isNotEmpty) ? ciudad : '-'),
@@ -992,7 +1018,11 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
       children: [
         _buildInfoRow('Nombre', name),
         _buildInfoRow('Email', email),
-        _buildInfoRow('Teléfono', telefono),
+        _buildPhoneRow(
+          'Teléfono',
+          telefono,
+          message: 'Hola, le contactamos por su orden #${_order['id']}.',
+        ),
         _buildInfoRow('Carnet', carnet),
         _buildInfoRow('Destinatario', _order['destinatario'] ?? '-'),
         _buildInfoRow('Notas', _order['notas'] ?? '-'),

@@ -21,7 +21,8 @@
       "PowerShell(npx -y skills find \"flutter best practices\" 2>&1 | Select-Object -First 100)",
       "WebFetch(domain:skills.sh)",
       "Bash(command -v mkdir)",
-      "Read(//c/Users/cesar/Desktop/wapi/**)"
+      "Read(//c/Users/cesar/Desktop/wapi/**)",
+      "mcp__supabase__execute_sql"
     ]
   },
   "enabledMcpjsonServers": [

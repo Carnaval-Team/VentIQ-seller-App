@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/carnaval_service.dart';
 import '../services/user_preferences_service.dart';
+import '../utils/whatsapp_helper.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/carnaval_order_detail_sheet.dart';
 import 'carnaval_orders_dashboard_screen.dart';
@@ -886,11 +887,26 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                       const SizedBox(width: 12),
                       Icon(Icons.phone, size: 14, color: Colors.grey[600]),
                       const SizedBox(width: 4),
-                      Text(
-                        clientePhone,
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      Flexible(
+                        child: Text(
+                          clientePhone,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ],
+                    // El botón se auto-oculta si el teléfono no es contactable
+                    // (vacío, o relleno tipo 5555555), así que no hace falta
+                    // condicionarlo aquí.
+                    const Spacer(),
+                    WhatsAppButton(
+                      phone: clientePhone,
+                      size: 30,
+                      message: 'Hola, le contactamos por su orden #$orderId.',
+                    ),
                   ],
                 ),
               ],
