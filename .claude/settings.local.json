@@ -20,7 +20,8 @@
       "WebFetch(domain:vsieeihstajlrdvpuooh.supabase.co)",
       "PowerShell(npx -y skills find \"flutter best practices\" 2>&1 | Select-Object -First 100)",
       "WebFetch(domain:skills.sh)",
-      "Bash(command -v mkdir)"
+      "Bash(command -v mkdir)",
+      "Read(//c/Users/cesar/Desktop/wapi/**)"
     ]
   },
   "enabledMcpjsonServers": [
