@@ -108,6 +108,9 @@ class UserPreferencesService {
   // Default order items key
   static const String _defaultOrderItemsKey = 'default_order_items';
 
+  // Conteos de inventario durante cierre (por TPV)
+  static const String _inventoryCountCierreKeyPrefix = 'inventory_count_cierre_';
+
   // Subscription keys
   static const String _subscriptionIdKey = 'subscription_id';
   static const String _subscriptionStateKey = 'subscription_state';
@@ -3580,6 +3583,55 @@ class UserPreferencesService {
       print('🗑️ Productos por defecto eliminados');
     } catch (e) {
       print('❌ Error limpiando productos por defecto: $e');
+    }
+  }
+
+  // ==================== CONTEOS DE INVENTARIO EN CIERRE ====================
+
+  String _inventoryCountCierreKey(int? idTpv) {
+    return '${_inventoryCountCierreKeyPrefix}${idTpv ?? 0}';
+  }
+
+  /// Guarda los conteos de inventario introducidos durante el cierre.
+  /// [counts] usa como clave el id del producto como String.
+  Future<void> saveInventoryCountCierre(
+    int? idTpv,
+    Map<String, double> counts,
+  ) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final json = jsonEncode(counts);
+      await prefs.setString(_inventoryCountCierreKey(idTpv), json);
+      print('💾 Conteos de inventario guardados (${counts.length} productos)');
+    } catch (e) {
+      print('❌ Error guardando conteos de inventario: $e');
+    }
+  }
+
+  /// Recupera los conteos de inventario guardados durante el cierre.
+  Future<Map<String, double>> getInventoryCountCierre(int? idTpv) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final json = prefs.getString(_inventoryCountCierreKey(idTpv));
+      if (json == null || json.isEmpty) return {};
+      final decoded = jsonDecode(json) as Map<String, dynamic>;
+      return decoded.map(
+        (key, value) => MapEntry(key, (value as num).toDouble()),
+      );
+    } catch (e) {
+      print('❌ Error obteniendo conteos de inventario: $e');
+      return {};
+    }
+  }
+
+  /// Elimina los conteos de inventario guardados.
+  Future<void> clearInventoryCountCierre(int? idTpv) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_inventoryCountCierreKey(idTpv));
+      print('🗑️ Conteos de inventario eliminados');
+    } catch (e) {
+      print('❌ Error limpiando conteos de inventario: $e');
     }
   }
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -37,6 +39,13 @@ class _CierreScreenState extends State<CierreScreen> {
   /// Stock real por producto (RPC batch / offline). Key = id_producto.
   Map<int, _StockRealProducto> _stockRealByProduct = {};
   bool _inventorySet = false;
+
+  // Conteos de inventario introducidos localmente (persistidos).
+  Map<int, double> _pendingInventoryCounts = {};
+  Timer? _inventorySaveTimer;
+
+  // Productos que aún no tienen cantidad ingresada (marcados al guardar).
+  final Set<int> _missingInventoryProductIds = {};
 
   // New state variables for conditional inventory
   bool _isLastOpenShift = false;
@@ -704,6 +713,7 @@ class _CierreScreenState extends State<CierreScreen> {
   void dispose() {
     _montoFinalController.dispose();
     _observacionesController.dispose();
+    _inventorySaveTimer?.cancel();
     // Dispose inventory controllers
     for (var controller in _inventoryControllers.values) {
       controller.dispose();
@@ -823,12 +833,18 @@ class _CierreScreenState extends State<CierreScreen> {
       }
 
       await _loadStockRealProductos();
+      await _loadInventoryCounts();
 
-      // Campos en 0: el usuario cuenta a ciegas; las diferencias van a observaciones.
+      // Restaurar conteos previos o dejar vacío para marcarlos como pendientes.
       for (final product in _inventoryProducts) {
         final controller = _inventoryControllers[product.id];
         if (controller == null) continue;
-        controller.text = '0';
+        final savedQty = _pendingInventoryCounts[product.id];
+        if (savedQty != null) {
+          controller.text = _formatInventoryQty(savedQty);
+        } else {
+          controller.text = '';
+        }
       }
     } finally {
       if (mounted) {
@@ -989,6 +1005,43 @@ class _CierreScreenState extends State<CierreScreen> {
     };
   }
 
+  /// Carga los conteos de inventario previamente guardados localmente.
+  Future<void> _loadInventoryCounts() async {
+    final idTpv = await _userPrefs.getIdTpv();
+    final saved = await _userPrefs.getInventoryCountCierre(idTpv);
+    _pendingInventoryCounts = saved.map(
+      (key, value) => MapEntry(int.tryParse(key) ?? 0, value),
+    );
+  }
+
+  /// Guarda los conteos localmente con un pequeño retardo para no saturar
+  /// SharedPreferences mientras el usuario escribe.
+  void _onInventoryCountChanged(int productId, String value) {
+    final qty = double.tryParse(value.replaceAll(',', '.')) ?? 0.0;
+    _pendingInventoryCounts[productId] = qty;
+    _scheduleSaveInventoryCounts();
+  }
+
+  void _scheduleSaveInventoryCounts() {
+    _inventorySaveTimer?.cancel();
+    _inventorySaveTimer = Timer(const Duration(milliseconds: 500), () async {
+      final idTpv = await _userPrefs.getIdTpv();
+      await _userPrefs.saveInventoryCountCierre(
+        idTpv,
+        _pendingInventoryCounts.map(
+          (k, v) => MapEntry(k.toString(), v),
+        ),
+      );
+    });
+  }
+
+  Future<void> _clearInventoryCounts() async {
+    _inventorySaveTimer?.cancel();
+    _pendingInventoryCounts.clear();
+    final idTpv = await _userPrefs.getIdTpv();
+    await _userPrefs.clearInventoryCountCierre(idTpv);
+  }
+
   /// Widget del modal de control de inventario
   Widget _buildInventoryCountModal() {
     return DraggableScrollableSheet(
@@ -996,7 +1049,9 @@ class _CierreScreenState extends State<CierreScreen> {
       minChildSize: 0.5,
       maxChildSize: 0.95,
       builder: (context, scrollController) {
-        return Container(
+        return StatefulBuilder(
+          builder: (modalContext, modalSetState) {
+            return Container(
           decoration: const BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.only(
@@ -1058,6 +1113,52 @@ class _CierreScreenState extends State<CierreScreen> {
                 ),
               ),
 
+              // Acciones masivas
+              if (!_isLoadingInventory && _inventoryProducts.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  color: Colors.grey[50],
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      if (_mostrarDebeHaberEnConteo)
+                        TextButton.icon(
+                          onPressed: () {
+                            for (final p in _inventoryProducts) {
+                              final debe =
+                                  _stockRealByProduct[p.id]?.debeHaber ??
+                                      p.cantidadFinalReal;
+                              _inventoryControllers[p.id]?.text =
+                                  _formatInventoryQty(debe);
+                              _pendingInventoryCounts[p.id] = debe;
+                            }
+                            _scheduleSaveInventoryCounts();
+                            modalSetState(() {});
+                          },
+                          icon: const Icon(Icons.auto_fix_high, size: 18),
+                          label: const Text("Rellenar con 'debe haber'"),
+                        ),
+                      TextButton.icon(
+                        onPressed: () {
+                          for (final p in _inventoryProducts) {
+                            _inventoryControllers[p.id]?.text = '0';
+                            _pendingInventoryCounts[p.id] = 0.0;
+                          }
+                          _scheduleSaveInventoryCounts();
+                          modalSetState(() {});
+                        },
+                        icon: const Icon(Icons.exposure_zero, size: 18),
+                        label: const Text('Todo en 0'),
+                      ),
+                    ],
+                  ),
+                ),
+
               // Lista de productos
               Expanded(
                 child:
@@ -1078,19 +1179,31 @@ class _CierreScreenState extends State<CierreScreen> {
                             final debeHaber =
                                 _stockRealByProduct[product.id]?.debeHaber ??
                                     product.cantidadFinalReal;
+                            final isMissing =
+                                _missingInventoryProductIds.contains(
+                                  product.id,
+                                );
 
                             return Container(
                               margin: const EdgeInsets.only(bottom: 12),
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: Colors.grey[50],
+                                color: isMissing ? Colors.red[50] : Colors.grey[50],
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
-                                  color: Colors.grey[200]!,
+                                  color: isMissing ? Colors.red[400]! : Colors.grey[200]!,
                                 ),
                               ),
                               child: Row(
                                 children: [
+                                  if (isMissing) ...[
+                                    Icon(
+                                      Icons.warning_amber_rounded,
+                                      color: Colors.red[700],
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                  ],
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment:
@@ -1149,6 +1262,18 @@ class _CierreScreenState extends State<CierreScreen> {
                                       style: const TextStyle(
                                         fontSize: 14,
                                       ),
+                                      onChanged: (value) {
+                                        _onInventoryCountChanged(
+                                          product.id,
+                                          value,
+                                        );
+                                        if (_missingInventoryProductIds
+                                            .contains(product.id)) {
+                                          _missingInventoryProductIds
+                                              .remove(product.id);
+                                          modalSetState(() {});
+                                        }
+                                      },
                                     ),
                                   ),
                                 ],
@@ -1189,7 +1314,39 @@ class _CierreScreenState extends State<CierreScreen> {
                       flex: 2,
                       child: ElevatedButton(
                         onPressed: () {
+                          final missing =
+                              _inventoryProducts
+                                  .where(
+                                    (p) =>
+                                        (_inventoryControllers[p.id]?.text
+                                                .trim()
+                                                .isEmpty ??
+                                            true),
+                                  )
+                                  .map((p) => p.id)
+                                  .toSet();
+                          if (missing.isNotEmpty) {
+                            modalSetState(() {
+                              _missingInventoryProductIds
+                                ..clear()
+                                ..addAll(missing);
+                            });
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Faltan ${missing.length} productos por contar',
+                                ),
+                                backgroundColor: Colors.orange,
+                              ),
+                            );
+                            return;
+                          }
+
+                          _inventorySaveTimer?.cancel();
+                          _scheduleSaveInventoryCounts();
+
                           setState(() {
+                            _missingInventoryProductIds.clear();
                             _inventorySet = true;
                           });
                           Navigator.pop(context);
@@ -1224,9 +1381,11 @@ class _CierreScreenState extends State<CierreScreen> {
         );
       },
     );
-  }
+  },
+);
+}
 
-  Future<void> _loadExpenses() async {
+Future<void> _loadExpenses() async {
     try {
       setState(() {
         _isLoadingExpenses = true;
@@ -2443,6 +2602,7 @@ class _CierreScreenState extends State<CierreScreen> {
             '🧹 Cache de turno/resúmenes offline limpiado tras cierre online',
           );
 
+          await _clearInventoryCounts();
           _showSuccessDialog(montoFinal, diferencia);
         } else if (result.isNetworkError) {
           print(
@@ -2671,6 +2831,8 @@ class _CierreScreenState extends State<CierreScreen> {
         cierrePayload: cierreData,
         resumen: resumenSnapshot,
       );
+
+      await _clearInventoryCounts();
 
       // Cerrar órdenes pendientes localmente
       if (mounted) {

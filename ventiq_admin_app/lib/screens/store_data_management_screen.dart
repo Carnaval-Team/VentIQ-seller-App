@@ -1,12 +1,13 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'dart:io';
 import '../config/app_colors.dart';
 import '../services/store_data_service.dart';
 import '../services/geonames_service.dart';
+import '../services/image_picker_service.dart';
 import 'package:dropdown_search/dropdown_search.dart';
 import 'package:country_flags/country_flags.dart';
 
@@ -24,7 +25,6 @@ class StoreDataManagementScreen extends StatefulWidget {
 
 class _StoreDataManagementScreenState extends State<StoreDataManagementScreen> {
   final StoreDataService _storeDataService = StoreDataService();
-  final ImagePicker _imagePicker = ImagePicker();
   
   late TextEditingController _denominacionController;
   late TextEditingController _direccionController;
@@ -50,7 +50,8 @@ class _StoreDataManagementScreenState extends State<StoreDataManagementScreen> {
   bool _errorLoadingStates = false;
   bool _errorLoadingCities = false;
   
-  File? _selectedImageFile;
+  Uint8List? _selectedImageBytes;
+  String? _selectedImageName;
   String? _currentImageUrl;
   
   double? _mapLatitude;
@@ -106,10 +107,11 @@ class _StoreDataManagementScreenState extends State<StoreDataManagementScreen> {
 
   Future<void> _pickImage() async {
     try {
-      final pickedFile = await _imagePicker.pickImage(source: ImageSource.gallery);
-      if (pickedFile != null && mounted) {
+      final picked = await ImagePickerService.pickImage(context: context);
+      if (picked != null && mounted) {
         setState(() {
-          _selectedImageFile = File(pickedFile.path);
+          _selectedImageBytes = picked.bytes;
+          _selectedImageName = picked.fileName;
         });
       }
     } catch (e) {
@@ -399,16 +401,18 @@ class _StoreDataManagementScreenState extends State<StoreDataManagementScreen> {
       String? imagenUrl = _currentImageUrl;
       
       // Si se seleccionó una nueva imagen, subirla a Supabase Storage
-      if (_selectedImageFile != null) {
+      if (_selectedImageBytes != null) {
         print('📸 Subiendo imagen de tienda...');
-        imagenUrl = await _storeDataService.uploadStoreImage(
+        imagenUrl = await _storeDataService.uploadStoreImageBytes(
           widget.storeId,
-          _selectedImageFile!,
+          _selectedImageBytes!,
+          fileName: _selectedImageName,
         );
         if (mounted) {
           setState(() {
             _currentImageUrl = imagenUrl;
-            _selectedImageFile = null;
+            _selectedImageBytes = null;
+            _selectedImageName = null;
           });
         }
       }
@@ -546,11 +550,11 @@ class _StoreDataManagementScreenState extends State<StoreDataManagementScreen> {
                             borderRadius: BorderRadius.circular(8),
                             color: Colors.grey.shade100,
                           ),
-                          child: _selectedImageFile != null
+                          child: _selectedImageBytes != null
                               ? ClipRRect(
                                   borderRadius: BorderRadius.circular(8),
-                                  child: Image.file(
-                                    _selectedImageFile!,
+                                  child: Image.memory(
+                                    _selectedImageBytes!,
                                     fit: BoxFit.cover,
                                   ),
                                 )
@@ -606,8 +610,8 @@ class _StoreDataManagementScreenState extends State<StoreDataManagementScreen> {
                           width: double.infinity,
                           child: ElevatedButton.icon(
                             onPressed: _pickImage,
-                            icon: const Icon(Icons.photo_library),
-                            label: const Text('Seleccionar Foto'),
+                            icon: const Icon(Icons.add_a_photo),
+                            label: const Text('Seleccionar Foto (cámara o galería)'),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.primary,
                               foregroundColor: Colors.white,

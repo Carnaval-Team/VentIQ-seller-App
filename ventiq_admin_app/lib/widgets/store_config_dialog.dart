@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import '../config/app_colors.dart';
 import '../services/carnaval_service.dart';
+import '../services/image_picker_service.dart';
 
 class StoreConfigDialog extends StatefulWidget {
   final int storeId;
@@ -29,7 +29,6 @@ class _StoreConfigDialogState extends State<StoreConfigDialog> {
   Uint8List? _newImageBytes;
   String? _newImageName;
   bool _isLoading = false;
-  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
@@ -60,19 +59,20 @@ class _StoreConfigDialogState extends State<StoreConfigDialog> {
 
   Future<void> _pickImage() async {
     try {
-      final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-      if (image != null) {
-        final bytes = await image.readAsBytes();
+      final picked = await ImagePickerService.pickImage(context: context);
+      if (picked != null) {
         setState(() {
-          _newImageBytes = bytes;
-          _newImageName = image.name;
+          _newImageBytes = picked.bytes;
+          _newImageName = picked.fileName;
         });
       }
     } catch (e) {
       print('Error picking image: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al seleccionar imagen: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al seleccionar imagen: $e')),
+        );
+      }
     }
   }
 

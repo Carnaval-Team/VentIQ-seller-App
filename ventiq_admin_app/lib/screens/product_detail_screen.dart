@@ -39,6 +39,8 @@ import '../services/currency_service.dart';
 import '../services/restaurant_service.dart';
 
 import '../services/product_image_download_service.dart';
+import '../services/inventory_service.dart';
+import '../models/inventory.dart';
 
 import 'package:flutter/foundation.dart';
 
@@ -77,6 +79,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
 
   List<Map<String, dynamic>> _stockLocations = [];
+
+  Map<int, StockBreakdown> _stockBreakdowns = {};
 
   List<Map<String, dynamic>> _receptionOperations = [];
 
@@ -421,6 +425,17 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         _product.id,
 
       );
+
+      final productId = int.tryParse(_product.id);
+      if (productId != null && _stockLocations.isNotEmpty) {
+        final breakdowns = await InventoryService.getStockBreakdownsForProduct(
+          productId,
+          _stockLocations,
+        );
+        if (mounted) {
+          setState(() => _stockBreakdowns = breakdowns);
+        }
+      }
 
     } catch (e) {
 
@@ -981,37 +996,97 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
 
   Widget _buildStockLocationsSection() {
+    final totalEnAlmacen = _stockLocations.fold<double>(0, (sum, location) {
+      final ubiId = int.tryParse(location['id_ubicacion']?.toString() ?? '');
+      final breakdown = ubiId != null ? _stockBreakdowns[ubiId] : null;
+      return sum +
+          (breakdown?.enAlmacen ??
+              ((location['cantidad'] as num?)?.toDouble() ?? 0.0));
+    });
+    final totalEntregando = _stockLocations.fold<double>(0, (sum, location) {
+      final ubiId = int.tryParse(location['id_ubicacion']?.toString() ?? '');
+      final breakdown = ubiId != null ? _stockBreakdowns[ubiId] : null;
+      return sum + (breakdown?.entregando ?? 0.0);
+    });
+    final totalEnPedidos = _stockLocations.fold<double>(0, (sum, location) {
+      final ubiId = int.tryParse(location['id_ubicacion']?.toString() ?? '');
+      final breakdown = ubiId != null ? _stockBreakdowns[ubiId] : null;
+      return sum + (breakdown?.enPedidos ?? 0.0);
+    });
+    String fmt(double v) =>
+        v.toStringAsFixed(v == v.roundToDouble() ? 0 : 2);
 
     return _buildInfoCard(
-
       title: 'Ubicaciones y Stock',
-
       icon: Icons.location_on,
-
       children: [
-
         if (_isLoadingLocations)
-
           const Center(child: CircularProgressIndicator())
-
         else if (_stockLocations.isEmpty)
-
           Text(
-
             'No hay ubicaciones registradas',
-
             style: TextStyle(
-
               color: Colors.grey[600],
-
               fontStyle: FontStyle.italic,
-
             ),
-
           )
-
-        else
-
+        else ...[
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.06),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.warehouse_outlined, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'En almacén (total): ${fmt(totalEnAlmacen)}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (totalEnPedidos > 0 || totalEntregando > 0) ...[
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      if (totalEnPedidos > 0)
+                        Text(
+                          'En pedidos: ${fmt(totalEnPedidos)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                      if (totalEntregando > 0)
+                        Text(
+                          'Entregando (Carnaval): ${fmt(totalEntregando)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[700],
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
           Column(
 
             children:
@@ -1072,21 +1147,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
                                   ),
 
-                                  const SizedBox(height: 4),
+                                  const SizedBox(height: 6),
 
-                                  Text(
-
-                                    'Disponible: ${location['cantidad']} | Reservado: ${location['reservado']}',
-
-                                    style: TextStyle(
-
-                                      fontSize: 13,
-
-                                      color: Colors.grey[600],
-
-                                    ),
-
-                                  ),
+                                  _buildStockBreakdownRow(location),
 
                                 ],
 
@@ -1094,41 +1157,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
                             ),
 
-                            Container(
-
-                              padding: const EdgeInsets.symmetric(
-
-                                horizontal: 8,
-
-                                vertical: 4,
-
-                              ),
-
-                              decoration: BoxDecoration(
-
-                                color: AppColors.success.withOpacity(0.1),
-
-                                borderRadius: BorderRadius.circular(12),
-
-                              ),
-
-                              child: Text(
-
-                                '${location['cantidad']}',
-
-                                style: TextStyle(
-
-                                  fontSize: 14,
-
-                                  fontWeight: FontWeight.bold,
-
-                                  color: AppColors.success,
-
-                                ),
-
-                              ),
-
-                            ),
+                            _buildStockTotalBadge(location),
 
                           ],
 
@@ -1139,10 +1168,187 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     )
 
                     .toList(),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildStockBreakdownRow(Map<String, dynamic> location) {
+
+    final ubiId = int.tryParse(location['id_ubicacion']?.toString() ?? '');
+
+    final breakdown = ubiId != null ? _stockBreakdowns[ubiId] : null;
+
+    final enAlmacen = breakdown?.enAlmacen ??
+        ((location['cantidad'] as num?)?.toDouble() ?? 0.0);
+
+    final enPedidos = breakdown?.enPedidos ?? 0.0;
+
+    final entregando = breakdown?.entregando ?? 0.0;
+
+
+
+    return Wrap(
+
+      spacing: 8,
+
+      runSpacing: 4,
+
+      children: [
+
+        _buildStockChip(
+
+          label: 'En almacén: ${enAlmacen.toStringAsFixed(0)}',
+
+          color: AppColors.success,
+
+          icon: Icons.warehouse_outlined,
+
+        ),
+
+        if (enPedidos > 0)
+
+          _buildStockChip(
+
+            label: 'En pedidos: ${enPedidos.toStringAsFixed(0)}',
+
+            color: AppColors.warning,
+
+            icon: Icons.shopping_bag_outlined,
+
+          ),
+
+        if (entregando > 0)
+
+          _buildStockChip(
+
+            label: 'Entregando: ${entregando.toStringAsFixed(0)}',
+
+            color: AppColors.info,
+
+            icon: Icons.local_shipping_outlined,
 
           ),
 
       ],
+
+    );
+
+  }
+
+
+
+  Widget _buildStockTotalBadge(Map<String, dynamic> location) {
+
+    final ubiId = int.tryParse(location['id_ubicacion']?.toString() ?? '');
+
+    final breakdown = ubiId != null ? _stockBreakdowns[ubiId] : null;
+
+    final realStock = breakdown?.enAlmacen ??
+        ((location['cantidad'] as num?)?.toDouble() ?? 0.0);
+
+    final statusColor = realStock <= 0
+
+        ? AppColors.error
+
+        : realStock <= 10
+
+            ? AppColors.warning
+
+            : AppColors.success;
+
+
+
+    return Container(
+
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+
+      decoration: BoxDecoration(
+
+        color: statusColor.withOpacity(0.1),
+
+        borderRadius: BorderRadius.circular(12),
+
+        border: Border.all(color: statusColor.withOpacity(0.3)),
+
+      ),
+
+      child: Text(
+
+        realStock.toStringAsFixed(0),
+
+        style: TextStyle(
+
+          fontSize: 14,
+
+          fontWeight: FontWeight.bold,
+
+          color: statusColor,
+
+        ),
+
+      ),
+
+    );
+
+  }
+
+
+
+  Widget _buildStockChip({
+
+    required String label,
+
+    required Color color,
+
+    required IconData icon,
+
+  }) {
+
+    return Container(
+
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+
+      decoration: BoxDecoration(
+
+        color: color.withOpacity(0.1),
+
+        borderRadius: BorderRadius.circular(12),
+
+        border: Border.all(color: color.withOpacity(0.3)),
+
+      ),
+
+      child: Row(
+
+        mainAxisSize: MainAxisSize.min,
+
+        children: [
+
+          Icon(icon, size: 12, color: color),
+
+          const SizedBox(width: 4),
+
+          Text(
+
+            label,
+
+            style: TextStyle(
+
+              fontSize: 11,
+
+              color: color,
+
+              fontWeight: FontWeight.w500,
+
+            ),
+
+          ),
+
+        ],
+
+      ),
 
     );
 
@@ -4187,6 +4393,19 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
 
   Widget _buildInventoryInfo() {
+    final stockFromLocations = _stockLocations.fold<double>(0, (sum, location) {
+      final ubiId = int.tryParse(location['id_ubicacion']?.toString() ?? '');
+      final breakdown = ubiId != null ? _stockBreakdowns[ubiId] : null;
+      return sum +
+          (breakdown?.enAlmacen ??
+              ((location['cantidad'] as num?)?.toDouble() ?? 0.0));
+    });
+    final stockDisponibleMostrado = !_isLoadingLocations && _stockLocations.isNotEmpty
+        ? stockFromLocations
+        : _product.stockDisponible.toDouble();
+    final stockLabel = stockDisponibleMostrado == stockDisponibleMostrado.roundToDouble()
+        ? stockDisponibleMostrado.toStringAsFixed(0)
+        : stockDisponibleMostrado.toStringAsFixed(2);
 
     return _buildInfoCard(
 
@@ -4196,9 +4415,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
       children: [
 
-        _buildInfoRow('Stock Disponible', _product.stockDisponible.toString()),
+        _buildInfoRow('Stock Disponible', stockLabel),
 
-        _buildInfoRow('Tiene Stock', _product.tieneStock ? 'Sí' : 'No'),
+        _buildInfoRow('Tiene Stock', stockDisponibleMostrado > 0 ? 'Sí' : 'No'),
 
         // if (_product.inventario.isNotEmpty) ...[
 

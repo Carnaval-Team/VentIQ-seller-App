@@ -616,3 +616,31 @@ class InventorySummaryByUser {
     };
   }
 }
+
+/// Desglose del stock real de un producto considerando operaciones pendientes.
+///
+/// - [enAlmacen]: cantidad real físicamente en el almacén (cantidad_final
+///   de la última operación más pendientes que aún no han salido).
+/// - [enPedidos]: cantidad en operaciones pendientes que aún no han sido
+///   marcadas como entregando (sigue en almacén pero comprometida).
+/// - [entregando]: cantidad en operaciones pendientes cuya orden Carnaval
+///   está en estado 'Entregando' (ya salió del almacén; NO forma parte de
+///   [enAlmacen]).
+class StockBreakdown {
+  final double enAlmacen;
+  final double enPedidos;
+  final double entregando;
+
+  const StockBreakdown({
+    required this.enAlmacen,
+    required this.enPedidos,
+    required this.entregando,
+  });
+
+  StockBreakdown.empty(double baseStock)
+      : this(
+          enAlmacen: baseStock,
+          enPedidos: 0,
+          entregando: 0,
+        );
+}

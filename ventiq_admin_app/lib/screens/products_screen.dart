@@ -2407,16 +2407,17 @@ class _AddImageDialogState extends State<_AddImageDialog> {
     try {
       setState(() => _isLoading = true);
 
-      final Uint8List? bytes = await ImagePickerService.pickImage();
+      final picked = await ImagePickerService.pickImage(context: context);
 
-      if (bytes != null) {
-        final fileName =
-            'product_${widget.product.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      if (picked != null) {
+        final fileName = picked.fileName.isNotEmpty
+            ? picked.fileName
+            : 'product_${widget.product.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
 
         // Subir imagen y actualizar producto
         final success = await ProductService.updateProductImage(
           productId: widget.product.id,
-          imageBytes: bytes,
+          imageBytes: picked.bytes,
           imageFileName: fileName,
         );
 
