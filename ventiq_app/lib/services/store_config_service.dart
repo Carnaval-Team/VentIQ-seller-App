@@ -105,39 +105,43 @@ class StoreConfigService {
   /// Obtiene la configuración de tienda (online primero, luego offline)
   static Future<Map<String, dynamic>?> getStoreConfig(int storeId) async {
     try {
-      // ✅ NUEVO: Verificar conectividad real PRIMERO, no solo el modo offline
-      final connectivityService = ConnectivityService();
-      final hasRealConnection = await connectivityService.checkConnectivity();
-
-      // Verificar si modo offline está activado
       final isOfflineMode =
           await _userPreferencesService.isOfflineModeEnabled();
+      final stayFullyOffline =
+          await _userPreferencesService.shouldStayFullyOffline();
+
+      // Full offline / modo offline: solo cache — no ping ni Supabase.
+      if (isOfflineMode || stayFullyOffline) {
+        print(
+          '🔌 Modo offline/full-offline - Cargando configuración desde cache...',
+        );
+        return await getStoreConfigFromCache();
+      }
+
+      final connectivityService = ConnectivityService();
+      final hasRealConnection = await connectivityService.checkConnectivity();
 
       print('🔍 Estado de conexión:');
       print('  • Modo offline activado: $isOfflineMode');
       print('  • Conectividad real: $hasRealConnection');
 
-      // ✅ IMPORTANTE: Si hay conexión real, siempre intentar obtener desde Supabase
-      if (hasRealConnection && !isOfflineMode) {
+      if (hasRealConnection) {
         print(
           '🌐 Conexión real detectada - Cargando configuración desde Supabase...',
         );
 
-        // Intentar obtener desde Supabase
         final config = await getStoreConfigFromSupabase(storeId);
 
         if (config != null) {
-          // Guardar en cache para uso offline futuro
           await saveStoreConfigToCache(config);
           return config;
         } else {
-          // Si no hay en Supabase, intentar desde cache como fallback
           print('🔄 Fallback: Intentando cargar desde cache offline...');
           return await getStoreConfigFromCache();
         }
-      } else if (isOfflineMode || !hasRealConnection) {
+      } else {
         print(
-          '🔌 Modo offline o sin conexión - Cargando configuración desde cache...',
+          '📵 Sin conexión - Cargando configuración desde cache...',
         );
         return await getStoreConfigFromCache();
       }
@@ -328,6 +332,34 @@ class StoreConfigService {
     } catch (e) {
       print('❌ Error al obtener allow_seller_make_order_modifications: $e');
       return false;
+    }
+  }
+
+  /// Obtiene el valor de permitir_modo_offline_completo.
+  /// Funciona offline porque getStoreConfig cae al cache local sin conexión.
+  static Future<bool> getPermitirModoOfflineCompleto(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      final value = config?['permitir_modo_offline_completo'] == true;
+      print('✅ permitir_modo_offline_completo: $value para tienda $storeId');
+      return value;
+    } catch (e) {
+      print('❌ Error al obtener permitir_modo_offline_completo: $e');
+      return false;
+    }
+  }
+
+  /// Obtiene el valor de dias_max_sin_validar_licencia.
+  static Future<int> getDiasMaxSinValidarLicencia(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      final raw = config?['dias_max_sin_validar_licencia'];
+      final value = raw is int ? raw : int.tryParse('$raw') ?? 7;
+      print('✅ dias_max_sin_validar_licencia: $value para tienda $storeId');
+      return value;
+    } catch (e) {
+      print('❌ Error al obtener dias_max_sin_validar_licencia: $e');
+      return 7;
     }
   }
 

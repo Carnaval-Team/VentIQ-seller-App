@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/app_colors.dart';
+import '../services/image_picker_service.dart';
 import '../services/store_data_service.dart';
 
 class StoreDetailScreen extends StatefulWidget {
@@ -19,9 +20,10 @@ class StoreDetailScreen extends StatefulWidget {
 
 class _StoreDetailScreenState extends State<StoreDetailScreen> {
   final StoreDataService _storeDataService = StoreDataService();
-  
+
   Map<String, dynamic>? _storeData;
   bool _isLoading = true;
+  bool _isUpdatingImage = false;
 
   @override
   void initState() {
@@ -48,6 +50,123 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
     }
   }
 
+  Future<void> _changeStoreImage() async {
+    if (_isUpdatingImage) return;
+
+    final picked = await ImagePickerService.pickImage(context: context);
+    if (picked == null || !mounted) return;
+
+    setState(() => _isUpdatingImage = true);
+    try {
+      final url = await _storeDataService.uploadStoreImageBytes(
+        widget.storeId,
+        picked.bytes,
+        fileName: picked.fileName,
+      );
+      if (url == null) {
+        throw Exception('No se pudo subir la imagen');
+      }
+
+      await _storeDataService.updateStoreData(
+        storeId: widget.storeId,
+        imagenUrl: url,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _storeData = {
+          ...?_storeData,
+          'imagen_url': url,
+        };
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Imagen de tienda actualizada'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error actualizando imagen: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUpdatingImage = false);
+    }
+  }
+
+  Widget _buildStoreImageCard() {
+    final imageUrl = (_storeData?['imagen_url'] as String?)?.trim() ?? '';
+    final hasImage = imageUrl.isNotEmpty;
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          SizedBox(
+            height: 250,
+            width: double.infinity,
+            child: hasImage
+                ? Image.network(
+                    imageUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return _imagePlaceholder(
+                        icon: Icons.image_not_supported,
+                      );
+                    },
+                  )
+                : _imagePlaceholder(icon: Icons.image),
+          ),
+          Positioned(
+            right: 12,
+            bottom: 12,
+            child: FloatingActionButton.extended(
+              heroTag: 'store_image_fab',
+              onPressed: _isUpdatingImage ? null : _changeStoreImage,
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              icon: _isUpdatingImage
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Icon(hasImage ? Icons.edit : Icons.add_a_photo),
+              label: Text(
+                _isUpdatingImage
+                    ? 'Subiendo...'
+                    : (hasImage ? 'Cambiar foto' : 'Agregar foto'),
+              ),
+            ),
+          ),
+          if (_isUpdatingImage)
+            Positioned.fill(
+              child: ColoredBox(
+                color: Colors.black.withOpacity(0.25),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _imagePlaceholder({required IconData icon}) {
+    return ColoredBox(
+      color: Colors.grey.shade200,
+      child: Center(
+        child: Icon(icon, size: 48, color: Colors.grey.shade400),
+      ),
+    );
+  }
+
   Widget _buildMapPreview() {
     final lat = (_storeData?['latitude'] as num?)?.toDouble() ?? 0.0;
     final lng = (_storeData?['longitude'] as num?)?.toDouble() ?? 0.0;
@@ -60,7 +179,8 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
       children: [
         TileLayer(
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'InventtiaGestion/1.0 (+https://inventtia.com; contact: support@inventtia.com)',
+          userAgentPackageName:
+              'InventtiaGestion/1.0 (+https://inventtia.com; contact: support@inventtia.com)',
           tileSize: 256,
         ),
         RichAttributionWidget(
@@ -143,13 +263,21 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
       );
     }
 
-    final hasCoordinates = _storeData!['latitude'] != null && _storeData!['longitude'] != null;
+    final hasCoordinates =
+        _storeData!['latitude'] != null && _storeData!['longitude'] != null;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Detalle de Tienda'),
         backgroundColor: AppColors.primary,
         elevation: 0,
+        actions: [
+          IconButton(
+            tooltip: 'Cambiar imagen',
+            onPressed: _isUpdatingImage ? null : _changeStoreImage,
+            icon: const Icon(Icons.add_a_photo_outlined),
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -159,42 +287,13 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Foto de la tienda
-                if (_storeData!['imagen_url'] != null && (_storeData!['imagen_url'] as String).isNotEmpty)
-                  Card(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.network(
-                        _storeData!['imagen_url'],
-                        height: 250,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            height: 250,
-                            color: Colors.grey.shade200,
-                            child: Center(
-                              child: Icon(Icons.image_not_supported, 
-                                size: 48, 
-                                color: Colors.grey.shade400),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  )
-                else
-                  Card(
-                    child: Container(
-                      height: 250,
-                      color: Colors.grey.shade200,
-                      child: Center(
-                        child: Icon(Icons.image, 
-                          size: 48, 
-                          color: Colors.grey.shade400),
-                      ),
-                    ),
-                  ),
+                _buildStoreImageCard(),
+                const SizedBox(height: 8),
+                Text(
+                  'Toca “Cambiar foto” para elegir desde galería o cámara '
+                  '(Android y web).',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
                 const SizedBox(height: 24),
 
                 // Información básica
@@ -264,7 +363,8 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
                         const SizedBox(height: 12),
                         _buildInfoRow(
                           'Coordenadas',
-                          _storeData!['latitude'] != null && _storeData!['longitude'] != null
+                          _storeData!['latitude'] != null &&
+                                  _storeData!['longitude'] != null
                               ? '${_storeData!['latitude']}, ${_storeData!['longitude']}'
                               : 'No especificadas',
                           Icons.map,

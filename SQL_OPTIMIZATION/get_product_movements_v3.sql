@@ -626,7 +626,7 @@ BEGIN
     ORDER BY est.id DESC
     LIMIT 1
   ) eo ON TRUE
-  ORDER BY t.id_op ASC NULLS LAST,
+  ORDER BY COALESCE(t.rp_created_at, t.ep_created_at, t.cp_created_at, t.inv_created_at) ASC NULLS LAST,
            t.inv_id ASC
   LIMIT  p_limit
   OFFSET p_offset;

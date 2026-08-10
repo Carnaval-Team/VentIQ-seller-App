@@ -1,8 +1,11 @@
 import 'dart:typed_data';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import '../models/order.dart';
 import '../models/mesa.dart';
 import '../services/order_service.dart';
@@ -1172,6 +1175,28 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         .getPublicUrl(path);
   }
 
+  /// Guarda la foto en disco para subirla cuando haya conexión.
+  Future<String?> _persistOfflineOperationPhoto(String orderId) async {
+    final bytes = _fotoOperacionBytes;
+    if (bytes == null || kIsWeb) return null;
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final folder = Directory(p.join(dir.path, 'operaciones_offline'));
+      if (!await folder.exists()) {
+        await folder.create(recursive: true);
+      }
+      final ext =
+          (_fotoOperacionMime?.contains('png') == true) ? 'png' : 'jpg';
+      final file = File(p.join(folder.path, '$orderId.$ext'));
+      await file.writeAsBytes(bytes, flush: true);
+      print('📷 Foto offline guardada en ${file.path}');
+      return file.path;
+    } catch (e) {
+      print('❌ Error guardando foto offline: $e');
+      return null;
+    }
+  }
+
   Widget _buildCreateOrderButton() {
     return SizedBox(
       width: double.infinity,
@@ -1331,16 +1356,29 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     });
 
     try {
+      // Anti-rollback: actualizar timestamp observado en cada venta
+      await _userPreferencesService.updateLastSeenTimestamp();
+
       final buyerName = _buyerNameController.text.trim();
       final buyerPhone = _buyerPhoneController.text.trim();
-      final fotoOperacionUrl =
-          _solicitarImagenOperacion ? await _uploadOperationPhoto() : null;
-      if (_solicitarImagenOperacion && fotoOperacionUrl == null) {
-        throw StateError('No se pudo subir la foto de la operación');
+      final isOffline = widget.order.isOfflineOrder ||
+          await _userPreferencesService.shouldStayFullyOffline() ||
+          await _userPreferencesService.isOfflineModeEnabled();
+
+      if (_solicitarImagenOperacion && _fotoOperacionBytes == null) {
+        throw StateError('Debes adjuntar una foto para crear la operación');
       }
 
-      // Detectar si es una orden offline
-      if (widget.order.isOfflineOrder) {
+      // Online: subir ya. Offline: se guarda en disco y se sube al sincronizar.
+      String? fotoOperacionUrl;
+      if (_solicitarImagenOperacion && !isOffline) {
+        fotoOperacionUrl = await _uploadOperationPhoto();
+        if (fotoOperacionUrl == null) {
+          throw StateError('No se pudo subir la foto de la operación');
+        }
+      }
+
+      if (isOffline) {
         print(
           '🔌 Procesando orden offline - Capturando datos del cliente y creando orden offline',
         );
@@ -1423,6 +1461,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       final total = subtotal - totalDescuentos;
 
+      final openTurno = await _userPreferencesService.getOfflineTurno();
+      final localTurnoId = openTurno?['local_id']?.toString() ??
+          openTurno?['local_turno_id']?.toString();
+
       // Crear estructura de orden virtual con datos del cliente
       final orderData = {
         'id': offlineOrderId,
@@ -1443,6 +1485,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'estado_final': 'completada',
         'is_pending_sync': true,
         'created_offline_at': DateTime.now().toIso8601String(),
+        if (localTurnoId != null) 'local_turno_id': localTurnoId,
         // DATOS DEL CLIENTE / MESA CAPTURADOS
         'buyer_name': buyerName,
         'buyer_phone': buyerPhone,
@@ -1489,6 +1532,22 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             }).toList(),
         'desglose_pagos': paymentBreakdown.values.toList(),
       };
+
+      // Persistir foto localmente para subirla al sincronizar
+      if (_solicitarImagenOperacion && _fotoOperacionBytes != null) {
+        final localPath = await _persistOfflineOperationPhoto(offlineOrderId);
+        if (localPath != null) {
+          orderData['foto_operacion_local_path'] = localPath;
+          orderData['foto_operacion_mime'] =
+              _fotoOperacionMime ?? 'image/jpeg';
+        } else if (kIsWeb) {
+          // Fallback web: base64 en la orden pendiente
+          orderData['foto_operacion_base64'] =
+              base64Encode(_fotoOperacionBytes!);
+          orderData['foto_operacion_mime'] =
+              _fotoOperacionMime ?? 'image/jpeg';
+        }
+      }
 
       // Guardar orden pendiente
       await _userPreferencesService.savePendingOrder(orderData);

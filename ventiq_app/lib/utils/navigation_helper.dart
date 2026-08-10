@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/store_config_service.dart';
+import '../services/user_preferences_service.dart';
 
 /// Helper centralizado para decisiones de navegación que dependen de banderas
 /// globales (modo restaurante, cuenta activa, etc.). Consolidar la lógica
@@ -7,24 +8,29 @@ import '../services/store_config_service.dart';
 class NavigationHelper {
   NavigationHelper._();
 
+  /// Destino home según rol de sesión y modo restaurante.
+  /// Gerente/supervisor (solo gestión) → `/admin-home`.
+  static Future<String> homeRoute() async {
+    final inventoryOnly =
+        await UserPreferencesService().isInventoryOnlySession();
+    if (inventoryOnly) return '/admin-home';
+    final modoRestaurante = StoreConfigService.modoRestauranteSync;
+    return modoRestaurante ? '/mesas' : '/categories';
+  }
+
   /// Navega al "Home" según el contexto:
   ///
-  ///  - Si modo restaurante **está activado**, va SIEMPRE a `/mesas`
-  ///    (la grilla de mesas es el home funcional del restaurante, también
-  ///    cuando hay una cuenta activa: si el vendedor quiere seguir
-  ///    agregando, abre la mesa → la cuenta y desde ahí vuelve a
-  ///    /categories).
-  ///  - Si modo restaurante está desactivado, va a `/categories` como antes.
-  ///
-  /// Devuelve un Future por si quieres encadenar; ignorar el await es seguro.
-  static Future<void> goHome(BuildContext context, {bool removeStack = true}) {
-    final modoRestaurante = StoreConfigService.modoRestauranteSync;
+  ///  - Sesión gerente/supervisor → `/admin-home` (sin venta).
+  ///  - Si modo restaurante **está activado**, va a `/mesas`.
+  ///  - Si no, va a `/categories`.
+  static Future<void> goHome(BuildContext context, {bool removeStack = true}) async {
+    final route = await homeRoute();
 
-    final route = modoRestaurante ? '/mesas' : '/categories';
-
+    if (!context.mounted) return;
     if (removeStack) {
-      return Navigator.pushNamedAndRemoveUntil(context, route, (r) => false);
+      await Navigator.pushNamedAndRemoveUntil(context, route, (r) => false);
+    } else {
+      await Navigator.pushNamed(context, route);
     }
-    return Navigator.pushNamed(context, route);
   }
 }

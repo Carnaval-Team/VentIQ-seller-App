@@ -4,6 +4,9 @@ import 'auto_sync_service.dart';
 import 'user_preferences_service.dart';
 import 'reauthentication_service.dart';
 import 'network_request_queue.dart';
+import 'store_config_service.dart';
+import 'offline_license_service.dart';
+import 'subscription_guard_service.dart';
 
 /// Gestor inteligente del modo offline
 /// Coordina la activación automática del modo offline y la sincronización automática
@@ -230,6 +233,15 @@ class SmartOfflineManager {
       final hasRealConnection = await _connectivityService.checkConnectivity();
 
       if (!hasRealConnection) {
+        // Modo offline completo: activar automáticamente sin diálogo
+        if (await _shouldAutoActivateOfflineCompleto()) {
+          print(
+            '🚀 Modo offline completo habilitado - activando offline automáticamente',
+          );
+          await _activateOfflineModeAutomatically();
+          return;
+        }
+
         print(
           '🚨 Conexión perdida confirmada - Solicitando confirmación al usuario',
         );
@@ -243,6 +255,25 @@ class SmartOfflineManager {
       print(
         '📶 Conexión restaurada durante verificación - No solicitando confirmación',
       );
+    }
+  }
+
+  /// True si la tienda tiene modo offline completo y licencia local válida.
+  Future<bool> _shouldAutoActivateOfflineCompleto() async {
+    try {
+      final storeId = await _userPreferencesService.getIdTienda();
+      if (storeId == null) return false;
+
+      final permitido =
+          await StoreConfigService.getPermitirModoOfflineCompleto(storeId);
+      if (!permitido) return false;
+
+      final status =
+          await OfflineLicenseService().validateLocalLicense(storeId: storeId);
+      return status.isValid;
+    } catch (e) {
+      print('⚠️ Error evaluando auto-offline completo: $e');
+      return false;
     }
   }
 
@@ -297,6 +328,14 @@ class SmartOfflineManager {
         await _connectivityService.performImmediateCheck();
 
     if (!hasRealConnection) {
+      if (await _shouldAutoActivateOfflineCompleto()) {
+        print(
+          '🚀 Modo offline completo (interceptor) - activando automáticamente',
+        );
+        await _activateOfflineModeAutomatically();
+        return;
+      }
+
       print(
         '🚨 Confirmado sin internet por interceptor - Solicitando confirmación',
       );
@@ -349,6 +388,19 @@ class SmartOfflineManager {
   /// Usuario presionó "Activar Modo Online" en el diálogo de restauración.
   Future<void> userChoseGoOnline() async {
     print('👤 Usuario eligió Activar Modo Online');
+
+    // Full offline: el diálogo no debería mostrarse; si llega aquí, bloquear
+    // hasta que un admin desactive offline desde Settings.
+    if (await _userPreferencesService.shouldStayFullyOffline()) {
+      print(
+        '📦 Full offline: no se permite volver online desde el diálogo. '
+        'El administrador debe desactivar el modo offline.',
+      );
+      _connectionRestoredDialogPending = false;
+      _wasOfflineModeManuallyEnabled = true;
+      return;
+    }
+
     _connectionRestoredDialogPending = false;
 
     try {
@@ -363,6 +415,17 @@ class SmartOfflineManager {
         }
       } catch (e) {
         print('⚠️ Error reautenticando tras volver online: $e');
+      }
+
+      // Revalidación de licencia: automática y obligatoria al recuperar conexión
+      try {
+        print('🔐 Revalidando licencia firmada tras volver online...');
+        final ok = await SubscriptionGuardService().forceCheck();
+        print(ok
+            ? '✅ Licencia revalidada correctamente'
+            : '❌ Licencia no válida tras revalidación');
+      } catch (e) {
+        print('⚠️ Error revalidando licencia: $e');
       }
 
       if (!_autoSyncService.isRunning) {
@@ -407,6 +470,24 @@ class SmartOfflineManager {
   /// Manejar restauración de conexión
   Future<void> _handleConnectionRestored() async {
     print('📶 Manejando restauración de conexión...');
+
+    // Full offline: no diálogo, no revalidación remota, no auto-sync.
+    // El admin debe desactivar el modo offline explícitamente.
+    if (await _userPreferencesService.shouldStayFullyOffline()) {
+      print(
+        '📦 Full offline activo: se ignora la conexión detectada '
+        '(sin diálogo ni llamadas al servidor)',
+      );
+      return;
+    }
+
+    // Revalidación de licencia: automática y obligatoria cuando hay red
+    try {
+      print('🔐 Revalidación obligatoria de licencia al recuperar conexión...');
+      await SubscriptionGuardService().forceCheck();
+    } catch (e) {
+      print('⚠️ Error en revalidación de licencia al restaurar conexión: $e');
+    }
 
     final isOfflineModeEnabled =
         await _userPreferencesService.isOfflineModeEnabled();

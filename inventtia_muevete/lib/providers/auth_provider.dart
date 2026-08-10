@@ -6,7 +6,6 @@ import '../services/auth_service.dart';
 import '../services/notification_service.dart';
 import '../services/background_service.dart';
 import '../services/pushy_service.dart';
-import '../services/vehicle_service.dart';
 import '../services/suscripcion_service.dart';
 import '../utils/battery_optimizer.dart';
 
@@ -258,13 +257,20 @@ class AuthProvider extends ChangeNotifier {
       _tipoUsuario = tipoUsuario;
       debugPrint('[signUp] Auth user creado: ${_user?.id}');
 
+      if (_user != null && response.session == null) {
+        throw Exception(
+          'Cuenta creada, pero no hay sesión activa. '
+          'Confirma el email o inicia sesión y completa el perfil.',
+        );
+      }
+
       if (_user != null) {
         if (isDriverType) {
-          debugPrint('[signUp] Creando perfil driver (tipo=$tipoUsuario)...');
-          await _authService.createDriverProfile({
+          debugPrint('[signUp] Registrando perfil driver vía RPC (tipo=$tipoUsuario)...');
+
+          final perfil = <String, dynamic>{
             'name': name,
             'email': email,
-            'uuid': _user!.id,
             'estado': false,
             'tipo_usuario': tipoUsuario,
             if (phone != null && phone.isNotEmpty) 'telefono': phone,
@@ -287,67 +293,48 @@ class AuthProvider extends ChangeNotifier {
               'lic_operativa_frente_url': licOperativaFrenteUrl,
             if (licOperativaDorsoUrl != null)
               'lic_operativa_dorso_url': licOperativaDorsoUrl,
-            // Dispatcher company fields
             if (tipoUsuario == 'dispatcher') ...{
               if (empresaNombre != null) 'empresa_nombre': empresaNombre,
               if (empresaRut != null) 'empresa_rut': empresaRut,
-              if (empresaDireccion != null) 'empresa_direccion': empresaDireccion,
+              if (empresaDireccion != null)
+                'empresa_direccion': empresaDireccion,
             },
-          });
-          debugPrint('[signUp] Perfil driver creado OK');
+          };
 
-          // Insert carrocerías for carrier_carga (N vehicles)
-          if (tipoUsuario == 'carrier_carga' &&
-              carrocerias != null &&
-              carrocerias.isNotEmpty) {
-            debugPrint('[signUp] Insertando ${carrocerias.length} carrocería(s)...');
-            final freshProfile = await _authService.getDriverProfile();
-            final driverId = freshProfile?['id'] as int?;
-            debugPrint('[signUp] driver_id obtenido: $driverId');
-            if (driverId != null) {
-              await VehicleService().createCarrocerias(
-                driverId: driverId,
-                carrocerias: carrocerias,
-              );
-              debugPrint('[signUp] Carrocerías insertadas OK');
-            } else {
-              debugPrint('[signUp][WARN] No se obtuvo driver_id; carrocerías no insertadas');
-            }
-          }
-
-          // Insert vehicle for conductor_pasajeros and link it to the driver
+          Map<String, dynamic>? vehiculo;
           if (tipoUsuario == 'conductor_pasajeros' &&
               vehiculoChapa != null &&
               vehiculoChapa.isNotEmpty) {
-            debugPrint('[signUp] Insertando vehículo pasajeros (chapa=$vehiculoChapa)...');
-            final vehicleData = <String, dynamic>{
-              'driver_uuid': _user!.id,
+            vehiculo = <String, dynamic>{
+              'chapa': vehiculoChapa,
               if (vehiculoMarca != null && vehiculoMarca.isNotEmpty)
                 'marca': vehiculoMarca,
               if (vehiculoModelo != null && vehiculoModelo.isNotEmpty)
                 'modelo': vehiculoModelo,
-              'chapa': vehiculoChapa,
               if (vehiculoColor != null && vehiculoColor.isNotEmpty)
                 'color': vehiculoColor,
               if (vehiculoAnio != null) 'año': vehiculoAnio,
               if (vehiculoCapacidad != null) 'capacidad_int': vehiculoCapacidad,
-              if (vehiculoCapacidad != null)
-                'capacidad': vehiculoCapacidad.toString(),
               if (vehiculoCondicion != null) 'condicion': vehiculoCondicion,
               if (vehiculoAireAcondicionado != null)
                 'aire_acondicionado': vehiculoAireAcondicionado,
               if (vehiculoIdTipo != null) 'id_tipo_vehiculo': vehiculoIdTipo,
             };
-            final vehicleId =
-                await _authService.createVehicle(vehicleData);
-            debugPrint('[signUp] Vehículo creado con id=$vehicleId');
-            if (vehicleId != null) {
-              await _authService.linkVehicleToDriver(vehicleId);
-              debugPrint('[signUp] Vehículo enlazado al driver OK');
-            } else {
-              debugPrint('[signUp][WARN] createVehicle retornó null; no se enlazó');
-            }
           }
+
+          List<Map<String, dynamic>>? carroceriasPayload;
+          if (tipoUsuario == 'carrier_carga' &&
+              carrocerias != null &&
+              carrocerias.isNotEmpty) {
+            carroceriasPayload = carrocerias;
+          }
+
+          final rpcResult = await _authService.registerDriverProfile(
+            perfil: perfil,
+            vehiculo: vehiculo,
+            carrocerias: carroceriasPayload,
+          );
+          debugPrint('[signUp] Perfil driver RPC OK: $rpcResult');
         } else {
           debugPrint('[signUp] Creando perfil usuario (tipo=$tipoUsuario)...');
           await _authService.createUserProfile({

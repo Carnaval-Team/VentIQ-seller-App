@@ -11,6 +11,7 @@ import '../services/currency_service.dart';
 import '../services/product_service.dart';
 import '../services/store_config_service.dart';
 import '../services/mesa_cuenta_service.dart';
+import '../services/offline_database_service.dart';
 import '../models/product.dart';
 import '../widgets/changelog_dialog.dart';
 import '../widgets/sales_monitor_fab.dart';
@@ -50,6 +51,7 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _redirectIfInventoryOnly();
     _checkForChangelog();
     _loadCategories();
     _loadUsdRate();
@@ -58,6 +60,13 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
     _searchController.addListener(() {
       _onSearchChanged(_searchController.text);
     });
+  }
+
+  Future<void> _redirectIfInventoryOnly() async {
+    final only = await _preferencesService.isInventoryOnlySession();
+    if (only && mounted) {
+      Navigator.of(context).pushReplacementNamed('/admin-home');
+    }
   }
 
   @override
@@ -113,15 +122,53 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
         _errorMessage = null;
       });
 
-      final categories = await _categoryService.getCategories();
+      final useLocalData = await _preferencesService.shouldUseLocalData();
+      List categories;
+
+      if (useLocalData) {
+        print('🔌 Offline/full-offline - Cargando categorías locales...');
+        final offlineData = await _preferencesService.getOfflineData();
+        final categoriesData = offlineData?['categories'];
+        if (categoriesData is! List || categoriesData.isEmpty) {
+          throw Exception(
+            'No hay categorías en cache offline. Sincroniza en Configuración.',
+          );
+        }
+        categories =
+            categoriesData.map((catData) {
+              final categoryData = Map<String, dynamic>.from(catData as Map);
+              final id = (categoryData['id'] as num?)?.toInt() ?? 0;
+              final name =
+                  categoryData['name'] as String? ??
+                  categoryData['nombre'] as String? ??
+                  'Sin nombre';
+              final imageUrl =
+                  categoryData['imageUrl'] as String? ??
+                  categoryData['imagen'] as String? ??
+                  categoryData['image'] as String?;
+              final colorValue = (categoryData['color'] as num?)?.toInt();
+              return Category(
+                id: id,
+                name: name,
+                description: categoryData['descripcion'] as String?,
+                imageUrl: imageUrl,
+                color: Color(colorValue ?? const Color(0xFF4A90E2).value),
+                isActive: categoryData['activo'] as bool? ?? true,
+                productCount:
+                    (categoryData['total_productos'] as num?)?.toInt() ?? 0,
+              );
+            }).toList();
+      } else {
+        categories = await _categoryService.getCategories();
+      }
 
       setState(() {
-        _categories = categories;
+        _categories = List<Category>.from(categories);
         _isLoading = false;
         _categoriesLoaded = true;
       });
 
-      debugPrint('✅ Categorías cargadas: ${categories.length}');
+      debugPrint('✅ Categorías cargadas: ${_categories.length}');
     } catch (e) {
       setState(() {
         _errorMessage = 'Error al cargar categorías: $e';
@@ -205,16 +252,49 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
       return;
     }
 
-    if (_isOfflineModeEnabled) {
+    final useLocalData = await _preferencesService.shouldUseLocalData();
+    if (useLocalData) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              '🔌 Modo offline activo: la búsqueda global requiere conexión',
-            ),
-            duration: Duration(seconds: 2),
-          ),
-        );
+        setState(() => _isSearchingProducts = true);
+      }
+      try {
+        final rows = await OfflineDatabaseService().searchProducts(trimmed);
+        final results =
+            rows
+                .map(
+                  (p) => Product(
+                    id: (p['id'] as num?)?.toInt() ?? 0,
+                    denominacion: p['denominacion'] as String? ?? 'Sin nombre',
+                    descripcion: p['descripcion'] as String?,
+                    sku: p['sku'] as String?,
+                    foto: p['foto'] as String?,
+                    precio: (p['precio'] as num?)?.toDouble() ?? 0.0,
+                    cantidad: p['cantidad'] as num? ?? 0,
+                    categoria: p['categoria'] as String? ?? '',
+                    esRefrigerado: false,
+                    esFragil: false,
+                    esPeligroso: false,
+                    esVendible: true,
+                    esComprable: true,
+                    esInventariable: true,
+                    esPorLotes: false,
+                    esElaborado: false,
+                    esServicio: false,
+                    variantes: [],
+                  ),
+                )
+                .toList();
+        if (!mounted) return;
+        setState(() {
+          _searchResults = results;
+          _isSearchingProducts = false;
+        });
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _isSearchingProducts = false;
+          _searchResults = [];
+        });
       }
       return;
     }

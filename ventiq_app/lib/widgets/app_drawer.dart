@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:convert';
+import '../services/admin_access_service.dart';
 import '../services/auth_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
@@ -19,6 +20,8 @@ class _AppDrawerState extends State<AppDrawer> {
   String _appVersion = 'Cargando...';
   bool _modoRestaurante = false;
   bool _isSuperAdmin = false;
+  bool _canManageInventory = false;
+  bool _inventoryOnly = false;
 
   @override
   void initState() {
@@ -27,6 +30,7 @@ class _AppDrawerState extends State<AppDrawer> {
     _loadAppVersion();
     _loadModoRestaurante();
     _loadSuperAdminFlag();
+    _loadAdminAccess();
   }
 
   /// Carga el flag de superadmin (cacheado en login). Controla la visibilidad
@@ -39,6 +43,23 @@ class _AppDrawerState extends State<AppDrawer> {
       }
     } catch (e) {
       print('❌ Error cargando flag superadmin en drawer: $e');
+    }
+  }
+
+  /// Solo gerente/supervisor → menú Administración.
+  /// Si es sesión solo-gestión, se ocultan opciones de venta/caja.
+  Future<void> _loadAdminAccess() async {
+    try {
+      final admin = AdminAccessService();
+      final can = await admin.canManageInventory();
+      final only = await admin.isInventoryOnlySession();
+      if (!mounted) return;
+      setState(() {
+        _canManageInventory = can;
+        _inventoryOnly = only;
+      });
+    } catch (e) {
+      print('❌ Error cargando acceso admin en drawer: $e');
     }
   }
 
@@ -236,104 +257,137 @@ class _AppDrawerState extends State<AppDrawer> {
             child: ListView(
               padding: const EdgeInsets.symmetric(vertical: 8),
               children: [
-                // Modo restaurante: el item de mesas va primero como entrada
-                // principal de la operación. La "Venta de Productos" se
-                // mantiene debajo (útil para venta de mostrador puntual).
-                if (_modoRestaurante) ...[
+                // Gerente/supervisor: solo gestión de inventario/productos
+                if (_inventoryOnly) ...[
                   _buildDrawerItem(
                     context,
-                    icon: Icons.table_restaurant,
-                    title: 'Mesas y Comensales',
-                    subtitle: 'Gestionar mesas y cuentas abiertas',
+                    icon: Icons.admin_panel_settings,
+                    title: 'Administración',
+                    subtitle: 'Inventario y productos',
                     onTap: () {
                       Navigator.pop(context);
                       Navigator.pushNamedAndRemoveUntil(
                         context,
-                        '/mesas',
+                        '/admin-home',
                         (route) => false,
                       );
                     },
                   ),
                   const Divider(height: 1),
-                ],
-
-                _buildDrawerItem(
-                  context,
-                  icon: Icons.shopping_cart,
-                  title: _modoRestaurante
-                      ? 'Venta de Mostrador'
-                      : 'Venta de Productos',
-                  subtitle: 'Ir al catálogo de productos',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.pushNamedAndRemoveUntil(
+                ] else ...[
+                  // Modo restaurante: el item de mesas va primero como entrada
+                  // principal de la operación. La "Venta de Productos" se
+                  // mantiene debajo (útil para venta de mostrador puntual).
+                  if (_modoRestaurante) ...[
+                    _buildDrawerItem(
                       context,
-                      '/categories',
-                      (route) => false,
-                    );
-                  },
-                ),
-                const Divider(height: 1),
+                      icon: Icons.table_restaurant,
+                      title: 'Mesas y Comensales',
+                      subtitle: 'Gestionar mesas y cuentas abiertas',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.pushNamedAndRemoveUntil(
+                          context,
+                          '/mesas',
+                          (route) => false,
+                        );
+                      },
+                    ),
+                    const Divider(height: 1),
+                  ],
 
-                _buildDrawerItem(
-                  context,
-                  icon: Icons.lock_open,
-                  title: 'Crear Apertura',
-                  subtitle: 'Abrir caja para el día',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.pushNamed(context, '/apertura');
-                  },
-                ),
-                const Divider(height: 1),
+                  _buildDrawerItem(
+                    context,
+                    icon: Icons.shopping_cart,
+                    title: _modoRestaurante
+                        ? 'Venta de Mostrador'
+                        : 'Venta de Productos',
+                    subtitle: 'Ir al catálogo de productos',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamedAndRemoveUntil(
+                        context,
+                        '/categories',
+                        (route) => false,
+                      );
+                    },
+                  ),
+                  const Divider(height: 1),
 
-                _buildDrawerItem(
-                  context,
-                  icon: Icons.money_off,
-                  title: 'Crear Egreso',
-                  subtitle: 'Registrar salida de dinero',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.pushNamed(context, '/egreso');
-                  },
-                ),
-                const Divider(height: 1),
+                  _buildDrawerItem(
+                    context,
+                    icon: Icons.lock_open,
+                    title: 'Crear Apertura',
+                    subtitle: 'Abrir caja para el día',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(context, '/apertura');
+                    },
+                  ),
+                  const Divider(height: 1),
 
-                _buildDrawerItem(
-                  context,
-                  icon: Icons.receipt_long,
-                  title: 'Venta Total',
-                  subtitle: 'Ver productos vendidos',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.pushNamed(context, '/venta-total');
-                  },
-                ),
-                const Divider(height: 1),
+                  _buildDrawerItem(
+                    context,
+                    icon: Icons.money_off,
+                    title: 'Crear Egreso',
+                    subtitle: 'Registrar salida de dinero',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(context, '/egreso');
+                    },
+                  ),
+                  const Divider(height: 1),
 
-                _buildDrawerItem(
-                  context,
-                  icon: Icons.lock,
-                  title: 'Crear Cierre',
-                  subtitle: 'Cerrar caja del día',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.pushNamed(context, '/cierre');
-                  },
-                ),
-                const Divider(height: 1),
+                  _buildDrawerItem(
+                    context,
+                    icon: Icons.receipt_long,
+                    title: 'Venta Total',
+                    subtitle: 'Ver productos vendidos',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(context, '/venta-total');
+                    },
+                  ),
+                  const Divider(height: 1),
 
-                _buildDrawerItem(
-                  context,
-                  icon: Icons.people,
-                  title: 'Trabajadores de Turno',
-                  subtitle: 'Gestionar trabajadores del turno',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.pushNamed(context, '/shift-workers');
-                  },
-                ),
-                const Divider(height: 1),
+                  _buildDrawerItem(
+                    context,
+                    icon: Icons.lock,
+                    title: 'Crear Cierre',
+                    subtitle: 'Cerrar caja del día',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(context, '/cierre');
+                    },
+                  ),
+                  const Divider(height: 1),
+
+                  _buildDrawerItem(
+                    context,
+                    icon: Icons.people,
+                    title: 'Trabajadores de Turno',
+                    subtitle: 'Gestionar trabajadores del turno',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(context, '/shift-workers');
+                    },
+                  ),
+                  const Divider(height: 1),
+
+                  if (_canManageInventory) ...[
+                    _buildDrawerItem(
+                      context,
+                      icon: Icons.admin_panel_settings,
+                      title: 'Administración',
+                      subtitle: 'Inventario y productos',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.pushNamed(context, '/admin-home');
+                      },
+                    ),
+                    const Divider(height: 1),
+                  ],
+                ],
 
                 // Entrada oculta: solo visible para superadmins. Diagnóstico de
                 // los datos guardados para trabajar offline.
@@ -354,8 +408,10 @@ class _AppDrawerState extends State<AppDrawer> {
                 _buildDrawerItem(
                   context,
                   icon: Icons.logout,
-                  title: 'Cerrar Sesión',
-                  subtitle: 'Salir de la aplicación',
+                  title: _inventoryOnly || _canManageInventory
+                      ? 'Cambiar usuario / Salir'
+                      : 'Cerrar Sesión',
+                  subtitle: 'Salir o cambiar de cuenta en este dispositivo',
                   onTap: () => _handleLogout(context),
                 ),
               ],
@@ -384,16 +440,67 @@ class _AppDrawerState extends State<AppDrawer> {
     );
   }
 
-  // Manejar logout
+  // Manejar logout / cambio local de usuario
   Future<void> _handleLogout(BuildContext context) async {
     try {
-      // Mostrar diálogo de confirmación
+      final prefs = UserPreferencesService();
+      final fullOffline = await prefs.isDeviceFullOfflineReady();
+      final hasUnsynced = await prefs.hasUnsyncedOfflineData();
+      final storeId = await prefs.getOfflineInventoryStoreId();
+
+      if (fullOffline) {
+        final bool? confirm = await showDialog<bool>(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: const Text('Cambiar de usuario'),
+              content: Text(
+                hasUnsynced
+                    ? 'Hay operaciones sin sincronizar (se conservan). '
+                        'Se abrirá el selector local sin salir al servidor.'
+                    : 'Se abrirá el selector local (admin/vendedor) sin '
+                        'conexión al servidor. Inventario de la tienda'
+                        '${storeId != null ? ' #$storeId' : ''} conservado.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Cancelar'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Cambiar usuario'),
+                ),
+              ],
+            );
+          },
+        );
+
+        if (confirm == true) {
+          await prefs.clearSessionKeepingStoreOffline();
+          AdminAccessService().clearMemoryCache();
+          if (context.mounted) {
+            Navigator.of(context).pushNamedAndRemoveUntil(
+              '/offline-user-switch',
+              (route) => false,
+            );
+          }
+        }
+        return;
+      }
+
       final bool? confirm = await showDialog<bool>(
         context: context,
         builder: (BuildContext context) {
           return AlertDialog(
             title: const Text('Cerrar Sesión'),
-            content: const Text('¿Estás seguro de que quieres cerrar sesión?'),
+            content: Text(
+              hasUnsynced
+                  ? 'Hay ventas u operaciones sin sincronizar. '
+                      'El inventario de la tienda${storeId != null ? ' #$storeId' : ''} '
+                      'se conserva. ¿Cerrar sesión?'
+                  : '¿Cerrar sesión? El inventario local se conserva.',
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(false),
@@ -410,15 +517,10 @@ class _AppDrawerState extends State<AppDrawer> {
       );
 
       if (confirm == true) {
-        // Cerrar sesión en Supabase
         await AuthService().signOut();
-
-        // Limpiar datos del usuario de las preferencias
         await UserPreferencesService().clearUserData();
+        print('🔓 Sesión cerrada (inventario de tienda conservado)');
 
-        print('🔓 Sesión cerrada y datos limpiados');
-
-        // Navegar al login y limpiar toda la pila de navegación
         if (context.mounted) {
           Navigator.of(
             context,

@@ -26,6 +26,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   bool _needMasterPasswordToCancel = false;
   bool _needAllOrdersCompletedToContinue = false;
   bool _manejaInventario = false;
+  bool _mostrarDebeHaberEnConteoInventario = false;
   bool _permiteVenderAunSinDisponibilidad = false;
   bool _noSolicitarCliente = false;
   bool _allowDiscountOnVendedor = false;
@@ -34,6 +35,8 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   bool _precioVentaRegidoPorUsd = false;
   bool _cambiarFechaCreacionOperacionAlCierre = false;
   bool _solicitarImagenOperacion = false;
+  bool _permitirModoOfflineCompleto = false;
+  int _diasMaxSinValidarLicencia = 7;
   String _metodoRedondeoPrecioVenta = 'NO_REDONDEAR';
   bool _hasMasterPassword = false;
   bool _showMasterPasswordField = false;
@@ -225,6 +228,75 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
     }
   }
 
+  Future<void> _updatePermitirModoOfflineCompletoSetting(bool value) async {
+    if (_storeId == null) return;
+
+    try {
+      await StoreConfigService.updatePermitirModoOfflineCompleto(
+        _storeId!,
+        value,
+      );
+      setState(() => _permitirModoOfflineCompleto = value);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              value
+                  ? '✅ Los vendedores podrán trabajar completamente offline'
+                  : '🔒 Modo offline completo desactivado para los vendedores',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuración: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateDiasMaxSinValidarLicenciaSetting(int value) async {
+    if (_storeId == null || value < 1) return;
+
+    final previousValue = _diasMaxSinValidarLicencia;
+    setState(() => _diasMaxSinValidarLicencia = value);
+
+    try {
+      await StoreConfigService.updateDiasMaxSinValidarLicencia(
+        _storeId!,
+        value,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Ventana de validación de licencia: $value día${value == 1 ? '' : 's'}',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _diasMaxSinValidarLicencia = previousValue);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuración: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _updatePrecioVentaRegidoPorUsdSetting(bool value) async {
     if (_storeId == null) return;
 
@@ -361,6 +433,8 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         _needAllOrdersCompletedToContinue =
             config['need_all_orders_completed_to_continue'] ?? false;
         _manejaInventario = config['maneja_inventario'] ?? false;
+        _mostrarDebeHaberEnConteoInventario =
+            config['mostrar_debe_haber_en_conteo_inventario'] ?? false;
         _permiteVenderAunSinDisponibilidad =
             config['permite_vender_aun_sin_disponibilidad'] ?? false;
         _noSolicitarCliente = config['no_solicitar_cliente'] ?? false;
@@ -375,6 +449,10 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             config['cambiar_fecha_creacion_operacion_al_cierre'] ?? false;
         _solicitarImagenOperacion =
             config['solicitar_imagen_operacion'] ?? false;
+        _permitirModoOfflineCompleto =
+            config['permitir_modo_offline_completo'] ?? false;
+        _diasMaxSinValidarLicencia =
+            config['dias_max_sin_validar_licencia'] ?? 7;
         _metodoRedondeoPrecioVenta =
             config['metodo_redondeo_precio_venta'] ?? 'NO_REDONDEAR';
         _hasMasterPassword = hasMasterPassword;
@@ -410,6 +488,9 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         '  - Completar todas las órdenes: $_needAllOrdersCompletedToContinue',
       );
       print('  - Maneja inventario: $_manejaInventario');
+      print(
+        '  - Mostrar debe haber en conteo: $_mostrarDebeHaberEnConteoInventario',
+      );
       print(
         '  - Permite vender sin disponibilidad: $_permiteVenderAunSinDisponibilidad',
       );
@@ -624,6 +705,52 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       // Revertir el cambio en caso de error
       setState(() {
         _manejaInventario = !value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuración: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateMostrarDebeHaberEnConteoSetting(bool value) async {
+    if (_storeId == null) return;
+
+    try {
+      print(
+        '🔧 Actualizando mostrar debe haber en conteo de inventario: $value',
+      );
+
+      await StoreConfigService.updateMostrarDebeHaberEnConteoInventario(
+        _storeId!,
+        value,
+      );
+
+      setState(() {
+        _mostrarDebeHaberEnConteoInventario = value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              value
+                  ? 'El vendedor verá la cantidad "debe haber" en el conteo'
+                  : 'El vendedor no verá la cantidad "debe haber" en el conteo',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ Error al actualizar mostrar debe haber: $e');
+      setState(() {
+        _mostrarDebeHaberEnConteoInventario = !value;
       });
 
       if (mounted) {
@@ -1079,6 +1206,25 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             onChanged: _updateInventoryManagementSetting,
           ),
 
+          // Subopción: mostrar "debe haber" (solo si hay control de inventario)
+          if (_manejaInventario) ...[
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.only(left: 24),
+              child: _buildConfigCard(
+                icon: Icons.visibility_outlined,
+                iconColor: Colors.lightBlue,
+                title: 'Mostrar "Debe haber" en el conteo',
+                subtitle:
+                    _mostrarDebeHaberEnConteoInventario
+                        ? 'El vendedor ve la cantidad esperada junto al campo de conteo real'
+                        : 'El vendedor solo ingresa la cantidad real, sin ver el esperado',
+                value: _mostrarDebeHaberEnConteoInventario,
+                onChanged: _updateMostrarDebeHaberEnConteoSetting,
+              ),
+            ),
+          ],
+
           const SizedBox(height: 16),
 
           // Configuración de Productos Elaborados sin Disponibilidad
@@ -1198,6 +1344,11 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             value: _solicitarImagenOperacion,
             onChanged: _updateSolicitarImagenOperacionSetting,
           ),
+
+          const SizedBox(height: 16),
+
+          // Configuración de Modo Offline Completo
+          _buildModoOfflineCompletoCard(),
 
           const SizedBox(height: 16),
 
@@ -1691,6 +1842,151 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                       'Contraseña maestra configurada correctamente',
                       style: TextStyle(color: Colors.green, fontSize: 12),
                     ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModoOfflineCompletoCard() {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color:
+              _permitirModoOfflineCompleto
+                  ? Colors.deepPurple.withOpacity(0.4)
+                  : Colors.grey.withOpacity(0.2),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Material(
+            color: Colors.transparent,
+            type: MaterialType.transparency,
+            borderRadius: BorderRadius.circular(12),
+            clipBehavior: Clip.antiAlias,
+            child: SwitchListTile(
+              secondary: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.deepPurple.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.wifi_off_outlined,
+                  color: Colors.deepPurple,
+                  size: 22,
+                ),
+              ),
+              title: const Text(
+                'Modo Offline Completo',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+              ),
+              subtitle: Text(
+                _permitirModoOfflineCompleto
+                    ? '✅ Los vendedores pueden trabajar sin conexión con licencia activa'
+                    : '🔒 Los vendedores requieren conexión para operar',
+                style: const TextStyle(fontSize: 13),
+              ),
+              value: _permitirModoOfflineCompleto,
+              activeColor: Colors.deepPurple,
+              onChanged: _updatePermitirModoOfflineCompletoSetting,
+            ),
+          ),
+          if (_permitirModoOfflineCompleto) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.timer_outlined,
+                        size: 18,
+                        color: Colors.deepPurple[700],
+                      ),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Días máximos sin validar licencia',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.remove_circle_outline),
+                        color: Colors.deepPurple,
+                        onPressed:
+                            _diasMaxSinValidarLicencia > 1
+                                ? () =>
+                                    _updateDiasMaxSinValidarLicenciaSetting(
+                                      _diasMaxSinValidarLicencia - 1,
+                                    )
+                                : null,
+                      ),
+                      Text(
+                        '$_diasMaxSinValidarLicencia',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add_circle_outline),
+                        color: Colors.deepPurple,
+                        onPressed:
+                            _diasMaxSinValidarLicencia < 90
+                                ? () =>
+                                    _updateDiasMaxSinValidarLicenciaSetting(
+                                      _diasMaxSinValidarLicencia + 1,
+                                    )
+                                : null,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        size: 16,
+                        color: Colors.deepPurple[700],
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'El vendedor deberá conectarse al menos una vez cada '
+                          '$_diasMaxSinValidarLicencia día${_diasMaxSinValidarLicencia == 1 ? '' : 's'} '
+                          'para revalidar la licencia. Al vencer esta ventana o la suscripción, la app se bloqueará hasta reconectarse.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.deepPurple[800],
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

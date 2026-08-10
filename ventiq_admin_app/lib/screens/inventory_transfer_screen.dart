@@ -5,6 +5,7 @@ import '../models/warehouse.dart';
 import '../services/warehouse_service.dart';
 import '../services/inventory_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/permissions_service.dart';
 import '../widgets/presentacion_equivalencia_widget.dart';
 
 class InventoryTransferScreen extends StatefulWidget {
@@ -21,6 +22,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   final _transportadoPorController = TextEditingController();
   final _recibidoPorController = TextEditingController();
   final _observacionesController = TextEditingController();
+  final _permissionsService = PermissionsService();
 
   // Persist across screen instances
   static String _lastEntregadoPor = '';
@@ -34,6 +36,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   WarehouseZone? _selectedDestinationLocation;
   bool _isLoading = false;
   bool _isLoadingWarehouses = true;
+  /// Solo el gerente puede "Registrar y Completar" en un solo paso.
+  bool _canRegisterAndComplete = false;
 
   // Inline product list state
   List<Map<String, dynamic>> _sourceProducts = [];
@@ -63,9 +67,14 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   void initState() {
     super.initState();
     _loadWarehouses();
-
-    // Load persisted values from previous entries
     _loadPersistedValues();
+    _loadGerentePermission();
+  }
+
+  Future<void> _loadGerentePermission() async {
+    final role = await _permissionsService.getUserRole();
+    if (!mounted) return;
+    setState(() => _canRegisterAndComplete = role == UserRole.gerente);
   }
 
   void _loadPersistedValues() {
@@ -294,7 +303,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     );
   }
 
-  Future<void> _submitTransfer() async {
+  Future<void> _submitTransfer({required bool completarOperaciones}) async {
     _buildSelectedProductsFromInputs();
     if (!_formKey.currentState!.validate() || _selectedProducts.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -324,6 +333,18 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           content: Text(
             'Las ubicaciones de origen y destino no pueden ser las mismas',
           ),
+        ),
+      );
+      return;
+    }
+
+    if (completarOperaciones && !_canRegisterAndComplete) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Solo el gerente puede registrar y completar en un solo paso',
+          ),
+          backgroundColor: Colors.red,
         ),
       );
       return;
@@ -453,7 +474,9 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       setState(() {
         _currentStep = 2;
         _transferProgress = 0.4;
-        _transferStatus = 'Procesando transferencia...';
+        _transferStatus = completarOperaciones
+            ? 'Registrando y completando transferencia...'
+            : 'Registrando transferencia (pendiente)...';
       });
 
       // Use unified transfer function for all scenarios
@@ -465,7 +488,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         transportadoPor: _transportadoPorController.text.trim(),
         recibidoPor: _recibidoPorController.text.trim(),
         observaciones: _observacionesController.text,
-        completarOperaciones: true,
+        completarOperaciones: completarOperaciones,
       );
 
       print('📋 Resultado de la transferencia:');
@@ -483,7 +506,9 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         setState(() {
           _currentStep = 2;
           _transferProgress = 1.0;
-          _transferStatus = '¡Transferencia completada!';
+          _transferStatus = completarOperaciones
+              ? '¡Transferencia registrada y completada!'
+              : '¡Transferencia registrada (pendiente)!';
         });
 
         // Wait a moment to show the completed state
@@ -1143,21 +1168,64 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _isLoading ? null : _submitTransfer,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
+            child: OutlinedButton.icon(
+              onPressed: _isLoading
+                  ? null
+                  : () => _submitTransfer(completarOperaciones: false),
+              icon: _isLoading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.save_outlined),
+              label: Text(
+                _isLoading ? 'Procesando...' : 'Registrar Transferencia',
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
               ),
-              child:
-                  _isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text(
-                        'Registrar Transferencia',
-                        style: TextStyle(color: Colors.white, fontSize: 16),
-                      ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.primary,
+                side: const BorderSide(color: AppColors.primary),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
             ),
           ),
+          if (_canRegisterAndComplete) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _isLoading
+                    ? null
+                    : () => _submitTransfer(completarOperaciones: true),
+                icon: _isLoading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.check_circle_outline),
+                label: Text(
+                  _isLoading
+                      ? 'Procesando...'
+                      : 'Registrar y Completar Transferencia',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green.shade700,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

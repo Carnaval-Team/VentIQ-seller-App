@@ -677,6 +677,11 @@ class PermissionsService {
       UserRole.supervisor,
       UserRole.almacenero,
     ],
+    'inventory.complete_transfer': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.almacenero,
+    ],
     'inventory.create_adjustment': [UserRole.gerente],
     'inventory.approve_adjustment': [UserRole.gerente, UserRole.supervisor],
     'inventory.view': [

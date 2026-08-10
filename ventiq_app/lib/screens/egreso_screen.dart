@@ -613,7 +613,13 @@ class _EgresoScreenState extends State<EgresoScreen> {
       final motivo = _motivoController.text.trim();
       final nombreAutoriza = _nombreAutorizaController.text.trim();
       final nombreRecibe = _nombreRecibeController.text.trim();
-      final idTurno = _turnoAbierto!['id'] as int;
+      final turnoIdRaw = _turnoAbierto!['id'];
+      final serverIdTurno =
+          _turnoAbierto!['server_id_turno'] as int? ??
+          (turnoIdRaw is int ? turnoIdRaw : null);
+      final localTurnoId =
+          _turnoAbierto!['local_id']?.toString() ??
+          _turnoAbierto!['local_turno_id']?.toString();
 
       // Verificar si el modo offline está activado
       final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
@@ -621,7 +627,8 @@ class _EgresoScreenState extends State<EgresoScreen> {
       if (isOfflineModeEnabled) {
         print('🔌 Modo offline - Creando egreso offline...');
         await _createOfflineEgreso(
-          idTurno: idTurno,
+          localTurnoId: localTurnoId,
+          serverIdTurno: serverIdTurno,
           monto: monto,
           motivo: motivo,
           nombreAutoriza: nombreAutoriza,
@@ -629,9 +636,12 @@ class _EgresoScreenState extends State<EgresoScreen> {
         );
       } else {
         print('🌐 Modo online - Registrando egreso en servidor...');
+        if (serverIdTurno == null) {
+          throw Exception('No hay id de turno válido para registrar el egreso');
+        }
         // Llamar a la función RPC
         final result = await TurnoService.registrarEgresoParcial(
-          idTurno: idTurno,
+          idTurno: serverIdTurno,
           montoEntrega: monto,
           motivoEntrega: motivo,
           nombreAutoriza: nombreAutoriza,
@@ -707,7 +717,8 @@ class _EgresoScreenState extends State<EgresoScreen> {
 
   /// Crear egreso offline
   Future<void> _createOfflineEgreso({
-    required int idTurno,
+    String? localTurnoId,
+    int? serverIdTurno,
     required double monto,
     required String motivo,
     required String nombreAutoriza,
@@ -716,7 +727,8 @@ class _EgresoScreenState extends State<EgresoScreen> {
     try {
       // Crear estructura de egreso offline
       final egresoData = {
-        'id_turno': idTurno,
+        if (serverIdTurno != null) 'id_turno': serverIdTurno,
+        if (localTurnoId != null) 'local_turno_id': localTurnoId,
         'monto_entrega': monto,
         'motivo_entrega': motivo,
         'nombre_autoriza': nombreAutoriza,

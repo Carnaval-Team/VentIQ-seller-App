@@ -73,12 +73,15 @@ class _PendingOrdersFABState extends State<PendingOrdersFAB>
 
   Future<void> _loadPendingOrders() async {
     final orders = await _userPrefs.getPendingOrders();
+    // Solo las que aún no se subieron al servidor
+    final unsynced =
+        orders.where((o) => o['synced'] != true).toList(growable: false);
     if (!mounted) return;
     setState(() {
-      _pendingOrders = orders;
+      _pendingOrders = unsynced;
       _isSyncing = _autoSyncService.isSyncing;
       // Si ya no hay órdenes, cerrar el panel
-      if (orders.isEmpty && _isExpanded) {
+      if (unsynced.isEmpty && _isExpanded) {
         _isExpanded = false;
         _animationController.reverse();
       }
@@ -95,21 +98,93 @@ class _PendingOrdersFABState extends State<PendingOrdersFAB>
     }
   }
 
+  /// Confirmación extra si el dispositivo está en offline / full offline.
+  Future<bool> _confirmSyncIfOffline({required bool single}) async {
+    final offline = await _userPrefs.isOfflineModeEnabled();
+    final fullOffline = await _userPrefs.shouldStayFullyOffline();
+    if (!offline && !fullOffline) return true;
+
+    final modeLabel = fullOffline ? 'full offline' : 'offline';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Sincronizar en modo offline'),
+        content: Text(
+          single
+              ? 'El dispositivo está en modo $modeLabel.\n\n'
+                  'Al sincronizar esta orden se usará la conexión al servidor '
+                  'solo para subirla y asignar el número de operación. '
+                  'El modo offline se mantendrá activo.\n\n'
+                  '¿Deseas continuar?'
+              : 'El dispositivo está en modo $modeLabel.\n\n'
+                  'Al sincronizar se usará la conexión al servidor para subir '
+                  'las órdenes pendientes y actualizar su número de operación. '
+                  'El modo offline se mantendrá activo.\n\n'
+                  '¿Deseas continuar?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Sincronizar'),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
   Future<void> _syncAll() async {
     if (_isSyncing) return;
+    if (!await _confirmSyncIfOffline(single: false)) return;
+
     setState(() => _isSyncing = true);
     try {
-      await _autoSyncService.forceSyncNow();
+      // Solo ventas pendientes; no apaga el modo offline (confirmado arriba).
+      final synced = await _autoSyncService.forceSyncPendingOrders();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              synced > 0
+                  ? '$synced orden(es) sincronizada(s). Número de operación actualizado.'
+                  : 'No había órdenes pendientes por sincronizar',
+            ),
+            backgroundColor: synced > 0 ? Colors.green : Colors.orange,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     } catch (e) {
       print('❌ Error en sincronización forzada: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al sincronizar: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
-    // Dar tiempo para que se limpie el almacenamiento
+    // Dar tiempo para que se persista id_operacion / synced
     await Future.delayed(const Duration(milliseconds: 500));
     await _loadPendingOrders();
     widget.onSyncCompleted?.call();
+    if (mounted) {
+      setState(() => _isSyncing = false);
+    }
   }
 
   Future<void> _retryOrder(String orderId) async {
+    if (!await _confirmSyncIfOffline(single: true)) return;
+
     setState(() => _retryingOrderId = orderId);
     final success = await _autoSyncService.syncSinglePendingOrder(orderId);
     if (!mounted) return;

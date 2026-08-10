@@ -19,6 +19,7 @@ import '../widgets/location_selector_widget.dart';
 import '../services/product_search_service.dart';
 import '../utils/presentation_converter.dart';
 import '../services/export_service.dart';
+import '../utils/ticket_text_utils.dart';
 
 class InventoryExtractionBySaleScreen extends StatefulWidget {
   const InventoryExtractionBySaleScreen({super.key});
@@ -2051,47 +2052,53 @@ class _InventoryExtractionBySaleScreenState
     int copyNumber = 1,
   }) {
     List<int> bytes = [];
+    List<int> line(String text, {PosStyles? styles}) {
+      return generator.text(
+        sanitizeForThermalPrinter(text),
+        styles: styles ?? const PosStyles(),
+      );
+    }
 
     // Header
-    bytes += generator.text(
+    bytes += line(
       'INVENTTIA',
       styles: PosStyles(align: PosAlign.center, bold: true),
     );
-    bytes += generator.text(
+    bytes += line(
       'VENTA POR ACUERDO',
       styles: PosStyles(align: PosAlign.center, bold: true),
     );
 
     // Indicador de copia
     String copyLabel =
-        copyNumber == 1 ? 'COMPROBANTE PRINCIPAL' : 'COMPROBANTE ALMACÉN';
-    bytes += generator.text(
+        copyNumber == 1 ? 'COMPROBANTE PRINCIPAL' : 'COMPROBANTE ALMACEN';
+    bytes += line(
       copyLabel,
       styles: PosStyles(align: PosAlign.center, bold: true),
     );
-    bytes += generator.text(
+    bytes += line(
       '----------------------------',
       styles: PosStyles(align: PosAlign.center),
     );
 
     // Información de la venta
-    bytes += generator.text(
+    bytes += line(
       'Cliente: ${_clienteController.text.isNotEmpty ? _clienteController.text : 'N/A'}',
       styles: PosStyles(align: PosAlign.left),
     );
-    bytes += generator.text(
+    bytes += line(
       'Tipo: ${_selectedMotivoVenta?['denominacion'] ?? 'N/A'}',
       styles: PosStyles(align: PosAlign.left),
     );
-    bytes += generator.text(
+    bytes += line(
       'Pago: ${_selectedMedioPago?['denominacion'] ?? 'N/A'}',
       styles: PosStyles(align: PosAlign.left),
     );
-    bytes += generator.text(
+    bytes += line(
       'Fecha: ${DateTime.now().toString().split('.')[0]}',
       styles: PosStyles(align: PosAlign.left),
     );
-    bytes += generator.text(
+    bytes += line(
       '----------------------------',
       styles: PosStyles(align: PosAlign.center),
     );
@@ -2110,46 +2117,48 @@ class _InventoryExtractionBySaleScreenState
           'Producto';
       final variante = product['variante'] as String? ?? '';
       if (variante.isNotEmpty) nombre = '$nombre ($variante)';
-      if (nombre.length > 28) nombre = nombre.substring(0, 25) + '...';
 
-      bytes += generator.text(
-        '${cantidad % 1 == 0 ? cantidad.toInt() : cantidad.toStringAsFixed(2)}x $nombre',
-        styles: PosStyles(align: PosAlign.left),
-      );
-      bytes += generator.text(
+      for (final wrapped in formatTicketProductLines(
+        cantidad % 1 == 0 ? cantidad.toInt() : cantidad.toStringAsFixed(2),
+        nombre,
+      )) {
+        bytes += line(wrapped, styles: PosStyles(align: PosAlign.left));
+      }
+      bytes += line(
         '  \$${precio.toStringAsFixed(2)} = \$${subtotal.toStringAsFixed(2)}',
         styles: PosStyles(align: PosAlign.right),
       );
     }
 
     // Total
-    bytes += generator.text(
+    bytes += line(
       '----------------------------',
       styles: PosStyles(align: PosAlign.center),
     );
-    bytes += generator.text(
+    bytes += line(
       'TOTAL: \$${_calculateTotal().toStringAsFixed(2)}',
       styles: PosStyles(align: PosAlign.right, bold: true),
     );
 
     // Observaciones
     if (_observacionesController.text.isNotEmpty) {
-      bytes += generator.text(
+      bytes += line(
         '----------------------------',
         styles: PosStyles(align: PosAlign.center),
       );
-      bytes += generator.text(
+      for (final wrapped in wrapTicketText(
         'Obs: ${_observacionesController.text}',
-        styles: PosStyles(align: PosAlign.left),
-      );
+      )) {
+        bytes += line(wrapped, styles: PosStyles(align: PosAlign.left));
+      }
     }
 
     // Footer
-    bytes += generator.text(
+    bytes += line(
       '----------------------------',
       styles: PosStyles(align: PosAlign.center),
     );
-    bytes += generator.text(
+    bytes += line(
       'Gracias por su compra',
       styles: PosStyles(align: PosAlign.center),
     );

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:excel/excel.dart' as excel;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -52,7 +53,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
   String _selectedWarehouse = 'Todos';
   List<Map<String, dynamic>> _warehouses = [];
   bool _isLoadingWarehouses = false;
-  bool _isExportingPdf = false;
+  bool _isExporting = false;
   bool _isAuditing = false;
   bool _filtersExpanded = false;
   String? _selectedTipoMovimiento;
@@ -140,24 +141,25 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
     try {
       // Cargar tipos de operación
       final types = await ProductMovementsService.getOperationTypes();
-      
-      // Cargar primera página de movimientos
-      final result = await ProductMovementsService.getProductMovements(
+
+      // Traer TODOS los movimientos del filtro y ordenar por fecha ASC.
+      // El RPC en servidor aún puede ordenar DESC/id_op: con paginado
+      // offset eso rompe la secuencia cronológica.
+      final allMovements =
+          await ProductMovementsService.getAllProductMovements(
         productId: int.parse(_product.id),
         dateFrom: _dateFrom,
         dateTo: _dateTo,
         operationTypeId: _selectedOperationTypeId,
         warehouseId: _selectedWarehouseId,
-        offset: 0,
-        limit: _pageSize,
       );
 
       setState(() {
         _operationTypes = types;
-        _movements = List<Map<String, dynamic>>.from(result['movements'] ?? []);
-        _totalCount = result['total_count'] ?? 0;
-        _currentOffset = _pageSize;
-        _hasMoreData = _movements.length < _totalCount;
+        _movements = allMovements;
+        _totalCount = allMovements.length;
+        _currentOffset = allMovements.length;
+        _hasMoreData = false;
         _applyFilters();
       });
     } catch (e) {
@@ -173,38 +175,9 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
   }
 
   Future<void> _loadMoreData() async {
+    // El listado ya carga el conjunto completo ordenado por fecha.
     if (_isLoadingMore || !_hasMoreData) return;
-    
-    setState(() => _isLoadingMore = true);
-    try {
-      final result = await ProductMovementsService.getProductMovements(
-        productId: int.parse(_product.id),
-        dateFrom: _dateFrom,
-        dateTo: _dateTo,
-        operationTypeId: _selectedOperationTypeId,
-        warehouseId: _selectedWarehouseId,
-        offset: _currentOffset,
-        limit: _pageSize,
-      );
-
-      setState(() {
-        final newMovements = List<Map<String, dynamic>>.from(result['movements'] ?? []);
-        _movements.addAll(newMovements);
-        _totalCount = result['total_count'] ?? 0;
-        _currentOffset += _pageSize;
-        _hasMoreData = _movements.length < _totalCount;
-        _applyFilters();
-      });
-    } catch (e) {
-      print('❌ Error al cargar más movimientos: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al cargar más movimientos: $e')),
-        );
-      }
-    } finally {
-      setState(() => _isLoadingMore = false);
-    }
+    setState(() => _hasMoreData = false);
   }
 
   int? _asInt(dynamic value) {
@@ -271,19 +244,9 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       return true;
     }).toList();
 
-    // Ordenar por fecha ascendente (más antiguos primero).
-    // No usar id: apertura/cierre usan id de control_productos y sesgan el paginado.
-    _filteredMovements.sort((a, b) {
-      final fa = DateTime.tryParse('${a['fecha'] ?? ''}') ??
-          DateTime.fromMillisecondsSinceEpoch(0);
-      final fb = DateTime.tryParse('${b['fecha'] ?? ''}') ??
-          DateTime.fromMillisecondsSinceEpoch(0);
-      final byFecha = fa.compareTo(fb);
-      if (byFecha != 0) return byFecha;
-      final idA = (a['id'] as num?)?.toInt() ?? 0;
-      final idB = (b['id'] as num?)?.toInt() ?? 0;
-      return idA.compareTo(idB);
-    });
+    // Ordenar por fecha de creación (y id de movimiento como desempate).
+    _filteredMovements =
+        ProductMovementsService.sortMovementsByFecha(_filteredMovements);
 
     setState(() {});
   }
@@ -429,29 +392,28 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                 ),
             ],
           ),
-          if (_selectedWarehouseId != null)
-            _isAuditing
-                ? const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: Center(
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
+          _isAuditing
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16),
+                  child: Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
                       ),
                     ),
-                  )
-                : IconButton(
-                    icon: const Icon(Icons.fact_check_outlined),
-                    tooltip: 'Auditar continuidad de stock',
-                    onPressed: (_isLoading || _isExportingPdf)
-                        ? null
-                        : _auditMovementsContinuity,
                   ),
-          if (_isExportingPdf)
+                )
+              : IconButton(
+                  icon: const Icon(Icons.fact_check_outlined),
+                  tooltip: 'Auditar movimientos (almacén o todos)',
+                  onPressed: (_isLoading || _isExporting)
+                      ? null
+                      : _auditMovementsContinuity,
+                ),
+          if (_isExporting)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16),
               child: Center(
@@ -467,9 +429,9 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
             )
           else
             IconButton(
-              icon: const Icon(Icons.picture_as_pdf_outlined),
-              tooltip: 'Exportar PDF',
-              onPressed: (_isLoading || _isAuditing) ? null : _exportMovementsPdf,
+              icon: const Icon(Icons.file_download_outlined),
+              tooltip: 'Exportar',
+              onPressed: (_isLoading || _isAuditing) ? null : _showExportFormatDialog,
             ),
         ],
       ),
@@ -654,17 +616,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
           .where((m) => m['tipo_movimiento'] == _selectedTipoMovimiento)
           .toList();
     }
-    list.sort((a, b) {
-      final fa = DateTime.tryParse('${a['fecha'] ?? ''}') ??
-          DateTime.fromMillisecondsSinceEpoch(0);
-      final fb = DateTime.tryParse('${b['fecha'] ?? ''}') ??
-          DateTime.fromMillisecondsSinceEpoch(0);
-      final byFecha = fa.compareTo(fb);
-      if (byFecha != 0) return byFecha;
-      final idA = (a['id'] as num?)?.toInt() ?? 0;
-      final idB = (b['id'] as num?)?.toInt() ?? 0;
-      return idA.compareTo(idB);
-    });
+    list = ProductMovementsService.sortMovementsByFecha(list);
     return list;
   }
 
@@ -714,13 +666,65 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
     return '#$op · $tipo · $alm · $fecha';
   }
 
-  /// Audita continuidad de stock + emparejado de transferencias.
-  Future<void> _auditMovementsContinuity() async {
-    if (_selectedWarehouseId == null) return;
+  /// Cantidad absoluta de un reajuste de cancelación (sin operación).
+  double _reajusteCancelacionQty(Map<String, dynamic> m) {
+    const epsilon = 0.0001;
+    var qty = (_asDouble(m['cantidad']) ?? 0).abs();
+    if (qty <= epsilon) {
+      final ini = _asDouble(m['cantidad_inicial']);
+      final fin = _asDouble(m['cantidad_final']);
+      if (ini != null && fin != null) {
+        qty = (fin - ini).abs();
+      }
+    }
+    return qty;
+  }
 
+  /// Reajustes de cancelación del listado (sin id_operacion).
+  List<double> _collectCancelReajusteQuantities(
+    List<Map<String, dynamic>> movements,
+  ) {
+    const epsilon = 0.0001;
+    final qtys = <double>[];
+    for (final m in movements) {
+      if (!ProductMovementsService.isCancelacionReajuste(m)) continue;
+      final qty = _reajusteCancelacionQty(m);
+      if (qty > epsilon) qtys.add(qty);
+    }
+    return qtys;
+  }
+
+  bool _hasMatchingCancelReajusteQty(List<double> reajusteQtys, double qty) {
+    const epsilon = 0.0001;
+    for (final r in reajusteQtys) {
+      if ((r - qty).abs() <= epsilon) return true;
+    }
+    return false;
+  }
+
+  bool _isVentaCanceladaODevueltaMov(Map<String, dynamic> m) {
+    final tipoMov = (m['tipo_movimiento'] as String?)?.toLowerCase() ?? '';
+    if (tipoMov != 'extracción' && tipoMov != 'extraccion') return false;
+    final estado =
+        (m['estado_operacion_nombre'] as String?)?.toLowerCase().trim() ?? '';
+    if (estado != 'cancelada' && estado != 'devuelta') return false;
+    final tipoOp = (m['tipo_operacion'] as String?)?.toLowerCase() ?? '';
+    // Preferir ventas; si el tipo viene vacío igual se considera (estado 3/4).
+    if (tipoOp.isNotEmpty &&
+        !tipoOp.contains('venta') &&
+        !tipoOp.contains('carnaval')) {
+      return false;
+    }
+    return true;
+  }
+
+  /// Audita continuidad de stock + emparejado de transferencias.
+  /// Con almacén específico o con "Todos los almacenes".
+  Future<void> _auditMovementsContinuity() async {
     setState(() => _isAuditing = true);
     try {
-      // Sin filtro de almacén: hace falta el otro lado de cada transferencia.
+      // Sin filtro de almacén en la carga: hace falta el otro lado de
+      // cada transferencia aunque el filtro UI sea un almacén concreto.
       final allRaw = await ProductMovementsService.getAllProductMovements(
         productId: int.parse(_product.id),
         dateFrom: _dateFrom,
@@ -733,10 +737,13 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
           .where((m) => !_isAperturaOCierreCaja(m))
           .toList();
 
-      final movements = allPrepared.where((m) {
-        final wid = _asInt(m['almacen_id'] ?? m['id_almacen']);
-        return wid == null || wid == _selectedWarehouseId;
-      }).toList();
+      final selectedWid = _selectedWarehouseId;
+      final movements = selectedWid == null
+          ? allPrepared
+          : allPrepared.where((m) {
+              final wid = _asInt(m['almacen_id'] ?? m['id_almacen']);
+              return wid == null || wid == selectedWid;
+            }).toList();
 
       if (movements.isEmpty) {
         if (!mounted) return;
@@ -748,7 +755,8 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
         return;
       }
 
-      // Continuidad de stock por ubicación dentro del almacén.
+      // Continuidad de stock por ubicación (y almacén si aplica).
+      final auditAllWarehouses = selectedWid == null;
       final byUbicacion = <String, List<Map<String, dynamic>>>{};
       for (final m in movements) {
         final ubiId = _asInt(m['ubicacion_id'] ?? m['id_ubicacion']);
@@ -758,7 +766,17 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                 : (m['ubicacion_nombre'] as String?)?.trim().isNotEmpty == true
                     ? m['ubicacion_nombre'] as String
                     : 'Sin ubicación';
-        final key = ubiId != null ? 'id:$ubiId|$ubiNombre' : 'name:$ubiNombre';
+        final almNombre = auditAllWarehouses
+            ? ((m['almacen'] as String?)?.trim().isNotEmpty == true
+                ? m['almacen'] as String
+                : (m['almacen_nombre'] as String?)?.trim().isNotEmpty == true
+                    ? m['almacen_nombre'] as String
+                    : null)
+            : null;
+        final label = almNombre != null && almNombre.isNotEmpty
+            ? '$almNombre · $ubiNombre'
+            : ubiNombre;
+        final key = ubiId != null ? 'id:$ubiId|$label' : 'name:$label';
         byUbicacion.putIfAbsent(key, () => []).add(m);
       }
 
@@ -825,14 +843,19 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       });
 
       final transferResult = await _auditTransfers(
-        warehouseId: _selectedWarehouseId!,
         warehouseMovements: movements,
         allMovements: allPrepared,
       );
 
       final carnivalResult = await _auditCarnivalOrders(
         productId: int.parse(_product.id),
-        warehouseId: _selectedWarehouseId!,
+        warehouseId: selectedWid,
+        warehouseMovements: movements,
+      );
+
+      final salesResult = await _auditSalesAndCancellations(
+        productId: int.parse(_product.id),
+        warehouseId: selectedWid,
         warehouseMovements: movements,
       );
 
@@ -846,6 +869,8 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
         carnivalOrdersChecked: carnivalResult.ordersChecked,
         carnivalIssues: carnivalResult.issues,
         carnivalSkippedReason: carnivalResult.skippedReason,
+        salesSummary: salesResult.summary,
+        salesCancelIssues: salesResult.issues,
       );
     } catch (e) {
       if (mounted) {
@@ -863,7 +888,6 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
 
   Future<({int pairsChecked, List<_TransferAuditIssue> issues})>
       _auditTransfers({
-    required int warehouseId,
     required List<Map<String, dynamic>> warehouseMovements,
     required List<Map<String, dynamic>> allMovements,
   }) async {
@@ -1099,7 +1123,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
         String? skippedReason,
       })> _auditCarnivalOrders({
     required int productId,
-    required int warehouseId,
+    required int? warehouseId,
     required List<Map<String, dynamic>> warehouseMovements,
   }) async {
     const epsilon = 0.0001;
@@ -1127,14 +1151,18 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       );
     }
 
-    final layoutRows = await _supabase
-        .from('app_dat_layout_almacen')
-        .select('id')
-        .eq('id_almacen', warehouseId);
-    final warehouseUbicaciones = <int>{
-      for (final r in layoutRows as List)
-        if (_asInt((r as Map)['id']) != null) _asInt(r['id'])!,
-    };
+    // Vacío = no filtrar por ubicación (Todos los almacenes).
+    final warehouseUbicaciones = <int>{};
+    if (warehouseId != null) {
+      final layoutRows = await _supabase
+          .from('app_dat_layout_almacen')
+          .select('id')
+          .eq('id_almacen', warehouseId);
+      for (final r in layoutRows as List) {
+        final id = _asInt((r as Map)['id']);
+        if (id != null) warehouseUbicaciones.add(id);
+      }
+    }
 
     // Órdenes Carnaval del producto en el rango de fechas del filtro.
     var detailsQuery = _supabase.schema('carnavalapp').from('OrderDetails').select(
@@ -1304,6 +1332,34 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       }
     }
 
+    // Estado actual de operaciones Inventtia vinculadas a Carnaval.
+    final estadoByOp = <int, int>{};
+    if (allOpIds.isNotEmpty) {
+      for (var i = 0; i < allOpIds.length; i += 80) {
+        final chunk = allOpIds.sublist(
+          i,
+          i + 80 > allOpIds.length ? allOpIds.length : i + 80,
+        );
+        final estados = await _supabase
+            .from('app_dat_estado_operacion')
+            .select('id, id_operacion, estado')
+            .inFilter('id_operacion', chunk)
+            .order('id', ascending: false);
+        for (final raw in estados as List) {
+          final e = Map<String, dynamic>.from(raw as Map);
+          final opId = _asInt(e['id_operacion']);
+          final estado = _asInt(e['estado']);
+          if (opId == null || estado == null) continue;
+          estadoByOp.putIfAbsent(opId, () => estado);
+        }
+      }
+    }
+
+    // Pool de reajustes de cancelación (mismo criterio que ventas Inventtia).
+    final cancelReajusteQtys = _collectCancelReajusteQuantities(
+      warehouseMovements,
+    );
+
     // Movimientos de venta carnaval en el almacén (backup / huérfanos).
     final movOrderIdsFromWarehouse = <int>{};
     final movQtyByOrder = <int, double>{};
@@ -1356,18 +1412,52 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
 
       if (agg.isCancelled) {
         if (hasInventtiaSignal) {
+          final relatedOpIds = ops
+              .map((o) => _asInt(o['id']))
+              .whereType<int>()
+              .toList();
+          final inventtiaCancelledOrReturned = relatedOpIds.isNotEmpty &&
+              relatedOpIds.every((id) {
+                final estado = estadoByOp[id];
+                return estado == 3 || estado == 4;
+              });
+          final expectedQty = inventtiaQtyAll > epsilon
+              ? inventtiaQtyAll
+              : (movQty > epsilon ? movQty : carnavalQty);
+          final hasCancelReajuste = _hasMatchingCancelReajusteQty(
+            cancelReajusteQtys,
+            expectedQty,
+          );
+
+          // Si Inventtia ya está Devuelta/Cancelada y existe el reajuste
+          // por cancelación con la misma qty, lo cubre el chequeo de ventas.
+          if (inventtiaCancelledOrReturned && hasCancelReajuste) {
+            continue;
+          }
+
+          final detail = inventtiaCancelledOrReturned && !hasCancelReajuste
+              ? 'Orden #$orderId está Cancelado en Carnaval '
+                  '(qty ${carnavalQty.toStringAsFixed(2)}) y la operación '
+                  'Inventtia #$opIdsLabel está Devuelta/Cancelada, pero no '
+                  'hay "Reajuste de cancelación" con qty '
+                  '${expectedQty.toStringAsFixed(2)}.'
+              : 'Orden #$orderId está Cancelado en Carnaval '
+                  '(qty ${carnavalQty.toStringAsFixed(2)}) pero existe '
+                  'operación Inventtia activa con observaciones '
+                  '"Venta desde orden $orderId"'
+                  '${opIdsLabel.isNotEmpty ? ' (op #$opIdsLabel)' : ''}.';
+
           issues.add(
             _CarnivalAuditIssue(
               kind: _CarnivalIssueKind.cancelledWithOp,
-              title: 'Orden Carnaval cancelada con operación Inventtia',
-              detail:
-                  'Orden #$orderId está Cancelado en Carnaval '
-                  '(qty ${carnavalQty.toStringAsFixed(2)}) pero existe '
-                  'operación con observaciones "Venta desde orden $orderId"'
-                  '${opIdsLabel.isNotEmpty ? ' (op #$opIdsLabel)' : ''}.',
+              title: inventtiaCancelledOrReturned && !hasCancelReajuste
+                  ? 'Orden Carnaval cancelada sin reajuste Inventtia'
+                  : 'Orden Carnaval cancelada con operación Inventtia activa',
+              detail: detail,
               orderId: orderId,
               carnavalQty: carnavalQty,
-              inventtiaQty: inventtiaQtyAll > epsilon ? inventtiaQtyAll : movQty,
+              inventtiaQty:
+                  inventtiaQtyAll > epsilon ? inventtiaQtyAll : movQty,
               orderStatus: agg.status,
             ),
           );
@@ -1484,6 +1574,398 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
     );
   }
 
+  /// Ventas Inventtia del periodo + match canceladas/devueltas vs reajustes.
+  Future<({_SalesAuditSummary summary, List<_SalesCancelAuditIssue> issues})>
+      _auditSalesAndCancellations({
+    required int productId,
+    required int? warehouseId,
+    required List<Map<String, dynamic>> warehouseMovements,
+  }) async {
+    const epsilon = 0.0001;
+    final issues = <_SalesCancelAuditIssue>[];
+
+    // Tipo "Venta"
+    final tipoRows = await _supabase
+        .from('app_nom_tipo_operacion')
+        .select('id, denominacion');
+    int? tipoVentaId;
+    for (final raw in tipoRows as List) {
+      final row = Map<String, dynamic>.from(raw as Map);
+      final den = (row['denominacion'] as String?)?.toLowerCase().trim() ?? '';
+      if (den == 'venta') {
+        tipoVentaId = _asInt(row['id']);
+        break;
+      }
+    }
+    if (tipoVentaId == null) {
+      return (
+        summary: const _SalesAuditSummary(),
+        issues: issues,
+      );
+    }
+
+    final ubicIds = <int>[];
+    if (warehouseId != null) {
+      final layoutRows = await _supabase
+          .from('app_dat_layout_almacen')
+          .select('id')
+          .eq('id_almacen', warehouseId);
+      for (final r in layoutRows as List) {
+        final id = _asInt((r as Map)['id']);
+        if (id != null) ubicIds.add(id);
+      }
+      if (ubicIds.isEmpty) {
+        return (
+          summary: const _SalesAuditSummary(),
+          issues: issues,
+        );
+      }
+    } else {
+      // Todos los almacenes visibles en el filtro.
+      final almIds = <int>[
+        for (final w in _warehouses)
+          if (_asInt(w['id']) != null) _asInt(w['id'])!,
+      ];
+      for (var i = 0; i < almIds.length; i += 80) {
+        final chunk = almIds.sublist(
+          i,
+          i + 80 > almIds.length ? almIds.length : i + 80,
+        );
+        final layoutRows = await _supabase
+            .from('app_dat_layout_almacen')
+            .select('id')
+            .inFilter('id_almacen', chunk);
+        for (final r in layoutRows as List) {
+          final id = _asInt((r as Map)['id']);
+          if (id != null) ubicIds.add(id);
+        }
+      }
+      if (ubicIds.isEmpty) {
+        return (
+          summary: const _SalesAuditSummary(),
+          issues: issues,
+        );
+      }
+    }
+
+    final DateTime? from = _dateFrom == null
+        ? null
+        : DateTime(_dateFrom!.year, _dateFrom!.month, _dateFrom!.day);
+    final DateTime? to = _dateTo == null
+        ? null
+        : DateTime(
+            _dateTo!.year,
+            _dateTo!.month,
+            _dateTo!.day,
+            23,
+            59,
+            59,
+          );
+
+    // Extracciones del producto en ubicaciones del alcance (almacén o todos).
+    // Usamos created_at de la extracción (igual que get_product_movements_v3),
+    // no el de la operación — evita subcontar vs el listado.
+    final extByOp = <int, ({double qty, DateTime? fecha})>{};
+    for (var i = 0; i < ubicIds.length; i += 80) {
+      final ubicChunk = ubicIds.sublist(
+        i,
+        i + 80 > ubicIds.length ? ubicIds.length : i + 80,
+      );
+      final exts = await _supabase
+          .from('app_dat_extraccion_productos')
+          .select('id_operacion, cantidad, created_at')
+          .eq('id_producto', productId)
+          .inFilter('id_ubicacion', ubicChunk);
+      for (final raw in exts as List) {
+        final e = Map<String, dynamic>.from(raw as Map);
+        final opId = _asInt(e['id_operacion']);
+        if (opId == null) continue;
+        final qty = (_asDouble(e['cantidad']) ?? 0).abs();
+        if (qty <= 0) continue;
+        final fecha = DateTime.tryParse('${e['created_at'] ?? ''}');
+        if (from != null && fecha != null) {
+          final day = DateTime(fecha.year, fecha.month, fecha.day);
+          if (day.isBefore(DateTime(from.year, from.month, from.day))) {
+            continue;
+          }
+        }
+        if (to != null && fecha != null) {
+          if (fecha.isAfter(to)) continue;
+        }
+        if (from != null && fecha == null) continue;
+        if (to != null && fecha == null) continue;
+        final prev = extByOp[opId];
+        if (prev == null) {
+          extByOp[opId] = (qty: qty, fecha: fecha);
+        } else {
+          final later = (fecha != null &&
+                  (prev.fecha == null || fecha.isAfter(prev.fecha!)))
+              ? fecha
+              : prev.fecha;
+          extByOp[opId] = (qty: prev.qty + qty, fecha: later);
+        }
+      }
+    }
+
+    if (extByOp.isEmpty) {
+      // Aún así buscar reajustes huérfanos abajo.
+    }
+
+    // Operaciones de venta (tipo Venta) entre las extracciones del periodo.
+    final saleOpMeta = <int, ({double qty, DateTime? fecha})>{};
+    final opIds = extByOp.keys.toList();
+    for (var i = 0; i < opIds.length; i += 80) {
+      final chunk = opIds.sublist(
+        i,
+        i + 80 > opIds.length ? opIds.length : i + 80,
+      );
+      final opsRaw = await _supabase
+          .from('app_dat_operaciones')
+          .select('id, created_at, id_tipo_operacion')
+          .inFilter('id', chunk)
+          .eq('id_tipo_operacion', tipoVentaId);
+      for (final raw in opsRaw as List) {
+        final op = Map<String, dynamic>.from(raw as Map);
+        final opId = _asInt(op['id']);
+        if (opId == null) continue;
+        final meta = extByOp[opId];
+        if (meta == null) continue;
+        saleOpMeta[opId] = meta;
+      }
+    }
+
+    // Estado actual por operación (último registro).
+    final estadoByOp = <int, int>{};
+    final saleIds = saleOpMeta.keys.toList();
+    for (var i = 0; i < saleIds.length; i += 80) {
+      final chunk = saleIds.sublist(
+        i,
+        i + 80 > saleIds.length ? saleIds.length : i + 80,
+      );
+      final estados = await _supabase
+          .from('app_dat_estado_operacion')
+          .select('id, id_operacion, estado')
+          .inFilter('id_operacion', chunk)
+          .order('id', ascending: false);
+      for (final raw in estados as List) {
+        final e = Map<String, dynamic>.from(raw as Map);
+        final opId = _asInt(e['id_operacion']);
+        final estado = _asInt(e['estado']);
+        if (opId == null || estado == null) continue;
+        estadoByOp.putIfAbsent(opId, () => estado);
+      }
+    }
+
+    var soldQty = 0.0;
+    var soldOrders = 0;
+    var pendingQty = 0.0;
+    var pendingOrders = 0;
+    final completedOrders = <_SoldOrderLine>[];
+    // Cancelada(4) / Devuelta(3): se cruzan con reajustes SIN id_operacion.
+    final cancelledByOp = <int, ({int opId, int estado, double qty})>{};
+
+    for (final entry in saleOpMeta.entries) {
+      final opId = entry.key;
+      final qty = entry.value.qty;
+      final fecha = entry.value.fecha;
+      final estado = estadoByOp[opId] ?? 1;
+      if (estado == 2) {
+        soldQty += qty;
+        soldOrders++;
+        completedOrders.add(
+          _SoldOrderLine(
+            operationId: opId,
+            qty: qty,
+            fecha: fecha,
+            estado: 'Completada',
+          ),
+        );
+      } else if (estado == 1) {
+        pendingQty += qty;
+        pendingOrders++;
+      } else if (estado == 3 || estado == 4) {
+        cancelledByOp[opId] = (opId: opId, estado: estado, qty: qty);
+      }
+    }
+
+    // Completar/ajustar con movimientos Completada del listado (misma lógica
+    // visual que usa el usuario al sumar orden a orden).
+    var movsForSales = warehouseMovements;
+    if (_selectedOperationTypeId != null) {
+      final raw = await ProductMovementsService.getAllProductMovements(
+        productId: productId,
+        dateFrom: _dateFrom,
+        dateTo: _dateTo,
+        operationTypeId: null,
+        warehouseId: warehouseId,
+      );
+      movsForSales = _prepareMovementsForExport(raw)
+          .where((m) => !_isAperturaOCierreCaja(m))
+          .toList();
+    }
+
+    final completedFromMov = <int, _SoldOrderLine>{};
+    for (final m in movsForSales) {
+      final tipoMov = (m['tipo_movimiento'] as String?)?.toLowerCase() ?? '';
+      if (tipoMov != 'extracción' && tipoMov != 'extraccion') continue;
+      final estadoNombre =
+          (m['estado_operacion_nombre'] as String?)?.toLowerCase().trim() ?? '';
+      if (estadoNombre != 'completada') continue;
+      final tipoOp = (m['tipo_operacion'] as String?)?.toLowerCase() ?? '';
+      if (tipoOp.isNotEmpty && !tipoOp.contains('venta')) continue;
+      final opId = _asInt(m['id_operacion']);
+      if (opId == null) continue;
+      final qty = (_asDouble(m['cantidad']) ?? 0).abs();
+      if (qty <= epsilon) continue;
+      final fecha = DateTime.tryParse('${m['fecha'] ?? ''}');
+      final prev = completedFromMov[opId];
+      if (prev == null) {
+        completedFromMov[opId] = _SoldOrderLine(
+          operationId: opId,
+          qty: qty,
+          fecha: fecha,
+          estado: 'Completada',
+          tipoOperacion: m['tipo_operacion'] as String?,
+        );
+      } else {
+        completedFromMov[opId] = _SoldOrderLine(
+          operationId: opId,
+          qty: prev.qty + qty,
+          fecha: (fecha != null &&
+                  (prev.fecha == null || fecha.isAfter(prev.fecha!)))
+              ? fecha
+              : prev.fecha,
+          estado: 'Completada',
+          tipoOperacion: prev.tipoOperacion ?? m['tipo_operacion'] as String?,
+        );
+      }
+    }
+
+    // Preferir cantidades del listado (movimientos) cuando existen; unir el resto.
+    final mergedCompleted = <int, _SoldOrderLine>{
+      for (final o in completedOrders) o.operationId: o,
+    };
+    for (final entry in completedFromMov.entries) {
+      mergedCompleted[entry.key] = entry.value;
+    }
+    completedOrders
+      ..clear()
+      ..addAll(mergedCompleted.values);
+    completedOrders.sort((a, b) {
+      final fa = a.fecha ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final fb = b.fecha ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final byFecha = fa.compareTo(fb);
+      if (byFecha != 0) return byFecha;
+      return a.operationId.compareTo(b.operationId);
+    });
+    soldQty = completedOrders.fold<double>(0, (s, o) => s + o.qty);
+    soldOrders = completedOrders.length;
+
+    // Completar canceladas/devueltas vistas en el listado (Extracción).
+    for (final m in movsForSales) {
+      if (!_isVentaCanceladaODevueltaMov(m)) continue;
+      final opId = _asInt(m['id_operacion']);
+      if (opId == null) continue;
+      final qty = (_asDouble(m['cantidad']) ?? 0).abs();
+      if (qty <= epsilon) continue;
+      final estadoNombre =
+          (m['estado_operacion_nombre'] as String?)?.toLowerCase() ?? '';
+      final estado = estadoNombre == 'devuelta' ? 3 : 4;
+      final prev = cancelledByOp[opId];
+      if (prev == null || qty > prev.qty) {
+        cancelledByOp[opId] = (opId: opId, estado: estado, qty: qty);
+      }
+    }
+
+    // Pool de reajustes: SIN operación; etiquetados en Flutter/RPC como
+    // tipo_movimiento=Reajuste, estado=Reajuste, tipo=Reajuste de cancelación.
+    final reajustePool = <({double qty, Map<String, dynamic> mov})>[];
+    for (final m in movsForSales) {
+      if (!ProductMovementsService.isCancelacionReajuste(m)) continue;
+      final qty = _reajusteCancelacionQty(m);
+      if (qty <= epsilon) continue;
+      reajustePool.add((qty: qty, mov: m));
+    }
+
+    final summary = _SalesAuditSummary(
+      soldQty: soldQty,
+      soldOrders: soldOrders,
+      pendingQty: pendingQty,
+      pendingOrders: pendingOrders,
+      cancelledCount: cancelledByOp.length,
+      cancelledQty: cancelledByOp.values.fold<double>(0, (s, c) => s + c.qty),
+      reajustesCount: reajustePool.length,
+      reajustesQty: reajustePool.fold<double>(0, (s, r) => s + r.qty),
+      completedOrders: List<_SoldOrderLine>.unmodifiable(completedOrders),
+    );
+
+    // Matching greedy 1:1 por cantidad:
+    // cada Cancelada/Devuelta ↔ un Reajuste de cancelación (sin id_operacion).
+    final expected = cancelledByOp.values.toList()
+      ..sort((a, b) => b.qty.compareTo(a.qty));
+    final available = List<({double qty, Map<String, dynamic> mov})>.from(
+      reajustePool,
+    )..sort((a, b) => b.qty.compareTo(a.qty));
+
+    final usedReajuste = <int>{};
+
+    // 1) Cada cancelación/devolución debe tener su reajuste.
+    for (final sale in expected) {
+      var matchedIdx = -1;
+      for (var i = 0; i < available.length; i++) {
+        if (usedReajuste.contains(i)) continue;
+        if ((available[i].qty - sale.qty).abs() <= epsilon) {
+          matchedIdx = i;
+          break;
+        }
+      }
+      if (matchedIdx < 0) {
+        final estadoNombre = sale.estado == 3 ? 'Devuelta' : 'Cancelada';
+        issues.add(
+          _SalesCancelAuditIssue(
+            kind: _SalesCancelIssueKind.cancelledMissingReajuste,
+            title: 'Venta $estadoNombre sin reajuste de cancelación',
+            detail:
+                'Operación de venta #${sale.opId} ($estadoNombre) con qty '
+                '${sale.qty.toStringAsFixed(2)} no tiene un movimiento '
+                '"Reajuste" / "Reajuste de cancelación" (sin N° operación) '
+                'con la misma cantidad en el almacén y periodo.',
+            operationId: sale.opId,
+            expectedQty: sale.qty,
+          ),
+        );
+      } else {
+        usedReajuste.add(matchedIdx);
+      }
+    }
+
+    // 2) Cada reajuste debe corresponder a una Cancelada/Devuelta.
+    for (var i = 0; i < available.length; i++) {
+      if (usedReajuste.contains(i)) continue;
+      final r = available[i];
+      // Intento residual: alguna cancelación no emparejada con misma qty
+      // (ya cubierto arriba) → aquí solo quedan huérfanos.
+      final movId = _asInt(r.mov['id']);
+      issues.add(
+        _SalesCancelAuditIssue(
+          kind: _SalesCancelIssueKind.orphanCancelReajuste,
+          title: 'Reajuste de cancelación sin venta Cancelada/Devuelta',
+          detail:
+              'Hay un reajuste de cancelación sin N° de operación '
+              '(qty ${r.qty.toStringAsFixed(2)}'
+              '${movId != null ? ', inv #$movId' : ''}, '
+              'estado Reajuste) y no hay venta Cancelada/Devuelta '
+              'del producto con la misma cantidad en el periodo.',
+          expectedQty: 0,
+          reajusteQty: r.qty,
+          movement: r.mov,
+        ),
+      );
+    }
+
+    return (summary: summary, issues: issues);
+  }
+
   Future<void> _showAuditReport({
     required int totalMovimientos,
     required int comparedPairs,
@@ -1493,6 +1975,8 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
     required int carnivalOrdersChecked,
     required List<_CarnivalAuditIssue> carnivalIssues,
     String? carnivalSkippedReason,
+    required _SalesAuditSummary salesSummary,
+    required List<_SalesCancelAuditIssue> salesCancelIssues,
   }) {
     final almacenNombre = _selectedWarehouse == 'Todos'
         ? 'Todos'
@@ -1504,144 +1988,237 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
             ?.toString() ??
             _selectedWarehouse;
 
-    final issueCount =
-        mismatches.length + transferIssues.length + carnivalIssues.length;
+    final issueCount = mismatches.length +
+        transferIssues.length +
+        carnivalIssues.length +
+        salesCancelIssues.length;
 
-    return showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) {
-        final ok = issueCount == 0;
-        return DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: ok ? 0.52 : 0.85,
-          minChildSize: 0.35,
-          maxChildSize: 0.95,
-          builder: (context, scrollController) {
-            return Column(
-              children: [
-                const SizedBox(height: 8),
-                Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(2),
+    final dateLabel = () {
+      final from = _dateFrom == null
+          ? '—'
+          : DateFormat('dd/MM/yyyy').format(_dateFrom!);
+      final to = _dateTo == null
+          ? '—'
+          : DateFormat('dd/MM/yyyy').format(_dateTo!);
+      return '$from → $to';
+    }();
+
+    final ok = issueCount == 0;
+
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (pageContext) {
+          var summaryExpanded = true;
+          return StatefulBuilder(
+            builder: (context, setLocal) {
+              return Scaffold(
+                backgroundColor: Colors.white,
+                appBar: AppBar(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  title: Text(
+                    ok
+                        ? 'Auditoría OK'
+                        : 'Auditoría ($issueCount problemas)',
+                  ),
+                  leading: IconButton(
+                    icon: const Icon(Icons.close),
+                    tooltip: 'Cerrar',
+                    onPressed: () => Navigator.pop(pageContext),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  child: Row(
-                    children: [
-                      Icon(
-                        ok
-                            ? Icons.verified_outlined
-                            : Icons.warning_amber_rounded,
-                        color: ok ? Colors.green : Colors.orange.shade800,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          ok
-                              ? 'Auditoría OK'
-                              : 'Inconsistencias encontradas ($issueCount)',
-                          style: const TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w700,
+                body: Column(
+                  children: [
+                    Material(
+                      color: ok ? Colors.green.shade50 : Colors.orange.shade50,
+                      child: InkWell(
+                        onTap: () => setLocal(
+                          () => summaryExpanded = !summaryExpanded,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+                          child: Row(
+                            children: [
+                              Icon(
+                                ok
+                                    ? Icons.verified_outlined
+                                    : Icons.warning_amber_rounded,
+                                color: ok
+                                    ? Colors.green.shade800
+                                    : Colors.orange.shade800,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  summaryExpanded
+                                      ? 'Resumen de la auditoría'
+                                      : 'Resumen oculto · toca para mostrar',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: ok
+                                        ? Colors.green.shade900
+                                        : Colors.orange.shade900,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                summaryExpanded ? 'Ocultar' : 'Mostrar',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.grey.shade700,
+                                ),
+                              ),
+                              Icon(
+                                summaryExpanded
+                                    ? Icons.expand_less
+                                    : Icons.expand_more,
+                                color: Colors.grey.shade700,
+                              ),
+                            ],
                           ),
                         ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Producto: ${_product.denominacion}\n'
-                      'Almacén: $almacenNombre\n'
-                      'Stock: $totalMovimientos mov. · $comparedPairs pares · '
-                      '${mismatches.length} roturas\n'
-                      'Transferencias: $transferPairsChecked emparejadas · '
-                      '${transferIssues.length} problemas\n'
-                      'Carnaval: $carnivalOrdersChecked órdenes · '
-                      '${carnivalIssues.length} problemas'
-                      '${carnivalSkippedReason != null ? '\n($carnivalSkippedReason)' : ''}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade700,
-                        height: 1.4,
-                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Divider(height: 1),
-                Expanded(
-                  child: ok
-                      ? ListView(
-                          controller: scrollController,
-                          padding: const EdgeInsets.all(24),
-                          children: [
-                            Icon(Icons.check_circle_outline,
-                                size: 56, color: Colors.green.shade400),
-                            const SizedBox(height: 12),
-                            Text(
-                              'Continuidad de stock, transferencias y '
-                              'órdenes Carnaval vs Inventtia cuadran '
-                              'con los filtros actuales.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey.shade700,
+                    AnimatedCrossFade(
+                      firstChild: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Producto: ${_product.denominacion}\n'
+                            'Almacén: $almacenNombre\n'
+                            'Periodo: $dateLabel\n'
+                            'Ventas: vendido ${salesSummary.soldQty.toStringAsFixed(2)} '
+                            '(${salesSummary.soldOrders} ops completadas) · '
+                            'pendiente ${salesSummary.pendingQty.toStringAsFixed(2)} '
+                            '(${salesSummary.pendingOrders} ops) · '
+                            'dev/canc ${salesSummary.cancelledQty.toStringAsFixed(2)} '
+                            '(${salesSummary.cancelledCount} ops) · '
+                            'reajustes ${salesSummary.reajustesQty.toStringAsFixed(2)} '
+                            '(${salesSummary.reajustesCount})\n'
+                            'Stock: $totalMovimientos mov. · $comparedPairs pares · '
+                            '${mismatches.length} roturas\n'
+                            'Transferencias: $transferPairsChecked emparejadas · '
+                            '${transferIssues.length} problemas\n'
+                            'Carnaval: $carnivalOrdersChecked órdenes · '
+                            '${carnivalIssues.length} problemas'
+                            '${carnivalSkippedReason != null ? '\n($carnivalSkippedReason)' : ''}\n'
+                            'Cancelaciones vs reajustes: ${salesCancelIssues.length} problemas',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade800,
+                              height: 1.45,
+                            ),
+                          ),
+                        ),
+                      ),
+                      secondChild: const SizedBox(width: double.infinity),
+                      crossFadeState: summaryExpanded
+                          ? CrossFadeState.showFirst
+                          : CrossFadeState.showSecond,
+                      duration: const Duration(milliseconds: 200),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+                        children: [
+                          if (salesSummary.completedOrders.isNotEmpty) ...[
+                            _buildAuditSectionHeader(
+                              'Órdenes completadas (vendido)',
+                              salesSummary.completedOrders.length,
+                            ),
+                            Padding(
+                              padding:
+                                  const EdgeInsets.only(left: 4, bottom: 8),
+                              child: Text(
+                                'Suma verificable: '
+                                '${salesSummary.soldQty.toStringAsFixed(2)} '
+                                '(${salesSummary.soldOrders} ops)',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.green.shade800,
+                                ),
                               ),
                             ),
+                            ...salesSummary.completedOrders
+                                .map(_buildSoldOrderCard),
+                            const SizedBox(height: 12),
                           ],
-                        )
-                      : ListView(
-                          controller: scrollController,
-                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-                          children: [
-                            if (mismatches.isNotEmpty) ...[
-                              _buildAuditSectionHeader(
-                                'Continuidad de stock',
-                                mismatches.length,
+                          if (ok &&
+                              mismatches.isEmpty &&
+                              transferIssues.isEmpty &&
+                              carnivalIssues.isEmpty &&
+                              salesCancelIssues.isEmpty &&
+                              salesSummary.completedOrders.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Column(
+                                children: [
+                                  Icon(Icons.check_circle_outline,
+                                      size: 56,
+                                      color: Colors.green.shade400),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'Continuidad de stock, transferencias, '
+                                    'órdenes Carnaval vs Inventtia, ventas del '
+                                    'periodo y reajustes por cancelación cuadran '
+                                    'con los filtros actuales.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.grey.shade700,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              ...mismatches.map(_buildMismatchCard),
-                              const SizedBox(height: 12),
-                            ],
-                            if (transferIssues.isNotEmpty) ...[
-                              _buildAuditSectionHeader(
-                                'Transferencias',
-                                transferIssues.length,
-                              ),
-                              ...transferIssues.map(_buildTransferIssueCard),
-                              const SizedBox(height: 12),
-                            ],
-                            if (carnivalIssues.isNotEmpty) ...[
-                              _buildAuditSectionHeader(
-                                'Carnaval vs Inventtia',
-                                carnivalIssues.length,
-                              ),
-                              ...carnivalIssues.map(_buildCarnivalIssueCard),
-                            ],
+                            ),
+                          if (mismatches.isNotEmpty) ...[
+                            _buildAuditSectionHeader(
+                              'Continuidad de stock',
+                              mismatches.length,
+                            ),
+                            ...mismatches.map(_buildMismatchCard),
+                            const SizedBox(height: 12),
                           ],
-                        ),
+                          if (transferIssues.isNotEmpty) ...[
+                            _buildAuditSectionHeader(
+                              'Transferencias',
+                              transferIssues.length,
+                            ),
+                            ...transferIssues.map(_buildTransferIssueCard),
+                            const SizedBox(height: 12),
+                          ],
+                          if (carnivalIssues.isNotEmpty) ...[
+                            _buildAuditSectionHeader(
+                              'Carnaval vs Inventtia',
+                              carnivalIssues.length,
+                            ),
+                            ...carnivalIssues.map(_buildCarnivalIssueCard),
+                            const SizedBox(height: 12),
+                          ],
+                          if (salesCancelIssues.isNotEmpty) ...[
+                            _buildAuditSectionHeader(
+                              'Cancelaciones vs reajustes',
+                              salesCancelIssues.length,
+                            ),
+                            ...salesCancelIssues
+                                .map(_buildSalesCancelIssueCard),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            );
-          },
-        );
-      },
+              );
+            },
+          );
+        },
+      ),
     );
   }
 
@@ -1653,6 +2230,65 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
         style: const TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSoldOrderCard(_SoldOrderLine order) {
+    final fechaStr = order.fecha == null
+        ? '—'
+        : DateFormat('dd/MM/yyyy HH:mm').format(order.fecha!.toLocal());
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Card(
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(color: Colors.green.shade200),
+        ),
+        color: Colors.green.shade50,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              Icon(Icons.check_circle_outline,
+                  size: 18, color: Colors.green.shade800),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Op #${order.operationId}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: Colors.green.shade900,
+                      ),
+                    ),
+                    Text(
+                      '$fechaStr'
+                      '${order.tipoOperacion != null && order.tipoOperacion!.isNotEmpty ? ' · ${order.tipoOperacion}' : ''}'
+                      ' · ${order.estado}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                order.qty.toStringAsFixed(2),
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14,
+                  color: Colors.green.shade900,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1858,30 +2494,442 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
     );
   }
 
-  Future<void> _exportMovementsPdf() async {
-    setState(() => _isExportingPdf = true);
-    try {
-      // Traer todas las operaciones del filtro (no solo la página en memoria).
-      final allMovements =
-          await ProductMovementsService.getAllProductMovements(
-        productId: int.parse(_product.id),
-        dateFrom: _dateFrom,
-        dateTo: _dateTo,
-        operationTypeId: _selectedOperationTypeId,
-        warehouseId: _selectedWarehouseId,
-      );
-      final movimientosExport = _prepareMovementsForExport(allMovements);
+  Widget _buildSalesCancelIssueCard(_SalesCancelAuditIssue issue) {
+    final color =
+        issue.kind == _SalesCancelIssueKind.cancelledMissingReajuste
+            ? Colors.deepOrange
+            : Colors.brown;
 
-      if (movimientosExport.isEmpty) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Card(
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(color: color.shade200),
+        ),
+        color: color.shade50,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.replay_circle_filled,
+                      size: 18, color: color.shade800),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      issue.title,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: color.shade900,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(issue.detail, style: const TextStyle(fontSize: 12)),
+              const SizedBox(height: 8),
+              Text(
+                [
+                  if (issue.operationId != null) 'Op #${issue.operationId}',
+                  if (issue.expectedQty > 0)
+                    'Esperado ${issue.expectedQty.toStringAsFixed(2)}',
+                  if (issue.reajusteQty != null)
+                    'Reajuste ${issue.reajusteQty!.toStringAsFixed(2)}',
+                ].join(' · '),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: color.shade800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showExportFormatDialog() async {
+    final format = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Exportar movimientos'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.picture_as_pdf, color: Colors.red),
+              title: const Text('PDF'),
+              subtitle: const Text('Reporte listo para imprimir'),
+              onTap: () => Navigator.pop(context, 'pdf'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.table_chart, color: Colors.green),
+              title: const Text('Excel'),
+              subtitle: const Text('Hoja de cálculo (.xlsx)'),
+              onTap: () => Navigator.pop(context, 'excel'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+        ],
+      ),
+    );
+    if (format == null || !mounted) return;
+    if (format == 'pdf') {
+      await _exportMovementsPdf();
+    } else if (format == 'excel') {
+      await _exportMovementsExcel();
+    }
+  }
+
+  Future<List<Map<String, dynamic>>?> _loadMovementsForExport() async {
+    final allMovements = await ProductMovementsService.getAllProductMovements(
+      productId: int.parse(_product.id),
+      dateFrom: _dateFrom,
+      dateTo: _dateTo,
+      operationTypeId: _selectedOperationTypeId,
+      warehouseId: _selectedWarehouseId,
+    );
+    final movimientosExport = _prepareMovementsForExport(allMovements);
+    if (movimientosExport.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No hay movimientos para exportar con los filtros actuales',
+            ),
+          ),
+        );
+      }
+      return null;
+    }
+    return movimientosExport;
+  }
+
+  ({String periodo, String almacen, String tipoMov, String tipoOp})
+      _exportFilterLabels() {
+    final periodoStr = (_dateFrom != null && _dateTo != null)
+        ? '${DateFormat('dd/MM/yyyy').format(_dateFrom!)} - ${DateFormat('dd/MM/yyyy').format(_dateTo!)}'
+        : _dateFrom != null
+            ? 'Desde ${DateFormat('dd/MM/yyyy').format(_dateFrom!)}'
+            : _dateTo != null
+                ? 'Hasta ${DateFormat('dd/MM/yyyy').format(_dateTo!)}'
+                : 'Todos los períodos';
+
+    final almacenStr = _selectedWarehouse == 'Todos'
+        ? 'Todos los almacenes'
+        : _warehouses
+                .firstWhere(
+                  (w) => w['id'].toString() == _selectedWarehouse,
+                  orElse: () => {'denominacion': _selectedWarehouse},
+                )['denominacion']
+                as String? ??
+            _selectedWarehouse;
+
+    final tipoMovStr = _selectedTipoMovimiento ?? 'Todos';
+    final tipoOpStr = _selectedOperationTypeId != null
+        ? (_operationTypes.firstWhere(
+              (t) => t['id'] == _selectedOperationTypeId,
+              orElse: () => {'denominacion': 'Desconocido'},
+            )['denominacion'] as String? ??
+            'Desconocido')
+        : 'Todos';
+
+    return (
+      periodo: periodoStr,
+      almacen: almacenStr,
+      tipoMov: tipoMovStr,
+      tipoOp: tipoOpStr,
+    );
+  }
+
+  Future<void> _shareOrDownloadExport({
+    required Uint8List fileBytes,
+    required String fileName,
+    required String mimeType,
+    required String successWeb,
+    required String successMobile,
+  }) async {
+    final now = DateTime.now();
+    if (kIsWeb) {
+      try {
+        web_download.downloadFileWeb(fileBytes, fileName, mimeType);
+      } catch (_) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('No hay movimientos para exportar con los filtros actuales'),
+              content: Text(
+                'Problema de compatibilidad del navegador. Intenta con Edge o actualiza tu navegador.',
+              ),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 5),
             ),
           );
         }
         return;
       }
+    } else {
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}/$fileName');
+      await file.writeAsBytes(fileBytes);
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: mimeType)],
+        subject: 'Movimientos - ${_product.denominacion}',
+        text:
+            'Reporte generado el ${DateFormat('dd/MM/yyyy HH:mm').format(now)}',
+      );
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(kIsWeb ? successWeb : successMobile),
+          backgroundColor: AppColors.primary,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  Future<void> _exportMovementsExcel() async {
+    setState(() => _isExporting = true);
+    try {
+      final movimientosExport = await _loadMovementsForExport();
+      if (movimientosExport == null) return;
+
+      final now = DateTime.now();
+      final dateStr = DateFormat('yyyyMMdd_HHmmss').format(now);
+      final productName = _product.denominacion.replaceAll(' ', '_');
+      final fileName = 'Movimientos_${productName}_$dateStr.xlsx';
+      final labels = _exportFilterLabels();
+
+      // Mismos totales que el PDF
+      final totalRecepciones = movimientosExport
+          .where((m) {
+            final tipo = m['tipo_movimiento'] as String? ?? '';
+            final cant = (m['cantidad'] as num?)?.toDouble() ?? 0;
+            return tipo == 'Recepción' ||
+                ((tipo == 'Reajuste' || tipo == 'Ajuste') && cant > 0);
+          })
+          .fold<double>(
+            0,
+            (s, m) => s + ((m['cantidad'] as num?)?.toDouble().abs() ?? 0),
+          );
+      final totalExtracciones = movimientosExport
+          .where((m) {
+            final tipo = m['tipo_movimiento'] as String? ?? '';
+            final cant = (m['cantidad'] as num?)?.toDouble() ?? 0;
+            return tipo == 'Extracción' ||
+                ((tipo == 'Reajuste' || tipo == 'Ajuste') && cant < 0);
+          })
+          .fold<double>(
+            0,
+            (s, m) => s + ((m['cantidad'] as num?)?.toDouble().abs() ?? 0),
+          );
+
+      final book = excel.Excel.createExcel();
+      final defaultSheet = book.getDefaultSheet();
+      if (defaultSheet != null) {
+        book.rename(defaultSheet, 'Movimientos');
+      }
+      final sheet = book['Movimientos'];
+
+      // Anchos similares a la tabla del PDF
+      sheet.setColumnWidth(0, 16); // Fecha
+      sheet.setColumnWidth(1, 22); // Almacén
+      sheet.setColumnWidth(2, 10); // N° Op.
+      sheet.setColumnWidth(3, 14); // Tipo Mov.
+      sheet.setColumnWidth(4, 22); // Tipo Operación
+      sheet.setColumnWidth(5, 12); // Estado
+      sheet.setColumnWidth(6, 10); // Entrada
+      sheet.setColumnWidth(7, 10); // Salida
+      sheet.setColumnWidth(8, 10); // Saldo
+      sheet.setColumnWidth(9, 36); // Observaciones
+
+      var row = 0;
+      void writeCell(
+        int col,
+        String text, {
+        bool bold = false,
+        int fontSize = 11,
+        excel.ExcelColor? bg,
+        excel.HorizontalAlign align = excel.HorizontalAlign.Left,
+      }) {
+        final cell = sheet.cell(
+          excel.CellIndex.indexByColumnRow(columnIndex: col, rowIndex: row),
+        );
+        cell.value = excel.TextCellValue(text);
+        cell.cellStyle = excel.CellStyle(
+          bold: bold,
+          fontSize: fontSize,
+          backgroundColorHex: bg ?? excel.ExcelColor.white,
+          horizontalAlign: align,
+        );
+      }
+
+      // Encabezado (mismo contenido que el PDF)
+      writeCell(0, 'Reporte de Movimientos de Inventario', bold: true, fontSize: 14);
+      row++;
+      writeCell(
+        0,
+        DateFormat('dd/MM/yyyy HH:mm').format(now),
+        fontSize: 9,
+      );
+      row += 2;
+
+      writeCell(0, _product.denominacion, bold: true, fontSize: 12);
+      row++;
+      if (_product.sku.isNotEmpty) {
+        writeCell(0, 'SKU: ${_product.sku}', fontSize: 10);
+        row++;
+      }
+      row++;
+
+      writeCell(0, 'Período: ${labels.periodo}', fontSize: 10);
+      writeCell(2, 'Total registros: ${movimientosExport.length}', fontSize: 10);
+      row++;
+      writeCell(0, 'Almacén: ${labels.almacen}', fontSize: 10);
+      writeCell(
+        2,
+        'Entradas: ${totalRecepciones.toStringAsFixed(2)}',
+        bold: true,
+        fontSize: 10,
+      );
+      row++;
+      writeCell(0, 'Tipo movimiento: ${labels.tipoMov}', fontSize: 10);
+      writeCell(
+        2,
+        'Salidas: ${totalExtracciones.toStringAsFixed(2)}',
+        bold: true,
+        fontSize: 10,
+      );
+      row++;
+      writeCell(0, 'Tipo operación: ${labels.tipoOp}', fontSize: 10);
+      row += 2;
+
+      // Cabecera de tabla (como PDF: fondo oscuro)
+      const headers = [
+        'Fecha',
+        'Almacén',
+        'N° Op.',
+        'Tipo Mov.',
+        'Tipo Operación',
+        'Estado',
+        'Entrada',
+        'Salida',
+        'Saldo',
+        'Observaciones',
+      ];
+      final headerBg = excel.ExcelColor.fromHexString('#37474F'); // blueGrey800
+      for (var i = 0; i < headers.length; i++) {
+        final cell = sheet.cell(
+          excel.CellIndex.indexByColumnRow(columnIndex: i, rowIndex: row),
+        );
+        cell.value = excel.TextCellValue(headers[i]);
+        cell.cellStyle = excel.CellStyle(
+          bold: true,
+          fontSize: 10,
+          fontColorHex: excel.ExcelColor.white,
+          backgroundColorHex: headerBg,
+          horizontalAlign: excel.HorizontalAlign.Center,
+        );
+      }
+      row++;
+
+      final altBg = excel.ExcelColor.fromHexString('#ECEFF1'); // blueGrey50
+      for (var i = 0; i < movimientosExport.length; i++) {
+        final m = movimientosExport[i];
+        final tipoMov = m['tipo_movimiento'] as String? ?? '';
+        final cantidadNum = (m['cantidad'] as num?)?.toDouble() ?? 0;
+        final isReajuste = tipoMov == 'Reajuste' || tipoMov == 'Ajuste';
+        final isEntrada =
+            tipoMov == 'Recepción' || (isReajuste && cantidadNum > 0);
+        final fechaStr = m['fecha'] as String? ?? '';
+        var fechaFmt = '-';
+        try {
+          fechaFmt =
+              DateFormat('dd/MM/yy HH:mm').format(DateTime.parse(fechaStr));
+        } catch (_) {}
+
+        final nOp = m['id_operacion']?.toString() ?? '-';
+        final rowBg = i.isEven ? excel.ExcelColor.white : altBg;
+        final values = <String>[
+          fechaFmt,
+          m['almacen'] as String? ?? '-',
+          nOp == '-' ? '-' : '#$nOp',
+          tipoMov,
+          m['tipo_operacion'] as String? ?? '-',
+          m['estado_operacion_nombre'] as String? ?? 'Completada',
+          isEntrada ? cantidadNum.abs().toStringAsFixed(2) : '',
+          !isEntrada ? cantidadNum.abs().toStringAsFixed(2) : '',
+          (m['cantidad_final'] as num?)?.toStringAsFixed(2) ?? '-',
+          (m['observaciones'] as String?)?.trim() ?? '',
+        ];
+
+        for (var c = 0; c < values.length; c++) {
+          final cell = sheet.cell(
+            excel.CellIndex.indexByColumnRow(columnIndex: c, rowIndex: row),
+          );
+          cell.value = excel.TextCellValue(values[c]);
+          final centerQty = c == 2 || c == 6 || c == 7 || c == 8;
+          cell.cellStyle = excel.CellStyle(
+            fontSize: 9,
+            bold: c == 3 || c == 6 || c == 7 || c == 8,
+            backgroundColorHex: rowBg,
+            horizontalAlign: centerQty
+                ? excel.HorizontalAlign.Center
+                : excel.HorizontalAlign.Left,
+          );
+        }
+        row++;
+      }
+
+      final encoded = book.encode();
+      if (encoded == null) {
+        throw Exception('No se pudo generar el archivo Excel');
+      }
+      final fileBytes = Uint8List.fromList(encoded);
+
+      await _shareOrDownloadExport(
+        fileBytes: fileBytes,
+        fileName: fileName,
+        mimeType:
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        successWeb: 'Excel descargado exitosamente',
+        successMobile: 'Excel generado y compartido exitosamente',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al exportar Excel: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isExporting = false);
+    }
+  }
+
+  Future<void> _exportMovementsPdf() async {
+    setState(() => _isExporting = true);
+    try {
+      // Traer todas las operaciones del filtro (no solo la página en memoria).
+      final movimientosExport = await _loadMovementsForExport();
+      if (movimientosExport == null) return;
 
       final now = DateTime.now();
       final dateStr = DateFormat('yyyyMMdd_HHmmss').format(now);
@@ -1892,33 +2940,11 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       final regularFont = await PdfGoogleFonts.robotoRegular();
       final boldFont = await PdfGoogleFonts.robotoBold();
 
-      // Encabezado de filtros aplicados
-      final String periodoStr = (_dateFrom != null && _dateTo != null)
-          ? '${DateFormat('dd/MM/yyyy').format(_dateFrom!)} - ${DateFormat('dd/MM/yyyy').format(_dateTo!)}'
-          : _dateFrom != null
-              ? 'Desde ${DateFormat('dd/MM/yyyy').format(_dateFrom!)}'
-              : _dateTo != null
-                  ? 'Hasta ${DateFormat('dd/MM/yyyy').format(_dateTo!)}'
-                  : 'Todos los períodos';
-
-      final String almacenStr = _selectedWarehouse == 'Todos'
-          ? 'Todos los almacenes'
-          : _warehouses
-                .firstWhere(
-                  (w) => w['id'].toString() == _selectedWarehouse,
-                  orElse: () => {'denominacion': _selectedWarehouse},
-                )['denominacion'] as String? ??
-              _selectedWarehouse;
-
-      final String tipoMovStr = _selectedTipoMovimiento ?? 'Todos';
-
-      final String tipoOpStr = _selectedOperationTypeId != null
-          ? (_operationTypes.firstWhere(
-                (t) => t['id'] == _selectedOperationTypeId,
-                orElse: () => {'denominacion': 'Desconocido'},
-              )['denominacion'] as String? ??
-              'Desconocido')
-          : 'Todos';
+      final labels = _exportFilterLabels();
+      final periodoStr = labels.periodo;
+      final almacenStr = labels.almacen;
+      final tipoMovStr = labels.tipoMov;
+      final tipoOpStr = labels.tipoOp;
 
       // Totales calculados sobre los datos a exportar
       // Reajuste y Ajuste con cantidad positiva son entradas, con negativa son salidas
@@ -2279,48 +3305,14 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       );
 
       final fileBytes = Uint8List.fromList(await pdf.save());
-      const mimeType = 'application/pdf';
 
-      if (kIsWeb) {
-        try {
-          web_download.downloadFileWeb(fileBytes, fileName, mimeType);
-        } catch (webError) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'Problema de compatibilidad del navegador. Intenta con Edge o actualiza tu navegador.',
-                ),
-                backgroundColor: Colors.orange,
-                duration: Duration(seconds: 5),
-              ),
-            );
-          }
-          return;
-        }
-      } else {
-        final tempDir = await getTemporaryDirectory();
-        final file = File('${tempDir.path}/$fileName');
-        await file.writeAsBytes(fileBytes);
-        await Share.shareXFiles(
-          [XFile(file.path, mimeType: mimeType)],
-          subject: 'Movimientos - ${_product.denominacion}',
-          text: 'Reporte generado el ${DateFormat('dd/MM/yyyy HH:mm').format(now)}',
-        );
-      }
-
-      if (mounted) {
-        final message = kIsWeb
-            ? 'PDF descargado exitosamente'
-            : 'PDF generado y compartido exitosamente';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: AppColors.primary,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
+      await _shareOrDownloadExport(
+        fileBytes: fileBytes,
+        fileName: fileName,
+        mimeType: 'application/pdf',
+        successWeb: 'PDF descargado exitosamente',
+        successMobile: 'PDF generado y compartido exitosamente',
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2332,7 +3324,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
         );
       }
     } finally {
-      if (mounted) setState(() => _isExportingPdf = false);
+      if (mounted) setState(() => _isExporting = false);
     }
   }
 
@@ -2697,6 +3689,10 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       case 'cancelada':
         estadoColor = Colors.red.shade700;
         estadoBg = Colors.red.shade50;
+        break;
+      case 'reajuste':
+        estadoColor = Colors.purple.shade700;
+        estadoBg = Colors.purple.shade50;
         break;
       default:
         estadoColor = Colors.grey.shade600;
@@ -3183,5 +4179,70 @@ class _CarnivalAuditIssue {
     required this.carnavalQty,
     required this.inventtiaQty,
     this.orderStatus,
+  });
+}
+
+class _SoldOrderLine {
+  final int operationId;
+  final double qty;
+  final DateTime? fecha;
+  final String estado;
+  final String? tipoOperacion;
+
+  const _SoldOrderLine({
+    required this.operationId,
+    required this.qty,
+    this.fecha,
+    required this.estado,
+    this.tipoOperacion,
+  });
+}
+
+class _SalesAuditSummary {
+  final double soldQty;
+  final int soldOrders;
+  final double pendingQty;
+  final int pendingOrders;
+  final int cancelledCount;
+  final double cancelledQty;
+  final int reajustesCount;
+  final double reajustesQty;
+  final List<_SoldOrderLine> completedOrders;
+
+  const _SalesAuditSummary({
+    this.soldQty = 0,
+    this.soldOrders = 0,
+    this.pendingQty = 0,
+    this.pendingOrders = 0,
+    this.cancelledCount = 0,
+    this.cancelledQty = 0,
+    this.reajustesCount = 0,
+    this.reajustesQty = 0,
+    this.completedOrders = const [],
+  });
+}
+
+enum _SalesCancelIssueKind {
+  cancelledMissingReajuste,
+  orphanCancelReajuste,
+}
+
+class _SalesCancelAuditIssue {
+  final _SalesCancelIssueKind kind;
+  final String title;
+  final String detail;
+  final int? operationId;
+  final double expectedQty;
+  final double? reajusteQty;
+  final Map<String, dynamic>? movement;
+
+  const _SalesCancelAuditIssue({
+    required this.kind,
+    required this.title,
+    required this.detail,
+    this.operationId,
+    required this.expectedQty,
+    this.reajusteQty,
+    this.movement,
   });
 }

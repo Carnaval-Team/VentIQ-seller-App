@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
 import 'category_service.dart';
@@ -10,6 +13,8 @@ import 'store_config_service.dart';
 import 'shift_workers_service.dart';
 import 'promotion_service.dart';
 import 'product_detail_service.dart';
+import 'offline_license_service.dart';
+import 'admin_inventory_service.dart';
 import '../utils/uuid_generator.dart';
 
 /// Servicio para sincronización automática periódica de datos
@@ -53,6 +58,12 @@ class AutoSyncService {
   Future<void> startAutoSync() async {
     if (_isRunning) {
       print('🔄 AutoSyncService ya está ejecutándose');
+      return;
+    }
+
+    // Si el modo offline está activo, no iniciar (prep usa syncModules).
+    if (await _userPreferencesService.isOfflineModeEnabled()) {
+      print('🔌 Modo offline activado - No se inicia sincronización automática');
       return;
     }
 
@@ -144,12 +155,10 @@ class AutoSyncService {
     print('✅ Sincronización automática detenida');
   }
 
-  /// Realizar una sincronización completa
+  /// Realizar una sincronización completa (delega en [syncModules]).
   Future<void> _performSync() async {
     // Guarda defensiva: si el modo offline ya está activado, no sincronizar.
-    // Evita que un pase relanzado (o forzado) pise el estado offline tras
-    // haber cambiado de modo. Existe un chequeo equivalente en el timer
-    // periódico y en performImmediateSync.
+    // (La prep admin / sync selectiva usa [syncModules] directamente.)
     if (await _userPreferencesService.isOfflineModeEnabled()) {
       print('🔌 Modo offline activado - Omitiendo _performSync');
       _pendingSyncRequested = false;
@@ -157,307 +166,33 @@ class AutoSyncService {
     }
 
     if (_isSyncing) {
-      // En vez de descartar la sincronización (lo que dejaba categorías/
-      // productos sin actualizar cuando una pasada tardaba >1 min), se marca
-      // que hay una pasada pendiente para ejecutarla al terminar la actual.
       _pendingSyncRequested = true;
       print('⏳ Sincronización en progreso; se encola una nueva al terminar');
       return;
     }
 
     _isSyncing = true;
-    final startTime = DateTime.now();
 
     try {
       print('🔄 Iniciando sincronización automática #${_syncCount + 1}...');
+      final modules = _modulesForAutoSyncPass();
+      final result = await syncModules(modules);
 
-      _syncEventController.add(
-        AutoSyncEvent(
-          type: AutoSyncEventType.syncStarted,
-          timestamp: startTime,
-          message: 'Sincronización iniciada',
-        ),
-      );
-
-      // Verificar y asegurar autenticación
-      print('🔐 Verificando autenticación antes de sincronizar...');
-      final isAuthenticated = await _reauthService.ensureAuthenticated();
-
-      if (!isAuthenticated) {
-        throw Exception('No se pudo autenticar al usuario para sincronización');
+      if (result.syncedItems.isNotEmpty || result.success) {
+        _lastSyncTime = DateTime.now();
+        _syncCount++;
       }
-
-      final user = Supabase.instance.client.auth.currentUser;
-      if (user == null) {
-        throw Exception('Usuario no autenticado después de verificación');
-      }
-
-      print('✅ Usuario autenticado correctamente para sincronización');
-
-      final Map<String, dynamic> syncedData = {};
-      final List<String> syncedItems = [];
-
-      // 1. Sincronizar métodos de pago (prioritario para uso offline)
-      try {
-        _syncEventController.add(
-          AutoSyncEvent(
-            type: AutoSyncEventType.syncProgress,
-            timestamp: DateTime.now(),
-            message: 'Métodos de pago',
-          ),
-        );
-        final paymentMethods = await _syncPaymentMethods();
-        if (paymentMethods.isNotEmpty) {
-          syncedData['payment_methods'] = paymentMethods;
-          syncedItems.add('métodos de pago');
-          await _userPreferencesService.mergeOfflineData({
-            'payment_methods': paymentMethods,
-          });
-          print('  ✅ Métodos de pago sincronizados y guardados primero');
-        } else {
-          print('  ⚠️ Sin métodos de pago disponibles para guardar');
-        }
-      } catch (e) {
-        print('  ❌ Error sincronizando métodos de pago: $e');
-      }
-
-      // 2. Sincronizar credenciales y datos del usuario
-      try {
-        _syncEventController.add(
-          AutoSyncEvent(
-            type: AutoSyncEventType.syncProgress,
-            timestamp: DateTime.now(),
-            message: 'Credenciales',
-          ),
-        );
-        syncedData['credentials'] = await _syncCredentials();
-        syncedItems.add('credenciales');
-        print('  ✅ Credenciales sincronizadas');
-      } catch (e) {
-        print('  ❌ Error sincronizando credenciales: $e');
-      }
-
-      // 3. Sincronizar promociones globales
-      try {
-        _syncEventController.add(
-          AutoSyncEvent(
-            type: AutoSyncEventType.syncProgress,
-            timestamp: DateTime.now(),
-            message: 'Promociones',
-          ),
-        );
-        syncedData['promotions'] = await _syncPromotions();
-        syncedItems.add('promociones');
-        print('  ✅ Promociones sincronizadas');
-      } catch (e) {
-        print('  ❌ Error sincronizando promociones: $e');
-      }
-
-      // 4. Sincronizar configuración de tienda
-      try {
-        _syncEventController.add(
-          AutoSyncEvent(
-            type: AutoSyncEventType.syncProgress,
-            timestamp: DateTime.now(),
-            message: 'Configuración',
-          ),
-        );
-        await _syncStoreConfig();
-        syncedItems.add('configuración de tienda');
-        print('  ✅ Configuración de tienda sincronizada');
-      } catch (e) {
-        print('  ❌ Error sincronizando configuración de tienda: $e');
-      }
-
-      // 5. Sincronizar categorías (siempre en primera sincronización, luego cada 3 sincronizaciones)
-      if (_syncCount == 0 || _syncCount % 3 == 0) {
-        try {
-          _syncEventController.add(
-            AutoSyncEvent(
-              type: AutoSyncEventType.syncProgress,
-              timestamp: DateTime.now(),
-              message: 'Categorías',
-            ),
-          );
-          final isFirstSync = _syncCount == 0;
-          print(
-            '  📂 Sincronizando categorías (${isFirstSync ? "primera carga" : "sincronización periódica #$_syncCount"})',
-          );
-          syncedData['categories'] = await _syncCategories();
-          syncedItems.add('categorías');
-          print('  ✅ Categorías sincronizadas');
-        } catch (e) {
-          print('  ❌ Error sincronizando categorías: $e');
-        }
-      } else {
-        print(
-          '  ⏭️ Omitiendo categorías (sincronización #$_syncCount, próxima en ${3 - (_syncCount % 3)})',
-        );
-      }
-
-      // 6. Sincronizar productos (siempre en primera sincronización, luego cada 5 sincronizaciones)
-      if (_syncCount == 0 || _syncCount % 5 == 0) {
-        try {
-          _syncEventController.add(
-            AutoSyncEvent(
-              type: AutoSyncEventType.syncProgress,
-              timestamp: DateTime.now(),
-              message: 'Productos',
-            ),
-          );
-          final isFirstSync = _syncCount == 0;
-          print(
-            '  📦 Sincronizando productos (${isFirstSync ? "primera carga" : "sincronización periódica #$_syncCount"})',
-          );
-          syncedData['products'] = await _syncProducts();
-          syncedItems.add('productos');
-          print('  ✅ Productos sincronizados');
-
-          final productsData = syncedData['products'];
-          if (productsData is Map<String, dynamic> && productsData.isNotEmpty) {
-            try {
-              final promotionsSynced = await _syncProductPromotions(
-                productsData,
-              );
-              syncedItems.add('promociones producto ($promotionsSynced)');
-              print(
-                '  ✅ Promociones de productos sincronizadas: $promotionsSynced',
-              );
-            } catch (e) {
-              print('  ❌ Error sincronizando promociones de producto: $e');
-            }
-          } else {
-            print('  ⚠️ Sin productos para sincronizar promociones');
-          }
-        } catch (e) {
-          print('  ❌ Error sincronizando productos: $e');
-        }
-      } else {
-        print(
-          '  ⏭️ Omitiendo productos (sincronización #$_syncCount, próxima en ${5 - (_syncCount % 5)})',
-        );
-      }
-
-      // 7. Sincronizar turno y resumen
-      try {
-        _syncEventController.add(
-          AutoSyncEvent(
-            type: AutoSyncEventType.syncProgress,
-            timestamp: DateTime.now(),
-            message: 'Turno',
-          ),
-        );
-        final turnoData = await _syncTurno();
-        syncedData['turno'] = turnoData; // Para datos offline generales
-
-        // ✅ CORREGIDO: También guardar en la clave específica de turno offline
-        if (turnoData != null) {
-          await _userPreferencesService.saveOfflineTurno(turnoData);
-          print('  💾 Turno guardado en cache offline específico');
-        }
-
-        await _syncTurnoResumen();
-        await _syncResumenCierre();
-        syncedItems.add('turno');
-        print('  ✅ Turno y resúmenes sincronizados');
-      } catch (e) {
-        print('  ❌ Error sincronizando turno: $e');
-      }
-
-      // 8. Sincronizar egresos
-      try {
-        await _syncEgresos();
-        syncedItems.add('egresos');
-        print('  ✅ Egresos sincronizados');
-      } catch (e) {
-        print('  ❌ Error sincronizando egresos: $e');
-      }
-
-      // 9. Sincronizar egresos offline pendientes
-      try {
-        final syncedEgresos = await _syncOfflineEgresos();
-        if (syncedEgresos > 0) {
-          syncedData['offline_egresos'] = syncedEgresos;
-          syncedItems.add('egresos offline ($syncedEgresos)');
-          print('  ✅ $syncedEgresos egresos offline sincronizados');
-        }
-      } catch (e) {
-        print('  ❌ Error sincronizando egresos offline: $e');
-      }
-
-      // 10. Crear turno online si hay turno offline pendiente (antes de ventas offline)
-      try {
-        final turnoSynced = await _ensureOnlineTurnoFromOffline();
-        if (turnoSynced) {
-          syncedItems.add('turno offline');
-        }
-      } catch (e) {
-        print('  ❌ Error asegurando turno offline: $e');
-      }
-
-      // 11. Sincronizar ventas offline pendientes
-      try {
-        final syncedSales = await _syncOfflineSales();
-        if (syncedSales > 0) {
-          syncedData['offline_sales'] = syncedSales;
-          syncedItems.add('ventas offline ($syncedSales)');
-          print('  ✅ $syncedSales ventas offline sincronizadas');
-        }
-      } catch (e) {
-        print('  ❌ Error sincronizando ventas offline: $e');
-      }
-
-      // 12. Sincronizar órdenes (solo cada 2 sincronizaciones)
-      if (_syncCount % 2 == 0) {
-        try {
-          syncedData['orders'] = await _syncOrders();
-          syncedItems.add('órdenes');
-          print('  ✅ Órdenes sincronizadas');
-        } catch (e) {
-          print('  ❌ Error sincronizando órdenes: $e');
-        }
-      }
-
-      // 13. Sincronizar operaciones pendientes de trabajadores de turno
-      try {
-        final syncedWorkers = await ShiftWorkersService.syncPendingOperations();
-        if (syncedWorkers > 0) {
-          syncedData['shift_workers_synced'] = syncedWorkers;
-          syncedItems.add('trabajadores de turno ($syncedWorkers)');
-          print('  ✅ $syncedWorkers operaciones de trabajadores sincronizadas');
-        }
-      } catch (e) {
-        print('  ❌ Error sincronizando trabajadores de turno: $e');
-      }
-
-      // Hacer merge inteligente de datos sincronizados para uso offline futuro
-      if (syncedData.isNotEmpty) {
-        await _userPreferencesService.mergeOfflineData(syncedData);
-        print('  💾 Datos merged para uso offline futuro');
-      }
-
-      _lastSyncTime = DateTime.now();
-      _syncCount++;
-
-      final duration = _lastSyncTime!.difference(startTime);
-
-      _syncEventController.add(
-        AutoSyncEvent(
-          type: AutoSyncEventType.syncCompleted,
-          timestamp: _lastSyncTime!,
-          message: 'Sincronización completada: ${syncedItems.join(", ")}',
-          duration: duration,
-          itemsSynced: syncedItems,
-        ),
-      );
 
       print(
-        '✅ Sincronización automática #$_syncCount completada en ${duration.inSeconds}s',
+        '✅ Sincronización automática #$_syncCount '
+        'en ${result.duration.inSeconds}s '
+        '(${result.syncedItems.join(", ")})',
       );
-      print('📊 Items sincronizados: ${syncedItems.join(", ")}');
+      if (result.errors.isNotEmpty) {
+        print('⚠️ Errores parciales: ${result.errors.join("; ")}');
+      }
     } catch (e) {
       print('❌ Error en sincronización automática: $e');
-
       _syncEventController.add(
         AutoSyncEvent(
           type: AutoSyncEventType.syncFailed,
@@ -469,16 +204,42 @@ class AutoSyncService {
     } finally {
       _isSyncing = false;
 
-      // Si llegaron peticiones de sincronización mientras corría esta, ejecutar
-      // UNA pasada adicional para no perder actualizaciones (sin recursión
-      // ilimitada: se consume el flag antes de relanzar).
       if (_pendingSyncRequested) {
         _pendingSyncRequested = false;
         print('🔁 Ejecutando sincronización encolada...');
-        // Sin await para no encadenar el finally; se ejecuta a continuación.
         unawaited(_performSync());
       }
     }
+  }
+
+  /// Módulos de la pasada automática (respeta frecuencias periódicas).
+  Set<SyncModule> _modulesForAutoSyncPass() {
+    final modules = <SyncModule>{
+      SyncModule.uploadTurno,
+      SyncModule.uploadSales,
+      SyncModule.uploadEgresos,
+      SyncModule.uploadShiftWorkers,
+      SyncModule.uploadAdminOps,
+      SyncModule.license,
+      SyncModule.paymentMethods,
+      SyncModule.credentials,
+      SyncModule.promotions,
+      SyncModule.storeConfig,
+      SyncModule.turno,
+      SyncModule.egresos,
+    };
+
+    if (_syncCount == 0 || _syncCount % 3 == 0) {
+      modules.add(SyncModule.categories);
+    }
+    if (_syncCount == 0 || _syncCount % 5 == 0) {
+      modules.add(SyncModule.products);
+    }
+    if (_syncCount % 2 == 0) {
+      modules.add(SyncModule.orders);
+    }
+
+    return modules;
   }
 
   /// Sincronizar credenciales del usuario
@@ -640,6 +401,7 @@ class AutoSyncService {
           final detalle = detallesPorId[product['id'] as int];
           if (detalle != null) {
             product['detalles_completos'] = detalle;
+            _alignProductCantidadWithInventario(product);
           }
         }
       }
@@ -714,6 +476,25 @@ class AutoSyncService {
     );
     print('🎉 AutoSync: Total de productos sincronizados: $totalProducts');
     return productsByCategory;
+  }
+
+  /// Si el detalle trae inventario con stock, alinea `cantidad` del listado.
+  /// Si el inventario viene vacío, conserva la cantidad del listado (RPC).
+  void _alignProductCantidadWithInventario(Map<String, dynamic> product) {
+    final detalle = product['detalles_completos'];
+    if (detalle is! Map) return;
+    final inv = detalle['inventario'];
+    if (inv is! List || inv.isEmpty) return;
+
+    num sum = 0;
+    for (final row in inv) {
+      if (row is Map) {
+        sum += (row['cantidad_disponible'] as num?) ?? 0;
+      }
+    }
+    if (sum > 0) {
+      product['cantidad'] = sum;
+    }
   }
 
   /// Sincronizar promociones específicas por producto
@@ -822,76 +603,66 @@ class AutoSyncService {
     return null;
   }
 
-  Future<bool> _ensureOnlineTurnoFromOffline() async {
-    final offlineTurno = await _userPreferencesService.getOfflineTurno();
-    if (offlineTurno == null) {
-      return false;
-    }
+  /// Asegura en servidor la apertura de UN turno de la cola offline.
+  /// Devuelve el `server_id_turno` o null si falló.
+  Future<int?> _ensureAperturaForQueueEntry(Map<String, dynamic> entry) async {
+    final localId = entry['local_id']?.toString();
+    if (localId == null) return null;
+
+    final existingServer = entry['server_id_turno'];
+    if (existingServer is int) return existingServer;
+    if (existingServer is num) return existingServer.toInt();
+
+    final aperturaRaw = entry['apertura'];
+    final aperturaData =
+        aperturaRaw is Map
+            ? Map<String, dynamic>.from(aperturaRaw)
+            : Map<String, dynamic>.from(entry);
 
     final idTpv =
-        offlineTurno['id_tpv'] as int? ??
+        (entry['id_tpv'] ?? aperturaData['id_tpv']) as int? ??
         await _userPreferencesService.getIdTpv();
     final idVendedor =
-        offlineTurno['id_vendedor'] as int? ??
+        (entry['id_vendedor'] ?? aperturaData['id_vendedor']) as int? ??
         await _userPreferencesService.getIdSeller();
 
     if (idTpv == null || idVendedor == null) {
       print(
-        '  ⚠️ No se pudo obtener TPV o vendedor para validar turno offline',
+        '  ⚠️ No se pudo obtener TPV o vendedor para turno $localId',
       );
-      return false;
+      return null;
     }
 
-    final existingTurno = await _getOnlineOpenShift(
-      idTpv: idTpv,
-      idVendedor: idVendedor,
-    );
-    if (existingTurno != null) {
-      await _userPreferencesService.saveOfflineTurno(existingTurno);
-      print('  ✅ Turno online ya existe, cache offline actualizado');
-      return false;
+    var clientUuid =
+        entry['client_uuid_apertura']?.toString() ??
+        aperturaData['client_uuid']?.toString();
+    if (clientUuid == null || clientUuid.isEmpty) {
+      clientUuid = UuidGenerator.v4();
+      entry['client_uuid_apertura'] = clientUuid;
+      aperturaData['client_uuid'] = clientUuid;
+      await _userPreferencesService.upsertOfflineTurno({
+        ...entry,
+        'apertura': aperturaData,
+        'client_uuid_apertura': clientUuid,
+      });
     }
-
-    print('  🔄 Creando turno online desde datos offline...');
-
-    final pendingOperations =
-        await _userPreferencesService.getPendingOperations();
-    Map<String, dynamic>? aperturaData;
-
-    for (final operation in pendingOperations) {
-      if (operation['type'] == 'apertura_turno') {
-        final data = operation['data'];
-        if (data is Map<String, dynamic>) {
-          aperturaData = Map<String, dynamic>.from(data);
-        }
-        break;
-      }
-    }
-
-    aperturaData ??= Map<String, dynamic>.from(offlineTurno);
 
     final efectivoInicial =
         (aperturaData['efectivo_inicial'] ?? 0.0).toDouble();
-    final usuario = aperturaData['usuario'] as String? ?? '';
+    final usuario = (aperturaData['usuario'] ?? entry['usuario'] ?? '').toString();
     final manejaInventario =
         aperturaData['maneja_inventario'] as bool? ?? false;
     final observaciones = aperturaData['observaciones'] as String?;
     final productosRaw = aperturaData['productos'] as List<dynamic>? ?? [];
     final productos =
         productosRaw.map((item) => item as Map<String, dynamic>).toList();
+    final fechaApertura =
+        entry['fecha_apertura'] ?? aperturaData['fecha_apertura'];
 
-    // client_uuid de idempotencia: estable por apertura. Si la apertura offline
-    // se creó antes de esta mejora y no lo tiene, se genera y se persiste.
-    var clientUuid = aperturaData['client_uuid']?.toString();
-    if (clientUuid == null || clientUuid.isEmpty) {
-      clientUuid = UuidGenerator.v4();
-      aperturaData['client_uuid'] = clientUuid;
-    }
-
+    print('  🔄 Apertura cola turno $localId...');
     bool aperturaOk = false;
+    int? serverId;
 
-    // 1) Preferir el wrapper idempotente fn_apertura_turno_offline (evita
-    //    crear turnos duplicados si la sincronización se reintenta).
     try {
       final resp = await Supabase.instance.client.rpc(
         'fn_apertura_turno_offline',
@@ -904,20 +675,25 @@ class AutoSyncService {
           'p_maneja_inventario': manejaInventario,
           'p_productos': productos,
           'p_observaciones': observaciones,
+          'p_fecha_apertura': fechaApertura,
         },
       );
       if (resp is Map && resp['status'] == 'success') {
         aperturaOk = true;
-        if (resp['idempotent'] == true) {
-          print('  ♻️ Apertura idempotente (turno ya existía): ${resp['id_turno']}');
-        } else {
-          print('  ✅ Turno abierto vía wrapper idempotente: ${resp['id_turno']}');
+        final rawId = resp['id_turno'];
+        if (rawId is int) {
+          serverId = rawId;
+        } else if (rawId is num) {
+          serverId = rawId.toInt();
         }
+        print(
+          '  ✅ Apertura $localId → id_turno=$serverId'
+          '${resp['idempotent'] == true ? ' (idempotente)' : ''}',
+        );
       }
     } catch (e) {
-      // 2) Fallback: RPC idempotente no disponible (no se subió el .sql).
       print(
-        '  ⚠️ fn_apertura_turno_offline no disponible ($e). Usando registrarAperturaTurno.',
+        '  ⚠️ fn_apertura_turno_offline no disponible ($e). Fallback.',
       );
       final result = await TurnoService.registrarAperturaTurno(
         efectivoInicial: efectivoInicial,
@@ -929,26 +705,356 @@ class AutoSyncService {
         observaciones: observaciones,
       );
       aperturaOk = result['success'] == true;
-      if (!aperturaOk) {
-        print('  ❌ Error creando turno offline: ${result['message']}');
-      }
     }
 
-    if (aperturaOk) {
-      final turnoOnline = await _getOnlineOpenShift(
+    if (!aperturaOk) return null;
+
+    if (serverId == null) {
+      final online = await _getOnlineOpenShift(
         idTpv: idTpv,
         idVendedor: idVendedor,
       );
-      if (turnoOnline != null) {
-        await _userPreferencesService.saveOfflineTurno(turnoOnline);
+      final raw = online?['id'];
+      if (raw is int) {
+        serverId = raw;
+      } else if (raw is num) {
+        serverId = raw.toInt();
       }
-      await _userPreferencesService.removePendingOperationsByType(
-        'apertura_turno',
-      );
-      print('  ✅ Turno offline sincronizado antes de ventas');
-      return true;
+      if (online != null && fechaApertura != null) {
+        try {
+          await Supabase.instance.client
+              .from('app_dat_caja_turno')
+              .update({'fecha_apertura': fechaApertura})
+              .eq('id', serverId!);
+        } catch (e) {
+          print('  ⚠️ No se pudo alinear fecha_apertura: $e');
+        }
+      }
     }
 
+    if (serverId != null) {
+      await _userPreferencesService.setOfflineTurnoServerId(localId, serverId);
+    }
+    return serverId;
+  }
+
+  /// Compat: asegura el turno OPEN de la cola (o false si no hay).
+  Future<bool> _ensureOnlineTurnoFromOffline() async {
+    final open = await _userPreferencesService.getOpenOfflineTurno();
+    if (open == null) return false;
+    final id = await _ensureAperturaForQueueEntry(open);
+    return id != null;
+  }
+
+  DateTime? _parseTurnoDt(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is DateTime) return raw.toUtc();
+    return DateTime.tryParse(raw.toString())?.toUtc();
+  }
+
+  /// ¿La orden pertenece a este turno de la cola?
+  bool _orderBelongsToTurno(
+    Map<String, dynamic> order,
+    Map<String, dynamic> turno,
+  ) {
+    final orderLid = order['local_turno_id']?.toString();
+    final turnoLid = turno['local_id']?.toString();
+    if (orderLid != null && orderLid.isNotEmpty) {
+      return orderLid == turnoLid;
+    }
+    // Fallback legacy: ventana [apertura, cierre].
+    final created = _parseTurnoDt(
+      order['fecha_creacion'] ?? order['created_offline_at'],
+    );
+    if (created == null) return false;
+    final from = _parseTurnoDt(turno['fecha_apertura']);
+    final to = _parseTurnoDt(turno['fecha_cierre']);
+    if (from != null && created.isBefore(from)) return false;
+    if (to != null && created.isAfter(to)) return false;
+    if (from == null && to == null) return false;
+    return true;
+  }
+
+  /// Cierra en servidor un turno de la cola (closed_pending_sync).
+  Future<bool> _syncCierreForQueueEntry(Map<String, dynamic> entry) async {
+    if (entry['status'] !=
+        UserPreferencesService.offlineTurnoStatusClosedPending) {
+      return false;
+    }
+
+    final cierreRaw = entry['cierre'];
+    if (cierreRaw is! Map) {
+      print('  ⚠️ Turno ${entry['local_id']} closed sin payload de cierre');
+      return false;
+    }
+    final cierreData = Map<String, dynamic>.from(cierreRaw);
+
+    final idTpv =
+        cierreData['id_tpv'] ??
+        entry['id_tpv'] ??
+        await _userPreferencesService.getIdTpv();
+    final usuario = cierreData['usuario'] ?? entry['usuario'];
+    final efectivoFinal = cierreData['efectivo_final'] ?? 0.0;
+    final observaciones = cierreData['observaciones'] as String?;
+    final productosRaw = cierreData['productos'] as List<dynamic>? ?? [];
+    final productos =
+        productosRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+
+    if (idTpv == null || usuario == null) {
+      print('  ⚠️ Cierre sin id_tpv/usuario; se omite');
+      return false;
+    }
+
+    var clientUuid =
+        entry['client_uuid_cierre']?.toString() ??
+        cierreData['client_uuid']?.toString();
+    if (clientUuid == null || clientUuid.isEmpty) {
+      clientUuid = UuidGenerator.v4();
+    }
+
+    print('  🔄 Cierre cola turno ${entry['local_id']} (TPV $idTpv)...');
+    bool cerrado = false;
+
+    try {
+      final resp = await Supabase.instance.client.rpc(
+        'fn_cerrar_turno_offline',
+        params: {
+          'p_client_uuid': clientUuid,
+          'p_id_tpv': idTpv,
+          'p_efectivo_real': efectivoFinal,
+          'p_usuario': usuario,
+          'p_productos': productos,
+          'p_observaciones': observaciones,
+          'p_fecha_cierre':
+              cierreData['fecha_cierre'] ?? entry['fecha_cierre'],
+        },
+      );
+      cerrado = resp is Map && resp['status'] == 'success';
+      if (cerrado) {
+        print('  ✅ Cierre sincronizado (idempotent=${resp['idempotent']})');
+      } else {
+        print('  ⚠️ Cierre offline rechazado: $resp');
+      }
+    } catch (e) {
+      print('  ⚠️ fn_cerrar_turno_offline no disponible ($e). Fallback.');
+      try {
+        final result = await TurnoService.cerrarTurnoDetailed(
+          efectivoReal: (efectivoFinal as num).toDouble(),
+          productos: productos,
+          observaciones: observaciones,
+        );
+        cerrado = result.success;
+      } catch (e2) {
+        print('  ❌ Error en fallback de cierre offline: $e2');
+      }
+    }
+
+    if (cerrado) {
+      final localId = entry['local_id']?.toString();
+      if (localId != null) {
+        await _userPreferencesService.purgeFinalizedSyncedOrdersForTurno(
+          localId,
+        );
+        await _userPreferencesService.markOfflineTurnoSynced(localId);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /// Replay ordenado: por cada turno pending → apertura → ventas → egresos → cierre.
+  Future<Map<String, dynamic>> _syncOfflineTurnoQueue() async {
+    await _hydrateTurnosFromLegacyPendingOps();
+
+    final pending = await _userPreferencesService.getOfflineTurnosPendingSync();
+    if (pending.isEmpty) {
+      print('  📝 No hay turnos offline pendientes en cola');
+      return {'turnos': 0, 'sales': 0, 'egresos': 0, 'cierres': 0};
+    }
+
+    print('  🔄 Replay de ${pending.length} turno(s) offline...');
+    int salesTotal = 0;
+    int egresosTotal = 0;
+    int cierres = 0;
+    int aperturas = 0;
+
+    for (final entry in pending) {
+      final localId = entry['local_id']?.toString() ?? '?';
+      print('  ——— Turno $localId (${entry['status']}) ———');
+
+      final serverId = await _ensureAperturaForQueueEntry(entry);
+      if (serverId == null) {
+        print('  ❌ No se pudo abrir turno $localId; se detiene el replay');
+        break;
+      }
+      aperturas++;
+
+      // Refrescar entry tras set server_id
+      final refreshed =
+          await _userPreferencesService.getOfflineTurnoByLocalId(localId) ??
+          entry;
+
+      final sales = await _syncOfflineSales(forTurno: refreshed);
+      salesTotal += sales;
+
+      final egresos = await _syncOfflineEgresos(
+        forLocalTurnoId: localId,
+        serverIdTurno: serverId,
+      );
+      egresosTotal += egresos;
+
+      // Workers: remapear id_turno local → server antes de sync global.
+      await _remapShiftWorkerOpsForTurno(localId, serverId);
+
+      if (refreshed['status'] ==
+          UserPreferencesService.offlineTurnoStatusClosedPending) {
+        final ok = await _syncCierreForQueueEntry(refreshed);
+        if (ok) {
+          cierres++;
+        } else {
+          print('  ❌ Cierre falló para $localId; se detiene el replay');
+          break;
+        }
+      }
+    }
+
+    // Sync workers restantes (ya remapeados).
+    try {
+      await ShiftWorkersService.syncPendingOperations();
+    } catch (e) {
+      print('  ⚠️ Error sync trabajadores tras cola: $e');
+    }
+
+    return {
+      'turnos': aperturas,
+      'sales': salesTotal,
+      'egresos': egresosTotal,
+      'cierres': cierres,
+    };
+  }
+
+  /// Incorpora apertura/cierre legacy de pending_operations a la cola.
+  Future<void> _hydrateTurnosFromLegacyPendingOps() async {
+    final ops = await _userPreferencesService.getPendingOperations();
+    final aperturas =
+        ops.where((o) => o['type'] == 'apertura_turno').toList();
+    final cierres = ops.where((o) => o['type'] == 'cierre_turno').toList();
+    if (aperturas.isEmpty && cierres.isEmpty) return;
+
+    final existing = await _userPreferencesService.getOfflineTurnos();
+    final knownClients =
+        existing
+            .map((t) => t['client_uuid_apertura']?.toString())
+            .whereType<String>()
+            .toSet();
+
+    for (final op in aperturas) {
+      final data = op['data'];
+      if (data is! Map) continue;
+      final map = Map<String, dynamic>.from(data);
+      final cu = map['client_uuid']?.toString();
+      if (cu != null && knownClients.contains(cu)) continue;
+
+      // ¿Hay cierre legacy pareado? (mismo id_tpv, posterior)
+      Map<String, dynamic>? cierreMatch;
+      for (final cOp in cierres) {
+        final cData = cOp['data'];
+        if (cData is! Map) continue;
+        final cMap = Map<String, dynamic>.from(cData);
+        if (cMap['id_tpv'] == map['id_tpv']) {
+          cierreMatch = cMap;
+          break;
+        }
+      }
+
+      try {
+        if (cierreMatch != null) {
+          final localId = map['local_id']?.toString() ??
+              map['local_turno_id']?.toString() ??
+              UuidGenerator.v4();
+          await _userPreferencesService.upsertOfflineTurno({
+            'local_id': localId,
+            'client_uuid_apertura':
+                map['client_uuid']?.toString() ?? UuidGenerator.v4(),
+            'client_uuid_cierre':
+                cierreMatch['client_uuid']?.toString() ?? UuidGenerator.v4(),
+            'status':
+                UserPreferencesService.offlineTurnoStatusClosedPending,
+            'id_tpv': map['id_tpv'],
+            'id_vendedor': map['id_vendedor'],
+            'usuario': map['usuario'],
+            'fecha_apertura': map['fecha_apertura'],
+            'fecha_cierre': cierreMatch['fecha_cierre'],
+            'apertura': {...map, 'local_id': localId},
+            'cierre': {...cierreMatch, 'local_turno_id': localId},
+          });
+        } else if (await _userPreferencesService.getOpenOfflineTurno() ==
+            null) {
+          await _userPreferencesService.createOpenOfflineTurno(
+            aperturaPayload: map,
+          );
+        }
+      } catch (e) {
+        print('  ⚠️ hydrate legacy apertura: $e');
+      }
+    }
+
+    // Limpiar ops de turno legacy: la cola es fuente de verdad.
+    final filtered =
+        ops
+            .where(
+              (o) =>
+                  o['type'] != 'apertura_turno' && o['type'] != 'cierre_turno',
+            )
+            .toList();
+    if (filtered.length != ops.length) {
+      await _userPreferencesService.savePendingOperations(filtered);
+      print('  🧹 Ops legacy apertura/cierre movidas a cola offline_turnos');
+    }
+  }
+
+  Future<void> _remapShiftWorkerOpsForTurno(
+    String localTurnoId,
+    int serverId,
+  ) async {
+    final ops = await _userPreferencesService.getPendingOperations();
+    var changed = false;
+    for (final op in ops) {
+      if (op['type'] != 'add_shift_worker') continue;
+      final data = op['data'];
+      if (data is! Map) continue;
+      final map = Map<String, dynamic>.from(data);
+      final lid = map['local_turno_id']?.toString();
+      final idTurno = map['id_turno'];
+      final matches =
+          lid == localTurnoId ||
+          idTurno?.toString() == localTurnoId ||
+          (idTurno is! int && lid == null);
+      if (!matches && lid != null && lid != localTurnoId) continue;
+      if (lid == localTurnoId || idTurno?.toString() == localTurnoId) {
+        map['id_turno'] = serverId;
+        map['local_turno_id'] = localTurnoId;
+        op['data'] = map;
+        changed = true;
+      }
+    }
+    if (changed) {
+      await _userPreferencesService.savePendingOperations(ops);
+    }
+  }
+
+  /// Compat: cierra el primer closed_pending_sync de la cola.
+  Future<bool> _syncOfflineCierreIfPending() async {
+    final pending = await _userPreferencesService.getOfflineTurnosPendingSync();
+    for (final t in pending) {
+      if (t['status'] ==
+          UserPreferencesService.offlineTurnoStatusClosedPending) {
+        // Debe haberse abierto antes; el queue loop es el camino correcto.
+        final serverId = await _ensureAperturaForQueueEntry(t);
+        if (serverId == null) return false;
+        return _syncCierreForQueueEntry(t);
+      }
+    }
     return false;
   }
 
@@ -1042,37 +1148,61 @@ class AutoSyncService {
     }
   }
 
-  /// Sincronizar egresos offline pendientes
-  Future<int> _syncOfflineEgresos() async {
+  /// Sincronizar egresos offline pendientes.
+  /// Si [forLocalTurnoId] se indica, solo sube egresos de ese turno y usa
+  /// [serverIdTurno] como id_turno en el RPC.
+  Future<int> _syncOfflineEgresos({
+    String? forLocalTurnoId,
+    int? serverIdTurno,
+  }) async {
     final egresosOffline = await _userPreferencesService.getEgresosOffline();
 
-    if (egresosOffline.isEmpty) {
-      print('  📝 No hay egresos offline pendientes');
+    final filtered =
+        forLocalTurnoId == null
+            ? egresosOffline
+            : egresosOffline.where((e) {
+              final lid = e['local_turno_id']?.toString();
+              if (lid != null) return lid == forLocalTurnoId;
+              // Legacy sin local_turno_id: incluir solo si no hay filtro estricto
+              // o si el id_turno ya es el server id.
+              if (serverIdTurno != null && e['id_turno'] == serverIdTurno) {
+                return true;
+              }
+              // Sin vínculo: solo al sync global (sin filtro).
+              return false;
+            }).toList();
+
+    if (filtered.isEmpty) {
+      print('  📝 No hay egresos offline pendientes'
+          '${forLocalTurnoId != null ? ' para turno $forLocalTurnoId' : ''}');
       return 0;
     }
 
-    print('  🔄 Sincronizando ${egresosOffline.length} egresos offline...');
+    print('  🔄 Sincronizando ${filtered.length} egresos offline...');
     int syncedCount = 0;
-    // Solo se removerán de pendientes los egresos REALMENTE sincronizados; los
-    // que fallen quedan para el próximo intento (no se pierden).
     final syncedOfflineIds = <String>[];
     final userId = await _userPreferencesService.getUserId();
 
-    for (var egresoData in egresosOffline) {
+    for (var egresoData in filtered) {
       final offlineId = egresoData['offline_id']?.toString();
       try {
         print('    - Procesando egreso offline: $offlineId');
 
-        // Extraer datos del egreso offline
-        final idTurno = egresoData['id_turno'] as int;
+        final idTurno =
+            serverIdTurno ??
+            (egresoData['id_turno'] is int
+                ? egresoData['id_turno'] as int
+                : int.tryParse('${egresoData['id_turno']}'));
+        if (idTurno == null) {
+          print('    ⚠️ Egreso sin id_turno servidor; se omite');
+          continue;
+        }
         final montoEntrega = (egresoData['monto_entrega'] ?? 0.0).toDouble();
         final motivoEntrega = egresoData['motivo_entrega'] as String;
         final nombreAutoriza = egresoData['nombre_autoriza'] as String;
         final nombreRecibe = egresoData['nombre_recibe'] as String;
         final idMedioPago = egresoData['id_medio_pago'] as int?;
 
-        // 🔑 IDEMPOTENCIA: client_uuid estable por egreso. Si la creación
-        // offline se hizo antes de esta mejora y no lo tiene, se genera.
         var clientUuid = egresoData['client_uuid']?.toString();
         if (clientUuid == null || clientUuid.isEmpty) {
           clientUuid = UuidGenerator.v4();
@@ -1081,7 +1211,6 @@ class AutoSyncService {
 
         Map<String, dynamic>? result;
         try {
-          // Preferir el wrapper idempotente fn_registrar_egreso_offline.
           final resp = await Supabase.instance.client.rpc(
             'fn_registrar_egreso_offline',
             params: {
@@ -1099,9 +1228,6 @@ class AutoSyncService {
             result = Map<String, dynamic>.from(resp);
           }
         } catch (e) {
-          // Fallback: wrapper idempotente no disponible (no se subió el .sql).
-          // NOTA: sin idempotencia del servidor, el control de duplicados
-          // depende del marcado local (removeEgresosOfflineByIds).
           print(
             '    ⚠️ fn_registrar_egreso_offline no disponible ($e). Usando registrarEgresoParcial.',
           );
@@ -1127,11 +1253,9 @@ class AutoSyncService {
         }
       } catch (e) {
         print('    ❌ Error sincronizando egreso offline $offlineId: $e');
-        // Continúa con el siguiente egreso sin interrumpir el proceso
       }
     }
 
-    // Remover SOLO los sincronizados; los fallidos quedan pendientes.
     if (syncedOfflineIds.isNotEmpty) {
       await _userPreferencesService.removeEgresosOfflineByIds(syncedOfflineIds);
     }
@@ -1139,7 +1263,115 @@ class AutoSyncService {
     return syncedCount;
   }
 
-  /// Sincronizar órdenes recientes
+  /// Ventana [apertura, cierre] del turno actual (offline / pending / servidor).
+  /// Las operaciones del turno son las que caen dentro de ese intervalo.
+  Future<({DateTime? from, DateTime? to})> _resolveTurnoOperacionesWindow() async {
+    DateTime? from;
+    DateTime? to;
+
+    DateTime? parseDt(dynamic raw) {
+      if (raw == null) return null;
+      if (raw is DateTime) return raw.toUtc();
+      return DateTime.tryParse(raw.toString())?.toUtc();
+    }
+
+    final offlineTurno = await _userPreferencesService.getOfflineTurno();
+    if (offlineTurno != null) {
+      from = parseDt(offlineTurno['fecha_apertura']);
+      to = parseDt(offlineTurno['fecha_cierre']);
+    }
+
+    // Cola multi-turno: usar el turno open o el más reciente closed_pending.
+    if (from == null) {
+      final pending =
+          await _userPreferencesService.getOfflineTurnosPendingSync();
+      if (pending.isNotEmpty) {
+        final last = pending.last;
+        from = parseDt(last['fecha_apertura']);
+        to = parseDt(last['fecha_cierre']);
+      }
+    }
+
+    final pendingOps = await _userPreferencesService.getPendingOperations();
+    for (final op in pendingOps) {
+      final type = op['type']?.toString();
+      final data = op['data'];
+      if (data is! Map) continue;
+      final map = Map<String, dynamic>.from(data);
+      if (type == 'apertura_turno') {
+        from ??= parseDt(map['fecha_apertura']);
+      } else if (type == 'cierre_turno') {
+        to ??= parseDt(map['fecha_cierre']);
+        from ??= parseDt(map['fecha_apertura']);
+      }
+    }
+
+    // Si aún no hay apertura local, usar el turno abierto en servidor.
+    if (from == null) {
+      try {
+        final idTpv = await _userPreferencesService.getIdTpv();
+        final idVendedor = await _userPreferencesService.getIdSeller();
+        if (idTpv != null && idVendedor != null) {
+          final online = await _getOnlineOpenShift(
+            idTpv: idTpv,
+            idVendedor: idVendedor,
+          );
+          from = parseDt(online?['fecha_apertura']);
+          to ??= parseDt(online?['fecha_cierre']);
+        }
+      } catch (e) {
+        print('  ⚠️ No se pudo leer turno online para ventana: $e');
+      }
+    }
+
+    // Turno abierto: hasta "ahora".
+    to ??= DateTime.now().toUtc();
+
+    return (from: from, to: to);
+  }
+
+  String? _toDateParam(DateTime? dt) {
+    if (dt == null) return null;
+    final local = dt.toLocal();
+    final y = local.year.toString().padLeft(4, '0');
+    final m = local.month.toString().padLeft(2, '0');
+    final d = local.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
+  /// Filtra filas de listar_ordenes al intervalo exacto del turno.
+  List<Map<String, dynamic>> _filterOrdersByTurnoWindow(
+    List<Map<String, dynamic>> orders, {
+    required DateTime? from,
+    required DateTime? to,
+  }) {
+    if (from == null && to == null) return orders;
+
+    DateTime? parseDt(dynamic raw) {
+      if (raw == null) return null;
+      if (raw is DateTime) return raw.toUtc();
+      return DateTime.tryParse(raw.toString())?.toUtc();
+    }
+
+    final filtered =
+        orders.where((row) {
+          final fo = parseDt(
+            row['fecha_operacion'] ?? row['created_at'] ?? row['fecha'],
+          );
+          if (fo == null) return true;
+          if (from != null && fo.isBefore(from)) return false;
+          if (to != null && fo.isAfter(to)) return false;
+          return true;
+        }).toList();
+
+    print(
+      '  📅 Filtro turno: ${orders.length} → ${filtered.length} ops '
+      '(desde=${from?.toIso8601String()} hasta=${to?.toIso8601String()})',
+    );
+    return filtered;
+  }
+
+  /// Sincronizar órdenes del turno actual (apertura → cierre/ahora).
   Future<List<Map<String, dynamic>>> _syncOrders() async {
     final userData = await _userPreferencesService.getUserData();
     final idTienda = await _userPreferencesService.getIdTienda();
@@ -1150,45 +1382,133 @@ class AutoSyncService {
       return [];
     }
 
+    final window = await _resolveTurnoOperacionesWindow();
+    final fechaDesde = _toDateParam(window.from);
+    final fechaHasta = _toDateParam(window.to);
+
+    print(
+      '  📅 listar_ordenes por turno: desde=$fechaDesde hasta=$fechaHasta '
+      '(apertura=${window.from?.toIso8601String()}, '
+      'cierre=${window.to?.toIso8601String()})',
+    );
+
     final response = await Supabase.instance.client.rpc(
       'listar_ordenes',
       params: {
         'con_inventario_param': false,
-        'fecha_desde_param': null,
-        'fecha_hasta_param': null,
+        // Fechas de calendario para acotar en servidor (el RPC usa DATE).
+        // El filtro fino por hora del turno se aplica después en cliente.
+        'fecha_desde_param': fechaDesde,
+        'fecha_hasta_param': fechaHasta,
         'id_estado_param': null,
         'id_tienda_param': idTienda,
         'id_tipo_operacion_param': null,
         'id_tpv_param': idTpv,
         'id_usuario_param': userId,
-        'limite_param': 50, // Limitar a 50 órdenes más recientes
-        'pagina_param': null,
+        'limite_param': 200,
+        'pagina_param': 1,
         'solo_pendientes_param': false,
       },
     );
 
-    if (response is List && response.isNotEmpty) {
-      return response.cast<Map<String, dynamic>>();
+    if (response is! List || response.isEmpty) {
+      return [];
     }
 
-    return [];
+    final raw = response.cast<Map<String, dynamic>>();
+    return _filterOrdersByTurnoWindow(
+      raw,
+      from: window.from,
+      to: window.to,
+    );
   }
 
-  /// Sincronizar ventas offline pendientes
-  Future<int> _syncOfflineSales() async {
-    final pendingOrders = await _userPreferencesService.getPendingOrders();
-
-    if (pendingOrders.isEmpty) {
-      print('  📝 No hay ventas offline pendientes');
+  /// Baja al cache local las órdenes/operaciones del servidor (turno abierto)
+  /// e incluye las que solo existen allá. Reconcilia pending locales synced
+  /// que ya aparecen en servidor para no duplicar en el listado.
+  Future<int> _pullServerOrdersIntoCache() async {
+    print('  ⬇️ Descargando operaciones del turno actual al dispositivo...');
+    final window = await _resolveTurnoOperacionesWindow();
+    if (window.from == null) {
+      print(
+        '  ⚠️ Sin fecha_apertura de turno: no se bajará cache de órdenes '
+        '(evita mezclar turnos)',
+      );
       return 0;
     }
 
-    print('  🔄 Sincronizando ${pendingOrders.length} ventas offline...');
+    final orders = await _syncOrders();
+    if (orders.isEmpty) {
+      print(
+        '  ℹ️ No hay operaciones en el rango del turno '
+        '(${window.from?.toIso8601String()} → ${window.to?.toIso8601String()})',
+      );
+      // Limpia cache de órdenes de turnos anteriores para este dispositivo.
+      await _userPreferencesService.mergeOfflineData({'orders': <dynamic>[]});
+      return 0;
+    }
+
+    await _userPreferencesService.mergeOfflineData({'orders': orders});
+
+    final serverOpIds = <int>{};
+    for (final row in orders) {
+      final raw = row['id_operacion'] ?? row['id'];
+      final id =
+          raw is int
+              ? raw
+              : (raw is num ? raw.toInt() : int.tryParse('$raw'));
+      if (id != null) serverOpIds.add(id);
+    }
+
+    await _userPreferencesService.removeSyncedPendingPresentOnServer(
+      serverOpIds,
+    );
+
+    try {
+      await _syncResumenCierre();
+      await _syncTurnoResumen();
+    } catch (e) {
+      print('  ⚠️ No se pudo refrescar resumen tras bajar órdenes: $e');
+    }
+
+    print(
+      '  ✅ Cache local actualizado con ${orders.length} órdenes del turno',
+    );
+    return orders.length;
+  }
+
+  /// API pública: baja operaciones del turno actual (apertura→cierre/ahora).
+  Future<int> pullServerOrdersForCurrentShift() => _pullServerOrdersIntoCache();
+
+  /// Sincronizar ventas offline pendientes.
+  /// Si [forTurno] se indica, solo sube órdenes de ese turno (local_turno_id
+  /// o ventana de fechas legacy).
+  Future<int> _syncOfflineSales({Map<String, dynamic>? forTurno}) async {
+    final pendingOrders = await _userPreferencesService.getPendingOrders();
+    var toSync =
+        pendingOrders.where((o) => o['synced'] != true).toList(growable: false);
+
+    if (forTurno != null) {
+      toSync =
+          toSync.where((o) => _orderBelongsToTurno(o, forTurno)).toList(
+            growable: false,
+          );
+    }
+
+    if (toSync.isEmpty) {
+      print(
+        '  📝 No hay ventas offline pendientes de subir'
+        '${forTurno != null ? ' para turno ${forTurno['local_id']}' : ''}',
+      );
+      return 0;
+    }
+
+    print('  🔄 Sincronizando ${toSync.length} ventas offline...');
     int syncedCount = 0;
     final syncedOrderIds = <String>[];
     final syncedOperationIds = <String, int>{};
 
-    for (var orderData in pendingOrders) {
+    for (var orderData in toSync) {
       final orderId = orderData['id']?.toString();
       try {
         if (orderId == null || orderId.isEmpty) {
@@ -1197,20 +1517,13 @@ class AutoSyncService {
 
         print('    - Procesando venta offline: $orderId');
 
-        // Limpiar error previo para reflejar solo el resultado de este intento
         await _userPreferencesService.clearPendingOrderError(orderId);
-
-        // 1. Registrar cliente si hay datos
         await _registerClientFromOfflineData(orderData);
-
-        // 2. Registrar la venta (idempotente por client_uuid)
         await _registerSaleInSupabase(orderData);
 
-        // 3. Completar la orden según su estado
         final estado = (orderData['estado'] ?? 'completada').toString();
         await _completeOrderWithStatus(orderId, estado);
 
-        // Capturar el id_operacion devuelto por el servidor para asociarlo.
         final opId = orderData['_operation_id'];
         if (opId is int) {
           syncedOperationIds[orderId] = opId;
@@ -1227,19 +1540,17 @@ class AutoSyncService {
             e.toString(),
           );
         }
-        // Continúa con la siguiente venta sin interrumpir el proceso
       }
     }
 
     if (syncedOrderIds.isNotEmpty) {
-      // Marcar como sincronizadas (NO eliminar) para que las órdenes activas
-      // sigan visibles en la pantalla de órdenes. Asociar id_operacion.
       await _userPreferencesService.markOrdersSyncedById(
         syncedOrderIds,
         operationIds: syncedOperationIds,
       );
-      // Purgar solo las que además están en estado final.
-      await _userPreferencesService.purgeFinalizedSyncedOrders();
+      print(
+        '  synced conservadas hasta cierre: ${syncedOrderIds.length}',
+      );
     }
 
     return syncedCount;
@@ -1275,8 +1586,19 @@ class AutoSyncService {
       final estado = (orderData['estado'] ?? 'completada').toString();
       await _completeOrderWithStatus(orderId, estado);
 
-      await _cleanupSyncedOrders([orderId]);
-      print('✅ Reintento manual exitoso: $orderId');
+      // Igual que el sync batch: asociar id_operacion y marcar sincronizada.
+      final opId = orderData['_operation_id'];
+      final operationIds = <String, int>{};
+      if (opId is int) {
+        operationIds[orderId] = opId;
+      }
+
+      await _userPreferencesService.markOrdersSyncedById(
+        [orderId],
+        operationIds: operationIds.isEmpty ? null : operationIds,
+      );
+      // Conservar en dispositivo hasta cierre de turno.
+      print('✅ Reintento manual exitoso: $orderId (op=$opId)');
       return true;
     } catch (e) {
       print('❌ Reintento manual falló para $orderId: $e');
@@ -1409,6 +1731,8 @@ class AutoSyncService {
           'p_productos': productos,
           'p_uuid': userId,
           'p_id_cliente': orderData['idCliente'],
+          'p_fecha_creacion':
+              orderData['fecha_creacion'] ?? orderData['created_offline_at'],
         },
       );
     } catch (e) {
@@ -1492,9 +1816,70 @@ class AutoSyncService {
             orderData: orderData,
           );
         }
+
+        // Subir foto de operación pendiente (si se capturó offline)
+        await _uploadPendingOperationPhoto(operationId, orderData);
       }
     } else {
       throw Exception(response?['message'] ?? 'Error en el registro de venta');
+    }
+  }
+
+  /// Sube la foto guardada localmente (o en base64) y la asocia a la operación.
+  Future<void> _uploadPendingOperationPhoto(
+    int operationId,
+    Map<String, dynamic> orderData,
+  ) async {
+    try {
+      Uint8List? bytes;
+      final mime =
+          orderData['foto_operacion_mime']?.toString() ?? 'image/jpeg';
+      final localPath = orderData['foto_operacion_local_path']?.toString();
+      final b64 = orderData['foto_operacion_base64']?.toString();
+
+      if (localPath != null && localPath.isNotEmpty) {
+        final file = File(localPath);
+        if (await file.exists()) {
+          bytes = await file.readAsBytes();
+        }
+      } else if (b64 != null && b64.isNotEmpty) {
+        bytes = Uint8List.fromList(base64Decode(b64));
+      }
+
+      if (bytes == null || bytes.isEmpty) return;
+
+      final ext = mime.contains('png') ? 'png' : 'jpg';
+      final path =
+          'operaciones/${operationId}_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      await Supabase.instance.client.storage
+          .from('productos')
+          .uploadBinary(
+            path,
+            bytes,
+            fileOptions: FileOptions(contentType: mime),
+          );
+      final url =
+          Supabase.instance.client.storage.from('productos').getPublicUrl(path);
+
+      await Supabase.instance.client
+          .from('app_dat_operaciones')
+          .update({'foto_operacion_url': url})
+          .eq('id', operationId);
+
+      // Limpiar archivo local
+      if (localPath != null) {
+        try {
+          final file = File(localPath);
+          if (await file.exists()) await file.delete();
+        } catch (_) {}
+      }
+      orderData.remove('foto_operacion_local_path');
+      orderData.remove('foto_operacion_base64');
+      print('    📷 Foto de operación $operationId subida');
+    } catch (e) {
+      // No fallar toda la sync por la foto; se reintentará en el próximo pase
+      // mientras el archivo local siga existiendo.
+      print('    ⚠️ Error subiendo foto de operación $operationId: $e');
     }
   }
 
@@ -1651,15 +2036,72 @@ class AutoSyncService {
     }
   }
 
-  /// Forzar una sincronización inmediata
-  Future<void> forceSyncNow() async {
+  /// Forzar una sincronización inmediata.
+  ///
+  /// [allowWhileOffline]: si true, ejecuta uploads (ventas pendientes, etc.)
+  /// aunque el modo offline esté activo — usado por el FAB de órdenes cuando
+  /// el usuario confirma explícitamente sincronizar.
+  Future<void> forceSyncNow({bool allowWhileOffline = false}) async {
     if (_isSyncing) {
       print('⏳ Sincronización ya en progreso');
       return;
     }
 
-    print('🚀 Forzando sincronización inmediata...');
-    await _performSync();
+    print(
+      '🚀 Forzando sincronización inmediata'
+      '${allowWhileOffline ? " (permitida en modo offline)" : ""}...',
+    );
+
+    if (!allowWhileOffline) {
+      await _performSync();
+      return;
+    }
+
+    // Bypass del guard de modo offline: solo módulos de subida.
+    final wasOffline = await _userPreferencesService.isOfflineModeEnabled();
+    if (wasOffline) {
+      await _userPreferencesService.setOfflineMode(false);
+    }
+    try {
+      await syncModules({
+        SyncModule.uploadTurno,
+        SyncModule.uploadSales,
+        SyncModule.uploadEgresos,
+        SyncModule.uploadShiftWorkers,
+        SyncModule.uploadAdminOps,
+      });
+    } finally {
+      if (wasOffline) {
+        await _userPreferencesService.setOfflineMode(true);
+      }
+    }
+  }
+
+
+  /// Sincroniza turno (apertura) + ventas pendientes + baja operaciones del
+  /// servidor + cierre (si aplica). Replay ordenado de la cola multi-turno.
+  Future<int> forceSyncPendingOrders() async {
+    final isAuthenticated = await _reauthService.ensureAuthenticated();
+    if (!isAuthenticated) {
+      throw Exception('No se pudo autenticar al usuario para sincronización');
+    }
+
+    int synced = 0;
+    try {
+      final result = await _syncOfflineTurnoQueue();
+      synced = (result['sales'] as int?) ?? 0;
+    } catch (e) {
+      print('⚠️ Error en replay de cola de turnos: ');
+      synced = await _syncOfflineSales();
+    }
+
+    try {
+      await _pullServerOrdersIntoCache();
+    } catch (e) {
+      print('⚠️ No se pudieron descargar órdenes del servidor: ');
+    }
+
+    return synced;
   }
 
   /// Esperar a que NO haya ningún pase de sincronización en curso.
@@ -1723,6 +2165,18 @@ class AutoSyncService {
 
       if (success) {
         print('✅ Configuración de tienda sincronizada exitosamente');
+
+        // Renovar licencia firmada junto con la config (obligatorio para offline)
+        try {
+          print('🔐 Renovando licencia firmada...');
+          final fetched =
+              await OfflineLicenseService().fetchAndStoreSignedLicense(idTienda);
+          print(fetched
+              ? '✅ Licencia firmada renovada'
+              : '⚠️ No se pudo renovar licencia firmada');
+        } catch (e) {
+          print('⚠️ Error renovando licencia firmada: $e');
+        }
       } else {
         print('⚠️ No se pudo sincronizar configuración de tienda');
       }
@@ -1735,6 +2189,265 @@ class AutoSyncService {
   void dispose() {
     stopAutoSync();
     _syncEventController.close();
+  }
+
+  // ========== SYNC SELECTIVA POR MÓDULOS (Fase 4) ==========
+
+  /// Sincroniza solo los módulos indicados.
+  /// La licencia firmada se incluye siempre si hay alguno de descarga.
+  Future<SyncResult> syncModules(
+    Set<SyncModule> modules, {
+    bool requireAuth = true,
+  }) async {
+    final startTime = DateTime.now();
+    final syncedItems = <String>[];
+    final errors = <String>[];
+    final syncedData = <String, dynamic>{};
+
+    // Licencia siempre si hay módulos de descarga
+    final hasDownload = modules.any((m) => m.isDownload);
+    final effective = Set<SyncModule>.from(modules);
+    if (hasDownload) {
+      effective.add(SyncModule.license);
+    }
+
+    try {
+      if (requireAuth) {
+        final isAuthenticated = await _reauthService.ensureAuthenticated();
+        if (!isAuthenticated) {
+          throw Exception('No se pudo autenticar al usuario para sincronización');
+        }
+      }
+
+      _syncEventController.add(
+        AutoSyncEvent(
+          type: AutoSyncEventType.syncStarted,
+          timestamp: startTime,
+          message: 'Sincronización selectiva iniciada',
+        ),
+      );
+
+      // Orden fijo del pipeline (solo cuentan los seleccionados en [effective]).
+      const pipelineOrder = [
+        SyncModule.uploadTurno,
+        SyncModule.uploadSales,
+        SyncModule.uploadEgresos,
+        SyncModule.uploadShiftWorkers,
+        SyncModule.uploadAdminOps,
+        SyncModule.license,
+        SyncModule.storeConfig,
+        SyncModule.credentials,
+        SyncModule.paymentMethods,
+        SyncModule.promotions,
+        SyncModule.categories,
+        SyncModule.products,
+        SyncModule.turno,
+        SyncModule.egresos,
+        SyncModule.orders,
+      ];
+      final totalSteps = pipelineOrder.where(effective.contains).length;
+      var stepIndex = 0;
+
+      Future<void> run(
+        SyncModule module,
+        String label,
+        Future<void> Function() action,
+      ) async {
+        if (!effective.contains(module)) return;
+        stepIndex++;
+        try {
+          _syncEventController.add(
+            AutoSyncEvent(
+              type: AutoSyncEventType.syncProgress,
+              timestamp: DateTime.now(),
+              message: label,
+              progressCurrent: stepIndex,
+              progressTotal: totalSteps,
+            ),
+          );
+          await action();
+          syncedItems.add(label);
+        } catch (e) {
+          print('❌ Error en módulo $label: $e');
+          errors.add('$label: $e');
+        }
+      }
+
+      // --- Upload primero (para no perder ventas locales) ---
+      // Replay ordenado: apertura → ventas → egresos → cierre por cada turno.
+      var queueAlreadyRan = false;
+      await run(SyncModule.uploadTurno, 'Turnos offline (cola)', () async {
+        final result = await _syncOfflineTurnoQueue();
+        queueAlreadyRan = true;
+        if ((result['turnos'] as int? ?? 0) > 0) {
+          syncedData['offline_turnos'] = result;
+        }
+      });
+
+      await run(SyncModule.uploadSales, 'Ventas offline (subir)', () async {
+        if (!queueAlreadyRan) {
+          final result = await _syncOfflineTurnoQueue();
+          queueAlreadyRan = true;
+          if ((result['sales'] as int? ?? 0) > 0) {
+            syncedData['offline_sales'] = result['sales'];
+          }
+        } else {
+          final n = await _syncOfflineSales();
+          if (n > 0) syncedData['offline_sales'] = n;
+        }
+      });
+
+      await run(SyncModule.uploadEgresos, 'Egresos offline (subir)', () async {
+        if (!queueAlreadyRan) {
+          final result = await _syncOfflineTurnoQueue();
+          queueAlreadyRan = true;
+          if ((result['egresos'] as int? ?? 0) > 0) {
+            syncedData['offline_egresos'] = result['egresos'];
+          }
+        } else {
+          final n = await _syncOfflineEgresos();
+          if (n > 0) syncedData['offline_egresos'] = n;
+        }
+      });
+
+      await run(
+        SyncModule.uploadShiftWorkers,
+        'Trabajadores de turno (subir)',
+        () async {
+          final n = await ShiftWorkersService.syncPendingOperations();
+          if (n > 0) syncedData['shift_workers_synced'] = n;
+        },
+      );
+
+      await run(
+        SyncModule.uploadAdminOps,
+        'Admin inventario/productos (subir)',
+        () async {
+          final n = await AdminInventoryService().syncPendingOps();
+          if (n > 0) syncedData['admin_ops_synced'] = n;
+        },
+      );
+
+      // --- Download ---
+      await run(SyncModule.license, 'Licencia', () async {
+        final idTienda = await _userPreferencesService.getIdTienda();
+        if (idTienda == null) throw Exception('Sin id de tienda');
+        final ok =
+            await OfflineLicenseService().fetchAndStoreSignedLicense(idTienda);
+        if (!ok) throw Exception('No se pudo renovar la licencia firmada');
+      });
+
+      await run(SyncModule.storeConfig, 'Configuración de tienda', () async {
+        await _syncStoreConfig();
+      });
+
+      await run(SyncModule.credentials, 'Credenciales', () async {
+        syncedData['credentials'] = await _syncCredentials();
+      });
+
+      await run(SyncModule.paymentMethods, 'Métodos de pago', () async {
+        final methods = await _syncPaymentMethods();
+        if (methods.isNotEmpty) {
+          syncedData['payment_methods'] = methods;
+        }
+      });
+
+      await run(SyncModule.promotions, 'Promociones', () async {
+        syncedData['promotions'] = await _syncPromotions();
+      });
+
+      await run(SyncModule.categories, 'Categorías', () async {
+        syncedData['categories'] = await _syncCategories();
+      });
+
+      await run(SyncModule.products, 'Productos', () async {
+        syncedData['products'] = await _syncProducts();
+        final productsData = syncedData['products'];
+        if (productsData is Map<String, dynamic> && productsData.isNotEmpty) {
+          await _syncProductPromotions(productsData);
+        }
+      });
+
+      await run(SyncModule.turno, 'Turno (bajar)', () async {
+        final turnoData = await _syncTurno();
+        syncedData['turno'] = turnoData;
+        if (turnoData != null) {
+          await _userPreferencesService.saveOfflineTurno(turnoData);
+        }
+        await _syncTurnoResumen();
+        await _syncResumenCierre();
+      });
+
+      await run(SyncModule.egresos, 'Egresos (bajar)', () async {
+        await _syncEgresos();
+      });
+
+      await run(SyncModule.orders, 'Órdenes (bajar)', () async {
+        final orders = await _syncOrders();
+        syncedData['orders'] = orders;
+        final serverOpIds = <int>{};
+        for (final row in orders) {
+          final raw = row['id_operacion'] ?? row['id'];
+          final id =
+              raw is int
+                  ? raw
+                  : (raw is num ? raw.toInt() : int.tryParse('$raw'));
+          if (id != null) serverOpIds.add(id);
+        }
+        await _userPreferencesService.removeSyncedPendingPresentOnServer(
+          serverOpIds,
+        );
+      });
+
+      if (syncedData.isNotEmpty) {
+        await _userPreferencesService.mergeOfflineData(syncedData);
+      }
+
+      final duration = DateTime.now().difference(startTime);
+      final success = errors.isEmpty;
+
+      _syncEventController.add(
+        AutoSyncEvent(
+          type:
+              success
+                  ? AutoSyncEventType.syncCompleted
+                  : AutoSyncEventType.syncFailed,
+          timestamp: DateTime.now(),
+          message:
+              success
+                  ? 'Sincronización selectiva completada: ${syncedItems.join(", ")}'
+                  : 'Sincronización selectiva con errores: ${errors.join("; ")}',
+          duration: duration,
+          itemsSynced: syncedItems,
+          error: success ? null : errors.join('; '),
+        ),
+      );
+
+      return SyncResult(
+        success: success,
+        syncedItems: syncedItems,
+        errors: errors,
+        duration: duration,
+      );
+    } catch (e) {
+      final duration = DateTime.now().difference(startTime);
+      errors.add(e.toString());
+      _syncEventController.add(
+        AutoSyncEvent(
+          type: AutoSyncEventType.syncFailed,
+          timestamp: DateTime.now(),
+          message: 'Error en sincronización selectiva: $e',
+          duration: duration,
+          error: e.toString(),
+        ),
+      );
+      return SyncResult(
+        success: false,
+        syncedItems: syncedItems,
+        errors: errors,
+        duration: duration,
+      );
+    }
   }
 }
 
@@ -1756,6 +2469,10 @@ class AutoSyncEvent {
   final Duration? duration;
   final List<String>? itemsSynced;
   final String? error;
+  /// Paso actual (1-based) durante [syncProgress].
+  final int? progressCurrent;
+  /// Total de pasos del pase actual.
+  final int? progressTotal;
 
   AutoSyncEvent({
     required this.type,
@@ -1764,10 +2481,91 @@ class AutoSyncEvent {
     this.duration,
     this.itemsSynced,
     this.error,
+    this.progressCurrent,
+    this.progressTotal,
   });
+
+  double? get progressFraction {
+    final c = progressCurrent;
+    final t = progressTotal;
+    if (c == null || t == null || t <= 0) return null;
+    return (c / t).clamp(0.0, 1.0);
+  }
 
   @override
   String toString() {
-    return 'AutoSyncEvent(type: $type, timestamp: $timestamp, message: $message, duration: $duration, itemsSynced: $itemsSynced, error: $error)';
+    return 'AutoSyncEvent(type: $type, timestamp: $timestamp, message: $message, '
+        'duration: $duration, itemsSynced: $itemsSynced, error: $error, '
+        'progress: $progressCurrent/$progressTotal)';
   }
+}
+
+/// Módulos seleccionables para sincronización manual/selectiva.
+enum SyncModule {
+  // Download
+  license,
+  storeConfig,
+  credentials,
+  paymentMethods,
+  promotions,
+  categories,
+  products,
+  orders,
+  turno,
+  egresos,
+  // Upload
+  uploadSales,
+  uploadEgresos,
+  uploadTurno,
+  uploadShiftWorkers,
+  uploadAdminOps,
+}
+
+extension SyncModuleX on SyncModule {
+  bool get isDownload => switch (this) {
+        SyncModule.uploadSales ||
+        SyncModule.uploadEgresos ||
+        SyncModule.uploadTurno ||
+        SyncModule.uploadShiftWorkers ||
+        SyncModule.uploadAdminOps =>
+          false,
+        _ => true,
+      };
+
+  bool get isUpload => !isDownload;
+
+  /// Licencia no se puede deseleccionar en la UI de descarga.
+  bool get isRequired => this == SyncModule.license;
+
+  String get label => switch (this) {
+        SyncModule.license => 'Licencia (obligatoria)',
+        SyncModule.storeConfig => 'Configuración de tienda',
+        SyncModule.credentials => 'Credenciales',
+        SyncModule.paymentMethods => 'Métodos de pago',
+        SyncModule.promotions => 'Promociones',
+        SyncModule.categories => 'Categorías',
+        SyncModule.products => 'Productos',
+        SyncModule.orders => 'Órdenes',
+        SyncModule.turno => 'Turno',
+        SyncModule.egresos => 'Egresos',
+        SyncModule.uploadSales => 'Ventas offline',
+        SyncModule.uploadEgresos => 'Egresos offline',
+        SyncModule.uploadTurno => 'Turno (apertura/cierre)',
+        SyncModule.uploadShiftWorkers => 'Cambios de trabajadores',
+        SyncModule.uploadAdminOps => 'Admin inventario/productos',
+      };
+}
+
+class SyncResult {
+  final bool success;
+  final List<String> syncedItems;
+  final List<String> errors;
+  final Duration duration;
+
+  const SyncResult({
+    required this.success,
+    required this.syncedItems,
+    required this.errors,
+    required this.duration,
+  });
 }

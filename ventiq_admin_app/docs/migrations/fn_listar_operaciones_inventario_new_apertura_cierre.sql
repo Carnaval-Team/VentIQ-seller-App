@@ -41,8 +41,8 @@ DECLARE
 BEGIN
     RETURN QUERY
     WITH
-    -- IDs que deben excluirse del listado independiente de extracciones/recepciones:
-    -- hijos de transferencias + operaciones que ya son ventas (las ventas también registran extracción)
+    -- Hijos de transferencia + ventas: no listar sueltos.
+    -- La transferencia se muestra como UNA op padre (tipo 19 / legado 7).
     op_children AS (
         SELECT id_extraccion AS op_id FROM app_dat_operacion_transferencia WHERE id_extraccion IS NOT NULL
         UNION ALL
@@ -146,20 +146,30 @@ BEGIN
             NULL::BIGINT,
             NULL::TEXT,
             o.uuid,
-            -- Estado derivado de los hijos: extraccion completada + recepcion completada = Completada
+            -- Estado derivado de los hijos (un solo estado para la transferencia combinada)
             CASE
-                WHEN neo_ext.denominacion ILIKE '%complet%' AND neo_rec.denominacion ILIKE '%complet%'
+                WHEN neo_ext.denominacion ILIKE '%complet%'
+                 AND neo_rec.denominacion ILIKE '%complet%'
                     THEN ue_rec.estado
                 WHEN neo_ext.denominacion ILIKE '%complet%'
+                 AND COALESCE(neo_rec.denominacion, '') NOT ILIKE '%complet%'
                     THEN ue_ext.estado
-                ELSE ue.estado
+                WHEN COALESCE(ue_ext.estado, 1) = 1
+                 AND COALESCE(ue_rec.estado, 1) = 1
+                    THEN COALESCE(ue_ext.estado, ue_rec.estado, 1::SMALLINT)
+                ELSE COALESCE(ue.estado, ue_ext.estado, ue_rec.estado)
             END AS estado,
             CASE
-                WHEN neo_ext.denominacion ILIKE '%complet%' AND neo_rec.denominacion ILIKE '%complet%'
+                WHEN neo_ext.denominacion ILIKE '%complet%'
+                 AND neo_rec.denominacion ILIKE '%complet%'
                     THEN COALESCE(neo_rec.denominacion, 'Completada')
                 WHEN neo_ext.denominacion ILIKE '%complet%'
+                 AND COALESCE(neo_rec.denominacion, '') NOT ILIKE '%complet%'
                     THEN 'En camino'
-                ELSE COALESCE(neo.denominacion, 'Sin estado')
+                WHEN COALESCE(ue_ext.estado, 1) = 1
+                 AND COALESCE(ue_rec.estado, 1) = 1
+                    THEN 'Pendiente'
+                ELSE COALESCE(neo.denominacion, neo_ext.denominacion, neo_rec.denominacion, 'Sin estado')
             END AS estado_nom,
             o.created_at,
             o.observaciones,
@@ -197,6 +207,22 @@ BEGIN
                 ),
                 'estado_extraccion', COALESCE(neo_ext.denominacion, 'Sin estado'),
                 'estado_recepcion',  COALESCE(neo_rec.denominacion, 'Sin estado'),
+                'estado_extraccion_id', ue_ext.estado,
+                'estado_recepcion_id',  ue_rec.estado,
+                'id_almacen_origen', (
+                    SELECT la.id_almacen
+                    FROM app_dat_extraccion_productos ep_loc
+                    JOIN app_dat_layout_almacen la ON ep_loc.id_ubicacion = la.id
+                    WHERE ep_loc.id_operacion = ot.id_extraccion
+                    LIMIT 1
+                ),
+                'id_almacen_destino', (
+                    SELECT la.id_almacen
+                    FROM app_dat_recepcion_productos rp_loc
+                    JOIN app_dat_layout_almacen la ON rp_loc.id_ubicacion = la.id
+                    WHERE rp_loc.id_operacion = ot.id_recepcion
+                    LIMIT 1
+                ),
                 'extraccion', jsonb_build_object('items', COALESCE((
                     SELECT jsonb_agg(jsonb_build_object(
                         'id_producto',    ep.id_producto,
@@ -265,7 +291,7 @@ BEGIN
 
         UNION ALL
 
-        -- ── 3. EXTRACCIONES INDEPENDIENTES (no vinculadas a ninguna transferencia)
+        -- ── 3. EXTRACCIONES INDEPENDIENTES (no hijas de transferencia)
         SELECT
             o.id,
             top.denominacion,

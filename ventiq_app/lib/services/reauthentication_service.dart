@@ -4,6 +4,7 @@ import 'user_preferences_service.dart';
 import 'auth_service.dart';
 import 'seller_service.dart';
 import 'promotion_service.dart';
+import 'admin_access_service.dart';
 
 /// Servicio para reautenticar automáticamente al usuario cuando se restaura la conexión
 /// Replica el proceso de autenticación completo del login_screen.dart
@@ -64,7 +65,7 @@ class ReauthenticationService {
 
       print('✅ Datos básicos del usuario guardados');
 
-      // PASO 3: Verificar y obtener perfil del vendedor
+      // PASO 3: Verificar acceso a Caja (vendedor / gerente / supervisor)
       try {
         final sellerProfile = await _sellerService.verifySellerAndGetProfile(
           response.user!.id,
@@ -72,36 +73,51 @@ class ReauthenticationService {
 
         final sellerData = sellerProfile['seller'] as Map<String, dynamic>;
         final workerData = sellerProfile['worker'] as Map<String, dynamic>;
+        final entryRole = sellerProfile['entryRole']?.toString() ?? 'vendedor';
 
-        // Extraer IDs
-        final idTpv = sellerProfile['idTpv'] as int;
-        final idTienda = sellerProfile['idTienda'] as int;
-        final idSeller = sellerData['id'] as int;
+        final idTpv = (sellerProfile['idTpv'] as num).toInt();
+        final idTienda = (sellerProfile['idTienda'] as num).toInt();
+        final idSeller = (sellerData['id'] as num?)?.toInt() ?? 0;
+        final idTrabajador =
+            (sellerData['id_trabajador'] as num?)?.toInt() ?? 0;
+        final idAlmacen = (sellerProfile['idAlmacen'] as num?)?.toInt();
 
-        print('🔍 Perfil del vendedor obtenido:');
+        print('🔍 Perfil de acceso a Caja:');
+        print('  - Entry role: $entryRole');
         print('  - ID TPV: $idTpv');
         print('  - ID Tienda: $idTienda');
         print('  - ID Seller: $idSeller');
 
-        // PASO 4: Guardar datos del vendedor
         await _userPreferencesService.saveSellerData(
           idTpv: idTpv,
-          idTrabajador: sellerData['id_trabajador'] as int,
+          idTrabajador: idTrabajador,
           permitirCustomizarPrecioVenta:
               sellerData['permitir_customizar_precio_venta'] == true,
         );
 
-        await _userPreferencesService.saveIdSeller(idSeller);
+        if (idSeller > 0) {
+          await _userPreferencesService.saveIdSeller(idSeller);
+        }
+        if (idAlmacen != null) {
+          await _userPreferencesService.saveIdAlmacen(idAlmacen);
+        }
 
-        // PASO 5: Guardar perfil del trabajador
         await _userPreferencesService.saveWorkerProfile(
-          nombres: workerData['nombres'] as String,
-          apellidos: workerData['apellidos'] as String,
+          nombres: (workerData['nombres'] ?? '').toString(),
+          apellidos: (workerData['apellidos'] ?? '').toString(),
           idTienda: idTienda,
-          idRoll: workerData['id_roll'] as int,
+          idRoll: (workerData['id_roll'] as num?)?.toInt() ?? 4,
         );
 
-        print('✅ Perfil completo del vendedor guardado');
+        await _userPreferencesService.ensureOfflineStoreScope(idTienda);
+
+        await _userPreferencesService.setCajaEntryRole(entryRole);
+
+        try {
+          await AdminAccessService().refreshAndCache();
+        } catch (_) {}
+
+        print('✅ Perfil de acceso a Caja guardado ($entryRole)');
 
         // PASO 6: Actualizar promoción global
         try {

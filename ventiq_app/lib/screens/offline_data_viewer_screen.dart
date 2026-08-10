@@ -96,7 +96,8 @@ class _OfflineDataViewerScreenState extends State<OfflineDataViewerScreen> {
       );
     }
     await add('pending_operations', _prefs.getPendingOperations);
-    await add('offline_turno', _prefs.getOfflineTurno);
+    await add('offline_turnos (cola)', _prefs.getOfflineTurnos);
+    await add('offline_turno (open compat)', _prefs.getOfflineTurno);
     await add('egresos_offline (pendientes)', _prefs.getEgresosOffline);
     await add('egresos_cache', _prefs.getEgresosCache);
     await add('offline_users', _prefs.getOfflineUsers);

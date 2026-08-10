@@ -58,12 +58,23 @@ BEGIN
         ) AS t
     ) INTO tiendas_accesibles;
 
-    -- Almacenes accesibles del vendedor (para el filtro de inventario).
+    -- Almacenes accesibles: vendedor (TPV), almacenero y todos los almacenes
+    -- de tiendas donde el usuario es gerente/supervisor (prep full offline).
     SELECT ARRAY(
-        SELECT DISTINCT tpv.id_almacen
-        FROM app_dat_vendedor v
-        JOIN app_dat_tpv tpv ON v.id_tpv = tpv.id
-        WHERE v.uuid = auth.uid()
+        SELECT DISTINCT id_almacen FROM (
+            SELECT tpv.id_almacen
+            FROM app_dat_vendedor v
+            JOIN app_dat_tpv tpv ON v.id_tpv = tpv.id
+            WHERE v.uuid = auth.uid()
+            UNION
+            SELECT al.id_almacen
+            FROM app_dat_almacenero al
+            WHERE al.uuid = auth.uid()
+            UNION
+            SELECT a.id
+            FROM app_dat_almacen a
+            WHERE a.id_tienda = ANY(tiendas_accesibles)
+        ) AS alms
     ) INTO almacenes_accesibles;
 
     -- Iterar SOLO sobre los productos solicitados que pertenecen a una tienda
@@ -217,11 +228,12 @@ BEGIN
           );
 
         -- Agregar al objeto resultado, indexado por id de producto (texto).
+        -- inventario vacío → [] (nunca null) para que el cliente sume stock bien.
         resultado := resultado || jsonb_build_object(
             rec.id::text,
             jsonb_build_object(
                 'producto', producto_data,
-                'inventario', inventario_data
+                'inventario', COALESCE(to_jsonb(inventario_data), '[]'::jsonb)
             )
         );
     END LOOP;

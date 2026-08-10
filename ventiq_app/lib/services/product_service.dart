@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/product.dart';
 import 'user_preferences_service.dart';
 import 'supabase_retry_helper.dart';
+import 'offline_database_service.dart';
 
 class ProductService {
   static final ProductService _instance = ProductService._internal();
@@ -12,10 +13,19 @@ class ProductService {
   final SupabaseClient _supabase = Supabase.instance.client;
   final UserPreferencesService _preferencesService = UserPreferencesService();
 
-  /// Fetch products by category from Supabase and group them by subcategory
+  /// Fetch products by category from Supabase and group them by subcategory.
+  /// [forceLocal]: UI full-offline / offline debe forzar SQLite aunque el flag
+  /// `offline_mode` esté temporalmente en false durante un sync explícito.
   Future<Map<String, List<Product>>> getProductsByCategory(
-    int categoryId,
-  ) async {
+    int categoryId, {
+    bool forceLocal = false,
+  }) async {
+    final useLocal =
+        forceLocal || await _preferencesService.isOfflineModeEnabled();
+    if (useLocal) {
+      return _getProductsByCategoryLocal(categoryId);
+    }
+
     try {
       // Get store ID from preferences
       final workerProfile = await _preferencesService.getWorkerProfile();
@@ -95,6 +105,68 @@ class ProductService {
       debugPrint('❌ Stack trace: $stackTrace');
       rethrow;
     }
+  }
+
+  /// Productos de una categoría desde SQLite (sin cargar todo el catálogo).
+  Future<Map<String, List<Product>>> _getProductsByCategoryLocal(
+    int categoryId,
+  ) async {
+    final rows = await OfflineDatabaseService().getProductsByCategory(
+      categoryId.toString(),
+    );
+
+    if (rows.isEmpty) {
+      // Fallback: mapa completo por si category_id no coincide en filas antiguas
+      final offlineData = await _preferencesService.getOfflineData();
+      final productsData = offlineData?['products'];
+      if (productsData is Map) {
+        final categoryProducts = productsData[categoryId.toString()];
+        if (categoryProducts is List && categoryProducts.isNotEmpty) {
+          return _groupOfflineProductMaps(
+            categoryProducts
+                .map((e) => Map<String, dynamic>.from(e as Map))
+                .toList(),
+          );
+        }
+      }
+      debugPrint(
+        '⚠️ No hay productos locales para categoría $categoryId',
+      );
+      return {};
+    }
+
+    return _groupOfflineProductMaps(rows);
+  }
+
+  Map<String, List<Product>> _groupOfflineProductMaps(
+    List<Map<String, dynamic>> categoryProducts,
+  ) {
+    final products = <String, List<Product>>{};
+    for (final prodData in categoryProducts) {
+      final subcategory = prodData['subcategoria'] as String? ?? 'General';
+      final product = Product(
+        id: (prodData['id'] as num?)?.toInt() ?? 0,
+        denominacion: prodData['denominacion'] as String? ?? 'Sin nombre',
+        descripcion: prodData['descripcion'] as String?,
+        sku: prodData['sku'] as String?,
+        foto: prodData['foto'] as String?,
+        precio: (prodData['precio'] as num?)?.toDouble() ?? 0.0,
+        cantidad: prodData['cantidad'] as num? ?? 0,
+        categoria: prodData['categoria'] as String? ?? '',
+        esRefrigerado: false,
+        esFragil: false,
+        esPeligroso: false,
+        esVendible: true,
+        esComprable: true,
+        esInventariable: true,
+        esPorLotes: false,
+        esElaborado: false,
+        esServicio: false,
+        variantes: [],
+      );
+      products.putIfAbsent(subcategory, () => []).add(product);
+    }
+    return products;
   }
 
   /// Global product search by text (denominacion/descripcion) with optional category filter.

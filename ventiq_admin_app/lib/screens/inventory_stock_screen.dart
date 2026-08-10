@@ -28,6 +28,9 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
   List<InventorySummaryByUser> _inventorySummaries = [];
   bool _isLoading = true;
   bool _isLoadingMore = false;
+  bool _isLoadingBreakdowns = false;
+  Map<String, StockBreakdown> _breakdownsByLocation = {};
+  Map<int, StockBreakdown> _breakdownsByProduct = {};
   String _selectedWarehouse = 'Todos';
   int? _selectedWarehouseId;
   String _stockFilter = 'Todos';
@@ -137,6 +140,8 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
           _isLoadingMore = false;
         });
 
+        _loadBreakdowns();
+
         print(
           '✅ Loaded ${response.products.length} raw products, grouped to ${groupedProducts.length} unique products (page $_currentPage)',
         );
@@ -162,6 +167,8 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
           _isLoading = false;
           _isLoadingMore = false;
         });
+
+        _loadSummaryBreakdowns();
 
         print('✅ Loaded ${summaries.length} inventory summaries');
         print(
@@ -285,6 +292,45 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     _loadInventoryData(reset: false);
   }
 
+  Future<void> _loadBreakdowns() async {
+    if (_inventoryProducts.isEmpty) return;
+    setState(() => _isLoadingBreakdowns = true);
+    try {
+      final breakdowns = await InventoryService.getStockBreakdownsByLocation(
+        _inventoryProducts,
+      );
+      if (mounted) {
+        setState(() => _breakdownsByLocation = breakdowns);
+      }
+    } catch (e) {
+      print('❌ Error loading stock breakdowns: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingBreakdowns = false);
+      }
+    }
+  }
+
+  Future<void> _loadSummaryBreakdowns() async {
+    if (_inventorySummaries.isEmpty) return;
+    setState(() => _isLoadingBreakdowns = true);
+    try {
+      final breakdowns = await InventoryService.getStockBreakdownsByProduct(
+        _inventorySummaries,
+        warehouseId: _selectedWarehouseId,
+      );
+      if (mounted) {
+        setState(() => _breakdownsByProduct = breakdowns);
+      }
+    } catch (e) {
+      print('❌ Error loading summary stock breakdowns: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingBreakdowns = false);
+      }
+    }
+  }
+
   void _showWarehouseFilterDialog() {
     showDialog(
       context: context,
@@ -372,7 +418,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
         title: const Text('Filtrar por Stock'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
-          children: ['Todos', 'Sin Stock', 'Stock Bajo', 'Stock OK'].map((value) {
+          children: ['Todos', 'Con stock', 'Sin Stock', 'Stock Bajo', 'Stock OK'].map((value) {
             final isSelected = _stockFilter == value;
             return RadioListTile<String>(
               value: value,
@@ -431,7 +477,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
           ],
         ],
       ),
-      floatingActionButton: _buildExportFAB(),
+      floatingActionButton: _buildActionsFAB(),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
@@ -457,6 +503,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
       errorMessage: _errorMessage.isNotEmpty ? _errorMessage : null,
       onRetry: () => _loadInventoryData(),
       onItemTap: (summary) => _showInventorySummaryDetails(summary),
+      breakdowns: _breakdownsByProduct,
     );
   }
 
@@ -477,15 +524,50 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
   }
 
   List<InventorySummaryByUser> _getFilteredInventorySummaries() {
-    // ✅ Todos los filtros ahora se manejan en el servidor
-    // Solo devolvemos los datos tal como vienen del servidor
+    // ✅ Los filtros principales se manejan en el servidor, pero se refina
+    // el filtro de stock usando el desglose real (enAlmacen).
     print('🔍 _getFilteredInventorySummaries called');
     print('📊 Summaries count (server-filtered): ${_inventorySummaries.length}');
     print('📊 Search query: "$_searchQuery"');
     print('📊 Stock filter: "$_stockFilter"');
-    print('📊 All filtering is now done on the server side');
-    
-    return _inventorySummaries;
+
+    var filtered = List<InventorySummaryByUser>.from(_inventorySummaries);
+
+    switch (_stockFilter) {
+      case 'Con stock':
+        filtered = filtered.where((s) {
+          final realStock = _breakdownsByProduct[s.idProducto]?.enAlmacen ??
+              s.cantidadTotalEnAlmacen;
+          return realStock > 0;
+        }).toList();
+        break;
+      case 'Sin Stock':
+        filtered = filtered.where((s) {
+          final realStock = _breakdownsByProduct[s.idProducto]?.enAlmacen ??
+              s.cantidadTotalEnAlmacen;
+          return realStock <= 0;
+        }).toList();
+        break;
+      case 'Stock Bajo':
+        filtered = filtered.where((s) {
+          final realStock = _breakdownsByProduct[s.idProducto]?.enAlmacen ??
+              s.cantidadTotalEnAlmacen;
+          return realStock > 0 && realStock <= 10;
+        }).toList();
+        break;
+      case 'Stock OK':
+        filtered = filtered.where((s) {
+          final realStock = _breakdownsByProduct[s.idProducto]?.enAlmacen ??
+              s.cantidadTotalEnAlmacen;
+          return realStock > 10;
+        }).toList();
+        break;
+      case 'Todos':
+      default:
+        break;
+    }
+
+    return filtered;
   }
 
   Widget _buildLoadingState() {
@@ -693,7 +775,10 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
   }
 
   Widget _buildInventoryCard(InventoryProduct item) {
-    final stockStatus = _getStockStatus(item.stockDisponible.toInt());
+    final key = '${item.idProducto}_${item.idUbicacion}';
+    final breakdown = _breakdownsByLocation[key];
+    final realStock = breakdown?.enAlmacen ?? item.cantidadFinal;
+    final stockStatus = _getStockStatus(realStock.toInt());
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -754,7 +839,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
         trailing: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text('${item.stockDisponible}'),
+            Text('${realStock.toStringAsFixed(0)}'),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
@@ -799,23 +884,39 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
       print('📋 Filtered to ${filtered.length} items for selected warehouse');
     }
 
-    // Apply stock filter based on stock_disponible field
+    // Apply stock filter based on real stock (enAlmacen)
     switch (_stockFilter) {
+      case 'Con stock':
+        filtered = filtered.where((item) {
+          final key = '${item.idProducto}_${item.idUbicacion}';
+          final realStock =
+              _breakdownsByLocation[key]?.enAlmacen ?? item.cantidadFinal;
+          return realStock > 0;
+        }).toList();
+        break;
       case 'Sin Stock':
-        filtered = filtered.where((item) => item.stockDisponible <= 0).toList();
+        filtered = filtered.where((item) {
+          final key = '${item.idProducto}_${item.idUbicacion}';
+          final realStock =
+              _breakdownsByLocation[key]?.enAlmacen ?? item.cantidadFinal;
+          return realStock <= 0;
+        }).toList();
         break;
       case 'Stock Bajo':
-        filtered =
-            filtered
-                .where(
-                  (item) =>
-                      item.stockDisponible > 0 && item.stockDisponible <= 10,
-                )
-                .toList();
+        filtered = filtered.where((item) {
+          final key = '${item.idProducto}_${item.idUbicacion}';
+          final realStock =
+              _breakdownsByLocation[key]?.enAlmacen ?? item.cantidadFinal;
+          return realStock > 0 && realStock <= 10;
+        }).toList();
         break;
       case 'Stock OK':
-        filtered =
-            filtered.where((item) => item.stockDisponible >= 10).toList();
+        filtered = filtered.where((item) {
+          final key = '${item.idProducto}_${item.idUbicacion}';
+          final realStock =
+              _breakdownsByLocation[key]?.enAlmacen ?? item.cantidadFinal;
+          return realStock > 10;
+        }).toList();
         break;
       case 'Todos':
       default:
@@ -833,6 +934,157 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     } else {
       return (color: AppColors.success, label: 'Stock OK');
     }
+  }
+
+  Widget _buildStockBreakdownSection(InventoryProduct item) {
+    final key = '${item.idProducto}_${item.idUbicacion}';
+    final breakdown = _breakdownsByLocation[key];
+
+    if (breakdown == null) {
+      return _buildDetailSection(
+        'Stock Real',
+        Icons.inventory_2_outlined,
+        [
+          _buildDetailRow(
+            'En almacén',
+            '${item.cantidadFinal.toStringAsFixed(2)} unidades',
+          ),
+          const SizedBox(height: 8),
+          Center(
+            child: Text(
+              'Calculando desglose de pedidos...',
+              style: TextStyle(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return _buildDetailSection(
+      'Stock Real',
+      Icons.inventory_2_outlined,
+      [
+        _buildBreakdownRow(
+          'En almacén',
+          breakdown.enAlmacen,
+          AppColors.success,
+          Icons.warehouse_outlined,
+        ),
+        _buildBreakdownRow(
+          'En pedidos',
+          breakdown.enPedidos,
+          AppColors.warning,
+          Icons.shopping_bag_outlined,
+        ),
+        _buildBreakdownRow(
+          'Entregando',
+          breakdown.entregando,
+          AppColors.info,
+          Icons.local_shipping_outlined,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBreakdownRow(
+    String label,
+    double value,
+    Color color,
+    IconData icon,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 18, color: color),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                Text(
+                  '${value.toStringAsFixed(2)} unidades',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryStockBreakdownSection(InventorySummaryByUser summary) {
+    final breakdown = _breakdownsByProduct[summary.idProducto];
+
+    if (breakdown == null) {
+      return _buildDetailSection(
+        'Stock Real',
+        Icons.inventory_2_outlined,
+        [
+          _buildDetailRow(
+            'En almacén',
+            '${summary.cantidadTotalEnAlmacen.toStringAsFixed(2)} unidades',
+          ),
+          const SizedBox(height: 8),
+          Center(
+            child: Text(
+              'Calculando desglose de pedidos...',
+              style: TextStyle(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return _buildDetailSection(
+      'Stock Real',
+      Icons.inventory_2_outlined,
+      [
+        _buildBreakdownRow(
+          'En almacén',
+          breakdown.enAlmacen,
+          AppColors.success,
+          Icons.warehouse_outlined,
+        ),
+        _buildBreakdownRow(
+          'En pedidos',
+          breakdown.enPedidos,
+          AppColors.warning,
+          Icons.shopping_bag_outlined,
+        ),
+        _buildBreakdownRow(
+          'Entregando',
+          breakdown.entregando,
+          AppColors.info,
+          Icons.local_shipping_outlined,
+        ),
+      ],
+    );
   }
 
   Widget _buildDetailSection(
@@ -1131,6 +1383,9 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                           ),
                           const SizedBox(height: 16),
 
+                          // Real stock breakdown
+                          _buildStockBreakdownSection(item),
+
                           // Stock Details
                           _buildDetailSection(
                             'Detalles de Stock',
@@ -1307,50 +1562,69 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                                   mainAxisAlignment:
                                       MainAxisAlignment.spaceBetween,
                                   children: [
-                                    Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Total en Almacén',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: AppColors.textSecondary,
-                                          ),
-                                        ),
-                                        Text(
-                                          '${summary.cantidadTotalEnAlmacen.toStringAsFixed(0)} unidades',
-                                          style: TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.bold,
-                                            color: summary.stockLevelColor,
-                                          ),
-                                        ),
-                                      ],
+                                    Builder(
+                                      builder: (context) {
+                                        final breakdown = _breakdownsByProduct[summary.idProducto];
+                                        final realStock = breakdown?.enAlmacen ?? summary.cantidadTotalEnAlmacen;
+                                        final stockStatus = _getStockStatus(realStock.toInt());
+                                        return Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'Total en Almacén',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: AppColors.textSecondary,
+                                              ),
+                                            ),
+                                            Text(
+                                              '${realStock.toStringAsFixed(0)} unidades',
+                                              style: TextStyle(
+                                                fontSize: 18,
+                                                fontWeight: FontWeight.bold,
+                                                color: stockStatus.color,
+                                              ),
+                                            ),
+                                          ],
+                                        );
+                                      },
                                     ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: summary.stockLevelColor,
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      child: Text(
-                                        summary.stockLevel,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
+                                    Builder(
+                                      builder: (context) {
+                                        final breakdown = _breakdownsByProduct[summary.idProducto];
+                                        final realStock = breakdown?.enAlmacen ?? summary.cantidadTotalEnAlmacen;
+                                        final stockStatus = _getStockStatus(realStock.toInt());
+                                        return Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: stockStatus.color,
+                                            borderRadius: BorderRadius.circular(20),
+                                          ),
+                                          child: Text(
+                                            stockStatus.label,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        );
+                                      },
                                     ),
                                   ],
                                 ),
                               ],
                             ),
                           ),
+                          const SizedBox(height: 16),
+
+                          // Real stock breakdown
+                          _buildSummaryStockBreakdownSection(summary),
+
                           const SizedBox(height: 16),
 
                           // Distribution Information
@@ -1422,15 +1696,233 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     );
   }
 
-  /// Construye el FAB de exportación en la parte izquierda
-  Widget _buildExportFAB() {
+  /// Construye el FAB de acciones del tab Stock
+  Widget _buildActionsFAB() {
     return FloatingActionButton.extended(
-      onPressed: () => showInventoryExportDialog(context),
-      backgroundColor: AppColors.success,
+      onPressed: () => _showActionsMenu(),
+      backgroundColor: AppColors.primary,
       foregroundColor: Colors.white,
-      icon: const Icon(Icons.file_download_outlined),
-      label: const Text('Exportar'),
-      tooltip: 'Exportar inventario',
+      icon: const Icon(Icons.menu),
+      label: const Text('Acciones'),
+      tooltip: 'Acciones',
     );
+  }
+
+  void _showActionsMenu() {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.file_download_outlined, color: AppColors.success),
+                title: const Text('Exportar inventario'),
+                onTap: () {
+                  Navigator.pop(context);
+                  showInventoryExportDialog(context);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.list_alt, color: AppColors.info),
+                title: const Text('Mostrar listado'),
+                subtitle: const Text('Resumen de stock real por almacén'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showWarehousePickerForStockList();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showWarehousePickerForStockList() async {
+    final selectableWarehouses =
+        (widget.isAlmacenero && widget.assignedWarehouseId != null)
+            ? _warehouses.where((w) {
+                final id = int.tryParse(w['id'].toString());
+                return id == widget.assignedWarehouseId;
+              }).toList()
+            : List<Map<String, dynamic>>.from(_warehouses);
+
+    if (selectableWarehouses.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No hay almacenes disponibles')),
+      );
+      return;
+    }
+
+    final selected = await showDialog<int?>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Seleccionar Almacén'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: selectableWarehouses.length,
+            itemBuilder: (context, index) {
+              final w = selectableWarehouses[index];
+              final id = int.tryParse(w['id'].toString());
+              final name = w['denominacion']?.toString() ?? 'Sin nombre';
+              final isSelected = id == _selectedWarehouseId;
+              return ListTile(
+                title: Text(name),
+                subtitle: Text('ID: ${w['id']}'),
+                trailing: isSelected ? const Icon(Icons.check, color: AppColors.success) : null,
+                onTap: () => Navigator.pop(context, id),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+        ],
+      ),
+    );
+
+    if (selected != null) {
+      _showStockListDialog(selected);
+    }
+  }
+
+  Future<void> _showStockListDialog(int warehouseId) async {
+    final warehouseName = _warehouses
+            .firstWhere(
+              (w) => int.tryParse(w['id'].toString()) == warehouseId,
+              orElse: () => {'denominacion': 'Almacén $warehouseId'},
+            )['denominacion']
+            ?.toString() ??
+        'Almacén $warehouseId';
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final summaries = await InventoryService.getInventorySummaryByUser(
+        warehouseId,
+        null,
+        'Todos',
+      );
+      final breakdowns = await InventoryService.getStockBreakdownsByProduct(
+        summaries,
+        warehouseId: warehouseId,
+      );
+
+      if (!mounted) return;
+      Navigator.of(context).pop();
+
+      final items = summaries
+          .map((s) {
+            final b = breakdowns[s.idProducto];
+            final realStock = b?.enAlmacen ?? s.cantidadTotalEnAlmacen;
+            return (summary: s, breakdown: b, realStock: realStock);
+          })
+          .where((item) => item.realStock > 0)
+          .toList();
+      items.sort(
+        (a, b) => a.summary.productoNombre
+            .toLowerCase()
+            .compareTo(b.summary.productoNombre.toLowerCase()),
+      );
+      final totalStock = items.fold<double>(0, (s, i) => s + i.realStock);
+
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Row(
+            children: [
+              const Icon(Icons.list_alt, color: AppColors.info),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Stock en $warehouseName',
+                  style: const TextStyle(fontSize: 16),
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: items.isEmpty
+                ? const Text('No hay productos con stock en este almacén')
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${items.length} productos · ${totalStock.toStringAsFixed(0)} unidades en almacén',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Flexible(
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: items.length,
+                          itemBuilder: (context, index) {
+                            final s = items[index].summary;
+                            final b = items[index].breakdown;
+                            final realStock = items[index].realStock;
+                            final color = realStock <= 0
+                                ? AppColors.error
+                                : realStock <= 10
+                                    ? AppColors.warning
+                                    : AppColors.success;
+                            return ListTile(
+                              dense: true,
+                              title: Text(
+                                s.productoNombre,
+                                style: const TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                              subtitle: Text(
+                                b != null
+                                    ? 'En almacén: ${realStock.toStringAsFixed(0)}  |  En pedidos: ${b.enPedidos.toStringAsFixed(0)}  |  Entregando: ${b.entregando.toStringAsFixed(0)}'
+                                    : 'En almacén: ${realStock.toStringAsFixed(0)}',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                              trailing: Text(
+                                realStock.toStringAsFixed(0),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: color,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error cargando listado: $e')),
+      );
+    }
   }
 }
