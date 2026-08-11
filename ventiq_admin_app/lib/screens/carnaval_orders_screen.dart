@@ -4,6 +4,7 @@ import '../services/user_preferences_service.dart';
 import '../utils/whatsapp_helper.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/carnaval_order_detail_sheet.dart';
+import 'carnaval_bitacora_screen.dart';
 import 'carnaval_orders_dashboard_screen.dart';
 
 class CarnavalOrdersScreen extends StatefulWidget {
@@ -281,6 +282,16 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     );
   }
 
+  /// Bitácora de capitán: quién tocó las cantidades de las órdenes.
+  /// Solo para la tienda principal (mismo `_isAdmin` que asignar/cancelar),
+  /// porque muestra movimientos de todos los proveedores.
+  void _openBitacora() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const CarnavalBitacoraScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -348,6 +359,19 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                               ),
                             ),
                           ),
+                        if (_isAdmin) ...[
+                          const SizedBox(width: 8),
+                          IconButton(
+                            onPressed: _openBitacora,
+                            icon: const Icon(Icons.fact_check_outlined),
+                            tooltip: 'Bitácora de capitán',
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.deepPurple.withValues(
+                                alpha: 0.1,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),

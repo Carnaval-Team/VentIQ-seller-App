@@ -8,6 +8,7 @@ import '../services/export_service.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/ticket_text_utils.dart';
 import '../utils/whatsapp_helper.dart';
+import 'bitacora_tile.dart';
 
 class CarnavalOrderDetailSheet extends StatefulWidget {
   final Map<String, dynamic> order;
@@ -41,6 +42,7 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
   Map<int, Map<String, dynamic>> _repartidores = {};
   List<Map<String, dynamic>> _statusHistory = [];
   List<Map<String, dynamic>> _ventiqEstadoHistory = [];
+  List<Map<String, dynamic>> _bitacora = [];
 
   @override
   void initState() {
@@ -76,6 +78,16 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
     final direccion = _order['direccion'] as String?;
     final resolvedOrderId = _order['id'] as int?;
 
+    // Bitácora de capitán: quién cambió cantidades o borró líneas. Se acota al
+    // proveedor cuando no es la tienda principal, igual que los detalles: si
+    // esta tienda no ve las líneas de otro proveedor, tampoco su bitácora.
+    final bitacoraFuture = resolvedOrderId != null
+        ? CarnavalService.getOrderBitacora(
+            resolvedOrderId,
+            proveedorFilter: widget.isAdmin ? null : widget.carnavalStoreId,
+          )
+        : Future.value(<Map<String, dynamic>>[]);
+
     final futures = await Future.wait([
       detailsFuture,
       if (userId != null) CarnavalService.getOrderUserInfo(userId),
@@ -90,6 +102,7 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
     int idx = 1;
     // Ya estaba en vuelo junto a `futures`, así que no añade latencia.
     final repartidores = await repartidoresFuture;
+    final bitacora = await bitacoraFuture;
     int? ventiqOpId;
     List<Map<String, dynamic>> carnavalHistory = [];
 
@@ -113,6 +126,7 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
       _repartidores = repartidores;
       _ventiqOperationId = ventiqOpId;
       _statusHistory = carnavalHistory;
+      _bitacora = bitacora;
       _isLoading = false;
     });
 
@@ -562,7 +576,10 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
     );
     if (confirmed == true) {
       setState(() => _isActionLoading = true);
-      final ok = await CarnavalService.deleteOrderDetail(detail['id']);
+      final ok = await CarnavalService.deleteOrderDetail(
+        detail['id'],
+        motivo: 'Eliminado desde la app de administración',
+      );
       if (ok) {
         await CarnavalService.recalculateOrderTotal(_order['id']);
         await _refreshOrder();
@@ -682,6 +699,14 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
                       _buildSection(
                         'Historial de estados',
                         _buildStatusHistory(),
+                      ),
+                    ],
+                    // Bitácora de capitán: solo si hubo cambios en las líneas.
+                    if (_bitacora.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      _buildSection(
+                        'Bitácora de la orden (${_bitacora.length})',
+                        _buildBitacora(),
                       ),
                     ],
                     const SizedBox(height: 16),
@@ -1156,6 +1181,18 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: rows,
+    );
+  }
+
+  /// Bitácora de capitán de esta orden: quién movió cantidades o borró líneas.
+  /// Las filas las escribe el trigger `trg_orderdetails_ajustar_erp`; la tabla
+  /// es append-only, así que nadie puede borrar su rastro.
+  Widget _buildBitacora() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final r in _bitacora) BitacoraTile(row: r),
+      ],
     );
   }
 
