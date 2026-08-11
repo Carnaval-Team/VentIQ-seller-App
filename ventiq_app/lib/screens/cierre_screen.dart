@@ -12,6 +12,7 @@ import '../services/user_preferences_service.dart';
 import '../utils/uuid_generator.dart';
 import '../services/turno_service.dart';
 import '../services/shift_workers_service.dart';
+import '../services/printer_manager.dart';
 
 class CierreScreen extends StatefulWidget {
   const CierreScreen({Key? key}) : super(key: key);
@@ -232,6 +233,9 @@ class _CierreScreenState extends State<CierreScreen> {
           final cantidadDisponible =
               (firstInventory['cantidad_disponible'] as num?)?.toDouble() ??
               0.0;
+
+          // Excluir productos sin stock del reporte/conteo del vendedor
+          if (cantidadDisponible <= 0) continue;
 
           productsByIdMap[productId] = InventoryProduct(
             id: productId,
@@ -752,7 +756,7 @@ class _CierreScreenState extends State<CierreScreen> {
         params: {
           'p_id_tienda': idTienda,
           'p_limite': 9999,
-          'p_mostrar_sin_stock': true,
+          'p_mostrar_sin_stock': false, // Excluir productos con stock 0
           'p_pagina': 1,
           'p_id_almacen': idAlmacen,
         },
@@ -786,8 +790,11 @@ class _CierreScreenState extends State<CierreScreen> {
           }
         }
 
-        // Crear lista consolidada y controllers
-        final products = productsByIdMap.values.toList();
+        // Crear lista consolidada (solo con stock) y controllers
+        final products =
+            productsByIdMap.values
+                .where((p) => p.cantidadFinal > 0)
+                .toList();
         for (var product in products) {
           // Crear controller para cada producto único
           if (!_inventoryControllers.containsKey(product.id)) {
@@ -860,7 +867,13 @@ class _CierreScreenState extends State<CierreScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => _buildInventoryCountModal(),
+      builder: (sheetContext) {
+        final keyboardInset = MediaQuery.viewInsetsOf(sheetContext).bottom;
+        return Padding(
+          padding: EdgeInsets.only(bottom: keyboardInset),
+          child: _buildInventoryCountModal(),
+        );
+      },
     );
   }
 
@@ -1051,6 +1064,8 @@ class _CierreScreenState extends State<CierreScreen> {
       builder: (context, scrollController) {
         return StatefulBuilder(
           builder: (modalContext, modalSetState) {
+            final keyboardOpen =
+                MediaQuery.viewInsetsOf(modalContext).bottom > 0;
             return Container(
           decoration: const BoxDecoration(
             color: Colors.white,
@@ -1093,28 +1108,31 @@ class _CierreScreenState extends State<CierreScreen> {
                 ),
               ),
 
-              // Info text
-              Container(
-                padding: const EdgeInsets.all(16),
-                color: Colors.blue[50],
-                child: Row(
-                  children: [
-                    Icon(Icons.info_outline, color: Colors.blue[700]),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        _mostrarDebeHaberEnConteo
-                            ? 'Compara el "debe haber" e ingresa la cantidad real contada'
-                            : 'Ingresa la cantidad real contada de cada producto',
-                        style: const TextStyle(fontSize: 14),
+              // Info text — ocultar con teclado para ganar espacio
+              if (!keyboardOpen)
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  color: Colors.blue[50],
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.blue[700]),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          _mostrarDebeHaberEnConteo
+                              ? 'Compara el "debe haber" e ingresa la cantidad real contada'
+                              : 'Ingresa la cantidad real contada de cada producto',
+                          style: const TextStyle(fontSize: 14),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
 
-              // Acciones masivas
-              if (!_isLoadingInventory && _inventoryProducts.isNotEmpty)
+              // Acciones masivas — ocultar con teclado
+              if (!keyboardOpen &&
+                  !_isLoadingInventory &&
+                  _inventoryProducts.isNotEmpty)
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -1170,7 +1188,9 @@ class _CierreScreenState extends State<CierreScreen> {
                         )
                         : ListView.builder(
                           controller: scrollController,
-                          padding: const EdgeInsets.all(16),
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                           itemCount: _inventoryProducts.length,
                           itemBuilder: (context, index) {
                             final product = _inventoryProducts[index];
@@ -1240,6 +1260,10 @@ class _CierreScreenState extends State<CierreScreen> {
                                           const TextInputType.numberWithOptions(
                                         decimal: true,
                                       ),
+                                      textInputAction: TextInputAction.next,
+                                      scrollPadding: const EdgeInsets.only(
+                                        bottom: 120,
+                                      ),
                                       inputFormatters: [
                                         FilteringTextInputFormatter.allow(
                                           RegExp(r'^\d+\.?\d{0,2}'),
@@ -1283,7 +1307,8 @@ class _CierreScreenState extends State<CierreScreen> {
                         ),
               ),
 
-              // Botones
+              // Botones — se mantienen visibles; el Padding exterior ya los
+              // sube por encima del teclado.
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -1379,13 +1404,13 @@ class _CierreScreenState extends State<CierreScreen> {
             ],
           ),
         );
+          },
+        );
       },
     );
-  },
-);
-}
+  }
 
-Future<void> _loadExpenses() async {
+  Future<void> _loadExpenses() async {
     try {
       setState(() {
         _isLoadingExpenses = true;
@@ -1521,6 +1546,7 @@ Future<void> _loadExpenses() async {
 
     return Scaffold(
       backgroundColor: Colors.grey[50],
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
         backgroundColor: const Color(0xFF4A90E2),
         elevation: 0,
@@ -1541,7 +1567,13 @@ Future<void> _loadExpenses() async {
       body: Form(
         key: _formKey,
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: EdgeInsets.fromLTRB(
+            16,
+            16,
+            16,
+            16 + MediaQuery.viewInsetsOf(context).bottom,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1875,6 +1907,7 @@ Future<void> _loadExpenses() async {
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
+                      scrollPadding: const EdgeInsets.only(bottom: 140),
                       inputFormatters: [
                         FilteringTextInputFormatter.allow(
                           RegExp(r'^\d+\.?\d{0,2}'),
@@ -1991,6 +2024,7 @@ Future<void> _loadExpenses() async {
                     TextFormField(
                       controller: _observacionesController,
                       maxLines: 3,
+                      scrollPadding: const EdgeInsets.only(bottom: 140),
                       decoration: InputDecoration(
                         hintText: 'Ej: Cierre normal, inventario cuadrado...',
                         border: OutlineInputBorder(
@@ -2603,6 +2637,7 @@ Future<void> _loadExpenses() async {
           );
 
           await _clearInventoryCounts();
+          PrinterManager().clearSavedPrinter();
           _showSuccessDialog(montoFinal, diferencia);
         } else if (result.isNetworkError) {
           print(
@@ -2833,6 +2868,7 @@ Future<void> _loadExpenses() async {
       );
 
       await _clearInventoryCounts();
+      PrinterManager().clearSavedPrinter();
 
       // Cerrar órdenes pendientes localmente
       if (mounted) {

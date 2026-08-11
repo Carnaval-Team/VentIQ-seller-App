@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/inventory_service.dart';
@@ -4569,12 +4568,15 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
             ),
       );
 
-      // Generar y enviar ticket
+      // Generar y enviar ticket (troceo + drenado, igual que ventiq_app)
       final profile = await CapabilityProfile.load();
       final generator = Generator(PaperSize.mm58, profile);
       List<int> bytes = _generateOperationTicket(generator, operation);
 
-      bool printed = await PrintBluetoothThermal.writeBytes(bytes);
+      bool printed = await bluetoothService.writeBytesSafe(
+        bytes,
+        jobName: 'Inventory Operation Ticket',
+      );
       await bluetoothService.disconnect();
 
       if (!mounted) return;
