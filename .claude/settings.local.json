@@ -23,7 +23,8 @@
       "Bash(command -v mkdir)",
       "Read(//c/Users/cesar/Desktop/wapi/**)",
       "mcp__supabase__execute_sql",
-      "Bash(python -c \"import json;d=json.load\\(open\\('assets/changelog.json',encoding='utf-8'\\)\\);print\\('OK',d['current_version'],d['build'],len\\(d['changelogs']\\),'versiones'\\);print\\(d['changelogs'][0]['title']\\)\")"
+      "Bash(python -c \"import json;d=json.load\\(open\\('assets/changelog.json',encoding='utf-8'\\)\\);print\\('OK',d['current_version'],d['build'],len\\(d['changelogs']\\),'versiones'\\);print\\(d['changelogs'][0]['title']\\)\")",
+      "mcp__supabase__apply_migration"
     ]
   },
   "enabledMcpjsonServers": [

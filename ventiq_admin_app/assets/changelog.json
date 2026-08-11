@@ -1,9 +1,51 @@
 {
-  "current_version": "2.6.0",
-  "build": 260,
+  "current_version": "2.7.0",
+  "build": 270,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.7.0",
+      "date": "2026-08-11",
+      "title": "🕵️ Bitácora de capitán: quién tocó cada orden",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Nueva bitácora de capitán",
+          "description": "Desde el listado de órdenes Carnaval, el nuevo botón morado abre la bitácora completa: cada vez que alguien sube una cantidad, la baja o elimina un producto de una orden queda registrado con nombre, fecha y hora. Puedes buscar por número de orden o por persona, y filtrar por tipo de cambio o por rango de fechas."
+        },
+        {
+          "type": "feature",
+          "title": "La bitácora también dentro de cada orden",
+          "description": "Al abrir una orden, debajo del historial de estados aparecen los cambios que se le hicieron a sus productos: qué se movió, de cuánto a cuánto, cuánto dinero representa y por qué."
+        },
+        {
+          "type": "feature",
+          "title": "Nadie puede borrar su rastro",
+          "description": "La bitácora solo permite lectura: ni la app del repartidor ni la de administración pueden modificar o eliminar un registro una vez escrito."
+        },
+        {
+          "type": "fix",
+          "title": "Cambiar cantidades ahora sí ajusta el inventario",
+          "description": "Cuando el repartidor quita o añade unidades a una orden, el inventario de Inventtia se mueve solo: entra una devolución si el cliente devolvió y sale una extracción si pidió de más, sin dejar el stock en negativo. Además se corrige el dinero de la venta ya registrada."
+        },
+        {
+          "type": "fix",
+          "title": "Se acabaron los totales descuadrados",
+          "description": "El total de la orden se recalcula a partir de sus productos, así que ya no queda cobrado de más al eliminar una línea con varias unidades ni se corrompe el precio unitario al bajar la cantidad."
+        },
+        {
+          "type": "improvement",
+          "title": "Avisos cuando un movimiento no llegó al inventario",
+          "description": "Si un cambio no se pudo reflejar en Inventtia, la bitácora lo marca en naranja con el motivo. El filtro \"Sin ajustar inventario\" te deja ver de un tirón todo lo que hay que revisar a mano."
+        },
+        {
+          "type": "improvement",
+          "title": "App más liviana",
+          "description": "La versión de instalación ahora se compila optimizada y comprimida, por lo que ocupa bastante menos espacio en el teléfono."
+        }
+      ]
+    },
     {
       "version": "2.6.0",
       "date": "2026-08-10",

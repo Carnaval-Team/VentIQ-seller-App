@@ -1578,6 +1578,105 @@ class CarnavalService {
     }
   }
 
+  // ==========================================================================
+  // BITÁCORA DE CAPITÁN
+  // ==========================================================================
+  // Lee la vista `carnavalapp.v_bitacora_capitan`, que se alimenta del trigger
+  // trg_orderdetails_ajustar_erp: cada cambio de cantidad, cambio de precio o
+  // borrado de línea en "OrderDetails" deja una fila con quién / qué / cuándo /
+  // por qué y qué pasó en el inventario de Inventtia.
+  //
+  // La tabla es append-only (RLS con política solo de SELECT), así que nadie
+  // puede borrar su rastro desde la app.
+  //
+  // Si el SQL todavía no se aplicó en Supabase, estos métodos devuelven lista
+  // vacía en vez de romper la pantalla.
+
+  /// Bitácora de una orden concreta.
+  ///
+  /// [proveedorFilter] acota a las líneas de una tienda: se pasa cuando quien
+  /// mira NO es la tienda principal, igual que en [getOrderDetails], para que
+  /// una tienda no vea los movimientos de las líneas de otro proveedor.
+  static Future<List<Map<String, dynamic>>> getOrderBitacora(
+    int orderId, {
+    int? proveedorFilter,
+  }) async {
+    try {
+      var query = _supabase
+          .schema('carnavalapp')
+          .from('v_bitacora_capitan')
+          .select()
+          .eq('order_id', orderId);
+
+      if (proveedorFilter != null) {
+        query = query.eq('proveedor', proveedorFilter);
+      }
+
+      final response = await query.order('created_at', ascending: false);
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('⚠️ Bitácora de la orden no disponible: $e');
+      return [];
+    }
+  }
+
+  /// Bitácora completa, paginada y filtrable. Alimenta la pantalla de bitácora
+  /// de capitán (solo tienda principal).
+  ///
+  /// [accion] filtra por el valor crudo: aumento | disminucion | eliminacion |
+  /// cambio_precio | ajuste_sistema.
+  /// [soloSinAplicar] deja solo lo que NO llegó a Inventtia (lo que hay que
+  /// revisar a mano).
+  static Future<List<Map<String, dynamic>>> getBitacora({
+    int page = 0,
+    int pageSize = 30,
+    int? orderId,
+    int? productId,
+    int? proveedorFilter,
+    String? accion,
+    String? buscarQuien,
+    DateTime? dateFrom,
+    DateTime? dateTo,
+    bool soloSinAplicar = false,
+  }) async {
+    try {
+      final from = page * pageSize;
+      final to = from + pageSize - 1;
+
+      var query = _supabase
+          .schema('carnavalapp')
+          .from('v_bitacora_capitan')
+          .select();
+
+      if (orderId != null) query = query.eq('order_id', orderId);
+      if (productId != null) query = query.eq('product_id', productId);
+      if (proveedorFilter != null) {
+        query = query.eq('proveedor', proveedorFilter);
+      }
+      if (accion != null) query = query.eq('accion', accion);
+      if (buscarQuien != null && buscarQuien.trim().isNotEmpty) {
+        query = query.ilike('quien', '%${buscarQuien.trim()}%');
+      }
+      if (dateFrom != null) {
+        final start = DateTime(dateFrom.year, dateFrom.month, dateFrom.day);
+        query = query.gte('created_at', start.toIso8601String());
+      }
+      if (dateTo != null) {
+        final end = DateTime(dateTo.year, dateTo.month, dateTo.day, 23, 59, 59);
+        query = query.lte('created_at', end.toIso8601String());
+      }
+      if (soloSinAplicar) query = query.eq('aplicado_erp', false);
+
+      final response = await query
+          .order('created_at', ascending: false)
+          .range(from, to);
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('⚠️ Bitácora no disponible: $e');
+      return [];
+    }
+  }
+
   /// Lista repartidores activos
   static Future<List<Map<String, dynamic>>> getRepartidores() async {
     try {
@@ -1917,11 +2016,18 @@ class CarnavalService {
 
   /// Elimina un detalle de orden y devuelve stock en Carnaval e Inventtia.
   /// Usa RPC `fn_eliminar_order_detail_con_devolucion` (aplicar SQL en Supabase).
-  static Future<bool> deleteOrderDetail(int detailId) async {
+  ///
+  /// [motivo] queda guardado en la bitácora de capitán. Se manda para poder
+  /// distinguir después lo que quitó el repartidor de lo que quitó la oficina.
+  static Future<bool> deleteOrderDetail(int detailId, {String? motivo}) async {
     try {
       final response = await _supabase.rpc(
         'fn_eliminar_order_detail_con_devolucion',
-        params: {'p_detail_id': detailId},
+        params: {
+          'p_detail_id': detailId,
+          if (motivo != null && motivo.trim().isNotEmpty)
+            'p_motivo': motivo.trim(),
+        },
       );
 
       final result = response is Map
@@ -1946,7 +2052,14 @@ class CarnavalService {
     }
   }
 
-  /// Recalcula el total de una orden sumando price*quantity de sus detalles
+  /// Recalcula el total de una orden sumando price*quantity de sus detalles.
+  ///
+  /// Con el trigger `trg_orderdetails_ajustar_erp` aplicado esto ya lo hace la
+  /// propia base de datos. Se mantiene por si el SQL aún no está aplicado, pero
+  /// NO se escribe cuando el total ya está bien: "Orders" tiene dos triggers
+  /// (`notificar-proveedores-orden`, `notificar_orden_asignada`) que llaman a
+  /// edge functions por HTTP en CADA update, así que un update de gratis son
+  /// dos notificaciones de gratis.
   static Future<bool> recalculateOrderTotal(int orderId) async {
     try {
       final details = await _supabase
@@ -1960,6 +2073,20 @@ class CarnavalService {
         final price = (d['price'] as num?)?.toDouble() ?? 0;
         final qty = (d['quantity'] as num?)?.toInt() ?? 0;
         total += price * qty;
+      }
+
+      final current = await _supabase
+          .schema('carnavalapp')
+          .from('Orders')
+          .select('total')
+          .eq('id', orderId)
+          .maybeSingle();
+      final currentTotal = (current?['total'] as num?)?.toDouble();
+
+      // `total` es float4 en la base: se compara con tolerancia porque el
+      // redondeo a 32 bits hace que casi nunca sea exactamente igual.
+      if (currentTotal != null && (currentTotal - total).abs() < 0.01) {
+        return true;
       }
 
       await _supabase

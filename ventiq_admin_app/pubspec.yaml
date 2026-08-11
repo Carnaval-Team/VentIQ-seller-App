@@ -2,7 +2,9 @@ name: ventiq_admin_app
 description: "Inventtia Gestión - Sistema de administración para gestión de inventarios, productos y ventas."
 publish_to: 'none'
 
-version: 1.9.7+197
+# Debe ir en paralelo con assets/changelog.json (current_version + build): la
+# app muestra la versión leyendo ese JSON, no el pubspec.
+version: 2.7.0+270
 
 environment:
   sdk: ^3.7.0
