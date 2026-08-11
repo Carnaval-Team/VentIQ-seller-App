@@ -118,7 +118,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (match == null || !mounted) return;
     setState(() {
       _confirmedPayment = match;
-      _esperandoSms = false;
     });
     _showSuccessMessage(
       '✅ Pago de \$${match.monto.toStringAsFixed(2)} confirmado por SMS '

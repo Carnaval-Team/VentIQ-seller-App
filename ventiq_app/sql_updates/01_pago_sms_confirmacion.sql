@@ -29,7 +29,8 @@ ALTER TABLE app_dat_operacion_venta
 COMMENT ON COLUMN app_dat_operacion_venta.pago_sms_json IS
   'SMS de confirmación de PAGOxMOVIL parseado a JSON. NULL = pago no '
   'confirmado por SMS (informativo, no bloquea la venta). Claves: banco, '
-  'fecha, entidad, nro_transaccion, nro_transaccion_banco, monto, moneda, '
+  'fecha, entidad, nro_transaccion, nro_transaccion_banco, monto, '
+  'monto_pagado (neto tras comisión, solo plantilla nueva), moneda, '
   'raw_message, received_at, matched_at.';
 
 -- 2) Unicidad del pago bancario -------------------------------------------

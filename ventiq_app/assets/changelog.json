@@ -1,12 +1,12 @@
 {
-  "current_version": "2.4.0",
-  "build": 842,
+  "current_version": "2.4.1",
+  "build": 843,
 
   "app_name": "ventiq_app",
   "changelogs": [
     {
-      "version": "2.4.0",
-      "date": "2026-08-07",
+      "version": "2.4.1",
+      "date": "2026-08-11",
       "title": "📋 Conteo de inventario con \"debe haber\" opcional",
       "changes": [
         {

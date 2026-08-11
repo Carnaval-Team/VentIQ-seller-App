@@ -29,6 +29,17 @@ Monto Pagado: 280.00 CUP
 Nro. Transaccion Banco:
 BR6O123W6W997.''';
 
+/// Plantilla nueva (pasarela distinta): "Pago completado", con "Id Compra",
+/// "Importe" (bruto) e "Importe Pagado" (neto), y el nro de transacción del
+/// banco directamente bajo "Nro. Transaccion".
+const _nuevaPopular = '''Banco Popular de Ahorro: Pago completado.
+ Fecha: 11/8/2026
+ Entidad: Carnaval Alimento SURL
+ Id Compra: 8689521470
+ Importe: 1.00 CUP
+ Importe Pagado: 0.96 CUP
+ Nro. Transaccion: BR60124LJB997.''';
+
 void main() {
   group('BankSmsParser.parse - mensajes reales', () {
     test('Bandec: monto con espacio tras los dos puntos', () {
@@ -73,6 +84,56 @@ void main() {
 
     test('conserva el mensaje crudo para auditoria', () {
       expect(BankSmsParser.parse(_bandec)!.rawMessage, _bandec);
+    });
+  });
+
+  group('BankSmsParser.parse - plantilla nueva (Importe / Id Compra)', () {
+    test('parsea "Pago completado" con Importe e Importe Pagado', () {
+      final p = BankSmsParser.parse(_nuevaPopular);
+      expect(p, isNotNull);
+      expect(p!.banco, 'Popular de Ahorro');
+      // Bruto (= total de la orden), NO el neto de 0.96.
+      expect(p.monto, 1.00);
+      expect(p.montoPagado, 0.96);
+      expect(p.moneda, 'CUP');
+      expect(p.entidad, 'Carnaval Alimento SURL');
+      // "Id Compra" es el id de pasarela.
+      expect(p.nroTransaccion, '8689521470');
+      // "Nro. Transaccion" alfanumérico es el id único del banco.
+      expect(p.nroTransaccionBanco, 'BR60124LJB997');
+      expect(p.fecha, DateTime(2026, 8, 11));
+    });
+
+    test('el id de banco no queda contaminado por el punto final', () {
+      expect(
+        BankSmsParser.parse(_nuevaPopular)!.nroTransaccionBanco,
+        isNot(contains('.')),
+      );
+    });
+
+    test('matchesAmount casa con el bruto (total de la orden)', () {
+      final p = BankSmsParser.parse(_nuevaPopular)!;
+      expect(p.matchesAmount(1.00, 0.01), isTrue);
+    });
+
+    test('matchesAmount tambien acepta el neto acreditado', () {
+      final p = BankSmsParser.parse(_nuevaPopular)!;
+      expect(p.matchesAmount(0.96, 0.01), isTrue);
+    });
+
+    test('matchesAmount rechaza un total ajeno', () {
+      final p = BankSmsParser.parse(_nuevaPopular)!;
+      expect(p.matchesAmount(5.00, 0.01), isFalse);
+    });
+
+    test('plantilla clasica no tiene montoPagado', () {
+      expect(BankSmsParser.parse(_bandec)!.montoPagado, isNull);
+    });
+
+    test('roundtrip json conserva montoPagado', () {
+      final p = BankSmsParser.parse(_nuevaPopular)!;
+      final copy = p; // toJson/fromJson cubierto en service_test
+      expect(copy.montoPagado, 0.96);
     });
   });
 

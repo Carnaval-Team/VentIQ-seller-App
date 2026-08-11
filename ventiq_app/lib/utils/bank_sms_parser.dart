@@ -59,35 +59,79 @@ class BankSmsParser {
     // o en la siguiente.
     final text = body.replaceAll(RegExp(r'\s+'), ' ').trim();
 
-    // Debe ser una confirmación exitosa. "Elpago"/"El pago" (con y sin
-    // espacio, ambos aparecen en muestras reales) y "completado".
+    // Debe ser una confirmación exitosa. Cubre dos plantillas:
+    //   clásica: "...Elpago externo fue completado"
+    //   nueva:   "...Pago completado."
+    // Se exige la palabra "completado" en contexto de pago, lo que excluye
+    // mensajes de pago rechazado/fallido.
     final esCompletado = RegExp(
-      r'el\s?pago\s+externo\s+fue\s+completado',
+      r'pago\s+(?:externo\s+fue\s+)?completado',
       caseSensitive: false,
     ).hasMatch(text);
     if (!esCompletado) return null;
 
-    // El nro de transacción del banco es obligatorio: sin él no hay
-    // identificador único y no podemos garantizar idempotencia.
-    final nroTxBanco = _matchGroup(
+    // Identificador único del pago (nro de transacción del banco).
+    //   clásica: etiqueta explícita "Nro. Transaccion Banco".
+    //   nueva:   el (único) "Nro. Transaccion" lleva el código alfanumérico.
+    String? nroTxBanco = _matchGroup(
       text,
-      // Alfanumérico de al menos 8 chars. Se excluye el punto final.
       RegExp(
         r'Nro\.?\s*Transaccion\s+Banco\s*:?\s*([A-Z0-9]{8,})',
         caseSensitive: false,
       ),
     );
+
+    // Id de pasarela.
+    //   clásica: "Nro. Transaccion" (numérico).
+    //   nueva:   "Id Compra" (numérico).
+    String? nroTxPasarela = _matchGroup(
+      text,
+      RegExp(r'Id\s*Compra\s*:?\s*(\d{4,})', caseSensitive: false),
+    );
+
+    if (nroTxBanco != null) {
+      // Plantilla clásica: el "Nro. Transaccion" plano es el de pasarela.
+      nroTxPasarela ??= _matchGroup(
+        text,
+        RegExp(
+          r'Nro\.?\s*Transaccion\s*:?\s*(?!Banco)(\d{4,})',
+          caseSensitive: false,
+        ),
+      );
+    } else {
+      // Plantilla nueva: el "Nro. Transaccion" (alfanumérico) es el del banco.
+      nroTxBanco = _matchGroup(
+        text,
+        RegExp(
+          r'Nro\.?\s*Transaccion\s*:?\s*([A-Z0-9]{6,})',
+          caseSensitive: false,
+        ),
+      );
+    }
+
+    // Sin identificador único no hay idempotencia posible: se descarta.
     if (nroTxBanco == null) return null;
 
-    // El monto también es obligatorio: es lo que se compara con el total.
-    // Tolera ausencia de espacio tras los dos puntos y separador de miles.
-    final montoRaw = _matchGroup(
+    // Monto cobrado (= total de la orden).
+    //   clásica: "Monto Pagado".
+    //   nueva:   "Importe" (NO "Importe Pagado", que es el neto).
+    var montoRaw = _matchGroup(
       text,
-      RegExp(
-        r'Monto\s+Pagado\s*:?\s*([\d.,]+)\s*([A-Z]{3})?',
-        caseSensitive: false,
-      ),
+      RegExp(r'Monto\s+Pagado\s*:?\s*([\d.,]+)', caseSensitive: false),
     );
+    double? montoPagado;
+    if (montoRaw == null) {
+      montoRaw = _matchGroup(
+        text,
+        // Lookahead para no capturar "Importe Pagado".
+        RegExp(r'Importe(?!\s+Pagado)\s*:?\s*([\d.,]+)', caseSensitive: false),
+      );
+      final netoRaw = _matchGroup(
+        text,
+        RegExp(r'Importe\s+Pagado\s*:?\s*([\d.,]+)', caseSensitive: false),
+      );
+      montoPagado = netoRaw != null ? _parseAmount(netoRaw) : null;
+    }
     if (montoRaw == null) return null;
     final monto = _parseAmount(montoRaw);
     if (monto == null || monto <= 0) return null;
@@ -95,7 +139,7 @@ class BankSmsParser {
     final moneda = _matchGroup(
           text,
           RegExp(
-            r'Monto\s+Pagado\s*:?\s*[\d.,]+\s*([A-Z]{3})',
+            r'(?:Monto\s+Pagado|Importe(?:\s+Pagado)?)\s*:?\s*[\d.,]+\s*([A-Z]{3})',
             caseSensitive: false,
           ),
         )?.toUpperCase() ??
@@ -106,22 +150,16 @@ class BankSmsParser {
       fecha: _parseFecha(text),
       entidad: _matchGroup(
         text,
-        // Se corta en la siguiente etiqueta conocida.
+        // Se corta en la siguiente etiqueta conocida (de cualquier plantilla).
         RegExp(
-          r'Entidad\s*:?\s*(.+?)\s*(?:Nro\.?\s*Transaccion|Monto\s+Pagado|Fecha\s*:)',
+          r'Entidad\s*:?\s*(.+?)\s*(?:Nro\.?\s*Transaccion|Id\s*Compra|Monto\s+Pagado|Importe|Fecha\s*:)',
           caseSensitive: false,
         ),
       ),
-      nroTransaccion: _matchGroup(
-        text,
-        // Negative lookahead para no capturar "Nro. Transaccion Banco".
-        RegExp(
-          r'Nro\.?\s*Transaccion\s*:?\s*(?!Banco)(\d{4,})',
-          caseSensitive: false,
-        ),
-      ),
+      nroTransaccion: nroTxPasarela,
       nroTransaccionBanco: nroTxBanco.toUpperCase(),
       monto: monto,
+      montoPagado: montoPagado,
       moneda: moneda,
       rawMessage: body,
       receivedAt: receivedAt ?? DateTime.now(),
@@ -135,7 +173,7 @@ class BankSmsParser {
     final text = body.replaceAll(RegExp(r'\s+'), ' ').trim();
     if (text.isEmpty) return false;
     final mencionaPago = RegExp(
-      r'el\s?pago\s+externo|Monto\s+Pagado|Nro\.?\s*Transaccion',
+      r'pago\s+(?:externo|completado)|Monto\s+Pagado|Importe|Nro\.?\s*Transaccion|Id\s*Compra',
       caseSensitive: false,
     ).hasMatch(text);
     return mencionaPago && parse(body) == null;

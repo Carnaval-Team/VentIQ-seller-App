@@ -317,7 +317,7 @@ class BankSmsService {
   Future<BankSmsPayment?> findMatchingPayment(double expectedAmount) async {
     final pending = await getPendingPayments();
     for (final p in pending) {
-      if ((p.monto - expectedAmount).abs() <= amountTolerance) return p;
+      if (p.matchesAmount(expectedAmount, amountTolerance)) return p;
     }
     return null;
   }

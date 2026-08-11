@@ -28,13 +28,25 @@ class BankSmsPayment {
   final String? entidad;
 
   /// Nro. de transacción de la pasarela.
+  ///
+  /// En la plantilla nueva corresponde a "Id Compra".
   final String? nroTransaccion;
 
   /// Nro. de transacción del banco. Identificador único del pago.
+  ///
+  /// En la plantilla clásica es "Nro. Transaccion Banco"; en la nueva es
+  /// "Nro. Transaccion" (valor alfanumérico).
   final String nroTransaccionBanco;
 
-  /// Monto cobrado.
+  /// Monto cobrado al cliente = total de la orden.
+  ///
+  /// Plantilla clásica: "Monto Pagado". Plantilla nueva: "Importe".
   final double monto;
+
+  /// Monto neto realmente acreditado tras la comisión del banco. Solo aparece
+  /// en la plantilla nueva ("Importe Pagado"); null en la clásica. Se guarda
+  /// como referencia; la conciliación usa [monto].
+  final double? montoPagado;
 
   /// Moneda (en la práctica siempre CUP).
   final String moneda;
@@ -55,8 +67,17 @@ class BankSmsPayment {
     this.fecha,
     this.entidad,
     this.nroTransaccion,
+    this.montoPagado,
     this.moneda = 'CUP',
   });
+
+  /// `true` si [total] coincide con el monto cobrado (o, en su defecto, con el
+  /// neto acreditado) dentro de [tolerancia].
+  bool matchesAmount(double total, double tolerancia) {
+    if ((monto - total).abs() <= tolerancia) return true;
+    final neto = montoPagado;
+    return neto != null && (neto - total).abs() <= tolerancia;
+  }
 
   Map<String, dynamic> toJson() => {
         'banco': banco,
@@ -65,6 +86,7 @@ class BankSmsPayment {
         'nro_transaccion': nroTransaccion,
         'nro_transaccion_banco': nroTransaccionBanco,
         'monto': monto,
+        'monto_pagado': montoPagado,
         'moneda': moneda,
         'raw_message': rawMessage,
         'received_at': receivedAt.toIso8601String(),
@@ -80,6 +102,7 @@ class BankSmsPayment {
       nroTransaccion: json['nro_transaccion'] as String?,
       nroTransaccionBanco: json['nro_transaccion_banco'] as String? ?? '',
       monto: (json['monto'] as num?)?.toDouble() ?? 0.0,
+      montoPagado: (json['monto_pagado'] as num?)?.toDouble(),
       moneda: json['moneda'] as String? ?? 'CUP',
       rawMessage: json['raw_message'] as String? ?? '',
       receivedAt: json['received_at'] != null
