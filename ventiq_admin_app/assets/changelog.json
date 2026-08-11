@@ -7,7 +7,7 @@
     {
       "version": "2.7.0",
       "date": "2026-08-11",
-      "title": "🕵️ Bitácora de capitán: quién tocó cada orden",
+      "title": "🕵️ Bitácora, auditoría Carnaval e impresión completa",
       "changes": [
         {
           "type": "feature",
@@ -43,6 +43,36 @@
           "type": "improvement",
           "title": "App más liviana",
           "description": "La versión de instalación ahora se compila optimizada y comprimida, por lo que ocupa bastante menos espacio en el teléfono."
+        },
+        {
+          "type": "feature",
+          "title": "Auditoría de órdenes Carnaval",
+          "description": "Desde el listado de órdenes Carnaval, el nuevo botón de auditoría compara las cantidades de Carnaval con las operaciones de Inventtia y te muestra diferencias: sin operación, solo en un lado o cantidades distintas."
+        },
+        {
+          "type": "feature",
+          "title": "Filtro por fecha de creación en la auditoría",
+          "description": "Puedes acotar la auditoría por el rango de fechas de creación de la orden, para revisar solo el período que te interesa."
+        },
+        {
+          "type": "improvement",
+          "title": "Auditoría más rápida y estable",
+          "description": "La comparación usa dos consultas en servidor (Carnaval e Inventtia) optimizadas para no cortarse por tiempo de espera en tiendas con muchas órdenes."
+        },
+        {
+          "type": "fix",
+          "title": "Tickets grandes por Bluetooth ya imprimen completos",
+          "description": "La impresión Bluetooth envía el ticket en paquetes pequeños con pausas, reintentos y espera a que la impresora termine, igual que en Caja. Así las órdenes largas no se cortan a medias."
+        },
+        {
+          "type": "improvement",
+          "title": "Stock más claro en el detalle del producto",
+          "description": "El detalle de producto calcula mejor las cantidades por ubicación y separa lo que está en almacén de lo que va en entregando (Carnaval), sin mezclar ambos."
+        },
+        {
+          "type": "improvement",
+          "title": "Desglose de stock más ágil",
+          "description": "El listado de inventario puede obtener el desglose de stock con menos llamadas al servidor, para que la pantalla cargue más rápido cuando hay muchos productos."
         }
       ]
     },
