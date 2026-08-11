@@ -1,5 +1,9 @@
 // Modelos para el módulo de Recursos Humanos (Rec. Hum.)
 
+import 'hr/hr_salary_type.dart';
+
+export 'hr/hr_salary_type.dart';
+
 /// Modelo para representar un turno con sus trabajadores
 class ShiftWithWorkers {
   final int turnoId;
@@ -71,10 +75,13 @@ class ShiftWorkerHours {
   final DateTime horaEntrada;
   final DateTime? horaSalida;
   final double? horasTrabajadas;
+  /// Tarifa aplicable: \$/hora o \$/día según [tipoSalario].
   final double salarioHora;
   final double salarioTotal;
   final String? observaciones;
   final String? manualChanged; // UUID del usuario que editó manualmente
+  /// Modalidad de pago configurada para el trabajador.
+  final TipoSalario tipoSalario;
 
   ShiftWorkerHours({
     required this.id,
@@ -89,12 +96,22 @@ class ShiftWorkerHours {
     required this.salarioTotal,
     this.observaciones,
     this.manualChanged,
+    this.tipoSalario = TipoSalario.hora,
   });
+
+  bool get esPorDia => tipoSalario.esPorDia;
+
+  /// Tarifa formateada con su sufijo. Ej: '\$1500.00/d' o '\$120.00/h'.
+  String get tarifaFormatted => tipoSalario.formatTarifa(salarioHora);
 
   factory ShiftWorkerHours.fromJson(Map<String, dynamic> json) {
     final horasTrabajadas = (json['horas_trabajadas'] as num?)?.toDouble();
     final salarioHora = (json['salario_hora'] as num?)?.toDouble() ?? 0.0;
-    final salarioTotal = horasTrabajadas != null ? horasTrabajadas * salarioHora : 0.0;
+    final tipoSalario = TipoSalario.fromDb(json['tipo_salario']);
+    // Modalidad día: la jornada se paga completa, no según las horas reales.
+    final salarioTotal = tipoSalario.esPorDia
+        ? salarioHora
+        : (horasTrabajadas != null ? horasTrabajadas * salarioHora : 0.0);
 
     // ✅ Convertir horas UTC a zona horaria de La Habana (UTC-4)
     final horaEntradaUtc = DateTime.parse(json['hora_entrada'] as String).toUtc();
@@ -115,6 +132,7 @@ class ShiftWorkerHours {
       salarioTotal: salarioTotal,
       observaciones: json['observaciones'] as String?,
       manualChanged: json['manual_changed'] as String?,
+      tipoSalario: tipoSalario,
     );
   }
 
@@ -145,6 +163,7 @@ class ShiftWorkerHours {
       'salario_total': salarioTotal,
       'observaciones': observaciones,
       'manual_changed': manualChanged,
+      'tipo_salario': tipoSalario.dbValue,
     };
   }
 }

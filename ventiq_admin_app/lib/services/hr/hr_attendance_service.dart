@@ -168,11 +168,16 @@ class HRAttendanceService {
   }
 
   /// Firmar salida en lote
+  ///
+  /// [cantidad] es lo que RR.HH. decidió pagar en cada jornada, en la unidad
+  /// de su modalidad: HORAS a pagar si cobra por hora, DÍAS a pagar si cobra
+  /// por día (0.5 = medio día). Debe ir alineado con [asistenciaIds].
   static Future<int> batchCheckout({
     required List<int> asistenciaIds,
     required DateTime horaSalida,
     required List<bool> aplicaPago,
     required String cerradoPor,
+    List<double>? cantidad,
   }) async {
     try {
       print('📝 Firmando salida en lote: ${asistenciaIds.length} registros');
@@ -183,6 +188,7 @@ class HRAttendanceService {
           'p_hora_salida': horaSalida.toIso8601String(),
           'p_aplica_pago': aplicaPago,
           'p_cerrado_por': cerradoPor,
+          'p_cantidad': cantidad,
         },
       );
 

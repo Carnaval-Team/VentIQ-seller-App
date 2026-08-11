@@ -93,6 +93,8 @@ class HRService {
               nombres,
               apellidos,
               salario_horas,
+              salario_dia,
+              tipo_salario,
               id_roll,
               seg_roll(
                 denominacion
@@ -111,10 +113,17 @@ class HRService {
         final trabajadorInfo = trabajadorData['app_dat_trabajadores'] as Map<String, dynamic>?;
         final rolInfo = trabajadorInfo?['seg_roll'] as Map<String, dynamic>?;
 
-        // 💰 Calcular salario total: horas_trabajadas * salario_hora
+        // 💰 Calcular salario total según la modalidad del trabajador.
+        //    Por hora: horas_trabajadas * tarifa/hora
+        //    Por día:  la jornada se paga completa, sin importar las horas
         final horasTrabajadas = (trabajadorData['horas_trabajadas'] as num?)?.toDouble();
-        final salarioHora = (trabajadorInfo?['salario_horas'] as num?)?.toDouble() ?? 0.0;
-        final salarioTotal = horasTrabajadas != null ? horasTrabajadas * salarioHora : 0.0;
+        final tipoSalario = TipoSalario.fromDb(trabajadorInfo?['tipo_salario']);
+        final salarioHora = tipoSalario.esPorDia
+            ? (trabajadorInfo?['salario_dia'] as num?)?.toDouble() ?? 0.0
+            : (trabajadorInfo?['salario_horas'] as num?)?.toDouble() ?? 0.0;
+        final salarioTotal = tipoSalario.esPorDia
+            ? salarioHora
+            : (horasTrabajadas != null ? horasTrabajadas * salarioHora : 0.0);
 
         final worker = ShiftWorkerHours(
           id: trabajadorData['id'] as int,
@@ -133,6 +142,7 @@ class HRService {
           salarioTotal: salarioTotal, // ✅ CORREGIDO: Calcular correctamente
           observaciones: trabajadorData['observaciones'] as String?,
           manualChanged: trabajadorData['manual_changed'] as String?,
+          tipoSalario: tipoSalario,
         );
 
         if (!trabajadoresPorTurno.containsKey(idTurno)) {

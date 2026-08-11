@@ -579,12 +579,20 @@ class _HRAttendanceHistoryScreenState
                                                   : _formatDuration(horas),
                                               AppColors.info,
                                             ),
+                                            if (r.esPorDia) ...[
+                                              const SizedBox(width: 8),
+                                              _infoChip(
+                                                Icons.today,
+                                                r.cantidadPagadaFormatted,
+                                                AppColors.primary,
+                                              ),
+                                            ],
                                           ],
                                         ),
                                         if (!isOpen) ...[
                                           const SizedBox(height: 3),
                                           Text(
-                                            'Salario: \$${_currencyFormat.format(r.salarioTotal ?? 0)}  ·  \$${r.salarioHora.toStringAsFixed(2)}/h',
+                                            'Salario: \$${_currencyFormat.format(r.salarioTotal ?? 0)}  ·  ${r.tarifaFormatted}',
                                             style: TextStyle(
                                               fontSize: 11,
                                               color: Colors.grey[600],

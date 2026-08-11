@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import '../../config/app_colors.dart';
+import '../../models/hr/hr_salary_type.dart';
+import 'hr_modalidad_badge.dart';
 
 class HRWorkerListTile extends StatelessWidget {
   final String nombre;
   final String? rol;
+  /// Tarifa del trabajador: \$/hora o \$/día según [tipoSalario].
   final double salarioHora;
   final double pagoPorResultado;
+  final TipoSalario tipoSalario;
   final bool isSelected;
   final ValueChanged<bool?>? onChanged;
   final Widget? trailing;
@@ -17,6 +21,7 @@ class HRWorkerListTile extends StatelessWidget {
     this.rol,
     required this.salarioHora,
     this.pagoPorResultado = 0,
+    this.tipoSalario = TipoSalario.hora,
     this.isSelected = false,
     this.onChanged,
     this.trailing,
@@ -97,8 +102,12 @@ class HRWorkerListTile extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                         ],
+                        if (tipoSalario.esPorDia) ...[
+                          HRModalidadBadge(tipoSalario: tipoSalario),
+                          const SizedBox(width: 6),
+                        ],
                         Text(
-                          '\$${salarioHora.toStringAsFixed(2)}/h',
+                          tipoSalario.formatTarifa(salarioHora),
                           style: TextStyle(
                             fontSize: 11,
                             color: Colors.grey[600],

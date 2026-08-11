@@ -6,6 +6,7 @@ import '../../services/hr/hr_salary_report_service.dart';
 import '../../services/store_service.dart';
 import '../../services/user_preferences_service.dart';
 import '../../widgets/hr/hr_drawer.dart';
+import '../../widgets/hr/hr_modalidad_badge.dart';
 
 class HRSalaryReportScreen extends StatefulWidget {
   const HRSalaryReportScreen({super.key});
@@ -129,15 +130,22 @@ class _HRSalaryReportScreenState extends State<HRSalaryReportScreen> {
   Widget build(BuildContext context) {
     // Calcular totales
     double totalHoras = 0;
+    double totalDias = 0;
     double totalBase = 0;
     double totalPPR = 0;
     double totalGeneral = 0;
     for (final e in _entries) {
       totalHoras += e.totalHoras;
+      totalDias += e.diasTrabajados;
       totalBase += e.totalSalarioBase;
       totalPPR += e.totalPPR;
       totalGeneral += e.totalGeneral;
     }
+    final totalDiasStr = totalDias == totalDias.roundToDouble()
+        ? totalDias.toStringAsFixed(0)
+        : totalDias.toStringAsFixed(2);
+    // Solo tiene sentido mostrar horas si alguien del período cobra por hora.
+    final hayHoras = _entries.any((e) => !e.esPorDia);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -228,7 +236,11 @@ class _HRSalaryReportScreenState extends State<HRSalaryReportScreen> {
                                 children: [
                                   _buildSummaryChip('${_entries.length} trabajadores', Icons.people, AppColors.info),
                                   const SizedBox(width: 10),
-                                  _buildSummaryChip('${totalHoras.toStringAsFixed(1)}h totales', Icons.access_time, AppColors.primary),
+                                  _buildSummaryChip('$totalDiasStr días', Icons.today, AppColors.primary),
+                                  if (hayHoras) ...[
+                                    const SizedBox(width: 10),
+                                    _buildSummaryChip('${totalHoras.toStringAsFixed(1)}h', Icons.access_time, AppColors.info),
+                                  ],
                                   const SizedBox(width: 10),
                                   _buildSummaryChip('\$${_currencyFormat.format(totalGeneral)}', Icons.account_balance_wallet, AppColors.success),
                                 ],
@@ -260,9 +272,10 @@ class _HRSalaryReportScreenState extends State<HRSalaryReportScreen> {
                                         DataColumn(label: Text('#')),
                                         DataColumn(label: Text('Nombre')),
                                         DataColumn(label: Text('Rol')),
+                                        DataColumn(label: Text('Mod.')),
                                         DataColumn(label: Text('Dias'), numeric: true),
                                         DataColumn(label: Text('Horas'), numeric: true),
-                                        DataColumn(label: Text('\$/h'), numeric: true),
+                                        DataColumn(label: Text('Tarifa'), numeric: true),
                                         DataColumn(label: Text('Salario Base'), numeric: true),
                                         DataColumn(label: Text('PPR'), numeric: true),
                                         DataColumn(label: Text('Total'), numeric: true),
@@ -292,9 +305,21 @@ class _HRSalaryReportScreenState extends State<HRSalaryReportScreen> {
                                                 e.rolNombre ?? '-',
                                                 style: TextStyle(fontSize: 10, color: Colors.grey[600]),
                                               )),
-                                              DataCell(Text('${e.diasTrabajados}')),
-                                              DataCell(Text('${e.totalHoras.toStringAsFixed(1)}h')),
-                                              DataCell(Text('\$${_currencyFormat.format(e.salarioHoras)}')),
+                                              DataCell(HRModalidadBadge(
+                                                tipoSalario: e.tipoSalario,
+                                                fontSize: 8,
+                                              )),
+                                              DataCell(Text(e.diasFormatted)),
+                                              // Quien cobra por día no muestra horas: no definen su importe
+                                              DataCell(Text(
+                                                e.horasFormatted,
+                                                style: e.esPorDia
+                                                    ? TextStyle(color: Colors.grey[400])
+                                                    : null,
+                                              )),
+                                              DataCell(Text(
+                                                '\$${_currencyFormat.format(e.tarifa)}${e.tipoSalario.tarifaSufijo}',
+                                              )),
                                               DataCell(Text('\$${_currencyFormat.format(e.totalSalarioBase)}')),
                                               DataCell(Text(
                                                 '\$${_currencyFormat.format(e.totalPPR)}',
@@ -327,15 +352,16 @@ class _HRSalaryReportScreenState extends State<HRSalaryReportScreen> {
                                             const DataCell(Text('')),
                                             const DataCell(Text('')),
                                             DataCell(Text(
-                                              '${totalHoras.toStringAsFixed(1)}h',
+                                              totalDiasStr,
                                               style: const TextStyle(fontWeight: FontWeight.w600),
                                             )),
                                             DataCell(Text(
-                                              totalHoras > 0
-                                                  ? '\$${(totalBase / totalHoras).toStringAsFixed(2)}'
-                                                  : '-',
-                                              style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                                              '${totalHoras.toStringAsFixed(1)}h',
+                                              style: const TextStyle(fontWeight: FontWeight.w600),
                                             )),
+                                            // Con plantilla mixta no existe una tarifa promedio
+                                            // única, así que no se muestra ninguna.
+                                            const DataCell(Text('')),
                                             DataCell(Text(
                                               '\$${_currencyFormat.format(totalBase)}',
                                               style: const TextStyle(fontWeight: FontWeight.w600),
