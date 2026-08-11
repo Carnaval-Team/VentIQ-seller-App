@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import '../services/carnaval_service.dart';
 import '../services/printer_manager.dart';
@@ -1661,7 +1660,11 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
       final generator = Generator(PaperSize.mm58, profile);
       List<int> bytes = _generateOrderTicket(generator);
 
-      bool printed = await PrintBluetoothThermal.writeBytes(bytes);
+      // Troceo + drenado del buffer (igual que ventiq_app) para órdenes grandes.
+      bool printed = await bluetoothService.writeBytesSafe(
+        bytes,
+        jobName: 'Carnaval Order Ticket',
+      );
       await bluetoothService.disconnect();
 
       if (!mounted) return;

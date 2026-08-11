@@ -3944,676 +3944,168 @@ class InventoryService {
     return double.tryParse(value.toString()) ?? 0.0;
   }
 
-  /// Cantidad absoluta de una extracción pendiente.
-  /// Misma regla que la auditoría en product_movements_screen:
-  /// usa `cantidad` si es significativa; si no, |final − inicial|.
-  static double _resolvePendingExtractionQty(Map<String, dynamic> e) {
-    const epsilon = 0.0001;
-    var qty = _asDouble(e['cantidad']).abs();
-    if (qty <= epsilon) {
-      final ini = _asDouble(e['cantidad_inicial']);
-      final fin = _asDouble(e['cantidad_final']);
-      // Si ambos existen y no son el default "0 por null", usar delta.
-      // Nota: _asDouble(null)=0, así que solo aplica si al menos uno viene
-      // explícito en el mapa.
-      if (e.containsKey('cantidad_inicial') && e.containsKey('cantidad_final')) {
-        qty = (fin - ini).abs();
-      }
-    }
-    return qty;
-  }
-
-  /// Normaliza el `status` de carnavalapp.Orders (ej. "Entregando" → "entregando").
-  static String _normalizeCarnivalStatus(dynamic raw) {
-    return (raw?.toString() ?? '').trim().toLowerCase();
-  }
-
-  /// La orden ya salió del almacén (reparto en curso).
-  /// En Carnaval el valor canónico es "Entregando".
-  static bool _isCarnivalOutForDelivery(String status) {
-    return status == 'entregando' || status.contains('entregando');
-  }
-
-  /// Orden cerrada en Carnaval: no debe inflar enPedidos/entregando aunque
-  /// la operación VentIQ siga en Pendiente.
-  static bool _isCarnivalTerminalStatus(String status) {
-    return status == 'completado' ||
-        status == 'completada' ||
-        status == 'cancelado' ||
-        status == 'cancelada';
-  }
-
-  /// Clasifica una venta pendiente según el status de su orden Carnaval:
-  /// - Entregando → [entregando] (NO vuelve a enAlmacén)
-  /// - Completado/Cancelado → se ignora
-  /// - Resto (Procesando, Creando, sin status, etc.) → [enPedidos]
-  ///   (sigue físicamente en almacén; se suma de vuelta a enAlmacén)
-  static void _accumulatePendingByCarnivalStatus(
-    _PendingStockAgg agg, {
-    required double qty,
-    required String status,
-  }) {
-    if (_isCarnivalOutForDelivery(status)) {
-      agg.entregando += qty;
-    } else if (!_isCarnivalTerminalStatus(status)) {
-      agg.enPedidos += qty;
-    }
-  }
-
-  /// Busca el id del tipo de operación "Venta". Se usa para que el desglose
-  /// de stock solo considere operaciones de venta, igual que en
-  /// ProductMovementsService.
-  static Future<int?> _getTipoVentaId() async {
-    try {
-      final rows = await _supabase
-          .from('app_nom_tipo_operacion')
-          .select('id, denominacion');
-      for (final raw in rows as List) {
-        final row = Map<String, dynamic>.from(raw as Map);
-        final den =
-            (row['denominacion'] as String?)?.toLowerCase().trim() ?? '';
-        if (den == 'venta') {
-          return _asInt(row['id']);
-        }
-      }
-    } catch (e) {
-      print('Error fetching tipo venta id: $e');
-    }
-    return null;
-  }
-
-  /// Devuelve el desglose de stock real por ubicación para una lista de
-  /// [InventoryProduct]. El stock real se calcula como:
-  ///   cantidad_final + pendientes_no_entregando
-  /// Las operaciones pendientes cuya orden Carnaval esté en 'entregando'
-  /// no se suman (ya salieron del almacén) y se reportan aparte.
+  /// Desglose por ubicación vía RPC `fn_stock_breakdown_by_locations`
+  /// (una sola llamada). Si el RPC falla, retorna stock base sin desglose
+  /// para no romper el listado.
   static Future<Map<String, StockBreakdown>> getStockBreakdownsByLocation(
     List<InventoryProduct> items,
   ) async {
     if (items.isEmpty) return {};
 
+    final result = <String, StockBreakdown>{
+      for (final item in items)
+        _locationKey(item.idProducto, item.idUbicacion):
+            StockBreakdown.empty(item.cantidadFinal),
+    };
+
     final productIds = items.map((i) => i.idProducto).toSet().toList();
     final ubicIds = items.map((i) => i.idUbicacion).toSet().toList();
+    if (productIds.isEmpty || ubicIds.isEmpty) return result;
 
-    // 1. Todas las extracciones del producto/ubicación.
-    final extractions = <Map<String, dynamic>>[];
-    for (var i = 0; i < productIds.length; i += 80) {
-      final prodChunk = productIds.sublist(
-        i,
-        i + 80 > productIds.length ? productIds.length : i + 80,
+    try {
+      final response = await _supabase.rpc(
+        'fn_stock_breakdown_by_locations',
+        params: {
+          'p_product_ids': productIds,
+          'p_ubicacion_ids': ubicIds,
+        },
       );
-      for (var j = 0; j < ubicIds.length; j += 80) {
-        final ubiChunk = ubicIds.sublist(
-          j,
-          j + 80 > ubicIds.length ? ubicIds.length : j + 80,
-        );
-        final rows = await _supabase
-            .from('app_dat_extraccion_productos')
-            .select('id, id_operacion, id_producto, id_ubicacion, cantidad')
-            .inFilter('id_producto', prodChunk)
-            .inFilter('id_ubicacion', ubiChunk);
-        extractions.addAll(
-          (rows as List).map((r) => Map<String, dynamic>.from(r as Map)),
-        );
-      }
-    }
 
-    // Sin movimientos: stock real = cantidad_final.
-    if (extractions.isEmpty) {
-      return {
+      if (response is! List) return result;
+
+      final baseByKey = <String, double>{
         for (final item in items)
-          _locationKey(item.idProducto, item.idUbicacion):
-              StockBreakdown.empty(item.cantidadFinal),
+          _locationKey(item.idProducto, item.idUbicacion): item.cantidadFinal,
       };
-    }
 
-    final opIds = extractions
-        .map((e) => _asInt(e['id_operacion']))
-        .whereType<int>()
-        .toSet()
-        .toList();
+      for (final raw in response) {
+        final row = Map<String, dynamic>.from(raw as Map);
+        final prodId = _asInt(row['id_producto']);
+        final ubiId = _asInt(row['id_ubicacion']);
+        if (prodId == null || ubiId == null) continue;
+        final key = _locationKey(prodId, ubiId);
+        if (!baseByKey.containsKey(key)) continue;
 
-    // 2. Último estado por operación.
-    final estadoByOp = <int, int>{};
-    for (var i = 0; i < opIds.length; i += 80) {
-      final chunk = opIds.sublist(
-        i,
-        i + 80 > opIds.length ? opIds.length : i + 80,
-      );
-      final estados = await _supabase
-          .from('app_dat_estado_operacion')
-          .select('id, id_operacion, estado')
-          .inFilter('id_operacion', chunk)
-          .order('id', ascending: false);
-      for (final raw in estados as List) {
-        final e = Map<String, dynamic>.from(raw as Map);
-        final opId = _asInt(e['id_operacion']);
-        final estado = _asInt(e['estado']);
-        if (opId != null && estado != null && !estadoByOp.containsKey(opId)) {
-          estadoByOp[opId] = estado;
-        }
+        final enPedidos = _asDouble(row['en_pedidos']);
+        final entregando = _asDouble(row['entregando']);
+        result[key] = StockBreakdown(
+          enAlmacen: baseByKey[key]! + enPedidos,
+          enPedidos: enPedidos,
+          entregando: entregando,
+        );
       }
-    }
-
-    // 3. Solo extracciones con estado actual Pendiente (1).
-    final pendingExtractions = extractions.where((e) {
-      final opId = _asInt(e['id_operacion']);
-      return opId != null && estadoByOp[opId] == 1;
-    }).toList();
-
-    if (pendingExtractions.isEmpty) {
-      return {
-        for (final item in items)
-          _locationKey(item.idProducto, item.idUbicacion):
-              StockBreakdown.empty(item.cantidadFinal),
-      };
-    }
-
-    // 4. Metadata de operaciones (id_carnaval_order, observaciones y tipo).
-    final pendingOpIds = pendingExtractions
-        .map((e) => _asInt(e['id_operacion']))
-        .whereType<int>()
-        .toSet()
-        .toList();
-    final tipoVentaId = await _getTipoVentaId();
-    final opMeta = <int, Map<String, dynamic>>{};
-    for (var i = 0; i < pendingOpIds.length; i += 80) {
-      final chunk = pendingOpIds.sublist(
-        i,
-        i + 80 > pendingOpIds.length ? pendingOpIds.length : i + 80,
-      );
-      final ops = await _supabase
-          .from('app_dat_operaciones')
-          .select('id, id_tipo_operacion, id_carnaval_order, observaciones')
-          .inFilter('id', chunk);
-      for (final raw in ops as List) {
-        final op = Map<String, dynamic>.from(raw as Map);
-        final id = _asInt(op['id']);
-        if (id != null) {
-          opMeta[id] = op;
-        }
-      }
-    }
-
-    // Solo operaciones de tipo Venta afectan enPedidos/entregando.
-    final ventaOpIds = opMeta.entries
-        .where((e) => tipoVentaId == null || _asInt(e.value['id_tipo_operacion']) == tipoVentaId)
-        .map((e) => e.key)
-        .toSet();
-    final filteredPending = pendingExtractions.where((e) {
-      final opId = _asInt(e['id_operacion']) ?? 0;
-      return ventaOpIds.contains(opId);
-    }).toList();
-
-    // 5. Resolver IDs de órdenes Carnaval vinculadas.
-    final orderIdSet = <int>{};
-    final orderIdByOp = <int, int?>{};
-    final ventaDesdeOrdenRe = RegExp(
-      r'Venta desde orden\s+(\d+)',
-      caseSensitive: false,
-    );
-    for (final e in filteredPending) {
-      final opId = _asInt(e['id_operacion'])!;
-      final meta = opMeta[opId];
-      int? carnavalOrderId;
-      if (meta != null) {
-        carnavalOrderId = _asInt(meta['id_carnaval_order']);
-        if (carnavalOrderId == null) {
-          final obs = (meta['observaciones'] as String?) ?? '';
-          final match = ventaDesdeOrdenRe.firstMatch(obs);
-          if (match != null) {
-            carnavalOrderId = int.tryParse(match.group(1)!);
-          }
-        }
-      }
-      orderIdByOp[opId] = carnavalOrderId;
-      if (carnavalOrderId != null) orderIdSet.add(carnavalOrderId);
-    }
-
-    // 6. Estados de las órdenes Carnaval.
-    final statusByOrderId = <int, String>{};
-    final orderIds = orderIdSet.toList();
-    for (var i = 0; i < orderIds.length; i += 80) {
-      final chunk = orderIds.sublist(
-        i,
-        i + 80 > orderIds.length ? orderIds.length : i + 80,
-      );
-      final rows = await _supabase
-          .schema('carnavalapp')
-          .from('Orders')
-          .select('id, status')
-          .inFilter('id', chunk);
-      for (final raw in rows as List) {
-        final o = Map<String, dynamic>.from(raw as Map);
-        final id = _asInt(o['id']);
-        final status = o['status']?.toString();
-        if (id != null && status != null && status.trim().isNotEmpty) {
-          statusByOrderId[id] = status;
-        }
-      }
-    }
-
-    // 7. Agregar por producto/ubicación.
-    final aggs = <String, _PendingStockAgg>{};
-    for (final e in filteredPending) {
-      final prodId = _asInt(e['id_producto']) ?? 0;
-      final ubiId = _asInt(e['id_ubicacion']) ?? 0;
-      final opId = _asInt(e['id_operacion']) ?? 0;
-      final qty = _resolvePendingExtractionQty(e);
-      final key = _locationKey(prodId, ubiId);
-      final agg = aggs.putIfAbsent(key, () => _PendingStockAgg());
-      final orderId = orderIdByOp[opId];
-      final status = _normalizeCarnivalStatus(
-        orderId != null ? statusByOrderId[orderId] : null,
-      );
-      _accumulatePendingByCarnivalStatus(agg, qty: qty, status: status);
-    }
-
-    // 8. Componer el resultado.
-    // cantidad_final ya descuenta pendientes; se suman de vuelta solo las
-    // que siguen en almacén (enPedidos). Entregando NO se suma.
-    final result = <String, StockBreakdown>{};
-    for (final item in items) {
-      final key = _locationKey(item.idProducto, item.idUbicacion);
-      final agg = aggs[key] ?? _PendingStockAgg();
-      result[key] = StockBreakdown(
-        enAlmacen: item.cantidadFinal + agg.enPedidos,
-        enPedidos: agg.enPedidos,
-        entregando: agg.entregando,
+    } catch (e) {
+      print(
+        '⚠️ fn_stock_breakdown_by_locations falló; '
+        'mostrando stock base sin desglose: $e',
       );
     }
+
     return result;
   }
 
-  /// Devuelve el desglose de stock real a nivel de producto (agregado por
-  /// todas sus ubicaciones/presentaciones). Útil para la vista de resumen.
-  ///
-  /// Si se proporciona [warehouseId], solo se consideran las ubicaciones de
-  /// ese almacén para las operaciones pendientes.
+  /// Desglose por producto vía RPC `fn_stock_breakdown_by_products`
+  /// (una sola llamada). Si el RPC falla, retorna stock base sin desglose.
   static Future<Map<int, StockBreakdown>> getStockBreakdownsByProduct(
     List<InventorySummaryByUser> summaries, {
     int? warehouseId,
   }) async {
     if (summaries.isEmpty) return {};
 
+    final result = <int, StockBreakdown>{
+      for (final s in summaries)
+        s.idProducto: StockBreakdown.empty(s.cantidadTotalEnAlmacen),
+    };
+
     final productIds = summaries.map((s) => s.idProducto).toSet().toList();
+    if (productIds.isEmpty) return result;
 
-    // Ubicaciones del almacén filtrado (si aplica).
-    final ubicacionIds = <int>[];
-    if (warehouseId != null) {
-      final layoutRows = await _supabase
-          .from('app_dat_layout_almacen')
-          .select('id')
-          .eq('id_almacen', warehouseId);
-      for (final r in layoutRows as List) {
-        final id = _asInt((r as Map)['id']);
-        if (id != null) ubicacionIds.add(id);
-      }
-    }
-
-    // 1. Todas las extracciones pendientes de esos productos.
-    var extractions = <Map<String, dynamic>>[];
-    for (var i = 0; i < productIds.length; i += 80) {
-      final chunk = productIds.sublist(
-        i,
-        i + 80 > productIds.length ? productIds.length : i + 80,
+    try {
+      final response = await _supabase.rpc(
+        'fn_stock_breakdown_by_products',
+        params: {
+          'p_product_ids': productIds,
+          'p_id_almacen': warehouseId,
+        },
       );
-      final rows = await _supabase
-          .from('app_dat_extraccion_productos')
-          .select('id, id_operacion, id_producto, id_ubicacion, cantidad')
-          .inFilter('id_producto', chunk);
-      extractions.addAll(
-        (rows as List).map((r) => Map<String, dynamic>.from(r as Map)),
-      );
-    }
 
-    // Filtrar por ubicaciones del almacén seleccionado.
-    if (ubicacionIds.isNotEmpty) {
-      extractions = extractions.where((e) {
-        final ubiId = _asInt(e['id_ubicacion']);
-        return ubiId != null && ubicacionIds.contains(ubiId);
-      }).toList();
-    }
+      if (response is! List) return result;
 
-    if (extractions.isEmpty) {
-      return {
-        for (final s in summaries)
-          s.idProducto: StockBreakdown.empty(s.cantidadTotalEnAlmacen),
+      final baseByProduct = <int, double>{
+        for (final s in summaries) s.idProducto: s.cantidadTotalEnAlmacen,
       };
-    }
 
-    final opIds = extractions
-        .map((e) => _asInt(e['id_operacion']))
-        .whereType<int>()
-        .toSet()
-        .toList();
+      for (final raw in response) {
+        final row = Map<String, dynamic>.from(raw as Map);
+        final prodId = _asInt(row['id_producto']);
+        if (prodId == null || !baseByProduct.containsKey(prodId)) continue;
 
-    final estadoByOp = <int, int>{};
-    for (var i = 0; i < opIds.length; i += 80) {
-      final chunk = opIds.sublist(
-        i,
-        i + 80 > opIds.length ? opIds.length : i + 80,
-      );
-      final estados = await _supabase
-          .from('app_dat_estado_operacion')
-          .select('id, id_operacion, estado')
-          .inFilter('id_operacion', chunk)
-          .order('id', ascending: false);
-      for (final raw in estados as List) {
-        final e = Map<String, dynamic>.from(raw as Map);
-        final opId = _asInt(e['id_operacion']);
-        final estado = _asInt(e['estado']);
-        if (opId != null && estado != null && !estadoByOp.containsKey(opId)) {
-          estadoByOp[opId] = estado;
-        }
+        final enPedidos = _asDouble(row['en_pedidos']);
+        final entregando = _asDouble(row['entregando']);
+        result[prodId] = StockBreakdown(
+          enAlmacen: baseByProduct[prodId]! + enPedidos,
+          enPedidos: enPedidos,
+          entregando: entregando,
+        );
       }
-    }
-
-    final pendingExtractions = extractions.where((e) {
-      final opId = _asInt(e['id_operacion']);
-      return opId != null && estadoByOp[opId] == 1;
-    }).toList();
-
-    if (pendingExtractions.isEmpty) {
-      return {
-        for (final s in summaries)
-          s.idProducto: StockBreakdown.empty(s.cantidadTotalEnAlmacen),
-      };
-    }
-
-    final pendingOpIds = pendingExtractions
-        .map((e) => _asInt(e['id_operacion']))
-        .whereType<int>()
-        .toSet()
-        .toList();
-    final tipoVentaId = await _getTipoVentaId();
-    final opMeta = <int, Map<String, dynamic>>{};
-    for (var i = 0; i < pendingOpIds.length; i += 80) {
-      final chunk = pendingOpIds.sublist(
-        i,
-        i + 80 > pendingOpIds.length ? pendingOpIds.length : i + 80,
-      );
-      final ops = await _supabase
-          .from('app_dat_operaciones')
-          .select('id, id_tipo_operacion, id_carnaval_order, observaciones')
-          .inFilter('id', chunk);
-      for (final raw in ops as List) {
-        final op = Map<String, dynamic>.from(raw as Map);
-        final id = _asInt(op['id']);
-        if (id != null) opMeta[id] = op;
-      }
-    }
-
-    // Solo operaciones de tipo Venta afectan enPedidos/entregando.
-    final ventaOpIds = opMeta.entries
-        .where((e) => tipoVentaId == null || _asInt(e.value['id_tipo_operacion']) == tipoVentaId)
-        .map((e) => e.key)
-        .toSet();
-    final filteredPending = pendingExtractions.where((e) {
-      final opId = _asInt(e['id_operacion']) ?? 0;
-      return ventaOpIds.contains(opId);
-    }).toList();
-
-    final orderIdSet = <int>{};
-    final orderIdByOp = <int, int?>{};
-    final ventaDesdeOrdenRe = RegExp(
-      r'Venta desde orden\s+(\d+)',
-      caseSensitive: false,
-    );
-    for (final e in filteredPending) {
-      final opId = _asInt(e['id_operacion'])!;
-      final meta = opMeta[opId];
-      int? carnavalOrderId;
-      if (meta != null) {
-        carnavalOrderId = _asInt(meta['id_carnaval_order']);
-        if (carnavalOrderId == null) {
-          final obs = (meta['observaciones'] as String?) ?? '';
-          final match = ventaDesdeOrdenRe.firstMatch(obs);
-          if (match != null) {
-            carnavalOrderId = int.tryParse(match.group(1)!);
-          }
-        }
-      }
-      orderIdByOp[opId] = carnavalOrderId;
-      if (carnavalOrderId != null) orderIdSet.add(carnavalOrderId);
-    }
-
-    final statusByOrderId = <int, String>{};
-    final orderIds = orderIdSet.toList();
-    for (var i = 0; i < orderIds.length; i += 80) {
-      final chunk = orderIds.sublist(
-        i,
-        i + 80 > orderIds.length ? orderIds.length : i + 80,
-      );
-      final rows = await _supabase
-          .schema('carnavalapp')
-          .from('Orders')
-          .select('id, status')
-          .inFilter('id', chunk);
-      for (final raw in rows as List) {
-        final o = Map<String, dynamic>.from(raw as Map);
-        final id = _asInt(o['id']);
-        final status = o['status']?.toString();
-        if (id != null && status != null && status.trim().isNotEmpty) {
-          statusByOrderId[id] = status;
-        }
-      }
-    }
-
-    final aggs = <int, _PendingStockAgg>{};
-    for (final e in filteredPending) {
-      final prodId = _asInt(e['id_producto']) ?? 0;
-      final opId = _asInt(e['id_operacion']) ?? 0;
-      final qty = _resolvePendingExtractionQty(e);
-      final agg = aggs.putIfAbsent(prodId, () => _PendingStockAgg());
-      final orderId = orderIdByOp[opId];
-      final status = _normalizeCarnivalStatus(
-        orderId != null ? statusByOrderId[orderId] : null,
-      );
-      _accumulatePendingByCarnivalStatus(agg, qty: qty, status: status);
-    }
-
-    final result = <int, StockBreakdown>{};
-    for (final s in summaries) {
-      final agg = aggs[s.idProducto] ?? _PendingStockAgg();
-      // cant_almacen_total ya descuenta pendientes; Entregando no se suma.
-      result[s.idProducto] = StockBreakdown(
-        enAlmacen: s.cantidadTotalEnAlmacen + agg.enPedidos,
-        enPedidos: agg.enPedidos,
-        entregando: agg.entregando,
+    } catch (e) {
+      print(
+        '⚠️ fn_stock_breakdown_by_products falló; '
+        'mostrando stock base sin desglose: $e',
       );
     }
+
     return result;
   }
 
-  /// Calcula el desglose de stock real para un único producto distribuido en
-  /// varias ubicaciones. [locations] debe contener mapas con al menos
-  /// 'id_ubicacion' y 'cantidad' (o 'cantidad_final').
-  ///
-  /// Devuelve un mapa {idUbicacion: StockBreakdown}.
+  /// Desglose para un producto en varias ubicaciones vía
+  /// `fn_stock_breakdown_by_locations`. Si falla, stock base.
   static Future<Map<int, StockBreakdown>> getStockBreakdownsForProduct(
     int productId,
     List<Map<String, dynamic>> locations,
   ) async {
     final result = <int, StockBreakdown>{};
-
-    final ubicacionIds = <int>[];
     final baseStockByUbi = <int, double>{};
+
     for (final loc in locations) {
       final ubiId = _asInt(loc['id_ubicacion']);
-      final base = _asDouble(loc['cantidad_final']) ?? _asDouble(loc['cantidad']);
+      final base = _asDouble(loc['cantidad_final'] ?? loc['cantidad']);
       if (ubiId != null) {
-        ubicacionIds.add(ubiId);
-        baseStockByUbi[ubiId] = base ?? 0.0;
+        baseStockByUbi[ubiId] = base;
+        result[ubiId] = StockBreakdown.empty(base);
       }
     }
 
-    if (ubicacionIds.isEmpty) return result;
+    if (baseStockByUbi.isEmpty) return result;
 
-    // Inicializar resultado con el stock base.
-    for (final ubiId in baseStockByUbi.keys) {
-      result[ubiId] = StockBreakdown.empty(baseStockByUbi[ubiId]!);
-    }
-
-    // 1. Todas las extracciones de este producto en esas ubicaciones.
-    var extractions = <Map<String, dynamic>>[];
-    for (var i = 0; i < ubicacionIds.length; i += 80) {
-      final chunk = ubicacionIds.sublist(
-        i,
-        i + 80 > ubicacionIds.length ? ubicacionIds.length : i + 80,
+    try {
+      final response = await _supabase.rpc(
+        'fn_stock_breakdown_by_locations',
+        params: {
+          'p_product_ids': [productId],
+          'p_ubicacion_ids': baseStockByUbi.keys.toList(),
+        },
       );
-      final rows = await _supabase
-          .from('app_dat_extraccion_productos')
-          .select('id, id_operacion, id_producto, id_ubicacion, cantidad')
-          .eq('id_producto', productId)
-          .inFilter('id_ubicacion', chunk);
-      extractions.addAll(
-        (rows as List).map((r) => Map<String, dynamic>.from(r as Map)),
-      );
-    }
 
-    if (extractions.isEmpty) return result;
+      if (response is! List) return result;
 
-    // 2. Último estado por operación.
-    final opIds = extractions
-        .map((e) => _asInt(e['id_operacion']))
-        .whereType<int>()
-        .toSet()
-        .toList();
+      for (final raw in response) {
+        final row = Map<String, dynamic>.from(raw as Map);
+        final ubiId = _asInt(row['id_ubicacion']);
+        if (ubiId == null || !baseStockByUbi.containsKey(ubiId)) continue;
 
-    final estadoByOp = <int, int>{};
-    for (var i = 0; i < opIds.length; i += 80) {
-      final chunk = opIds.sublist(
-        i,
-        i + 80 > opIds.length ? opIds.length : i + 80,
-      );
-      final estados = await _supabase
-          .from('app_dat_estado_operacion')
-          .select('id, id_operacion, estado')
-          .inFilter('id_operacion', chunk)
-          .order('id', ascending: false);
-      for (final raw in estados as List) {
-        final e = Map<String, dynamic>.from(raw as Map);
-        final opId = _asInt(e['id_operacion']);
-        final estado = _asInt(e['estado']);
-        if (opId != null && estado != null && !estadoByOp.containsKey(opId)) {
-          estadoByOp[opId] = estado;
-        }
+        final enPedidos = _asDouble(row['en_pedidos']);
+        final entregando = _asDouble(row['entregando']);
+        result[ubiId] = StockBreakdown(
+          enAlmacen: baseStockByUbi[ubiId]! + enPedidos,
+          enPedidos: enPedidos,
+          entregando: entregando,
+        );
       }
-    }
-
-    // 3. Solo extracciones con estado actual Pendiente (1).
-    final pendingExtractions = extractions.where((e) {
-      final opId = _asInt(e['id_operacion']);
-      return opId != null && estadoByOp[opId] == 1;
-    }).toList();
-
-    if (pendingExtractions.isEmpty) return result;
-
-    // 4. Metadata de operaciones (id_carnaval_order, observaciones y tipo).
-    final pendingOpIds = pendingExtractions
-        .map((e) => _asInt(e['id_operacion']))
-        .whereType<int>()
-        .toSet()
-        .toList();
-    final tipoVentaId = await _getTipoVentaId();
-    final opMeta = <int, Map<String, dynamic>>{};
-    for (var i = 0; i < pendingOpIds.length; i += 80) {
-      final chunk = pendingOpIds.sublist(
-        i,
-        i + 80 > pendingOpIds.length ? pendingOpIds.length : i + 80,
-      );
-      final ops = await _supabase
-          .from('app_dat_operaciones')
-          .select('id, id_tipo_operacion, id_carnaval_order, observaciones')
-          .inFilter('id', chunk);
-      for (final raw in ops as List) {
-        final op = Map<String, dynamic>.from(raw as Map);
-        final id = _asInt(op['id']);
-        if (id != null) opMeta[id] = op;
-      }
-    }
-
-    // Solo operaciones de tipo Venta afectan enPedidos/entregando.
-    final ventaOpIds = opMeta.entries
-        .where((e) => tipoVentaId == null || _asInt(e.value['id_tipo_operacion']) == tipoVentaId)
-        .map((e) => e.key)
-        .toSet();
-    final filteredPending = pendingExtractions.where((e) {
-      final opId = _asInt(e['id_operacion']) ?? 0;
-      return ventaOpIds.contains(opId);
-    }).toList();
-
-    // 5. Resolver IDs de órdenes Carnaval vinculadas.
-    final orderIdSet = <int>{};
-    final orderIdByOp = <int, int?>{};
-    final ventaDesdeOrdenRe = RegExp(
-      r'Venta desde orden\s+(\d+)',
-      caseSensitive: false,
-    );
-    for (final e in filteredPending) {
-      final opId = _asInt(e['id_operacion'])!;
-      final meta = opMeta[opId];
-      int? carnavalOrderId;
-      if (meta != null) {
-        carnavalOrderId = _asInt(meta['id_carnaval_order']);
-        if (carnavalOrderId == null) {
-          final obs = (meta['observaciones'] as String?) ?? '';
-          final match = ventaDesdeOrdenRe.firstMatch(obs);
-          if (match != null) {
-            carnavalOrderId = int.tryParse(match.group(1)!);
-          }
-        }
-      }
-      orderIdByOp[opId] = carnavalOrderId;
-      if (carnavalOrderId != null) orderIdSet.add(carnavalOrderId);
-    }
-
-    // 6. Estados de las órdenes Carnaval.
-    final statusByOrderId = <int, String>{};
-    final orderIds = orderIdSet.toList();
-    for (var i = 0; i < orderIds.length; i += 80) {
-      final chunk = orderIds.sublist(
-        i,
-        i + 80 > orderIds.length ? orderIds.length : i + 80,
-      );
-      final rows = await _supabase
-          .schema('carnavalapp')
-          .from('Orders')
-          .select('id, status')
-          .inFilter('id', chunk);
-      for (final raw in rows as List) {
-        final o = Map<String, dynamic>.from(raw as Map);
-        final id = _asInt(o['id']);
-        final status = o['status']?.toString();
-        if (id != null && status != null && status.trim().isNotEmpty) {
-          statusByOrderId[id] = status;
-        }
-      }
-    }
-
-    // 7. Agregar por ubicación.
-    final aggs = <int, _PendingStockAgg>{};
-    for (final e in filteredPending) {
-      final ubiId = _asInt(e['id_ubicacion']) ?? 0;
-      final opId = _asInt(e['id_operacion']) ?? 0;
-      final qty = _resolvePendingExtractionQty(e);
-      final agg = aggs.putIfAbsent(ubiId, () => _PendingStockAgg());
-      final orderId = orderIdByOp[opId];
-      final status = _normalizeCarnivalStatus(
-        orderId != null ? statusByOrderId[orderId] : null,
-      );
-      _accumulatePendingByCarnivalStatus(agg, qty: qty, status: status);
-    }
-
-    // 8. Componer el resultado.
-    // base (cantidad_final) ya descuenta pendientes; Entregando no vuelve.
-    for (final ubiId in baseStockByUbi.keys) {
-      final agg = aggs[ubiId] ?? _PendingStockAgg();
-      result[ubiId] = StockBreakdown(
-        enAlmacen: baseStockByUbi[ubiId]! + agg.enPedidos,
-        enPedidos: agg.enPedidos,
-        entregando: agg.entregando,
+    } catch (e) {
+      print(
+        '⚠️ fn_stock_breakdown_by_locations (producto $productId) falló; '
+        'mostrando stock base sin desglose: $e',
       );
     }
 
@@ -4623,9 +4115,4 @@ class InventoryService {
   static String _locationKey(int productId, int ubicacionId) {
     return '${productId}_$ubicacionId';
   }
-}
-
-class _PendingStockAgg {
-  double enPedidos = 0.0;
-  double entregando = 0.0;
 }

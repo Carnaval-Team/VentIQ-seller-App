@@ -395,22 +395,35 @@ class OrderService {
 
       final idCliente = operation?['id_cliente'] as int?;
 
-      if (idCliente != null) {
-        // Actualizar datos del cliente en la tabla de clientes
-        final updateData = <String, dynamic>{};
-        if (buyerName != null && buyerName.isNotEmpty) {
-          updateData['nombre'] = buyerName;
-        }
-        if (buyerPhone != null && buyerPhone.isNotEmpty) {
-          updateData['telefono'] = buyerPhone;
-        }
-        if (updateData.isNotEmpty) {
-          await Supabase.instance.client
-              .from('app_dat_cliente')
-              .update(updateData)
-              .eq('id_cliente', idCliente);
-        }
+      if (idCliente == null) {
+        return {
+          'success': false,
+          'error':
+              'Esta orden no tiene un cliente registrado en la base de datos',
+        };
       }
+
+      // Persistencia directa en app_dat_clientes
+      final updateData = <String, dynamic>{};
+      if (buyerName != null && buyerName.isNotEmpty) {
+        updateData['nombre_completo'] = buyerName;
+      }
+      if (buyerPhone != null) {
+        // Permitir limpiar teléfono enviando string vacío → null
+        updateData['telefono'] =
+            buyerPhone.isEmpty ? null : buyerPhone;
+      }
+      if (updateData.isEmpty) {
+        return {
+          'success': false,
+          'error': 'No hay datos para actualizar',
+        };
+      }
+
+      await Supabase.instance.client
+          .from('app_dat_clientes')
+          .update(updateData)
+          .eq('id', idCliente);
 
       // Actualizar cache local
       final idx = _orders.indexWhere((o) => o.id == order.id);

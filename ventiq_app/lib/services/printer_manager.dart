@@ -9,6 +9,10 @@ import '../widgets/web_print_dialog.dart';
 /// Servicio unificado de impresión que decide qué tipo de impresión usar
 /// según la plataforma (móvil = Bluetooth/WiFi, web = impresoras de red/USB)
 class PrinterManager {
+  static final PrinterManager _instance = PrinterManager._internal();
+  factory PrinterManager() => _instance;
+  PrinterManager._internal();
+
   // Servicios específicos por plataforma
   final BluetoothPrinterService _bluetoothService = BluetoothPrinterService();
   final WiFiPrinterService _wifiService = WiFiPrinterService();
@@ -18,14 +22,16 @@ class PrinterManager {
   String _mobileprinterType = 'bluetooth'; // 'bluetooth' o 'wifi'
 
   // ── Selección guardada durante el turno ─────────────────────────────────
-  // Una vez que el trabajador elige tipo + dispositivo, se reutiliza
-  // automáticamente hasta que llame a clearSavedPrinter().
+  // Una vez que el trabajador elige tipo + dispositivo y confirma guardar,
+  // se reutiliza automáticamente hasta que llame a clearSavedPrinter().
   String? _savedPrinterType;           // 'bluetooth' | 'wifi'
   dynamic _savedBluetoothDevice;       // BluetoothInfo
   Map<String, dynamic>? _savedWifiPrinter; // {'ip': ..., 'port': ...}
+  bool _rememberPrinterForShift = false;
 
   /// Devuelve true si ya hay una selección guardada para la sesión
-  bool get hasSavedPrinter => _savedPrinterType != null;
+  bool get hasSavedPrinter =>
+      _rememberPrinterForShift && _savedPrinterType != null;
 
   /// Nombre descriptivo de la impresora guardada (para mostrar en UI)
   String get savedPrinterDescription {
@@ -43,6 +49,7 @@ class PrinterManager {
     _savedPrinterType = null;
     _savedBluetoothDevice = null;
     _savedWifiPrinter = null;
+    _rememberPrinterForShift = false;
   }
 
   /// Muestra el diálogo de confirmación de impresión apropiado para la plataforma
@@ -238,8 +245,8 @@ class PrinterManager {
     List<Order> orders,
   ) async {
     try {
-      // Si ya hay una selección guardada, usar directamente
-      if (_savedPrinterType != null) {
+      // Si ya se guardó una impresora para el turno, imprimir automáticamente
+      if (hasSavedPrinter) {
         if (_savedPrinterType == 'bluetooth') {
           return await _printCustomerReceiptsViaBluetoothMobileWithDevice(
             context, orders, _savedBluetoothDevice);
@@ -294,9 +301,24 @@ class PrinterManager {
         );
       }
 
-      // Guardar selección para el resto del turno
-      _savedPrinterType = 'bluetooth';
-      _savedBluetoothDevice = selectedDevice;
+      // Primera vez en el turno: preguntar si se guarda la impresora
+      final remember = await _showRememberPrinterDialog(
+        context,
+        'bluetooth',
+        selectedDevice,
+      );
+      if (remember == null) {
+        return PrintResult(
+          success: false,
+          message: 'Impresión cancelada por el usuario',
+          platform: 'Mobile',
+        );
+      }
+      if (remember) {
+        _savedPrinterType = 'bluetooth';
+        _savedBluetoothDevice = selectedDevice;
+        _rememberPrinterForShift = true;
+      }
 
       return await _printCustomerReceiptsViaBluetoothMobileWithDevice(context, orders, selectedDevice);
     } catch (e) {
@@ -408,9 +430,24 @@ class PrinterManager {
         );
       }
 
-      // Guardar selección para el resto del turno
-      _savedPrinterType = 'wifi';
-      _savedWifiPrinter = Map<String, dynamic>.from(selectedPrinter);
+      // Primera vez en el turno: preguntar si se guarda la impresora
+      final remember = await _showRememberPrinterDialog(
+        context,
+        'wifi',
+        selectedPrinter,
+      );
+      if (remember == null) {
+        return PrintResult(
+          success: false,
+          message: 'Impresión cancelada por el usuario',
+          platform: 'Mobile',
+        );
+      }
+      if (remember) {
+        _savedPrinterType = 'wifi';
+        _savedWifiPrinter = Map<String, dynamic>.from(selectedPrinter);
+        _rememberPrinterForShift = true;
+      }
 
       return await _printCustomerReceiptsViaWiFiMobileWithPrinter(
         context, orders, selectedPrinter);
@@ -574,20 +611,20 @@ class PrinterManager {
     Order order,
   ) async {
     try {
-      // Si ya hay una selección guardada, solo pedir confirmación
-      if (_savedPrinterType != null) {
-        final confirmed = await _showQuickPrintConfirmDialog(context, order);
-        if (confirmed == null) return PrintResult(success: false, message: 'Impresión cancelada', platform: 'Mobile');
-        if (!confirmed) {
-          // El usuario quiere cambiar de impresora
-          clearSavedPrinter();
-          return await _printInvoiceMobile(context, order);
-        }
-        // Imprimir con la selección guardada
+      // Si ya se guardó una impresora para el turno, imprimir automáticamente
+      if (hasSavedPrinter) {
         if (_savedPrinterType == 'bluetooth') {
-          return await _printViaBluetoothMobileWithDevice(context, order, _savedBluetoothDevice);
+          return await _printViaBluetoothMobileWithDevice(
+            context,
+            order,
+            _savedBluetoothDevice,
+          );
         } else {
-          return await _printViaWiFiMobileWithPrinter(context, order, _savedWifiPrinter!);
+          return await _printViaWiFiMobileWithPrinter(
+            context,
+            order,
+            _savedWifiPrinter!,
+          );
         }
       }
 
@@ -723,14 +760,18 @@ class PrinterManager {
     );
   }
 
-  /// Diálogo rápido cuando ya hay impresora guardada:
-  /// true = confirmar con impresora guardada
-  /// false = cambiar impresora
-  /// null = cancelar
-  Future<bool?> _showQuickPrintConfirmDialog(
+  /// Pregunta si se recuerda la impresora seleccionada para el resto del turno.
+  /// true = guardar, false = solo esta vez, null = cancelar.
+  Future<bool?> _showRememberPrinterDialog(
     BuildContext context,
-    Order order,
+    String printerType,
+    dynamic deviceOrPrinter,
   ) async {
+    final description =
+        printerType == 'bluetooth'
+            ? (deviceOrPrinter.name as String? ?? 'Bluetooth')
+            : 'WiFi · ${deviceOrPrinter['ip']}:${deviceOrPrinter['port'] ?? 9100}';
+
     return showDialog<bool>(
       context: context,
       builder:
@@ -741,7 +782,7 @@ class PrinterManager {
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Imprimir factura',
+                    'Guardar impresora',
                     style: Theme.of(ctx).textTheme.titleLarge,
                   ),
                 ),
@@ -751,7 +792,9 @@ class PrinterManager {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Orden: ${order.id}'),
+                Text(
+                  '¿Usar "$description" para el resto del turno?',
+                ),
                 SizedBox(height: 12),
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -766,7 +809,7 @@ class PrinterManager {
                   child: Row(
                     children: [
                       Icon(
-                        _savedPrinterType == 'bluetooth'
+                        printerType == 'bluetooth'
                             ? Icons.bluetooth
                             : Icons.wifi,
                         size: 18,
@@ -775,7 +818,7 @@ class PrinterManager {
                       SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          savedPrinterDescription,
+                          description,
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
@@ -795,15 +838,12 @@ class PrinterManager {
               ),
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: Text(
-                  'Cambiar impresora',
-                  style: TextStyle(color: Colors.grey[600]),
-                ),
+                child: Text('Solo esta vez'),
               ),
               ElevatedButton.icon(
                 onPressed: () => Navigator.pop(ctx, true),
-                icon: Icon(Icons.print, size: 18),
-                label: Text('Imprimir'),
+                icon: Icon(Icons.save, size: 18),
+                label: Text('Guardar para el turno'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF4A90E2),
                   foregroundColor: Colors.white,
@@ -832,9 +872,24 @@ class PrinterManager {
         );
       }
 
-      // Guardar selección para el resto del turno
-      _savedPrinterType = 'bluetooth';
-      _savedBluetoothDevice = selectedDevice;
+      // Primera vez en el turno: preguntar si se guarda la impresora
+      final remember = await _showRememberPrinterDialog(
+        context,
+        'bluetooth',
+        selectedDevice,
+      );
+      if (remember == null) {
+        return PrintResult(
+          success: false,
+          message: 'Impresión cancelada por el usuario',
+          platform: 'Mobile',
+        );
+      }
+      if (remember) {
+        _savedPrinterType = 'bluetooth';
+        _savedBluetoothDevice = selectedDevice;
+        _rememberPrinterForShift = true;
+      }
 
       return await _printViaBluetoothMobileWithDevice(context, order, selectedDevice);
     } catch (e) {
@@ -950,9 +1005,24 @@ class PrinterManager {
         );
       }
 
-      // Guardar selección para el resto del turno
-      _savedPrinterType = 'wifi';
-      _savedWifiPrinter = Map<String, dynamic>.from(selectedPrinter);
+      // Primera vez en el turno: preguntar si se guarda la impresora
+      final remember = await _showRememberPrinterDialog(
+        context,
+        'wifi',
+        selectedPrinter,
+      );
+      if (remember == null) {
+        return PrintResult(
+          success: false,
+          message: 'Impresión cancelada por el usuario',
+          platform: 'Mobile',
+        );
+      }
+      if (remember) {
+        _savedPrinterType = 'wifi';
+        _savedWifiPrinter = Map<String, dynamic>.from(selectedPrinter);
+        _rememberPrinterForShift = true;
+      }
 
       debugPrint(
         '✅ Impresora WiFi seleccionada: ${selectedPrinter['ip']}:${selectedPrinter['port']}',

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import '../config/app_colors.dart';
 import '../models/warehouse.dart';
@@ -1965,7 +1964,11 @@ class _InventoryExtractionBySaleScreenState
       // ========== IMPRIMIR COPIA 1: COMPROBANTE PRINCIPAL ==========
       print('📄 Imprimiendo copia 1: COMPROBANTE PRINCIPAL');
       List<int> bytes1 = _generateExtractionTicket(generator, copyNumber: 1);
-      bool printed1 = await PrintBluetoothThermal.writeBytes(bytes1);
+      bool printed1 = await bluetoothService.writeBytesSafe(
+        bytes1,
+        jobName: 'Extraction Ticket Copy 1',
+        settleAfter: false,
+      );
 
       if (!printed1) {
         await bluetoothService.disconnect();
@@ -1982,7 +1985,11 @@ class _InventoryExtractionBySaleScreenState
       // ========== IMPRIMIR COPIA 2: COMPROBANTE ALMACÉN ==========
       print('🏭 Imprimiendo copia 2: COMPROBANTE ALMACÉN');
       List<int> bytes2 = _generateExtractionTicket(generator, copyNumber: 2);
-      bool printed2 = await PrintBluetoothThermal.writeBytes(bytes2);
+      bool printed2 = await bluetoothService.writeBytesSafe(
+        bytes2,
+        jobName: 'Extraction Ticket Copy 2',
+        settleAfter: true,
+      );
 
       // Desconectar
       await bluetoothService.disconnect();
