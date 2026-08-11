@@ -5,6 +5,7 @@ import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
 import '../../models/hr/hr_salary_report.dart';
 import '../../models/hr/hr_audit_log.dart';
+import '../../models/hr/hr_salary_type.dart';
 
 class HRSalaryReportService {
   static final _supabase = Supabase.instance.client;
@@ -65,16 +66,23 @@ class HRSalaryReportService {
   }
 
   /// Actualizar salario de un trabajador
+  ///
+  /// [tipoSalario] define la modalidad de pago. Las dos tarifas se guardan
+  /// siempre: si RR.HH. alterna de modalidad, la tarifa de la otra no se
+  /// pierde. Un día no equivale a 8h ni a 24h.
   static Future<bool> updateWorkerSalary({
     required int workerId,
     required int storeId,
     required double salarioHoras,
     required double pagoPorResultado,
     required String modificadoPor,
+    double salarioDia = 0,
+    TipoSalario tipoSalario = TipoSalario.hora,
     String? motivo,
   }) async {
     try {
-      print('💰 Actualizando salario: trabajador $workerId');
+      print('💰 Actualizando salario: trabajador $workerId '
+          '(modalidad: ${tipoSalario.dbValue})');
       final response = await _supabase.rpc(
         'fn_hr_update_worker_salary',
         params: {
@@ -84,6 +92,8 @@ class HRSalaryReportService {
           'p_pago_por_resultado': pagoPorResultado,
           'p_modificado_por': modificadoPor,
           'p_motivo': motivo,
+          'p_tipo_salario': tipoSalario.dbValue,
+          'p_salario_dia': salarioDia,
         },
       );
 
@@ -112,15 +122,21 @@ class HRSalaryReportService {
 
     // Calcular totales
     double totalHoras = 0;
+    double totalDias = 0;
     double totalBase = 0;
     double totalPPR = 0;
     double totalGeneral = 0;
     for (final e in entries) {
       totalHoras += e.totalHoras;
+      totalDias += e.diasTrabajados;
       totalBase += e.totalSalarioBase;
       totalPPR += e.totalPPR;
       totalGeneral += e.totalGeneral;
     }
+
+    String formatDias(double d) => d == d.roundToDouble()
+        ? d.toStringAsFixed(0)
+        : d.toStringAsFixed(2);
 
     pdf.addPage(
       pw.MultiPage(
@@ -153,32 +169,45 @@ class HRSalaryReportService {
             cellAlignments: {
               0: pw.Alignment.centerLeft,
               1: pw.Alignment.center,
-              2: pw.Alignment.centerRight,
-              3: pw.Alignment.centerRight,
+              2: pw.Alignment.center,
+              3: pw.Alignment.center,
               4: pw.Alignment.centerRight,
               5: pw.Alignment.centerRight,
-              6: pw.Alignment.center,
+              6: pw.Alignment.centerRight,
+              7: pw.Alignment.centerRight,
             },
-            headers: ['Nombre', 'Horas', '\$/h', 'Salario Base', 'PPR', 'Total', 'Dias'],
+            headers: [
+              'Nombre',
+              'Modalidad',
+              'Horas',
+              'Dias',
+              'Tarifa',
+              'Salario Base',
+              'PPR',
+              'Total',
+            ],
             data: [
               ...entries.map((e) => [
                 e.nombreCompleto,
-                e.totalHoras.toStringAsFixed(1),
-                currencyFormat.format(e.salarioHoras),
+                e.tipoSalario.badge,
+                // Quien cobra por dia no muestra horas: no definen su pago
+                e.esPorDia ? '-' : e.totalHoras.toStringAsFixed(1),
+                e.diasFormatted,
+                '${currencyFormat.format(e.tarifa)}${e.tipoSalario.tarifaSufijo}',
                 currencyFormat.format(e.totalSalarioBase),
                 currencyFormat.format(e.totalPPR),
                 currencyFormat.format(e.totalGeneral),
-                e.diasTrabajados.toString(),
               ]),
               // Fila de totales
               [
                 'TOTALES',
+                '',
                 totalHoras.toStringAsFixed(1),
+                formatDias(totalDias),
                 '',
                 currencyFormat.format(totalBase),
                 currencyFormat.format(totalPPR),
                 currencyFormat.format(totalGeneral),
-                '',
               ],
             ],
           ),

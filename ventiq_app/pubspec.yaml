@@ -72,6 +72,11 @@ dependencies:
 
   # Image picker for package photos
   image_picker: ^1.1.2
+
+  # Lectura de SMS para confirmar pagos por transferencia (PAGOxMOVIL).
+  # Solo Android; el resto de plataformas cae a confirmación manual.
+  # Fork mantenido de `telephony`, que fue discontinuado en 2025.
+  another_telephony: ^0.4.1
   sqflite: ^2.4.3
   path: ^1.9.1
   sqflite_common_ffi: ^2.4.2

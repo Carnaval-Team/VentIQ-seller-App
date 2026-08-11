@@ -795,15 +795,8 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                     ),
                   ],
                   const Spacer(),
-                  // Se auto-oculta si el teléfono no es contactable (vacío o
-                  // relleno tipo 5555555), así que no hace falta condicionarlo.
-                  WhatsAppButton(
-                    phone: clientePhone,
-                    size: 30,
-                    message: 'Hola, le contactamos por su orden #$orderId.',
-                  ),
-                  if (WhatsAppHelper.isContactable(clientePhone))
-                    const SizedBox(width: 8),
+                  // El contacto por WhatsApp se hace tocando el teléfono del
+                  // cliente, más abajo en esta misma tarjeta.
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
@@ -947,18 +940,72 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                       ),
                     if (clientePhone.isNotEmpty) ...[
                       const SizedBox(width: 12),
-                      Icon(Icons.phone, size: 14, color: Colors.grey[600]),
-                      const SizedBox(width: 4),
-                      Flexible(
-                        child: Text(
-                          clientePhone,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
+                      // Si el número es contactable, tocarlo abre WhatsApp.
+                      // Si no lo es (vacío, relleno tipo 5555555), se muestra
+                      // como texto plano y no reacciona al toque.
+                      if (WhatsAppHelper.isContactable(clientePhone))
+                        Flexible(
+                          child: InkWell(
+                            onTap: () async {
+                              final ok = await WhatsAppHelper.openChat(
+                                clientePhone,
+                                message:
+                                    'Hola, le contactamos por su orden #$orderId.',
+                              );
+                              if (!ok && context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('No se pudo abrir WhatsApp'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            },
+                            borderRadius: BorderRadius.circular(4),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 2,
+                                vertical: 2,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.chat,
+                                    size: 14,
+                                    color: WhatsAppHelper.brandColor,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                      clientePhone,
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: WhatsAppHelper.brandColor,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
-                          overflow: TextOverflow.ellipsis,
+                        )
+                      else ...[
+                        Icon(Icons.phone, size: 14, color: Colors.grey[600]),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            clientePhone,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ],
                 ),

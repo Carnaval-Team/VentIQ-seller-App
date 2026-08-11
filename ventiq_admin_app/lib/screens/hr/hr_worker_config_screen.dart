@@ -8,6 +8,7 @@ import '../../services/store_service.dart';
 import '../../services/hr/hr_salary_report_service.dart';
 import '../../utils/navigation_guard.dart';
 import '../../widgets/hr/hr_drawer.dart';
+import '../../widgets/hr/hr_modalidad_badge.dart';
 
 class HRWorkerConfigScreen extends StatefulWidget {
   const HRWorkerConfigScreen({super.key});
@@ -150,8 +151,11 @@ class _HRWorkerConfigScreenState extends State<HRWorkerConfigScreen> {
   void _showAddWorkerDialog() {
     final nombresController = TextEditingController();
     final apellidosController = TextEditingController();
-    final salarioHorasController = TextEditingController(text: '0');
+    final salarioController = TextEditingController(text: '0');
     String? selectedRole;
+    // Modalidad de pago del nuevo trabajador. Por hora por defecto, que es
+    // el comportamiento histórico del módulo.
+    TipoSalario tipoSalario = TipoSalario.hora;
     bool isSaving = false;
 
     showDialog(
@@ -188,16 +192,45 @@ class _HRWorkerConfigScreenState extends State<HRWorkerConfigScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
+                SegmentedButton<TipoSalario>(
+                  segments: const [
+                    ButtonSegment(
+                      value: TipoSalario.hora,
+                      label: Text('Por hora'),
+                      icon: Icon(Icons.schedule, size: 18),
+                    ),
+                    ButtonSegment(
+                      value: TipoSalario.dia,
+                      label: Text('Por día'),
+                      icon: Icon(Icons.today, size: 18),
+                    ),
+                  ],
+                  selected: {tipoSalario},
+                  onSelectionChanged: (sel) =>
+                      setDialogState(() => tipoSalario = sel.first),
+                  style: ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    textStyle: WidgetStateProperty.all(
+                      const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 TextField(
-                  controller: salarioHorasController,
+                  controller: salarioController,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                    labelText: 'Salario por Hora',
-                    prefixIcon: Icon(Icons.attach_money),
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: tipoSalario.esPorDia
+                        ? 'Salario por Día'
+                        : 'Salario por Hora',
+                    prefixIcon: const Icon(Icons.attach_money),
+                    suffixText: tipoSalario.tarifaSufijo,
+                    border: const OutlineInputBorder(),
                     hintText: '0.00',
-                    helperText: 'Salario en moneda local por hora trabajada',
+                    helperText: tipoSalario.esPorDia
+                        ? 'Salario en moneda local por día trabajado'
+                        : 'Salario en moneda local por hora trabajada',
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -295,9 +328,15 @@ class _HRWorkerConfigScreenState extends State<HRWorkerConfigScreen> {
                           apellidos: apellidos,
                           usuarioUuid: null,
                           rolId: _getRoleIdFromName(selectedRole),
-                          salarioHoras:
-                              double.tryParse(salarioHorasController.text) ??
-                                  0.0,
+                          // La tarifa escrita se guarda en el campo de su
+                          // modalidad; la otra queda en 0 hasta que se defina.
+                          tipoSalario: tipoSalario,
+                          salarioHoras: tipoSalario.esPorDia
+                              ? 0.0
+                              : double.tryParse(salarioController.text) ?? 0.0,
+                          salarioDia: tipoSalario.esPorDia
+                              ? double.tryParse(salarioController.text) ?? 0.0
+                              : 0.0,
                         );
 
                         if (!success) {
@@ -407,13 +446,19 @@ class _HRWorkerConfigScreenState extends State<HRWorkerConfigScreen> {
   }
 
   void _showEditSheet(WorkerData worker) {
-    final salarioController = TextEditingController(
+    final salarioHoraController = TextEditingController(
       text: worker.salarioHoras.toStringAsFixed(2),
+    );
+    final salarioDiaController = TextEditingController(
+      text: worker.salarioDia.toStringAsFixed(2),
     );
     final pprController = TextEditingController(
       text: worker.pagoPorResultado.toStringAsFixed(2),
     );
     final motivoController = TextEditingController();
+    // Modalidad seleccionada en el sheet. Las dos tarifas se guardan siempre,
+    // así que alternar de modalidad no borra la tarifa de la otra.
+    TipoSalario tipoSalario = worker.tipoSalario;
     bool isSaving = false;
 
     showModalBottomSheet(
@@ -477,17 +522,62 @@ class _HRWorkerConfigScreenState extends State<HRWorkerConfigScreen> {
                     const Divider(),
                     const SizedBox(height: 12),
 
-                    // Salario por hora
+                    // Modalidad de pago
                     const Text(
-                      'Salario por hora (\$/h)',
+                      'Modalidad de pago',
                       style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
                     ),
                     const SizedBox(height: 8),
+                    SegmentedButton<TipoSalario>(
+                      segments: const [
+                        ButtonSegment(
+                          value: TipoSalario.hora,
+                          label: Text('Por hora'),
+                          icon: Icon(Icons.schedule, size: 18),
+                        ),
+                        ButtonSegment(
+                          value: TipoSalario.dia,
+                          label: Text('Por día'),
+                          icon: Icon(Icons.today, size: 18),
+                        ),
+                      ],
+                      selected: {tipoSalario},
+                      onSelectionChanged: (sel) =>
+                          setSheetState(() => tipoSalario = sel.first),
+                      style: ButtonStyle(
+                        visualDensity: VisualDensity.compact,
+                        textStyle: WidgetStateProperty.all(
+                          const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      tipoSalario.esPorDia
+                          ? 'Se paga por día trabajado, sin importar las horas.'
+                          : 'Se paga por hora efectivamente trabajada.',
+                      style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Tarifa de la modalidad activa. Se muestra solo la que
+                    // aplica para no confundir, pero ambas se conservan.
+                    Text(
+                      tipoSalario.esPorDia
+                          ? 'Salario por día (\$/d)'
+                          : 'Salario por hora (\$/h)',
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
+                    const SizedBox(height: 8),
                     TextField(
-                      controller: salarioController,
+                      key: ValueKey('tarifa_${tipoSalario.dbValue}'),
+                      controller: tipoSalario.esPorDia
+                          ? salarioDiaController
+                          : salarioHoraController,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       decoration: InputDecoration(
                         prefixText: '\$ ',
+                        suffixText: tipoSalario.tarifaSufijo,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -507,6 +597,8 @@ class _HRWorkerConfigScreenState extends State<HRWorkerConfigScreen> {
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       decoration: InputDecoration(
                         prefixText: '\$ ',
+                        helperText: 'Bono fijo que se suma una vez por jornada',
+                        helperStyle: const TextStyle(fontSize: 11),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -541,7 +633,10 @@ class _HRWorkerConfigScreenState extends State<HRWorkerConfigScreen> {
                         onPressed: isSaving
                             ? null
                             : () async {
-                                final newSalario = double.tryParse(salarioController.text) ?? 0;
+                                final newSalarioHora =
+                                    double.tryParse(salarioHoraController.text) ?? 0;
+                                final newSalarioDia =
+                                    double.tryParse(salarioDiaController.text) ?? 0;
                                 final newPPR = double.tryParse(pprController.text) ?? 0;
                                 final motivo = motivoController.text.trim().isEmpty
                                     ? null
@@ -553,7 +648,9 @@ class _HRWorkerConfigScreenState extends State<HRWorkerConfigScreen> {
                                   await HRSalaryReportService.updateWorkerSalary(
                                     workerId: worker.trabajadorId,
                                     storeId: _storeId!,
-                                    salarioHoras: newSalario,
+                                    salarioHoras: newSalarioHora,
+                                    salarioDia: newSalarioDia,
+                                    tipoSalario: tipoSalario,
                                     pagoPorResultado: newPPR,
                                     modificadoPor: _userUuid!,
                                     motivo: motivo,
@@ -651,7 +748,7 @@ class _HRWorkerConfigScreenState extends State<HRWorkerConfigScreen> {
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          '${log.campoLabel}: ${log.valorAnterior ?? "N/A"} -> ${log.valorNuevo ?? "N/A"}',
+                                          '${log.campoLabel}: ${log.valorAnteriorLabel} -> ${log.valorNuevoLabel}',
                                           style: const TextStyle(fontSize: 12),
                                         ),
                                         Row(
@@ -795,8 +892,13 @@ class _HRWorkerConfigScreenState extends State<HRWorkerConfigScreen> {
                                 ),
                                 subtitle: Row(
                                   children: [
+                                    HRModalidadBadge(
+                                      tipoSalario: worker.tipoSalario,
+                                      fontSize: 9,
+                                    ),
+                                    const SizedBox(width: 6),
                                     Text(
-                                      '\$${worker.salarioHoras.toStringAsFixed(2)}/h',
+                                      worker.tarifaFormatted,
                                       style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                                     ),
                                     if (worker.pagoPorResultado > 0) ...[

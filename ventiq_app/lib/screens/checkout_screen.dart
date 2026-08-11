@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -8,12 +9,14 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import '../models/order.dart';
 import '../models/mesa.dart';
+import '../models/bank_sms_payment.dart';
 import '../services/order_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
 import '../services/currency_service.dart';
 import '../services/mesa_service.dart';
 import '../services/mesa_cuenta_service.dart';
+import '../services/bank_sms_service.dart';
 import '../utils/price_utils.dart';
 import '../utils/promotion_rules.dart';
 import '../utils/uuid_generator.dart';
@@ -62,6 +65,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   double _usdRate = 0.0;
   bool _isLoadingUsdRate = false;
 
+  // ===== Confirmación de pago por SMS (PAGOxMOVIL) =====
+  final BankSmsService _bankSmsService = BankSmsService();
+  StreamSubscription<BankSmsPayment>? _smsSub;
+  // Pago capturado y casado con el total de esta orden. Informativo: si es
+  // null al crear la orden, la venta se cierra igual sin confirmar.
+  BankSmsPayment? _confirmedPayment;
+
   // Discount percentages (you can make these configurable)
   static const double promoDiscountPercentage = 0.10; // 10% promo discount
 
@@ -76,6 +86,97 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     _loadProductPromotions();
     _loadGlobalPromotion();
     _loadUsdRate();
+    _initSmsPaymentWatch();
+  }
+
+  /// `true` si algún producto de la orden se paga por transferencia.
+  bool get _tieneTransferencia => widget.order.items
+      .any((item) => item.paymentMethod?.esTransferencia ?? false);
+
+  /// Arranca (o reengancha) la escucha del SMS de confirmación y se suscribe a
+  /// los pagos entrantes. Todo best-effort: la confirmación es informativa.
+  Future<void> _initSmsPaymentWatch() async {
+    if (!_tieneTransferencia || !BankSmsService.isSupported) return;
+
+    // La escucha pudo haberse iniciado en PreorderScreen antes de navegar
+    // aquí; startListening es idempotente y solo reinicia el temporizador.
+    await _bankSmsService.startListening();
+
+    // Respaldo: si Android mató el proceso y el receiver no se disparó,
+    // recuperamos del inbox los pagos recientes. Luego intentamos casar.
+    await _bankSmsService.reconcileFromInbox();
+    await _tryMatchPending();
+
+    _smsSub = _bankSmsService.onPayment.listen((_) => _tryMatchPending());
+  }
+
+  /// Busca en el buffer un pago cuyo monto coincida con el total y, si lo
+  /// encuentra, lo marca como confirmado en la UI.
+  Future<void> _tryMatchPending() async {
+    if (_confirmedPayment != null) return;
+    final match = await _bankSmsService.findMatchingPayment(finalTotal);
+    if (match == null || !mounted) return;
+    setState(() {
+      _confirmedPayment = match;
+    });
+    _showSuccessMessage(
+      '✅ Pago de \$${match.monto.toStringAsFixed(2)} confirmado por SMS '
+      '(${match.banco})',
+    );
+  }
+
+  /// Resuelve el pago SMS a persistir en el momento de crear la orden.
+  ///
+  /// Hace un último intento de casar por si el SMS llegó entre que el cajero
+  /// vio la pantalla y pulsó "Crear Orden". Devuelve null si no hay
+  /// transferencia, no hay soporte, o no llegó ningún SMS que cuadre — en
+  /// todos esos casos la venta se cierra igual (confirmación informativa).
+  Future<BankSmsPayment?> _resolveSmsPayment() async {
+    if (!_tieneTransferencia) return null;
+    if (_confirmedPayment != null) return _confirmedPayment;
+    if (!BankSmsService.isSupported) return null;
+    await _bankSmsService.reconcileFromInbox();
+    return _bankSmsService.findMatchingPayment(finalTotal);
+  }
+
+  /// Detiene la escucha y saca el pago del buffer una vez asociado a la venta.
+  Future<void> _finishSmsWatch(BankSmsPayment? payment) async {
+    if (payment != null) {
+      await _bankSmsService.removePendingPayment(payment.nroTransaccionBanco);
+    }
+    _bankSmsService.stopListening();
+  }
+
+  /// Adjunta el SMS de confirmación a la operación de venta recién creada
+  /// (online) vía `fn_confirmar_pago_sms`. Best-effort: cualquier fallo se
+  /// loguea pero no interrumpe el cierre de la venta.
+  Future<void> _persistSmsConfirmation(int operationId) async {
+    final payment = await _resolveSmsPayment();
+    if (payment == null) {
+      _bankSmsService.stopListening();
+      return;
+    }
+    try {
+      final resp = await Supabase.instance.client.rpc(
+        'fn_confirmar_pago_sms',
+        params: {
+          'p_id_operacion': operationId,
+          'p_sms_json': payment.toJson(),
+          'p_tolerancia': BankSmsService.amountTolerance,
+        },
+      );
+      final status = (resp is Map) ? resp['status'] : null;
+      if (status == 'success') {
+        print('✅ Pago SMS ${payment.nroTransaccionBanco} vinculado a op '
+            '$operationId');
+      } else {
+        print('⚠️ fn_confirmar_pago_sms devolvió: $resp');
+      }
+    } catch (e) {
+      print('❌ Error vinculando pago SMS a operación $operationId: $e');
+    } finally {
+      await _finishSmsWatch(payment);
+    }
   }
 
   Future<void> _loadUsdRate() async {
@@ -255,6 +356,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     _buyerNameController.dispose();
     _buyerPhoneController.dispose();
     _extraContactsController.dispose();
+    // Solo cancelamos nuestra suscripción; NO detenemos la escucha global:
+    // el SMS puede llegar tras salir del checkout y el propio servicio la
+    // apaga por inactividad (20 min). La escucha sí se detiene al crear la
+    // orden (ver _createOrder).
+    _smsSub?.cancel();
     super.dispose();
   }
 
@@ -389,6 +495,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               // _buildExtraContactsSection(),
               const SizedBox(height: 30),
               _buildFinalTotalSection(),
+              if (_tieneTransferencia) ...[
+                const SizedBox(height: 16),
+                _buildSmsConfirmationSection(),
+              ],
               if (_solicitarImagenOperacion) ...[
                 const SizedBox(height: 20),
                 _buildOperationPhotoSection(),
@@ -1062,6 +1172,121 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
+  Widget _buildSmsConfirmationSection() {
+    final confirmed = _confirmedPayment;
+
+    if (confirmed != null) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.green.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.green.withOpacity(0.4)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.verified, color: Colors.green, size: 28),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Pago confirmado por SMS',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1B5E20),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${confirmed.banco} · \$${confirmed.monto.toStringAsFixed(2)} ${confirmed.moneda}',
+                    style: TextStyle(fontSize: 13, color: Colors.grey[800]),
+                  ),
+                  Text(
+                    'Tx: ${confirmed.nroTransaccionBanco}',
+                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Plataforma sin soporte de SMS (iOS/Windows/Web): no prometemos algo
+    // que no podemos cumplir; solo un aviso discreto.
+    if (!BankSmsService.isSupported) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.grey.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.withOpacity(0.3)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.info_outline, color: Colors.grey[600], size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Confirmación automática de transferencia solo disponible en '
+                'Android. Verifica el pago manualmente.',
+                style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Esperando el SMS.
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.orange.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.withOpacity(0.4)),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.5,
+              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFE65100)),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Esperando confirmación de transferencia…',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFE65100),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Buscando SMS de PAGOxMOVIL por \$${finalTotal.toStringAsFixed(2)}. '
+                  'Puedes crear la orden sin esperar.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildOperationPhotoSection() {
     final hasPhoto = _fotoOperacionBytes != null;
     return Container(
@@ -1549,8 +1774,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         }
       }
 
+      // Confirmación de pago por SMS (informativa). En offline no podemos
+      // llamar al RPC; guardamos el SMS parseado en la orden pendiente para
+      // que la sincronización lo suba junto con la venta.
+      final smsPayment = await _resolveSmsPayment();
+      if (smsPayment != null) {
+        orderData['pago_sms_json'] = smsPayment.toJson();
+      }
+
       // Guardar orden pendiente
       await _userPreferencesService.savePendingOrder(orderData);
+      await _finishSmsWatch(smsPayment);
 
       // Actualizar inventario en cache
       for (final item in widget.order.items) {
@@ -1702,6 +1936,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       );
 
       if (result['success'] == true) {
+        // Confirmación de pago por SMS (informativa). Si llegó un SMS de
+        // PAGOxMOVIL que cuadra con el total, lo adjuntamos a la operación.
+        final operationId = result['operationId'];
+        if (operationId is int) {
+          await _persistSmsConfirmation(operationId);
+        }
+
         // Show success and navigate back
         if (result['paymentWarning'] != null) {
           _showErrorMessage(

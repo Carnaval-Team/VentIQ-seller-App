@@ -104,14 +104,17 @@ class WorkerService {
     required String apellidos,
     required String tipoRol,
     required String usuarioUuid,
-    double salarioHoras = 0.0, // 💰 NUEVO: Salario por hora
+    double salarioHoras = 0.0, // 💰 Tarifa por hora
+    double salarioDia = 0.0, // 💰 Tarifa por día (independiente de la de hora)
+    TipoSalario tipoSalario = TipoSalario.hora, // 💰 Modalidad de pago
     int? tpvId,
     int? almacenId,
     String? numeroConfirmacion,
   }) async {
     try {
       print('➕ Creando trabajador: $nombres $apellidos, rol: $tipoRol');
-      print('💰 Salario/Hora: $salarioHoras');
+      print('💰 Modalidad: ${tipoSalario.dbValue} '
+          '(hora: $salarioHoras, día: $salarioDia)');
 
       // 1. Crear trabajador con RPC existente
       final response = await _supabase.rpc(
@@ -134,15 +137,21 @@ class WorkerService {
         throw Exception(response['message'] ?? 'Error al crear trabajador');
       }
 
-      // 2. 💰 Actualizar salario_horas si es mayor a 0
-      if (salarioHoras > 0 && response['trabajador_id'] != null) {
+      // 2. 💰 Guardar modalidad y tarifas. La modalidad se escribe siempre
+      //    (aunque las tarifas sean 0) para que quede registrada tal como
+      //    la eligió quien creó al trabajador.
+      if (response['trabajador_id'] != null) {
         final trabajadorId = response['trabajador_id'] as int;
         print(
-          '💰 Actualizando salario_horas: $salarioHoras para trabajador $trabajadorId',
+          '💰 Guardando salario (${tipoSalario.dbValue}) para trabajador $trabajadorId',
         );
         await _supabase
             .from('app_dat_trabajadores')
-            .update({'salario_horas': salarioHoras})
+            .update({
+              'salario_horas': salarioHoras,
+              'salario_dia': salarioDia,
+              'tipo_salario': tipoSalario.dbValue,
+            })
             .eq('id', trabajadorId);
         print('✅ Salario actualizado correctamente');
       }
@@ -161,12 +170,15 @@ class WorkerService {
     required String apellidos,
     String? usuarioUuid,
     int? rolId,
-    double salarioHoras = 0.0, // 💰 NUEVO: Salario por hora
+    double salarioHoras = 0.0, // 💰 Tarifa por hora
+    double salarioDia = 0.0, // 💰 Tarifa por día (independiente de la de hora)
+    TipoSalario tipoSalario = TipoSalario.hora, // 💰 Modalidad de pago
   }) async {
     try {
       print('➡️ Creando trabajador básico: $nombres $apellidos');
       print('   UUID: ${usuarioUuid ?? "null"}, Rol ID: $rolId');
-      print('💰 Salario/Hora: $salarioHoras');
+      print('💰 Modalidad: ${tipoSalario.dbValue} '
+          '(hora: $salarioHoras, día: $salarioDia)');
 
       // 1. Crear trabajador con RPC existente
       final response = await _supabase.rpc(
@@ -186,15 +198,19 @@ class WorkerService {
         throw Exception(response['message'] ?? 'Error al crear trabajador');
       }
 
-      // 2. 💰 Actualizar salario_horas si es mayor a 0
-      if (salarioHoras > 0 && response['trabajador_id'] != null) {
+      // 2. 💰 Guardar modalidad y tarifas (ver nota en createWorker)
+      if (response['trabajador_id'] != null) {
         final trabajadorId = response['trabajador_id'] as int;
         print(
-          '💰 Actualizando salario_horas: $salarioHoras para trabajador $trabajadorId',
+          '💰 Guardando salario (${tipoSalario.dbValue}) para trabajador $trabajadorId',
         );
         await _supabase
             .from('app_dat_trabajadores')
-            .update({'salario_horas': salarioHoras})
+            .update({
+              'salario_horas': salarioHoras,
+              'salario_dia': salarioDia,
+              'tipo_salario': tipoSalario.dbValue,
+            })
             .eq('id', trabajadorId);
         print('✅ Salario actualizado correctamente');
       }
@@ -215,7 +231,9 @@ class WorkerService {
     required String apellidos,
     String? tipoRol, // Deprecated - mantenido por compatibilidad
     String? usuarioUuid,
-    double? salarioHoras, // 💰 NUEVO: Salario por hora (opcional para edición)
+    double? salarioHoras, // 💰 Tarifa por hora (null = sin cambios)
+    double? salarioDia, // 💰 Tarifa por día (null = sin cambios)
+    TipoSalario? tipoSalario, // 💰 Modalidad de pago (null = sin cambios)
     bool?
     manejaAperturaControl, // 📋 NUEVO: Control de inventario (opcional para edición)
     int? tpvId, // Deprecated - usar updateRoleSpecificData
@@ -228,6 +246,10 @@ class WorkerService {
       print('  - Apellidos: $apellidos');
       print('  - UUID: $usuarioUuid');
       print('  - Salario/Hora: ${salarioHoras ?? "sin cambios"}'); // 💰 NUEVO
+      print('  - Salario/Día: ${salarioDia ?? "sin cambios"}'); // 💰 NUEVO
+      print(
+        '  - Modalidad: ${tipoSalario?.dbValue ?? "sin cambios"}',
+      ); // 💰 NUEVO
       print(
         '  - Maneja Apertura Control: ${manejaAperturaControl ?? "sin cambios"}',
       ); // 📋 NUEVO
@@ -256,6 +278,18 @@ class WorkerService {
       if (salarioHoras != null) {
         updateData['salario_horas'] = salarioHoras;
         print('💰 Actualizando salario_horas: $salarioHoras');
+      }
+
+      // 💰 Actualizar salario_dia si se proporcionó
+      if (salarioDia != null) {
+        updateData['salario_dia'] = salarioDia;
+        print('💰 Actualizando salario_dia: $salarioDia');
+      }
+
+      // 💰 Actualizar modalidad de pago si se proporcionó
+      if (tipoSalario != null) {
+        updateData['tipo_salario'] = tipoSalario.dbValue;
+        print('💰 Actualizando tipo_salario: ${tipoSalario.dbValue}');
       }
 
       // 📋 Actualizar maneja_apertura_control si se proporcionó

@@ -499,18 +499,20 @@ class _WorkersScreenState extends State<WorkersScreen>
                     // 🆕 NUEVO: Etiquetas múltiples de roles
                     _buildRoleTags(worker),
                     const SizedBox(height: 4),
-                    // 💰 NUEVO: Mostrar salario por hora
-                    if (worker.salarioHoras > 0)
+                    // 💰 NUEVO: Mostrar tarifa según su modalidad (hora o día)
+                    if (worker.tarifaVigente > 0)
                       Row(
                         children: [
                           Icon(
-                            Icons.attach_money,
+                            worker.tipoSalario.esPorDia
+                                ? Icons.today
+                                : Icons.attach_money,
                             size: 14,
                             color: Colors.green[700],
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            'Salario: \$${worker.salarioHoras.toStringAsFixed(2)}/h',
+                            'Salario: ${worker.tarifaFormatted}',
                             style: TextStyle(
                               color: Colors.green[700],
                               fontSize: 12,
@@ -1189,6 +1191,8 @@ class _WorkersScreenState extends State<WorkersScreen>
     final passwordController = TextEditingController();
     final numeroConfirmacionController = TextEditingController();
     final salarioHorasController = TextEditingController(text: '0'); // 💰 NUEVO
+    // 💰 NUEVO: modalidad de pago del nuevo trabajador
+    TipoSalario tipoSalario = TipoSalario.hora;
     bool crearUsuario = false;
     bool asignarRolEspecifico = false;
     String? selectedRole;
@@ -1242,16 +1246,45 @@ class _WorkersScreenState extends State<WorkersScreen>
                           ),
                         ),
                         const SizedBox(height: 12),
-                        // 💰 NUEVO: Campo de salario por hora
+                        // 💰 NUEVO: Modalidad de pago (por hora o por día)
+                        SegmentedButton<TipoSalario>(
+                          segments: const [
+                            ButtonSegment(
+                              value: TipoSalario.hora,
+                              label: Text('Por hora'),
+                              icon: Icon(Icons.schedule, size: 18),
+                            ),
+                            ButtonSegment(
+                              value: TipoSalario.dia,
+                              label: Text('Por día'),
+                              icon: Icon(Icons.today, size: 18),
+                            ),
+                          ],
+                          selected: {tipoSalario},
+                          onSelectionChanged: (sel) =>
+                              setDialogState(() => tipoSalario = sel.first),
+                          style: ButtonStyle(
+                            visualDensity: VisualDensity.compact,
+                            textStyle: WidgetStateProperty.all(
+                              const TextStyle(fontSize: 13),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        // 💰 NUEVO: Tarifa de la modalidad seleccionada
                         TextField(
                           controller: salarioHorasController,
-                          decoration: const InputDecoration(
-                            labelText: 'Salario por Hora',
-                            prefixIcon: Icon(Icons.attach_money),
-                            border: OutlineInputBorder(),
+                          decoration: InputDecoration(
+                            labelText: tipoSalario.esPorDia
+                                ? 'Salario por Día'
+                                : 'Salario por Hora',
+                            prefixIcon: const Icon(Icons.attach_money),
+                            suffixText: tipoSalario.tarifaSufijo,
+                            border: const OutlineInputBorder(),
                             hintText: '0.00',
-                            helperText:
-                                'Salario en moneda local por hora trabajada',
+                            helperText: tipoSalario.esPorDia
+                                ? 'Salario en moneda local por día trabajado'
+                                : 'Salario en moneda local por hora trabajada',
                           ),
                           keyboardType: const TextInputType.numberWithOptions(
                             decimal: true,
@@ -1557,9 +1590,21 @@ class _WorkersScreenState extends State<WorkersScreen>
                           () => _createWorkerFlexible(
                             nombres: nombresController.text,
                             apellidos: apellidosController.text,
-                            salarioHoras:
-                                double.tryParse(salarioHorasController.text) ??
-                                0.0, // 💰 NUEVO
+                            // 💰 NUEVO: la tarifa escrita va al campo de su
+                            // modalidad; la otra queda en 0 hasta definirse.
+                            tipoSalario: tipoSalario,
+                            salarioHoras: tipoSalario.esPorDia
+                                ? 0.0
+                                : double.tryParse(
+                                      salarioHorasController.text,
+                                    ) ??
+                                    0.0,
+                            salarioDia: tipoSalario.esPorDia
+                                ? double.tryParse(
+                                      salarioHorasController.text,
+                                    ) ??
+                                    0.0
+                                : 0.0,
                             crearUsuario: crearUsuario,
                             email: emailController.text,
                             password: passwordController.text,
@@ -1761,7 +1806,9 @@ class _WorkersScreenState extends State<WorkersScreen>
   Future<void> _createWorkerFlexible({
     required String nombres,
     required String apellidos,
-    double salarioHoras = 0.0, // 💰 NUEVO: Salario por hora
+    double salarioHoras = 0.0, // 💰 NUEVO: Tarifa por hora
+    double salarioDia = 0.0, // 💰 NUEVO: Tarifa por día
+    TipoSalario tipoSalario = TipoSalario.hora, // 💰 NUEVO: Modalidad
     required bool crearUsuario,
     String? email,
     String? password,
@@ -1915,6 +1962,8 @@ class _WorkersScreenState extends State<WorkersScreen>
             tipoRol: tipoRol,
             usuarioUuid: userUuid,
             salarioHoras: salarioHoras, // 💰 NUEVO
+            salarioDia: salarioDia, // 💰 NUEVO
+            tipoSalario: tipoSalario, // 💰 NUEVO
             tpvId: tpvId,
             almacenId: almacenId,
             numeroConfirmacion: numeroConfirmacion,
@@ -1932,6 +1981,8 @@ class _WorkersScreenState extends State<WorkersScreen>
             apellidos: apellidos,
             usuarioUuid: userUuid,
             salarioHoras: salarioHoras, // 💰 NUEVO
+            salarioDia: salarioDia, // 💰 NUEVO
+            tipoSalario: tipoSalario, // 💰 NUEVO
             rolId: rolGeneralId,
           );
 
@@ -1950,6 +2001,8 @@ class _WorkersScreenState extends State<WorkersScreen>
           usuarioUuid: null,
           rolId: rolGeneralId,
           salarioHoras: salarioHoras, // 💰 NUEVO
+          salarioDia: salarioDia, // 💰 NUEVO
+          tipoSalario: tipoSalario, // 💰 NUEVO
         );
 
         if (!success) {
@@ -3288,7 +3341,7 @@ class _WorkersScreenState extends State<WorkersScreen>
                             ),
                             const SizedBox(width: 8),
                             Text(
-                              '\$${worker.salarioHora.toStringAsFixed(2)}/hora',
+                              worker.tarifaFormatted,
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.green.shade700,
@@ -3319,6 +3372,31 @@ class _WorkersScreenState extends State<WorkersScreen>
                     ),
                     autofocus: true,
                   ),
+                  // Aviso: a quien cobra por día las horas no le cambian el pago
+                  if (worker.esPorDia)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            size: 14,
+                            color: Colors.orange.shade700,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Este trabajador cobra por día: las horas '
+                              'registradas no modifican su salario.',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.orange.shade800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   const SizedBox(height: 12),
 
                   // Cálculo de salario
@@ -3343,7 +3421,11 @@ class _WorkersScreenState extends State<WorkersScreen>
                           valueListenable: hoursController,
                           builder: (context, value, child) {
                             final hours = double.tryParse(value.text) ?? 0.0;
-                            final total = hours * worker.salarioHora;
+                            // Modalidad día: la jornada se paga completa, así
+                            // que ajustar las horas no altera el importe.
+                            final total = worker.esPorDia
+                                ? worker.salarioHora
+                                : hours * worker.salarioHora;
                             return Text(
                               '\$${total.toStringAsFixed(2)}',
                               style: TextStyle(
@@ -3941,7 +4023,7 @@ class _WorkersScreenState extends State<WorkersScreen>
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '\$${worker.salarioHora.toStringAsFixed(2)}/h',
+                        worker.tarifaFormatted,
                         style: const TextStyle(
                           fontSize: 11,
                           color: AppColors.textSecondary,

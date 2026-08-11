@@ -1,3 +1,7 @@
+import 'hr/hr_salary_type.dart';
+
+export 'hr/hr_salary_type.dart';
+
 class WorkerRole {
   final int id;
   final String denominacion;
@@ -41,7 +45,9 @@ class WorkerData {
   final Map<String, dynamic> datosEspecificos;
   final String? usuarioUuid;
   final String? email; // 📧 Email del trabajador desde auth.users
-  final double salarioHoras; // 💰 Salario por hora del trabajador
+  final double salarioHoras; // 💰 Tarifa por hora del trabajador
+  final double salarioDia; // 💰 Tarifa por día (independiente de la de hora)
+  final TipoSalario tipoSalario; // 💰 Modalidad de pago: por hora o por día
   final double pagoPorResultado; // 💰 Pago por resultado del trabajador
   final bool? manejaAperturaControl; // 📋 Control de inventario en turnos
 
@@ -65,6 +71,8 @@ class WorkerData {
     this.usuarioUuid,
     this.email, // 📧 Email opcional
     this.salarioHoras = 0.0, // Valor por defecto 0
+    this.salarioDia = 0.0, // Valor por defecto 0
+    this.tipoSalario = TipoSalario.hora, // Modalidad histórica por defecto
     this.pagoPorResultado = 0.0, // Valor por defecto 0
     this.manejaAperturaControl, // 📋 Puede ser null
     this.tieneUsuario = false,
@@ -90,7 +98,13 @@ class WorkerData {
       email: json['email'] as String?, // 📧 Parsear email
       salarioHoras:
           (json['salario_horas'] as num?)?.toDouble() ??
-          0.0, // 💰 Parsear salario
+          0.0, // 💰 Parsear tarifa/hora
+      salarioDia:
+          (json['salario_dia'] as num?)?.toDouble() ??
+          0.0, // 💰 Parsear tarifa/día
+      tipoSalario: TipoSalario.fromDb(
+        json['tipo_salario'],
+      ), // 💰 Parsear modalidad
       pagoPorResultado:
           (json['pago_por_resultado'] as num?)?.toDouble() ??
           0.0, // 💰 Parsear PPR
@@ -108,6 +122,14 @@ class WorkerData {
   }
 
   String get nombreCompleto => '$nombres $apellidos';
+
+  /// 💰 Tarifa vigente según la modalidad configurada.
+  /// Un día no equivale a 8h ni a 24h: cada modalidad tiene su propia tarifa.
+  double get tarifaVigente =>
+      tipoSalario.esPorDia ? salarioDia : salarioHoras;
+
+  /// 💰 Tarifa vigente formateada. Ej: '\$1500.00/d' o '\$120.00/h'.
+  String get tarifaFormatted => tipoSalario.formatTarifa(tarifaVigente);
 
   // 🆕 Getter para obtener lista de roles activos
   List<String> get rolesActivos {
@@ -149,7 +171,9 @@ class WorkerData {
       'datos_especificos': datosEspecificos,
       'usuario_uuid': usuarioUuid,
       'email': email, // 📧 Incluir email en JSON
-      'salario_horas': salarioHoras, // 💰 Incluir salario en JSON
+      'salario_horas': salarioHoras, // 💰 Incluir tarifa/hora en JSON
+      'salario_dia': salarioDia, // 💰 Incluir tarifa/día en JSON
+      'tipo_salario': tipoSalario.dbValue, // 💰 Incluir modalidad en JSON
       'pago_por_resultado': pagoPorResultado, // 💰 Incluir PPR en JSON
       'maneja_apertura_control':
           manejaAperturaControl, // 📋 Incluir control inventario en JSON

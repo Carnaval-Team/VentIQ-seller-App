@@ -5,6 +5,7 @@ import '../../models/hr/hr_attendance.dart';
 import '../../services/hr/hr_attendance_service.dart';
 import '../../services/store_service.dart';
 import '../../widgets/hr/hr_drawer.dart';
+import '../../widgets/hr/hr_modalidad_badge.dart';
 
 class HRCheckoutScreen extends StatefulWidget {
   const HRCheckoutScreen({super.key});
@@ -22,14 +23,16 @@ class _HRCheckoutScreenState extends State<HRCheckoutScreen> {
   List<HRAttendance> _workingWorkers = [];
   final Set<int> _selectedIds = {};
   final Map<int, bool> _aplicaPPR = {};
-  // Horas editables por trabajador (key = asistenciaId)
-  final Map<int, TextEditingController> _horasControllers = {};
+  // Cantidad editable a pagar por trabajador (key = asistenciaId).
+  // Su unidad depende de la modalidad: HORAS si cobra por hora, DÍAS si
+  // cobra por día. Un día no equivale a 8h ni a 24h.
+  final Map<int, TextEditingController> _cantidadControllers = {};
 
   TimeOfDay _selectedTime = TimeOfDay.now();
 
   @override
   void dispose() {
-    for (final c in _horasControllers.values) {
+    for (final c in _cantidadControllers.values) {
       c.dispose();
     }
     super.dispose();
@@ -48,11 +51,16 @@ class _HRCheckoutScreenState extends State<HRCheckoutScreen> {
     return diff < 0 ? 0 : diff;
   }
 
-  /// Devuelve las horas que el usuario decidió aplicar para un trabajador.
-  /// Si no ha editado el campo, usa el cálculo automático.
-  double _horasParaTrabajador(HRAttendance w) {
-    final ctrl = _horasControllers[w.asistenciaId];
-    if (ctrl == null || ctrl.text.trim().isEmpty) return _calcHorasRaw(w);
+  /// Cantidad sugerida al abrir la pantalla, en la unidad de la modalidad:
+  /// por día siempre 1 jornada completa; por hora, las horas transcurridas.
+  double _cantidadSugerida(HRAttendance w) =>
+      w.esPorDia ? 1.0 : _calcHorasRaw(w);
+
+  /// Cantidad que el usuario decidió pagar (días u horas según modalidad).
+  /// Si no ha editado el campo, usa el valor sugerido.
+  double _cantidadParaTrabajador(HRAttendance w) {
+    final ctrl = _cantidadControllers[w.asistenciaId];
+    if (ctrl == null || ctrl.text.trim().isEmpty) return _cantidadSugerida(w);
     final parsed = double.tryParse(ctrl.text.replaceAll(',', '.'));
     return parsed == null || parsed < 0 ? 0 : parsed;
   }
@@ -93,16 +101,17 @@ class _HRCheckoutScreenState extends State<HRCheckoutScreen> {
           _selectedIds.clear();
           _aplicaPPR.clear();
           // Limpiar controllers viejos
-          for (final c in _horasControllers.values) {
+          for (final c in _cantidadControllers.values) {
             c.dispose();
           }
-          _horasControllers.clear();
+          _cantidadControllers.clear();
           for (final w in workers) {
             _aplicaPPR[w.asistenciaId] = false;
-            // Precargar horas calculadas (sin tope)
-            final horasRaw = _calcHorasRaw(w);
-            _horasControllers[w.asistenciaId] =
-                TextEditingController(text: horasRaw.toStringAsFixed(2));
+            // Precargar la cantidad sugerida: 1 día completo o las horas
+            // transcurridas, según la modalidad del trabajador.
+            _cantidadControllers[w.asistenciaId] = TextEditingController(
+              text: _cantidadSugerida(w).toStringAsFixed(2),
+            );
           }
           _isLoading = false;
         });
@@ -137,9 +146,11 @@ class _HRCheckoutScreenState extends State<HRCheckoutScreen> {
     if (picked != null) {
       setState(() {
         _selectedTime = picked;
-        // Recalcular horas sugeridas (sin tope) para todos los trabajadores
+        // Recalcular las horas sugeridas. A quien cobra por día no le afecta
+        // la hora de salida: sus días a pagar no se derivan del tiempo.
         for (final w in _workingWorkers) {
-          final ctrl = _horasControllers[w.asistenciaId];
+          if (w.esPorDia) continue;
+          final ctrl = _cantidadControllers[w.asistenciaId];
           if (ctrl != null) {
             ctrl.text = _calcHorasRaw(w).toStringAsFixed(2);
           }
@@ -154,9 +165,10 @@ class _HRCheckoutScreenState extends State<HRCheckoutScreen> {
     for (final w in _workingWorkers) {
       if (!_selectedIds.contains(w.asistenciaId)) continue;
       if (w.horaEntrada == null) continue;
-      // Usa las horas editadas por el usuario (sin tope máximo)
-      final horasEfectivas = _horasParaTrabajador(w);
-      total += horasEfectivas * w.salarioHora;
+      // salarioHora es la tarifa de su modalidad ($/hora o $/día), así que
+      // el cálculo es el mismo: cantidad a pagar x tarifa.
+      total += _cantidadParaTrabajador(w) * w.salarioHora;
+      // El PPR es un bono fijo por jornada: no se multiplica por la cantidad.
       if (_aplicaPPR[w.asistenciaId] == true) {
         total += w.pagoPorResultado;
       }
@@ -169,11 +181,19 @@ class _HRCheckoutScreenState extends State<HRCheckoutScreen> {
 
     setState(() => _isSubmitting = true);
 
-    // Cierre individual por trabajador: cada uno se cierra con
-    // horaSalida = horaEntrada + horas editadas. Esto permite que distintos
-    // trabajadores tengan distinta cantidad final de horas trabajadas.
+    // Cierre individual por trabajador para que cada uno pueda cerrarse con
+    // una cantidad distinta. El backend interpreta la cantidad según la
+    // modalidad: horas a pagar (ajusta hora_salida) o días a pagar.
     int okCount = 0;
     final List<String> errores = [];
+
+    // Hora de salida real seleccionada en el TimePicker. Solo se usa tal cual
+    // en modalidad día; en modalidad hora el backend la recalcula.
+    final now = DateTime.now();
+    final horaSalidaReal = DateTime(
+      now.year, now.month, now.day,
+      _selectedTime.hour, _selectedTime.minute,
+    );
 
     for (final w in _workingWorkers) {
       if (!_selectedIds.contains(w.asistenciaId)) continue;
@@ -182,22 +202,21 @@ class _HRCheckoutScreenState extends State<HRCheckoutScreen> {
         continue;
       }
 
-      final horas = _horasParaTrabajador(w);
-      if (horas <= 0) {
-        errores.add('${w.nombreCompleto}: horas inválidas');
+      final cantidad = _cantidadParaTrabajador(w);
+      if (cantidad <= 0) {
+        errores.add(
+          '${w.nombreCompleto}: ${w.tipoSalario.unidadPlural} inválidas',
+        );
         continue;
       }
-
-      final horaSalida = w.horaEntrada!.add(
-        Duration(milliseconds: (horas * 3600 * 1000).round()),
-      );
 
       try {
         final count = await HRAttendanceService.batchCheckout(
           asistenciaIds: [w.asistenciaId],
-          horaSalida: horaSalida,
+          horaSalida: horaSalidaReal,
           aplicaPago: [_aplicaPPR[w.asistenciaId] ?? false],
           cerradoPor: _userUuid!,
+          cantidad: [cantidad],
         );
         okCount += count;
       } catch (e) {
@@ -236,6 +255,9 @@ class _HRCheckoutScreenState extends State<HRCheckoutScreen> {
     final m = ((hours - h) * 60).round();
     return '${h}h ${m}m';
   }
+
+  Widget _modalidadBadge(HRAttendance w) =>
+      HRModalidadBadge(tipoSalario: w.tipoSalario);
 
   @override
   Widget build(BuildContext context) {
@@ -408,28 +430,33 @@ class _HRCheckoutScreenState extends State<HRCheckoutScreen> {
                                                 style: TextStyle(fontSize: 11, color: Colors.grey[600]),
                                               ),
                                               const SizedBox(width: 8),
+                                              // Tarifa de su modalidad: $/h o $/d
                                               Text(
-                                                '\$${w.salarioHora.toStringAsFixed(2)}/h',
+                                                w.tarifaFormatted,
                                                 style: TextStyle(fontSize: 11, color: Colors.grey[600]),
                                               ),
+                                              if (w.esPorDia) ...[
+                                                const SizedBox(width: 6),
+                                                _modalidadBadge(w),
+                                              ],
                                             ],
                                           ),
                                           const SizedBox(height: 6),
-                                          // Campo editable de horas finales (sin tope máx)
+                                          // Campo editable: horas o días a pagar según modalidad
                                           Row(
                                             children: [
                                               const Icon(Icons.edit_calendar, size: 12, color: AppColors.primary),
                                               const SizedBox(width: 4),
-                                              const Text(
-                                                'Horas a pagar:',
-                                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+                                              Text(
+                                                w.tipoSalario.labelCantidadAPagar,
+                                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
                                               ),
                                               const SizedBox(width: 6),
                                               SizedBox(
                                                 width: 70,
                                                 height: 32,
                                                 child: TextField(
-                                                  controller: _horasControllers[w.asistenciaId],
+                                                  controller: _cantidadControllers[w.asistenciaId],
                                                   enabled: isSelected,
                                                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                                   textAlign: TextAlign.center,
@@ -440,7 +467,7 @@ class _HRCheckoutScreenState extends State<HRCheckoutScreen> {
                                                     border: OutlineInputBorder(
                                                       borderRadius: BorderRadius.circular(6),
                                                     ),
-                                                    suffixText: 'h',
+                                                    suffixText: w.tipoSalario.unidadCorta,
                                                     suffixStyle: const TextStyle(fontSize: 10),
                                                   ),
                                                   onChanged: (_) => setState(() {}),

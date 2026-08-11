@@ -33,6 +33,13 @@
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
 
+    <!-- Lectura de SMS para confirmar pagos por transferencia (PAGOxMOVIL).
+         RECEIVE_SMS: escuchar el SMS entrante del banco en tiempo real.
+         READ_SMS: releer el inbox al volver a foreground, como respaldo si
+         Android mató el proceso y el receiver no se disparó. -->
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+
     <!-- Cámara y galería para tomar fotos del paquete -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
@@ -82,6 +89,18 @@
             </intent-filter>
         </receiver>
         
+        <!-- Receiver de SMS entrantes (another_telephony). El package del
+             receiver conserva el namespace `com.shounakmulay` del paquete
+             original del que este fork deriva. -->
+        <receiver
+            android:name="com.shounakmulay.telephony.sms.IncomingSmsReceiver"
+            android:permission="android.permission.BROADCAST_SMS"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+        </receiver>
+
         <!-- FileProvider para compartir archivos APK (Android 7+) -->
         <provider
             android:name="androidx.core.content.FileProvider"

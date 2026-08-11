@@ -39,6 +39,9 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
   late TextEditingController _apellidosController;
   late TextEditingController _uuidController;
   late TextEditingController _salarioHorasController; // 💰 NUEVO
+  late TextEditingController _salarioDiaController; // 💰 NUEVO
+  // Modalidad de pago. Ambas tarifas se conservan al alternarla.
+  late TipoSalario _tipoSalario; // 💰 NUEVO
 
   // Estado de roles
   late Set<String> _activeRoles;
@@ -67,6 +70,10 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
     _salarioHorasController = TextEditingController(
       text: widget.worker.salarioHoras.toStringAsFixed(2), // 💰 NUEVO
     );
+    _salarioDiaController = TextEditingController(
+      text: widget.worker.salarioDia.toStringAsFixed(2), // 💰 NUEVO
+    );
+    _tipoSalario = widget.worker.tipoSalario; // 💰 NUEVO
 
     // Inicializar roles activos
     _activeRoles = Set.from(widget.worker.rolesActivos);
@@ -102,6 +109,7 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
     _apellidosController.dispose();
     _uuidController.dispose();
     _salarioHorasController.dispose(); // 💰 NUEVO
+    _salarioDiaController.dispose(); // 💰 NUEVO
     super.dispose();
   }
 
@@ -178,15 +186,43 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
             ),
           ),
           const SizedBox(height: 16),
-          // 💰 NUEVO: Campo de salario por hora
+          // 💰 NUEVO: Modalidad de pago (por hora o por día)
+          SegmentedButton<TipoSalario>(
+            segments: const [
+              ButtonSegment(
+                value: TipoSalario.hora,
+                label: Text('Por hora'),
+                icon: Icon(Icons.schedule, size: 18),
+              ),
+              ButtonSegment(
+                value: TipoSalario.dia,
+                label: Text('Por día'),
+                icon: Icon(Icons.today, size: 18),
+              ),
+            ],
+            selected: {_tipoSalario},
+            onSelectionChanged: (sel) =>
+                setState(() => _tipoSalario = sel.first),
+          ),
+          const SizedBox(height: 12),
+          // 💰 NUEVO: Tarifa de la modalidad activa. Solo se muestra la que
+          // aplica, pero ambas se guardan para no perder la configuración.
           TextField(
-            controller: _salarioHorasController,
-            decoration: const InputDecoration(
-              labelText: 'Salario por Hora',
-              prefixIcon: Icon(Icons.attach_money),
-              border: OutlineInputBorder(),
+            key: ValueKey('tarifa_${_tipoSalario.dbValue}'),
+            controller: _tipoSalario.esPorDia
+                ? _salarioDiaController
+                : _salarioHorasController,
+            decoration: InputDecoration(
+              labelText: _tipoSalario.esPorDia
+                  ? 'Salario por Día'
+                  : 'Salario por Hora',
+              prefixIcon: const Icon(Icons.attach_money),
+              suffixText: _tipoSalario.tarifaSufijo,
+              border: const OutlineInputBorder(),
               hintText: '0.00',
-              helperText: 'Salario en moneda local por hora trabajada',
+              helperText: _tipoSalario.esPorDia
+                  ? 'Salario en moneda local por día trabajado'
+                  : 'Salario en moneda local por hora trabajada',
             ),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
           ),
@@ -647,6 +683,9 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
         usuarioUuid: _uuidController.text.isEmpty ? null : _uuidController.text,
         salarioHoras:
             double.tryParse(_salarioHorasController.text) ?? 0.0, // 💰 NUEVO
+        salarioDia:
+            double.tryParse(_salarioDiaController.text) ?? 0.0, // 💰 NUEVO
+        tipoSalario: _tipoSalario, // 💰 NUEVO
         manejaAperturaControl:
             _manejaAperturaControl, // 📋 NUEVO: Control de inventario
       );

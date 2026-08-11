@@ -11,6 +11,7 @@ import '../services/payment_method_service.dart';
 import '../services/product_detail_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
+import '../services/bank_sms_service.dart';
 import '../utils/price_utils.dart';
 import '../utils/navigation_helper.dart';
 import '../widgets/bottom_navigation.dart';
@@ -946,6 +947,19 @@ class _PreorderScreenState extends State<PreorderScreen> {
             ),
       );
       return;
+    }
+
+    // Si algún producto se paga por transferencia, empezar a escuchar el SMS
+    // de confirmación de PAGOxMOVIL YA — antes de navegar al checkout — para
+    // no perder el mensaje del cliente que transfiere mientras el cajero
+    // termina de armar la orden. Es best-effort: si no hay permiso/soporte,
+    // el cobro sigue igual (la confirmación es informativa).
+    final tieneTransferencia = currentOrder.items.any(
+      (item) => item.paymentMethod?.esTransferencia ?? false,
+    );
+    if (tieneTransferencia) {
+      // No se espera (await) para no retrasar la navegación.
+      BankSmsService().startListening();
     }
 
     // Verificar si el modo offline / full offline está activado
