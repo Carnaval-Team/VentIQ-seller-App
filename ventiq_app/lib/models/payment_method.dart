@@ -41,6 +41,13 @@ class PaymentMethod {
 
   String get displayName => denominacion;
 
+  /// `true` si es una transferencia bancaria — el método que dispara un SMS de
+  /// confirmación del corto `PAGOxMOVIL`. Es digital y no efectivo; se excluye
+  /// explícitamente el pseudo-método 999 ("Pago regular" efectivo).
+  bool get esTransferencia =>
+      !esEfectivo &&
+      (esDigital || denominacion.toLowerCase().contains('transfer'));
+
   IconData get typeIcon {
     if (esEfectivo) return Icons.payments;
     if (esDigital) return Icons.credit_card;
