@@ -2198,4 +2198,267 @@ class CarnavalService {
       return null;
     }
   }
+
+  // ==========================================================================
+  // AUDITORÍA CARNIVAL ↔ INVENTTIA
+  // ==========================================================================
+  // Dos RPCs:
+  //  1) fn_audit_carnaval_order_lines  → cantidades en Carnaval
+  //  2) fn_audit_inventtia_carnaval_lines → extracciones Inventtia de esas órdenes
+  // La app solo cruza ambos resultados y arma las diferencias.
+
+  /// Audita órdenes Carnaval vs operaciones Inventtia vía 2 RPCs.
+  ///
+  /// Retorna:
+  /// `{ ordersChecked, diffsCount, sinOperacion, mismatches, diffs: [...] }`
+  /// donde cada diff tiene: `order_id`, `status`, `tipo`, `product_name`,
+  /// `carnaval_product_id`, `inventtia_product_id`, `qty_carnaval`,
+  /// `qty_inventtia`, `diferencia`, `operation_ids`.
+  static Future<Map<String, dynamic>> auditOrdersVsInventtia({
+    required int carnavalStoreId,
+    required bool isAdmin,
+    DateTime? dateFrom,
+    DateTime? dateTo,
+    String? statusFilter,
+    bool excludeCancelled = true,
+  }) async {
+    try {
+      print('🔎 Auditoría vía RPCs Carnaval + Inventtia...');
+
+      DateTime? fechaHasta;
+      if (dateTo != null) {
+        fechaHasta = DateTime(dateTo.year, dateTo.month, dateTo.day, 23, 59, 59);
+      }
+
+      // 1) RPC Carnaval: líneas agregadas por orden + producto
+      final carnavalRaw = await _supabase.rpc(
+        'fn_audit_carnaval_order_lines',
+        params: {
+          'p_proveedor_id': isAdmin ? null : carnavalStoreId,
+          'p_fecha_desde': dateFrom?.toIso8601String().split('T').first,
+          'p_fecha_hasta': fechaHasta?.toIso8601String(),
+          'p_status': statusFilter,
+          'p_exclude_cancelled': excludeCancelled,
+        },
+      );
+
+      final carnavalLines = List<Map<String, dynamic>>.from(
+        (carnavalRaw as List?) ?? const [],
+      );
+
+      if (carnavalLines.isEmpty) {
+        return {
+          'ordersChecked': 0,
+          'diffsCount': 0,
+          'sinOperacion': 0,
+          'mismatches': 0,
+          'diffs': <Map<String, dynamic>>[],
+        };
+      }
+
+      final orderIds =
+          carnavalLines
+              .map((r) => (r['order_id'] as num?)?.toInt())
+              .whereType<int>()
+              .toSet()
+              .toList();
+
+      final orderStatus = <int, String?>{};
+      // order_id -> product_id -> {qty, name}
+      final carnavalByOrder = <int, Map<int, Map<String, dynamic>>>{};
+      for (final row in carnavalLines) {
+        final oid = (row['order_id'] as num?)?.toInt();
+        final pid = (row['carnaval_product_id'] as num?)?.toInt();
+        if (oid == null || pid == null) continue;
+        orderStatus[oid] = row['order_status']?.toString();
+        final qty = (row['qty_carnaval'] as num?)?.toDouble() ?? 0;
+        final name = row['product_name']?.toString();
+        final products = carnavalByOrder.putIfAbsent(oid, () => {});
+        final existing = products[pid];
+        if (existing == null) {
+          products[pid] = {'qty': qty, 'name': name};
+        } else {
+          existing['qty'] = ((existing['qty'] as num?)?.toDouble() ?? 0) + qty;
+          existing['name'] ??= name;
+        }
+      }
+
+      // Tienda Inventtia (solo si no es admin)
+      int? inventtiaStoreId;
+      if (!isAdmin) {
+        try {
+          final tienda = await _supabase
+              .from('app_dat_tienda')
+              .select('id')
+              .eq('id_tienda_carnaval', carnavalStoreId)
+              .maybeSingle();
+          inventtiaStoreId = (tienda?['id'] as num?)?.toInt();
+        } catch (_) {}
+      }
+
+      // 2) RPC Inventtia: extracciones de esas órdenes
+      final inventtiaByOrder = <int, Map<int, Map<String, dynamic>>>{};
+      final opsByOrder = <int, Set<int>>{};
+
+      for (final chunk in _chunkList(orderIds, 50)) {
+        final inventtiaRaw = await _supabase.rpc(
+          'fn_audit_inventtia_carnaval_lines',
+          params: {
+            'p_order_ids': chunk,
+            'p_id_tienda': inventtiaStoreId,
+          },
+        );
+
+        for (final row in List<Map<String, dynamic>>.from(
+          (inventtiaRaw as List?) ?? const [],
+        )) {
+          final oid = (row['order_id'] as num?)?.toInt();
+          if (oid == null) continue;
+
+          final opIdsRaw = row['operation_ids'];
+          if (opIdsRaw is List) {
+            final set = opsByOrder.putIfAbsent(oid, () => <int>{});
+            for (final op in opIdsRaw) {
+              final opId = (op as num?)?.toInt();
+              if (opId != null) set.add(opId);
+            }
+          }
+
+          final carnavalPid = (row['carnaval_product_id'] as num?)?.toInt();
+          final inventtiaPid = (row['inventtia_product_id'] as num?)?.toInt();
+          // Stub de "hay operación sin líneas": solo registra operation_ids.
+          if (carnavalPid == null && inventtiaPid == null) continue;
+
+          final key = carnavalPid ?? -inventtiaPid!;
+
+          final qty = (row['qty_inventtia'] as num?)?.toDouble() ?? 0;
+          final products = inventtiaByOrder.putIfAbsent(oid, () => {});
+          final existing = products[key];
+          if (existing == null) {
+            products[key] = {
+              'qty': qty,
+              'name': row['product_name']?.toString(),
+              'inventtia_product_id': inventtiaPid,
+            };
+          } else {
+            existing['qty'] =
+                ((existing['qty'] as num?)?.toDouble() ?? 0) + qty;
+            existing['name'] ??= row['product_name']?.toString();
+            existing['inventtia_product_id'] ??= inventtiaPid;
+          }
+        }
+      }
+
+      // 3) Cruzar resultados
+      final diffs = <Map<String, dynamic>>[];
+      var sinOperacion = 0;
+      var mismatches = 0;
+
+      for (final orderId in orderIds) {
+        final status = orderStatus[orderId];
+        final carnavalProducts = carnavalByOrder[orderId] ?? const {};
+        final inventtiaProducts = inventtiaByOrder[orderId] ?? const {};
+        final opIds = (opsByOrder[orderId] ?? const <int>{}).toList()..sort();
+
+        if (opIds.isEmpty) {
+          if (carnavalProducts.isEmpty) continue;
+          sinOperacion++;
+          final totalCarnaval = carnavalProducts.values.fold<double>(
+            0,
+            (a, b) => a + ((b['qty'] as num?)?.toDouble() ?? 0),
+          );
+          diffs.add({
+            'order_id': orderId,
+            'status': status,
+            'tipo': 'sin_operacion',
+            'product_name': null,
+            'carnaval_product_id': null,
+            'inventtia_product_id': null,
+            'qty_carnaval': totalCarnaval,
+            'qty_inventtia': 0.0,
+            'diferencia': -totalCarnaval,
+            'operation_ids': <int>[],
+            'lineas_carnaval': carnavalProducts.length,
+          });
+          continue;
+        }
+
+        final allKeys = {
+          ...carnavalProducts.keys,
+          ...inventtiaProducts.keys,
+        };
+
+        for (final key in allKeys) {
+          final c = carnavalProducts[key];
+          final i = inventtiaProducts[key];
+          final qC = (c?['qty'] as num?)?.toDouble() ?? 0;
+          final qI = (i?['qty'] as num?)?.toDouble() ?? 0;
+          if ((qC - qI).abs() < 0.0001) continue;
+
+          mismatches++;
+          final String tipo;
+          if (qC > 0 && qI == 0) {
+            tipo = 'solo_carnaval';
+          } else if (qI > 0 && qC == 0) {
+            tipo = 'solo_inventtia';
+          } else {
+            tipo = 'cantidad';
+          }
+
+          diffs.add({
+            'order_id': orderId,
+            'status': status,
+            'tipo': tipo,
+            'product_name':
+                c?['name']?.toString() ??
+                i?['name']?.toString() ??
+                (key > 0
+                    ? 'Producto Carnaval #$key'
+                    : 'Producto Inventtia #${-key}'),
+            'carnaval_product_id': key > 0 ? key : null,
+            'inventtia_product_id': i?['inventtia_product_id'],
+            'qty_carnaval': qC,
+            'qty_inventtia': qI,
+            'diferencia': qI - qC,
+            'operation_ids': opIds,
+          });
+        }
+      }
+
+      diffs.sort((a, b) {
+        final oa = (a['order_id'] as num?)?.toInt() ?? 0;
+        final ob = (b['order_id'] as num?)?.toInt() ?? 0;
+        if (oa != ob) return ob.compareTo(oa);
+        return (a['tipo'] as String).compareTo(b['tipo'] as String);
+      });
+
+      print(
+        '✅ Auditoría RPC: ${orderIds.length} órdenes, '
+        '${diffs.length} diferencias '
+        '($sinOperacion sin operación, $mismatches mismatch líneas)',
+      );
+
+      return {
+        'ordersChecked': orderIds.length,
+        'diffsCount': diffs.length,
+        'sinOperacion': sinOperacion,
+        'mismatches': mismatches,
+        'diffs': diffs,
+      };
+    } catch (e, st) {
+      print('❌ Error en auditoría Carnaval ↔ Inventtia: $e');
+      print(st);
+      rethrow;
+    }
+  }
+
+  static List<List<T>> _chunkList<T>(List<T> items, int size) {
+    if (items.isEmpty) return const [];
+    final chunks = <List<T>>[];
+    for (var i = 0; i < items.length; i += size) {
+      final end = (i + size > items.length) ? items.length : i + size;
+      chunks.add(items.sublist(i, end));
+    }
+    return chunks;
+  }
 }
