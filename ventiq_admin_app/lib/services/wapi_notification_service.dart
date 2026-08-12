@@ -198,6 +198,33 @@ class WapiNotificationService {
     });
   }
 
+  /// Reanuda una tanda interrumpida: re-despacha SÓLO los mensajes que
+  /// quedaron `pendiente` o `fallido`.
+  ///
+  /// El backend reutiliza esas mismas filas de `app_wapi_envio_log` (no
+  /// inserta nuevas), así que la tanda original se completa en el historial
+  /// en lugar de duplicarse.
+  Future<Map<String, dynamic>> resumeTanda({
+    required int idSesion,
+    required List<int> logIds,
+    int delayMinSeconds = 5,
+    int delayMaxSeconds = 10,
+  }) async {
+    if (logIds.isEmpty) {
+      throw Exception('No hay mensajes pendientes que reanudar.');
+    }
+    return _invoke('wapi-send-products', {
+      'id_sesion': idSesion,
+      'resume_log_ids': logIds,
+      // El backend los deriva de los logs; van vacíos para satisfacer el
+      // contrato del endpoint.
+      'product_ids': <int>[],
+      'destinations': <Map<String, dynamic>>[],
+      'delay_min_seconds': delayMinSeconds,
+      'delay_max_seconds': delayMaxSeconds,
+    });
+  }
+
   // =========================================================================
   // Programación (Plan Avanzado)
   // =========================================================================
@@ -377,5 +404,41 @@ class WapiNotificationService {
     return (rows as List)
         .map((e) => WapiEnvioLog.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  /// Mapa `chat_id → etiqueta` de los destinatarios de la tienda, para mostrar
+  /// nombres de grupo en el historial en vez de ids `1203…@g.us`.
+  Future<Map<String, String>> getEtiquetasDestinatarios(int idTienda) async {
+    final rows = await _sb
+        .from('app_wapi_destinatario')
+        .select('chat_id, etiqueta')
+        .eq('id_tienda', idTienda);
+    final map = <String, String>{};
+    for (final r in (rows as List)) {
+      final chat = r['chat_id'] as String?;
+      final etq = r['etiqueta'] as String?;
+      if (chat != null && etq != null && etq.isNotEmpty) map[chat] = etq;
+    }
+    return map;
+  }
+
+  /// Denominaciones de productos por id. Se consulta sólo para los ids que
+  /// aparecen en el historial visible.
+  Future<Map<int, String>> getDenominacionesProductos(
+    Iterable<int> idsProducto,
+  ) async {
+    final ids = idsProducto.toSet().toList();
+    if (ids.isEmpty) return {};
+    final rows = await _sb
+        .from('app_dat_producto')
+        .select('id, denominacion')
+        .inFilter('id', ids);
+    final map = <int, String>{};
+    for (final r in (rows as List)) {
+      final id = (r['id'] as num?)?.toInt();
+      final den = r['denominacion'] as String?;
+      if (id != null && den != null) map[id] = den;
+    }
+    return map;
   }
 }

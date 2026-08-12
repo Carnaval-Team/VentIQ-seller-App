@@ -70,6 +70,7 @@ import 'screens/hr/hr_checkin_screen.dart';
 import 'screens/hr/hr_checkout_screen.dart';
 import 'screens/hr/hr_salary_report_screen.dart';
 import 'screens/hr/hr_worker_config_screen.dart';
+import 'screens/hr/hr_attendance_history_screen.dart';
 import 'screens/importadora/importadora_facturas_screen.dart';
 import 'screens/importadora/estados_factura_screen.dart';
 
@@ -88,7 +89,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Inventtia Admin',
+      title: 'Inventtia Gestión',
       debugShowCheckedModeBanner: false,
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
@@ -248,6 +249,7 @@ class MyApp extends StatelessWidget {
         '/hr-checkout': (context) => const HRCheckoutScreen(),
         '/hr-salary-report': (context) => const HRSalaryReportScreen(),
         '/hr-worker-config': (context) => const HRWorkerConfigScreen(),
+        '/hr-attendance-history': (context) => const HRAttendanceHistoryScreen(),
         '/importadora-facturas': (context) => const ImportadoraFacturasScreen(),
         '/importadora-estados': (context) => const EstadosFacturaScreen(),
       },

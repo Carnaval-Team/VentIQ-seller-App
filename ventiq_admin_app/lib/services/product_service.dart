@@ -5608,5 +5608,129 @@ class ProductService {
 
   }
 
+  /// Calcula el costo total de un producto elaborado basado en sus ingredientes
+  static Future<Map<String, dynamic>> calcularCostoProductoElaborado(int productId) async {
+    try {
+      print('🧮 Iniciando cálculo de costo para producto elaborado ID: $productId');
+      
+      // 1. Obtener ingredientes del producto
+      final ingredientes = await obtenerIngredientesProducto(productId);
+      if (ingredientes.isEmpty) {
+        return {
+          'costo_total': 0.0,
+          'desglose': [],
+          'error': 'El producto no tiene ingredientes definidos'
+        };
+      }
+
+      print('📦 Ingredientes encontrados: ${ingredientes.length}');
+      
+      // 2. Calcular costo de cada ingrediente
+      final List<Map<String, dynamic>> desglose = [];
+      double costoTotal = 0.0;
+
+      for (final ingrediente in ingredientes) {
+        final idIngrediente = ingrediente['id_ingrediente'] as int;
+        final cantidadNecesaria = (ingrediente['cantidad_necesaria'] as num?)?.toDouble() ?? 0.0;
+        final unidadMedida = ingrediente['unidad_medida'] as String? ?? '';
+        
+        print('🔍 Calculando costo para ingrediente ID: $idIngrediente, Cantidad: $cantidadNecesaria $unidadMedida');
+
+        // Obtener costo unitario del ingrediente
+        final costoUnitario = await _calcularCostoUnitarioIngrediente(idIngrediente);
+        final costoIngrediente = costoUnitario * cantidadNecesaria;
+        
+        // Obtener datos del ingrediente para mostrar
+        final productoIngrediente = await _supabase
+            .from('app_dat_producto')
+            .select('denominacion, sku')
+            .eq('id', idIngrediente)
+            .single();
+
+        final desgloseItem = {
+          'id_producto': idIngrediente,
+          'denominacion': productoIngrediente['denominacion'] ?? '',
+          'sku': productoIngrediente['sku'] ?? '',
+          'cantidad_necesaria': cantidadNecesaria,
+          'unidad_medida': unidadMedida,
+          'costo_unitario': costoUnitario,
+          'costo_total': costoIngrediente,
+        };
+
+        desglose.add(desgloseItem);
+        costoTotal += costoIngrediente;
+
+        print('✅ Ingrediente: ${productoIngrediente['denominacion']} - Costo: $costoIngrediente');
+      }
+
+      print('🧮 Costo total calculado para producto $productId: $costoTotal');
+
+      return {
+        'costo_total': costoTotal,
+        'desglose': desglose,
+        'error': null
+      };
+
+    } catch (e) {
+      print('❌ Error calculando costo de producto elaborado: $e');
+      return {
+        'costo_total': 0.0,
+        'desglose': [],
+        'error': 'Error al calcular costo: $e'
+      };
+    }
+  }
+
+  /// Verifica si un producto es elaborado (tiene ingredientes)
+  static Future<bool> esProductoElaborado(int productId) async {
+    try {
+      print('🔍 Verificando si producto $productId es elaborado...');
+      final response = await _supabase
+          .from('app_dat_producto_ingredientes')
+          .select('id')
+          .eq('id_producto_elaborado', productId)
+          .limit(1);
+      
+      final isElaborado = (response as List).isNotEmpty;
+      print('📋 Producto $productId elaborado: $isElaborado (response: $response)');
+      return isElaborado;
+    } catch (e) {
+      print('❌ Error verificando si producto es elaborado: $e');
+      return false;
+    }
+  }
+
+  /// Obtiene los ingredientes de un producto elaborado
+  static Future<List<Map<String, dynamic>>> obtenerIngredientesProducto(int productId) async {
+    try {
+      print('🍽️ Obteniendo ingredientes para producto elaborado: $productId');
+      
+      final response = await _supabase
+          .from('app_dat_producto_ingredientes')
+          .select('''
+            id,
+            id_producto_elaborado,
+            id_ingrediente,
+            cantidad_necesaria,
+            unidad_medida,
+            app_dat_producto!app_dat_producto_ingredientes_ingrediente_fkey(
+              id,
+              denominacion,
+              sku
+            )
+          ''')
+          .eq('id_producto_elaborado', productId)
+          .order('id');
+
+      final ingredientes = List<Map<String, dynamic>>.from(response);
+      print('📦 Ingredientes obtenidos: ${ingredientes.length}');
+      
+      return ingredientes;
+    } catch (e) {
+      print('❌ Error al obtener ingredientes: $e');
+      return [];
+    }
+  }
+
 }
 

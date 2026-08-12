@@ -27,6 +27,8 @@ as $$
         'cantidad',             a.cantidad,
         'datos_adicionales',    a.datos_adicionales,
         'reservado_por',        a.reservado_por,
+        'precio_total',         a.precio_total,
+        'moneda',               a.moneda,
         'uuid_usuario',         a.uuid_usuario,
         'estado', jsonb_build_object(
           'id',          e.id,

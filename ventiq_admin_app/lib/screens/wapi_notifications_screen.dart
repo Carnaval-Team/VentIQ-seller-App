@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:intl/intl.dart';
 
 import '../config/app_colors.dart';
 import '../models/wapi_envio_log.dart';
+import '../models/wapi_envio_tanda.dart';
 import '../models/wapi_licencia.dart';
 import '../models/wapi_programacion.dart';
 import '../models/wapi_session.dart';
@@ -15,6 +17,7 @@ import '../services/wapi_notification_service.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/wapi_add_bot_sheet.dart';
 import '../widgets/wapi_destinatario_picker.dart';
+import '../widgets/wapi_envio_tanda_card.dart';
 import '../widgets/wapi_qr_dialog.dart';
 import '../widgets/wapi_session_card.dart';
 import 'wapi_product_selector_screen.dart';
@@ -44,12 +47,76 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
   // Datos de la feature (solo se cargan si la licencia está activa)
   List<WapiSession> _sesiones = [];
   WapiProgramacion? _programacion;
-  List<WapiEnvioLog> _logs = [];
+  List<WapiEnvioTanda> _tandas = [];
+  Map<String, String> _etiquetasChat = {};
+  Map<int, String> _nombresProducto = {};
+
+  /// Refresco periódico mientras hay una tanda en curso, para que los
+  /// contadores "enviados / faltan" avancen sin que el usuario haga pull.
+  Timer? _autoRefresh;
 
   @override
   void initState() {
     super.initState();
     _bootstrap();
+  }
+
+  @override
+  void dispose() {
+    _autoRefresh?.cancel();
+    super.dispose();
+  }
+
+  /// Hay envío activo si alguna tanda sigue en curso.
+  bool get _hayEnvioActivo {
+    final ahora = DateTime.now();
+    return _tandas
+        .any((t) => t.estadoPara(ahora) == WapiTandaEstado.enCurso);
+  }
+
+  /// Enciende el timer sólo cuando hay algo que observar y lo apaga al
+  /// terminar — así no golpeamos Supabase cada 8s indefinidamente.
+  void _sincronizarAutoRefresh() {
+    if (_hayEnvioActivo) {
+      _autoRefresh ??= Timer.periodic(
+        const Duration(seconds: 8),
+        (_) => _refrescarLogs(),
+      );
+    } else {
+      _autoRefresh?.cancel();
+      _autoRefresh = null;
+    }
+  }
+
+  /// Recarga sólo el historial (no sesiones ni programación): es lo único que
+  /// cambia durante un envío en curso.
+  Future<void> _refrescarLogs() async {
+    if (_idTienda == null) return;
+    try {
+      final logs = await _service.getRecentLogs(_idTienda!, limit: 400);
+      if (!mounted) return;
+      final tandas = WapiEnvioTanda.agrupar(logs);
+      await _cargarNombresProducto(tandas);
+      if (!mounted) return;
+      setState(() => _tandas = tandas);
+      _sincronizarAutoRefresh();
+    } catch (_) {
+      // Silencioso: es un refresco de fondo, no queremos romper la vista si
+      // falla un tick puntual.
+    }
+  }
+
+  /// Resuelve las denominaciones de los productos visibles (sólo los que aún
+  /// no tenemos en caché).
+  Future<void> _cargarNombresProducto(List<WapiEnvioTanda> tandas) async {
+    final ids = <int>{};
+    for (final t in tandas) {
+      ids.addAll(t.productos);
+    }
+    final faltantes = ids.where((id) => !_nombresProducto.containsKey(id));
+    if (faltantes.isEmpty) return;
+    final nuevos = await _service.getDenominacionesProductos(faltantes);
+    _nombresProducto = {..._nombresProducto, ...nuevos};
   }
 
   Future<void> _bootstrap() async {
@@ -87,17 +154,26 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
 
   Future<void> _reloadData() async {
     if (_idTienda == null) return;
+    // Traemos bastantes logs: una sola tanda puede tener cientos de filas
+    // (productos × destinos), así que con 10 no se veía ni un envío completo.
     final results = await Future.wait([
       _service.listSessions(_idTienda!),
       _service.getProgramacion(_idTienda!),
-      _service.getRecentLogs(_idTienda!, limit: 10),
+      _service.getRecentLogs(_idTienda!, limit: 400),
+      _service.getEtiquetasDestinatarios(_idTienda!),
     ]);
+    if (!mounted) return;
+    final logs = results[2] as List<WapiEnvioLog>;
+    final tandas = WapiEnvioTanda.agrupar(logs);
+    await _cargarNombresProducto(tandas);
     if (!mounted) return;
     setState(() {
       _sesiones = results[0] as List<WapiSession>;
       _programacion = results[1] as WapiProgramacion?;
-      _logs = results[2] as List<WapiEnvioLog>;
+      _tandas = tandas;
+      _etiquetasChat = results[3] as Map<String, String>;
     });
+    _sincronizarAutoRefresh();
   }
 
   // ── Gating: cualquier acción WAPI requiere licencia activa ─────────────
@@ -596,9 +672,19 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
           _buildProgramacionCard(),
           const SizedBox(height: 22),
           _SectionHeader(
-            icon: Icons.history,
-            title: 'Envíos recientes',
-            subtitle: 'Últimos 10 mensajes despachados',
+            icon: _hayEnvioActivo ? Icons.podcasts : Icons.history,
+            title: _hayEnvioActivo ? 'Envío en progreso' : 'Envíos recientes',
+            subtitle: _hayEnvioActivo
+                ? 'Actualizándose automáticamente cada 8 segundos'
+                : 'Toca un envío para ver el detalle por destino',
+            action: _hayEnvioActivo
+                ? const _PuntoVivo()
+                : IconButton(
+                    tooltip: 'Actualizar',
+                    icon: const Icon(Icons.refresh, size: 20),
+                    color: AppColors.textSecondary,
+                    onPressed: _refrescarLogs,
+                  ),
           ),
           const SizedBox(height: 8),
           _buildLogsList(),
@@ -627,20 +713,31 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
       );
     }
     if (isWeb) {
-      return GridView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        itemCount: _sesiones.length,
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 420,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          mainAxisExtent: 140,
-        ),
-        itemBuilder: (_, i) => WapiSessionCard(
-          session: _sesiones[i],
-          onAction: (a) => _onSessionAction(_sesiones[i], a),
-        ),
+      // Wrap en vez de GridView: los cards crecen a su contenido, así no se
+      // recortan cuando el nombre/session-id ocupan más de una línea.
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          const spacing = 12.0;
+          const minCardWidth = 440.0;
+          final maxW = constraints.maxWidth;
+          var cols = ((maxW + spacing) / (minCardWidth + spacing)).floor();
+          if (cols < 1) cols = 1;
+          if (cols > _sesiones.length) cols = _sesiones.length;
+          final cardWidth = (maxW - spacing * (cols - 1)) / cols;
+          return Wrap(
+            spacing: spacing,
+            runSpacing: spacing,
+            children: _sesiones
+                .map((s) => SizedBox(
+                      width: cardWidth,
+                      child: WapiSessionCard(
+                        session: s,
+                        onAction: (a) => _onSessionAction(s, a),
+                      ),
+                    ))
+                .toList(),
+          );
+        },
       );
     }
     return Column(
@@ -751,66 +848,73 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
     return DateFormat('dd/MM/yyyy HH:mm').format(local);
   }
 
+  /// Reanuda una tanda que quedó a medias: manda al backend sólo los ids de
+  /// log sin entregar. El backend reutiliza esas filas, así que la tanda se
+  /// completa en el historial en vez de duplicarse.
+  Future<void> _reanudarTanda(WapiEnvioTanda tanda) async {
+    if (!_ensureActive()) return;
+    final idSesion = tanda.idSesion;
+    final pendientes = tanda.logIdsSinEnviar;
+    if (idSesion == null || pendientes.isEmpty) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final res = await _service.resumeTanda(
+        idSesion: idSesion,
+        logIds: pendientes,
+      );
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(
+        content: Text(
+          (res['message'] as String?) ??
+              'Reanudando ${pendientes.length} mensaje(s)…',
+        ),
+        backgroundColor: AppColors.success,
+      ));
+      // El backend ya devolvió los logs a `pendiente`; refrescamos para que la
+      // tanda vuelva a "en curso" y arranque el auto-refresh.
+      await _refrescarLogs();
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(
+        content: Text('No se pudo reanudar: $e'),
+        backgroundColor: Colors.red,
+      ));
+    }
+  }
+
   Widget _buildLogsList() {
-    if (_logs.isEmpty) {
+    if (_tandas.isEmpty) {
       return _EmptyCard(
         icon: Icons.inbox_outlined,
         title: 'Sin envíos aún',
         subtitle: 'Cuando difundas productos los verás aquí.',
       );
     }
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        children: List.generate(_logs.length, (i) {
-          final l = _logs[i];
-          final last = i == _logs.length - 1;
-          IconData icon;
-          Color color;
-          switch (l.estado) {
-            case WapiEnvioEstado.enviado:
-              icon = Icons.check_circle;
-              color = AppColors.success;
-              break;
-            case WapiEnvioEstado.fallido:
-              icon = Icons.error;
-              color = Colors.red;
-              break;
-            default:
-              icon = Icons.schedule;
-              color = AppColors.warning;
-          }
-          return Column(
-            children: [
-              ListTile(
-                dense: true,
-                leading: Icon(icon, color: color),
-                title: Text(
-                  '${l.tipoEnvio.toUpperCase()} → ${l.chatId}',
-                  style: const TextStyle(fontSize: 13),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(
-                  l.errorMessage ??
-                      (l.sentAt != null
-                          ? 'Enviado ${l.sentAt!.toLocal()}'
-                          : 'Pendiente'),
-                  style: const TextStyle(
-                      fontSize: 11, color: AppColors.textSecondary),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (!last) const Divider(height: 1),
-            ],
-          );
-        }),
-      ),
+
+    // La tanda en curso va primero y destacada. `agrupar` ya devuelve las
+    // tandas de más reciente a más antigua, así que basta con subir la activa
+    // al tope si no lo estuviera.
+    final ahora = DateTime.now();
+    final orden = [..._tandas];
+    final iActiva = orden
+        .indexWhere((t) => t.estadoPara(ahora) == WapiTandaEstado.enCurso);
+    if (iActiva > 0) {
+      orden.insert(0, orden.removeAt(iActiva));
+    }
+
+    return Column(
+      children: [
+        for (final t in orden)
+          WapiEnvioTandaCard(
+            key: ValueKey(t.id),
+            tanda: t,
+            destacada: t.estadoPara(ahora) == WapiTandaEstado.enCurso,
+            etiquetas: _etiquetasChat,
+            productos: _nombresProducto,
+            onReanudar: _reanudarTanda,
+          ),
+      ],
     );
   }
 }
@@ -1304,6 +1408,67 @@ class _SectionHeader extends StatelessWidget {
         ),
         if (action != null) action!,
       ],
+    );
+  }
+}
+
+/// Punto rojo pulsante estilo "LIVE": indica que la vista se está
+/// actualizando sola porque hay un envío corriendo.
+class _PuntoVivo extends StatefulWidget {
+  const _PuntoVivo();
+  @override
+  State<_PuntoVivo> createState() => _PuntoVivoState();
+}
+
+class _PuntoVivoState extends State<_PuntoVivo>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: AppColors.info.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FadeTransition(
+            opacity: Tween(begin: 0.35, end: 1.0).animate(
+              CurvedAnimation(parent: _c, curve: Curves.easeInOut),
+            ),
+            child: Container(
+              width: 8,
+              height: 8,
+              decoration: const BoxDecoration(
+                color: AppColors.info,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          const Text(
+            'EN VIVO',
+            style: TextStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.5,
+              color: AppColors.info,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

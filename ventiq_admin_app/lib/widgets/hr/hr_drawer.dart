@@ -4,6 +4,9 @@ import 'dart:convert';
 import '../../config/app_colors.dart';
 import '../../services/user_preferences_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/session_cache_manager.dart';
+import '../../utils/platform_utils.dart';
+import '../../utils/web_reload.dart' as web_reload;
 
 class HRDrawer extends StatefulWidget {
   final bool isFromGerente;
@@ -201,6 +204,18 @@ class _HRDrawerState extends State<HRDrawer> {
                 const Divider(height: 1),
                 _buildDrawerItem(
                   context,
+                  icon: Icons.history,
+                  title: 'Historial de Asistencia',
+                  subtitle: 'Ver y eliminar días de trabajo',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushReplacementNamed(
+                        context, '/hr-attendance-history');
+                  },
+                ),
+                const Divider(height: 1),
+                _buildDrawerItem(
+                  context,
                   icon: Icons.settings,
                   title: 'Configurar Trabajador',
                   subtitle: 'Salarios y pago por resultado',
@@ -286,7 +301,7 @@ class _HRDrawerState extends State<HRDrawer> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Inventtia Admin $_appVersion',
+                      'Inventtia Gestión $_appVersion',
                       style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                     ),
                   ),
@@ -327,9 +342,16 @@ class _HRDrawerState extends State<HRDrawer> {
                       : () async {
                           setState(() => isLoading = true);
                           await AuthService().signOut();
+                          await SessionCacheManager.clearForLogout();
                           await Future.delayed(const Duration(milliseconds: 300));
                           if (dialogContext.mounted) {
                             Navigator.of(dialogContext).pop();
+                          }
+                          // En Web, reload completo para descartar el estado
+                          // en memoria de los singletons (ver admin_drawer).
+                          if (PlatformUtils.isWeb) {
+                            web_reload.reloadToRoot();
+                            return;
                           }
                           if (context.mounted) {
                             Navigator.of(context, rootNavigator: true)

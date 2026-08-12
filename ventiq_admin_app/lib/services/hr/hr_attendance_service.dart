@@ -106,6 +106,67 @@ class HRAttendanceService {
     }
   }
 
+  /// Obtener historial de asistencia por período (todos los registros, abiertos y cerrados)
+  static Future<List<HRAttendance>> getAttendanceHistory(
+    int storeId, {
+    required DateTime fechaDesde,
+    required DateTime fechaHasta,
+  }) async {
+    try {
+      print('📋 Obteniendo historial de asistencia, tienda: $storeId');
+      final response = await _supabase.rpc(
+        'fn_hr_attendance_history',
+        params: {
+          'p_id_tienda': storeId,
+          'p_fecha_desde': fechaDesde.toIso8601String().split('T')[0],
+          'p_fecha_hasta': fechaHasta.toIso8601String().split('T')[0],
+        },
+      );
+
+      if (response['success'] == true) {
+        final List<dynamic> data = response['data'] as List<dynamic>;
+        print('📋 ${data.length} registros en historial');
+        return data
+            .map((w) => HRAttendance.fromJson(w as Map<String, dynamic>))
+            .toList();
+      }
+      return [];
+    } catch (e) {
+      print('❌ Error obteniendo historial: $e');
+      throw Exception('Error al cargar historial: $e');
+    }
+  }
+
+  /// Eliminar un día de trabajo (registro de asistencia)
+  static Future<bool> deleteAttendance({
+    required int asistenciaId,
+    required String eliminadoPor,
+    required int storeId,
+  }) async {
+    try {
+      print('🗑️ Eliminando registro de asistencia id=$asistenciaId');
+      final response = await _supabase.rpc(
+        'fn_hr_delete_attendance',
+        params: {
+          'p_asistencia_id': asistenciaId,
+          'p_eliminado_por': eliminadoPor,
+          'p_id_tienda': storeId,
+        },
+      );
+
+      if (response['success'] == true) {
+        print('✅ Registro eliminado: ${response['message']}');
+        return true;
+      } else {
+        print('❌ Error: ${response['message']}');
+        throw Exception(response['message'] ?? 'Error al eliminar registro');
+      }
+    } catch (e) {
+      print('❌ Error eliminando registro de asistencia: $e');
+      rethrow;
+    }
+  }
+
   /// Firmar salida en lote
   static Future<int> batchCheckout({
     required List<int> asistenciaIds,

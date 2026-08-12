@@ -4,6 +4,7 @@ import '../../config/app_theme.dart';
 import '../../models/entidad.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/entidad_provider.dart';
+import '../../services/auth_service.dart';
 import 'entidad_detail_screen.dart';
 import 'gestion_locales_screen.dart';
 import 'gestion_servicios_screen.dart';
@@ -17,8 +18,17 @@ class GestionScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final entidadProv = context.watch<EntidadProvider>();
-    final myUuid = context.read<AuthProvider>().user?.id ?? '';
+    final myUuid = AuthService.currentUserId ?? '';
     final seleccionada = entidadProv.entidadSeleccionada;
+
+    // Si no hay UUID, mostrar mensaje de error
+    if (myUuid.isEmpty) {
+      return const Scaffold(
+        body: Center(
+          child: Text('No se pudo obtener el usuario autenticado'),
+        ),
+      );
+    }
 
     if (entidadProv.isLoading) {
       return const Scaffold(

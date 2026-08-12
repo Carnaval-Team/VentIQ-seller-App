@@ -362,6 +362,10 @@ class PrinterManager {
       );
 
       Navigator.pop(context);
+      // El batch ya espera a vaciar el buffer; un margen extra antes de cerrar BT.
+      if (printed) {
+        await Future.delayed(const Duration(milliseconds: 800));
+      }
       await _bluetoothService.disconnect();
 
       return PrintResult(
@@ -899,6 +903,9 @@ class PrinterManager {
       bool printed = await _bluetoothService.printInvoice(order);
 
       Navigator.pop(context);
+      if (printed) {
+        await Future.delayed(const Duration(milliseconds: 800));
+      }
       await _bluetoothService.disconnect();
 
       return PrintResult(

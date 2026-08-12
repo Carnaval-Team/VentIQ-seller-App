@@ -4,6 +4,7 @@ import '../../config/app_theme.dart';
 import '../../models/entidad.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/entidad_provider.dart';
+import '../../services/auth_service.dart';
 import 'entidad_detail_screen.dart';
 
 class MisEntidadesScreen extends StatefulWidget {
@@ -21,7 +22,7 @@ class _MisEntidadesScreenState extends State<MisEntidadesScreen> {
   }
 
   Future<void> _cargar() async {
-    final uuid = context.read<AuthProvider>().user?.id;
+    final uuid = AuthService.currentUserId;
     if (uuid != null) {
       await context.read<EntidadProvider>().cargarMisEntidades(uuid);
     }
@@ -41,7 +42,7 @@ class _MisEntidadesScreenState extends State<MisEntidadesScreen> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<EntidadProvider>();
-    final myUuid = context.read<AuthProvider>().user?.id ?? '';
+    final myUuid = AuthService.currentUserId ?? '';
 
     return Scaffold(
       appBar: AppBar(

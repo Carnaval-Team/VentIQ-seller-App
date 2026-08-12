@@ -451,7 +451,7 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
   }
 
   Future<void> _launchWhatsApp(String phoneNumber) async {
-    final url = 'https://wa.me/$phoneNumber?text=Hola, necesito ayuda con mi suscripción de VentIQ';
+    final url = 'https://wa.me/$phoneNumber?text=Hola, necesito ayuda con mi suscripción de Inventtia Caja';
     try {
       if (await canLaunchUrl(Uri.parse(url))) {
         await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
@@ -483,7 +483,7 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
   }
 
   Future<void> _launchEmail(String email) async {
-    final url = 'mailto:$email?subject=Soporte VentIQ - Suscripción';
+    final url = 'mailto:$email?subject=Soporte Inventtia Caja - Suscripción';
     try {
       if (await canLaunchUrl(Uri.parse(url))) {
         await launchUrl(Uri.parse(url));

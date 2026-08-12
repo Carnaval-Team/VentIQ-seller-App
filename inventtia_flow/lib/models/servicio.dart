@@ -1,4 +1,5 @@
 import 'campo_adicional.dart';
+import 'config_precio.dart';
 
 class Servicio {
   final int id;
@@ -8,6 +9,9 @@ class Servicio {
   final DateTime createdAt;
   final List<CampoAdicional> camposAdicionales;
   final bool permiteTercero;
+  final ConfigPrecio configPrecio;
+  final int? idTipoActividad;
+  final String? tipoActividad;
 
   Servicio({
     required this.id,
@@ -17,23 +21,34 @@ class Servicio {
     required this.createdAt,
     List<CampoAdicional>? camposAdicionales,
     this.permiteTercero = false,
-  }) : camposAdicionales = camposAdicionales ?? [];
+    ConfigPrecio? configPrecio,
+    this.idTipoActividad,
+    this.tipoActividad,
+  }) : camposAdicionales = camposAdicionales ?? [],
+       configPrecio = configPrecio ?? ConfigPrecio();
 
   factory Servicio.fromJson(Map<String, dynamic> json) => Servicio(
-        id: (json['id'] as num).toInt(),
-        nombre: json['nombre'] as String,
-        descripcion: json['descripcion'] as String?,
-        foto: json['foto'] as String?,
-        createdAt: json['created_at'] != null
-            ? DateTime.parse(json['created_at'] as String)
-            : DateTime.now(),
-        camposAdicionales: (json['campos_adicionales'] as List?)
-                ?.map((e) =>
-                    CampoAdicional.fromJson(e as Map<String, dynamic>))
-                .toList() ??
-            [],
-        permiteTercero: (json['permite_tercero'] as bool?) ?? false,
-      );
+    id: (json['id'] as num).toInt(),
+    nombre: json['nombre'] as String,
+    descripcion: json['descripcion'] as String?,
+    foto: json['foto'] as String?,
+    createdAt: json['created_at'] != null
+        ? DateTime.parse(json['created_at'] as String)
+        : DateTime.now(),
+    camposAdicionales:
+        (json['campos_adicionales'] as List?)
+            ?.map((e) => CampoAdicional.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        [],
+    permiteTercero: (json['permite_tercero'] as bool?) ?? false,
+    configPrecio: ConfigPrecio.fromJson(
+      json['config_precio'] as Map<String, dynamic>?,
+    ),
+    idTipoActividad: (json['id_tipo_actividad'] as num?)?.toInt(),
+    tipoActividad:
+        (json['tipo_actividad'] as Map?)?['codigo'] as String? ??
+        json['tipo_actividad_codigo'] as String?,
+  );
 }
 
 class Local {
@@ -64,25 +79,28 @@ class Local {
   });
 
   String get ubicacion {
-    final parts = [provincia, pais].where((v) => v != null && v.isNotEmpty).toList();
+    final parts = [
+      provincia,
+      pais,
+    ].where((v) => v != null && v.isNotEmpty).toList();
     return parts.join(', ');
   }
 
   factory Local.fromJson(Map<String, dynamic> json) => Local(
-        id: (json['id'] as num).toInt(),
-        nombre: json['nombre'] as String,
-        descripcion: json['descripcion'] as String?,
-        horarioAtencion: json['horario_atencion'] as String?,
-        terminosCondiciones: json['terminos_condiciones'] as String?,
-        coordenadas: json['coordenadas'] as Map<String, dynamic>?,
-        direccion: json['direccion'] as String?,
-        pais: json['pais'] as String?,
-        provincia: json['provincia'] as String?,
-        foto: json['foto'] as String?,
-        createdAt: json['created_at'] != null
-            ? DateTime.parse(json['created_at'] as String)
-            : DateTime.now(),
-      );
+    id: (json['id'] as num).toInt(),
+    nombre: json['nombre'] as String,
+    descripcion: json['descripcion'] as String?,
+    horarioAtencion: json['horario_atencion'] as String?,
+    terminosCondiciones: json['terminos_condiciones'] as String?,
+    coordenadas: json['coordenadas'] as Map<String, dynamic>?,
+    direccion: json['direccion'] as String?,
+    pais: json['pais'] as String?,
+    provincia: json['provincia'] as String?,
+    foto: json['foto'] as String?,
+    createdAt: json['created_at'] != null
+        ? DateTime.parse(json['created_at'] as String)
+        : DateTime.now(),
+  );
 }
 
 class LocalServicio {
@@ -108,16 +126,28 @@ class LocalServicio {
     this.cantidadMaxCapacidad = 1,
   });
 
+  bool get esTransporteOmnibus =>
+      servicio?.tipoActividad == 'transporte_omnibus';
+
   factory LocalServicio.fromJson(Map<String, dynamic> json) {
     // Soporta formato RPC (id_local_servicio, local, servicio)
     // y formato PostgREST (id, app_dat_locales, app_dat_servicios)
-    final id = (json['id_local_servicio'] ?? json['id']) as int;
+    final idRaw = json['id_local_servicio'] ?? json['id'];
+    final id = (idRaw as num).toInt();
     final localRaw = json['local'] ?? json['app_dat_locales'];
     final servicioRaw = json['servicio'] ?? json['app_dat_servicios'];
     return LocalServicio(
       id: id,
-      idLocal: (json['id_local'] as int?) ?? (localRaw != null ? (localRaw as Map<String,dynamic>)['id'] as int : 0),
-      idServicio: (json['id_servicio'] as int?) ?? (servicioRaw != null ? (servicioRaw as Map<String,dynamic>)['id'] as int : 0),
+      idLocal:
+          (json['id_local'] as num?)?.toInt() ??
+          (localRaw != null
+              ? ((localRaw as Map<String, dynamic>)['id'] as num).toInt()
+              : 0),
+      idServicio:
+          (json['id_servicio'] as num?)?.toInt() ??
+          (servicioRaw != null
+              ? ((servicioRaw as Map<String, dynamic>)['id'] as num).toInt()
+              : 0),
       local: localRaw != null
           ? Local.fromJson(localRaw as Map<String, dynamic>)
           : null,
@@ -139,18 +169,15 @@ class LocalServicio {
     bool? permiteReservaDirecta,
     int? cantidadDefault,
     int? cantidadMaxCapacidad,
-  }) =>
-      LocalServicio(
-        id: id,
-        idLocal: idLocal,
-        idServicio: idServicio,
-        local: local,
-        servicio: servicio,
-        createdAt: createdAt,
-        permiteReservaDirecta:
-            permiteReservaDirecta ?? this.permiteReservaDirecta,
-        cantidadDefault: cantidadDefault ?? this.cantidadDefault,
-        cantidadMaxCapacidad:
-            cantidadMaxCapacidad ?? this.cantidadMaxCapacidad,
-      );
+  }) => LocalServicio(
+    id: id,
+    idLocal: idLocal,
+    idServicio: idServicio,
+    local: local,
+    servicio: servicio,
+    createdAt: createdAt,
+    permiteReservaDirecta: permiteReservaDirecta ?? this.permiteReservaDirecta,
+    cantidadDefault: cantidadDefault ?? this.cantidadDefault,
+    cantidadMaxCapacidad: cantidadMaxCapacidad ?? this.cantidadMaxCapacidad,
+  );
 }

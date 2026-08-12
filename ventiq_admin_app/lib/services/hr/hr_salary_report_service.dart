@@ -187,7 +187,7 @@ class HRSalaryReportService {
           alignment: pw.Alignment.centerRight,
           margin: const pw.EdgeInsets.only(top: 8),
           child: pw.Text(
-            'Generado: ${dateFormat.format(DateTime.now())} - Inventtia Admin',
+            'Generado: ${dateFormat.format(DateTime.now())} - Inventtia Gestión',
             style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey),
           ),
         ),

@@ -59,7 +59,8 @@ class ReferralPaymentsService {
     }
   }
 
-  /// Obtiene ordenes asociadas a un codigo de referido en un rango de fecha
+  /// Obtiene ordenes asociadas a un codigo de referido en un rango de fecha.
+  /// Solo incluye órdenes Completado (las efectivamente cobradas).
   static Future<List<Map<String, dynamic>>> getOrdersByReferralCode({
     required String referalCode,
     required DateTime from,
@@ -67,7 +68,10 @@ class ReferralPaymentsService {
   }) async {
     try {
       final fromStr = _formatDate(from);
-      final toStr = _formatDate(to);
+      // Incluir el día completo hasta 23:59:59
+      final toExclusive = DateTime(to.year, to.month, to.day)
+          .add(const Duration(days: 1));
+      final toStr = _formatDate(toExclusive);
 
       final response = await _supabase
           .schema('carnavalapp')
@@ -76,14 +80,26 @@ class ReferralPaymentsService {
             'id, created_at, total, "totalUsd", "totalEuro", metodo_pago, moneda, status, user_id, referal_code',
           )
           .eq('referal_code', referalCode)
+          .eq('status', 'Completado')
           .gte('created_at', fromStr)
-          .lte('created_at', toStr)
+          .lt('created_at', toStr)
           .order('created_at', ascending: false);
-      return List<Map<String, dynamic>>.from(response);
+
+      // Defensa: por si el filtro del servidor no aplica, excluir canceladas
+      // y cualquier estado distinto de Completado antes de calcular.
+      return List<Map<String, dynamic>>.from(response)
+          .where(isCompletedOrder)
+          .toList();
     } catch (e) {
       print('❌ Error getOrdersByReferralCode($referalCode): $e');
       return [];
     }
+  }
+
+  /// True solo para órdenes efectivamente cobradas (comisionables).
+  static bool isCompletedOrder(Map<String, dynamic> order) {
+    final status = (order['status'] as String? ?? '').trim();
+    return status.toLowerCase() == 'completado';
   }
 
   /// Clasifica una orden como nacional o internacional segun reglas:
@@ -109,7 +125,8 @@ class ReferralPaymentsService {
     return moneda != 'CUP';
   }
 
-  /// Calcula totales y comisiones para un referidor
+  /// Calcula totales y comisiones para un referidor.
+  /// Solo suma órdenes Completado; Cancelado / otros estados se ignoran.
   static ReferralSummary computeSummary({
     required List<Map<String, dynamic>> orders,
     required double pctNacional,
@@ -128,6 +145,8 @@ class ReferralPaymentsService {
     double comisionEuro = 0;
 
     for (final o in orders) {
+      if (!isCompletedOrder(o)) continue;
+
       final total = (o['total'] as num?)?.toDouble() ?? 0;
       final tUsd = (o['totalUsd'] as num?)?.toDouble() ?? 0;
       final tEuro = (o['totalEuro'] as num?)?.toDouble() ?? 0;

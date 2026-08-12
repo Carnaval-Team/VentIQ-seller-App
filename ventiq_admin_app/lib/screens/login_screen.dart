@@ -59,7 +59,9 @@ class _LoginScreenState extends State<LoginScreen> {
       try {
         final role = await _permissionsService.getUserRole();
         if (role == UserRole.recursosHumanos && mounted) {
-          print('✅ Usuario HR detectado en auto-login, navegando a HR dashboard...');
+          print(
+            '✅ Usuario HR detectado en auto-login, navegando a HR dashboard...',
+          );
           Navigator.pushNamedAndRemoveUntil(
             context,
             '/hr-dashboard',
@@ -170,7 +172,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         const SizedBox(height: 24),
         const Text(
-          'Inventtia Admin',
+          'Inventtia Gestión',
           style: TextStyle(
             fontSize: 32,
             fontWeight: FontWeight.bold,
@@ -179,7 +181,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         const SizedBox(height: 8),
         const Text(
-          'Panel de Administración',
+          'Panel de Gestión',
           style: TextStyle(fontSize: 16, color: AppColors.textSecondary),
         ),
       ],
@@ -524,6 +526,7 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
       await _userPreferencesService.saveUserRolesByStore(rolesForStorage);
+      await _permissionsService.initializeSessionPermissions();
       print('💾 Roles por tienda guardados: $rolesForStorage');
 
       print('✅ Usuario autenticado:');

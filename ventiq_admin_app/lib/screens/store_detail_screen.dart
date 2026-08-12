@@ -60,7 +60,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
       children: [
         TileLayer(
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'VentIQAdmin/1.6.0 (+https://ventiq.com; contact: support@ventiq.com)',
+          userAgentPackageName: 'InventtiaGestion/1.0 (+https://inventtia.com; contact: support@inventtia.com)',
           tileSize: 256,
         ),
         RichAttributionWidget(

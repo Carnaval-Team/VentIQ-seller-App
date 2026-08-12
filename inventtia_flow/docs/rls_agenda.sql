@@ -1,11 +1,12 @@
 -- Políticas RLS para flow.agenda
 -- Permitir que el dueño de la reserva y los administradores/dueños de la entidad
--- puedan actualizar (cancelar) y eliminar agendas.
+-- puedan leer, actualizar (cancelar) y eliminar agendas.
 
 -- 1. Habilitar RLS en la tabla
 ALTER TABLE flow.agenda ENABLE ROW LEVEL SECURITY;
 
 -- 2. Eliminar políticas previas si existen (para evitar duplicados)
+DROP POLICY IF EXISTS "agenda_select_dueño_y_admins" ON flow.agenda;
 DROP POLICY IF EXISTS "agenda_update_dueño_y_admins" ON flow.agenda;
 DROP POLICY IF EXISTS "agenda_delete_dueño_y_admins" ON flow.agenda;
 
@@ -33,7 +34,18 @@ AS $$
   );
 $$;
 
--- 4. Política UPDATE (cancelar reserva)
+-- 4. Política SELECT (cliente ve las suyas; admin/owner ve las de su entidad)
+CREATE POLICY "agenda_select_dueño_y_admins"
+ON flow.agenda
+FOR SELECT
+TO authenticated
+USING (
+  auth.uid() = uuid_usuario
+  OR auth.uid() = reservado_por
+  OR flow.es_admin_o_dueño_de_entidad_de_agenda(id_local_servicio)
+);
+
+-- 5. Política UPDATE (cancelar reserva)
 CREATE POLICY "agenda_update_dueño_y_admins"
 ON flow.agenda
 FOR UPDATE
@@ -47,7 +59,7 @@ WITH CHECK (
   OR flow.es_admin_o_dueño_de_entidad_de_agenda(id_local_servicio)
 );
 
--- 5. Política DELETE (eliminar reserva)
+-- 6. Política DELETE (eliminar reserva)
 CREATE POLICY "agenda_delete_dueño_y_admins"
 ON flow.agenda
 FOR DELETE

@@ -6,7 +6,10 @@ import '../services/user_preferences_service.dart';
 import '../services/permissions_service.dart';
 import '../services/auth_service.dart';
 import '../services/subscription_service.dart';
+import '../services/session_cache_manager.dart';
 import '../utils/navigation_guard.dart';
+import '../utils/platform_utils.dart';
+import '../utils/web_reload.dart' as web_reload;
 import '../services/changelog_service.dart';
 import '../services/update_service.dart';
 import '../services/carnaval_service.dart';
@@ -122,6 +125,22 @@ class _AdminDrawerState extends State<AdminDrawer> {
       return await SubscriptionService().hasProPlan(storeId);
     } catch (e) {
       print('❌ Error verificando función de consignación: $e');
+      return false;
+    }
+  }
+
+  /// Verificar si el usuario puede acceder al módulo de Recursos Humanos
+  Future<bool> _canAccessHR(BuildContext context) async {
+    try {
+      final hasPermission = await NavigationGuard.canNavigate(
+        '/hr-dashboard',
+        context,
+        showDialog: false,
+      );
+      if (!hasPermission) return false;
+      return await SubscriptionService().hasProPlanInAnyStore();
+    } catch (e) {
+      print('❌ Error verificando acceso a RRHH: $e');
       return false;
     }
   }
@@ -510,7 +529,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   },
                 ),
 
-                // Trabajadores (solo Gerente y Supervisor)
+                // Trabajadores (Gerente, Supervisor, Auditor, RRHH)
                 FutureBuilder<bool>(
                   future: NavigationGuard.canNavigate(
                     '/workers',
@@ -531,6 +550,34 @@ class _AdminDrawerState extends State<AdminDrawer> {
                               NavigationGuard.navigateWithPermission(
                                 context,
                                 '/workers',
+                              );
+                            },
+                          ),
+                          const Divider(height: 1),
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
+
+                // Recursos Humanos (Gerente, Supervisor y RRHH con plan Pro)
+                FutureBuilder<bool>(
+                  future: _canAccessHR(context),
+                  builder: (context, snapshot) {
+                    if (snapshot.data == true) {
+                      return Column(
+                        children: [
+                          _buildDrawerItem(
+                            context,
+                            icon: Icons.badge_outlined,
+                            title: 'Recursos Humanos',
+                            subtitle: 'Fichar entrada, salida y reportes',
+                            onTap: () {
+                              Navigator.pop(context);
+                              NavigationGuard.navigateWithPermission(
+                                context,
+                                '/hr-dashboard',
                               );
                             },
                           ),
@@ -613,7 +660,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Inventtia® Admin $_appVersion',
+                          'Inventtia® Gestión $_appVersion',
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.grey[600],
@@ -763,6 +810,14 @@ class _AdminDrawerState extends State<AdminDrawer> {
                             if (dialogContext.mounted) {
                               Navigator.of(dialogContext).pop();
                             }
+                            // En Web recargamos la página completa: los
+                            // singletons (servicios con caché) sobreviven a la
+                            // navegación SPA y arrastran datos de la sesión
+                            // anterior. Un reload real los recrea desde cero.
+                            if (PlatformUtils.isWeb) {
+                              web_reload.reloadToRoot();
+                              return;
+                            }
                             // Navegar a splash que detectará que no hay sesión
                             if (context.mounted) {
                               Navigator.of(
@@ -806,6 +861,11 @@ class _AdminDrawerState extends State<AdminDrawer> {
 
       // Usar AuthService.signOut() que limpia TODO correctamente
       await authService.signOut();
+
+      // Invalidar cachés en memoria de todos los singletons. En móvil no hay
+      // reload de página, así que esta limpieza es la que evita arrastrar
+      // datos de la sesión anterior.
+      await SessionCacheManager.clearForLogout();
 
       // Pequeña espera para asegurar que la limpieza se complete
       await Future.delayed(const Duration(milliseconds: 300));

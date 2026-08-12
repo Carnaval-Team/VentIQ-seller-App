@@ -45,6 +45,13 @@ class _WapiScheduleConfigScreenState extends State<WapiScheduleConfigScreen> {
   /// Si la programación ya existe y trae otra zona, mostramos ambas.
   String? _detectedTz;
 
+  /// Zona que se GUARDARÁ. Antes se tomaba siempre la detectada, pero la
+  /// detección puede fallar (navegadores con VPN, perfiles mal configurados)
+  /// y entonces el cron dispara a una hora que no es la del cliente — sin
+  /// error visible, simplemente "no se envía a las 9". Ahora es explícita y
+  /// editable.
+  String? _tzSeleccionada;
+
   @override
   void initState() {
     super.initState();
@@ -54,6 +61,9 @@ class _WapiScheduleConfigScreenState extends State<WapiScheduleConfigScreen> {
       _delayMin = widget.existente!.delayMinSeconds;
       _delayMax = widget.existente!.delayMaxSeconds;
       _productIds = widget.existente!.productIds.toSet();
+      // Respetamos la zona ya guardada: si el usuario la corrigió, no la
+      // pisamos con la del dispositivo al reeditar.
+      _tzSeleccionada = widget.existente!.timezone;
       _sesion = widget.sesiones.firstWhere(
         (s) => s.id == widget.existente!.idSesion,
         orElse: () => widget.sesiones.first,
@@ -68,7 +78,30 @@ class _WapiScheduleConfigScreenState extends State<WapiScheduleConfigScreen> {
   Future<void> _resolveTimezone() async {
     final tz = await TimezoneHelper.getLocalTimezone();
     if (!mounted) return;
-    setState(() => _detectedTz = tz);
+    setState(() {
+      _detectedTz = tz;
+      _tzSeleccionada ??= tz;
+    });
+  }
+
+  /// Zonas ofrecidas en el selector: las habituales de la base de clientes
+  /// más la detectada y la ya guardada (para no perderlas si son exóticas).
+  List<String> get _opcionesTz {
+    final base = <String>[
+      'America/Havana',
+      'America/Mexico_City',
+      'America/Bogota',
+      'America/Santo_Domingo',
+      'America/New_York',
+      'America/Santiago',
+      'Europe/Madrid',
+    ];
+    final set = <String>{
+      if (_detectedTz != null) _detectedTz!,
+      if (_tzSeleccionada != null) _tzSeleccionada!,
+      ...base,
+    };
+    return set.toList()..sort();
   }
 
   Future<void> _loadExistingDestinatarios() async {
@@ -135,7 +168,9 @@ class _WapiScheduleConfigScreenState extends State<WapiScheduleConfigScreen> {
     try {
       // Asegura que la zona ya esté resuelta antes de guardar (evita
       // condición de carrera si el usuario toca "Guardar" muy rápido).
-      final tz = _detectedTz ?? await TimezoneHelper.getLocalTimezone();
+      final tz = _tzSeleccionada ??
+          _detectedTz ??
+          await TimezoneHelper.getLocalTimezone();
       await _service.saveProgramacion(
         idTienda: widget.idTienda,
         idSesion: _sesion!.id,
@@ -195,7 +230,9 @@ class _WapiScheduleConfigScreenState extends State<WapiScheduleConfigScreen> {
                 const SizedBox(height: 8),
                 _TimezoneNotice(
                   detected: _detectedTz!,
-                  saved: widget.existente?.timezone,
+                  seleccionada: _tzSeleccionada,
+                  opciones: _opcionesTz,
+                  onCambiar: (tz) => setState(() => _tzSeleccionada = tz),
                 ),
               ],
               const SizedBox(height: 14),
@@ -429,14 +466,28 @@ class _Card extends StatelessWidget {
 
 /// Muestra la zona horaria detectada del dispositivo y, si el registro
 /// existente tiene otra zona guardada, advierte al usuario.
+/// Selector de zona horaria de la programación.
+///
+/// Es un selector y no un simple aviso porque la zona determina a qué hora
+/// real dispara el cron: si la detección del dispositivo falla, la difusión
+/// sale a una hora equivocada sin producir ningún error visible.
 class _TimezoneNotice extends StatelessWidget {
   final String detected;
-  final String? saved;
-  const _TimezoneNotice({required this.detected, this.saved});
+  final String? seleccionada;
+  final List<String> opciones;
+  final ValueChanged<String> onCambiar;
+
+  const _TimezoneNotice({
+    required this.detected,
+    required this.seleccionada,
+    required this.opciones,
+    required this.onCambiar,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final mismatch = saved != null && saved != detected;
+    final tz = seleccionada ?? detected;
+    final mismatch = tz != detected;
     final color = mismatch ? AppColors.warning : AppColors.success;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -445,21 +496,52 @@ class _TimezoneNotice extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: color.withOpacity(0.3)),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(mismatch ? Icons.warning_amber_rounded : Icons.public,
-              color: color, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              mismatch
-                  ? 'Zona detectada: $detected. La programación está guardada en '
-                      '$saved — al guardar se actualizará a tu zona actual.'
-                  : 'Zona horaria detectada: $detected. La hora se interpreta '
-                      'en esta zona.',
-              style: const TextStyle(fontSize: 12, color: AppColors.textPrimary),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(mismatch ? Icons.warning_amber_rounded : Icons.public,
+                  color: color, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  mismatch
+                      ? 'Tu dispositivo reporta $detected, pero la difusión '
+                          'se programará en $tz. Verifica que sea la zona de '
+                          'tu tienda: la hora se interpreta en esta zona.'
+                      : 'Zona horaria: $detected (detectada de tu dispositivo). '
+                          'La hora se interpreta en esta zona — cámbiala si tu '
+                          'tienda está en otra.',
+                  style:
+                      const TextStyle(fontSize: 12, color: AppColors.textPrimary),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            value: opciones.contains(tz) ? tz : null,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              isDense: true,
+              labelText: 'Zona horaria de la difusión',
             ),
+            items: opciones
+                .map((o) => DropdownMenuItem(
+                      value: o,
+                      child: Text(
+                        o == detected ? '$o  (tu dispositivo)' : o,
+                        style: const TextStyle(fontSize: 13),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ))
+                .toList(),
+            onChanged: (v) {
+              if (v != null) onCambiar(v);
+            },
           ),
         ],
       ),

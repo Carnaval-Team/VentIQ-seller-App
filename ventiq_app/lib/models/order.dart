@@ -18,7 +18,8 @@ class Order {
   final Map<String, dynamic>? descuento; // Descuento aplicado (si existe)
   final String? sellerName;
   final String? tpvName;
-  final Map<String, dynamic>? paqueteria; // Datos del paquete (si la orden es de paquetería)
+  final Map<String, dynamic>?
+  paqueteria; // Datos del paquete (si la orden es de paquetería)
   // Modo restaurante: si la orden está asociada a una mesa
   final int? idMesa;
   final String? mesaNumero;
@@ -194,12 +195,7 @@ class OrderItem {
   });
 
   double get subtotal {
-    final raw = _getFinalPrice() * cantidad;
-    // Redondear por exceso al entero más cercano para cantidades fraccionadas
-    if (cantidad != cantidad.roundToDouble()) {
-      return raw.ceilToDouble();
-    }
-    return raw;
+    return _getFinalPrice() * cantidad;
   }
 
   double get displayPrice {
@@ -218,7 +214,7 @@ class OrderItem {
 
     if (!PromotionRules.isMinimumPurchaseMet(
       promotionData!,
-      quantity: cantidad.round(),
+      quantity: cantidad,
     )) {
       if (paymentMethod?.id == 1) {
         return precioUnitario;

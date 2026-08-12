@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/plan_servicio.dart';
+import 'auth_service.dart';
 
 class PlanServicioService {
   static final SupabaseClient _supabase = Supabase.instance.client;
@@ -29,13 +30,18 @@ class PlanServicioService {
   static Future<List<PlanServicio>> getByLocalServicio(
       int idLocalServicio) async {
     try {
-      final res = await _supabase
-          .schema(_schema)
-          .from('plan_servicios')
-          .select()
-          .eq('id_local_servicio', idLocalServicio)
-          .order('fecha');
-      return (res as List).map((e) => PlanServicio.fromJson(e)).toList();
+      final res = await _supabase.schema(_schema).rpc(
+        'admin_get_plan_servicios',
+        params: {'p_id_local_servicio': idLocalServicio},
+      );
+      
+      final json = res as Map<String, dynamic>;
+      if (json['ok'] != true) {
+        throw Exception(json['error'] ?? 'Error al obtener planes de servicio');
+      }
+      
+      final data = json['data'] as List;
+      return data.map((e) => PlanServicio.fromJson(e as Map<String, dynamic>)).toList();
     } catch (e) {
       throw handleSchemaPermissionError(Exception(e.toString()));
     }
@@ -47,18 +53,21 @@ class PlanServicioService {
     required int cantidad,
   }) async {
     try {
-      final res = await _supabase
-          .schema(_schema)
-          .from('plan_servicios')
-          .insert({
-            'id_local_servicio': idLocalServicio,
-            'fecha': fecha?.toIso8601String(),
-            'cantidad': cantidad,
-            'agendados': 0,
-          })
-          .select()
-          .single();
-      return PlanServicio.fromJson(res);
+      final res = await _supabase.schema(_schema).rpc(
+        'admin_create_plan_servicio',
+        params: {
+          'p_id_local_servicio': idLocalServicio,
+          'p_fecha': fecha?.toIso8601String().substring(0, 10),
+          'p_cantidad': cantidad,
+        },
+      );
+      
+      final json = res as Map<String, dynamic>;
+      if (json['ok'] != true) {
+        throw Exception(json['error'] ?? 'Error al crear plan de servicio');
+      }
+      
+      return PlanServicio.fromJson(json['data'] as Map<String, dynamic>);
     } catch (e) {
       throw handleSchemaPermissionError(Exception(e.toString()));
     }
@@ -70,17 +79,21 @@ class PlanServicioService {
     required int cantidad,
   }) async {
     try {
-      final res = await _supabase
-          .schema(_schema)
-          .from('plan_servicios')
-          .update({
-            'fecha': fecha?.toIso8601String(),
-            'cantidad': cantidad,
-          })
-          .eq('id', id)
-          .select()
-          .single();
-      return PlanServicio.fromJson(res);
+      final res = await _supabase.schema(_schema).rpc(
+        'admin_update_plan_servicio',
+        params: {
+          'p_id': id,
+          'p_fecha': fecha?.toIso8601String().substring(0, 10),
+          'p_cantidad': cantidad,
+        },
+      );
+      
+      final json = res as Map<String, dynamic>;
+      if (json['ok'] != true) {
+        throw Exception(json['error'] ?? 'Error al actualizar plan de servicio');
+      }
+      
+      return PlanServicio.fromJson(json['data'] as Map<String, dynamic>);
     } catch (e) {
       throw handleSchemaPermissionError(Exception(e.toString()));
     }
@@ -94,21 +107,21 @@ class PlanServicioService {
     int? excludeId,
   }) async {
     try {
-      final desde = DateTime(fecha.year, fecha.month, fecha.day);
-      final hasta = DateTime(fecha.year, fecha.month, fecha.day, 23, 59, 59);
-      var query = _supabase
-          .schema(_schema)
-          .from('plan_servicios')
-          .select('id')
-          .eq('id_local_servicio', idLocalServicio)
-          .gte('fecha', desde.toIso8601String())
-          .lte('fecha', hasta.toIso8601String());
-      final res = await query;
-      final list = res as List;
-      if (excludeId != null) {
-        return list.any((e) => (e['id'] as num).toInt() != excludeId);
+      final res = await _supabase.schema(_schema).rpc(
+        'admin_existe_plan_fecha',
+        params: {
+          'p_id_local_servicio': idLocalServicio,
+          'p_fecha': fecha.toIso8601String().substring(0, 10),
+          if (excludeId != null) 'p_exclude_id': excludeId,
+        },
+      );
+      
+      final json = res as Map<String, dynamic>;
+      if (json['ok'] != true) {
+        throw Exception(json['error'] ?? 'Error al verificar existencia de plan');
       }
-      return list.isNotEmpty;
+      
+      return json['existe'] as bool;
     } catch (e) {
       throw handleSchemaPermissionError(Exception(e.toString()));
     }
@@ -116,11 +129,15 @@ class PlanServicioService {
 
   static Future<void> delete(int id) async {
     try {
-      await _supabase
-          .schema(_schema)
-          .from('plan_servicios')
-          .delete()
-          .eq('id', id);
+      final res = await _supabase.schema(_schema).rpc(
+        'admin_delete_plan_servicio',
+        params: {'p_id': id},
+      );
+      
+      final json = res as Map<String, dynamic>;
+      if (json['ok'] != true) {
+        throw Exception(json['error'] ?? 'Error al eliminar plan de servicio');
+      }
     } catch (e) {
       throw handleSchemaPermissionError(Exception(e.toString()));
     }

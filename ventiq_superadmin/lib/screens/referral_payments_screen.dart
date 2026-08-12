@@ -32,7 +32,7 @@ class _ReferralPaymentsScreenState extends State<ReferralPaymentsScreen> {
   _ReferrerRow? _selected;
   List<Map<String, dynamic>> _selectedOrders = [];
 
-  bool _excludeZeroPayments = false;
+  bool _excludeZeroPayments = true;
 
   final NumberFormat _moneyFmt = NumberFormat('#,##0.00');
 
@@ -81,8 +81,12 @@ class _ReferralPaymentsScreenState extends State<ReferralPaymentsScreen> {
         from: _fromDate,
         to: _toDate,
       );
+      // Solo Completado para listado y comisiones (nunca Cancelado).
+      final completedOrders = orders
+          .where(ReferralPaymentsService.isCompletedOrder)
+          .toList();
       final summary = ReferralPaymentsService.computeSummary(
-        orders: orders,
+        orders: completedOrders,
         pctNacional: _pctNacional,
         pctInternacional: _pctInternacional,
         valorUsd: _valorUsd,
@@ -93,7 +97,7 @@ class _ReferralPaymentsScreenState extends State<ReferralPaymentsScreen> {
         referralCode: code,
         referredCount: referredCount,
         summary: summary,
-        orders: orders,
+        orders: completedOrders,
       ));
     }
 

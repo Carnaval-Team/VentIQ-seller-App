@@ -149,7 +149,7 @@ class BluetoothPermissionService {
         title: const Text('Permisos Denegados'),
         content: const Text(
           'No se pueden usar las funciones de impresora Bluetooth sin los permisos necesarios. '
-          'Puedes habilitarlos manualmente en Configuración > Aplicaciones > Inventtia Admin > Permisos.',
+          'Puedes habilitarlos manualmente en Configuración > Aplicaciones > Inventtia Gestión > Permisos.',
         ),
         actions: [
           TextButton(

@@ -1073,7 +1073,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 _buildSettingsTile(
                   icon: Icons.info_outline,
                   title: 'Acerca de',
-                  subtitle: 'Inventtia $_appVersion',
+                  subtitle: 'Inventtia Caja $_appVersion',
                   onTap: () => _showAboutDialog(),
                 ),
               ]),
@@ -2202,7 +2202,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   onPressed: () => Navigator.of(context).pop(),
                 ),
                 title: const Text(
-                  'Código QR - Inventtia',
+                  'Código QR - Inventtia Caja',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 18,
@@ -2240,7 +2240,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     const SizedBox(height: 24),
                     // Información
                     Text(
-                      'Escanea este código para descargar Inventtia',
+                      'Escanea este código para descargar Inventtia Caja',
                       style: TextStyle(
                         color: Colors.white.withOpacity(0.9),
                         fontSize: 16,
@@ -2250,7 +2250,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Inventtia $_appVersion',
+                      'Inventtia Caja $_appVersion',
                       style: TextStyle(
                         color: Colors.white.withOpacity(0.7),
                         fontSize: 14,
@@ -2315,7 +2315,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               const SizedBox(width: 12),
               const Expanded(
                 child: Text(
-                  'Descargar App Vendedor',
+                  'Descargar Inventtia Caja',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
@@ -2329,7 +2329,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
-                'Escanea el código QR para descargar la aplicación Inventtia en tu dispositivo:',
+                'Escanea el código QR para descargar Inventtia Caja en tu dispositivo:',
                 style: TextStyle(fontSize: 14, color: Color(0xFF6B7280)),
                 textAlign: TextAlign.center,
               ),
@@ -2395,7 +2395,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               ),
               const SizedBox(height: 16),
               Text(
-                'Inventtia $_appVersion',
+                'Inventtia Caja $_appVersion',
                 style: const TextStyle(
                   fontSize: 12,
                   color: Color(0xFF9CA3AF),
@@ -2428,7 +2428,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   void _showAboutDialog() {
     showAboutDialog(
       context: context,
-      applicationName: 'Inventtia',
+      applicationName: 'Inventtia Caja',
       applicationVersion: _appVersion,
       applicationIcon: Container(
         padding: const EdgeInsets.all(8),
@@ -2439,7 +2439,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         child: const Icon(Icons.inventory_2, color: Colors.white, size: 32),
       ),
       children: [
-        const Text('Aplicación de gestión de inventario y ventas.'),
+        const Text('Punto de venta (caja) de Inventtia para gestionar ventas y turnos.'),
         const SizedBox(height: 8),
         const Text(
           'Desarrollado para optimizar el proceso de pedidos y gestión de productos.',

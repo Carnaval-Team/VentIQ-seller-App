@@ -24,10 +24,34 @@
       "Bash(findstr /I marketplace)",
       "WebSearch",
       "Bash(deno check *)",
-      "Bash(deno --version)"
+      "Bash(deno --version)",
+      "mcp__supabase__execute_sql",
+      "Bash(curl -s -m 20 -o /dev/null -w \"sessions_list HTTP=%{http_code} time=%{time_total}s\\\\n\" http://3.238.37.3:2786/api/sessions)",
+      "Bash(curl -s -m 20 \"http://3.238.37.3:2786/api/health\")",
+      "Bash(curl -s -m 20 \"http://3.238.37.3:2786/api/sessions/f4f929bd-a8e6-4caa-a9ad-fdd34aa56e5f\")",
+      "Bash(curl -s -m 10 -o /dev/null -w \"google HTTP=%{http_code}\\\\n\" https://www.google.com)",
+      "Bash(timeout 8 bash -c 'cat < /dev/null > /dev/tcp/3.238.37.3/2786')",
+      "PowerShell(flutter analyze *)",
+      "Bash(timeout 560 flutter build web --target-platform web-javascript)",
+      "Bash(timeout 560 flutter build web)",
+      "Bash(python -c ' *)",
+      "Bash(supabase functions *)",
+      "mcp__supabase__get_edge_function",
+      "PowerShell(npx supabase functions deploy wapi-send-products --project-ref vsieeihstajlrdvpuooh)",
+      "PowerShell(Get-ChildItem C:\\\\Users\\\\cesar\\\\Documents\\\\VentIQ-seller-App\\\\ventiq_admin_app\\\\supabase -Force | Select-Object Name; echo \"--- temp ---\"; Get-ChildItem C:\\\\Users\\\\cesar\\\\Documents\\\\VentIQ-seller-App\\\\ventiq_admin_app\\\\supabase\\\\.temp -Force | Select-Object Name; echo \"--- version ---\"; npx supabase --version)",
+      "PowerShell(\\(Get-Location\\).Path; echo \"--- linked ---\"; Get-Content C:\\\\Users\\\\cesar\\\\Documents\\\\VentIQ-seller-App\\\\ventiq_admin_app\\\\supabase\\\\.temp\\\\linked-project.json)",
+      "PowerShell(npx supabase functions deploy wapi-send-products --project-ref vsieeihstajlrdvpuooh --workdir C:\\\\Users\\\\cesar\\\\Documents\\\\VentIQ-seller-App\\\\ventiq_admin_app)",
+      "PowerShell(npx supabase functions deploy wapi-cron-dispatch --project-ref vsieeihstajlrdvpuooh --workdir C:\\\\Users\\\\cesar\\\\Documents\\\\VentIQ-seller-App\\\\ventiq_admin_app)",
+      "mcp__supabase__apply_migration",
+      "PowerShell(npx supabase functions list --project-ref vsieeihstajlrdvpuooh --workdir C:\\\\Users\\\\cesar\\\\Documents\\\\VentIQ-seller-App\\\\ventiq_admin_app)",
+      "PowerShell($j = Get-Content assets/changelog.json -Raw | ConvertFrom-Json; \"OK version=$\\($j.current_version\\) build=$\\($j.build\\) entries=$\\($j.changelogs.Count\\)\"; $j.changelogs[0].changes.Count)",
+      "PowerShell(git add *)",
+      "Bash(git commit *)",
+      "PowerShell(git push *)",
+      "mcp__supabase__list_tables"
     ]
   },
-  "disabledMcpjsonServers": [
+  "enabledMcpjsonServers": [
     "supabase"
   ]
 }

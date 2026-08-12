@@ -171,7 +171,7 @@ class PromotionRules {
 
   static bool isMinimumPurchaseMet(
     Map<String, dynamic> promotion, {
-    required int? quantity,
+    required num? quantity,
   }) {
     final minCompra = _parseMinCompra(promotion);
     if (minCompra == null || minCompra <= 0) {
@@ -205,7 +205,7 @@ class PromotionRules {
     required List<Map<String, dynamic>>? productPromotions,
     required Map<String, dynamic>? globalPromotion,
     required int? paymentMethodId,
-    required int? quantity,
+    required num? quantity,
   }) {
     final productPromotion = _pickMostRecentPromotion(
       productPromotions,
@@ -234,7 +234,7 @@ class PromotionRules {
   static Map<String, dynamic>? pickPromotionForDisplay({
     required List<Map<String, dynamic>>? productPromotions,
     required Map<String, dynamic>? globalPromotion,
-    required int? quantity,
+    required num? quantity,
   }) {
     final productPromotion = _pickMostRecentPromotion(
       productPromotions,
@@ -308,7 +308,7 @@ class PromotionRules {
   static Map<String, dynamic>? _pickMostRecentPromotion(
     List<Map<String, dynamic>>? promotions, {
     int? paymentMethodId,
-    int? quantity,
+    num? quantity,
   }) {
     if (promotions == null || promotions.isEmpty) {
       return null;
@@ -369,15 +369,11 @@ class PromotionRules {
     return null;
   }
 
-  static int? _parseMinCompra(Map<String, dynamic> promotion) {
+  static num? _parseMinCompra(Map<String, dynamic> promotion) {
     final rawMinCompra = promotion['min_compra'];
 
-    if (rawMinCompra is int) {
-      return rawMinCompra;
-    }
-
     if (rawMinCompra is num) {
-      return rawMinCompra.round();
+      return rawMinCompra;
     }
 
     if (rawMinCompra is String) {
@@ -385,7 +381,7 @@ class PromotionRules {
       if (normalized.isEmpty) {
         return null;
       }
-      return int.tryParse(normalized) ?? double.tryParse(normalized)?.round();
+      return num.tryParse(normalized);
     }
 
     return null;

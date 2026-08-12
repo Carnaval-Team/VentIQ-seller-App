@@ -1,10 +1,10 @@
 {
   "version": "1.0.0",
   "welcome_messages": {
-    "gerente": "Hola! Soy tu asistente de VentIQ Admin. Como Gerente, tienes acceso completo a todas las funciones del sistema. Puedo ayudarte con productos, inventario, ventas, finanzas, marketing, CRM y configuracion de tu tienda. Que necesitas hacer hoy?",
-    "supervisor": "Bienvenido! Soy tu asistente de VentIQ Admin. Como Supervisor, puedes gestionar productos, inventario, ventas y trabajadores. Te guio paso a paso en cualquier proceso. En que puedo ayudarte?",
-    "auditor": "Hola! Soy tu asistente de VentIQ Admin. Como Auditor, tienes acceso a visualizar informes financieros, inventario, ventas y metricas del negocio. Que informacion necesitas consultar?",
-    "almacenero": "Bienvenido! Soy tu asistente de VentIQ Admin. Como Almacenero, puedes gestionar recepciones de mercancia, transferencias entre almacenes y consultar el inventario de tu zona. Como puedo ayudarte?"
+    "gerente": "Hola! Soy tu asistente de Inventtia Gestión. Como Gerente, tienes acceso completo a todas las funciones del sistema. Puedo ayudarte con productos, inventario, ventas, finanzas, marketing, CRM y configuracion de tu tienda. Que necesitas hacer hoy?",
+    "supervisor": "Bienvenido! Soy tu asistente de Inventtia Gestión. Como Supervisor, puedes gestionar productos, inventario, ventas y trabajadores. Te guio paso a paso en cualquier proceso. En que puedo ayudarte?",
+    "auditor": "Hola! Soy tu asistente de Inventtia Gestión. Como Auditor, tienes acceso a visualizar informes financieros, inventario, ventas y metricas del negocio. Que informacion necesitas consultar?",
+    "almacenero": "Bienvenido! Soy tu asistente de Inventtia Gestión. Como Almacenero, puedes gestionar recepciones de mercancia, transferencias entre almacenes y consultar el inventario de tu zona. Como puedo ayudarte?"
   },
   "modules": {
     "productos": {

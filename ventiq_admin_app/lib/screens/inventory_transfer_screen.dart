@@ -17,11 +17,15 @@ class InventoryTransferScreen extends StatefulWidget {
 
 class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _autorizadoPorController = TextEditingController();
+  final _entregadoPorController = TextEditingController();
+  final _transportadoPorController = TextEditingController();
+  final _recibidoPorController = TextEditingController();
   final _observacionesController = TextEditingController();
 
-  // Static variables to persist field values across screen instances
-  static String _lastAutorizadoPor = '';
+  // Persist across screen instances
+  static String _lastEntregadoPor = '';
+  static String _lastTransportadoPor = '';
+  static String _lastRecibidoPor = '';
   static String _lastObservaciones = '';
 
   List<Map<String, dynamic>> _selectedProducts = [];
@@ -65,18 +69,24 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   }
 
   void _loadPersistedValues() {
-    _autorizadoPorController.text = _lastAutorizadoPor;
+    _entregadoPorController.text = _lastEntregadoPor;
+    _transportadoPorController.text = _lastTransportadoPor;
+    _recibidoPorController.text = _lastRecibidoPor;
     _observacionesController.text = _lastObservaciones;
   }
 
   void _savePersistedValues() {
-    _lastAutorizadoPor = _autorizadoPorController.text;
+    _lastEntregadoPor = _entregadoPorController.text;
+    _lastTransportadoPor = _transportadoPorController.text;
+    _lastRecibidoPor = _recibidoPorController.text;
     _lastObservaciones = _observacionesController.text;
   }
 
   @override
   void dispose() {
-    _autorizadoPorController.dispose();
+    _entregadoPorController.dispose();
+    _transportadoPorController.dispose();
+    _recibidoPorController.dispose();
     _observacionesController.dispose();
     _searchController.dispose();
     for (final c in _qtyControllers.values) {
@@ -356,7 +366,9 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       print('🔍 ===== DATOS DEL FORMULARIO DE TRANSFERENCIA =====');
       print('👤 Usuario UUID: $userUuid');
       print('🏪 ID Tienda: $idTienda');
-      print('📝 Autorizado por: ${_autorizadoPorController.text}');
+      print('📝 Entrega: ${_entregadoPorController.text}');
+      print('🚚 Transporta: ${_transportadoPorController.text}');
+      print('📥 Recibe: ${_recibidoPorController.text}');
       print('📋 Observaciones: ${_observacionesController.text}');
       print(
         '📍 Ubicación origen: ${_selectedSourceLocation!.displayName} (ID: ${_selectedSourceLocation!.id})',
@@ -432,7 +444,9 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       print('   - idLayoutOrigen: $sourceLayoutId');
       print('   - idLayoutDestino: $destinationLayoutId');
       print('   - productos: $productosParaEnviar');
-      print('   - autorizadoPor: ${_autorizadoPorController.text}');
+      print('   - entregadoPor: ${_entregadoPorController.text}');
+      print('   - transportadoPor: ${_transportadoPorController.text}');
+      print('   - recibidoPor: ${_recibidoPorController.text}');
       print('   - observaciones: ${_observacionesController.text}');
 
       // Update progress: Iniciando transferencia
@@ -447,7 +461,9 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         idLayoutOrigen: sourceLayoutId,
         idLayoutDestino: destinationLayoutId,
         productos: productosParaEnviar,
-        autorizadoPor: _autorizadoPorController.text,
+        entregadoPor: _entregadoPorController.text.trim(),
+        transportadoPor: _transportadoPorController.text.trim(),
+        recibidoPor: _recibidoPorController.text.trim(),
         observaciones: _observacionesController.text,
         completarOperaciones: true,
       );
@@ -594,15 +610,49 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
               'Información de Transferencia',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
+            const SizedBox(height: 8),
+            Text(
+              'Indique quién entrega en origen, quién transporta y quién recibe en destino.',
+              style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+            ),
             const SizedBox(height: 16),
             TextFormField(
-              controller: _autorizadoPorController,
+              controller: _entregadoPorController,
+              textCapitalization: TextCapitalization.words,
               decoration: const InputDecoration(
-                labelText: 'Autorizado por',
+                labelText: 'Entrega (origen) *',
+                hintText: 'Quién entrega la mercancía en el origen',
                 border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.person_outline),
               ),
-              validator:
-                  (value) => value?.isEmpty == true ? 'Campo requerido' : null,
+              validator: (value) =>
+                  value?.trim().isEmpty == true ? 'Campo requerido' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _transportadoPorController,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Transporta *',
+                hintText: 'Quién lleva la mercancía al destino',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.local_shipping_outlined),
+              ),
+              validator: (value) =>
+                  value?.trim().isEmpty == true ? 'Campo requerido' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _recibidoPorController,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Recibe (destino) *',
+                hintText: 'Quién recibe la mercancía en el destino',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.how_to_reg_outlined),
+              ),
+              validator: (value) =>
+                  value?.trim().isEmpty == true ? 'Campo requerido' : null,
             ),
             const SizedBox(height: 12),
             TextFormField(

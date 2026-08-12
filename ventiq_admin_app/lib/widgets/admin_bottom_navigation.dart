@@ -97,8 +97,8 @@ class _AdminBottomNavigationState extends State<AdminBottomNavigation> {
     );
     routes.add('/warehouse');
 
-    // Configuración - Solo Gerente
-    if (userRole == UserRole.gerente) {
+    // Configuración - Gerente y Supervisor
+    if (userRole == UserRole.gerente || userRole == UserRole.supervisor) {
       items.add(
         const BottomNavigationBarItem(
           icon: Icon(Icons.settings_outlined),

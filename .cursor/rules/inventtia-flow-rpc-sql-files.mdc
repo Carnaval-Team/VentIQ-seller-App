@@ -1,0 +1,15 @@
+---
+description: Guardar siempre los SQL de RPCs de inventtia_flow en archivo bajo docs/flow_schema
+globs: inventtia_flow/**/*
+alwaysApply: false
+---
+
+# SQL de RPCs en inventtia_flow
+
+Cuando modifiques o propongas cambios a funciones/RPC de Postgres del schema `flow`:
+
+1. **Siempre** escribe el SQL completo en un archivo bajo `inventtia_flow/docs/flow_schema/` (p. ej. `rpc admin/`, `rpc clientes/`, `migraciones/`).
+2. No te limites a pegar el SQL solo en el chat: el archivo es la fuente de verdad para revisar el estado actual.
+3. Si ya existe un archivo canónico del RPC (ej. `04_admin_listar_agendas.sql`), **actualízalo** al estado deseado actual.
+4. Si es un cambio incremental histórico, puedes además dejar un archivo numerado nuevo; el canónico debe reflejar el resultado final.
+5. Incluye encabezado breve: propósito, campos clave nuevos/cambiados, y que es idempotente (`create or replace`) si aplica.

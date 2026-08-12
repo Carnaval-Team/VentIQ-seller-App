@@ -18,12 +18,14 @@
 -- =============================================================================
 
 DROP FUNCTION IF EXISTS public.fn_reporte_ventas_con_proveedor4(BIGINT, DATE, DATE, BIGINT);
+DROP FUNCTION IF EXISTS public.fn_reporte_ventas_con_proveedor4(BIGINT, DATE, DATE, BIGINT, TEXT);
 
 CREATE OR REPLACE FUNCTION public.fn_reporte_ventas_con_proveedor4(
-    p_id_tienda  BIGINT,
-    p_fecha_desde DATE DEFAULT NULL,
-    p_fecha_hasta DATE DEFAULT NULL,
-    p_id_almacen  BIGINT DEFAULT NULL
+    p_id_tienda    BIGINT,
+    p_fecha_desde  DATE DEFAULT NULL,
+    p_fecha_hasta  DATE DEFAULT NULL,
+    p_id_almacen   BIGINT DEFAULT NULL,
+    p_filtro_fecha TEXT DEFAULT 'creacion'
 )
 RETURNS TABLE (
     id_tienda           BIGINT,
@@ -46,12 +48,18 @@ RETURNS TABLE (
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
+DECLARE
+    v_filtro_fecha TEXT := LOWER(COALESCE(NULLIF(TRIM(p_filtro_fecha), ''), 'creacion'));
 BEGIN
+    IF v_filtro_fecha NOT IN ('creacion', 'completado') THEN
+        v_filtro_fecha := 'creacion';
+    END IF;
+
     RETURN QUERY
     WITH
 
     -- -------------------------------------------------------------------------
-    -- 1. Cada línea de venta con su fecha de operación
+    -- 1. Cada línea de venta con su fecha de criterio (creación o completado)
     -- -------------------------------------------------------------------------
     ventas_detalle AS (
         SELECT
@@ -60,7 +68,10 @@ BEGIN
             ep.id_presentacion,
             ep.cantidad,
             ep.importe,                          -- importe registrado en la venta
-            o.created_at::DATE AS fecha_op
+            CASE
+                WHEN v_filtro_fecha = 'completado' THEN eo.created_at::DATE
+                ELSE o.created_at::DATE
+            END AS fecha_op
         FROM app_dat_operaciones o
         JOIN app_dat_operacion_venta  ov  ON o.id = ov.id_operacion
         JOIN app_dat_extraccion_productos ep ON o.id = ep.id_operacion
@@ -73,8 +84,20 @@ BEGIN
                 SELECT id FROM app_nom_tipo_operacion
                 WHERE LOWER(denominacion) = 'venta'
               )
-          AND (p_fecha_desde IS NULL OR o.created_at::DATE >= p_fecha_desde)
-          AND (p_fecha_hasta IS NULL OR o.created_at::DATE <= p_fecha_hasta)
+          AND (
+                p_fecha_desde IS NULL
+                OR CASE
+                    WHEN v_filtro_fecha = 'completado' THEN eo.created_at::DATE
+                    ELSE o.created_at::DATE
+                   END >= p_fecha_desde
+              )
+          AND (
+                p_fecha_hasta IS NULL
+                OR CASE
+                    WHEN v_filtro_fecha = 'completado' THEN eo.created_at::DATE
+                    ELSE o.created_at::DATE
+                   END <= p_fecha_hasta
+              )
           AND (p_id_almacen IS NULL OR ep.id_ubicacion IN (
                 SELECT id FROM app_dat_layout_almacen WHERE id_almacen = p_id_almacen
               ))
@@ -344,7 +367,7 @@ END;
 $$;
 
 -- Permisos
-GRANT EXECUTE ON FUNCTION public.fn_reporte_ventas_con_proveedor4(BIGINT, DATE, DATE, BIGINT)
+GRANT EXECUTE ON FUNCTION public.fn_reporte_ventas_con_proveedor4(BIGINT, DATE, DATE, BIGINT, TEXT)
     TO authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_reporte_ventas_con_proveedor4(BIGINT, DATE, DATE, BIGINT)
+GRANT EXECUTE ON FUNCTION public.fn_reporte_ventas_con_proveedor4(BIGINT, DATE, DATE, BIGINT, TEXT)
     TO service_role;

@@ -10,6 +10,8 @@ class EditWorkerMultiRoleScreen extends StatefulWidget {
   final List<TPVData> tpvs;
   final List<AlmacenData> almacenes;
   final VoidCallback onSaved;
+  final bool canDelete;
+  final VoidCallback? onDeleted;
 
   const EditWorkerMultiRoleScreen({
     super.key,
@@ -19,6 +21,8 @@ class EditWorkerMultiRoleScreen extends StatefulWidget {
     required this.tpvs,
     required this.almacenes,
     required this.onSaved,
+    this.canDelete = false,
+    this.onDeleted,
   });
 
   @override
@@ -115,6 +119,14 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
         ),
         backgroundColor: AppColors.primary,
         iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          if (widget.canDelete)
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: Colors.white),
+              tooltip: 'Eliminar trabajador',
+              onPressed: _isLoading ? null : _confirmDeleteWorker,
+            ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           labelColor: Colors.white,
@@ -300,7 +312,7 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
           ),
           _buildRoleCheckbox(
             'vendedor',
-            'Vendedor',
+            'Dependiente',
             Icons.point_of_sale,
             AppColors.primary,
           ),
@@ -396,7 +408,7 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Configuración de Vendedor',
+            'Configuración de Dependiente',
             style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
           ),
           const SizedBox(height: 12),
@@ -531,6 +543,60 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
     );
   }
 
+  Future<void> _confirmDeleteWorker() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Eliminar Trabajador'),
+        content: Text(
+          '¿Estás seguro de que deseas eliminar a ${widget.worker.nombreCompleto}?\n\n'
+          'Se eliminarán todos sus roles en el sistema (gerente, supervisor, '
+          'dependiente, almacenero, recursos humanos, auditor).\n\n'
+          'Esta acción no se puede deshacer.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final success = await WorkerService.deleteWorker(
+        widget.worker.trabajadorId,
+        widget.storeId,
+      );
+      if (!mounted) return;
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Trabajador eliminado exitosamente'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        widget.onDeleted?.call();
+        widget.onSaved();
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        _showError('Error al eliminar trabajador: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   Future<void> _saveChanges() async {
     // Validaciones
     if (_nombresController.text.trim().isEmpty ||
@@ -558,7 +624,7 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
 
     // Validar datos específicos de vendedor
     if (_activeRoles.contains('vendedor') && _vendedorTpvId == null) {
-      _showError('Debes seleccionar un TPV para el rol de vendedor');
+      _showError('Debes seleccionar un TPV para el rol de dependiente');
       return;
     }
 

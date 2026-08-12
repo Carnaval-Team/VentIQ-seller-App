@@ -2,6 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
+import 'session_cache_manager.dart';
+import '../utils/platform_utils.dart';
+import '../utils/web_reload.dart' as web_reload;
 
 class Store {
   final int id;
@@ -133,10 +136,10 @@ class StoreSelectorService extends ChangeNotifier {
 
         print('🏪 Tiendas cargadas: ${_userStores.length}');
       } else {
-        // RPC returned empty — user may be a Recursos Humanos role.
-        // Query app_dat_recursos_humanos directly.
-        print('⚠️ No se encontraron tiendas vía RPC, verificando rol Recursos Humanos...');
-        await _loadHRStores(user.id);
+        // RPC returned empty — user may be another admin role (supervisor, auditor, almacenero, HR).
+        // Query role tables directly.
+        print('⚠️ No se encontraron tiendas vía RPC, verificando otros roles admin...');
+        await _loadAdminRoleStores(user.id);
       }
     } catch (e) {
       print('❌ Error cargando tiendas: $e');
@@ -148,6 +151,82 @@ class StoreSelectorService extends ChangeNotifier {
         _userStores = _getMockStores();
       }
     }
+  }
+
+  /// Cargar tiendas asignadas a roles administrativos distintos de gerente
+  Future<void> _loadAdminRoleStores(String userUuid) async {
+    try {
+      // Supervisor
+      final supervisorData = await _supabase
+          .from('app_dat_supervisor')
+          .select('id_tienda, app_dat_tienda(id, denominacion, direccion, created_at)')
+          .eq('uuid', userUuid);
+
+      if (supervisorData.isNotEmpty) {
+        _userStores = _mapRoleDataToStores(supervisorData);
+        print('🏪 Tiendas Supervisor cargadas: ${_userStores.length}');
+        return;
+      }
+
+      // Auditor
+      final auditorData = await _supabase
+          .from('auditor')
+          .select('id_tienda, app_dat_tienda(id, denominacion, direccion, created_at)')
+          .eq('uuid', userUuid);
+
+      if (auditorData.isNotEmpty) {
+        _userStores = _mapRoleDataToStores(auditorData);
+        print('🏪 Tiendas Auditor cargadas: ${_userStores.length}');
+        return;
+      }
+
+      // Almacenero
+      final almaceneroData = await _supabase
+          .from('app_dat_almacenero')
+          .select('id_almacen, app_dat_almacen(id_tienda, app_dat_tienda(id, denominacion, direccion, created_at))')
+          .eq('uuid', userUuid);
+
+      if (almaceneroData.isNotEmpty) {
+        final stores = <Store>[];
+        for (final record in almaceneroData) {
+          final almacen = record['app_dat_almacen'] as Map<String, dynamic>?;
+          final tienda = almacen?['app_dat_tienda'] as Map<String, dynamic>?;
+          if (tienda != null) {
+            stores.add(_storeFromTiendaMap(tienda));
+          }
+        }
+        _userStores = stores;
+        print('🏪 Tiendas Almacenero cargadas: ${_userStores.length}');
+        return;
+      }
+
+      // Recursos Humanos
+      await _loadHRStores(userUuid);
+    } catch (e) {
+      print('❌ Error cargando tiendas por rol admin: $e');
+      _userStores = [];
+    }
+  }
+
+  /// Helper para convertir registros de rol a lista de Store
+  List<Store> _mapRoleDataToStores(List<dynamic> roleData) {
+    return roleData
+        .where((r) => r['app_dat_tienda'] != null)
+        .map((r) => _storeFromTiendaMap(r['app_dat_tienda'] as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Helper para construir un Store desde un mapa de app_dat_tienda
+  Store _storeFromTiendaMap(Map<String, dynamic> tienda) {
+    return Store(
+      id: tienda['id'] as int,
+      denominacion: tienda['denominacion'] as String,
+      direccion: tienda['direccion'] as String?,
+      ubicacion: null,
+      createdAt: tienda['created_at'] != null
+          ? DateTime.parse(tienda['created_at'] as String)
+          : DateTime.now(),
+    );
   }
 
   /// Cargar tienda seleccionada desde preferencias
@@ -212,14 +291,36 @@ class StoreSelectorService extends ChangeNotifier {
 
     _selectedStore = store;
 
-    // Guardar en preferencias
+    // Guardar en preferencias ANTES de invalidar cachés / recargar, para que
+    // al re-resolver el rol y (en Web) al recargar la página, la tienda nueva
+    // ya esté persistida.
     await _userPreferencesService.updateSelectedStore(store.id);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_selectedStoreKey, store.id);
 
+    // Invalidar los cachés en memoria que dependen de la tienda (rol,
+    // suscripción, consignaciones). Sin esto, los singletons muestran datos
+    // de la tienda anterior.
+    await SessionCacheManager.clearForStoreSwitch();
+
     print('🏪 Tienda cambiada a: ${store.denominacion} (ID: ${store.id})');
 
     notifyListeners();
+  }
+
+  /// Recarga la página en Web para descartar el estado en memoria de las
+  /// pantallas ya montadas (listas, controllers) que sobreviven al cambio de
+  /// tienda y seguirían mostrando datos de la tienda anterior.
+  ///
+  /// DEBE llamarse al FINAL del flujo de cambio de tienda, después de haber
+  /// persistido todo en preferencias, porque tras esta llamada el navegador
+  /// descarga la página y el código posterior podría no ejecutarse.
+  /// En móvil/desktop es un no-op (allí se confía en notifyListeners + la
+  /// invalidación de cachés).
+  void reloadAfterStoreSwitchIfWeb() {
+    if (PlatformUtils.isWeb) {
+      web_reload.reloadPage();
+    }
   }
 
   /// Obtener ID de la tienda seleccionada (compatibilidad con código existente)

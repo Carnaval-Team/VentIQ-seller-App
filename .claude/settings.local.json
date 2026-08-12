@@ -24,7 +24,7 @@
       "Bash(Select-Object -First 40)"
     ]
   },
-  "disabledMcpjsonServers": [
+  "enabledMcpjsonServers": [
     "supabase"
   ]
 }

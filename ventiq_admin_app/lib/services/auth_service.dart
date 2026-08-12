@@ -1,11 +1,15 @@
+import 'dart:async';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
 import 'permissions_service.dart';
 import 'subscription_guard_service.dart';
 import 'user_preferences_service.dart';
+import 'native_session_vault_service.dart';
 
 class AuthService {
   static final AuthService _instance = AuthService._internal();
+  static StreamSubscription<AuthState>? _sessionSubscription;
   factory AuthService() => _instance;
   AuthService._internal();
 
@@ -17,6 +21,17 @@ class AuthService {
       url: SupabaseConfig.supabaseUrl,
       anonKey: SupabaseConfig.supabaseAnonKey,
     );
+    await NativeSessionVaultService.restoreSupabaseSession();
+    await PermissionsService().initializeSessionPermissions();
+    _sessionSubscription ??= Supabase.instance.client.auth.onAuthStateChange
+        .listen((state) {
+          if (state.event == AuthChangeEvent.signedOut) {
+            NativeSessionVaultService.clear();
+            PermissionsService().clearAllCache();
+          } else {
+            NativeSessionVaultService.saveSession(state.session);
+          }
+        });
   }
 
   // Sign in with email and password
@@ -51,6 +66,8 @@ class AuthService {
         print('⚠️ Supabase auth signOut warning: $authError');
         // Continuamos con la limpieza local sin rethrow
       }
+
+      await NativeSessionVaultService.clear();
 
       // Limpiar TODO el caché de permisos (incluyendo roles por tienda)
       PermissionsService().clearAllCache();

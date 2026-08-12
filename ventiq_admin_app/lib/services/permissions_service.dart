@@ -36,6 +36,37 @@ class PermissionsService {
     clearCache();
   }
 
+  Future<void> initializeSessionPermissions() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) {
+      clearAllCache();
+      return;
+    }
+
+    if (_cachedUserId == user.id && _cachedRolesByStore != null) return;
+
+    clearAllCache();
+    _cachedUserId = user.id;
+    final storedUserId = await _userPrefs.getUserId();
+    if (storedUserId == user.id) {
+      final storedRoles = await _userPrefs.getUserRolesByStore();
+      if (storedRoles.isNotEmpty) {
+        _cachedRolesByStore = storedRoles.map(
+          (storeId, roleName) =>
+              MapEntry(storeId, _convertStringToUserRole(roleName)),
+        );
+        final currentStoreId = await _userPrefs.getIdTienda();
+        if (currentStoreId != null) {
+          _cachedRole = _cachedRolesByStore![currentStoreId];
+          _cachedRoleStoreId = currentStoreId;
+        }
+        return;
+      }
+    }
+
+    await getUserRolesByStore();
+  }
+
   /// Obtener el rol del usuario actual
   /// Primero intenta obtener del caché, luego de preferencias guardadas, y finalmente de la BD
   Future<UserRole> getUserRole() async {
@@ -80,115 +111,47 @@ class PermissionsService {
       _cachedUserId = user.id;
       print('🔍 Verificando roles para UUID: ${user.id}');
 
-      // Verificar en orden de jerarquía
-      // 1. Gerente
-      final gerenteData =
-          await _supabase
-              .from('app_dat_gerente')
-              .select('id')
-              .eq('uuid', user.id)
-              .maybeSingle();
+      // Obtener todos los roles por tienda para soportar usuarios con múltiples roles/tiendas
+      final rolesByStore = await getUserRolesByStore();
 
-      print('  • Gerente: ${gerenteData != null ? "✅ Sí" : "❌ No"}');
-      if (gerenteData != null) {
-        print('✅ ROL DETECTADO Y GUARDADO EN CACHÉ: GERENTE');
-        _cachedRole = UserRole.gerente;
+      if (rolesByStore.isEmpty) {
+        print('❌ No se encontró ningún rol para este usuario');
+        _cachedRole = UserRole.none;
         _cachedRoleStoreId = currentStoreId;
-        return UserRole.gerente;
+        return UserRole.none;
       }
 
-      // 2. Supervisor
-      final supervisorData =
-          await _supabase
-              .from('app_dat_supervisor')
-              .select('id')
-              .eq('uuid', user.id)
-              .maybeSingle();
+      // Si hay tienda actual, usar ese rol; de lo contrario, usar el rol de mayor jerarquía
+      final role =
+          currentStoreId != null && rolesByStore.containsKey(currentStoreId)
+              ? rolesByStore[currentStoreId]!
+              : _getHighestRole(rolesByStore);
 
-      print('  • Supervisor: ${supervisorData != null ? "✅ Sí" : "❌ No"}');
-      if (supervisorData != null) {
-        print('✅ ROL DETECTADO Y GUARDADO EN CACHÉ: SUPERVISOR');
-        _cachedRole = UserRole.supervisor;
-        _cachedRoleStoreId = currentStoreId;
-        return UserRole.supervisor;
-      }
-
-      // 3. Auditor
-      final auditorData =
-          await _supabase
-              .from('auditor')
-              .select('id')
-              .eq('uuid', user.id)
-              .maybeSingle();
-
-      print('  • Auditor: ${auditorData != null ? "✅ Sí" : "❌ No"}');
-      if (auditorData != null) {
-        print('✅ ROL DETECTADO Y GUARDADO EN CACHÉ: AUDITOR');
-        _cachedRole = UserRole.auditor;
-        _cachedRoleStoreId = currentStoreId;
-        return UserRole.auditor;
-      }
-
-      // 4. Almacenero
-      final almaceneroData =
-          await _supabase
-              .from('app_dat_almacenero')
-              .select('id, id_almacen')
-              .eq('uuid', user.id)
-              .maybeSingle();
-
-      print('  • Almacenero: ${almaceneroData != null ? "✅ Sí" : "❌ No"}');
-      if (almaceneroData != null) {
-        print(
-          '✅ ROL DETECTADO Y GUARDADO EN CACHÉ: ALMACENERO (Almacén: ${almaceneroData['id_almacen']})',
-        );
-        _cachedRole = UserRole.almacenero;
-        _cachedRoleStoreId = currentStoreId;
-        _cachedWarehouseId = almaceneroData['id_almacen'] as int?;
-        return UserRole.almacenero;
-      }
-
-      // 5. Vendedor
-      final vendedorData =
-          await _supabase
-              .from('app_dat_vendedor')
-              .select('id')
-              .eq('uuid', user.id)
-              .maybeSingle();
-
-      print('  • Vendedor: ${vendedorData != null ? "✅ Sí" : "❌ No"}');
-      if (vendedorData != null) {
-        print('✅ ROL DETECTADO Y GUARDADO EN CACHÉ: VENDEDOR');
-        _cachedRole = UserRole.vendedor;
-        _cachedRoleStoreId = currentStoreId;
-        return UserRole.vendedor;
-      }
-
-      // 6. Recursos Humanos
-      final rrhhData =
-          await _supabase
-              .from('app_dat_recursos_humanos')
-              .select('id')
-              .eq('uuid', user.id)
-              .maybeSingle();
-
-      print('  • Recursos Humanos: ${rrhhData != null ? "✅ Sí" : "❌ No"}');
-      if (rrhhData != null) {
-        print('✅ ROL DETECTADO Y GUARDADO EN CACHÉ: RECURSOS HUMANOS');
-        _cachedRole = UserRole.recursosHumanos;
-        _cachedRoleStoreId = currentStoreId;
-        return UserRole.recursosHumanos;
-      }
-
-      // Sin rol
-      print('❌ No se encontró ningún rol para este usuario');
-      _cachedRole = UserRole.none;
+      print('✅ ROL DETECTADO Y GUARDADO EN CACHÉ: ${getRoleName(role)}');
+      _cachedRole = role;
       _cachedRoleStoreId = currentStoreId;
-      return UserRole.none;
+      return role;
     } catch (e) {
       print('❌ Error al obtener rol del usuario: $e');
       return UserRole.none;
     }
+  }
+
+  /// Retorna el rol de mayor jerarquía a partir de un mapa de roles por tienda
+  UserRole _getHighestRole(Map<int, UserRole> rolesByStore) {
+    final priority = {
+      UserRole.gerente: 6,
+      UserRole.supervisor: 5,
+      UserRole.auditor: 4,
+      UserRole.almacenero: 3,
+      UserRole.recursosHumanos: 2,
+      UserRole.vendedor: 1,
+      UserRole.none: 0,
+    };
+
+    return rolesByStore.values.reduce(
+      (a, b) => (priority[a] ?? 0) >= (priority[b] ?? 0) ? a : b,
+    );
   }
 
   /// Convertir string de rol a UserRole enum
@@ -214,19 +177,31 @@ class PermissionsService {
   /// Obtener todos los roles del usuario para cada tienda
   /// Retorna: Map<idTienda, UserRole>
   Future<Map<int, UserRole>> getUserRolesByStore() async {
-    if (_cachedRolesByStore != null) {
+    final user = _supabase.auth.currentUser;
+    if (user == null) {
+      print('❌ No hay usuario autenticado');
+      return {};
+    }
+
+    if (_cachedUserId == user.id && _cachedRolesByStore != null) {
       print('💾 Usando roles por tienda en caché: $_cachedRolesByStore');
       return _cachedRolesByStore!;
     }
 
     try {
-      final user = _supabase.auth.currentUser;
-      if (user == null) {
-        print('❌ No hay usuario autenticado');
-        return {};
+      _cachedUserId = user.id;
+      final storedUserId = await _userPrefs.getUserId();
+      if (storedUserId == user.id) {
+        final storedRoles = await _userPrefs.getUserRolesByStore();
+        if (storedRoles.isNotEmpty) {
+          _cachedRolesByStore = storedRoles.map(
+            (storeId, roleName) =>
+                MapEntry(storeId, _convertStringToUserRole(roleName)),
+          );
+          return _cachedRolesByStore!;
+        }
       }
 
-      _cachedUserId = user.id;
       final rolesByStore = <int, UserRole>{};
       print('🔍 Verificando roles por tienda para UUID: ${user.id}');
 
@@ -328,11 +303,8 @@ class PermissionsService {
   /// Si no está pero el usuario tiene un solo rol, retorna ese rol
   /// Si no está y hay múltiples roles, retorna none
   Future<UserRole> getUserRoleForStore(int storeId) async {
-    // Primero intentar con roles guardados en preferencias (más rápido y consistente)
-    final storedRoleName = await _userPrefs.getUserRoleForStore(storeId);
-    if (storedRoleName != null && storedRoleName.isNotEmpty) {
-      return _convertStringToUserRole(storedRoleName);
-    }
+    final cachedRole = _cachedRolesByStore?[storeId];
+    if (cachedRole != null) return cachedRole;
 
     final rolesByStore = await getUserRolesByStore();
 
@@ -497,7 +469,7 @@ class PermissionsService {
       case UserRole.almacenero:
         return 'Almacenero';
       case UserRole.vendedor:
-        return 'Vendedor';
+        return 'Dependiente';
       case UserRole.recursosHumanos:
         return 'Recursos Humanos';
       case UserRole.none:
@@ -532,7 +504,7 @@ class PermissionsService {
       UserRole.auditor,
       UserRole.almacenero,
     ],
-    '/add-product': [UserRole.gerente],
+    '/add-product': [UserRole.gerente, UserRole.supervisor],
     '/categories': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
     '/tpv-prices': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
 
@@ -544,9 +516,17 @@ class PermissionsService {
       UserRole.auditor,
       UserRole.almacenero,
     ],
-    '/inventory-reception': [UserRole.gerente, UserRole.almacenero],
+    '/inventory-reception': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.almacenero,
+    ],
     '/inventory-extraction': [UserRole.gerente],
-    '/inventory-transfer': [UserRole.gerente, UserRole.almacenero],
+    '/inventory-transfer': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.almacenero,
+    ],
     '/inventory-adjustment': [UserRole.gerente, UserRole.supervisor],
     '/inventory-history': [
       UserRole.gerente,
@@ -609,7 +589,12 @@ class PermissionsService {
     ],
 
     // Personal
-    '/workers': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
+    '/workers': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.auditor,
+      UserRole.recursosHumanos,
+    ],
     '/tpv-management': [
       UserRole.gerente,
       UserRole.supervisor,
@@ -621,15 +606,35 @@ class PermissionsService {
       UserRole.auditor,
     ],
 
-    // Recursos Humanos (Gerente y Recursos Humanos tienen acceso)
-    '/hr-dashboard': [UserRole.gerente, UserRole.recursosHumanos],
-    '/hr-checkin': [UserRole.gerente, UserRole.recursosHumanos],
-    '/hr-checkout': [UserRole.gerente, UserRole.recursosHumanos],
-    '/hr-salary-report': [UserRole.gerente, UserRole.recursosHumanos],
-    '/hr-worker-config': [UserRole.gerente, UserRole.recursosHumanos],
+    // Recursos Humanos (Gerente, Supervisor y Recursos Humanos)
+    '/hr-dashboard': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
+    '/hr-checkin': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
+    '/hr-checkout': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
+    '/hr-salary-report': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
+    '/hr-worker-config': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
 
-    // Configuración (Solo Gerente)
-    '/settings': [UserRole.gerente],
+    // Configuración (Gerente y Supervisor)
+    '/settings': [UserRole.gerente, UserRole.supervisor],
     '/excel-import': [UserRole.gerente],
 
     // Consignaciones
@@ -650,8 +655,8 @@ class PermissionsService {
   // =====================================================
   static const Map<String, List<UserRole>> _actionPermissions = {
     // Productos
-    'product.create': [UserRole.gerente],
-    'product.edit': [UserRole.gerente],
+    'product.create': [UserRole.gerente, UserRole.supervisor],
+    'product.edit': [UserRole.gerente, UserRole.supervisor],
     'product.delete': [UserRole.gerente],
     'product.view': [
       UserRole.gerente,
@@ -661,9 +666,17 @@ class PermissionsService {
     ],
 
     // Inventario
-    'inventory.create_reception': [UserRole.gerente, UserRole.almacenero],
+    'inventory.create_reception': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.almacenero,
+    ],
     'inventory.create_extraction': [UserRole.gerente],
-    'inventory.create_transfer': [UserRole.gerente, UserRole.almacenero],
+    'inventory.create_transfer': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.almacenero,
+    ],
     'inventory.create_adjustment': [UserRole.gerente],
     'inventory.approve_adjustment': [UserRole.gerente, UserRole.supervisor],
     'inventory.view': [
@@ -685,13 +698,31 @@ class PermissionsService {
     ],
 
     // Trabajadores
-    'worker.create': [UserRole.gerente],
-    'worker.edit': [UserRole.gerente],
-    'worker.delete': [UserRole.gerente],
-    'worker.view': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
+    'worker.create': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
+    'worker.edit': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
+    'worker.delete': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
+    'worker.view': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.auditor,
+      UserRole.recursosHumanos,
+    ],
 
     // Ventas
     'sales.view': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
+    'sales.view_realtime': [UserRole.gerente, UserRole.auditor],
     'sales.modify': [UserRole.gerente],
 
     // Proveedores
@@ -705,8 +736,8 @@ class PermissionsService {
     'financial.edit': [UserRole.gerente],
 
     // Configuración
-    'settings.view': [UserRole.gerente],
-    'settings.edit': [UserRole.gerente],
+    'settings.view': [UserRole.gerente, UserRole.supervisor],
+    'settings.edit': [UserRole.gerente, UserRole.supervisor],
 
     // TPVs
     'tpv.create': [UserRole.gerente, UserRole.supervisor],
@@ -752,13 +783,41 @@ class PermissionsService {
     'printers.edit': [UserRole.gerente],
 
     // Recursos Humanos
-    'hr.checkin': [UserRole.gerente, UserRole.recursosHumanos],
-    'hr.checkout': [UserRole.gerente, UserRole.recursosHumanos],
-    'hr.salary_report': [UserRole.gerente, UserRole.recursosHumanos],
-    'hr.worker_config': [UserRole.gerente, UserRole.recursosHumanos],
-    'hr.dashboard': [UserRole.gerente, UserRole.recursosHumanos],
+    'hr.checkin': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
+    'hr.checkout': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
+    'hr.salary_report': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
+    'hr.worker_config': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
+    'hr.dashboard': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.recursosHumanos,
+    ],
   };
 }
 
 /// Enum de roles de usuario
-enum UserRole { gerente, supervisor, auditor, almacenero, vendedor, recursosHumanos, none }
+enum UserRole {
+  gerente,
+  supervisor,
+  auditor,
+  almacenero,
+  vendedor,
+  recursosHumanos,
+  none,
+}

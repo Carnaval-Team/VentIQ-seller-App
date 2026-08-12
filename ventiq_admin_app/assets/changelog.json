@@ -1,9 +1,205 @@
 {
-  "current_version": "2.2.9",
-  "build": 229,
+  "current_version": "2.5.0",
+  "build": 250,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.5.0",
+      "date": "2026-08-07",
+      "title": "📅 Recursos Humanos: control de días de trabajo",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Cada entrada cuenta como un día, sin importar las horas",
+          "description": "A partir de ahora, cada vez que registras la entrada de un trabajador se suma automáticamente un día trabajado. Los días y las horas son independientes: el reporte muestra ambos por separado y nunca se calculan días dividiendo las horas entre 24."
+        },
+        {
+          "type": "feature",
+          "title": "Nuevo historial completo de asistencia",
+          "description": "Accede al historial de todos los días trabajados en cualquier período desde el menú de Recursos Humanos. Verás el nombre del trabajador, su rol, la hora de entrada y salida, las horas y el salario de cada registro, con buscador y selector de fechas."
+        },
+        {
+          "type": "feature",
+          "title": "Elimina un día de trabajo si el trabajador se fue antes",
+          "description": "Si necesitas borrar un día registrado por error o porque el trabajador se retiró, ahora puedes eliminarlo directamente desde el historial. Al eliminarlo, se descuenta del reporte de salarios de ese período automáticamente."
+        },
+        {
+          "type": "improvement",
+          "title": "Doble confirmación para evitar borrados accidentales",
+          "description": "Eliminar un día de trabajo requiere dos pasos: primero escribir la palabra ELIMINAR y luego confirmar con Sí. Así se evitan borrados por accidente y cada eliminación es una decisión consciente."
+        },
+        {
+          "type": "improvement",
+          "title": "Reporte de salarios con días trabajados corregido",
+          "description": "La columna Días del reporte de salarios ahora refleja exactamente la cantidad de entradas registradas, en línea con el nuevo comportamiento de días independientes."
+        }
+      ]
+    },
+    {
+      "version": "2.4.0",
+      "date": "2026-07-31",
+      "title": "🛵 Repartidores con nombre y teléfono en las órdenes",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Ya no verás solo un número de repartidor",
+          "description": "En el listado de órdenes Carnaval cada orden asignada muestra el nombre del repartidor y su teléfono, en lugar del código interno. Así sabes de un vistazo a quién llamar si necesitas ubicar un pedido."
+        },
+        {
+          "type": "improvement",
+          "title": "Datos del repartidor en el detalle de la orden",
+          "description": "Al abrir una orden verás una sección de Repartidor con su nombre y teléfono listos para contactarlo, incluso en órdenes antiguas de repartidores que ya no están activos."
+        },
+        {
+          "type": "improvement",
+          "title": "Listado más rápido y mejor presentado",
+          "description": "Los datos de los repartidores se cargan una sola vez al entrar a la pantalla, por lo que el listado abre sin demoras. Además el nombre y el teléfono se muestran alineados a la derecha, junto a su ícono y con una letra más legible."
+        }
+      ]
+    },
+    {
+      "version": "2.3.9",
+      "date": "2026-07-30",
+      "title": "💳 Pagos faltantes y órdenes Carnaval más precisas",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Registrar pago faltante en operaciones de venta",
+          "description": "Si una venta quedó sin registro en el desglose de pagos, gerentes y supervisores pueden crearlo desde el detalle de la operación: eligen el medio de pago, confirman el monto y guardan la referencia."
+        },
+        {
+          "type": "fix",
+          "title": "Estado correcto en órdenes Carnaval",
+          "description": "Se corrigió un error al enriquecer la dirección de la orden que podía sobrescribir el ID de la venta y mostrar un estado incorrecto (por ejemplo, Pendiente de Pago en lugar de Cancelado)."
+        },
+        {
+          "type": "improvement",
+          "title": "Identidad Inventtia Gestión",
+          "description": "Actualizamos el nombre visible del producto a Inventtia Gestión en títulos, manifiestos y textos de la aplicación."
+        }
+      ]
+    },
+    {
+      "version": "2.3.5",
+      "date": "2026-07-24",
+      "title": "👥 Recursos Humanos ya puede dar de alta trabajadores",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Agrega trabajadores desde Recursos Humanos",
+          "description": "En Configurar Trabajador ahora encontrarás un botón para agregar un nuevo trabajador con su nombre, salario por hora y rol, sin salir del módulo de Recursos Humanos."
+        },
+        {
+          "type": "improvement",
+          "title": "Alta sencilla, sin crear cuenta de acceso",
+          "description": "El trabajador se registra listo para el control de asistencia y salarios. La creación de su usuario para entrar a la app sigue reservada al gerente o supervisor, así cada rol mantiene sus responsabilidades."
+        }
+      ]
+    },
+    {
+      "version": "2.3.4",
+      "date": "2026-07-23",
+      "title": "📷 Control de fotos y ubicaciones más visibles",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Solicita foto al crear una operación",
+          "description": "En Configuración Global puedes decidir si la Caja debe exigir una foto al crear cada operación."
+        },
+        {
+          "type": "feature",
+          "title": "Consulta la foto dentro del detalle de operación",
+          "description": "Las operaciones con foto ahora la muestran directamente en su detalle, con opción de ampliarla."
+        },
+        {
+          "type": "improvement",
+          "title": "Provincia y municipio visibles en órdenes Carnaval",
+          "description": "El listado de órdenes Carnaval ahora muestra la provincia y el municipio obtenidos desde la misma dirección que se consulta en el detalle de cada orden."
+        }
+      ]
+    },
+    {
+      "version": "2.3.3", 
+      "date": "2026-07-13",
+      "title": "Cambios menores de permisos",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Supervisor: recepciones y transferencias",
+          "description": "El rol supervisor ahora puede registrar recepciones de productos y transferencias entre almacenes desde Inventario."
+        },
+        {
+          "type": "improvement",
+          "title": "Supervisor: gestión de trabajadores",
+          "description": "Los supervisores pueden crear, editar y eliminar trabajadores, además de consultarlos."
+        },
+        {
+          "type": "improvement",
+          "title": "Supervisor: configuración Global y Carnaval App",
+          "description": "Se habilita el acceso a Configuración para el supervisor, con las pestañas Global y Carnaval App."
+        },
+        {
+          "type": "improvement",
+          "title": "Supervisor: módulo de Recursos Humanos",
+          "description": "El supervisor puede entrar al módulo de RRHH (dashboard, check-in, check-out, reporte de salarios y configuración de trabajadores)."
+        }
+      ]
+    },
+    {
+      "version": "2.3.1",
+      "date": "2026-07-08",
+      "title": "📊 Ventas, proveedores y filtros de precios más precisos",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Filtro por fecha de creación o de completado en Tiempo Real",
+          "description": "En el tab Tiempo Real de Ventas, los filtros ahora vienen en un panel expandible. Además de elegir el rango de fechas, puedes decidir si las ventas se calculan por la fecha de creación de la orden o por la fecha en que se completó según el historial de estados."
+        },
+        {
+          "type": "feature",
+          "title": "Detalle de proveedor con órdenes por producto",
+          "description": "Al ver el detalle de un proveedor ves cada producto con su cantidad, monto y cuántas órdenes lo incluyen. Al expandir un producto aparecen el ID de la orden, fechas de creación y completado, cantidad por orden y nombre del cliente."
+        },
+        {
+          "type": "feature",
+          "title": "Exportación PDF y Excel del detalle de proveedor con órdenes",
+          "description": "Al exportar el detalle de un proveedor, el archivo incluye el resumen de productos y, por cada producto, el desglose completo de órdenes (ID, fechas, cantidad y cliente). En Excel también hay una hoja dedicada «Órdenes»."
+        },
+        {
+          "type": "feature",
+          "title": "Filtros de stock y % de ganancia en precios",
+          "description": "En la pantalla de precios de productos puedes filtrar por Con stock / Sin stock y por margen de ganancia (mayor que o menor que un porcentaje), combinables con los filtros que ya existían."
+        },
+        {
+          "type": "improvement",
+          "title": "Productos con precio de venta 0 admitidos",
+          "description": "Ya puedes registrar y mantener productos con precio de venta 0 en CUP y USD, útil para cortesía, muestras o productos promocionales."
+        }
+      ]
+    },
+    {
+      "version": "2.3.0",
+      "date": "2026-07-07",
+      "title": "🧮 Costo automático por ingredientes en gestión de precios",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Costo calculado automáticamente para elaborados y servicios",
+          "description": "Los productos elaborados y servicios ahora calculan su precio de costo sumando el costo de cada ingrediente de su receta. El cálculo usa el precio promedio de la presentación base de cada ingrediente y aplica conversiones de unidades cuando corresponde, igual que el detalle del producto."
+        },
+        {
+          "type": "improvement",
+          "title": "Pantalla de precios optimizada con un solo RPC",
+          "description": "La carga de la pantalla de gestión de precios ahora usa un único procedimiento en base de datos que devuelve productos, presentaciones, stock, precios de venta y desglose de costos en una sola consulta, reduciendo significativamente los tiempos de carga."
+        },
+        {
+          "type": "improvement",
+          "title": "Panel de filtros desplegable",
+          "description": "Los filtros avanzados de la pantalla de precios ahora se muestran en un panel colapsable. Permanecen ocultos por defecto y se abren con un toque en el botón \"Filtros\". Cuando hay filtros activos aparece un indicador con el número de filtros aplicados."
+        }
+      ]
+    },
     {
       "version": "2.2.9",
       "date": "2026-07-03",

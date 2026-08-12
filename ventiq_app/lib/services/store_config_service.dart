@@ -250,19 +250,14 @@ class StoreConfigService {
   /// Devuelve true si la operación terminó correctamente.
   static Future<bool> setModoRestaurante(int storeId, bool enabled) async {
     try {
-      print(
-        '🔧 Actualizando modo_restaurante=$enabled para tienda $storeId',
-      );
+      print('🔧 Actualizando modo_restaurante=$enabled para tienda $storeId');
 
       // Upsert para crear el registro si no existe
-      await _supabase.from('app_dat_configuracion_tienda').upsert(
-        {
-          'id_tienda': storeId,
-          'modo_restaurante': enabled,
-          'updated_at': DateTime.now().toIso8601String(),
-        },
-        onConflict: 'id_tienda',
-      );
+      await _supabase.from('app_dat_configuracion_tienda').upsert({
+        'id_tienda': storeId,
+        'modo_restaurante': enabled,
+        'updated_at': DateTime.now().toIso8601String(),
+      }, onConflict: 'id_tienda');
 
       // Refrescar cache
       final config = await getStoreConfigFromSupabase(storeId);
@@ -310,12 +305,25 @@ class StoreConfigService {
     }
   }
 
+  /// Obtiene el valor de solicitar_imagen_operacion.
+  static Future<bool> getSolicitarImagenOperacion(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config?['solicitar_imagen_operacion'] == true;
+    } catch (e) {
+      print('❌ Error al obtener solicitar_imagen_operacion: $e');
+      return false;
+    }
+  }
+
   /// Obtiene el valor de allow_seller_make_order_modifications
   static Future<bool> getAllowSellerMakeOrderModifications(int storeId) async {
     try {
       final config = await getStoreConfig(storeId);
       final value = config?['allow_seller_make_order_modifications'] ?? false;
-      print('✅ allow_seller_make_order_modifications: $value para tienda $storeId');
+      print(
+        '✅ allow_seller_make_order_modifications: $value para tienda $storeId',
+      );
       return value;
     } catch (e) {
       print('❌ Error al obtener allow_seller_make_order_modifications: $e');

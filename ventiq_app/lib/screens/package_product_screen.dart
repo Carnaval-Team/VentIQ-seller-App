@@ -71,7 +71,8 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   String? _packagePhotoName;
   String? _packagePhotoMime;
   // Fotos adicionales del paquete (además de la principal).
-  final List<({Uint8List bytes, String name, String? mime})> _packageExtraPhotos = [];
+  final List<({Uint8List bytes, String name, String? mime})>
+  _packageExtraPhotos = [];
   final ImagePicker _imagePicker = ImagePicker();
   bool _loadingPackageNumber = false;
 
@@ -166,35 +167,40 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 28),
-            const SizedBox(width: 8),
-            const Text('Turno Requerido'),
-          ],
-        ),
-        content: const Text(
-          'Debe tener un turno abierto para enviar un paquete. Por favor, vaya a la sección de Apertura para abrir un turno.',
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pushReplacementNamed(context, '/apertura');
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: _primary),
-            child: const Text('Ir a Apertura'),
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(
+                  Icons.warning_amber_rounded,
+                  color: Colors.orange,
+                  size: 28,
+                ),
+                const SizedBox(width: 8),
+                const Text('Turno Requerido'),
+              ],
+            ),
+            content: const Text(
+              'Debe tener un turno abierto para enviar un paquete. Por favor, vaya a la sección de Apertura para abrir un turno.',
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.pushReplacementNamed(context, '/apertura');
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: _primary),
+                child: const Text('Ir a Apertura'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.pop(context);
+                },
+                child: const Text('Volver'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pop(context);
-            },
-            child: const Text('Volver'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -237,7 +243,9 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   }
 
   Future<void> _loadSenderStates(String countryCode) async {
-    print('🗺️ [GEO] → Solicitando estados (remitente) para countryCode=$countryCode');
+    print(
+      '🗺️ [GEO] → Solicitando estados (remitente) para countryCode=$countryCode',
+    );
     setState(() {
       _sLoadingStates = true;
       _sStates = [];
@@ -265,7 +273,9 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   }
 
   Future<void> _loadSenderCities(String countryCode, String adminCode) async {
-    print('🏙️ [GEO] → Solicitando ciudades (remitente) country=$countryCode admin=$adminCode');
+    print(
+      '🏙️ [GEO] → Solicitando ciudades (remitente) country=$countryCode admin=$adminCode',
+    );
     setState(() {
       _sLoadingCities = true;
       _sCities = [];
@@ -293,7 +303,9 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   // ───────────────── GEONAMES (DESTINATARIO) ─────────────────
 
   Future<void> _loadReceiverStates(String countryCode) async {
-    print('🗺️ [GEO] → Solicitando estados (destinatario) para countryCode=$countryCode');
+    print(
+      '🗺️ [GEO] → Solicitando estados (destinatario) para countryCode=$countryCode',
+    );
     setState(() {
       _dLoadingStates = true;
       _dStates = [];
@@ -321,7 +333,9 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   }
 
   Future<void> _loadReceiverCities(String countryCode, String adminCode) async {
-    print('🏙️ [GEO] → Solicitando ciudades (destinatario) country=$countryCode admin=$adminCode');
+    print(
+      '🏙️ [GEO] → Solicitando ciudades (destinatario) country=$countryCode admin=$adminCode',
+    );
     setState(() {
       _dLoadingCities = true;
       _dCities = [];
@@ -448,7 +462,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
 
     // Si aún no se eligió método de pago, usar la promo "para display"
     // (sin filtrar por medio de pago) para mostrar el descuento potencial.
-    final qtyInt = _quantity.ceil();
+    final qtyInt = _quantity;
     final promo =
         paymentId == null
             ? PromotionRules.pickPromotionForDisplay(
@@ -851,20 +865,21 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
               hintText: 'P-001',
               labelStyle: const TextStyle(fontSize: 13),
               prefixIcon: const Icon(Icons.tag, size: 18),
-              suffixIcon: _loadingPackageNumber
-                  ? const Padding(
-                      padding: EdgeInsets.all(12),
-                      child: SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+              suffixIcon:
+                  _loadingPackageNumber
+                      ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                      : IconButton(
+                        icon: const Icon(Icons.refresh, size: 18),
+                        tooltip: 'Obtener nuevo correlativo',
+                        onPressed: _loadPackageNumber,
                       ),
-                    )
-                  : IconButton(
-                      icon: const Icon(Icons.refresh, size: 18),
-                      tooltip: 'Obtener nuevo correlativo',
-                      onPressed: _loadPackageNumber,
-                    ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
@@ -1016,10 +1031,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
               style: OutlinedButton.styleFrom(
                 foregroundColor: _primary,
                 side: const BorderSide(color: _primary),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 6,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 minimumSize: const Size(0, 32),
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
@@ -1053,9 +1065,8 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                       right: -4,
                       child: InkWell(
                         onTap:
-                            () => setState(
-                              () => _packageExtraPhotos.removeAt(i),
-                            ),
+                            () =>
+                                setState(() => _packageExtraPhotos.removeAt(i)),
                         child: Container(
                           decoration: BoxDecoration(
                             color: Colors.red.shade600,
@@ -1086,34 +1097,41 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2),
-              ),
+      builder:
+          (ctx) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 8),
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  leading: const Icon(
+                    Icons.photo_camera_outlined,
+                    color: _primary,
+                  ),
+                  title: const Text('Tomar foto con la cámara'),
+                  onTap: () => Navigator.pop(ctx, ImageSource.camera),
+                ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.photo_library_outlined,
+                    color: _primary,
+                  ),
+                  title: const Text('Elegir de la galería'),
+                  onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+                ),
+                const SizedBox(height: 8),
+              ],
             ),
-            const SizedBox(height: 8),
-            ListTile(
-              leading: const Icon(Icons.photo_camera_outlined, color: _primary),
-              title: const Text('Tomar foto con la cámara'),
-              onTap: () => Navigator.pop(ctx, ImageSource.camera),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined, color: _primary),
-              title: const Text('Elegir de la galería'),
-              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
+          ),
     );
 
     if (source == null) return;
@@ -1152,9 +1170,11 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
 
       setState(() {
         if (isExtra) {
-          _packageExtraPhotos.add(
-            (bytes: bytes!, name: name ?? 'paquete.jpg', mime: mime),
-          );
+          _packageExtraPhotos.add((
+            bytes: bytes!,
+            name: name ?? 'paquete.jpg',
+            mime: mime,
+          ));
         } else {
           _packagePhotoBytes = bytes;
           _packagePhotoName = name ?? 'paquete.jpg';
@@ -1411,10 +1431,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                 if (_usdRate <= 0)
                   Text(
                     'Cargando tasa...',
-                    style: TextStyle(
-                      color: Colors.grey.shade600,
-                      fontSize: 14,
-                    ),
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
                   )
                 else if (_hasDiscount)
                   Row(
@@ -1513,21 +1530,24 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           const Spacer(),
           _qtyButton(
             icon: Icons.remove_rounded,
-            onTap: _quantity > 0.5
-                ? () => setState(() {
+            onTap:
+                _quantity > 0.5
+                    ? () => setState(() {
                       _quantity = (_quantity - 0.5);
                       if (_quantity < 0.1) _quantity = 0.1;
                       _quantityCtrl.text = _formatQty(_quantity);
                       _recalcPrices();
                     })
-                : null,
+                    : null,
           ),
           SizedBox(
             width: 80,
             child: TextField(
               controller: _quantityCtrl,
               textAlign: TextAlign.center,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
               ],
@@ -1562,11 +1582,12 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           ),
           _qtyButton(
             icon: Icons.add_rounded,
-            onTap: () => setState(() {
-              _quantity = _quantity + 0.5;
-              _quantityCtrl.text = _formatQty(_quantity);
-              _recalcPrices();
-            }),
+            onTap:
+                () => setState(() {
+                  _quantity = _quantity + 0.5;
+                  _quantityCtrl.text = _formatQty(_quantity);
+                  _recalcPrices();
+                }),
           ),
         ],
       ),
@@ -1800,15 +1821,16 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                 scrollDirection: Axis.horizontal,
                 itemCount: _packageExtraPhotos.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 4),
-                itemBuilder: (_, i) => ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: Image.memory(
-                    _packageExtraPhotos[i].bytes,
-                    width: 48,
-                    height: 48,
-                    fit: BoxFit.cover,
-                  ),
-                ),
+                itemBuilder:
+                    (_, i) => ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: Image.memory(
+                        _packageExtraPhotos[i].bytes,
+                        width: 48,
+                        height: 48,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
               ),
             ),
           ],
@@ -1999,16 +2021,16 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
       builder: (state) {
         return Autocomplete<Map<String, dynamic>>(
           optionsBuilder: (TextEditingValue value) {
-            print('🔎 [Autocomplete:$label] optionsBuilder query="${value.text}" '
-                'items=${items.length} enabled=$enabled loading=$loading');
+            print(
+              '🔎 [Autocomplete:$label] optionsBuilder query="${value.text}" '
+              'items=${items.length} enabled=$enabled loading=$loading',
+            );
             if (!enabled || loading) {
               return const Iterable<Map<String, dynamic>>.empty();
             }
             final query = value.text.trim().toLowerCase();
             if (query.isEmpty) return items;
-            return items.where(
-              (e) => labelOf(e).toLowerCase().contains(query),
-            );
+            return items.where((e) => labelOf(e).toLowerCase().contains(query));
           },
           displayStringForOption: labelOf,
           fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
@@ -2038,15 +2060,16 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
               decoration: InputDecoration(
                 labelText: displayLabel,
                 prefixIcon: Icon(icon, size: 20),
-                suffixIcon: controller.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, size: 18),
-                        onPressed: () {
-                          controller.clear();
-                          state.didChange(null);
-                        },
-                      )
-                    : const Icon(Icons.arrow_drop_down),
+                suffixIcon:
+                    controller.text.isNotEmpty
+                        ? IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          onPressed: () {
+                            controller.clear();
+                            state.didChange(null);
+                          },
+                        )
+                        : const Icon(Icons.arrow_drop_down),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
@@ -2066,8 +2089,10 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                 elevation: 4,
                 borderRadius: BorderRadius.circular(10),
                 child: ConstrainedBox(
-                  constraints:
-                      const BoxConstraints(maxHeight: 260, maxWidth: 480),
+                  constraints: const BoxConstraints(
+                    maxHeight: 260,
+                    maxWidth: 480,
+                  ),
                   child: ListView.builder(
                     padding: EdgeInsets.zero,
                     shrinkWrap: true,
@@ -2145,8 +2170,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           _sSelectedCity = null;
           _sCities = [];
         });
-        final countryCode =
-            _sSelectedCountry?['countryCode']?.toString() ?? '';
+        final countryCode = _sSelectedCountry?['countryCode']?.toString() ?? '';
         final adminCode = state['adminCode1']?.toString() ?? '';
         if (countryCode.isNotEmpty && adminCode.isNotEmpty) {
           _loadSenderCities(countryCode, adminCode);
@@ -2241,8 +2265,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           _dSelectedCity = null;
           _dCities = [];
         });
-        final countryCode =
-            _dSelectedCountry?['countryCode']?.toString() ?? '';
+        final countryCode = _dSelectedCountry?['countryCode']?.toString() ?? '';
         final adminCode = state['adminCode1']?.toString() ?? '';
         if (countryCode.isNotEmpty && adminCode.isNotEmpty) {
           _loadReceiverCities(countryCode, adminCode);
@@ -2373,7 +2396,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
         _showError('No se pudo determinar la tienda actual.');
         return;
       }
-// 
+      //
       int? idProveedorCarnaval = await _paqueteriaService
           .resolveProveedorCarnaval(idTienda);
 
@@ -2416,8 +2439,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
       // Separar cantidad entera y parte decimal (extra) para soportar
       // libras fraccionarias en la RPC v2.
       final int qtyInt = _quantity.floor();
-      final double qtyExtra =
-          double.parse((_quantity - qtyInt).toStringAsFixed(4));
+      final double qtyExtra = _quantity - qtyInt;
       final payload = <String, dynamic>{
         'id_producto_inventtia': product.id,
         'cantidad': qtyInt,
@@ -2567,5 +2589,4 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           ),
     );
   }
-
 }

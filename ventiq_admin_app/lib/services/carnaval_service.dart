@@ -1440,13 +1440,21 @@ class CarnavalService {
     }
   }
 
-  /// Reasigna un repartidor a una orden sin cambiar el estado
-  static Future<bool> reassignDelivery(int orderId, int repartidorId) async {
+  /// Reasigna un repartidor a una orden.
+  /// Por defecto no cambia el estado. Si [resetToAsignado] es true, devuelve la
+  /// orden al estado 'Asignado' (usado al reasignar una orden en 'Entregando').
+  static Future<bool> reassignDelivery(
+    int orderId,
+    int repartidorId, {
+    bool resetToAsignado = false,
+  }) async {
     try {
+      final updates = <String, dynamic>{'repartidor': repartidorId};
+      if (resetToAsignado) updates['status'] = 'Asignado';
       await _supabase
           .schema('carnavalapp')
           .from('Orders')
-          .update({'repartidor': repartidorId})
+          .update(updates)
           .eq('id', orderId);
       return true;
     } catch (e) {
@@ -1468,6 +1476,60 @@ class CarnavalService {
       print('❌ Error al obtener repartidores: $e');
       return [];
     }
+  }
+
+  /// Mapa `id -> {nombre, telefono}` de TODOS los repartidores (incluidos los
+  /// inactivos, para poder resolver el nombre en órdenes históricas).
+  /// Se consulta una sola vez y se cachea en memoria: son pocos registros y
+  /// evita una query por fila al pintar la lista de órdenes.
+  static Map<int, Map<String, dynamic>>? _repartidoresCache;
+
+  static Future<Map<int, Map<String, dynamic>>> getRepartidoresMap({
+    bool forceRefresh = false,
+  }) async {
+    if (!forceRefresh && _repartidoresCache != null) {
+      return _repartidoresCache!;
+    }
+    try {
+      final response = await _supabase
+          .schema('carnavalapp')
+          .from('repartidores')
+          .select('id, nombre, telefono');
+      final map = <int, Map<String, dynamic>>{};
+      for (final row in List<Map<String, dynamic>>.from(response)) {
+        final id = row['id'];
+        if (id is int) {
+          map[id] = row;
+        } else if (id != null) {
+          final parsed = int.tryParse(id.toString());
+          if (parsed != null) map[parsed] = row;
+        }
+      }
+      _repartidoresCache = map;
+      return map;
+    } catch (e) {
+      print('❌ Error al obtener mapa de repartidores: $e');
+      return _repartidoresCache ?? {};
+    }
+  }
+
+  /// Formatea el teléfono (columna `numeric`) quitando el `.0` que añade Dart
+  /// al convertir números sin decimales.
+  static String? formatRepartidorTelefono(dynamic telefono) {
+    if (telefono == null) return null;
+    if (telefono is num) {
+      if (telefono == telefono.truncate()) {
+        return telefono.toInt().toString();
+      }
+      return telefono.toString();
+    }
+    final text = telefono.toString().trim();
+    if (text.isEmpty) return null;
+    final asNum = num.tryParse(text);
+    if (asNum != null && asNum == asNum.truncate()) {
+      return asNum.toInt().toString();
+    }
+    return text;
   }
 
   /// Crea un nuevo repartidor: registra usuario en Supabase Auth (para que pueda
@@ -1581,6 +1643,9 @@ class CarnavalService {
       } catch (uErr) {
         print('⚠️ No se pudo sincronizar Usuarios: $uErr');
       }
+
+      // El nuevo repartidor debe aparecer en el mapa cacheado.
+      _repartidoresCache = null;
 
       return {
         'repartidor': Map<String, dynamic>.from(response),
@@ -1795,21 +1860,25 @@ class CarnavalService {
     }
   }
 
-  /// Obtiene provincia y municipio de una dirección por su texto
+  /// Obtiene provincia y municipio de una dirección por su texto.
+  /// Solo devuelve nombres de ubicación (nunca `id`), para no pisar
+  /// campos de `Orders` al enriquecer la lista.
   static Future<Map<String, dynamic>?> getOrderDireccion(
       String direccionText) async {
     try {
       final dirResponse = await _supabase
           .schema('carnavalapp')
           .from('Direcciones')
-          .select('id, address, provincia, municipio')
+          .select('address, provincia, municipio')
           .eq('address', direccionText)
           .limit(1)
           .maybeSingle();
 
       if (dirResponse == null) return null;
 
-      final result = Map<String, dynamic>.from(dirResponse);
+      final result = <String, dynamic>{
+        'address': dirResponse['address'],
+      };
       final provinciaId = dirResponse['provincia'];
       final municipioId = dirResponse['municipio'];
 

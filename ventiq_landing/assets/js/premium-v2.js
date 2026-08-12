@@ -20,6 +20,42 @@
         onScroll();
     }
 
+    // ---------- 1b. Mobile drawer ----------
+    // Lenis is loaded later and captures wheel events, so the drawer parks it
+    // via window.__v2Lenis (set below) instead of relying on overflow:hidden.
+    const burger = document.querySelector('.v2-burger');
+    const drawer = document.querySelector('[data-drawer]');
+    if (burger && drawer) {
+        const closeBtn = drawer.querySelector('[data-drawer-close]');
+        const scrim = drawer.querySelector('.v2-drawer-scrim');
+
+        const openDrawer = () => {
+            drawer.classList.add('is-open');
+            drawer.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('v2-no-scroll');
+            burger.setAttribute('aria-expanded', 'true');
+            if (window.__v2Lenis) window.__v2Lenis.stop();
+            const first = drawer.querySelector('a, button');
+            if (first) first.focus();
+        };
+
+        const closeDrawer = () => {
+            drawer.classList.remove('is-open');
+            drawer.setAttribute('aria-hidden', 'true');
+            document.body.classList.remove('v2-no-scroll');
+            burger.setAttribute('aria-expanded', 'false');
+            if (window.__v2Lenis) window.__v2Lenis.start();
+        };
+
+        burger.addEventListener('click', openDrawer);
+        if (closeBtn) closeBtn.addEventListener('click', closeDrawer);
+        if (scrim) scrim.addEventListener('click', closeDrawer);
+        drawer.querySelectorAll('a').forEach((a) => a.addEventListener('click', closeDrawer));
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && drawer.classList.contains('is-open')) closeDrawer();
+        });
+    }
+
     // ---------- 2. CSS-driven reveal fallback (always on, no JS deps) ----------
     const revealEls = document.querySelectorAll('.v2-reveal');
     if (revealEls.length) {
@@ -91,6 +127,8 @@
             smoothWheel: true,
             smoothTouch: false,
         });
+        // Exposed so the drawer can pause smooth scroll while it's open.
+        window.__v2Lenis = lenis;
         function raf(time) {
             lenis.raf(time);
             requestAnimationFrame(raf);

@@ -35,6 +35,10 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
   bool _isAdmin = false;
   List<Map<String, dynamic>> _orders = [];
   Map<int, int> _ventiqOps = {}; // carnaval order id -> ventiq operation id
+  // id repartidor -> {nombre, telefono}. Se carga una sola vez (son pocos)
+  // para no consultar Supabase fila a fila al pintar las órdenes.
+  Map<int, Map<String, dynamic>> _repartidores = {};
+  bool _repartidoresRefetched = false;
   String? _selectedStatus;
   DateTime? _dateFrom;
   DateTime? _dateTo;
@@ -80,6 +84,7 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       }
       _carnavalStoreId = carnavalId;
       _isAdmin = _adminIds.contains(carnavalId);
+      _repartidores = await CarnavalService.getRepartidoresMap();
       await _loadOrders();
     } catch (e) {
       print('❌ Error init carnaval orders: $e');
@@ -99,8 +104,9 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       final id = o['id'] as int?;
       if (id != null && !_ventiqOps.containsKey(id)) {
         futures.add(
-          CarnavalService.getVentiqOperationId(id)
-              .then((opId) => MapEntry(id, opId)),
+          CarnavalService.getVentiqOperationId(
+            id,
+          ).then((opId) => MapEntry(id, opId)),
         );
       }
     }
@@ -113,6 +119,22 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     if (newOps.isNotEmpty && mounted) {
       setState(() => _ventiqOps.addAll(newOps));
     }
+  }
+
+  /// Si alguna orden trae un `repartidor` que no está en el mapa (p.ej. dado
+  /// de alta después de abrir la pantalla), refresca el mapa una sola vez.
+  Future<void> _ensureRepartidores(List<Map<String, dynamic>> orders) async {
+    if (_repartidoresRefetched) return;
+    final missing = orders.any((o) {
+      final raw = o['repartidor'];
+      if (raw == null) return false;
+      final id = raw is int ? raw : int.tryParse(raw.toString());
+      return id != null && !_repartidores.containsKey(id);
+    });
+    if (!missing) return;
+    _repartidoresRefetched = true;
+    final fresh = await CarnavalService.getRepartidoresMap(forceRefresh: true);
+    if (mounted) setState(() => _repartidores = fresh);
   }
 
   Future<void> _loadOrders() async {
@@ -129,12 +151,14 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       dateFrom: _dateFrom,
       dateTo: _dateTo,
     );
+    final ordersWithDireccion = await _enrichOrdersWithDireccion(orders);
     setState(() {
-      _orders = orders;
+      _orders = ordersWithDireccion;
       _hasMore = orders.length == _pageSize;
       _isLoading = false;
     });
     _loadVentiqOps(orders);
+    _ensureRepartidores(orders);
   }
 
   Future<void> _loadMore() async {
@@ -151,12 +175,40 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       dateFrom: _dateFrom,
       dateTo: _dateTo,
     );
+    final ordersWithDireccion = await _enrichOrdersWithDireccion(orders);
     setState(() {
-      _orders.addAll(orders);
+      _orders.addAll(ordersWithDireccion);
       _hasMore = orders.length == _pageSize;
       _isLoadingMore = false;
     });
     _loadVentiqOps(orders);
+    _ensureRepartidores(orders);
+  }
+
+  Future<List<Map<String, dynamic>>> _enrichOrdersWithDireccion(
+    List<Map<String, dynamic>> orders,
+  ) async {
+    final enriched = await Future.wait(
+      orders.map((order) async {
+        final result = Map<String, dynamic>.from(order);
+        final direccion = result['direccion'] as String?;
+        if (direccion == null || direccion.isEmpty) return result;
+
+        final direccionInfo = await CarnavalService.getOrderDireccion(
+          direccion,
+        );
+        // Solo nombres de ubicación. NUNCA addAll: Direcciones.id pisa
+        // Orders.id y hace que el estado parezca de otra orden al cruzar con BD.
+        if (direccionInfo != null) {
+          final provincia = direccionInfo['provincia_nombre'];
+          final municipio = direccionInfo['municipio_nombre'];
+          if (provincia != null) result['provincia_nombre'] = provincia;
+          if (municipio != null) result['municipio_nombre'] = municipio;
+        }
+        return result;
+      }),
+    );
+    return enriched;
   }
 
   Color _statusColor(String? status) {
@@ -211,157 +263,167 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => CarnavalOrderDetailSheet(
-        order: order,
-        isAdmin: _isAdmin,
-        carnavalStoreId: _carnavalStoreId!,
-        onOrderUpdated: _loadOrders,
-      ),
+      builder:
+          (_) => CarnavalOrderDetailSheet(
+            order: order,
+            isAdmin: _isAdmin,
+            carnavalStoreId: _carnavalStoreId!,
+            onOrderUpdated: _loadOrders,
+          ),
     );
   }
 
   void _openDashboard() {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => const CarnavalOrdersDashboardScreen(),
-      ),
+      MaterialPageRoute(builder: (_) => const CarnavalOrdersDashboardScreen()),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Órdenes Carnaval'),
-      ),
+      appBar: AppBar(title: const Text('Órdenes Carnaval')),
       drawer: const AdminDrawer(),
-      body: _isLoading && _orders.isEmpty
-          ? const Center(child: CircularProgressIndicator())
-          : _carnavalStoreId == null
+      body:
+          _isLoading && _orders.isEmpty
+              ? const Center(child: CircularProgressIndicator())
+              : _carnavalStoreId == null
               ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text(
-                      'Tu tienda no está vinculada a Carnaval.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 16),
-                    ),
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text(
+                    'Tu tienda no está vinculada a Carnaval.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 16),
                   ),
-                )
+                ),
+              )
               : Column(
-                  children: [
-                    // Search bar + dashboard icon
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _searchController,
-                              keyboardType: TextInputType.number,
-                              onSubmitted: (_) => _onSearch(),
-                              decoration: InputDecoration(
-                                hintText: 'Buscar por ID de orden...',
-                                prefixIcon:
-                                    const Icon(Icons.search, size: 20),
-                                suffixIcon: _searchController.text.isNotEmpty
-                                    ? IconButton(
-                                        icon: const Icon(Icons.clear,
-                                            size: 20),
+                children: [
+                  // Search bar + dashboard icon
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _searchController,
+                            keyboardType: TextInputType.number,
+                            onSubmitted: (_) => _onSearch(),
+                            decoration: InputDecoration(
+                              hintText: 'Buscar por ID de orden...',
+                              prefixIcon: const Icon(Icons.search, size: 20),
+                              suffixIcon:
+                                  _searchController.text.isNotEmpty
+                                      ? IconButton(
+                                        icon: const Icon(Icons.clear, size: 20),
                                         onPressed: () {
                                           _searchController.clear();
                                           _loadOrders();
                                         },
                                       )
-                                    : null,
-                                isDense: true,
-                                contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 10),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
+                                      : null,
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
                               ),
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          if (_isAdmin)
-                            IconButton(
-                              onPressed: _openDashboard,
-                              icon: const Icon(Icons.dashboard),
-                              tooltip: 'Dashboard',
-                              style: IconButton.styleFrom(
-                                backgroundColor:
-                                    Colors.indigo.withValues(alpha: 0.1),
+                        ),
+                        const SizedBox(width: 8),
+                        if (_isAdmin)
+                          IconButton(
+                            onPressed: _openDashboard,
+                            icon: const Icon(Icons.dashboard),
+                            tooltip: 'Dashboard',
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.indigo.withValues(
+                                alpha: 0.1,
                               ),
                             ),
-                        ],
-                      ),
+                          ),
+                      ],
                     ),
-                    // Date range filter
-                    _buildDateRangeRow(),
-                    // Status chips
-                    SizedBox(
-                      height: 48,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
-                        children: [
-                          _buildStatusChip(null, 'Todos'),
-                          ..._allStatuses
-                              .map((s) => _buildStatusChip(s, s)),
-                        ],
+                  ),
+                  // Date range filter
+                  _buildDateRangeRow(),
+                  // Status chips
+                  SizedBox(
+                    height: 48,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
                       ),
+                      children: [
+                        _buildStatusChip(null, 'Todos'),
+                        ..._allStatuses.map((s) => _buildStatusChip(s, s)),
+                      ],
                     ),
-                    // Orders list
-                    Expanded(
-                      child: _isLoading
-                          ? const Center(child: CircularProgressIndicator())
-                          : RefreshIndicator(
+                  ),
+                  // Orders list
+                  Expanded(
+                    child:
+                        _isLoading
+                            ? const Center(child: CircularProgressIndicator())
+                            : RefreshIndicator(
                               onRefresh: _loadOrders,
-                              child: _orders.isEmpty
-                                  ? ListView(
-                                      children: const [
-                                        SizedBox(height: 120),
-                                        Center(
-                                          child: Column(
-                                            children: [
-                                              Icon(Icons.receipt_long,
+                              child:
+                                  _orders.isEmpty
+                                      ? ListView(
+                                        children: const [
+                                          SizedBox(height: 120),
+                                          Center(
+                                            child: Column(
+                                              children: [
+                                                Icon(
+                                                  Icons.receipt_long,
                                                   size: 64,
-                                                  color: Colors.grey),
-                                              SizedBox(height: 16),
-                                              Text('No hay órdenes',
+                                                  color: Colors.grey,
+                                                ),
+                                                SizedBox(height: 16),
+                                                Text(
+                                                  'No hay órdenes',
                                                   style: TextStyle(
-                                                      fontSize: 18,
-                                                      color: Colors.grey)),
-                                            ],
+                                                    fontSize: 18,
+                                                    color: Colors.grey,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
                                           ),
-                                        ),
-                                      ],
-                                    )
-                                  : ListView.builder(
-                                      controller: _scrollController,
-                                      padding: const EdgeInsets.all(12),
-                                      itemCount: _orders.length +
-                                          (_hasMore ? 1 : 0),
-                                      itemBuilder: (context, index) {
-                                        if (index == _orders.length) {
-                                          return const Padding(
-                                            padding: EdgeInsets.all(16),
-                                            child: Center(
+                                        ],
+                                      )
+                                      : ListView.builder(
+                                        controller: _scrollController,
+                                        padding: const EdgeInsets.all(12),
+                                        itemCount:
+                                            _orders.length + (_hasMore ? 1 : 0),
+                                        itemBuilder: (context, index) {
+                                          if (index == _orders.length) {
+                                            return const Padding(
+                                              padding: EdgeInsets.all(16),
+                                              child: Center(
                                                 child:
-                                                    CircularProgressIndicator()),
+                                                    CircularProgressIndicator(),
+                                              ),
+                                            );
+                                          }
+                                          return _buildOrderCard(
+                                            _orders[index],
                                           );
-                                        }
-                                        return _buildOrderCard(
-                                            _orders[index]);
-                                      },
-                                    ),
+                                        },
+                                      ),
                             ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
+              ),
     );
   }
 
@@ -385,11 +447,17 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                 ),
               ),
               style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                side: BorderSide(
-                  color: _dateFrom != null ? Colors.indigo : Colors.grey.shade300,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
                 ),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                side: BorderSide(
+                  color:
+                      _dateFrom != null ? Colors.indigo : Colors.grey.shade300,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
               onPressed: () async {
                 final picked = await showDatePicker(
@@ -420,11 +488,16 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                 ),
               ),
               style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 side: BorderSide(
                   color: _dateTo != null ? Colors.indigo : Colors.grey.shade300,
                 ),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
               onPressed: () async {
                 final picked = await showDatePicker(
@@ -542,6 +615,19 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     final metodoPago = order['metodo_pago'] as String? ?? '-';
     final proveedorId = order['proveedor_id'];
     final repartidor = order['repartidor'];
+    final repartidorId = repartidor is int
+        ? repartidor
+        : int.tryParse(repartidor?.toString() ?? '');
+    final repartidorInfo =
+        repartidorId != null ? _repartidores[repartidorId] : null;
+    final repartidorNombre = (repartidorInfo?['nombre'] as String?)?.trim();
+    final repartidorTel = CarnavalService.formatRepartidorTelefono(
+      repartidorInfo?['telefono'],
+    );
+    final repartidorLabel = (repartidorNombre != null &&
+            repartidorNombre.isNotEmpty)
+        ? (repartidorTel != null ? '$repartidorNombre · $repartidorTel' : repartidorNombre)
+        : 'Repartidor #$repartidor';
     final usuario = order['Usuarios'] as Map<String, dynamic>?;
     final clienteName = usuario?['name'] as String? ?? '';
     final clientePhone = usuario?['telefono'] as String? ?? '';
@@ -566,12 +652,18 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     final destNombre = destinatarioInfo?['nombre']?.toString();
     // Nuevo formato (GeoNames): ciudad_nombre / estado_nombre / pais_nombre.
     // Formato antiguo (carnavalapp): municipio_nombre / provincia_nombre.
-    final destMunicipio = (destinatarioInfo?['ciudad_nombre'] ??
-            destinatarioInfo?['municipio_nombre'])
-        ?.toString();
-    final destProvincia = (destinatarioInfo?['estado_nombre'] ??
-            destinatarioInfo?['provincia_nombre'])
-        ?.toString();
+    final destMunicipio =
+        (destinatarioInfo?['ciudad_nombre'] ??
+                destinatarioInfo?['municipio_nombre'])
+            ?.toString();
+    final destProvincia =
+        (destinatarioInfo?['estado_nombre'] ??
+                destinatarioInfo?['provincia_nombre'] ??
+                order['provincia_nombre'])
+            ?.toString();
+    final ubicacionMunicipio =
+        destMunicipio ?? order['municipio_nombre']?.toString();
+    final ubicacionProvincia = destProvincia;
 
     String dateStr = '-';
     if (createdAt != null) {
@@ -586,9 +678,10 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       margin: const EdgeInsets.only(bottom: 8),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: isPaqueteria
-            ? const BorderSide(color: Colors.blue, width: 2)
-            : BorderSide.none,
+        side:
+            isPaqueteria
+                ? const BorderSide(color: Colors.blue, width: 2)
+                : BorderSide.none,
       ),
       child: InkWell(
         onTap: () => _openOrderDetail(order),
@@ -601,8 +694,11 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
               Row(
                 children: [
                   if (isPaqueteria) ...[
-                    const Icon(Icons.local_shipping_outlined,
-                        size: 18, color: Colors.blue),
+                    const Icon(
+                      Icons.local_shipping_outlined,
+                      size: 18,
+                      color: Colors.blue,
+                    ),
                     const SizedBox(width: 6),
                   ],
                   Text(
@@ -616,7 +712,9 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                     const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.blue.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(10),
@@ -624,8 +722,11 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: const [
-                          Icon(Icons.inventory_2_outlined,
-                              size: 12, color: Colors.blue),
+                          Icon(
+                            Icons.inventory_2_outlined,
+                            size: 12,
+                            color: Colors.blue,
+                          ),
                           SizedBox(width: 3),
                           Text(
                             'Paquete',
@@ -642,7 +743,9 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                   const Spacer(),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: _statusColor(status).withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(12),
@@ -658,16 +761,43 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                   ),
                 ],
               ),
-              if (isPaqueteria && (numeroPaquete != null || descPaquete != null)) ...[
+              if (ubicacionMunicipio != null || ubicacionProvincia != null) ...[
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.location_on_outlined,
+                      size: 15,
+                      color: Colors.indigo,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        _formatDestino(
+                          null,
+                          ubicacionMunicipio,
+                          ubicacionProvincia,
+                        ),
+                        style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              if (isPaqueteria &&
+                  (numeroPaquete != null || descPaquete != null)) ...[
                 const SizedBox(height: 6),
                 Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 6),
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.blue.withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                        color: Colors.blue.withValues(alpha: 0.2)),
+                      color: Colors.blue.withValues(alpha: 0.2),
+                    ),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -675,8 +805,11 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                       if (numeroPaquete != null && numeroPaquete.isNotEmpty)
                         Row(
                           children: [
-                            const Icon(Icons.confirmation_number_outlined,
-                                size: 13, color: Colors.blue),
+                            const Icon(
+                              Icons.confirmation_number_outlined,
+                              size: 13,
+                              color: Colors.blue,
+                            ),
                             const SizedBox(width: 4),
                             Text(
                               'Paquete #$numeroPaquete',
@@ -704,13 +837,19 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                         const SizedBox(height: 2),
                         Row(
                           children: [
-                            Icon(Icons.person_pin_circle_outlined,
-                                size: 13, color: Colors.grey[600]),
+                            Icon(
+                              Icons.person_pin_circle_outlined,
+                              size: 13,
+                              color: Colors.grey[600],
+                            ),
                             const SizedBox(width: 4),
                             Flexible(
                               child: Text(
-                                _formatDestino(destNombre, destMunicipio,
-                                    destProvincia),
+                                _formatDestino(
+                                  destNombre,
+                                  destMunicipio,
+                                  destProvincia,
+                                ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
@@ -734,16 +873,23 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                     const SizedBox(width: 4),
                     if (clienteName.isNotEmpty)
                       Flexible(
-                        child: Text(clienteName,
-                            style: TextStyle(fontSize: 13, color: Colors.grey[700]),
-                            overflow: TextOverflow.ellipsis),
+                        child: Text(
+                          clienteName,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey[700],
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     if (clientePhone.isNotEmpty) ...[
                       const SizedBox(width: 12),
                       Icon(Icons.phone, size: 14, color: Colors.grey[600]),
                       const SizedBox(width: 4),
-                      Text(clientePhone,
-                          style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                      Text(
+                        clientePhone,
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
                     ],
                   ],
                 ),
@@ -754,31 +900,36 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                   children: [
                     const Icon(Icons.link, size: 14, color: Colors.indigo),
                     const SizedBox(width: 4),
-                    Text('Op. Inventtia #$ventiqOpId',
-                        style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.indigo)),
+                    Text(
+                      'Op. Inventtia #$ventiqOpId',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.indigo,
+                      ),
+                    ),
                   ],
                 ),
               ],
               const SizedBox(height: 8),
               Row(
                 children: [
-                  Icon(Icons.calendar_today,
-                      size: 14, color: Colors.grey[600]),
+                  Icon(Icons.calendar_today, size: 14, color: Colors.grey[600]),
                   const SizedBox(width: 4),
-                  Text(dateStr,
-                      style:
-                          TextStyle(fontSize: 12, color: Colors.grey[600])),
+                  Text(
+                    dateStr,
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  ),
                   const SizedBox(width: 16),
-                  Icon(Icons.attach_money,
-                      size: 14, color: Colors.grey[600]),
-                  Text('\$${total.toStringAsFixed(2)} CUP',
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.grey[800])),
+                  Icon(Icons.attach_money, size: 14, color: Colors.grey[600]),
+                  Text(
+                    '\$${total.toStringAsFixed(2)} CUP',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[800],
+                    ),
+                  ),
                 ],
               ),
               if (moneda == 'USD' && totalUsd != null && totalUsd > 0) ...[
@@ -790,7 +941,9 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                   color: Colors.green.shade700,
                   bg: Colors.green.withValues(alpha: 0.10),
                 ),
-              ] else if (moneda == 'EUR' && totalEuro != null && totalEuro > 0) ...[
+              ] else if (moneda == 'EUR' &&
+                  totalEuro != null &&
+                  totalEuro > 0) ...[
                 const SizedBox(height: 4),
                 _buildForeignCurrencyBadge(
                   symbol: '€',
@@ -803,20 +956,27 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
               const SizedBox(height: 6),
               Row(
                 children: [
-                  Icon(Icons.local_shipping,
-                      size: 14, color: Colors.grey[600]),
+                  Icon(Icons.local_shipping, size: 14, color: Colors.grey[600]),
                   const SizedBox(width: 4),
-                  Text(metodoEntrega,
-                      style:
-                          TextStyle(fontSize: 12, color: Colors.grey[600])),
+                  Text(
+                    metodoEntrega,
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  ),
                   const SizedBox(width: 16),
-                  Icon(Icons.payment, size: 14, color: _paymentColor(metodoPago)),
+                  Icon(
+                    Icons.payment,
+                    size: 14,
+                    color: _paymentColor(metodoPago),
+                  ),
                   const SizedBox(width: 4),
-                  Text(metodoPago,
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: _paymentColor(metodoPago))),
+                  Text(
+                    metodoPago,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _paymentColor(metodoPago),
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 6),
@@ -825,19 +985,42 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                   Icon(Icons.store, size: 14, color: Colors.grey[600]),
                   const SizedBox(width: 4),
                   Expanded(
-                    child: Text('Proveedor #$proveedorId',
-                        style:
-                            TextStyle(fontSize: 12, color: Colors.grey[600]),
-                        overflow: TextOverflow.ellipsis),
+                    child: Text(
+                      'Proveedor #$proveedorId',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                  if (repartidor != null) ...[
-                    Icon(Icons.delivery_dining,
-                        size: 14, color: Colors.purple[400]),
-                    const SizedBox(width: 4),
-                    Text('Repartidor #$repartidor',
-                        style: TextStyle(
-                            fontSize: 12, color: Colors.purple[400])),
-                  ],
+                  if (repartidor != null)
+                    // Icono + texto dentro del mismo Expanded con
+                    // mainAxisAlignment.end: así el bloque completo se pega al
+                    // borde derecho y el icono queda junto al texto. flex 2 para
+                    // que "Nombre · Teléfono" quepa sin recortarse.
+                    Expanded(
+                      flex: 2,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Icon(
+                            Icons.delivery_dining,
+                            size: 15,
+                            color: Colors.purple[400],
+                          ),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              repartidorLabel,
+                              textAlign: TextAlign.end,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.purple[400],
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                 ],
               ),
             ],

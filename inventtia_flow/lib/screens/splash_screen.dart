@@ -3,6 +3,7 @@ import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:provider/provider.dart';
 import '../config/app_theme.dart';
 import '../providers/auth_provider.dart';
+import '../services/auth_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -103,7 +104,12 @@ class _SplashScreenState extends State<SplashScreen>
 
     FlutterNativeSplash.remove();
 
-    if (auth.isLoggedIn) {
+    // Revalidar justo antes de navegar: en web tras un deploy el storage
+    // puede quedar inconsistente y la sesión desaparecer tras el wait inicial.
+    final stillLoggedIn =
+        auth.isLoggedIn && AuthService.currentUserId != null;
+
+    if (stillLoggedIn) {
       if (auth.hasPerfil) {
         Navigator.pushReplacementNamed(context, '/home');
       } else {

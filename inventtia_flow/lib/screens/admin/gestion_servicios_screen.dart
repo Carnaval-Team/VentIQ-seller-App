@@ -6,20 +6,22 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_theme.dart';
 import '../../models/campo_adicional.dart';
+import '../../models/config_precio.dart';
 import '../../models/entidad.dart';
 import '../../models/servicio.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/auth_service.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/imagen_service.dart';
 import '../../widgets/net_image.dart';
+import '../../widgets/opciones_list_editor.dart';
 
 class GestionServiciosScreen extends StatefulWidget {
   final Entidad entidad;
   const GestionServiciosScreen({super.key, required this.entidad});
 
   @override
-  State<GestionServiciosScreen> createState() =>
-      _GestionServiciosScreenState();
+  State<GestionServiciosScreen> createState() => _GestionServiciosScreenState();
 }
 
 class _GestionServiciosScreenState extends State<GestionServiciosScreen> {
@@ -35,8 +37,9 @@ class _GestionServiciosScreenState extends State<GestionServiciosScreen> {
   Future<void> _cargar() async {
     setState(() => _loading = true);
     try {
-      _servicios =
-          await CatalogoService.getServiciosByEntidad(widget.entidad.id);
+      _servicios = await CatalogoService.getServiciosByEntidad(
+        widget.entidad.id,
+      );
     } catch (e) {
       print('[flow] GestionServiciosScreen _cargar ERROR: $e');
     }
@@ -63,8 +66,8 @@ class _GestionServiciosScreenState extends State<GestionServiciosScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => _ServicioFormSheet(
-          idEntidad: widget.entidad.id, servicio: servicio),
+      builder: (_) =>
+          _ServicioFormSheet(idEntidad: widget.entidad.id, servicio: servicio),
     ).then((_) => _cargar());
   }
 
@@ -76,8 +79,9 @@ class _GestionServiciosScreenState extends State<GestionServiciosScreen> {
         content: Text('¿Eliminar "${servicio.nombre}"?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
             onPressed: () => Navigator.pop(ctx, true),
@@ -93,8 +97,7 @@ class _GestionServiciosScreenState extends State<GestionServiciosScreen> {
       } catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Error: $e'), backgroundColor: AppTheme.error),
+          SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.error),
         );
       }
     }
@@ -103,9 +106,7 @@ class _GestionServiciosScreenState extends State<GestionServiciosScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Servicios · ${widget.entidad.denominacion}'),
-      ),
+      appBar: AppBar(title: Text('Servicios · ${widget.entidad.denominacion}')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _nuevoServicio,
         icon: const Icon(Icons.add),
@@ -114,67 +115,79 @@ class _GestionServiciosScreenState extends State<GestionServiciosScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _servicios.isEmpty
-              ? const Center(
-                  child: Text('Sin servicios registrados',
-                      style: TextStyle(color: AppTheme.textSecondary)),
-                )
-              : RefreshIndicator(
-                  onRefresh: _cargar,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _servicios.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (_, i) {
-                      final s = _servicios[i];
-                      return Card(
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(color: Colors.grey.shade200),
-                        ),
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: AppTheme.surface,
-                            backgroundImage: s.foto != null
-                                ? (kIsWeb
-                                    ? NetworkImage(s.foto!) as ImageProvider
-                                    : CachedNetworkImageProvider(s.foto!))
-                                : null,
-                            child: s.foto == null
-                                ? const Icon(
-                                    Icons.miscellaneous_services_outlined,
-                                    color: AppTheme.primary)
-                                : null,
+          ? const Center(
+              child: Text(
+                'Sin servicios registrados',
+                style: TextStyle(color: AppTheme.textSecondary),
+              ),
+            )
+          : RefreshIndicator(
+              onRefresh: _cargar,
+              child: ListView.separated(
+                padding: const EdgeInsets.all(16),
+                itemCount: _servicios.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemBuilder: (_, i) {
+                  final s = _servicios[i];
+                  return Card(
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(color: Colors.grey.shade200),
+                    ),
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: AppTheme.surface,
+                        backgroundImage: s.foto != null
+                            ? (kIsWeb
+                                  ? NetworkImage(s.foto!) as ImageProvider
+                                  : CachedNetworkImageProvider(s.foto!))
+                            : null,
+                        child: s.foto == null
+                            ? const Icon(
+                                Icons.miscellaneous_services_outlined,
+                                color: AppTheme.primary,
+                              )
+                            : null,
+                      ),
+                      title: Text(
+                        s.nombre,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: s.descripcion != null
+                          ? Text(
+                              s.descripcion!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12),
+                            )
+                          : null,
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(
+                              Icons.edit_outlined,
+                              size: 20,
+                              color: AppTheme.primary,
+                            ),
+                            onPressed: () => _editarServicio(s),
                           ),
-                          title: Text(s.nombre,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w600)),
-                          subtitle: s.descripcion != null
-                              ? Text(s.descripcion!,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontSize: 12))
-                              : null,
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.edit_outlined,
-                                    size: 20, color: AppTheme.primary),
-                                onPressed: () => _editarServicio(s),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.delete_outline,
-                                    size: 20, color: AppTheme.error),
-                                onPressed: () => _eliminarServicio(s),
-                              ),
-                            ],
+                          IconButton(
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              size: 20,
+                              color: AppTheme.error,
+                            ),
+                            onPressed: () => _eliminarServicio(s),
                           ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
     );
   }
 }
@@ -196,22 +209,110 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
   String? _fotoUrl;
   bool _saving = false;
 
-  // Datos adicionales + terceros
+  // Datos adicionales + terceros + precio
   bool _permiteTercero = false;
   late List<_CampoEditable> _campos;
+  List<String> _monedasHabilitadas = ['USD'];
+  String _monedaDefault = 'USD';
+  final Map<String, TextEditingController> _precioBaseCtrls = {};
+  final List<_ReglaPrecioEditable> _reglasPrecio = [];
+  List<Map<String, dynamic>> _tiposActividad = [];
+  int? _idTipoActividad;
+  bool _cargandoTiposActividad = true;
+  bool _aplicaPrecioIdaVueltaTodos = false;
+
+  bool get _esTransporteOmnibus {
+    for (final tipo in _tiposActividad) {
+      if ((tipo['id'] as num?)?.toInt() == _idTipoActividad) {
+        return tipo['codigo'] == 'transporte_omnibus';
+      }
+    }
+    return widget.servicio?.tipoActividad == 'transporte_omnibus';
+  }
 
   @override
   void initState() {
     super.initState();
-    _nombreCtrl =
-        TextEditingController(text: widget.servicio?.nombre ?? '');
-    _descCtrl =
-        TextEditingController(text: widget.servicio?.descripcion ?? '');
+    _nombreCtrl = TextEditingController(text: widget.servicio?.nombre ?? '');
+    _descCtrl = TextEditingController(text: widget.servicio?.descripcion ?? '');
     _fotoUrl = widget.servicio?.foto;
     _permiteTercero = widget.servicio?.permiteTercero ?? false;
     _campos = (widget.servicio?.camposAdicionales ?? [])
         .map(_CampoEditable.fromModel)
         .toList();
+    final cfg = widget.servicio?.configPrecio ?? ConfigPrecio();
+    _monedasHabilitadas = cfg.monedas.isEmpty ? ['USD'] : [...cfg.monedas];
+    _monedaDefault = cfg.monedaDefault;
+    _aplicaPrecioIdaVueltaTodos = cfg.aplicaPrecioIdaVueltaTodos;
+    if (!_monedasHabilitadas.contains(_monedaDefault)) {
+      _monedaDefault = _monedasHabilitadas.first;
+    }
+    for (final m in _monedasHabilitadas) {
+      _precioBaseCtrls[m] = TextEditingController(
+        text: _fmtPrecio(cfg.preciosBase[m]),
+      );
+    }
+    _reglasPrecio.addAll(
+      cfg.reglas.map(
+        (r) => _ReglaPrecioEditable.fromModel(r, monedas: _monedasHabilitadas),
+      ),
+    );
+    _cargarTiposActividad();
+  }
+
+  Future<void> _cargarTiposActividad() async {
+    try {
+      final tipos = await CatalogoService.getTiposActividadServicio();
+      if (!mounted) return;
+      final actual = widget.servicio?.idTipoActividad;
+      Map<String, dynamic>? general;
+      for (final tipo in tipos) {
+        if (tipo['codigo'] == 'general') {
+          general = tipo;
+          break;
+        }
+      }
+      setState(() {
+        _tiposActividad = tipos;
+        _idTipoActividad = actual ?? (general?['id'] as num?)?.toInt();
+        _cargandoTiposActividad = false;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _cargandoTiposActividad = false);
+    }
+  }
+
+  String _fmtPrecio(double? v) {
+    if (v == null || v == 0) return '';
+    return v == v.roundToDouble() ? v.toInt().toString() : v.toString();
+  }
+
+  void _syncPrecioCtrls() {
+    for (final m in List<String>.from(_precioBaseCtrls.keys)) {
+      if (!_monedasHabilitadas.contains(m)) {
+        _precioBaseCtrls.remove(m)?.dispose();
+      }
+    }
+    for (final m in _monedasHabilitadas) {
+      _precioBaseCtrls.putIfAbsent(m, () => TextEditingController());
+    }
+    for (final r in _reglasPrecio) {
+      r.syncMonedas(_monedasHabilitadas);
+    }
+  }
+
+  void _toggleMoneda(String m, bool on) {
+    setState(() {
+      if (on) {
+        if (!_monedasHabilitadas.contains(m)) {
+          _monedasHabilitadas.add(m);
+        }
+      } else if (_monedasHabilitadas.length > 1) {
+        _monedasHabilitadas.remove(m);
+        if (_monedaDefault == m) _monedaDefault = _monedasHabilitadas.first;
+      }
+      _syncPrecioCtrls();
+    });
   }
 
   @override
@@ -221,13 +322,21 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
     for (final c in _campos) {
       c.dispose();
     }
+    for (final c in _precioBaseCtrls.values) {
+      c.dispose();
+    }
+    for (final r in _reglasPrecio) {
+      r.dispose();
+    }
     super.dispose();
   }
 
   /// Construye la lista de campos en formato jsonb, autogenerando claves únicas.
   /// Devuelve null si hay un campo inválido (sin etiqueta, o select sin opciones).
   List<Map<String, dynamic>>? _camposToJson() {
-    final out = <Map<String, dynamic>>[];
+    // Pasada 1: calcular la clave única (slug) de cada campo, para poder
+    // resolver las referencias de las reglas condicionales (si_clave).
+    final claves = <_CampoEditable, String>{};
     final usadas = <String>{};
     for (final c in _campos) {
       final etiqueta = c.etiquetaCtrl.text.trim();
@@ -235,34 +344,78 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
         _campoError = 'Cada dato adicional necesita una etiqueta';
         return null;
       }
-      final opciones = c.tipo == TipoCampo.select
-          ? c.opcionesCtrl.text
-              .split(',')
-              .map((e) => e.trim())
-              .where((e) => e.isNotEmpty)
-              .toList()
-          : <String>[];
-      if (c.tipo == TipoCampo.select && opciones.isEmpty) {
-        _campoError = '"$etiqueta": un seleccionable necesita opciones';
-        return null;
-      }
-      // Clave única (slug de la etiqueta, con sufijo si colisiona).
       var clave = CampoAdicional.slug(etiqueta);
-      var base = clave;
+      final base = clave;
       var n = 2;
       while (usadas.contains(clave)) {
         clave = '${base}_$n';
         n++;
       }
       usadas.add(clave);
+      claves[c] = clave;
+    }
+
+    // Resuelve el slug base seleccionado en una regla a la clave final del campo.
+    String? resolverSiClave(String? siBase) {
+      if (siBase == null || siBase.isEmpty) return null;
+      for (final c in _campos) {
+        if (CampoAdicional.slug(c.etiquetaCtrl.text.trim()) == siBase) {
+          return claves[c];
+        }
+      }
+      return siBase;
+    }
+
+    // Pasada 2: construir el jsonb de cada campo.
+    final out = <Map<String, dynamic>>[];
+    for (final c in _campos) {
+      final etiqueta = c.etiquetaCtrl.text.trim();
+      final opciones = c.tipo == TipoCampo.select
+          ? [...c.opciones]
+          : <String>[];
+      if (c.tipo == TipoCampo.select && opciones.isEmpty) {
+        _campoError = '"$etiqueta": un seleccionable necesita opciones';
+        return null;
+      }
+
+      // Valor por defecto fijo según el tipo.
+      Object? defaultVal;
+      if (c.tipo == TipoCampo.booleano) {
+        if (c.defaultBool) defaultVal = true; // false == ausencia
+      } else {
+        final dt = c.defaultCtrl.text.trim();
+        if (dt.isNotEmpty) {
+          defaultVal = c.tipo == TipoCampo.numero
+              ? (int.tryParse(dt) ?? dt)
+              : dt;
+        }
+      }
+
+      // Reglas de default condicional (se ignoran las incompletas).
+      final reglasJson = <Map<String, dynamic>>[];
+      for (final r in c.reglas) {
+        final si = resolverSiClave(r.siClave);
+        final ig = r.igualCtrl.text.trim();
+        final va = r.valorCtrl.text.trim();
+        if (si == null || si.isEmpty || ig.isEmpty || va.isEmpty) continue;
+        reglasJson.add({
+          'si_clave': si,
+          'igual': ig,
+          'valor': c.tipo == TipoCampo.numero ? (int.tryParse(va) ?? va) : va,
+        });
+      }
+
       out.add({
-        'clave': clave,
+        'clave': claves[c],
         'etiqueta': etiqueta,
         'tipo': c.tipo.valor,
         'requerido': c.requerido,
         'opciones': opciones,
         if (c.min != null) 'min': c.min,
         if (c.max != null) 'max': c.max,
+        if (defaultVal != null) 'default': defaultVal,
+        if (c.contabilizar) 'contabilizar': true,
+        if (reglasJson.isNotEmpty) 'reglas': reglasJson,
       });
     }
     _campoError = null;
@@ -270,6 +423,87 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
   }
 
   String? _campoError;
+
+  Map<String, dynamic>? _configPrecioToJson(
+    Map<_CampoEditable, String> claves,
+  ) {
+    final base = <String, double>{};
+    for (final m in _monedasHabilitadas) {
+      final t = _precioBaseCtrls[m]?.text.trim() ?? '';
+      if (t.isNotEmpty) {
+        final v = double.tryParse(t.replaceAll(',', '.'));
+        if (v == null) {
+          _campoError = 'Precio base inválido para $m';
+          return null;
+        }
+        base[m] = v;
+      }
+    }
+
+    final reglasOut = <Map<String, dynamic>>[];
+    for (final r in _reglasPrecio) {
+      if (r.siClave == null || r.siClave!.isEmpty) continue;
+
+      final preciosOpcion = <String, Map<String, double>>{};
+      for (final opcion in r.preciosPorOpcion.keys) {
+        final pmap = <String, double>{};
+        for (final m in _monedasHabilitadas) {
+          final t = r.preciosPorOpcion[opcion]?[m]?.text.trim() ?? '';
+          if (t.isEmpty) continue;
+          final v = double.tryParse(t.replaceAll(',', '.'));
+          if (v == null) {
+            _campoError = 'Precio inválido para "$opcion"';
+            return null;
+          }
+          pmap[m] = v;
+        }
+        if (pmap.isNotEmpty) preciosOpcion[opcion] = pmap;
+      }
+      if (preciosOpcion.isEmpty) continue;
+
+      String? claveFinal;
+      for (final e in claves.entries) {
+        if (CampoAdicional.slug(e.key.etiquetaCtrl.text.trim()) == r.siClave ||
+            e.value == r.siClave) {
+          claveFinal = e.value;
+          break;
+        }
+      }
+      reglasOut.add({
+        'si_clave': claveFinal ?? r.siClave,
+        'precios_opcion': preciosOpcion,
+      });
+    }
+
+    return ConfigPrecio(
+      monedaDefault: _monedaDefault,
+      monedas: _monedasHabilitadas,
+      preciosBase: base,
+      reglas: reglasOut.map((e) => ReglaPrecio.fromJson(e)).toList(),
+      aplicaPrecioIdaVueltaTodos: _aplicaPrecioIdaVueltaTodos,
+    ).toJson();
+  }
+
+  List<({String slug, String clave, String etiqueta, List<String> opciones})>
+  _camposSelectParaPrecio(Map<_CampoEditable, String> claves) {
+    final out =
+        <
+          ({String slug, String clave, String etiqueta, List<String> opciones})
+        >[];
+    for (final e in claves.entries) {
+      final c = e.key;
+      if (c.tipo != TipoCampo.select) continue;
+      final etq = c.etiquetaCtrl.text.trim();
+      if (etq.isEmpty || c.opciones.isEmpty) continue;
+      out.add((
+        slug: CampoAdicional.slug(etq),
+        clave: e.value,
+        etiqueta: etq,
+        opciones: [...c.opciones],
+      ));
+    }
+    return out;
+  }
 
   Future<void> _pickImagen(ImageSource source) async {
     final file = await ImagenService.seleccionarImagen(source: source);
@@ -307,17 +541,53 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    final campos = _camposToJson();
-    if (campos == null) {
-      setState(() {}); // refresca para mostrar _campoError
+    if (_idTipoActividad == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(_campoError ?? 'Revisa los datos adicionales'),
-            backgroundColor: AppTheme.error),
+        const SnackBar(
+          content: Text('Selecciona la actividad del servicio'),
+          backgroundColor: AppTheme.error,
+        ),
       );
       return;
     }
-    final uuid = context.read<AuthProvider>().user?.id ?? '';
+    final campos = _camposToJson();
+    if (campos == null) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_campoError ?? 'Revisa los datos adicionales'),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+      return;
+    }
+    final claves = <_CampoEditable, String>{};
+    final usadas = <String>{};
+    for (final c in _campos) {
+      final etiqueta = c.etiquetaCtrl.text.trim();
+      if (etiqueta.isEmpty) continue;
+      var clave = CampoAdicional.slug(etiqueta);
+      final base = clave;
+      var n = 2;
+      while (usadas.contains(clave)) {
+        clave = '${base}_$n';
+        n++;
+      }
+      usadas.add(clave);
+      claves[c] = clave;
+    }
+    final configPrecio = _configPrecioToJson(claves);
+    if (configPrecio == null) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_campoError ?? 'Revisa la configuración de precio'),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+      return;
+    }
+    final uuid = AuthService.currentUserId ?? '';
     setState(() => _saving = true);
     try {
       String? fotoFinal = _fotoUrl;
@@ -329,6 +599,7 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
               ? null
               : _descCtrl.text.trim(),
           idEntidad: widget.idEntidad,
+          idTipoActividad: _idTipoActividad,
         );
         idServicio = nuevo.id;
         if (_imagenFile != null) {
@@ -341,6 +612,7 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
             nombre: nuevo.nombre,
             descripcion: nuevo.descripcion,
             foto: fotoFinal,
+            idTipoActividad: _idTipoActividad,
           );
         }
       } else {
@@ -358,6 +630,7 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
               ? null
               : _descCtrl.text.trim(),
           foto: fotoFinal,
+          idTipoActividad: _idTipoActividad,
         );
       }
       // Guarda datos adicionales + flag de terceros (RPC admin)
@@ -366,6 +639,7 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
         idServicio: idServicio,
         campos: campos,
         permiteTercero: _permiteTercero,
+        configPrecio: configPrecio,
       );
       if (!mounted) return;
       Navigator.pop(context);
@@ -373,8 +647,7 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
       setState(() => _saving = false);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('Error: $e'), backgroundColor: AppTheme.error),
+        SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.error),
       );
     }
   }
@@ -409,9 +682,13 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
               Row(
                 children: [
                   Text(
-                    widget.servicio == null ? 'Nuevo Servicio' : 'Editar Servicio',
+                    widget.servicio == null
+                        ? 'Nuevo Servicio'
+                        : 'Editar Servicio',
                     style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.bold),
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const Spacer(),
                   IconButton(
@@ -426,152 +703,615 @@ class _ServicioFormSheetState extends State<_ServicioFormSheet> {
               ),
               const SizedBox(height: 16),
 
-            // ── Selector de imagen ────────────────────────
-            GestureDetector(
-              onTap: _showImagenPicker,
-              child: Container(
-                height: 130,
-                decoration: BoxDecoration(
-                  color: AppTheme.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade300),
+              // ── Selector de imagen ────────────────────────
+              GestureDetector(
+                onTap: _showImagenPicker,
+                child: Container(
+                  height: 130,
+                  decoration: BoxDecoration(
+                    color: AppTheme.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(11),
+                    child: _imagenFile != null
+                        ? Image.file(
+                            File(_imagenFile!.path),
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                          )
+                        : _fotoUrl != null
+                        ? NetImage(
+                            url: _fotoUrl!,
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                            placeholder: () => const Center(
+                              child: CircularProgressIndicator(),
+                            ),
+                            errorWidget: () => _SrvImagePlaceholder(),
+                          )
+                        : _SrvImagePlaceholder(),
+                  ),
                 ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(11),
-                  child: _imagenFile != null
-                      ? Image.file(File(_imagenFile!.path),
-                          fit: BoxFit.cover, width: double.infinity)
-                      : _fotoUrl != null
-                          ? NetImage(
-                              url: _fotoUrl!,
-                              fit: BoxFit.cover,
-                              width: double.infinity,
-                              placeholder: () => const Center(
-                                  child: CircularProgressIndicator()),
-                              errorWidget: () => _SrvImagePlaceholder(),
-                            )
-                          : _SrvImagePlaceholder(),
+              ),
+              Center(
+                child: TextButton.icon(
+                  onPressed: _showImagenPicker,
+                  icon: const Icon(
+                    Icons.add_photo_alternate_outlined,
+                    size: 16,
+                  ),
+                  label: Text(
+                    _imagenFile != null || _fotoUrl != null
+                        ? 'Cambiar imagen'
+                        : 'Agregar imagen',
+                  ),
                 ),
               ),
-            ),
-            Center(
-              child: TextButton.icon(
-                onPressed: _showImagenPicker,
-                icon: const Icon(Icons.add_photo_alternate_outlined, size: 16),
-                label: Text(_imagenFile != null || _fotoUrl != null
-                    ? 'Cambiar imagen'
-                    : 'Agregar imagen'),
-              ),
-            ),
-            const SizedBox(height: 4),
+              const SizedBox(height: 4),
+              if (_cargandoTiposActividad)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: LinearProgressIndicator(),
+                )
+              else
+                DropdownButtonFormField<int>(
+                  initialValue: _idTipoActividad,
+                  decoration: const InputDecoration(
+                    labelText: 'Actividad *',
+                    prefixIcon: Icon(Icons.category_outlined),
+                  ),
+                  items: _tiposActividad
+                      .map(
+                        (tipo) => DropdownMenuItem<int>(
+                          value: (tipo['id'] as num).toInt(),
+                          child: Text(tipo['nombre'] as String),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) =>
+                      setState(() => _idTipoActividad = value),
+                  validator: (value) => value == null ? 'Requerido' : null,
+                ),
+              const SizedBox(height: 12),
 
-            TextFormField(
-              controller: _nombreCtrl,
-              textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(
-                labelText: 'Nombre *',
-                prefixIcon:
-                    Icon(Icons.miscellaneous_services_outlined),
+              TextFormField(
+                controller: _nombreCtrl,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  labelText: 'Nombre *',
+                  prefixIcon: Icon(Icons.miscellaneous_services_outlined),
+                ),
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Requerido' : null,
               ),
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Requerido' : null,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _descCtrl,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Descripción',
-                prefixIcon: Icon(Icons.notes),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _descCtrl,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Descripción',
+                  prefixIcon: Icon(Icons.notes),
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            const Divider(),
+              const SizedBox(height: 8),
+              const Divider(),
 
-            // ── Reservar para terceros ────────────────────
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              value: _permiteTercero,
-              onChanged: (v) => setState(() => _permiteTercero = v),
-              title: const Text('Permitir reservar para terceros'),
-              subtitle: const Text(
+              // ── Reservar para terceros ────────────────────
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _permiteTercero,
+                onChanged: (v) => setState(() => _permiteTercero = v),
+                title: const Text('Permitir reservar para terceros'),
+                subtitle: const Text(
                   'El cliente podrá reservar a nombre de otra persona',
-                  style: TextStyle(fontSize: 12)),
-            ),
-            const Divider(),
-
-            // ── Datos adicionales ─────────────────────────
-            Row(
-              children: [
-                const Expanded(
-                  child: Text('Datos adicionales',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w600, fontSize: 15)),
+                  style: TextStyle(fontSize: 12),
                 ),
-                TextButton.icon(
-                  onPressed: _agregarCampo,
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Agregar'),
+              ),
+              const Divider(),
+
+              // ── Precio del servicio ───────────────────────
+              const Text(
+                'Precio del servicio',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Monedas disponibles',
+                style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  for (final m in MonedasApp.todas)
+                    FilterChip(
+                      label: Text(
+                        MonedasApp.etiqueta(m),
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                      selected: _monedasHabilitadas.contains(m),
+                      onSelected: (v) => _toggleMoneda(m, v),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                value: _monedaDefault,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Moneda por defecto',
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                ),
+                items: _monedasHabilitadas
+                    .map(
+                      (m) => DropdownMenuItem(
+                        value: m,
+                        child: Text(MonedasApp.etiqueta(m)),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (v) {
+                  if (v != null) setState(() => _monedaDefault = v);
+                },
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Precio base',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 6),
+              for (final m in _monedasHabilitadas)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: TextField(
+                    controller: _precioBaseCtrls[m],
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Precio base (${MonedasApp.simbolo(m)})',
+                      isDense: true,
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+              if (_esTransporteOmnibus) ...[
+                const SizedBox(height: 8),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _aplicaPrecioIdaVueltaTodos,
+                  onChanged: (v) => setState(
+                    () => _aplicaPrecioIdaVueltaTodos = v ?? false,
+                  ),
+                  title: const Text(
+                    'Aplica precio de Ida y vuelta para todos los pasajes',
+                    style: TextStyle(fontSize: 13.5),
+                  ),
+                  subtitle: const Text(
+                    'Si está desactivado (recomendado), el precio del turno '
+                    'combinado solo aplica cuando ida y vuelta son el mismo día. '
+                    'En fechas distintas se cobran ida + vuelta por separado.',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  controlAffinity: ListTileControlAffinity.leading,
                 ),
               ],
-            ),
-            if (_campos.isEmpty)
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Reglas de precio por dato adicional',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: () {
+                      setState(
+                        () => _reglasPrecio.add(
+                          _ReglaPrecioEditable.nueva(_monedasHabilitadas),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('Regla'),
+                  ),
+                ],
+              ),
               const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
+                padding: EdgeInsets.only(bottom: 6),
                 child: Text(
+                  'Configura un precio distinto para cada opción del campo seleccionable.',
+                  style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                ),
+              ),
+              Builder(
+                builder: (context) {
+                  final claves = <_CampoEditable, String>{};
+                  final usadas = <String>{};
+                  for (final c in _campos) {
+                    final etq = c.etiquetaCtrl.text.trim();
+                    if (etq.isEmpty) continue;
+                    var clave = CampoAdicional.slug(etq);
+                    final base = clave;
+                    var n = 2;
+                    while (usadas.contains(clave)) {
+                      clave = '${base}_$n';
+                      n++;
+                    }
+                    usadas.add(clave);
+                    claves[c] = clave;
+                  }
+                  final selects = _camposSelectParaPrecio(claves);
+                  if (selects.isEmpty && _reglasPrecio.isEmpty) {
+                    return const Padding(
+                      padding: EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        'Agrega campos tipo seleccionable para definir reglas.',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    );
+                  }
+                  return Column(
+                    children: [
+                      for (var i = 0; i < _reglasPrecio.length; i++)
+                        _ReglaPrecioTile(
+                          regla: _reglasPrecio[i],
+                          camposSelect: selects,
+                          monedas: _monedasHabilitadas,
+                          onChanged: () => setState(() {}),
+                          onRemove: () {
+                            setState(() {
+                              _reglasPrecio[i].dispose();
+                              _reglasPrecio.removeAt(i);
+                            });
+                          },
+                        ),
+                    ],
+                  );
+                },
+              ),
+              const Divider(),
+
+              // ── Datos adicionales ─────────────────────────
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Datos adicionales',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: _agregarCampo,
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Agregar'),
+                  ),
+                ],
+              ),
+              if (_campos.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
                     'Sin datos adicionales. El cliente solo verá lo básico.',
                     style: TextStyle(
-                        fontSize: 12, color: AppTheme.textSecondary)),
-              ),
-            for (var i = 0; i < _campos.length; i++)
-              _CampoEditableTile(
-                key: ValueKey(_campos[i]),
-                campo: _campos[i],
-                onChanged: () => setState(() {}),
-                onRemove: () => _quitarCampo(i),
-              ),
-            if (_campoError != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(_campoError!,
-                    style: const TextStyle(
-                        color: AppTheme.error, fontSize: 12)),
-              ),
+                      fontSize: 12,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                ),
+              for (var i = 0; i < _campos.length; i++)
+                _CampoEditableTile(
+                  key: ValueKey(_campos[i]),
+                  campo: _campos[i],
+                  todosCampos: _campos,
+                  onChanged: () => setState(() {}),
+                  onRemove: () => _quitarCampo(i),
+                ),
+              if (_campoError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    _campoError!,
+                    style: const TextStyle(color: AppTheme.error, fontSize: 12),
+                  ),
+                ),
 
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: _saving ? null : _submit,
-              child: _saving
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2),
-                    )
-                  : Text(
-                      widget.servicio == null
-                          ? 'Crear Servicio'
-                          : 'Guardar',
-                      style: const TextStyle(fontSize: 16)),
-            ),
-          ],
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: _saving ? null : _submit,
+                child: _saving
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : Text(
+                        widget.servicio == null ? 'Crear Servicio' : 'Guardar',
+                        style: const TextStyle(fontSize: 16),
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
+    );
+  }
+}
+
+/// Regla editable: un campo select con precio por cada opción y moneda.
+class _ReglaPrecioEditable {
+  String? siClave;
+
+  /// opción → moneda → controlador
+  final Map<String, Map<String, TextEditingController>> preciosPorOpcion = {};
+
+  _ReglaPrecioEditable({this.siClave});
+
+  factory _ReglaPrecioEditable.nueva(List<String> monedas) =>
+      _ReglaPrecioEditable();
+
+  factory _ReglaPrecioEditable.fromModel(
+    ReglaPrecio r, {
+    required List<String> monedas,
+    List<String>? opcionesCampo,
+  }) {
+    final editable = _ReglaPrecioEditable(siClave: r.siClave);
+    final opciones = opcionesCampo ?? r.preciosOpcion.keys.toList();
+    editable.syncCampo(opciones, monedas);
+    for (final opcion in r.preciosOpcion.entries) {
+      for (final precio in opcion.value.entries) {
+        final ctrl = editable.preciosPorOpcion[opcion.key]?[precio.key];
+        if (ctrl == null) continue;
+        final v = precio.value;
+        ctrl.text = v == 0
+            ? ''
+            : (v == v.roundToDouble() ? v.toInt().toString() : v.toString());
+      }
+    }
+    return editable;
+  }
+
+  void syncCampo(List<String> opciones, List<String> monedas) {
+    for (final o in List<String>.from(preciosPorOpcion.keys)) {
+      if (!opciones.contains(o)) {
+        for (final c in preciosPorOpcion[o]!.values) {
+          c.dispose();
+        }
+        preciosPorOpcion.remove(o);
+      }
+    }
+    for (final o in opciones) {
+      preciosPorOpcion.putIfAbsent(o, () => {});
+      final map = preciosPorOpcion[o]!;
+      for (final m in List<String>.from(map.keys)) {
+        if (!monedas.contains(m)) map.remove(m)?.dispose();
+      }
+      for (final m in monedas) {
+        map.putIfAbsent(m, () => TextEditingController());
+      }
+    }
+  }
+
+  void syncMonedas(List<String> monedas) {
+    syncCampo(preciosPorOpcion.keys.toList(), monedas);
+  }
+
+  void dispose() {
+    for (final map in preciosPorOpcion.values) {
+      for (final c in map.values) {
+        c.dispose();
+      }
+    }
+    preciosPorOpcion.clear();
+  }
+}
+
+class _ReglaPrecioTile extends StatefulWidget {
+  final _ReglaPrecioEditable regla;
+  final List<
+    ({String slug, String clave, String etiqueta, List<String> opciones})
+  >
+  camposSelect;
+  final List<String> monedas;
+  final VoidCallback onChanged;
+  final VoidCallback onRemove;
+
+  const _ReglaPrecioTile({
+    required this.regla,
+    required this.camposSelect,
+    required this.monedas,
+    required this.onChanged,
+    required this.onRemove,
+  });
+
+  @override
+  State<_ReglaPrecioTile> createState() => _ReglaPrecioTileState();
+}
+
+class _ReglaPrecioTileState extends State<_ReglaPrecioTile> {
+  ({String slug, String clave, String etiqueta, List<String> opciones})?
+  _campoActual() {
+    for (final c in widget.camposSelect) {
+      if (c.slug == widget.regla.siClave || c.clave == widget.regla.siClave) {
+        return c;
+      }
+    }
+    return null;
+  }
+
+  void _syncOpciones() {
+    final campo = _campoActual();
+    widget.regla.syncCampo(campo?.opciones ?? [], widget.monedas);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _syncOpciones();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ReglaPrecioTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncOpciones();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final campoActual = _campoActual();
+    final opcionesDisp = campoActual?.opciones ?? const <String>[];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value:
+                      widget.camposSelect.any(
+                        (c) => c.slug == widget.regla.siClave,
+                      )
+                      ? widget.regla.siClave
+                      : (widget.camposSelect.any(
+                              (c) => c.clave == widget.regla.siClave,
+                            )
+                            ? widget.camposSelect
+                                  .firstWhere(
+                                    (c) => c.clave == widget.regla.siClave,
+                                  )
+                                  .slug
+                            : null),
+                  isDense: true,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Campo',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  items: widget.camposSelect
+                      .map(
+                        (c) => DropdownMenuItem(
+                          value: c.slug,
+                          child: Text(
+                            c.etiqueta,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) {
+                    widget.regla.siClave = v;
+                    _syncOpciones();
+                    widget.onChanged();
+                  },
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 18, color: AppTheme.error),
+                onPressed: widget.onRemove,
+              ),
+            ],
+          ),
+          if (opcionesDisp.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text(
+                'Selecciona un campo con opciones definidas.',
+                style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+              ),
+            )
+          else
+            for (final opcion in opcionesDisp) ...[
+              const Divider(height: 16),
+              Text(
+                opcion,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 6),
+              for (final m in widget.monedas)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: TextField(
+                    controller: widget.regla.preciosPorOpcion[opcion]?[m],
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Precio (${MonedasApp.simbolo(m)})',
+                      isDense: true,
+                      border: const OutlineInputBorder(),
+                    ),
+                    onChanged: (_) => widget.onChanged(),
+                  ),
+                ),
+            ],
+        ],
       ),
     );
+  }
+}
+
+/// Estado mutable de una regla de default condicional mientras se edita.
+class _ReglaEditable {
+  String? siClave; // slug base del campo del que depende (etiqueta -> slug)
+  final TextEditingController igualCtrl;
+  final TextEditingController valorCtrl;
+
+  _ReglaEditable({this.siClave, String igual = '', String valor = ''})
+    : igualCtrl = TextEditingController(text: igual),
+      valorCtrl = TextEditingController(text: valor);
+
+  void dispose() {
+    igualCtrl.dispose();
+    valorCtrl.dispose();
   }
 }
 
 /// Estado mutable de un campo adicional mientras se edita en el formulario.
 class _CampoEditable {
   final TextEditingController etiquetaCtrl;
-  final TextEditingController opcionesCtrl; // CSV para select
+  List<String> opciones;
   TipoCampo tipo;
   bool requerido;
   int? min;
   int? max;
   final TextEditingController minCtrl;
   final TextEditingController maxCtrl;
+
+  // Datos adicionales nuevos: default, contabilizar, reglas.
+  final TextEditingController defaultCtrl; // default para texto/numero/select
+  bool defaultBool; // default para booleano
+  bool contabilizar;
+  final List<_ReglaEditable> reglas;
 
   _CampoEditable({
     required String etiqueta,
@@ -580,47 +1320,269 @@ class _CampoEditable {
     required List<String> opciones,
     this.min,
     this.max,
-  })  : etiquetaCtrl = TextEditingController(text: etiqueta),
-        opcionesCtrl = TextEditingController(text: opciones.join(', ')),
-        minCtrl = TextEditingController(text: min?.toString() ?? ''),
-        maxCtrl = TextEditingController(text: max?.toString() ?? '');
+    String defaultTexto = '',
+    this.defaultBool = false,
+    this.contabilizar = false,
+    List<_ReglaEditable>? reglas,
+  }) : etiquetaCtrl = TextEditingController(text: etiqueta),
+       opciones = [...opciones],
+       minCtrl = TextEditingController(text: min?.toString() ?? ''),
+       maxCtrl = TextEditingController(text: max?.toString() ?? ''),
+       defaultCtrl = TextEditingController(text: defaultTexto),
+       reglas = reglas ?? [];
 
   factory _CampoEditable.nuevo() => _CampoEditable(
-        etiqueta: '',
-        tipo: TipoCampo.texto,
-        requerido: false,
-        opciones: [],
-      );
+    etiqueta: '',
+    tipo: TipoCampo.texto,
+    requerido: false,
+    opciones: [],
+  );
 
   factory _CampoEditable.fromModel(CampoAdicional c) => _CampoEditable(
-        etiqueta: c.etiqueta,
-        tipo: c.tipo,
-        requerido: c.requerido,
-        opciones: c.opciones,
-        min: c.min,
-        max: c.max,
-      );
+    etiqueta: c.etiqueta,
+    tipo: c.tipo,
+    requerido: c.requerido,
+    opciones: c.opciones,
+    min: c.min,
+    max: c.max,
+    defaultTexto: c.tipo == TipoCampo.booleano
+        ? ''
+        : (c.valorDefault?.toString() ?? ''),
+    defaultBool:
+        c.tipo == TipoCampo.booleano &&
+        DatosAdicionalesBoolParse.asBool(c.valorDefault),
+    contabilizar: c.contabilizar,
+    reglas: c.reglas
+        .map(
+          (r) => _ReglaEditable(
+            siClave: r.siClave,
+            igual: r.igual,
+            valor: r.valor.toString(),
+          ),
+        )
+        .toList(),
+  );
 
   void dispose() {
     etiquetaCtrl.dispose();
-    opcionesCtrl.dispose();
     minCtrl.dispose();
     maxCtrl.dispose();
+    defaultCtrl.dispose();
+    for (final r in reglas) {
+      r.dispose();
+    }
   }
 }
 
-/// Tarjeta editable para un campo adicional (etiqueta, tipo, requerido, opciones, min/max).
+/// Pequeño helper para interpretar un default booleano guardado como bool o texto.
+class DatosAdicionalesBoolParse {
+  static bool asBool(Object? v) {
+    if (v is bool) return v;
+    final s = v?.toString().toLowerCase().trim();
+    return s == 'true' || s == 'sí' || s == 'si' || s == '1';
+  }
+}
+
+/// Tarjeta editable para un campo adicional (etiqueta, tipo, requerido, opciones,
+/// min/max, valor por defecto, contabilizar y reglas de default condicional).
 class _CampoEditableTile extends StatelessWidget {
   final _CampoEditable campo;
+  final List<_CampoEditable> todosCampos;
   final VoidCallback onChanged;
   final VoidCallback onRemove;
 
   const _CampoEditableTile({
     super.key,
     required this.campo,
+    required this.todosCampos,
     required this.onChanged,
     required this.onRemove,
   });
+
+  /// Opciones del dropdown "depende de": los demás campos con etiqueta no vacía.
+  List<DropdownMenuItem<String>> _otrosCamposItems() {
+    final items = <DropdownMenuItem<String>>[];
+    for (final c in todosCampos) {
+      if (identical(c, campo)) continue;
+      final etq = c.etiquetaCtrl.text.trim();
+      if (etq.isEmpty) continue;
+      items.add(
+        DropdownMenuItem(
+          value: CampoAdicional.slug(etq),
+          child: Text(etq, overflow: TextOverflow.ellipsis),
+        ),
+      );
+    }
+    return items;
+  }
+
+  Widget _buildDefault() {
+    if (campo.tipo == TipoCampo.booleano) {
+      return Row(
+        children: [
+          const Text('Valor por defecto', style: TextStyle(fontSize: 13)),
+          const Spacer(),
+          Switch(
+            value: campo.defaultBool,
+            onChanged: (v) {
+              campo.defaultBool = v;
+              onChanged();
+            },
+          ),
+        ],
+      );
+    }
+    if (campo.tipo == TipoCampo.select) {
+      final opciones = campo.opciones;
+      final current = campo.defaultCtrl.text.trim();
+      return DropdownButtonFormField<String>(
+        value: opciones.contains(current) ? current : null,
+        isDense: true,
+        isExpanded: true,
+        decoration: const InputDecoration(
+          labelText: 'Valor por defecto',
+          isDense: true,
+          border: OutlineInputBorder(),
+        ),
+        items: [
+          const DropdownMenuItem(value: '', child: Text('— Ninguno —')),
+          ...opciones.map((o) => DropdownMenuItem(value: o, child: Text(o))),
+        ],
+        onChanged: (v) {
+          campo.defaultCtrl.text = v ?? '';
+          onChanged();
+        },
+      );
+    }
+    return TextField(
+      controller: campo.defaultCtrl,
+      keyboardType: campo.tipo == TipoCampo.numero
+          ? TextInputType.number
+          : TextInputType.text,
+      decoration: const InputDecoration(
+        labelText: 'Valor por defecto',
+        isDense: true,
+        border: OutlineInputBorder(),
+      ),
+      onChanged: (_) => onChanged(),
+    );
+  }
+
+  Widget _buildReglas() {
+    final otros = _otrosCamposItems();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Default según otro campo',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: otros.isEmpty
+                  ? null
+                  : () {
+                      campo.reglas.add(_ReglaEditable());
+                      onChanged();
+                    },
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('Regla'),
+            ),
+          ],
+        ),
+        if (otros.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 4),
+            child: Text(
+              'Agrega otros campos para poder condicionar.',
+              style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+            ),
+          ),
+        for (var i = 0; i < campo.reglas.length; i++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const Text('Si ', style: TextStyle(fontSize: 12)),
+                Expanded(
+                  flex: 3,
+                  child: DropdownButtonFormField<String>(
+                    value: otros.any((o) => o.value == campo.reglas[i].siClave)
+                        ? campo.reglas[i].siClave
+                        : null,
+                    isDense: true,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 8,
+                      ),
+                    ),
+                    hint: const Text('campo', style: TextStyle(fontSize: 12)),
+                    items: otros,
+                    onChanged: (v) {
+                      campo.reglas[i].siClave = v;
+                      onChanged();
+                    },
+                  ),
+                ),
+                const Text(' = ', style: TextStyle(fontSize: 12)),
+                Expanded(
+                  flex: 2,
+                  child: TextField(
+                    controller: campo.reglas[i].igualCtrl,
+                    decoration: const InputDecoration(
+                      hintText: 'valor',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 8,
+                      ),
+                    ),
+                  ),
+                ),
+                const Text(' → ', style: TextStyle(fontSize: 12)),
+                Expanded(
+                  flex: 2,
+                  child: TextField(
+                    controller: campo.reglas[i].valorCtrl,
+                    decoration: const InputDecoration(
+                      hintText: 'default',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 8,
+                      ),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(
+                    Icons.close,
+                    size: 16,
+                    color: AppTheme.error,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () {
+                    campo.reglas[i].dispose();
+                    campo.reglas.removeAt(i);
+                    onChanged();
+                  },
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -645,11 +1607,15 @@ class _CampoEditableTile extends StatelessWidget {
                     isDense: true,
                     border: OutlineInputBorder(),
                   ),
+                  onChanged: (_) => onChanged(),
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.delete_outline,
-                    color: AppTheme.error, size: 20),
+                icon: const Icon(
+                  Icons.delete_outline,
+                  color: AppTheme.error,
+                  size: 20,
+                ),
                 onPressed: onRemove,
                 tooltip: 'Quitar',
               ),
@@ -668,8 +1634,10 @@ class _CampoEditableTile extends StatelessWidget {
                     border: OutlineInputBorder(),
                   ),
                   items: TipoCampo.values
-                      .map((t) => DropdownMenuItem(
-                          value: t, child: Text(t.etiqueta)))
+                      .map(
+                        (t) =>
+                            DropdownMenuItem(value: t, child: Text(t.etiqueta)),
+                      )
                       .toList(),
                   onChanged: (t) {
                     if (t != null) {
@@ -698,17 +1666,16 @@ class _CampoEditableTile extends StatelessWidget {
           ),
           if (campo.tipo == TipoCampo.select) ...[
             const SizedBox(height: 8),
-            TextField(
-              controller: campo.opcionesCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Opciones (separadas por coma)',
-                hintText: 'Casado, Viudo, Soltero',
-                isDense: true,
-                border: OutlineInputBorder(),
-              ),
+            OpcionesListEditor(
+              opciones: campo.opciones,
+              onChanged: (next) {
+                campo.opciones = next;
+                onChanged();
+              },
             ),
           ],
-          if (campo.tipo != TipoCampo.select) ...[
+          if (campo.tipo == TipoCampo.numero ||
+              campo.tipo == TipoCampo.texto) ...[
             const SizedBox(height: 8),
             Row(
               children: [
@@ -744,6 +1711,28 @@ class _CampoEditableTile extends StatelessWidget {
               ],
             ),
           ],
+          const SizedBox(height: 8),
+          _buildDefault(),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Checkbox(
+                value: campo.contabilizar,
+                onChanged: (v) {
+                  campo.contabilizar = v ?? false;
+                  onChanged();
+                },
+              ),
+              const Flexible(
+                child: Text(
+                  'Totalizar en reportes',
+                  style: TextStyle(fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+          const Divider(height: 12),
+          _buildReglas(),
         ],
       ),
     );
@@ -758,13 +1747,19 @@ class _SrvImagePlaceholder extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.miscellaneous_services_outlined,
-              size: 36, color: AppTheme.textSecondary.withOpacity(0.4)),
+          Icon(
+            Icons.miscellaneous_services_outlined,
+            size: 36,
+            color: AppTheme.textSecondary.withOpacity(0.4),
+          ),
           const SizedBox(height: 6),
-          Text('Toca para agregar imagen',
-              style: TextStyle(
-                  fontSize: 12,
-                  color: AppTheme.textSecondary.withOpacity(0.6))),
+          Text(
+            'Toca para agregar imagen',
+            style: TextStyle(
+              fontSize: 12,
+              color: AppTheme.textSecondary.withOpacity(0.6),
+            ),
+          ),
         ],
       ),
     );

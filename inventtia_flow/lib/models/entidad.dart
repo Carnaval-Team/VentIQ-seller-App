@@ -20,7 +20,7 @@ class Entidad {
   });
 
   factory Entidad.fromJson(Map<String, dynamic> json) => Entidad(
-        id: json['id'] as int,
+        id: (json['id'] as num).toInt(),
         denominacion: json['denominacion'] as String,
         direccion: json['direccion'] as String?,
         telefono: json['telefono'] as String?,

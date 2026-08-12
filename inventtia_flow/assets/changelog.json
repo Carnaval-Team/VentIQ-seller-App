@@ -1,8 +1,283 @@
 {
   "app_name": "inventtia_flow",
-  "current_version": "1.3.1",
-  "build": 5,
+  "current_version": "1.4.7",
+  "build": 15,
   "changelogs": [
+    {
+      "version": "1.4.7",
+      "date": "2026-08-03",
+      "title": "🚌 PDF de reservas ómnibus y listado más claro",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "PDF de transporte ómnibus",
+          "description": "El PDF muestra Nombre, CI, Teléfono, Tipo de viaje, Recogida, Destino, Notas y Precio a cobrar. Ida y Regreso van en una sola fila; no se incluyen canceladas."
+        },
+        {
+          "type": "improvement",
+          "title": "Total a cobrar y número de página",
+          "description": "Se quitaron las tablas de resumen del PDF. Debajo del detalle aparece el total a cobrar y en el pie de cada página: Página X de Y."
+        },
+        {
+          "type": "improvement",
+          "title": "Resumen de cantidades por tramo",
+          "description": "En el listado, el panel de Totales muestra solo Ida y Regreso (sin dinero ni puntos Recogida/Destino). El filtro de estado por defecto es Todos."
+        },
+        {
+          "type": "improvement",
+          "title": "Precio visible en cada reserva",
+          "description": "En administración y trabajador vuelve a mostrarse en la tarjeta lo que se debe cobrar por cada reserva."
+        },
+        {
+          "type": "fix",
+          "title": "Etiquetas Regreso / Ida y Regreso",
+          "description": "Se renombraron «Vuelta» y «Ida y vuelta» a «Regreso» e «Ida y Regreso» en listados, totales y exportaciones."
+        }
+      ]
+    },
+    {
+      "version": "1.4.6",
+      "date": "2026-08-01",
+      "title": "📋 Reservas más claras y sesión estable en la web",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Totales por turno en el resumen",
+          "description": "En administración y trabajador, las cantidades por recurso y turno aparecen dentro del panel de Totales, junto al resumen del día."
+        },
+        {
+          "type": "improvement",
+          "title": "Botón Hoy más a mano",
+          "description": "En la barra de fechas, Hoy queda a la izquierda de la flecha derecha para volver al día actual con un toque."
+        },
+        {
+          "type": "improvement",
+          "title": "Canceladas y completadas más visibles",
+          "description": "Las canceladas muestran el sello de cancelado, borde rojo y no se pueden marcar como consumidas ni editar. Las completadas se destacan con fondo verde suave y tampoco se editan."
+        },
+        {
+          "type": "feature",
+          "title": "Exportar el día o todas desde hoy",
+          "description": "Al exportar a PDF o Excel puedes elegir solo el día que estás viendo, o todas las reservas del estado filtrado desde hoy en adelante."
+        },
+        {
+          "type": "fix",
+          "title": "Navegación admin + trabajador",
+          "description": "Corregida la barra inferior cuando el usuario es administrador y trabajador a la vez, para que las pestañas coincidan con las pantallas."
+        }
+      ]
+    },
+    {
+      "version": "1.4.5",
+      "date": "2026-07-28",
+      "title": "💰 Precio actualizado al editar una reserva",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Recálculo de precio al editar desde administración",
+          "description": "Si al editar una reserva cambian datos que afectan el precio (reglas del servicio o precio del turno), el sistema recalcula y guarda el nuevo importe automáticamente."
+        },
+        {
+          "type": "improvement",
+          "title": "Vista previa del precio en el editor",
+          "description": "Al modificar la información adicional de la reserva puedes ver el precio recalculado antes de guardar, y el aviso confirma el nuevo total si cambió."
+        }
+      ]
+    },
+    {
+      "version": "1.4.4",
+      "date": "2026-07-22",
+      "title": "🚌 Pasajes ómnibus: precios, turnos y listado unificado",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Reserva de pasaje por tipo y fechas",
+          "description": "El pasajero elige solo el tipo (ida, vuelta o ida y vuelta) y las fechas. El sistema asigna el turno automáticamente: solo-ida / solo-vuelta, o el paquete combinado cuando corresponde."
+        },
+        {
+          "type": "feature",
+          "title": "Precio ida y vuelta según el mismo día",
+          "description": "Por defecto el precio del turno combinado aplica solo si ida y vuelta son el mismo día; en fechas distintas se cobran por separado. En el servicio hay un checkbox para aplicar el precio de ida y vuelta a todos los pasajes."
+        },
+        {
+          "type": "feature",
+          "title": "Configuración mínima de turnos de transporte",
+          "description": "Cada vehículo exige al menos un turno Solo Ida y uno Solo Vuelta. El turno combinado es opcional. La pantalla de recursos avisa si falta alguno."
+        },
+        {
+          "type": "feature",
+          "title": "Reserva de pasaje desde administración",
+          "description": "Al reservar capacidad de un servicio ómnibus, el administrador usa el mismo flujo de tipo de pasaje, fechas, asignación de turnos y precio estimado que el cliente."
+        },
+        {
+          "type": "improvement",
+          "title": "Listado: una tarjeta para ida y vuelta el mismo día",
+          "description": "En reservas de admin y vendedor, un viaje ida+vuelta el mismo día se muestra como una sola reserva con tipo Ida y vuelta. Si las fechas son distintas, aparecen por separado como Ida y Vuelta."
+        },
+        {
+          "type": "improvement",
+          "title": "Totales sin doble conteo e importes correctos",
+          "description": "El resumen de reservas ya no cuenta dos veces un pasaje de ida y vuelta del mismo día, y suma los importes según los precios reales de cada tramo o del paquete."
+        }
+      ]
+    },
+    {
+      "version": "1.4.3",
+      "date": "2026-07-15",
+      "title": "📞 Contacto al cliente y swipe de fechas más fiable",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Llamar o WhatsApp al tocar el teléfono",
+          "description": "En las reservas de administrador y trabajador, al tocar el teléfono del cliente aparece un diálogo para llamar o abrir WhatsApp. Funciona en la app y en la web."
+        },
+        {
+          "type": "fix",
+          "title": "Swipe entre días sin reservas",
+          "description": "Corregido el deslizamiento horizontal cuando el día no tiene reservas: ahora puedes cambiar de fecha desde toda el área vacía, no solo sobre el texto."
+        }
+      ]
+    },
+    {
+      "version": "1.4.2",
+      "date": "2026-07-13",
+      "title": "📅 Reservas de administración con la misma usabilidad del trabajador",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Navegación por día en reservas del administrador",
+          "description": "El listado de reservas administrativas ahora funciona día a día: flechas, selector de fecha, botón Hoy y deslizamiento horizontal para cambiar de fecha, igual que en la vista del trabajador."
+        },
+        {
+          "type": "improvement",
+          "title": "Filtros colapsables y chips de estado",
+          "description": "Los filtros de local, servicio y estado quedan en un panel compacto. Por defecto se muestran las reservas del día en estado Reservado, y se pueden limpiar o ampliar con un toque."
+        },
+        {
+          "type": "improvement",
+          "title": "Exportación alineada al día seleccionado",
+          "description": "Al exportar a PDF o Excel se usa directamente el día que estás viendo, sin tener que configurar un rango Desde/Hasta."
+        }
+      ]
+    },
+    {
+      "version": "1.4.1",
+      "date": "2026-07-10",
+      "title": "💰 Precios por servicio y reservas visibles en administración",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Precio configurable por servicio",
+          "description": "Desde la gestión del servicio puedes definir precio base, monedas habilitadas (USD, EUR, CUP, MLC) y reglas que ajustan el precio según los datos adicionales del cliente (por ejemplo, tipo de viaje u opciones de un campo seleccionable)."
+        },
+        {
+          "type": "feature",
+          "title": "Precio independiente por cada opción",
+          "description": "En las reglas de precio, cada opción de un campo seleccionable tiene su propio valor por moneda. Ya no se comparte un mismo precio entre varias opciones marcadas."
+        },
+        {
+          "type": "feature",
+          "title": "Total de reserva al reservar",
+          "description": "El cliente ve el total calculado al final del formulario de datos adicionales. Si el servicio admite varias monedas, puede elegir en cuál ver el precio antes de confirmar."
+        },
+        {
+          "type": "feature",
+          "title": "Precio guardado en cada reserva",
+          "description": "Al crear la reserva (cliente o administrador), se guarda el precio total y la moneda usados en ese momento, para que el historial refleje el valor real de cada cita."
+        },
+        {
+          "type": "feature",
+          "title": "Precio en listados y exportaciones",
+          "description": "Las reservas muestran el precio en las vistas de cliente, administrador y trabajador. Los reportes PDF y Excel incluyen la columna Precio con el mismo formato de la app."
+        },
+        {
+          "type": "improvement",
+          "title": "Opciones de campos con chips",
+          "description": "Las opciones de los campos tipo seleccionable se gestionan como chips independientes (añadir, editar, eliminar), en lugar de escribirlas separadas por comas."
+        },
+        {
+          "type": "improvement",
+          "title": "Confirmar consumido",
+          "description": "El botón para marcar una reserva como atendida se renombró a «Confirmar consumido», alineado con el estado Completado."
+        },
+        {
+          "type": "fix",
+          "title": "Reservas visibles en administración",
+          "description": "Corregido el listado de reservas del administrador: ahora muestra las citas de clientes de la entidad (permisos RPC y RLS), sin filtro de fechas por defecto y con comparación correcta por día de cita."
+        },
+        {
+          "type": "fix",
+          "title": "Listado más robusto",
+          "description": "Mejorado el parseo de la respuesta del servidor y el envío de fechas sin zona horaria, para evitar listas vacías o errores al cargar reservas."
+        }
+      ]
+    },
+    {
+      "version": "1.4.0",
+      "date": "2026-07-10",
+      "title": "🚀 Datos inteligentes y control total de reservas",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Completa o cancela reservas en un toque",
+          "description": "Desde el listado de reservas, tanto administradores como trabajadores pueden marcar una reserva como completada o cancelarla al instante. Al cancelar, el cliente recibe su notificación automáticamente."
+        },
+        {
+          "type": "feature",
+          "title": "Totales automáticos de tus reservas",
+          "description": "Elige qué datos quieres contabilizar (por ejemplo asientos, paradas o tipo de viaje) y la app te muestra los totales sumados según tus filtros, con un desglose por día. Solo se cuentan las reservas completadas, para que tus números reflejen lo realmente atendido."
+        },
+        {
+          "type": "feature",
+          "title": "Datos que se completan solos",
+          "description": "Ahora los campos que pides al reservar pueden traer un valor por defecto, e incluso cambiarlo de forma inteligente según lo que elija el cliente. Menos escritura, menos errores y reservas más rápidas."
+        },
+        {
+          "type": "feature",
+          "title": "Campos de Sí / No",
+          "description": "Suma a tus servicios preguntas de tipo Sí o No (como '¿Lleva equipaje?') con un cómodo interruptor."
+        },
+        {
+          "type": "improvement",
+          "title": "Vista de reservas más clara de un vistazo",
+          "description": "Las reservas completadas se destacan con un borde azul y las canceladas aparecen atenuadas, para que sepas el estado de cada una sin leer letra por letra."
+        },
+        {
+          "type": "improvement",
+          "title": "El administrador ve todo el mes por defecto",
+          "description": "El listado de reservas del administrador ahora muestra el mes en curso completo y te deja filtrar por la fecha o el estado que prefieras cuando lo necesites."
+        }
+      ]
+    },
+    {
+      "version": "1.3.3",
+      "date": "2026-07-07",
+      "title": "📋 Vista de reservas rediseñada",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Lista de reservas vertical",
+          "description": "La vista de reservas del administrador y del trabajador ahora muestra cada reserva como una tarjeta con toda la información visible, eliminando la tabla horizontal que impedía ver todos los datos en pantallas pequeñas."
+        },
+        {
+          "type": "fix",
+          "title": "Reducción de peticiones al servidor",
+          "description": "Se optimizó la sincronización de sesión para que no se repita más de una vez cada 5 minutos, evitando peticiones innecesarias al servidor."
+        }
+      ]
+    },
+    {
+      "version": "1.3.2",
+      "date": "2026-07-07",
+      "title": "🛠️ Correcciones de visualización",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Scroll horizontal en tabla de reservas",
+          "description": "La tabla de reservas ahora permite desplazamiento horizontal para ver todas las columnas cuando hay muchos campos de datos adicionales."
+        }
+      ]
+    },
     {
       "version": "1.3.1",
       "date": "2026-07-05",

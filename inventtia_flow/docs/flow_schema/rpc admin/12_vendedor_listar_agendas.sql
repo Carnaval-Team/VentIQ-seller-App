@@ -27,6 +27,8 @@ as $$
     jsonb_agg(
       jsonb_build_object(
         'id',                  a.id,
+        'uuid_usuario',        a.uuid_usuario,
+        'id_estado',           a.id_estado,
         'fecha_hora_reserva',  a.fecha_hora_reserva,
         'fecha_hora_atencion', a.fecha_hora_atencion,
         'created_at',          a.created_at,
@@ -34,6 +36,8 @@ as $$
         'cantidad',            a.cantidad,
         'datos_adicionales',   a.datos_adicionales,
         'reservado_por',       a.reservado_por,
+        'precio_total',        a.precio_total,
+        'moneda',              a.moneda,
         'estado', jsonb_build_object(
           'id',          es.id,
           'nombre',      es.nombre,
@@ -92,8 +96,8 @@ as $$
     and (p_id_local          is null or ls.id_local          = p_id_local)
     and (p_id_local_servicio is null or a.id_local_servicio  = p_id_local_servicio)
     and (p_id_estado         is null or a.id_estado          = p_id_estado)
-    and (p_desde             is null or a.fecha_hora_reserva >= p_desde)
-    and (p_hasta             is null or a.fecha_hora_reserva <= p_hasta);
+    and (p_desde             is null or a.fecha_hora_reserva::date >= p_desde::date)
+    and (p_hasta             is null or a.fecha_hora_reserva::date <= p_hasta::date);
 $$;
 
 grant execute on function flow.vendedor_listar_agendas(

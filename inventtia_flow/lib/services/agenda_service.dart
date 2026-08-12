@@ -57,6 +57,8 @@ class AgendaService {
     String? terceroApellidos,
     String? terceroCi,
     String? terceroTelefono,
+    String? moneda,
+    int? idTurno,
   }) async {
     try {
       final res = await _supabase.schema(_schema).rpc(
@@ -72,6 +74,8 @@ class AgendaService {
           if (paraTercero) 'p_t_apellidos': terceroApellidos,
           if (paraTercero) 'p_t_ci': terceroCi,
           if (paraTercero) 'p_t_telefono': terceroTelefono,
+          if (moneda != null) 'p_moneda': moneda,
+          if (idTurno != null) 'p_id_turno': idTurno,
         },
       );
       final json = res as Map<String, dynamic>;

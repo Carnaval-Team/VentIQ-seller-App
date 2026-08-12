@@ -6,6 +6,7 @@ import '../../models/hr/hr_audit_log.dart';
 import '../../services/worker_service.dart';
 import '../../services/store_service.dart';
 import '../../services/hr/hr_salary_report_service.dart';
+import '../../utils/navigation_guard.dart';
 import '../../widgets/hr/hr_drawer.dart';
 
 class HRWorkerConfigScreen extends StatefulWidget {
@@ -19,8 +20,10 @@ class _HRWorkerConfigScreenState extends State<HRWorkerConfigScreen> {
   bool _isLoading = true;
   int? _storeId;
   String? _userUuid;
+  bool _canDeleteWorkers = false;
 
   List<WorkerData> _workers = [];
+  List<WorkerRole> _roles = [];
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
@@ -43,9 +46,12 @@ class _HRWorkerConfigScreenState extends State<HRWorkerConfigScreen> {
         if (mounted) setState(() => _isLoading = false);
         return;
       }
+      final canDelete =
+          await NavigationGuard.canPerformAction('worker.delete');
       setState(() {
         _storeId = storeData['storeId'] as int?;
         _userUuid = storeData['userUuid'] as String?;
+        _canDeleteWorkers = canDelete;
       });
       await _loadWorkers();
     } catch (e) {
@@ -60,9 +66,11 @@ class _HRWorkerConfigScreenState extends State<HRWorkerConfigScreen> {
 
     try {
       final workers = await WorkerService.getWorkersByStore(_storeId!, _userUuid!);
+      final roles = await WorkerService.getRolesByStore(_storeId!);
       if (mounted) {
         setState(() {
           _workers = workers;
+          _roles = roles;
           _isLoading = false;
         });
       }
@@ -84,6 +92,318 @@ class _HRWorkerConfigScreenState extends State<HRWorkerConfigScreen> {
       return w.nombreCompleto.toLowerCase().contains(query) ||
           w.rolNombre.toLowerCase().contains(query);
     }).toList();
+  }
+
+  // Convierte un nombre de rol interno (p.ej. 'vendedor') al ID del rol
+  // organizacional (seg_roll) de la tienda, buscando por denominación.
+  int? _getRoleIdFromName(String? roleName) {
+    if (roleName == null) return null;
+    try {
+      final display = _getRoleDisplayName(roleName).toLowerCase();
+      final key = roleName.toLowerCase();
+      final role = _roles.firstWhere(
+        (r) {
+          final d = r.denominacion.toLowerCase();
+          if (d == display || d == key) return true;
+          if (key == 'vendedor' &&
+              (d.contains('vendedor') || d.contains('dependiente'))) {
+            return true;
+          }
+          return false;
+        },
+        orElse: () => WorkerRole(
+          id: 0,
+          denominacion: '',
+          descripcion: null,
+          createdAt: DateTime.now(),
+        ),
+      );
+      return role.id > 0 ? role.id : null;
+    } catch (e) {
+      print('⚠️ No se encontró rol con nombre: $roleName');
+      return null;
+    }
+  }
+
+  String _getRoleDisplayName(String role) {
+    switch (role.toLowerCase()) {
+      case 'gerente':
+        return 'Gerente';
+      case 'supervisor':
+        return 'Supervisor';
+      case 'auditor':
+        return 'Auditor';
+      case 'vendedor':
+        return 'Dependiente';
+      case 'almacenero':
+        return 'Almacenero';
+      case 'recursos_humanos':
+        return 'Recursos Humanos';
+      default:
+        if (role.isEmpty) return 'Trabajador';
+        return role[0].toUpperCase() + role.substring(1);
+    }
+  }
+
+  // Diálogo para que Recursos Humanos agregue un trabajador SIN crear
+  // usuario de acceso al sistema (solo registro en la tabla de trabajadores).
+  void _showAddWorkerDialog() {
+    final nombresController = TextEditingController();
+    final apellidosController = TextEditingController();
+    final salarioHorasController = TextEditingController(text: '0');
+    String? selectedRole;
+    bool isSaving = false;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.person_add, color: AppColors.primary),
+              const SizedBox(width: 12),
+              const Expanded(child: Text('Agregar Trabajador')),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: nombresController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombres *',
+                    prefixIcon: Icon(Icons.person),
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: apellidosController,
+                  decoration: const InputDecoration(
+                    labelText: 'Apellidos *',
+                    prefixIcon: Icon(Icons.person_outline),
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: salarioHorasController,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Salario por Hora',
+                    prefixIcon: Icon(Icons.attach_money),
+                    border: OutlineInputBorder(),
+                    hintText: '0.00',
+                    helperText: 'Salario en moneda local por hora trabajada',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: selectedRole,
+                  decoration: const InputDecoration(
+                    labelText: 'Rol *',
+                    prefixIcon: Icon(Icons.badge),
+                    border: OutlineInputBorder(),
+                    helperText: 'Rol organizacional del trabajador',
+                  ),
+                  items: const [
+                    'gerente',
+                    'supervisor',
+                    'auditor',
+                    'vendedor',
+                    'almacenero',
+                    'recursos_humanos',
+                  ]
+                      .map(
+                        (role) => DropdownMenuItem(
+                          value: role,
+                          child: Text(_getRoleDisplayName(role)),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) =>
+                      setDialogState(() => selectedRole = value),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.shade200),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.orange),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'El trabajador se creará sin usuario de acceso al '
+                          'sistema. Un gerente o supervisor podrá crearle uno '
+                          'después si es necesario.',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed:
+                  isSaving ? null : () => Navigator.pop(dialogContext),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton.icon(
+              onPressed: isSaving
+                  ? null
+                  : () async {
+                      final nombres = nombresController.text.trim();
+                      final apellidos = apellidosController.text.trim();
+
+                      if (nombres.isEmpty || apellidos.isEmpty) {
+                        ScaffoldMessenger.of(dialogContext).showSnackBar(
+                          const SnackBar(
+                            content: Text('Ingresa nombres y apellidos'),
+                            backgroundColor: AppColors.error,
+                          ),
+                        );
+                        return;
+                      }
+                      if (selectedRole == null) {
+                        ScaffoldMessenger.of(dialogContext).showSnackBar(
+                          const SnackBar(
+                            content: Text('Selecciona un rol'),
+                            backgroundColor: AppColors.error,
+                          ),
+                        );
+                        return;
+                      }
+
+                      setDialogState(() => isSaving = true);
+
+                      try {
+                        final success =
+                            await WorkerService.createWorkerBasic(
+                          storeId: _storeId!,
+                          nombres: nombres,
+                          apellidos: apellidos,
+                          usuarioUuid: null,
+                          rolId: _getRoleIdFromName(selectedRole),
+                          salarioHoras:
+                              double.tryParse(salarioHorasController.text) ??
+                                  0.0,
+                        );
+
+                        if (!success) {
+                          throw Exception('No se pudo crear el trabajador');
+                        }
+
+                        if (dialogContext.mounted) {
+                          Navigator.pop(dialogContext);
+                        }
+                        if (mounted) {
+                          ScaffoldMessenger.of(this.context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Trabajador creado exitosamente'),
+                              backgroundColor: AppColors.success,
+                            ),
+                          );
+                          await _loadWorkers();
+                        }
+                      } catch (e) {
+                        setDialogState(() => isSaving = false);
+                        if (dialogContext.mounted) {
+                          ScaffoldMessenger.of(dialogContext).showSnackBar(
+                            SnackBar(
+                              content: Text('Error: $e'),
+                              backgroundColor: AppColors.error,
+                            ),
+                          );
+                        }
+                      }
+                    },
+              icon: isSaving
+                  ? const SizedBox(
+                      height: 16,
+                      width: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor:
+                            AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : const Icon(Icons.add),
+              label: const Text('Agregar'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteWorker(WorkerData worker) async {
+    if (_storeId == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Eliminar Trabajador'),
+        content: Text(
+          '¿Estás seguro de que deseas eliminar a ${worker.nombreCompleto}?\n\n'
+          'Se eliminarán todos sus roles en el sistema (gerente, supervisor, '
+          'dependiente, almacenero, recursos humanos, auditor).\n\n'
+          'Esta acción no se puede deshacer.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final success = await WorkerService.deleteWorker(
+        worker.trabajadorId,
+        _storeId!,
+      );
+      if (!mounted) return;
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Trabajador eliminado exitosamente'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        await _loadWorkers();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al eliminar: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
   }
 
   void _showEditSheet(WorkerData worker) {
@@ -387,6 +707,11 @@ class _HRWorkerConfigScreenState extends State<HRWorkerConfigScreen> {
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
+            icon: const Icon(Icons.person_add, color: Colors.white),
+            onPressed: _showAddWorkerDialog,
+            tooltip: 'Agregar Trabajador',
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: _loadWorkers,
           ),
@@ -494,7 +819,18 @@ class _HRWorkerConfigScreenState extends State<HRWorkerConfigScreen> {
                                     ],
                                   ],
                                 ),
-                                trailing: const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (_canDeleteWorkers)
+                                      IconButton(
+                                        icon: const Icon(Icons.delete_outline, color: Colors.red),
+                                        tooltip: 'Eliminar trabajador',
+                                        onPressed: () => _confirmDeleteWorker(worker),
+                                      ),
+                                    const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+                                  ],
+                                ),
                               ),
                             );
                           },

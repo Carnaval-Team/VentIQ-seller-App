@@ -40,7 +40,7 @@
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
     
     <application
-        android:label="Inventtia"
+        android:label="Inventtia Caja"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
         <activity

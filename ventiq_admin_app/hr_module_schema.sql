@@ -511,3 +511,53 @@ BEGIN
     );
 END;
 $$;
+
+-- =====================================================
+-- 1.5 PERMISOS PARA FUNCIONES Y TABLAS HR
+-- =====================================================
+
+-- Permitir a usuarios autenticados ejecutar las funciones HR
+GRANT EXECUTE ON FUNCTION fn_check_is_hr_user(UUID, INTEGER) TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION fn_hr_workers_for_checkin(INTEGER) TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION fn_hr_workers_currently_working(INTEGER) TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION fn_hr_register_checkin(INTEGER, INTEGER, TIMESTAMPTZ, UUID) TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION fn_hr_batch_checkout(BIGINT[], TIMESTAMPTZ, BOOLEAN[], UUID) TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION fn_hr_dashboard_summary(INTEGER, DATE, DATE) TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION fn_hr_top_workers_by_pay(INTEGER, DATE, DATE, INTEGER) TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION fn_hr_salary_report(INTEGER, DATE, DATE) TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION fn_hr_update_worker_salary(INTEGER, INTEGER, NUMERIC, NUMERIC, UUID, TEXT) TO authenticated, anon;
+
+-- Habilitar RLS en tablas HR y definir políticas para usuarios autenticados
+ALTER TABLE hr_dat_asistencia ENABLE ROW LEVEL SECURITY;
+ALTER TABLE hr_dat_auditoria_salario ENABLE ROW LEVEL SECURITY;
+
+-- Política para hr_dat_asistencia: los usuarios autenticados pueden leer/insertar/actualizar
+-- registros de su tienda asignada. Las funciones SECURITY DEFINER bypass RLS,
+-- pero esta política permite acceso directo si es necesario en el futuro.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies WHERE tablename = 'hr_dat_asistencia' AND policyname = 'hr_asistencia_authenticated_access'
+    ) THEN
+        CREATE POLICY hr_asistencia_authenticated_access ON hr_dat_asistencia
+        FOR ALL
+        TO authenticated
+        USING (true)
+        WITH CHECK (true);
+    END IF;
+END
+$$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies WHERE tablename = 'hr_dat_auditoria_salario' AND policyname = 'hr_auditoria_authenticated_access'
+    ) THEN
+        CREATE POLICY hr_auditoria_authenticated_access ON hr_dat_auditoria_salario
+        FOR ALL
+        TO authenticated
+        USING (true)
+        WITH CHECK (true);
+    END IF;
+END
+$$;
