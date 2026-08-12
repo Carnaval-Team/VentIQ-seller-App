@@ -48,7 +48,11 @@
       "PowerShell(git add *)",
       "Bash(git commit *)",
       "PowerShell(git push *)",
-      "mcp__supabase__list_tables"
+      "mcp__supabase__list_tables",
+      "Bash(node -e ' *)",
+      "Bash(node --experimental-strip-types --no-warnings /tmp/t.ts)",
+      "Bash(node --experimental-strip-types --no-warnings ./_scratch_t.ts)",
+      "Bash(rm -f /c/tmp/pure.ts /c/tmp/t.ts)"
     ]
   },
   "enabledMcpjsonServers": [

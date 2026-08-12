@@ -7,8 +7,15 @@
 //   message_template?: string,
 //   delay_min_seconds?: number,   // anti-ban (default 5)
 //   delay_max_seconds?: number,   // anti-ban (default 10)
-//   tipo_envio?: 'manual'|'programado'
+//   tipo_envio?: 'manual'|'programado',
+//   send_summary?: boolean        // resumen final (default true)
 // }
+//
+// Formato del mensaje (ver buildCaption): una imagen por producto con un
+// caption de 5 líneas — nombre + icono, disponibilidad con semáforo
+// 🟢/🟡/🔴, precio, presentación y hashtag de categoría. Al terminar TODA la
+// tanda se manda además un mensaje de texto con el listado resumido de
+// productos (ver buildSummaryMessages).
 //
 // Estrategia anti-ban actual:
 //   1. Por producto: se envía la misma imagen a TODOS los destinatarios
@@ -54,6 +61,14 @@ interface SendBody {
   // de aparecer dos veces). `product_ids` y `destinations` se ignoran: los
   // pares (producto, chat) salen de los propios logs.
   resume_log_ids?: number[];
+
+  // Uso INTERNO (cadena de chunks): lista completa de productos del envío
+  // lógico, para que el resumen final del último chunk liste todo y no sólo
+  // su propio trozo. Si no viene, se asume `product_ids`.
+  summary_product_ids?: number[];
+
+  /** ¿Mandar el mensaje resumen al final del envío? Default true. */
+  send_summary?: boolean;
 }
 
 // ───────────────────────────────────────────────────────────────────────
@@ -84,37 +99,90 @@ function safeCaption(text: string): string {
   return text.slice(0, 1017) + "...";
 }
 
-// Encabezados rotativos estilo marketing — se elige uno aleatorio por mensaje
-// para variar el tono entre productos (no spam-y).
-const MARKETING_HEADERS = [
-  "✨ *NUEVO EN TIENDA* ✨",
-  "🔥 *OFERTA DE HOY* 🔥",
-  "⭐ *LO MÁS PEDIDO*",
-  "🛍️ *YA DISPONIBLE*",
-  "💎 *SELECCIÓN ESPECIAL*",
-  "🚀 *RECIÉN LLEGADO*",
-  "🌟 *DESTACADO DE LA SEMANA*",
-  "🎉 *TE VA A ENCANTAR*",
+// ───────────────────────────────────────────────────────────────────────
+//  Formato del mensaje
+//  Política actual (deliberadamente austera): el caption lleva SÓLO 5 datos
+//  — nombre, disponibilidad, precio, presentación y hashtag de categoría.
+//  Sin encabezados de marketing, sin líneas separadoras y sin CTA: además de
+//  leerse más limpio, los captions cortos no inflan la cola de Puppeteer de
+//  la sesión WAPI.
+// ───────────────────────────────────────────────────────────────────────
+
+/** Iconos "elegantes" que acompañan al nombre. Se rotan entre productos. */
+const PRODUCT_ICONS = [
+  "✨", "💫", "🌟", "⭐", "💎", "🔹", "🔸", "🏷️",
+  "🛍️", "🎁", "🌸", "🍀", "💠", "🎯", "🪄", "🔖",
 ];
 
-const MARKETING_CTAS = [
-  "🏬 *Visítanos* y llévatelo hoy mismo.",
-  "📍 Te esperamos en la tienda.",
-  "🛒 Ven a verlo — *disponible en tienda.*",
-  "💬 Escríbenos si quieres más información.",
-  "🕒 Pásate por la tienda y compruébalo.",
-  "😊 *Te esperamos* — calidad garantizada.",
-];
+/** Con este stock o menos, la disponibilidad se marca 🟡 en vez de 🟢. */
+const STOCK_BAJO = 5;
+
+/** Tope conservador por mensaje de texto (WhatsApp corta sobre los 4096). */
+const SUMMARY_MAX_CHARS = 3_500;
+
+/**
+ * Máximo de mensajes de resumen por destino. El resumen se manda al final del
+ * último chunk, dentro del mismo worker (techo ~400s): sin tope, un catálogo
+ * enorme × muchos destinos se cortaría a media tanda de textos. Con 4 partes
+ * caben ~180 productos; el resto se anuncia como "y N más" en vez de
+ * desaparecer en silencio.
+ */
+const SUMMARY_MAX_PARTS = 4;
 
 function pick<T>(arr: T[], seed: number): T {
   return arr[seed % arr.length];
 }
 
+/** Separador de miles respetando la parte decimal. */
+function withThousands(s: string): string {
+  const [ent, dec] = s.split(".");
+  return ent.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (dec ? `.${dec}` : "");
+}
+
 function formatPrice(n: number): string {
   // Formato con separador de miles y sin decimales innecesarios.
   if (!Number.isFinite(n) || n <= 0) return "";
-  const fixed = n % 1 === 0 ? n.toFixed(0) : n.toFixed(2);
-  return fixed.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return withThousands(n % 1 === 0 ? n.toFixed(0) : n.toFixed(2));
+}
+
+/** Cantidades: a diferencia del precio admite el 0 y decimales (fraccionables). */
+function formatQty(n: number): string {
+  if (!Number.isFinite(n)) return "";
+  // 2.50 → "2.5" · 2.00 → "2"
+  const s = Number.isInteger(n)
+    ? n.toFixed(0)
+    : n.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+  return withThousands(s);
+}
+
+/**
+ * Semáforo de disponibilidad: 🟢 holgado · 🟡 quedan pocas · 🔴 agotado.
+ * `null` significa "no se pudo calcular el stock" → sin semáforo, para no
+ * anunciar un agotado que no sabemos si es real.
+ */
+function stockEmoji(stock: number | null): string {
+  if (stock == null) return "";
+  if (stock <= 0) return "🔴";
+  if (stock <= STOCK_BAJO) return "🟡";
+  return "🟢";
+}
+
+/** Texto de cantidad: "24 disponibles" · "Agotado" · "" si no se sabe. */
+function stockTexto(stock: number | null): string {
+  if (stock == null) return "";
+  if (stock <= 0) return "Agotado";
+  return `${formatQty(stock)} disponibles`;
+}
+
+/**
+ * Recorta nombres largos para el listado del resumen. Además de leerse mejor,
+ * acota la longitud de cada línea: sin esto un nombre kilométrico podría
+ * empujar un bloque del resumen por encima del límite de WhatsApp (el troceo
+ * nunca parte una línea por la mitad).
+ */
+function shortName(s: string, max = 60): string {
+  const t = s.trim();
+  return t.length <= max ? t : `${t.slice(0, max - 1)}…`;
 }
 
 /**
@@ -140,88 +208,351 @@ function categoriaToHashtag(cat: string | null | undefined): string {
   return slug ? `#${slug}` : "";
 }
 
+/** Datos de un producto ya resueltos y listos para pintar en el mensaje. */
+interface ProdInfo {
+  id: number;
+  denominacion: string;
+  descripcion: string | null;
+  imagen: string | null;
+  sku: string | null;
+  categoria: string | null;
+  /** Nombre de la presentación base ("Unidad", "Caja", "Paquete"…) o null. */
+  presentacion: string | null;
+  precio: number;
+  /** Existencias sumadas. `null` = no se pudo calcular (≠ agotado). */
+  stock: number | null;
+}
+
 /**
- * Construye un caption estilo marketing: encabezado llamativo, nombre del
- * producto en negrita, descripción opcional, precio destacado, separadores
- * visuales y CTA al final. Truncado a 1020 chars (límite WhatsApp).
+ * Caption del producto. Cinco líneas como máximo, sin adornos:
+ *
+ *   ✨ *Coca Cola 1L*
+ *   🟢 24 disponibles
+ *   💰 $250 CUP
+ *   📦 Presentación: Caja
+ *   #refrescos
+ *
+ * De la presentación se muestra SÓLO el nombre — nunca la cantidad por
+ * empaque ("12 x Caja"): al cliente le importa en qué formato lo compra,
+ * no cómo se contabiliza en el almacén.
  *
  * Si se pasa un `template`, se respeta y se reemplazan los placeholders
- * `{nombre}`, `{descripcion}`, `{precio}`.
+ * `{nombre}`, `{precio}`, `{categoria}`, `{sku}`, `{stock}`,
+ * `{disponibilidad}` y `{presentacion}`.
  */
 function buildCaption(
   template: string | undefined,
-  p: {
-    denominacion: string;
-    descripcion?: string | null;
-    precio?: number | null;
-    sku?: string | null;
-    categoria?: string | null;
-    stock?: number | null;
-  },
+  p: ProdInfo,
   seed: number,
 ): string {
-  const stockStr = p.stock != null && p.stock > 0 ? formatPrice(p.stock) : "";
+  const cantidad = stockTexto(p.stock);
+  const emoji = stockEmoji(p.stock);
+  const precioStr = formatPrice(p.precio);
+  const tag = categoriaToHashtag(p.categoria);
+
   if (template && template.includes("{nombre}")) {
     return safeCaption(
       template
         .replaceAll("{nombre}", p.denominacion ?? "")
         // {descripcion} se rellena vacío: la política actual oculta la
-        // descripción del producto en los envíos por WhatsApp (ver buildCaption
-        // por defecto). Si el template la pide, queda en blanco.
+        // descripción del producto en los envíos por WhatsApp (ver el
+        // formato por defecto). Si el template la pide, queda en blanco.
         .replaceAll("{descripcion}", "")
-        .replaceAll("{precio}", p.precio != null ? formatPrice(p.precio) : "")
+        .replaceAll("{precio}", precioStr)
         // {categoria} → hashtag (#alimentos, #aseo_personal, …)
-        .replaceAll("{categoria}", categoriaToHashtag(p.categoria))
+        .replaceAll("{categoria}", tag)
         .replaceAll("{sku}", p.sku ?? "")
-        .replaceAll("{stock}", stockStr),
+        .replaceAll("{stock}", p.stock != null ? formatQty(p.stock) : "")
+        .replaceAll("{disponibilidad}", cantidad ? `${emoji} ${cantidad}` : "")
+        .replaceAll("{presentacion}", p.presentacion ?? ""),
     );
   }
 
-  const header = pick(MARKETING_HEADERS, seed);
-  const cta = pick(MARKETING_CTAS, seed + 1);
-  const sep = "━━━━━━━━━━━━━━";
-
   const parts: string[] = [];
-  parts.push(header);
-  parts.push("");
-  parts.push(`🛍️ *${p.denominacion.trim()}*`);
-
-  // NOTA: la descripción del producto se omite intencionalmente del caption
-  // para reducir longitud del mensaje y consumo de RAM en la sesión WAPI
-  // (captions largos inflan la cola de Puppeteer). Si en el futuro se quiere
-  // reactivar, basta con re-añadir el bloque `_${p.descripcion}_` aquí.
-
-  parts.push("");
-  parts.push(sep);
-
-  if (p.precio != null && p.precio > 0) {
-    parts.push(`💰 *Precio:* $${formatPrice(p.precio)} CUP`);
-  }
-  // Categoría: mostramos AMBAS formas — la línea con icono (legible) y el
-  // hashtag debajo (agrupable/tap en WhatsApp).
-  //   🏷️ Alimentos
-  //   #alimentos
-  if (p.categoria && p.categoria.trim()) {
-    parts.push(`🏷️ ${p.categoria.trim()}`);
-  }
-  const tag = categoriaToHashtag(p.categoria);
-  if (tag) {
-    parts.push(tag);
-  }
-  // Stock disponible — solo mostramos cuando hay existencia real.
-  // Si quedan pocas unidades añadimos un toque de urgencia.
-  if (p.stock != null && p.stock > 0) {
-    if (p.stock <= 5) {
-      parts.push(`⚠️ *¡Solo ${formatPrice(p.stock)} disponibles!*`);
-    } else {
-      parts.push(`📦 *Disponibles:* ${formatPrice(p.stock)} unidades`);
-    }
-  }
-  parts.push(sep);
-  parts.push("");
-  parts.push(cta);
+  parts.push(`${pick(PRODUCT_ICONS, seed)} *${p.denominacion.trim()}*`);
+  if (cantidad) parts.push(`${emoji} ${cantidad}`);
+  if (precioStr) parts.push(`💰 $${precioStr} CUP`);
+  if (p.presentacion) parts.push(`📦 Presentación: ${p.presentacion}`);
+  if (tag) parts.push(tag);
 
   return safeCaption(parts.join("\n"));
+}
+
+/**
+ * Mensaje(s) de resumen que se manda al final de la tanda: un listado
+ * compacto de nombre · cantidad/disponibilidad · precio.
+ *
+ *   📋 *RESUMEN DE PRODUCTOS*
+ *   _12 productos · precios en CUP_
+ *
+ *   🟢 *Coca Cola 1L* · 24 disponibles · 💰 $250
+ *   🟡 *Pan Suave* · 3 disponibles · 💰 $80
+ *   🔴 *Cerveza Cristal* · Agotado · 💰 $200
+ *
+ * Devuelve varios mensajes si el listado no cabe en uno solo (WhatsApp corta
+ * los textos largos, así que troceamos por debajo de SUMMARY_MAX_CHARS).
+ */
+function buildSummaryMessages(items: ProdInfo[]): string[] {
+  if (items.length === 0) return [];
+
+  const lineas = items.map((p) => {
+    // "▪️" cuando no hay dato de stock: mantiene la columna alineada sin
+    // afirmar una disponibilidad que no conocemos.
+    const campos = [`${stockEmoji(p.stock) || "▪️"} *${shortName(p.denominacion)}*`];
+    const cantidad = stockTexto(p.stock);
+    if (cantidad) campos.push(cantidad);
+    const precioStr = formatPrice(p.precio);
+    if (precioStr) campos.push(`💰 $${precioStr}`);
+    return campos.join(" · ");
+  });
+
+  const bloques: string[] = [];
+  let buf: string[] = [];
+  let len = 0;
+  for (const linea of lineas) {
+    if (buf.length > 0 && len + linea.length + 1 > SUMMARY_MAX_CHARS) {
+      bloques.push(buf.join("\n"));
+      buf = [];
+      len = 0;
+    }
+    buf.push(linea);
+    len += linea.length + 1;
+  }
+  if (buf.length > 0) bloques.push(buf.join("\n"));
+
+  // Tope de partes: preferimos un resumen recortado y honesto a uno completo
+  // que el worker no alcance a mandar entero.
+  let omitidos = 0;
+  if (bloques.length > SUMMARY_MAX_PARTS) {
+    omitidos = bloques
+      .slice(SUMMARY_MAX_PARTS)
+      .reduce((acc, b) => acc + b.split("\n").length, 0);
+    bloques.length = SUMMARY_MAX_PARTS;
+    console.warn(
+      `[wapi-send-products] resumen recortado a ${SUMMARY_MAX_PARTS} mensaje(s): ` +
+        `${omitidos} de ${items.length} producto(s) no se listan`,
+    );
+  }
+
+  return bloques.map((cuerpo, i) => {
+    const titulo = bloques.length > 1
+      ? `📋 *RESUMEN DE PRODUCTOS* (${i + 1}/${bloques.length})`
+      : "📋 *RESUMEN DE PRODUCTOS*";
+    const pie = omitidos > 0 && i === bloques.length - 1
+      ? `\n\n_… y ${omitidos} producto(s) más disponibles en tienda._`
+      : "";
+    return `${titulo}\n_${items.length} producto(s) · precios en CUP_\n\n${cuerpo}${pie}`;
+  });
+}
+
+/**
+ * Carga todo lo que el mensaje necesita de cada producto: nombre, imagen,
+ * categoría, precio vigente, presentación base y stock disponible.
+ *
+ * Se usa dos veces por tanda: para los productos del chunk que se está
+ * despachando y (en el último chunk) para el listado completo del resumen.
+ */
+async function loadProductInfo(
+  admin: ReturnType<typeof serviceClient>,
+  idTienda: number,
+  ids: number[],
+): Promise<Map<number, ProdInfo>> {
+  const out = new Map<number, ProdInfo>();
+  if (ids.length === 0) return out;
+
+  const { data: productos, error: prodErr } = await admin
+    .from("app_dat_producto")
+    .select(
+      "id, denominacion, descripcion, imagen, sku, app_dat_categoria(denominacion)",
+    )
+    .in("id", ids);
+  if (prodErr) throw new Error(`Error cargando productos: ${prodErr.message}`);
+
+  // Precio venta (último vigente por producto).
+  // `app_dat_precio_venta` es un histórico: cada producto puede tener N filas
+  // (una por cada cambio de precio). El precio actual es el de mayor `id`.
+  // Traemos todo el histórico ordenado por id desc y nos quedamos con la
+  // primera ocurrencia por producto (la más reciente).
+  const { data: precios } = await admin
+    .from("app_dat_precio_venta")
+    .select("id, id_producto, precio_venta_cup, precio_venta_usd")
+    .in("id_producto", ids)
+    .order("id", { ascending: false });
+
+  const precioMap = new Map<number, number>();
+  (precios ?? []).forEach((p: any) => {
+    if (precioMap.has(p.id_producto)) return; // ya tenemos el más reciente
+    precioMap.set(
+      p.id_producto,
+      Number(p.precio_venta_cup ?? p.precio_venta_usd ?? 0),
+    );
+  });
+
+  // ───────────────────────────────────────────────────────────────────
+  // Stock disponible por producto (suma sobre todas las ubicaciones de
+  // todos los almacenes vinculados a algún TPV de la tienda).
+  //
+  // 1. tpvs.id_almacen ─→ 2. layout_almacen.id (ubicaciones) ─→
+  // 3. inventario_productos (histórico: última fila por
+  //    (id_producto, id_ubicacion) manda) ─→ sumar cantidad_final.
+  //
+  // `stockOk` sólo se pone a true si la cadena llegó hasta el final. Si la
+  // tienda no tiene almacenes/ubicaciones o algo falla, el stock queda
+  // DESCONOCIDO (null) en vez de 0 — anunciar "🔴 Agotado" por un fallo de
+  // lectura sería peor que no decir nada.
+  // ───────────────────────────────────────────────────────────────────
+  const stockMap = new Map<number, number>();
+  let stockOk = false;
+  try {
+    const { data: tpvs } = await admin
+      .from("app_dat_tpv")
+      .select("id_almacen")
+      .eq("id_tienda", idTienda);
+    const almacenIds = Array.from(
+      new Set((tpvs ?? []).map((t: any) => Number(t.id_almacen)).filter(Boolean)),
+    );
+
+    if (almacenIds.length > 0) {
+      const { data: ubicaciones } = await admin
+        .from("app_dat_layout_almacen")
+        .select("id")
+        .in("id_almacen", almacenIds)
+        .is("deleted_at", null);
+      const ubicacionIds = (ubicaciones ?? []).map((u: any) => Number(u.id));
+
+      if (ubicacionIds.length > 0) {
+        // Traemos todos los movimientos de inventario (histórico) para
+        // los productos y ubicaciones relevantes. Después, en memoria,
+        // nos quedamos con la última fila por (producto, ubicación).
+        const { data: invRows } = await admin
+          .from("app_dat_inventario_productos")
+          .select("id, id_producto, id_ubicacion, cantidad_final, created_at")
+          .in("id_producto", ids)
+          .in("id_ubicacion", ubicacionIds)
+          .order("id", { ascending: false });
+
+        // Mapa intermedio: (idProducto, idUbicacion) → cantidad_final más reciente.
+        const latestPerPair = new Map<string, number>();
+        for (const row of invRows ?? []) {
+          const key = `${row.id_producto}_${row.id_ubicacion}`;
+          if (!latestPerPair.has(key)) {
+            latestPerPair.set(key, Number(row.cantidad_final ?? 0));
+          }
+        }
+        // Acumulamos por producto.
+        for (const [key, qty] of latestPerPair.entries()) {
+          const idProd = Number(key.split("_")[0]);
+          stockMap.set(idProd, (stockMap.get(idProd) ?? 0) + qty);
+        }
+        stockOk = true;
+      }
+    }
+    console.log(
+      `[wapi-send-products] stock calculado para ${stockMap.size}/${ids.length} ` +
+        `productos (ok=${stockOk})`,
+    );
+  } catch (e) {
+    // No bloqueamos el envío si falla el cálculo de stock — solo se
+    // omite del mensaje.
+    console.warn(
+      `[wapi-send-products] error calculando stock: ${(e as Error).message ?? e}`,
+    );
+  }
+
+  // ───────────────────────────────────────────────────────────────────
+  // Presentación base de cada producto.
+  // `app_dat_producto_presentacion` NO tiene FK declarada hacia
+  // `app_nom_presentacion`, así que PostgREST no puede resolver el embed:
+  // hay que traer los nombres en una segunda consulta.
+  // ───────────────────────────────────────────────────────────────────
+  const presentacionMap = new Map<number, string>();
+  try {
+    const { data: pres } = await admin
+      .from("app_dat_producto_presentacion")
+      .select("id, id_producto, id_presentacion, es_base")
+      .in("id_producto", ids)
+      // es_base primero: es la presentación en la que se vende el producto.
+      .order("es_base", { ascending: false, nullsFirst: false })
+      .order("id", { ascending: true });
+
+    const idsPres = Array.from(
+      new Set(
+        (pres ?? []).map((r: any) => Number(r.id_presentacion)).filter(Boolean),
+      ),
+    );
+    if (idsPres.length > 0) {
+      const { data: noms } = await admin
+        .from("app_nom_presentacion")
+        .select("id, denominacion")
+        .in("id", idsPres);
+      const nombrePres = new Map<number, string>(
+        (noms ?? []).map((n: any) => [Number(n.id), String(n.denominacion ?? "")]),
+      );
+      for (const r of pres ?? []) {
+        const idProd = Number((r as any).id_producto);
+        if (presentacionMap.has(idProd)) continue; // ya tenemos la base
+        const nombre = nombrePres.get(Number((r as any).id_presentacion));
+        if (nombre && nombre.trim()) presentacionMap.set(idProd, nombre.trim());
+      }
+    }
+  } catch (e) {
+    console.warn(
+      `[wapi-send-products] error cargando presentaciones: ${(e as Error).message ?? e}`,
+    );
+  }
+
+  for (const p of productos ?? []) {
+    const id = Number((p as any).id);
+    // Categoría llega como objeto (PostgREST embed) o null.
+    const catRaw = (p as any).app_dat_categoria;
+    const categoria = Array.isArray(catRaw)
+      ? catRaw[0]?.denominacion ?? null
+      : catRaw?.denominacion ?? null;
+
+    out.set(id, {
+      id,
+      denominacion: String((p as any).denominacion ?? ""),
+      descripcion: (p as any).descripcion ?? null,
+      imagen: (p as any).imagen ?? null,
+      sku: (p as any).sku ?? null,
+      categoria,
+      presentacion: presentacionMap.get(id) ?? null,
+      precio: precioMap.get(id) ?? 0,
+      stock: stockOk ? stockMap.get(id) ?? 0 : null,
+    });
+  }
+  return out;
+}
+
+/**
+ * Manda un mensaje de texto con la misma política de reintentos que las
+ * imágenes (los fallos de WAPI son casi siempre transitorios).
+ */
+async function sendTextConReintentos(
+  wapiSessionId: string,
+  chatId: string,
+  text: string,
+): Promise<boolean> {
+  for (let intento = 1; intento <= RETRY_MAX_ATTEMPTS; intento++) {
+    const r = await wapi.sendText(wapiSessionId, chatId, text);
+    if (r.success) return true;
+
+    const code = r.error?.code ?? "SEND_ERROR";
+    const puedeReintentar = intento < RETRY_MAX_ATTEMPTS && esReintentable(code);
+    console.error(
+      `[wapi-send-products] resumen fallido chat=${chatId} ` +
+        `intento ${intento}/${RETRY_MAX_ATTEMPTS} (${code}): ` +
+        `${r.error?.message ?? "Error desconocido"}` +
+        (puedeReintentar ? " — reintentando" : ""),
+    );
+    if (!puedeReintentar) break;
+
+    const base = RETRY_BASE_MS * Math.pow(2, intento - 1);
+    await new Promise((res) =>
+      setTimeout(res, Math.round(base * (0.75 + Math.random() * 0.5)))
+    );
+  }
+  return false;
 }
 
 /**
@@ -242,12 +573,22 @@ export async function dispatchProducts(args: {
   idProgramacion?: number;
   /** Ver `SendBody.resume_log_ids`. Cuando viene, se reusan esas filas de log. */
   resumeLogIds?: number[];
+  /**
+   * Lista COMPLETA de productos del envío lógico, para el mensaje resumen.
+   * La primera invocación no la trae (son todos los pedidos); las
+   * continuaciones por chunk sí, para que el resumen del último chunk liste
+   * todo lo enviado y no sólo su trozo.
+   */
+  summaryProductIds?: number[];
+  /** ¿Mandar el mensaje resumen al terminar? Default true. */
+  enviarResumen?: boolean;
 }) {
   const {
     admin, idSesion, idTienda, wapiSessionId, productIds,
     destinations, template, delayMin, delayMax, tipoEnvio, idProgramacion,
     resumeLogIds,
   } = args;
+  const enviarResumen = args.enviarResumen ?? true;
 
   // ── MODO REANUDAR ───────────────────────────────────────────────────
   // Reconstruimos productos y destinos a partir de las filas de log que
@@ -310,6 +651,14 @@ export async function dispatchProducts(args: {
   if (effProductIds.length === 0 || effDestinations.length === 0) {
     return { enviados: 0, fallidos: 0, batch_id: null, skipped: true };
   }
+
+  // Productos que listará el resumen final. En la primera invocación son
+  // todos los pedidos; en las continuaciones viene heredado del chunk previo.
+  // (Al reanudar sólo conocemos los productos que quedaron sin enviar, así que
+  //  el resumen de una reanudación lista ese subconjunto.)
+  const summaryIds = args.summaryProductIds?.length
+    ? args.summaryProductIds
+    : effProductIds;
 
   // ───────────────────────────────────────────────────────────────────
   //  CHUNKING anti-timeout
@@ -380,6 +729,10 @@ export async function dispatchProducts(args: {
       delay_max_seconds: delayMax,
       tipo_envio: tipoEnvio,
       ...(idProgramacion ? { id_programacion: idProgramacion } : {}),
+      // El resumen lo manda el ÚLTIMO chunk de la cadena, y necesita conocer
+      // la lista completa del envío — no sólo su propio trozo.
+      summary_product_ids: summaryIds,
+      send_summary: enviarResumen,
     };
 
     // Ruta primaria: admin.functions.invoke. El cliente `admin` ya fue
@@ -445,97 +798,55 @@ export async function dispatchProducts(args: {
     }
   };
 
-  // Cargar productos (con SKU + categoría via JOIN para captions marketing)
-  const { data: productos, error: prodErr } = await admin
-    .from("app_dat_producto")
-    .select(
-      "id, denominacion, descripcion, imagen, sku, app_dat_categoria(denominacion)",
-    )
-    .in("id", chunkIds);
-  if (prodErr) throw new Error(`Error cargando productos: ${prodErr.message}`);
+  // Datos de los productos de este chunk: nombre, imagen, categoría, precio
+  // vigente, presentación base y stock disponible.
+  const infoChunk = await loadProductInfo(admin, idTienda, chunkIds);
 
-  // Cargar precio venta (último vigente por producto).
-  // `app_dat_precio_venta` es un histórico: cada producto puede tener N filas
-  // (una por cada cambio de precio). El precio actual es el de mayor `id`.
-  // Traemos todo el histórico ordenado por id desc y nos quedamos con la
-  // primera ocurrencia por producto (la más reciente).
-  const { data: precios } = await admin
-    .from("app_dat_precio_venta")
-    .select("id, id_producto, precio_venta_cup, precio_venta_usd")
-    .in("id_producto", chunkIds)
-    .order("id", { ascending: false });
-
-  const precioMap = new Map<number, number>();
-  (precios ?? []).forEach((p: any) => {
-    if (precioMap.has(p.id_producto)) return; // ya tenemos el más reciente
-    precioMap.set(
-      p.id_producto,
-      Number(p.precio_venta_cup ?? p.precio_venta_usd ?? 0),
-    );
-  });
-
-  // ───────────────────────────────────────────────────────────────────
-  // Stock disponible por producto (suma sobre todas las ubicaciones de
-  // todos los almacenes vinculados a algún TPV de la tienda).
+  // ── RESUMEN FINAL ───────────────────────────────────────────────────
+  // Mensaje de texto con el listado completo (nombre · cantidad ·
+  // disponibilidad · precio). Sólo lo dispara el ÚLTIMO chunk de la cadena;
+  // si no, saldría un resumen por cada chunk.
   //
-  // 1. tpvs.id_almacen ─→ 2. layout_almacen.id (ubicaciones) ─→
-  // 3. inventario_productos (histórico: última fila por
-  //    (id_producto, id_ubicacion) manda) ─→ sumar cantidad_final.
-  // ───────────────────────────────────────────────────────────────────
-  const stockMap = new Map<number, number>();
-  try {
-    const { data: tpvs } = await admin
-      .from("app_dat_tpv")
-      .select("id_almacen")
-      .eq("id_tienda", idTienda);
-    const almacenIds = Array.from(
-      new Set((tpvs ?? []).map((t: any) => Number(t.id_almacen)).filter(Boolean)),
-    );
+  // NO se registra en `app_wapi_envio_log`: esa tabla es por producto y la UI
+  // agrupa/reanuda tandas a partir de ella — una fila sin `id_producto` que
+  // fallara dejaría la tanda "interrumpida" para siempre, porque el modo
+  // reanudar descarta los logs sin producto.
+  const enviarResumenFinal = async (): Promise<number> => {
+    try {
+      // Si el envío entero cupo en un chunk reusamos lo ya cargado; si hubo
+      // varios chunks hay que releer los productos de los anteriores.
+      const infoResumen = summaryIds.every((id) => infoChunk.has(id))
+        ? infoChunk
+        : await loadProductInfo(admin, idTienda, summaryIds);
 
-    if (almacenIds.length > 0) {
-      const { data: ubicaciones } = await admin
-        .from("app_dat_layout_almacen")
-        .select("id")
-        .in("id_almacen", almacenIds)
-        .is("deleted_at", null);
-      const ubicacionIds = (ubicaciones ?? []).map((u: any) => Number(u.id));
+      const items = summaryIds
+        .map((id) => infoResumen.get(id))
+        .filter((p): p is ProdInfo => !!p);
+      const mensajes = buildSummaryMessages(items);
+      if (mensajes.length === 0) return 0;
 
-      if (ubicacionIds.length > 0) {
-        // Traemos todos los movimientos de inventario (histórico) para
-        // los productos y ubicaciones relevantes. Después, en memoria,
-        // nos quedamos con la última fila por (producto, ubicación).
-        const { data: invRows } = await admin
-          .from("app_dat_inventario_productos")
-          .select("id, id_producto, id_ubicacion, cantidad_final, created_at")
-          .in("id_producto", chunkIds)
-          .in("id_ubicacion", ubicacionIds)
-          .order("id", { ascending: false });
-
-        // Mapa intermedio: (idProducto, idUbicacion) → cantidad_final más reciente.
-        const latestPerPair = new Map<string, number>();
-        for (const row of invRows ?? []) {
-          const key = `${row.id_producto}_${row.id_ubicacion}`;
-          if (!latestPerPair.has(key)) {
-            latestPerPair.set(key, Number(row.cantidad_final ?? 0));
-          }
-        }
-        // Acumulamos por producto.
-        for (const [key, qty] of latestPerPair.entries()) {
-          const idProd = Number(key.split("_")[0]);
-          stockMap.set(idProd, (stockMap.get(idProd) ?? 0) + qty);
+      let ok = 0;
+      for (const d of effDestinations) {
+        if (!d.chat_id || !/@(c|g)\.us$/.test(d.chat_id)) continue;
+        for (const texto of mensajes) {
+          if (await sendTextConReintentos(wapiSessionId, d.chat_id, texto)) ok++;
+          // Pausa corta entre textos (anti-ban).
+          await new Promise((res) => setTimeout(res, 1_500));
         }
       }
+      console.log(
+        `[wapi-send-products] resumen: ${items.length} producto(s) en ` +
+          `${mensajes.length} mensaje(s) → ${ok} entrega(s) ok`,
+      );
+      return ok;
+    } catch (e) {
+      // El resumen es un extra: si falla, el envío de productos ya está hecho.
+      console.error(
+        `[wapi-send-products] error enviando resumen: ${(e as Error).message ?? e}`,
+      );
+      return 0;
     }
-    console.log(
-      `[wapi-send-products] stock calculado para ${stockMap.size}/${chunkIds.length} productos`,
-    );
-  } catch (e) {
-    // No bloqueamos el envío si falla el cálculo de stock — solo se
-    // omite del caption.
-    console.warn(
-      `[wapi-send-products] error calculando stock: ${(e as Error).message ?? e}`,
-    );
-  }
+  };
 
   // Construir mensajes: filtrar productos sin imagen
   const messages: Array<{
@@ -547,40 +858,28 @@ export async function dispatchProducts(args: {
   }> = [];
 
   const skipped: Array<{ id_producto: number; reason: string }> = [];
-  let seedCounter = Math.floor(Math.random() * 1000); // rotación de headers/CTAs
-  for (const p of productos ?? []) {
+  let seedCounter = Math.floor(Math.random() * 1000); // rotación de iconos
+  // Recorremos en el orden pedido (chunkIds), no en el que devuelva PostgREST.
+  for (const idProd of chunkIds) {
+    const p = infoChunk.get(idProd);
+    if (!p) {
+      skipped.push({ id_producto: idProd, reason: "producto no encontrado" });
+      continue;
+    }
     if (!p.imagen || typeof p.imagen !== "string" || !p.imagen.trim()) {
-      skipped.push({ id_producto: p.id, reason: "sin imagen" });
+      skipped.push({ id_producto: idProd, reason: "sin imagen" });
       continue;
     }
     const imageUrl = p.imagen.trim();
     // WAPI requiere URL pública http(s). Data URLs y blobs no funcionan.
     if (!/^https?:\/\//i.test(imageUrl)) {
       skipped.push({
-        id_producto: p.id,
+        id_producto: idProd,
         reason: `imagen no es URL http(s): ${imageUrl.slice(0, 40)}…`,
       });
       continue;
     }
-    const precio = precioMap.get(p.id) ?? 0;
-    // Categoría llega como objeto (PostgREST embed) o null.
-    const catRaw = (p as any).app_dat_categoria;
-    const categoria = Array.isArray(catRaw)
-      ? catRaw[0]?.denominacion ?? null
-      : catRaw?.denominacion ?? null;
-    const stock = stockMap.get(p.id) ?? null;
-    const caption = buildCaption(
-      template,
-      {
-        denominacion: p.denominacion,
-        descripcion: p.descripcion,
-        precio,
-        sku: (p as any).sku ?? null,
-        categoria,
-        stock,
-      },
-      seedCounter++,
-    );
+    const caption = buildCaption(template, p, seedCounter++);
     // Inferir mimetype desde la extensión (algunas builds de WAPI lo exigen)
     const ext = imageUrl.split("?")[0].split(".").pop()?.toLowerCase() ?? "";
     const mimetype =
@@ -597,19 +896,19 @@ export async function dispatchProducts(args: {
       // chatId debe acabar en @c.us (números) o @g.us (grupos)
       if (!/@(c|g)\.us$/.test(d.chat_id)) {
         skipped.push({
-          id_producto: p.id,
+          id_producto: idProd,
           reason: `chat_id inválido: ${d.chat_id}`,
         });
         continue;
       }
       // Al reanudar sólo re-despachamos los pares que realmente quedaron
       // sin enviar; el resto del producto ya llegó y no debe repetirse.
-      if (esReanudacion && !logIdPorPar.has(`${p.id}|${d.chat_id}`)) continue;
+      if (esReanudacion && !logIdPorPar.has(`${idProd}|${d.chat_id}`)) continue;
       messages.push({
         chatId: d.chat_id,
         type: "image",
         content: { image: { url: imageUrl, mimetype }, caption },
-        _meta: { id_producto: p.id, chat_id: d.chat_id },
+        _meta: { id_producto: idProd, chat_id: d.chat_id },
       });
     }
   }
@@ -662,7 +961,18 @@ export async function dispatchProducts(args: {
     // imagen / chat_id inválido). Aún así debemos continuar con los
     // productos restantes — si no, la cadena de chunks se rompería aquí.
     await reinvokeRemaining();
-    return { enviados: 0, fallidos: 0, batch_id: null, skipped: true };
+    // Si además éste era el último chunk, el resumen sigue tocando: los
+    // chunks anteriores sí enviaron productos.
+    const resumen = enviarResumen && remainingIds.length === 0
+      ? await enviarResumenFinal()
+      : 0;
+    return {
+      enviados: 0,
+      fallidos: 0,
+      batch_id: null,
+      skipped: true,
+      resumen_entregas: resumen,
+    };
   }
 
   // Log del envío. En modo reanudar NO insertamos: reutilizamos las filas
@@ -839,6 +1149,14 @@ export async function dispatchProducts(args: {
   // de tiempo). Cada continuación corre en su propio worker con 400s frescos.
   await reinvokeRemaining();
 
+  // Resumen final: sólo el último chunk de la cadena lo manda.
+  let resumenEntregas = 0;
+  if (enviarResumen && remainingIds.length === 0) {
+    // Pequeña pausa tras el último producto antes del texto (anti-ban).
+    await new Promise((res) => setTimeout(res, minMs));
+    resumenEntregas = await enviarResumenFinal();
+  }
+
   return {
     enviados,
     fallidos,
@@ -847,6 +1165,7 @@ export async function dispatchProducts(args: {
     fanout: MAX_PARALLEL_FANOUT,
     chunk_size: chunkIds.length,
     remaining: remainingIds.length,
+    resumen_entregas: resumenEntregas,
   };
 }
 
@@ -939,6 +1258,15 @@ export async function handleSendProducts(req: Request): Promise<Response> {
     delayMax,
     tipoEnvio: body.tipo_envio ?? "manual",
     idProgramacion: body.id_programacion,
+    enviarResumen: body.send_summary ?? true,
+    ...(Array.isArray(body.summary_product_ids) &&
+      body.summary_product_ids.length > 0
+      ? {
+        summaryProductIds: body.summary_product_ids
+          .map(Number)
+          .filter((n) => Number.isFinite(n)),
+      }
+      : {}),
     ...(esReanudacion ? { resumeLogIds } : {}),
   }).catch((err) => {
     console.error(
