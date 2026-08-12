@@ -4,6 +4,7 @@ import '../services/user_preferences_service.dart';
 import '../utils/whatsapp_helper.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/carnaval_order_detail_sheet.dart';
+import 'carnaval_audit_screen.dart';
 import 'carnaval_bitacora_screen.dart';
 import 'carnaval_orders_dashboard_screen.dart';
 
@@ -292,6 +293,25 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     );
   }
 
+  /// Auditoría: compara cantidades Carnaval vs operaciones Inventtia.
+  /// Usa los mismos filtros de fecha/estado de la lista actual.
+  void _openAudit() {
+    if (_carnavalStoreId == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder:
+            (_) => CarnavalAuditScreen(
+              carnavalStoreId: _carnavalStoreId!,
+              isAdmin: _isAdmin,
+              dateFrom: _dateFrom,
+              dateTo: _dateTo,
+              statusFilter: _selectedStatus,
+            ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -359,6 +379,15 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                               ),
                             ),
                           ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          onPressed: _openAudit,
+                          icon: const Icon(Icons.rule_folder_outlined),
+                          tooltip: 'Auditoría Carnaval vs Inventtia',
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.teal.withValues(alpha: 0.1),
+                          ),
+                        ),
                         if (_isAdmin) ...[
                           const SizedBox(width: 8),
                           IconButton(

@@ -3549,43 +3549,329 @@ class UserPreferencesService {
 
   // ==================== PRODUCTOS POR DEFECTO EN ORDEN ====================
 
-  /// Guardar lista de productos por defecto.
-  /// Cada elemento: { 'product': Map (Product.toJson), 'cantidad': double,
-  ///                  'presentacion': Map? (Presentation.toJson) }
-  Future<void> saveDefaultOrderItems(
+  /// Clave local scoped por usuario + tienda.
+  Future<String> _defaultOrderItemsScopedKey() async {
+    final userId = await getUserId() ?? 'anon';
+    final idTienda = await getIdTienda() ?? 0;
+    return '${_defaultOrderItemsKey}_${userId}_$idTienda';
+  }
+
+  Future<String> _defaultOrderItemsMigratedKey() async {
+    final userId = await getUserId() ?? 'anon';
+    final idTienda = await getIdTienda() ?? 0;
+    return '${_defaultOrderItemsKey}_migrated_${userId}_$idTienda';
+  }
+
+  Future<bool> _isDefaultOrderItemsMigrated() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(await _defaultOrderItemsMigratedKey()) ?? false;
+  }
+
+  Future<void> _markDefaultOrderItemsMigrated([bool value = true]) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(await _defaultOrderItemsMigratedKey(), value);
+  }
+
+  /// Lee solo el cache local (clave scoped, con fallback a la clave legacy).
+  Future<List<Map<String, dynamic>>> _getDefaultOrderItemsLocal() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final scopedKey = await _defaultOrderItemsScopedKey();
+      var raw = prefs.getString(scopedKey);
+
+      // Migración de clave global antigua → scoped
+      if (raw == null) {
+        final legacy = prefs.getString(_defaultOrderItemsKey);
+        if (legacy != null) {
+          raw = legacy;
+          await prefs.setString(scopedKey, legacy);
+          print('📦 Productos por defecto: clave legacy migrada a $scopedKey');
+        }
+      }
+
+      if (raw == null) return [];
+      final list = jsonDecode(raw) as List<dynamic>;
+      return list
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    } catch (e) {
+      print('❌ Error leyendo productos por defecto locales: $e');
+      return [];
+    }
+  }
+
+  Future<void> _saveDefaultOrderItemsLocal(
+    List<Map<String, dynamic>> items,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final scopedKey = await _defaultOrderItemsScopedKey();
+    await prefs.setString(scopedKey, jsonEncode(items));
+  }
+
+  /// Convierte filas del RPC a formato local `{product, cantidad}`.
+  List<Map<String, dynamic>> _mapServerDefaultItems(
+    List<Map<String, dynamic>> rows,
+  ) {
+    return rows.map((row) {
+      final idProducto = (row['id_producto'] as num?)?.toInt() ?? 0;
+      final cantidad = (row['cantidad'] as num?)?.toDouble() ?? 1.0;
+      return <String, dynamic>{
+        'product': <String, dynamic>{
+          'id': idProducto,
+          'denominacion': row['denominacion'] ?? 'Producto',
+          'descripcion': null,
+          'sku': row['sku'],
+          'foto': row['imagen'],
+          'precio': (row['precio_venta'] as num?)?.toDouble() ?? 0.0,
+          'cantidad': 0,
+          'es_refrigerado': false,
+          'es_fragil': false,
+          'es_peligroso': false,
+          'es_vendible': row['es_vendible'] ?? true,
+          'es_comprable': true,
+          'es_inventariable': true,
+          'es_por_lotes': false,
+          'es_elaborado': row['es_elaborado'] ?? false,
+          'es_servicio': row['es_servicio'] ?? false,
+          'es_paquete': row['es_paquete'] ?? false,
+          'categoria': '',
+          'variantes': <dynamic>[],
+          'reservado_carnaval': 0,
+        },
+        'cantidad': cantidad,
+      };
+    }).toList();
+  }
+
+  List<Map<String, dynamic>> _toServerPayload(
+    List<Map<String, dynamic>> items,
+  ) {
+    final payload = <Map<String, dynamic>>[];
+    for (var i = 0; i < items.length; i++) {
+      final entry = items[i];
+      final product = entry['product'];
+      int? idProducto;
+      if (product is Map) {
+        idProducto = (product['id'] as num?)?.toInt();
+      }
+      if (idProducto == null) continue;
+      final cantidad = (entry['cantidad'] as num?)?.toDouble() ?? 1.0;
+      if (cantidad <= 0) continue;
+      payload.add({
+        'id_producto': idProducto,
+        'cantidad': cantidad,
+        'orden': i,
+      });
+    }
+    return payload;
+  }
+
+  Future<bool> _canReachDefaultItemsServer() async {
+    if (await isOfflineModeEnabled()) return false;
+    final token = await getAccessToken();
+    if (token == null || token.isEmpty || token == 'offline_mode') {
+      return false;
+    }
+    return true;
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchDefaultOrderItemsFromServer(
+    int idTienda,
+  ) async {
+    final response = await Supabase.instance.client.rpc(
+      'fn_get_productos_orden_default',
+      params: {'p_id_tienda': idTienda},
+    );
+    if (response == null) return [];
+    if (response is! List) return [];
+    return response
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  Future<void> _pushDefaultOrderItemsToServer(
+    int idTienda,
+    List<Map<String, dynamic>> items,
+  ) async {
+    await Supabase.instance.client.rpc(
+      'fn_set_productos_orden_default',
+      params: {
+        'p_id_tienda': idTienda,
+        'p_items': _toServerPayload(items),
+      },
+    );
+  }
+
+  /// Guardar lista de productos por defecto (local + servidor si hay red).
+  ///
+  /// Cada elemento: { 'product': Map (Product.toJson), 'cantidad': double }
+  ///
+  /// Retorna `{ success, savedLocal, savedServer, message }`.
+  Future<Map<String, dynamic>> saveDefaultOrderItems(
     List<Map<String, dynamic>> items,
   ) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_defaultOrderItemsKey, jsonEncode(items));
-      print('💾 Productos por defecto guardados: ${items.length}');
+      await _saveDefaultOrderItemsLocal(items);
+      print('💾 Productos por defecto locales: ${items.length}');
+
+      var savedServer = false;
+      String message = 'Guardado en este dispositivo';
+
+      if (await _canReachDefaultItemsServer()) {
+        final idTienda = await getIdTienda();
+        if (idTienda != null) {
+          try {
+            await _pushDefaultOrderItemsToServer(idTienda, items);
+            await _markDefaultOrderItemsMigrated(true);
+            savedServer = true;
+            message = 'Guardado en servidor y dispositivo';
+            print('☁️ Productos por defecto subidos al servidor');
+          } catch (e) {
+            print('⚠️ No se pudo guardar en servidor: $e');
+            message =
+                'Guardado solo en este dispositivo (sin conexión al servidor)';
+          }
+        }
+      }
+
+      return {
+        'success': true,
+        'savedLocal': true,
+        'savedServer': savedServer,
+        'message': message,
+      };
     } catch (e) {
       print('❌ Error guardando productos por defecto: $e');
+      return {
+        'success': false,
+        'savedLocal': false,
+        'savedServer': false,
+        'message': 'Error guardando: $e',
+      };
     }
   }
 
   /// Obtener lista de productos por defecto.
+  /// Online: servidor gana; si servidor vacío y hay local no migrado, lo sube.
+  /// Offline: solo cache local.
   Future<List<Map<String, dynamic>>> getDefaultOrderItems() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_defaultOrderItemsKey);
-      if (raw == null) return [];
-      final list = jsonDecode(raw) as List<dynamic>;
-      return list.cast<Map<String, dynamic>>();
+      final local = await _getDefaultOrderItemsLocal();
+
+      if (!await _canReachDefaultItemsServer()) {
+        return local;
+      }
+
+      final idTienda = await getIdTienda();
+      if (idTienda == null) return local;
+
+      try {
+        final serverRows = await _fetchDefaultOrderItemsFromServer(idTienda);
+        if (serverRows.isNotEmpty) {
+          final mapped = _mapServerDefaultItems(serverRows);
+          await _saveDefaultOrderItemsLocal(mapped);
+          await _markDefaultOrderItemsMigrated(true);
+          print(
+            '☁️ Productos por defecto desde servidor: ${mapped.length}',
+          );
+          return mapped;
+        }
+
+        // Servidor vacío: migrar local una sola vez
+        if (local.isNotEmpty && !await _isDefaultOrderItemsMigrated()) {
+          await _pushDefaultOrderItemsToServer(idTienda, local);
+          await _markDefaultOrderItemsMigrated(true);
+          print(
+            '📤 Migración local→servidor de productos por defecto '
+            '(${local.length})',
+          );
+        }
+        return local;
+      } catch (e) {
+        print('⚠️ Fallback local productos por defecto: $e');
+        return local;
+      }
     } catch (e) {
       print('❌ Error obteniendo productos por defecto: $e');
       return [];
     }
   }
 
-  /// Limpiar todos los productos por defecto.
-  Future<void> clearDefaultOrderItems() async {
+  /// Sube de forma explícita la configuración local al servidor (forzar sync).
+  Future<Map<String, dynamic>> uploadLocalDefaultOrderItemsToServer() async {
+    try {
+      if (!await _canReachDefaultItemsServer()) {
+        return {
+          'success': false,
+          'message': 'Sin conexión al servidor',
+        };
+      }
+      final idTienda = await getIdTienda();
+      if (idTienda == null) {
+        return {
+          'success': false,
+          'message': 'No hay tienda seleccionada',
+        };
+      }
+      final local = await _getDefaultOrderItemsLocal();
+      await _pushDefaultOrderItemsToServer(idTienda, local);
+      await _markDefaultOrderItemsMigrated(true);
+      return {
+        'success': true,
+        'count': local.length,
+        'message': local.isEmpty
+            ? 'Lista vacía sincronizada en el servidor'
+            : 'Se subieron ${local.length} productos al servidor',
+      };
+    } catch (e) {
+      print('❌ Error subiendo productos por defecto: $e');
+      return {
+        'success': false,
+        'message': 'Error al subir: $e',
+      };
+    }
+  }
+
+  /// Limpiar todos los productos por defecto (local + servidor).
+  Future<Map<String, dynamic>> clearDefaultOrderItems() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      final scopedKey = await _defaultOrderItemsScopedKey();
+      await prefs.remove(scopedKey);
+      // También limpia la clave legacy si existiera
       await prefs.remove(_defaultOrderItemsKey);
-      print('🗑️ Productos por defecto eliminados');
+      print('🗑️ Productos por defecto locales eliminados');
+
+      var clearedServer = false;
+      if (await _canReachDefaultItemsServer()) {
+        final idTienda = await getIdTienda();
+        if (idTienda != null) {
+          try {
+            await _pushDefaultOrderItemsToServer(idTienda, const []);
+            await _markDefaultOrderItemsMigrated(true);
+            clearedServer = true;
+          } catch (e) {
+            print('⚠️ No se pudo limpiar en servidor: $e');
+          }
+        }
+      }
+
+      return {
+        'success': true,
+        'clearedServer': clearedServer,
+        'message': clearedServer
+            ? 'Lista eliminada en servidor y dispositivo'
+            : 'Lista eliminada en este dispositivo',
+      };
     } catch (e) {
       print('❌ Error limpiando productos por defecto: $e');
+      return {
+        'success': false,
+        'clearedServer': false,
+        'message': 'Error limpiando: $e',
+      };
     }
   }
 
