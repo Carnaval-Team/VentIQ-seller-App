@@ -1,5 +1,6 @@
+import 'dart:typed_data';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'dart:io';
 
 class StoreDataService {
   final SupabaseClient _supabase = Supabase.instance.client;
@@ -19,25 +20,28 @@ class StoreDataService {
     }
   }
 
-  Future<String?> uploadStoreImage(int storeId, File imageFile) async {
+  /// Sube bytes de imagen (compatible Android / web).
+  Future<String?> uploadStoreImageBytes(
+    int storeId,
+    Uint8List imageBytes, {
+    String? fileName,
+  }) async {
     try {
       print('📤 Subiendo imagen de tienda...');
-      
-      // Generar nombre único para evitar conflictos
-      final uniqueFileName = '${DateTime.now().millisecondsSinceEpoch}_tienda_$storeId.jpg';
-      
-      // Leer archivo como bytes
-      final imageBytes = await imageFile.readAsBytes();
-      
-      // Subir imagen al bucket 'images_back' con opciones específicas
-      final response = await _supabase.storage
-          .from(_storageBucket)
-          .uploadBinary(
+
+      final safeName = (fileName == null || fileName.trim().isEmpty)
+          ? 'tienda.jpg'
+          : fileName.trim().replaceAll(RegExp(r'[^\w.\-]+'), '_');
+      final uniqueFileName =
+          '${DateTime.now().millisecondsSinceEpoch}_tienda_${storeId}_$safeName';
+
+      final response = await _supabase.storage.from(_storageBucket).uploadBinary(
             uniqueFileName,
             imageBytes,
             fileOptions: const FileOptions(
               cacheControl: '3600',
               upsert: true,
+              contentType: 'image/jpeg',
             ),
           );
 
@@ -45,10 +49,8 @@ class StoreDataService {
         throw Exception('Error al subir la imagen');
       }
 
-      // Obtener URL pública de la imagen
-      final publicUrl = _supabase.storage
-          .from(_storageBucket)
-          .getPublicUrl(uniqueFileName);
+      final publicUrl =
+          _supabase.storage.from(_storageBucket).getPublicUrl(uniqueFileName);
 
       print('✅ Imagen subida correctamente: $publicUrl');
       return publicUrl;
@@ -56,6 +58,14 @@ class StoreDataService {
       print('❌ Error subiendo imagen: $e');
       rethrow;
     }
+  }
+
+  /// Compatibilidad: sube desde path local (solo plataformas con dart:io).
+  @Deprecated('Usar uploadStoreImageBytes para Android y web')
+  Future<String?> uploadStoreImage(int storeId, dynamic imageFile) async {
+    final bytes = await imageFile.readAsBytes() as Uint8List;
+    final name = imageFile.path?.toString().split(RegExp(r'[\\/]')).last;
+    return uploadStoreImageBytes(storeId, bytes, fileName: name);
   }
 
   Future<bool> updateStoreData({
@@ -74,7 +84,7 @@ class StoreDataService {
   }) async {
     try {
       final updateData = <String, dynamic>{};
-      
+
       if (denominacion != null) updateData['denominacion'] = denominacion;
       if (direccion != null) updateData['direccion'] = direccion;
       if (ubicacion != null) updateData['ubicacion'] = ubicacion;
@@ -85,12 +95,11 @@ class StoreDataService {
       if (nombreEstado != null) updateData['nombre_estado'] = nombreEstado;
       if (latitude != null) updateData['latitude'] = latitude;
       if (longitude != null) updateData['longitude'] = longitude;
-      
-      // Construir el campo ubicacion a partir de latitude y longitude
+
       if (latitude != null && longitude != null) {
         updateData['ubicacion'] = '$latitude,$longitude';
       }
-      
+
       if (imagenUrl != null) updateData['imagen_url'] = imagenUrl;
 
       await _supabase
@@ -106,18 +115,17 @@ class StoreDataService {
     }
   }
 
-  Future<bool> updateStoreField(int storeId, String fieldKey, dynamic value) async {
+  Future<bool> updateStoreField(
+    int storeId,
+    String fieldKey,
+    dynamic value,
+  ) async {
     try {
       print('🔄 Actualizando campo $fieldKey para tienda: $storeId');
-      
-      final updateData = <String, dynamic>{
-        fieldKey: value,
-      };
 
-      await _supabase
-          .from('app_dat_tienda')
-          .update(updateData)
-          .eq('id', storeId);
+      await _supabase.from('app_dat_tienda').update({
+        fieldKey: value,
+      }).eq('id', storeId);
 
       print('✅ Campo $fieldKey actualizado correctamente');
       return true;

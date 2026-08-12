@@ -3,6 +3,7 @@ import '../services/auth_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/seller_service.dart';
 import '../services/promotion_service.dart';
+import '../services/admin_access_service.dart';
 
 class LoginWebScreen extends StatefulWidget {
   const LoginWebScreen({super.key});
@@ -79,49 +80,60 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
             '  - Access Token: ${response.session?.accessToken != null ? response.session!.accessToken.substring(0, 20) : "null"}...',
           );
 
-          // Verificar si el usuario es un vendedor válido
+          // Verificar acceso a Caja: vendedor, gerente o supervisor
           try {
             final sellerProfile = await _sellerService
                 .verifySellerAndGetProfile(response.user!.id);
 
             final sellerData = sellerProfile['seller'] as Map<String, dynamic>;
             final workerData = sellerProfile['worker'] as Map<String, dynamic>;
+            final entryRole = sellerProfile['entryRole']?.toString() ?? 'vendedor';
 
-            // Extraer IDs por separado
-            final idTpv =
-                sellerProfile['idTpv'] as int; // Desde app_dat_vendedor
-            final idTienda =
-                sellerProfile['idTienda'] as int; // Desde app_dat_trabajadores
-            final idSeller =
-                sellerData['id']
-                    as int; // ID del vendedor desde app_dat_vendedor
-            final idAlmacen = sellerProfile['idAlmacen'];
+            final idTpv = (sellerProfile['idTpv'] as num).toInt();
+            final idTienda = (sellerProfile['idTienda'] as num).toInt();
+            final idSeller = (sellerData['id'] as num?)?.toInt() ?? 0;
+            final idAlmacen = (sellerProfile['idAlmacen'] as num?)?.toInt();
+            final idTrabajador =
+                (sellerData['id_trabajador'] as num?)?.toInt() ?? 0;
 
             print('🔍 IDs extraídos por separado:');
-            print('  - ID TPV (app_dat_vendedor): $idTpv');
-            print('  - ID Tienda (app_dat_trabajadores): $idTienda');
-            print('  - ID Seller (app_dat_vendedor): $idSeller');
-            print('  - ID Almacen (app_dat_tpv): $idAlmacen');
+            print('  - Entry role: $entryRole');
+            print('  - ID TPV: $idTpv');
+            print('  - ID Tienda: $idTienda');
+            print('  - ID Seller: $idSeller');
+            print('  - ID Almacen: $idAlmacen');
 
-            // Guardar datos del vendedor
             await _userPreferencesService.saveSellerData(
               idTpv: idTpv,
-              idTrabajador: sellerData['id_trabajador'] as int,
+              idTrabajador: idTrabajador,
               permitirCustomizarPrecioVenta:
                   sellerData['permitir_customizar_precio_venta'] == true,
             );
 
-            // Guardar ID del vendedor
-            await _userPreferencesService.saveIdSeller(idSeller);
-            await _userPreferencesService.saveIdAlmacen(idAlmacen);
+            if (idSeller > 0) {
+              await _userPreferencesService.saveIdSeller(idSeller);
+            }
+            if (idAlmacen != null) {
+              await _userPreferencesService.saveIdAlmacen(idAlmacen);
+            }
 
-            // Guardar perfil del trabajador
             await _userPreferencesService.saveWorkerProfile(
-              nombres: workerData['nombres'] as String,
-              apellidos: workerData['apellidos'] as String,
+              nombres: (workerData['nombres'] ?? '').toString(),
+              apellidos: (workerData['apellidos'] ?? '').toString(),
               idTienda: idTienda,
-              idRoll: workerData['id_roll'] as int,
+              idRoll: (workerData['id_roll'] as num?)?.toInt() ?? 4,
             );
+
+            await _userPreferencesService.ensureOfflineStoreScope(idTienda);
+
+            await _userPreferencesService.setCajaEntryRole(entryRole);
+
+            try {
+              final adminRole = await AdminAccessService().refreshAndCache();
+              print('  - Admin Lite role: $adminRole');
+            } catch (e) {
+              print('⚠️ No se pudo cachear rol admin: $e');
+            }
 
             // Guardar credenciales si el usuario marcó "Recordarme"
             if (_rememberMe) {
@@ -133,7 +145,7 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
               await _userPreferencesService.clearSavedCredentials();
             }
 
-            print('✅ Perfil completo del vendedor guardado');
+            print('✅ Perfil de acceso a Caja guardado ($entryRole)');
 
             // Buscar promoción global para la tienda
             try {
@@ -175,9 +187,14 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
               );
             }
 
-            // Login exitoso - ir al catálogo
+            // Login exitoso: gerente/supervisor → gestión; vendedor → catálogo
             if (mounted) {
-              Navigator.of(context).pushReplacementNamed('/categories');
+              final inventoryOnly = entryRole == 'gerente' ||
+                  entryRole == 'supervisor' ||
+                  sellerProfile['inventoryOnly'] == true;
+              Navigator.of(context).pushReplacementNamed(
+                inventoryOnly ? '/admin-home' : '/categories',
+              );
             }
           } catch (e) {
             // Error: usuario no es vendedor válido

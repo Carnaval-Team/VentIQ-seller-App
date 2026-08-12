@@ -1186,66 +1186,58 @@ class ProductService {
 
 
 
-      // ✅ CORRECCIÓN: Agrupar por ubicación para eliminar duplicados
-
-      final Map<String, Map<String, dynamic>> ubicacionesAgrupadas = {};
-
-
+      // El RPC ya trae DISTINCT ON por (producto, variante, opción,
+      // presentación, ubicación). Aquí:
+      // 1) Deduplicamos por esa misma clave de línea (por si hay ruido).
+      // 2) Sumamos por ubicación — igual que la auditoría de movimientos,
+      //    que trabaja con saldos de inventario por línea y luego agrega.
+      final Map<String, Map<String, dynamic>> lineasUnicas = {};
 
       for (var item in data) {
-
         print('📊 Registros recibidos   qw: $item');
 
         final idUbicacion =
-
             item['id_ubicacion']?.toString() ??
-
             item['id_almacen']?.toString() ??
-
             '0';
+        final idVariante = item['id_variante']?.toString() ?? '0';
+        final idOpcion = item['id_opcion_variante']?.toString() ?? '0';
+        final idPresentacion = item['id_presentacion']?.toString() ?? '0';
+        final lineKey =
+            '$idUbicacion|$idVariante|$idOpcion|$idPresentacion';
 
-        final nombreUbicacion =
-
-            item['ubicacion']?.toString() ??
-
-            item['almacen']?.toString() ??
-
-            'Sin ubicación';
-
-        final nombreAlmacen =
-
-            item['almacen']?.toString() ??
-
-            item['almacen']?.toString() ??
-
-            'Sin ubicación';
-
-        final cantidad = (item['cantidad_final'] ?? 0).toDouble();
-
+        // Preferir cantidad_final; si viniera 0 y hay delta inicial/final,
+        // usar el mismo criterio que la auditoría de movimientos.
+        final cantidad = _resolveInventoryQty(item);
         final reservado = (item['stock_reservado'] ?? 0).toDouble();
 
-
-
-        if (!ubicacionesAgrupadas.containsKey(idUbicacion)) {
-
-          // Crear nueva entrada usando idUbicacion como clave del mapa principal
-
-          ubicacionesAgrupadas[idUbicacion] = {
-
+        if (!lineasUnicas.containsKey(lineKey)) {
+          lineasUnicas[lineKey] = {
             'id_ubicacion': idUbicacion,
-
-            'ubicacion': nombreUbicacion,
-
-            'almacen': nombreAlmacen,
-
+            'ubicacion':
+                item['ubicacion']?.toString() ??
+                item['almacen']?.toString() ??
+                'Sin ubicación',
+            'almacen': item['almacen']?.toString() ?? 'Sin ubicación',
             'cantidad': cantidad,
-
             'reservado': reservado,
-
           };
-
         }
+      }
 
+      final Map<String, Map<String, dynamic>> ubicacionesAgrupadas = {};
+      for (final line in lineasUnicas.values) {
+        final idUbicacion = line['id_ubicacion'] as String;
+        if (ubicacionesAgrupadas.containsKey(idUbicacion)) {
+          ubicacionesAgrupadas[idUbicacion]!['cantidad'] =
+              (ubicacionesAgrupadas[idUbicacion]!['cantidad'] as double) +
+              (line['cantidad'] as double);
+          ubicacionesAgrupadas[idUbicacion]!['reservado'] =
+              (ubicacionesAgrupadas[idUbicacion]!['reservado'] as double) +
+              (line['reservado'] as double);
+        } else {
+          ubicacionesAgrupadas[idUbicacion] = Map<String, dynamic>.from(line);
+        }
       }
 
 
@@ -1848,44 +1840,24 @@ class ProductService {
 
 
 
-      // Procesar operaciones usando stock_final de BD
-
+      // Procesar operaciones. El RPC ya calcula cantidad = final - inicial
+      // (con signo), igual que la auditoría de movimientos. NO invertir
+      // el signo según tipo: eso convertía extracciones negativas en positivas.
       for (var operation in data) {
-
         final fecha = DateTime.parse(operation['fecha']);
-
         final stockFinal = (operation['stock_final'] ?? 0).toDouble();
-
-        final cantidad = (operation['cantidad'] ?? 0).toDouble();
-
+        final cantidadConSigno = _resolveSignedMovementQty(operation);
         final tipoOperacion = operation['tipo_operacion'] ?? 'Operación';
 
-
-
-        final cantidadConSigno =
-
-            tipoOperacion == 'Recepción' ? cantidad : -cantidad;
-
-
-
         stockHistory.add(
-
           _createStockPoint(
-
             fecha,
-
-            stockFinal.abs(),
-
+            stockFinal,
             cantidadConSigno,
-
             tipoOperacion,
-
             operation['documento'] ?? '',
-
           ),
-
         );
-
       }
 
 
@@ -1925,6 +1897,45 @@ class ProductService {
   }
 
 
+
+  /// Cantidad de saldo de inventario (línea de stock).
+  /// Misma lógica que la auditoría de movimientos: preferir cantidad_final;
+  /// si no hay señal útil, caer a |final - inicial|.
+  static double _resolveInventoryQty(Map<dynamic, dynamic> item) {
+    const epsilon = 0.0001;
+    final finalQty = (item['cantidad_final'] as num?)?.toDouble();
+    if (finalQty != null) return finalQty;
+
+    final stockDisp = (item['stock_disponible'] as num?)?.toDouble();
+    if (stockDisp != null) return stockDisp;
+
+    final cantidad = (item['cantidad'] as num?)?.toDouble() ?? 0.0;
+    if (cantidad.abs() > epsilon) return cantidad;
+
+    final ini = (item['cantidad_inicial'] as num?)?.toDouble();
+    final fin = (item['cantidad_final'] as num?)?.toDouble();
+    if (ini != null && fin != null) return fin - ini;
+    return 0.0;
+  }
+
+  /// Delta firmado de un movimiento (entrada +, salida −).
+  /// Alineado con product_movements_screen auditoría:
+  /// - Usa `cantidad` si es significativa
+  /// - Si no, usa final − inicial (el RPC de historial ya lo envía así)
+  static double _resolveSignedMovementQty(Map<dynamic, dynamic> operation) {
+    const epsilon = 0.0001;
+    var qty = (operation['cantidad'] as num?)?.toDouble() ?? 0.0;
+    if (qty.abs() <= epsilon) {
+      final ini = (operation['stock_inicial'] as num?)?.toDouble() ??
+          (operation['cantidad_inicial'] as num?)?.toDouble();
+      final fin = (operation['stock_final'] as num?)?.toDouble() ??
+          (operation['cantidad_final'] as num?)?.toDouble();
+      if (ini != null && fin != null) {
+        qty = fin - ini;
+      }
+    }
+    return qty;
+  }
 
   // Métodos auxiliares para crear puntos de stock
 

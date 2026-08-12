@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import '../services/carnaval_service.dart';
 import '../services/printer_manager.dart';
 import '../services/wifi_printer_service.dart';
 import '../services/export_service.dart';
+import '../services/user_preferences_service.dart';
 import '../utils/ticket_text_utils.dart';
+import '../utils/whatsapp_helper.dart';
+import 'bitacora_tile.dart';
 
 class CarnavalOrderDetailSheet extends StatefulWidget {
   final Map<String, dynamic> order;
@@ -37,6 +39,9 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
   Map<String, dynamic>? _direccionInfo;
   int? _ventiqOperationId;
   Map<int, Map<String, dynamic>> _repartidores = {};
+  List<Map<String, dynamic>> _statusHistory = [];
+  List<Map<String, dynamic>> _ventiqEstadoHistory = [];
+  List<Map<String, dynamic>> _bitacora = [];
 
   @override
   void initState() {
@@ -72,6 +77,16 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
     final direccion = _order['direccion'] as String?;
     final resolvedOrderId = _order['id'] as int?;
 
+    // Bitácora de capitán: quién cambió cantidades o borró líneas. Se acota al
+    // proveedor cuando no es la tienda principal, igual que los detalles: si
+    // esta tienda no ve las líneas de otro proveedor, tampoco su bitácora.
+    final bitacoraFuture = resolvedOrderId != null
+        ? CarnavalService.getOrderBitacora(
+            resolvedOrderId,
+            proveedorFilter: widget.isAdmin ? null : widget.carnavalStoreId,
+          )
+        : Future.value(<Map<String, dynamic>>[]);
+
     final futures = await Future.wait([
       detailsFuture,
       if (userId != null) CarnavalService.getOrderUserInfo(userId),
@@ -79,27 +94,50 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
         CarnavalService.getOrderDireccion(direccion),
       if (resolvedOrderId != null)
         CarnavalService.getVentiqOperationId(resolvedOrderId),
+      if (resolvedOrderId != null)
+        CarnavalService.getOrderStatusHistory(resolvedOrderId),
     ]);
 
     int idx = 1;
     // Ya estaba en vuelo junto a `futures`, así que no añade latencia.
     final repartidores = await repartidoresFuture;
+    final bitacora = await bitacoraFuture;
+    int? ventiqOpId;
+    List<Map<String, dynamic>> carnavalHistory = [];
+
+    if (userId != null) {
+      _userInfo = futures[idx] as Map<String, dynamic>?;
+      idx++;
+    }
+    if (direccion != null && direccion.isNotEmpty) {
+      _direccionInfo = futures[idx] as Map<String, dynamic>?;
+      idx++;
+    }
+    if (resolvedOrderId != null) {
+      ventiqOpId = futures[idx] as int?;
+      idx++;
+      carnavalHistory = futures[idx] as List<Map<String, dynamic>>;
+    }
+
+    if (!mounted) return;
     setState(() {
       _details = futures[0] as List<Map<String, dynamic>>;
       _repartidores = repartidores;
-      if (userId != null) {
-        _userInfo = futures[idx] as Map<String, dynamic>?;
-        idx++;
-      }
-      if (direccion != null && direccion.isNotEmpty) {
-        _direccionInfo = futures[idx] as Map<String, dynamic>?;
-        idx++;
-      }
-      if (resolvedOrderId != null) {
-        _ventiqOperationId = futures[idx] as int?;
-      }
+      _ventiqOperationId = ventiqOpId;
+      _statusHistory = carnavalHistory;
+      _bitacora = bitacora;
       _isLoading = false;
     });
+
+    if (ventiqOpId != null) {
+      final ventiqHistory =
+          await CarnavalService.getVentiqEstadoHistory(ventiqOpId);
+      if (mounted) {
+        setState(() => _ventiqEstadoHistory = ventiqHistory);
+      }
+    } else if (mounted) {
+      setState(() => _ventiqEstadoHistory = []);
+    }
   }
 
   Future<void> _refreshOrder() async {
@@ -154,14 +192,26 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
     }
   }
 
+  Future<String?> _currentAdminName() async {
+    return UserPreferencesService().getAdminName();
+  }
+
   Future<void> _acceptOrder() async {
-    await _doAction(() =>
-        CarnavalService.updateOrderStatus(_order['id'], 'Procesando'));
+    final by = await _currentAdminName();
+    await _doAction(() => CarnavalService.updateOrderStatus(
+          _order['id'],
+          'Procesando',
+          changedBy: by,
+        ));
   }
 
   Future<void> _validatePayment() async {
-    await _doAction(() =>
-        CarnavalService.updateOrderStatus(_order['id'], 'Procesando'));
+    final by = await _currentAdminName();
+    await _doAction(() => CarnavalService.updateOrderStatus(
+          _order['id'],
+          'Procesando',
+          changedBy: by,
+        ));
   }
 
   Future<void> _cancelOrder() async {
@@ -181,8 +231,39 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
       ),
     );
     if (confirmed == true) {
-      await _doAction(() =>
-          CarnavalService.updateOrderStatus(_order['id'], 'Cancelado'));
+      final by = await _currentAdminName();
+      await _doAction(() => CarnavalService.updateOrderStatus(
+            _order['id'],
+            'Cancelado',
+            changedBy: by,
+          ));
+    }
+  }
+
+  Future<void> _completePickupOrder() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Completar Orden'),
+        content: const Text(
+          '¿Marcar esta orden de recogida como completada?',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('No')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Sí, completar')),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      final by = await _currentAdminName();
+      await _doAction(() => CarnavalService.completePickupOrder(
+            _order['id'],
+            completedBy: by,
+          ));
     }
   }
 
@@ -409,9 +490,13 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
     final selected = await _showRepartidorPicker();
     if (selected != null) {
       final metodoEntrega = _order['metodo_entrega'] as String? ?? 'Domicilio';
-      await _doAction(() =>
-          CarnavalService.assignDelivery(_order['id'], selected,
-              metodoEntrega: metodoEntrega));
+      final by = await _currentAdminName();
+      await _doAction(() => CarnavalService.assignDelivery(
+            _order['id'],
+            selected,
+            metodoEntrega: metodoEntrega,
+            changedBy: by,
+          ));
     }
   }
 
@@ -442,10 +527,12 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
 
     final selected = await _showRepartidorPicker();
     if (selected != null) {
+      final by = await _currentAdminName();
       await _doAction(() => CarnavalService.reassignDelivery(
             _order['id'],
             selected,
             resetToAsignado: isEntregando,
+            changedBy: by,
           ));
     }
   }
@@ -472,7 +559,10 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Eliminar producto'),
-        content: const Text('¿Eliminar este producto de la orden?'),
+        content: const Text(
+          '¿Eliminar este producto de la orden?\n'
+          'Se devolverá al inventario de Carnaval e Inventtia.',
+        ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -485,12 +575,24 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
     );
     if (confirmed == true) {
       setState(() => _isActionLoading = true);
-      final ok = await CarnavalService.deleteOrderDetail(detail['id']);
+      final ok = await CarnavalService.deleteOrderDetail(
+        detail['id'],
+        motivo: 'Eliminado desde la app de administración',
+      );
       if (ok) {
         await CarnavalService.recalculateOrderTotal(_order['id']);
         await _refreshOrder();
         await _loadDetails();
         widget.onOrderUpdated();
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No se pudo eliminar el producto ni devolver el stock',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
       setState(() => _isActionLoading = false);
     }
@@ -590,6 +692,22 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
                     // Repartidor
                     if (_order['repartidor'] != null)
                       _buildSection('Repartidor', _buildRepartidorInfo()),
+                    if (_statusHistory.isNotEmpty ||
+                        _ventiqEstadoHistory.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      _buildSection(
+                        'Historial de estados',
+                        _buildStatusHistory(),
+                      ),
+                    ],
+                    // Bitácora de capitán: solo si hubo cambios en las líneas.
+                    if (_bitacora.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      _buildSection(
+                        'Bitácora de la orden (${_bitacora.length})',
+                        _buildBitacora(),
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     // Acciones admin
                     if (widget.isAdmin) _buildAdminActions(),
@@ -603,6 +721,8 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
   Widget _buildHeader() {
     final orderId = _order['id'];
     final createdAt = _order['created_at'] as String?;
+    final clienteTelefono =
+        _userInfo?['telefono'] as String? ?? _order['telefono'];
     String dateStr = '-';
     if (createdAt != null) {
       final dt = DateTime.tryParse(createdAt);
@@ -641,7 +761,13 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
             ),
           ),
         ),
-        const SizedBox(width: 4),
+        const SizedBox(width: 8),
+        // Se auto-oculta si el teléfono del cliente no es contactable.
+        WhatsAppButton(
+          phone: clienteTelefono,
+          size: 30,
+          message: 'Hola, le contactamos por su orden #$orderId.',
+        ),
         IconButton(
           onPressed: _isLoading ? null : _printOrder,
           icon: const Icon(Icons.print, color: Color(0xFF4A90E2)),
@@ -922,13 +1048,149 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
   }
 
   Widget _buildEntregaInfo() {
+    final completadoPor = (_order['completado_por'] as String?)?.trim();
+    final completadoEn = _order['completado_en'] as String?;
+    String? completadoEnFmt;
+    if (completadoEn != null && completadoEn.isNotEmpty) {
+      final dt = DateTime.tryParse(completadoEn)?.toLocal();
+      if (dt != null) {
+        completadoEnFmt =
+            '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year} '
+            '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+      }
+    }
+
     return Column(
       children: [
         _buildInfoRow('Método', _order['metodo_entrega'] ?? '-'),
-        _buildInfoRow('Dirección', _order['direccion_entrega'] ?? '-'),
+        _buildInfoRow('Dirección', _order['direccion'] ?? '-'),
         _buildInfoRow('Costo envío',
             '\$${(_order['costo_envio'] as num?)?.toStringAsFixed(2) ?? '0.00'}'),
         _buildInfoRow('Fecha entrega', _order['fecha_entrega'] ?? '-'),
+        if (completadoPor != null && completadoPor.isNotEmpty)
+          _buildInfoRow('Completada por', completadoPor),
+        if (completadoEnFmt != null)
+          _buildInfoRow('Completada el', completadoEnFmt),
+      ],
+    );
+  }
+
+  Widget _buildStatusHistory() {
+    final rows = <Widget>[];
+
+    for (final h in _statusHistory) {
+      final status = h['status']?.toString() ?? '-';
+      final by = (h['changed_by'] as String?)?.trim();
+      final at = h['created_at'] as String?;
+      String when = '-';
+      if (at != null) {
+        final dt = DateTime.tryParse(at)?.toLocal();
+        if (dt != null) {
+          when =
+              '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year} '
+              '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+        }
+      }
+      rows.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                margin: const EdgeInsets.only(top: 4),
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: _statusColor(status),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      status,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: _statusColor(status),
+                      ),
+                    ),
+                    Text(
+                      by != null && by.isNotEmpty ? '$when · $by' : when,
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_ventiqEstadoHistory.isNotEmpty) {
+      rows.add(Padding(
+        padding: const EdgeInsets.only(top: 4, bottom: 6),
+        child: Text(
+          'Inventtia (operación #$_ventiqOperationId)',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: Colors.indigo[700],
+          ),
+        ),
+      ));
+      for (final e in _ventiqEstadoHistory) {
+        final estadoNum = (e['estado'] as num?)?.toInt();
+        final nombre = switch (estadoNum) {
+          1 => 'Pendiente',
+          2 => 'Completada',
+          3 => 'Devuelta',
+          4 => 'Cancelada',
+          _ => 'Estado $estadoNum',
+        };
+        final at = e['created_at'] as String?;
+        String when = '-';
+        if (at != null) {
+          final dt = DateTime.tryParse(at)?.toLocal();
+          if (dt != null) {
+            when =
+                '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year} '
+                '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+          }
+        }
+        final comentario = (e['comentario'] as String?)?.trim();
+        rows.add(
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(
+              comentario != null && comentario.isNotEmpty
+                  ? '$nombre · $when — $comentario'
+                  : '$nombre · $when',
+              style: TextStyle(fontSize: 13, color: Colors.grey[800]),
+            ),
+          ),
+        );
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: rows,
+    );
+  }
+
+  /// Bitácora de capitán de esta orden: quién movió cantidades o borró líneas.
+  /// Las filas las escribe el trigger `trg_orderdetails_ajustar_erp`; la tabla
+  /// es append-only, así que nadie puede borrar su rastro.
+  Widget _buildBitacora() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final r in _bitacora) BitacoraTile(row: r),
       ],
     );
   }
@@ -1435,7 +1697,11 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
       final generator = Generator(PaperSize.mm58, profile);
       List<int> bytes = _generateOrderTicket(generator);
 
-      bool printed = await PrintBluetoothThermal.writeBytes(bytes);
+      // Troceo + drenado del buffer (igual que ventiq_app) para órdenes grandes.
+      bool printed = await bluetoothService.writeBytesSafe(
+        bytes,
+        jobName: 'Carnaval Order Ticket',
+      );
       await bluetoothService.disconnect();
 
       if (!mounted) return;
@@ -1659,7 +1925,6 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
 
   Widget _buildAdminActions() {
     final actions = <Widget>[];
-    final metodoPago = _order['metodo_pago'] as String? ?? '';
     final metodoEntrega = _order['metodo_entrega'] as String? ?? '';
 
     switch (_status) {
@@ -1697,16 +1962,25 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
         ));
         break;
       case 'Procesando':
-        final esRecogida = metodoEntrega == 'Entrega Cliente';
-        actions.add(_actionButton(
-          esRecogida ? 'Asignar y Completar' : 'Asignar Repartidor',
-          esRecogida
-              ? 'Recogida en tienda: se marcará como completada'
-              : 'Seleccionar repartidor para envío a domicilio',
-          esRecogida ? Icons.storefront : Icons.delivery_dining,
-          Colors.purple,
-          _assignDelivery,
-        ));
+        final esRecogida =
+            CarnavalService.isMetodoRecogida(metodoEntrega);
+        if (esRecogida) {
+          actions.add(_actionButton(
+            'Completar Orden',
+            'Recogida en tienda: marcar como completada',
+            Icons.check_circle,
+            Colors.green,
+            _completePickupOrder,
+          ));
+        } else {
+          actions.add(_actionButton(
+            'Asignar Repartidor',
+            'Seleccionar repartidor para envío a domicilio',
+            Icons.delivery_dining,
+            Colors.purple,
+            _assignDelivery,
+          ));
+        }
         actions.add(_actionButton(
           'Cancelar Orden',
           'Cancelar preparación',

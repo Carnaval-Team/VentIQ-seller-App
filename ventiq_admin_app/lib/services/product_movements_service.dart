@@ -3,6 +3,70 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class ProductMovementsService {
   static final SupabaseClient _supabase = Supabase.instance.client;
 
+  /// Orden estable por fecha de creación ASC (desempate por id de movimiento).
+  /// Necesario porque el RPC en servidor puede estar en DESC / id_op y el
+  /// paginado solo es coherente si ordenamos el conjunto completo.
+  static List<Map<String, dynamic>> sortMovementsByFecha(
+    List<Map<String, dynamic>> source,
+  ) {
+    final list = List<Map<String, dynamic>>.from(source);
+    list.sort((a, b) {
+      final fa = DateTime.tryParse('${a['fecha'] ?? ''}') ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final fb = DateTime.tryParse('${b['fecha'] ?? ''}') ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final byFecha = fa.compareTo(fb);
+      if (byFecha != 0) return byFecha;
+      final idA = (a['id'] as num?)?.toInt() ?? 0;
+      final idB = (b['id'] as num?)?.toInt() ?? 0;
+      return idA.compareTo(idB);
+    });
+    return list;
+  }
+
+  /// Cancelaciones de stock: sin id_operacion. En UI/auditoría se muestran
+  /// como tipo_movimiento=Reajuste, estado=Reajuste, tipo_operacion=
+  /// "Reajuste de cancelación".
+  static bool isCancelacionReajuste(Map<String, dynamic> m) {
+    final tipoMov = (m['tipo_movimiento'] as String?)?.toLowerCase().trim() ?? '';
+    if (tipoMov != 'reajuste') return false;
+
+    final tipoOp = (m['tipo_operacion'] as String?)?.toLowerCase().trim() ?? '';
+    if (tipoOp.contains('cancelacion') || tipoOp.contains('cancelación')) {
+      return true;
+    }
+
+    // Sin operación padre = cancelación (los "Ajuste" sí traen id_operacion).
+    final opId = m['id_operacion'];
+    final hasOp = opId != null && '$opId'.trim().isNotEmpty && '$opId' != 'null';
+    if (hasOp) return false;
+
+    final estado =
+        (m['estado_operacion_nombre'] as String?)?.toLowerCase().trim() ?? '';
+    return estado.isEmpty ||
+        estado == 'reajuste' ||
+        estado == 'desconocido' ||
+        tipoOp.isEmpty ||
+        tipoOp == 'reajuste';
+  }
+
+  static Map<String, dynamic> normalizeCancelReajusteLabels(
+    Map<String, dynamic> m,
+  ) {
+    if (!isCancelacionReajuste(m)) return m;
+    final out = Map<String, dynamic>.from(m);
+    out['tipo_movimiento'] = 'Reajuste';
+    final tipoOp = (out['tipo_operacion'] as String?)?.trim() ?? '';
+    if (tipoOp.isEmpty ||
+        tipoOp.toLowerCase() == 'reajuste' ||
+        tipoOp == '-') {
+      out['tipo_operacion'] = 'Reajuste de cancelación';
+    }
+    out['estado_operacion_nombre'] = 'Reajuste';
+    out['id_operacion'] = null;
+    return out;
+  }
+
   /// Obtiene movimientos de un producto con paginado usando RPC optimizado
   static Future<Map<String, dynamic>> getProductMovements({
     required int productId,
@@ -39,13 +103,14 @@ class ProductMovementsService {
           ? (rawMovements[0]['total_count'] as int?) ?? 0
           : 0;
       final movements = rawMovements.map((m) {
-        return {
+        final normalized = Map<String, dynamic>.from({
           ...m,
           'almacen': m['almacen_nombre'] ?? m['almacen'],
           'ubicacion': m['ubicacion_nombre'] ?? m['ubicacion'],
           'zona': m['ubicacion_nombre'] ?? m['zona'],
           'proveedor': m['proveedor_nombre'] ?? m['proveedor'],
-        };
+        });
+        return normalizeCancelReajusteLabels(normalized);
       }).toList();
 
       print('Movimientos obtenidos: ' + movements.toString());
@@ -111,11 +176,12 @@ class ProductMovementsService {
       offset += pageSize;
     } while (all.length < totalCount);
 
+    final sorted = sortMovementsByFecha(all);
     print(
-      '[ProductMovements] Export completo: ${all.length} filas '
-      '(total_count=$totalCount)',
+      '[ProductMovements] Export completo: ${sorted.length} filas '
+      '(total_count=$totalCount, orden=fecha ASC)',
     );
-    return all;
+    return sorted;
   }
 
   /// Obtiene todos los tipos de operacion disponibles

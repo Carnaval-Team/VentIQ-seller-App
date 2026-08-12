@@ -6455,7 +6455,13 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
       _selectedInventory = null;
     });
     try {
-      final prods = await _productService.getProductsByCategory(cat.id);
+      final useLocal =
+          widget.isOfflineMode ||
+          await widget.userPreferencesService.shouldUseLocalData();
+      final prods = await _productService.getProductsByCategory(
+        cat.id,
+        forceLocal: useLocal,
+      );
       if (mounted) {
         setState(() {
           _productsBySubcat = prods;

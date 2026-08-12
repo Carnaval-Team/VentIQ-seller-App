@@ -596,15 +596,15 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     });
 
     try {
-      // Verificar si el modo offline está activado
-      final isOfflineModeEnabled =
-          await _userPreferencesService.isOfflineModeEnabled();
+      // Verificar si el modo offline / full-offline está activado
+      final useLocalData =
+          await _userPreferencesService.shouldUseLocalData();
 
       Product detailedProduct;
 
-      if (isOfflineModeEnabled) {
+      if (useLocalData) {
         print(
-          '🔌 Modo offline - Cargando detalles del producto desde cache...',
+          '🔌 Offline/full-offline - Cargando detalles del producto desde cache...',
         );
 
         // Cargar datos offline
@@ -616,36 +616,52 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
           // Buscar el producto en todas las categorías
           Product? foundProduct;
           for (var categoryProducts in productsData.values) {
-            final productsList = categoryProducts as List<dynamic>;
-            final productData = productsList.firstWhere(
-              (p) => p['id'] == widget.product.id,
-              orElse: () => null,
-            );
+            if (categoryProducts is! List) continue;
+            Map<String, dynamic>? productData;
+            for (final raw in categoryProducts) {
+              if (raw is! Map) continue;
+              final p = Map<String, dynamic>.from(raw);
+              final pid = p['id'];
+              final id = pid is int ? pid : (pid is num ? pid.toInt() : null);
+              if (id == widget.product.id) {
+                productData = p;
+                break;
+              }
+            }
+            if (productData == null) continue;
 
-            if (productData != null &&
-                productData['detalles_completos'] != null) {
+            if (productData['detalles_completos'] != null) {
               // Construir Product desde detalles completos
-              final detalles = productData['detalles_completos'];
-              final productoInfo = detalles['producto'];
+              final detallesRaw = productData['detalles_completos'];
+              if (detallesRaw is! Map) continue;
+              final detalles = Map<String, dynamic>.from(detallesRaw);
+              final productoInfoRaw = detalles['producto'];
+              if (productoInfoRaw is! Map) continue;
+              final productoInfo = Map<String, dynamic>.from(productoInfoRaw);
               final inventarioList =
-                  detalles['inventario'] as List<dynamic>? ?? [];
+                  List<dynamic>.from(detalles['inventario'] as List? ?? []);
 
               // Crear variantes desde el inventario (igual que en modo normal)
               final variantes = <ProductVariant>[];
 
               for (int i = 0; i < inventarioList.length; i++) {
-                final item = inventarioList[i];
+                final itemRaw = inventarioList[i];
 
                 // Validar que el item no sea null
-                if (item == null) continue;
+                if (itemRaw is! Map) continue;
+                final item = Map<String, dynamic>.from(itemRaw);
 
-                final varianteData = item['variante'] as Map<String, dynamic>?;
-                final presentacionData =
-                    item['presentacion'] as Map<String, dynamic>?;
-                final ubicacionData =
-                    item['ubicacion'] as Map<String, dynamic>?;
+                final varianteData = item['variante'] is Map
+                    ? Map<String, dynamic>.from(item['variante'] as Map)
+                    : null;
+                final presentacionData = item['presentacion'] is Map
+                    ? Map<String, dynamic>.from(item['presentacion'] as Map)
+                    : null;
+                final ubicacionData = item['ubicacion'] is Map
+                    ? Map<String, dynamic>.from(item['ubicacion'] as Map)
+                    : null;
                 final cantidadDisponible =
-                    (item['cantidad_disponible'] as num?)?.toInt() ?? 0;
+                    (item['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
                 final reservadoCarnavalItem =
                     (item['reservado_carnaval'] as num?)?.toInt() ?? 0;
 
@@ -654,10 +670,14 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                 String variantDescription = '';
 
                 if (varianteData != null) {
-                  final opcion =
-                      varianteData['opcion'] as Map<String, dynamic>?;
-                  final atributo =
-                      varianteData['atributo'] as Map<String, dynamic>?;
+                  final opcion = varianteData['opcion'] is Map
+                      ? Map<String, dynamic>.from(varianteData['opcion'] as Map)
+                      : null;
+                  final atributo = varianteData['atributo'] is Map
+                      ? Map<String, dynamic>.from(
+                          varianteData['atributo'] as Map,
+                        )
+                      : null;
 
                   if (opcion != null && atributo != null) {
                     final valor = opcion['valor'] as String? ?? '';
@@ -696,12 +716,18 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                 }
 
                 // Extraer metadata de inventario (igual que en modo normal)
-                final almacenData =
-                    ubicacionData?['almacen'] as Map<String, dynamic>?;
+                final almacenData = ubicacionData?['almacen'] is Map
+                    ? Map<String, dynamic>.from(
+                        ubicacionData!['almacen'] as Map,
+                      )
+                    : null;
                 final inventoryMetadata = {
                   'id_inventario': item['id_inventario'],
                   'id_variante': varianteData?['id'],
-                  'id_opcion_variante': varianteData?['opcion']?['id'],
+                  'id_opcion_variante':
+                      varianteData?['opcion'] is Map
+                          ? (varianteData!['opcion'] as Map)['id']
+                          : null,
                   'id_presentacion': presentacionData?['id'],
                   'id_ubicacion': ubicacionData?['id'],
                   'sku_producto': item['sku_producto'],
@@ -727,17 +753,37 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                 );
               }
 
+              final categoriaRaw = productoInfo['categoria'];
+              final categoriaNombre = categoriaRaw is Map
+                  ? (categoriaRaw['denominacion'] as String? ?? 'Sin categoría')
+                  : 'Sin categoría';
+
+              // Stock: preferir suma de inventario; si viene vacío (sync admin
+              // sin almacenes de vendedor), usar cantidad del listado cacheado.
+              final invSum = inventarioList.fold<double>(0, (sum, inv) {
+                if (inv is! Map) return sum;
+                return sum +
+                    ((inv['cantidad_disponible'] as num?)?.toDouble() ?? 0);
+              });
+              final cachedCantidad =
+                  (productData['cantidad'] as num?)?.toDouble() ??
+                      widget.product.cantidad.toDouble();
+              final totalCantidad = invSum > 0 ? invSum : cachedCantidad;
+              final totalReservado = variantes.fold<int>(
+                0,
+                (sum, v) => sum + v.reservadoCarnaval.toInt(),
+              );
+
               foundProduct = Product(
-                id: productoInfo['id'] as int,
-                denominacion: productoInfo['denominacion'] as String,
+                id: (productoInfo['id'] as num).toInt(),
+                denominacion:
+                    productoInfo['denominacion'] as String? ?? 'Sin nombre',
                 descripcion: productoInfo['descripcion'] as String?,
                 foto: productoInfo['foto'] as String?,
-                precio: (productoInfo['precio_actual'] as num).toDouble(),
-                cantidad: inventarioList.fold(
-                  0,
-                  (sum, inv) => sum + (inv['cantidad_disponible'] as num),
-                ),
-                categoria: productoInfo['categoria']['denominacion'] as String,
+                precio:
+                    (productoInfo['precio_actual'] as num?)?.toDouble() ?? 0.0,
+                cantidad: totalCantidad,
+                categoria: categoriaNombre,
                 esRefrigerado: productoInfo['es_refrigerado'] as bool? ?? false,
                 esFragil: productoInfo['es_fragil'] as bool? ?? false,
                 esPeligroso: productoInfo['es_peligroso'] as bool? ?? false,
@@ -748,10 +794,14 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                 esElaborado: productoInfo['es_elaborado'] as bool? ?? false,
                 esServicio: productoInfo['es_servicio'] as bool? ?? false,
                 variantes: variantes,
+                reservadoCarnaval: totalReservado,
               );
 
               print('✅ Detalles del producto cargados desde cache offline');
               print('  - Producto: ${foundProduct.denominacion}');
+              print(
+                '  - Stock inventario: $invSum | cache listado: $cachedCantidad | usado: $totalCantidad',
+              );
               print('  - Variantes: ${foundProduct.variantes.length}');
               break;
             }
@@ -842,14 +892,14 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
 
   void _loadPromotionData() async {
     try {
-      final isOfflineModeEnabled =
-          await _userPreferencesService.isOfflineModeEnabled();
+      final useLocalData =
+          await _userPreferencesService.shouldUseLocalData();
 
       Map<String, dynamic>? globalPromotion;
       List<Map<String, dynamic>>? productPromotions;
 
-      if (isOfflineModeEnabled) {
-        print('🔌 Modo offline - Cargando promociones desde cache...');
+      if (useLocalData) {
+        print('🔌 Offline/full-offline - Cargando promociones desde cache...');
         globalPromotion = await _userPreferencesService.getPromotionData();
         productPromotions = await _userPreferencesService.getProductPromotions(
           currentProduct.id,
@@ -928,14 +978,14 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
         '🔍 Cargando presentaciones para producto ID: ${widget.product.id}',
       );
 
-      // Verificar si el modo offline está activado
-      final isOfflineModeEnabled =
-          await _userPreferencesService.isOfflineModeEnabled();
+      // Verificar si el modo offline / full-offline está activado
+      final useLocalData =
+          await _userPreferencesService.shouldUseLocalData();
 
       List<ProductPresentation> presentations = [];
 
-      if (isOfflineModeEnabled) {
-        print('🔌 Modo offline - Cargando presentaciones desde cache...');
+      if (useLocalData) {
+        print('🔌 Offline/full-offline - Cargando presentaciones desde cache...');
 
         // Cargar datos offline
         final offlineData = await _userPreferencesService.getOfflineData();
@@ -947,22 +997,33 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
           bool found = false;
           for (var categoryProducts in productsData.values) {
             if (found) break;
+            if (categoryProducts is! List) continue;
 
-            final productsList = categoryProducts as List<dynamic>;
-            final productData = productsList.firstWhere(
-              (p) => p['id'] == widget.product.id,
-              orElse: () => null,
-            );
+            Map<String, dynamic>? productData;
+            for (final raw in categoryProducts) {
+              if (raw is! Map) continue;
+              final p = Map<String, dynamic>.from(raw);
+              final pid = p['id'];
+              final id = pid is int ? pid : (pid is num ? pid.toInt() : null);
+              if (id == widget.product.id) {
+                productData = p;
+                break;
+              }
+            }
 
             if (productData != null && productData['presentaciones'] != null) {
               final presentationsData =
-                  productData['presentaciones'] as List<dynamic>;
+                  List<dynamic>.from(productData['presentaciones'] as List);
 
               // Convertir los datos a ProductPresentation
-              presentations =
-                  presentationsData
-                      .map((item) => ProductPresentation.fromJson(item))
-                      .toList();
+              presentations = presentationsData
+                  .whereType<Map>()
+                  .map(
+                    (item) => ProductPresentation.fromJson(
+                      Map<String, dynamic>.from(item),
+                    ),
+                  )
+                  .toList();
 
               print(
                 '✅ ${presentations.length} presentaciones cargadas desde cache offline',

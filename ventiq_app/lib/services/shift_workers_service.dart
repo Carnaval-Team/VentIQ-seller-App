@@ -345,6 +345,7 @@ class ShiftWorkersService {
           'offline_id': offlineId,
           'data': {
             'id_turno': idTurno,
+            'local_turno_id': idTurno.toString(),
             'id_trabajador': idTrabajador,
             'nombres_trabajador': worker.nombres,
             'apellidos_trabajador': worker.apellidos,

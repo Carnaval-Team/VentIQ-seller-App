@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../utils/ticket_text_utils.dart';
 
 /// Servicio para manejar impresión Bluetooth térmica
 class BluetoothPrinterService {
@@ -569,25 +570,138 @@ class BluetoothPrinterService {
 
       // Generate ticket bytes
       List<int> bytes = [];
-      bytes += generator.text(ticketContent);
+      bytes += generator.text(sanitizeForThermalPrinter(ticketContent));
       bytes += generator.emptyLines(2);
       bytes += generator.cut();
 
       debugPrint('📤 Sending ticket (${bytes.length} bytes)...');
-      
-      bool printed = await PrintBluetoothThermal.writeBytes(bytes);
-      
-      if (printed) {
-        debugPrint('✅ Ticket printed successfully');
-      } else {
-        debugPrint('❌ Failed to print ticket');
-      }
-      
-      return printed;
+      return await writeBytesSafe(bytes, jobName: 'Operation Ticket');
     } catch (e) {
       debugPrint('❌ Error printing ticket: $e');
       return false;
     }
+  }
+
+  /// Espera a que la impresora consuma el buffer BT antes de cortar el socket.
+  /// [totalBytes] es el tamaño aproximado del job ESC/POS enviado.
+  Future<void> waitForPrinterBufferDrain(int totalBytes) async {
+    // ~25 ms por cada 100 bytes, mínimo 2s, máximo 60s (tickets largos).
+    final ms = ((totalBytes / 100) * 25).round().clamp(2000, 60000);
+    debugPrint(
+      '⏳ Waiting ${ms}ms for printer buffer drain ($totalBytes bytes)...',
+    );
+    await Future.delayed(Duration(milliseconds: ms));
+  }
+
+  /// Envío público con troceo + reintentos (tickets grandes / órdenes largas).
+  Future<bool> writeBytesSafe(
+    List<int> bytes, {
+    String jobName = 'Print Job',
+    bool settleAfter = true,
+  }) {
+    return _sendToPrinterWithRetry(bytes, jobName, settleAfter: settleAfter);
+  }
+
+  // Chunks pequeños: muchas térmicas BT fallan con ráfagas grandes.
+  static const int _btChunkSize = 256;
+  static const Duration _btChunkDelay = Duration(milliseconds: 80);
+
+  /// Escribe en trozos con pausa entre ellos para no saturar el buffer SPP.
+  Future<bool> _writeBytesChunked(List<int> bytes) async {
+    if (bytes.isEmpty) return true;
+
+    for (var offset = 0; offset < bytes.length; offset += _btChunkSize) {
+      final end = (offset + _btChunkSize > bytes.length)
+          ? bytes.length
+          : offset + _btChunkSize;
+      final chunk = bytes.sublist(offset, end);
+      final ok = await PrintBluetoothThermal.writeBytes(chunk);
+      if (!ok) {
+        debugPrint(
+          '❌ BT chunk write failed at $offset/${bytes.length} bytes',
+        );
+        return false;
+      }
+      if (end < bytes.length) {
+        await Future.delayed(_btChunkDelay);
+      }
+    }
+    return true;
+  }
+
+  Future<bool> _reconnectSelectedDevice() async {
+    final device = _selectedDevice;
+    if (device == null) return false;
+    try {
+      try {
+        await PrintBluetoothThermal.disconnect;
+      } catch (_) {}
+      await Future.delayed(const Duration(milliseconds: 600));
+      final connected = await PrintBluetoothThermal.connect(
+        macPrinterAddress: device.macAdress,
+      );
+      _isConnected = connected;
+      debugPrint(
+        connected
+            ? '🔄 Reconectado a ${device.name}'
+            : '❌ No se pudo reconectar a ${device.name}',
+      );
+      return connected;
+    } catch (e) {
+      debugPrint('❌ Error reconectando Bluetooth: $e');
+      _isConnected = false;
+      return false;
+    }
+  }
+
+  /// Send bytes to printer with chunking + retry (+ reconnect on failure).
+  Future<bool> _sendToPrinterWithRetry(
+    List<int> bytes,
+    String jobName, {
+    bool settleAfter = true,
+  }) async {
+    var result = false;
+    var attempts = 0;
+    const maxAttempts = 3;
+
+    while (!result && attempts < maxAttempts) {
+      attempts++;
+      debugPrint(
+        '🔄 $jobName - Print attempt $attempts of $maxAttempts '
+        '(${bytes.length} bytes)',
+      );
+
+      try {
+        result = await _writeBytesChunked(bytes);
+        if (result) {
+          debugPrint('✅ $jobName - Print successful on attempt $attempts');
+        } else {
+          debugPrint('❌ $jobName - Print failed on attempt $attempts');
+          if (attempts < maxAttempts) {
+            await _reconnectSelectedDevice();
+            await Future.delayed(const Duration(seconds: 1));
+          }
+        }
+      } catch (printError) {
+        debugPrint(
+          '❌ $jobName - Print error on attempt $attempts: $printError',
+        );
+        if (attempts < maxAttempts) {
+          await _reconnectSelectedDevice();
+          await Future.delayed(const Duration(seconds: 2));
+        }
+      }
+    }
+
+    if (!result) {
+      debugPrint('❌ $jobName - All print attempts failed');
+      return false;
+    }
+
+    if (settleAfter) {
+      await waitForPrinterBufferDrain(bytes.length);
+    }
+    return true;
   }
 
   /// Dispose resources

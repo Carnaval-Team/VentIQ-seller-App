@@ -58,6 +58,7 @@ class StoreConfigService {
     bool? needAllOrdersCompletedToContinue,
     String? masterPassword,
     bool? manejaInventario,
+    bool? mostrarDebeHaberEnConteoInventario,
     bool? permiteVenderAunSinDisponibilidad,
     bool? noSolicitarCliente,
     bool? allowDiscountOnVendedor,
@@ -68,6 +69,8 @@ class StoreConfigService {
     bool? precioVentaRegidoPorUsd,
     bool? cambiarFechaCreacionOperacionAlCierre,
     bool? solicitarImagenOperacion,
+    bool? permitirModoOfflineCompleto,
+    int? diasMaxSinValidarLicencia,
   }) async {
     try {
       print('🔧 Actualizando configuración para tienda ID: $storeId');
@@ -101,6 +104,14 @@ class StoreConfigService {
       if (manejaInventario != null) {
         updateData['maneja_inventario'] = manejaInventario;
         print('  - maneja_inventario: $manejaInventario');
+      }
+
+      if (mostrarDebeHaberEnConteoInventario != null) {
+        updateData['mostrar_debe_haber_en_conteo_inventario'] =
+            mostrarDebeHaberEnConteoInventario;
+        print(
+          '  - mostrar_debe_haber_en_conteo_inventario: $mostrarDebeHaberEnConteoInventario',
+        );
       }
 
       if (permiteVenderAunSinDisponibilidad != null) {
@@ -163,6 +174,22 @@ class StoreConfigService {
       if (solicitarImagenOperacion != null) {
         updateData['solicitar_imagen_operacion'] = solicitarImagenOperacion;
         print('  - solicitar_imagen_operacion: $solicitarImagenOperacion');
+      }
+
+      if (permitirModoOfflineCompleto != null) {
+        updateData['permitir_modo_offline_completo'] =
+            permitirModoOfflineCompleto;
+        print(
+          '  - permitir_modo_offline_completo: $permitirModoOfflineCompleto',
+        );
+      }
+
+      if (diasMaxSinValidarLicencia != null) {
+        updateData['dias_max_sin_validar_licencia'] =
+            diasMaxSinValidarLicencia;
+        print(
+          '  - dias_max_sin_validar_licencia: $diasMaxSinValidarLicencia',
+        );
       }
 
       if (updateData.isEmpty) {
@@ -264,6 +291,28 @@ class StoreConfigService {
   /// Actualiza solo maneja_inventario
   static Future<void> updateManejaInventario(int storeId, bool value) async {
     await updateStoreConfig(storeId, manejaInventario: value);
+  }
+
+  /// Obtiene si se muestra "debe haber" en el conteo de inventario
+  static Future<bool> getMostrarDebeHaberEnConteoInventario(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config['mostrar_debe_haber_en_conteo_inventario'] ?? false;
+    } catch (e) {
+      print('❌ Error al obtener mostrar_debe_haber_en_conteo_inventario: $e');
+      return false;
+    }
+  }
+
+  /// Actualiza mostrar_debe_haber_en_conteo_inventario
+  static Future<void> updateMostrarDebeHaberEnConteoInventario(
+    int storeId,
+    bool value,
+  ) async {
+    await updateStoreConfig(
+      storeId,
+      mostrarDebeHaberEnConteoInventario: value,
+    );
   }
 
   /// Obtiene solo el valor de permite_vender_aun_sin_disponibilidad
@@ -430,5 +479,43 @@ class StoreConfigService {
     bool value,
   ) async {
     await updateStoreConfig(storeId, precioVentaRegidoPorUsd: value);
+  }
+
+  /// Obtiene el valor de permitir_modo_offline_completo
+  static Future<bool> getPermitirModoOfflineCompleto(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config['permitir_modo_offline_completo'] ?? false;
+    } catch (e) {
+      print('❌ Error al obtener permitir_modo_offline_completo: $e');
+      return false;
+    }
+  }
+
+  /// Actualiza permitir_modo_offline_completo
+  static Future<void> updatePermitirModoOfflineCompleto(
+    int storeId,
+    bool value,
+  ) async {
+    await updateStoreConfig(storeId, permitirModoOfflineCompleto: value);
+  }
+
+  /// Obtiene el valor de dias_max_sin_validar_licencia
+  static Future<int> getDiasMaxSinValidarLicencia(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config['dias_max_sin_validar_licencia'] ?? 7;
+    } catch (e) {
+      print('❌ Error al obtener dias_max_sin_validar_licencia: $e');
+      return 7;
+    }
+  }
+
+  /// Actualiza dias_max_sin_validar_licencia
+  static Future<void> updateDiasMaxSinValidarLicencia(
+    int storeId,
+    int value,
+  ) async {
+    await updateStoreConfig(storeId, diasMaxSinValidarLicencia: value);
   }
 }

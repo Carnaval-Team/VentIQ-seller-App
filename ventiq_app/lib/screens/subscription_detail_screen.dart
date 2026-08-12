@@ -8,6 +8,8 @@ import '../services/user_preferences_service.dart';
 import '../utils/app_snackbar.dart';
 import '../services/subscription_guard_service.dart';
 import '../services/auth_service.dart';
+import '../services/connectivity_service.dart';
+import '../services/offline_license_service.dart';
 
 class SubscriptionDetailScreen extends StatefulWidget {
   const SubscriptionDetailScreen({super.key});
@@ -21,10 +23,13 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
   final _userPreferencesService = UserPreferencesService();
   final _subscriptionGuard = SubscriptionGuardService();
   final _authService = AuthService();
+  final _connectivity = ConnectivityService();
   
   Subscription? _activeSubscription;
   List<Subscription> _subscriptionHistory = [];
+  OfflineLicenseStatus? _licenseStatus;
   bool _isLoading = true;
+  bool _isRevalidating = false;
   int? _idTienda;
 
   @override
@@ -48,11 +53,28 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
       
       // Cargar suscripción activa desde el guard (que ahora tiene datos frescos)
       _activeSubscription = await _subscriptionGuard.getCurrentSubscription(forceRefresh: true);
+      _licenseStatus = _subscriptionGuard.lastOfflineStatus;
       
-      // Cargar historial de suscripciones
-      _subscriptionHistory = await _subscriptionService.getSubscriptionHistory(_idTienda!);
+      // Cargar historial de suscripciones (solo online)
+      if (_connectivity.isConnected) {
+        _subscriptionHistory = await _subscriptionService.getSubscriptionHistory(_idTienda!);
+      }
       
       print('✅ Datos de suscripción cargados - Estado: ${_activeSubscription?.isActive ?? false ? "ACTIVA" : "INACTIVA"}');
+      if (_licenseStatus != null) {
+        print('🔐 Licencia offline: ${_licenseStatus!.isValid} — ${_licenseStatus!.message}');
+      }
+
+      // Si la licencia firmada ya es válida, entrar a la app.
+      if (_licenseStatus?.isValid == true && mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          Navigator.of(context).pushNamedAndRemoveUntil(
+            '/categories',
+            (route) => false,
+          );
+        });
+      }
     } catch (e) {
       print('❌ Error cargando datos de suscripción: $e');
       if (mounted) {
@@ -86,15 +108,17 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          // Mostrar botón de categorías si hay suscripción activa
-          if (_activeSubscription != null && _activeSubscription!.isActive)
+          // Mostrar botón de categorías si hay suscripción/licencia activa
+          if ((_activeSubscription != null && _activeSubscription!.isActive) ||
+              (_licenseStatus?.isValid == true))
             IconButton(
               onPressed: _navigateToCategories,
               icon: const Icon(Icons.category, color: Colors.white),
               tooltip: 'Ir al Catálogo',
             ),
-          // Mostrar botón de logout si no hay suscripción activa
-          if (_activeSubscription == null || !_activeSubscription!.isActive)
+          // Mostrar botón de logout si no hay suscripción/licencia activa
+          if ((_activeSubscription == null || !_activeSubscription!.isActive) &&
+              _licenseStatus?.isValid != true)
             IconButton(
               onPressed: _logout,
               icon: const Icon(Icons.logout, color: Colors.white),
@@ -113,6 +137,10 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildCurrentSubscriptionCard(),
+                  if (_licenseStatus != null && !_licenseStatus!.isValid) ...[
+                    const SizedBox(height: 16),
+                    _buildLicenseBlockedCard(),
+                  ],
                   const SizedBox(height: 20),
                   _buildContactCard(),
                   const SizedBox(height: 20),
@@ -185,15 +213,155 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
                 ),
               ),
             ] else ...[
-              const Text(
-                'No se encontró información de suscripción para esta tienda.',
-                style: TextStyle(fontSize: 16, color: Colors.grey),
+              Text(
+                _licenseStatus?.message ??
+                    'No se encontró información de suscripción para esta tienda.',
+                style: const TextStyle(fontSize: 16, color: Colors.grey),
               ),
             ],
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildLicenseBlockedCard() {
+    final status = _licenseStatus!;
+    final online = _connectivity.isConnected;
+
+    return Card(
+      elevation: 4,
+      color: Colors.red.shade50,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.red.shade200),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.lock, color: Colors.red.shade700, size: 28),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'App bloqueada',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              status.message,
+              style: TextStyle(
+                fontSize: 15,
+                color: Colors.red.shade900,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: (_isRevalidating || !online) ? null : _revalidateLicense,
+                icon: _isRevalidating
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.cloud_sync),
+                label: Text(
+                  online
+                      ? (_isRevalidating
+                          ? 'Revalidando...'
+                          : 'Revalidar licencia ahora')
+                      : 'Sin conexión — conéctate para revalidar',
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF4A90E2),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _revalidateLicense() async {
+    setState(() => _isRevalidating = true);
+    try {
+      final ok = await _subscriptionGuard.forceCheck();
+      if (!mounted) return;
+
+      final licenseStatus = _subscriptionGuard.lastOfflineStatus ??
+          await OfflineLicenseService().validateLocalLicense(
+            storeId: _idTienda,
+          );
+      final canEnter = licenseStatus.isValid || ok;
+
+      if (canEnter && licenseStatus.isValid) {
+        AppSnackBar.showPersistent(
+          context,
+          message: 'Licencia revalidada correctamente',
+          backgroundColor: Colors.green,
+        );
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/categories',
+          (route) => false,
+        );
+        return;
+      }
+
+      // Suscripción online activa pero sin token firmado: permitir entrar
+      // en modo online (el banner ya no redirige tras un fetch fallido
+      // reiterado si no hay offline completo bloqueando).
+      if (ok && _activeSubscription?.isActive == true) {
+        AppSnackBar.showPersistent(
+          context,
+          message:
+              'Suscripción activa. No se pudo guardar licencia offline; '
+              'puedes continuar en línea.',
+          backgroundColor: Colors.orange,
+        );
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/categories',
+          (route) => false,
+        );
+        return;
+      }
+
+      setState(() {
+        _licenseStatus = licenseStatus;
+      });
+      AppSnackBar.showPersistent(
+        context,
+        message: licenseStatus.message,
+        backgroundColor: Colors.red,
+      );
+    } catch (e) {
+      if (mounted) {
+        AppSnackBar.showPersistent(
+          context,
+          message: 'Error revalidando: $e',
+          backgroundColor: Colors.red,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isRevalidating = false);
+    }
   }
 
   Widget _buildContactCard() {
@@ -389,6 +557,10 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
   }
 
   Color _getStatusColor() {
+    if (_licenseStatus != null && !_licenseStatus!.isValid) {
+      return Colors.red;
+    }
+
     if (_activeSubscription == null || !_activeSubscription!.isActive || _activeSubscription!.isExpired) {
       return Colors.red;
     }
@@ -401,6 +573,10 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
   }
 
   String _getStatusMessage() {
+    if (_licenseStatus != null && !_licenseStatus!.isValid) {
+      return _licenseStatus!.message;
+    }
+
     if (_activeSubscription == null) {
       return 'No se encontró información de suscripción para esta tienda.';
     }

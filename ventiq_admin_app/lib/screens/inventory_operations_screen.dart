@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/inventory_service.dart';
@@ -39,20 +38,23 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   bool _hasNextPage = false;
   bool _isLoadingMore = false;
   final ScrollController _scrollController = ScrollController();
+  bool _canCompleteTransfers = false;
+  final PermissionsService _permissionsService = PermissionsService();
+  UserRole _userRole = UserRole.none;
+  int? _almaceneroWarehouseId;
 
   /// Tipos que realmente lista fn_listar_operaciones_inventario_new.
-  /// IDs alineados con app_nom_tipo_operacion (no hardcodear nombres viejos).
+  /// Transferencias unificadas: padre tipo 19 (legado tipo 7).
   static const List<int> _tiposInventarioIds = [
     1, // Recepcion
     2, // Venta
     3, // Ajuste Positivo
     4, // Ajuste Negativo
-    7, // Transferencia Salida (operación padre de transferencia)
-    8, // Transferencia
+    7, // Transferencia Salida (padre legado)
     16, // Apertura de Caja
     17, // Cierre de Caja
     18, // Extracción
-    19, // Transferencia de productos
+    19, // Transferencia de productos (padre actual)
   ];
 
   @override
@@ -64,9 +66,32 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     print('  • Items por página: $_itemsPerPage');
 
     _loadTiposOperacion();
-    _loadOperations();
+    _initPermissionsAndOperations();
     _searchController.addListener(_onSearchChanged);
     _scrollController.addListener(_onScroll);
+  }
+
+  Future<void> _initPermissionsAndOperations() async {
+    await _loadCompleteTransferPermission();
+    if (!mounted) return;
+    await _loadOperations();
+  }
+
+  Future<void> _loadCompleteTransferPermission() async {
+    final can = await _permissionsService.canPerformAction(
+      'inventory.complete_transfer',
+    );
+    final role = await _permissionsService.getUserRole();
+    int? warehouseId;
+    if (role == UserRole.almacenero) {
+      warehouseId = await _permissionsService.getAssignedWarehouse();
+    }
+    if (!mounted) return;
+    setState(() {
+      _canCompleteTransfers = can;
+      _userRole = role;
+      _almaceneroWarehouseId = warehouseId;
+    });
   }
 
   @override
@@ -703,9 +728,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
           {
             'id': 7,
             'denominacion': 'Transferencia Salida',
-            'accion': 'salida',
+            'accion': 'transferencia',
           },
-          {'id': 8, 'denominacion': 'Transferencia', 'accion': 'entrada'},
           {
             'id': 16,
             'denominacion': 'Apertura de Caja',
@@ -1094,7 +1118,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     IconData operationIcon;
     Color operationColor;
 
-    if (accion == 'transferencia') {
+    if (accion == 'transferencia' ||
+        tipoOperacion.toLowerCase().contains('transferencia')) {
       operationIcon = Icons.swap_horiz;
       operationColor = Colors.purple;
     } else if (accion == 'apertura_caja') {
@@ -1661,11 +1686,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                                 },
                               ),
                             ],
-                            // Mostrar almacenes origen y destino para transferencias
-                            if ((operation['tipo_operacion_accion']
-                                        ?.toString() ??
-                                    '') ==
-                                'transferencia') ...[
+                            // Origen / destino para transferencias unificadas
+                            if (_isUnifiedTransfer(operation)) ...[
                               Builder(
                                 builder: (context) {
                                   final det =
@@ -1765,8 +1787,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                               _buildFormattedDetails(operation['detalles']),
                             ],
 
-                            // Show completion button for pending reception operations
-                            if (_shouldShowCompleteButton(operation)) ...[
+                            // Completar: transferencia unificada (salida/entrada) u otras ops
+                            if (_isUnifiedTransfer(operation)) ...[
+                              ..._buildTransferCompleteActions(operation),
+                            ] else if (_shouldShowCompleteButton(operation)) ...[
                               const SizedBox(height: 24),
                               _buildCompleteButton(operation),
                             ],
@@ -2610,8 +2634,6 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                                   fontWeight: FontWeight.w600,
                                   color: Color(0xFF1F2937),
                                 ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
                               ),
                               if (item['variante'] != null ||
                                   item['opcion_variante'] != null) ...[
@@ -2951,36 +2973,267 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     return operation['total']?.toDouble() ?? 0.0;
   }
 
-  bool _shouldShowCompleteButton(Map<String, dynamic> operation) {
-    String tipoOperacion =
+  bool _isUnifiedTransfer(Map<String, dynamic> operation) {
+    final accion =
+        operation['tipo_operacion_accion']?.toString().toLowerCase() ?? '';
+    if (accion == 'transferencia') return true;
+    final tipo =
         operation['tipo_operacion_nombre']?.toString().toLowerCase() ?? '';
-    final accion = operation['tipo_operacion_accion']?.toString() ?? '';
-    String estado = operation['estado_nombre']?.toString().toLowerCase() ?? '';
+    if (tipo.contains('transferencia de productos')) return true;
+    final esp = _extractDetallesEspecificos(operation);
+    return esp != null &&
+        esp['id_extraccion'] != null &&
+        esp['id_recepcion'] != null;
+  }
 
-    print(
-      '🔍 Checking completion button - ID: ${operation['id']}, accion: "$accion", tipo: "$tipoOperacion"',
+  bool _isChildPending(dynamic estadoNombre, dynamic estadoId) {
+    final id = estadoId is num ? estadoId.toInt() : int.tryParse('$estadoId');
+    if (id == 1) return true;
+    final s = (estadoNombre?.toString() ?? '').toLowerCase().trim();
+    return s.contains('pendiente') ||
+        s.contains('pending') ||
+        s.isEmpty ||
+        s.contains('sin estado');
+  }
+
+  int? _asInt(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString());
+  }
+
+  /// Almacenero solo confirma el lado de su almacén; gerente/supervisor ambos.
+  bool _canConfirmTransferSide({
+    required bool isSalida,
+    required Map<String, dynamic> operation,
+  }) {
+    if (!_canCompleteTransfers) return false;
+    final esp = _extractDetallesEspecificos(operation);
+    if (esp == null) return false;
+
+    final pending = isSalida
+        ? _isChildPending(esp['estado_extraccion'], esp['estado_extraccion_id'])
+        : _isChildPending(esp['estado_recepcion'], esp['estado_recepcion_id']);
+    if (!pending) return false;
+
+    if (_userRole == UserRole.gerente || _userRole == UserRole.supervisor) {
+      return true;
+    }
+
+    if (_userRole == UserRole.almacenero) {
+      final mine = _almaceneroWarehouseId;
+      if (mine == null) return false;
+      final origen = _asInt(esp['id_almacen_origen']);
+      final destino = _asInt(esp['id_almacen_destino']);
+      if (isSalida) return origen == mine;
+      return destino == mine;
+    }
+
+    return false;
+  }
+
+  List<Widget> _buildTransferCompleteActions(Map<String, dynamic> operation) {
+    final showSalida = _canConfirmTransferSide(
+      isSalida: true,
+      operation: operation,
     );
+    final showEntrada = _canConfirmTransferSide(
+      isSalida: false,
+      operation: operation,
+    );
+    if (!showSalida && !showEntrada) return const [];
 
-    bool isReception = tipoOperacion.contains('recepci');
-    bool isExtraction = tipoOperacion.contains('extrac');
-    bool isAjuste = tipoOperacion.contains('ajuste');
-    bool isTransfer = accion == 'transferencia';
+    final esp = _extractDetallesEspecificos(operation)!;
+    final widgets = <Widget>[const SizedBox(height: 24)];
 
-    // Check for different variations of pending status
-    bool isPending =
+    if (showSalida) {
+      widgets.add(
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () => _showCompleteTransferSideDialog(
+              operation: operation,
+              childOpId: _asInt(esp['id_extraccion'])!,
+              sideLabel: 'Salida (extracción)',
+            ),
+            icon: const Icon(Icons.output),
+            label: const Text('Completar Salida'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange.shade700,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (showEntrada) {
+      if (showSalida) widgets.add(const SizedBox(height: 10));
+      widgets.add(
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () => _showCompleteTransferSideDialog(
+              operation: operation,
+              childOpId: _asInt(esp['id_recepcion'])!,
+              sideLabel: 'Entrada (recepción)',
+            ),
+            icon: const Icon(Icons.input),
+            label: const Text('Completar Entrada'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green.shade700,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return widgets;
+  }
+
+  void _showCompleteTransferSideDialog({
+    required Map<String, dynamic> operation,
+    required int childOpId,
+    required String sideLabel,
+  }) {
+    final commentController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Completar $sideLabel'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '¿Completar la operación #$childOpId ($sideLabel) '
+              'de la transferencia #${operation['id']}?',
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: commentController,
+              decoration: const InputDecoration(
+                labelText: 'Comentario (opcional)',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _completeTransferChild(
+                parentOperation: operation,
+                childOpId: childOpId,
+                sideLabel: sideLabel,
+                comment: commentController.text,
+              );
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+            child: const Text('Completar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _completeTransferChild({
+    required Map<String, dynamic> parentOperation,
+    required int childOpId,
+    required String sideLabel,
+    required String comment,
+  }) async {
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Expanded(child: Text('Completando...')),
+            ],
+          ),
+        ),
+      );
+
+      final userUuid = await UserPreferencesService().getUserId();
+      if (userUuid == null) {
+        throw Exception('No se pudo obtener el UUID del usuario');
+      }
+
+      final result = await InventoryService.completeOperation(
+        idOperacion: childOpId,
+        comentario: comment.isEmpty
+            ? 'Transferencia $sideLabel completada desde la app'
+            : comment,
+        uuid: userUuid,
+      );
+
+      if (!mounted) return;
+      Navigator.pop(context); // loading
+
+      final ok = result['success'] == true || result['status'] == 'success';
+      if (ok) {
+        Navigator.pop(context); // detail sheet
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message'] ?? '$sideLabel completada'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _loadOperations();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message'] ?? 'Error al completar'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop(); // loading if open
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  bool _shouldShowCompleteButton(Map<String, dynamic> operation) {
+    if (_isUnifiedTransfer(operation)) return false;
+
+    final tipoOperacion =
+        operation['tipo_operacion_nombre']?.toString().toLowerCase() ?? '';
+    final estado =
+        operation['estado_nombre']?.toString().toLowerCase().trim() ?? '';
+
+    final isReception = tipoOperacion.contains('recepci');
+    final isExtraction = tipoOperacion.contains('extrac');
+    final isAjuste = tipoOperacion.contains('ajuste');
+
+    final isPending =
         estado.contains('pendiente') ||
         estado.contains('pending') ||
         estado.contains('en proceso') ||
         estado.contains('proceso');
 
-    print('   - Is reception: $isReception');
-    print('   - Is extraction: $isExtraction');
-    print('   - Is pending: $isPending');
-    print(
-      '   - Should show button: ${(isReception || isExtraction) && isPending}',
-    );
-
-    return (isReception || isExtraction || isAjuste || isTransfer) && isPending;
+    return (isReception || isExtraction || isAjuste) && isPending;
   }
 
   bool _shouldShowCancelButton(Map<String, dynamic> operation) {
@@ -3937,11 +4190,16 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         .toString()
         .contains('Venta desde orden');
 
+    // Transferencias: permitir imprimir en cualquier estado (pendiente, parcial, completada)
+    final isTransfer = _isUnifiedTransfer(operation);
+
+    final canPrint = isCompleted || isCarnavalOrder || isTransfer;
+
     print(
-      '🖨️ Print & PDF Buttons - Estado: "$estadoNombre", ¿Completada?: $isCompleted, ¿Carnaval?: $isCarnavalOrder',
+      '🖨️ Print & PDF Buttons - Estado: "$estadoNombre", ¿Completada?: $isCompleted, ¿Carnaval?: $isCarnavalOrder, ¿Transfer?: $isTransfer, ¿Puede?: $canPrint',
     );
 
-    if (!isCompleted && !isCarnavalOrder) {
+    if (!canPrint) {
       return SizedBox(
         width: double.infinity,
         child: ElevatedButton.icon(
@@ -4003,6 +4261,56 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         ),
       ],
     );
+  }
+
+  /// Items imprimibles: incluye productos anidados de transferencia unificada.
+  List<Map<String, dynamic>> _extractPrintableItems(
+    Map<String, dynamic> operation,
+  ) {
+    final details = operation['detalles'];
+    if (details is! Map) return const [];
+
+    final detailsMap = Map<String, dynamic>.from(details);
+    final items = <Map<String, dynamic>>[];
+
+    void addFromList(dynamic raw) {
+      if (raw is! List) return;
+      for (final item in raw) {
+        if (item is Map) {
+          items.add(Map<String, dynamic>.from(item));
+        }
+      }
+    }
+
+    addFromList(detailsMap['items']);
+
+    final esp = detailsMap['detalles_especificos'];
+    if (esp is Map) {
+      final espMap = Map<String, dynamic>.from(esp);
+      addFromList(espMap['items']);
+
+      final extraccion = espMap['extraccion'];
+      if (extraccion is Map) {
+        addFromList(extraccion['items']);
+      }
+      // Si no hubo items de extracción, usar recepción
+      if (items.isEmpty) {
+        final recepcion = espMap['recepcion'];
+        if (recepcion is Map) {
+          addFromList(recepcion['items']);
+        }
+      }
+    }
+
+    // Deduplicar por id_producto + cantidad + nombre
+    final seen = <String>{};
+    final unique = <Map<String, dynamic>>[];
+    for (final item in items) {
+      final key =
+          '${item['id_producto']}|${item['cantidad']}|${item['producto_nombre'] ?? item['nombre_producto']}';
+      if (seen.add(key)) unique.add(item);
+    }
+    return unique;
   }
 
   /// 🖨️ Imprimir operación - Seleccionar tipo de impresora
@@ -4084,38 +4392,29 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
       final wifiService = WiFiPrinterService();
 
-      // Obtener detalles de la operación desde los datos ya cargados en la vista
-      List<Map<String, dynamic>> details = [];
-
-      if (operation['detalles'] != null && operation['detalles'] is Map) {
-        final detallesMap = operation['detalles'] as Map<String, dynamic>;
-        if (detallesMap['items'] != null && detallesMap['items'] is List) {
-          // Convertir los items del formato de la vista al formato esperado por el servicio
-          details =
-              (detallesMap['items'] as List).map((item) {
-                return {
-                  'cantidad': item['cantidad_contada'] ?? item['cantidad'] ?? 0,
-                  'producto_nombre':
-                      item['producto_nombre'] ??
-                      item['nombre_producto'] ??
-                      'Producto',
-                  'producto': {
-                    'denominacion':
-                        item['producto_nombre'] ??
-                        item['nombre_producto'] ??
-                        'Producto',
-                    'codigo_barras': item['codigo_barras'],
-                  },
-                  'presentacion':
-                      item['presentacion_nombre'] ?? item['presentacion'],
-                  'ubicacion': item['ubicacion_nombre'] ?? item['ubicacion'],
-                };
-              }).toList();
-          print(
-            '📦 Detalles obtenidos de la vista: ${details.length} productos',
-          );
-        }
-      }
+      // Obtener detalles de la operación (incluye items de transferencia unificada)
+      final printableItems = _extractPrintableItems(operation);
+      final details =
+          printableItems.map((item) {
+            return {
+              'cantidad': item['cantidad_contada'] ?? item['cantidad'] ?? 0,
+              'producto_nombre':
+                  item['producto_nombre'] ??
+                  item['nombre_producto'] ??
+                  'Producto',
+              'producto': {
+                'denominacion':
+                    item['producto_nombre'] ??
+                    item['nombre_producto'] ??
+                    'Producto',
+                'codigo_barras': item['codigo_barras'],
+              },
+              'presentacion':
+                  item['presentacion_nombre'] ?? item['presentacion'],
+              'ubicacion': item['ubicacion_nombre'] ?? item['ubicacion'],
+            };
+          }).toList();
+      print('📦 Detalles obtenidos de la vista: ${details.length} productos');
 
       if (!mounted) return;
 
@@ -4269,12 +4568,15 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
             ),
       );
 
-      // Generar y enviar ticket
+      // Generar y enviar ticket (troceo + drenado, igual que ventiq_app)
       final profile = await CapabilityProfile.load();
       final generator = Generator(PaperSize.mm58, profile);
       List<int> bytes = _generateOperationTicket(generator, operation);
 
-      bool printed = await PrintBluetoothThermal.writeBytes(bytes);
+      bool printed = await bluetoothService.writeBytesSafe(
+        bytes,
+        jobName: 'Inventory Operation Ticket',
+      );
       await bluetoothService.disconnect();
 
       if (!mounted) return;
@@ -4307,43 +4609,35 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     try {
       final exportService = ExportService();
 
-      // Extraer items de los detalles
-      List<Map<String, dynamic>> items = [];
-      if (operation['detalles'] != null && operation['detalles'] is Map) {
-        final detallesMap = operation['detalles'] as Map<String, dynamic>;
-
-        // Intentar obtener de 'items' directo
-        if (detallesMap['items'] != null && detallesMap['items'] is List) {
-          items = List<Map<String, dynamic>>.from(detallesMap['items']);
-        }
-
-        // Si no hay items, intentar de 'detalles_especificos'
-        if (items.isEmpty &&
-            detallesMap['detalles_especificos'] != null &&
-            detallesMap['detalles_especificos'] is Map) {
-          final especificos =
-              detallesMap['detalles_especificos'] as Map<String, dynamic>;
-          if (especificos['items'] != null && especificos['items'] is List) {
-            items = List<Map<String, dynamic>>.from(especificos['items']);
-          }
-        }
-      }
+      // Extraer items (incluye anidados de transferencia)
+      final items = _extractPrintableItems(operation);
 
       // Obtener nombre del almacén (igual que el bottom sheet)
       String almacenNombre = 'N/A';
-      final tipoOp = operation['tipo_operacion_nombre'] ?? '';
-      final tipoLC = tipoOp.toLowerCase();
-      if (tipoLC.contains('recepción') ||
-          tipoLC.contains('recepcion') ||
-          tipoLC.contains('reception') ||
-          tipoLC.contains('extracción') ||
-          tipoLC.contains('extraccion') ||
-          tipoLC.contains('extraction') ||
-          tipoLC.contains('productos')) {
-        almacenNombre = await InventoryService.getWarehouseFromOperation(
-          operation['id'],
-          tipoOp,
-        );
+      if (_isUnifiedTransfer(operation)) {
+        final esp = _extractDetallesEspecificos(operation);
+        final origen = esp?['origen']?.toString();
+        final destino = esp?['destino']?.toString();
+        if ((origen != null && origen.isNotEmpty) ||
+            (destino != null && destino.isNotEmpty)) {
+          almacenNombre =
+              '${origen ?? 'N/A'} → ${destino ?? 'N/A'}';
+        }
+      } else {
+        final tipoOp = operation['tipo_operacion_nombre'] ?? '';
+        final tipoLC = tipoOp.toLowerCase();
+        if (tipoLC.contains('recepción') ||
+            tipoLC.contains('recepcion') ||
+            tipoLC.contains('reception') ||
+            tipoLC.contains('extracción') ||
+            tipoLC.contains('extraccion') ||
+            tipoLC.contains('extraction') ||
+            tipoLC.contains('productos')) {
+          almacenNombre = await InventoryService.getWarehouseFromOperation(
+            operation['id'],
+            tipoOp,
+          );
+        }
       }
 
       if (!mounted) return;
@@ -4398,112 +4692,126 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     Map<String, dynamic> operation,
   ) {
     List<int> bytes = [];
+    List<int> line(String text, {PosStyles? styles}) {
+      return generator.text(
+        sanitizeForThermalPrinter(text),
+        styles: styles ?? const PosStyles(),
+      );
+    }
 
     // Header
-    bytes += generator.text(
+    bytes += line(
       'INVENTTIA',
       styles: PosStyles(align: PosAlign.center, bold: true),
     );
-    bytes += generator.text(
-      'OPERACIÓN DE INVENTARIO',
+    bytes += line(
+      'OPERACION DE INVENTARIO',
       styles: PosStyles(align: PosAlign.center, bold: true),
     );
-    bytes += generator.text(
+    bytes += line(
       '----------------------------',
       styles: PosStyles(align: PosAlign.center),
     );
 
     // Información de la operación
-    bytes += generator.text(
+    bytes += line(
       'ID: ${operation['id']}',
       styles: PosStyles(align: PosAlign.left, bold: true),
     );
-    bytes += generator.text(
+    bytes += line(
       'Tipo: ${operation['tipo_operacion_nombre'] ?? 'N/A'}',
       styles: PosStyles(align: PosAlign.left),
     );
-    bytes += generator.text(
+    bytes += line(
       'Estado: ${operation['estado_nombre'] ?? 'N/A'}',
       styles: PosStyles(align: PosAlign.left),
     );
-    bytes += generator.text(
+    bytes += line(
       'Fecha: ${_formatDateTime(DateTime.parse(operation['created_at']))}',
       styles: PosStyles(align: PosAlign.left),
     );
 
-    // Observaciones
+    // Observaciones (nombre/texto completo, sin cortar)
     if (operation['observaciones']?.isNotEmpty == true) {
-      String obs = operation['observaciones'].toString();
-      if (obs.length > 28) obs = obs.substring(0, 25) + '...';
-      bytes += generator.text(
-        'Obs: $obs',
-        styles: PosStyles(align: PosAlign.left),
-      );
+      final obs = operation['observaciones'].toString();
+      for (final wrapped in wrapTicketText('Obs: $obs')) {
+        bytes += line(wrapped, styles: PosStyles(align: PosAlign.left));
+      }
     }
 
-    bytes += generator.text(
+    // Origen / destino transferencia
+    final esp = _extractDetallesEspecificos(operation);
+    if (esp != null) {
+      final origen = esp['origen']?.toString();
+      final destino = esp['destino']?.toString();
+      if (origen != null && origen.isNotEmpty) {
+        for (final wrapped in wrapTicketText('Origen: $origen')) {
+          bytes += line(wrapped, styles: PosStyles(align: PosAlign.left));
+        }
+      }
+      if (destino != null && destino.isNotEmpty) {
+        for (final wrapped in wrapTicketText('Destino: $destino')) {
+          bytes += line(wrapped, styles: PosStyles(align: PosAlign.left));
+        }
+      }
+    }
+
+    bytes += line(
       '----------------------------',
       styles: PosStyles(align: PosAlign.center),
     );
 
-    // Productos (si existen en los detalles)
-    if (operation['detalles'] != null && operation['detalles'] is Map) {
-      final detallesMap = operation['detalles'] as Map<String, dynamic>;
-      if (detallesMap['items'] != null && detallesMap['items'] is List) {
-        final items = detallesMap['items'] as List;
+    // Productos (nombre completo con wrap)
+    final items = _extractPrintableItems(operation);
+    if (items.isNotEmpty) {
+      bytes += line(
+        'PRODUCTOS:',
+        styles: PosStyles(align: PosAlign.left, bold: true),
+      );
 
-        bytes += generator.text(
-          'PRODUCTOS:',
-          styles: PosStyles(align: PosAlign.left, bold: true),
-        );
+      for (var item in items) {
+        final cantidad = item['cantidad_contada'] ?? item['cantidad'] ?? 0;
+        final productName =
+            (item['producto_nombre'] ?? item['nombre_producto'] ?? 'Producto')
+                .toString();
 
-        for (var item in items) {
-          final cantidad = item['cantidad_contada'] ?? item['cantidad'] ?? 0;
-          final productName =
-              (item['producto_nombre'] ?? item['nombre_producto'] ?? 'Producto')
-                  .toString();
-
-          for (final line in formatTicketProductLines(cantidad, productName)) {
-            bytes +=
-                generator.text(line, styles: PosStyles(align: PosAlign.left));
-          }
-
-          // Agregar ubicación si existe
-          final ubicacion = item['ubicacion_nombre'] ?? item['ubicacion'];
-          if (ubicacion != null && ubicacion.toString().isNotEmpty) {
-            for (final line in wrapTicketText('  Ubic: $ubicacion')) {
-              bytes +=
-                  generator.text(line, styles: PosStyles(align: PosAlign.left));
-            }
-          }
+        for (final wrapped in formatTicketProductLines(cantidad, productName)) {
+          bytes += line(wrapped, styles: PosStyles(align: PosAlign.left));
         }
 
-        bytes += generator.text(
-          '----------------------------',
-          styles: PosStyles(align: PosAlign.center),
-        );
+        final ubicacion = item['ubicacion_nombre'] ?? item['ubicacion'];
+        if (ubicacion != null && ubicacion.toString().isNotEmpty) {
+          for (final wrapped in wrapTicketText('  Ubic: $ubicacion')) {
+            bytes += line(wrapped, styles: PosStyles(align: PosAlign.left));
+          }
+        }
       }
+
+      bytes += line(
+        '----------------------------',
+        styles: PosStyles(align: PosAlign.center),
+      );
     }
 
     // Totales
     final totalPrice = _calculateTotalPrice(operation);
     final totalItems = _calculateTotalItems(operation);
 
-    bytes += generator.text(
+    bytes += line(
       'Total Items: $totalItems',
       styles: PosStyles(align: PosAlign.left),
     );
-    bytes += generator.text(
+    bytes += line(
       'Total: \$${totalPrice.toStringAsFixed(2)}',
       styles: PosStyles(align: PosAlign.left, bold: true),
     );
 
     // Footer
-    bytes += generator.text(
+    bytes += line(
       '----------------------------',
       styles: PosStyles(align: PosAlign.center),
     );
-    bytes += generator.text(
+    bytes += line(
       'Gracias',
       styles: PosStyles(align: PosAlign.center),
     );

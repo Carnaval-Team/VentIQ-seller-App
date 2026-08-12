@@ -448,45 +448,52 @@ class WiFiPrinterService {
     {int copyNumber = 1}
   ) {
     List<int> bytes = [];
+    List<int> line(String text, {PosStyles? styles}) {
+      return generator.text(
+        sanitizeForThermalPrinter(text),
+        styles: styles ?? const PosStyles(),
+      );
+    }
 
     debugPrint('📋 Construyendo recibo de operación ${operation['id']} - Copia $copyNumber');
     
     // Encabezado
-    bytes += generator.text('INVENTTIA', styles: PosStyles(align: PosAlign.center, bold: true));
-    bytes += generator.text('OPERACION INVENTARIO', styles: PosStyles(align: PosAlign.center, bold: true));
+    bytes += line('INVENTTIA', styles: PosStyles(align: PosAlign.center, bold: true));
+    bytes += line('OPERACION INVENTARIO', styles: PosStyles(align: PosAlign.center, bold: true));
     
     // Indicar número de copia
     final copyLabel = copyNumber == 1 ? 'COMPROBANTE PRINCIPAL' : 'COMPROBANTE ALMACEN';
-    bytes += generator.text(copyLabel, styles: PosStyles(align: PosAlign.center, bold: true));
-    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+    bytes += line(copyLabel, styles: PosStyles(align: PosAlign.center, bold: true));
+    bytes += line('----------------------------', styles: PosStyles(align: PosAlign.center));
 
     // Información de la operación
     final operationId = operation['id']?.toString() ?? 'N/A';
-    bytes += generator.text('ID: ${operationId.length > 20 ? operationId.substring(0, 20) : operationId}', 
+    bytes += line('ID: ${operationId.length > 20 ? operationId.substring(0, 20) : operationId}', 
                            styles: PosStyles(align: PosAlign.left, bold: true));
     
     final tipoOperacion = operation['tipo_operacion_nombre'] ?? operation['tipo_operacion'] ?? 'N/A';
-    bytes += generator.text('Tipo: $tipoOperacion', styles: PosStyles(align: PosAlign.left));
+    bytes += line('Tipo: $tipoOperacion', styles: PosStyles(align: PosAlign.left));
     
     final estado = operation['estado_nombre'] ?? operation['estado'] ?? 'N/A';
-    bytes += generator.text('Estado: $estado', styles: PosStyles(align: PosAlign.left));
+    bytes += line('Estado: $estado', styles: PosStyles(align: PosAlign.left));
     
     if (operation['fecha_operacion'] != null) {
       final fecha = DateTime.parse(operation['fecha_operacion'].toString());
-      bytes += generator.text('Fecha: ${_formatDateForPrint(fecha)}', styles: PosStyles(align: PosAlign.left));
+      bytes += line('Fecha: ${_formatDateForPrint(fecha)}', styles: PosStyles(align: PosAlign.left));
     }
     
     if (operation['observaciones'] != null && operation['observaciones'].toString().isNotEmpty) {
-      String obs = operation['observaciones'].toString();
-      if (obs.length > 28) obs = obs.substring(0, 25) + '...';
-      bytes += generator.text('Obs: $obs', styles: PosStyles(align: PosAlign.left));
+      final obs = operation['observaciones'].toString();
+      for (final wrapped in wrapTicketText('Obs: $obs')) {
+        bytes += line(wrapped, styles: PosStyles(align: PosAlign.left));
+      }
     }
     
-    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+    bytes += line('----------------------------', styles: PosStyles(align: PosAlign.center));
 
     // Productos
     debugPrint('📦 Agregando ${details.length} productos');
-    bytes += generator.text('PRODUCTOS:', styles: PosStyles(align: PosAlign.left, bold: true));
+    bytes += line('PRODUCTOS:', styles: PosStyles(align: PosAlign.left, bold: true));
     
     for (int i = 0; i < details.length; i++) {
       var detail = details[i];
@@ -498,17 +505,16 @@ class WiFiPrinterService {
 
       debugPrint('📋 Producto ${i + 1}: ${cantidad}x $productName');
 
-      for (final line in formatTicketProductLines(cantidad, productName)) {
-        bytes += generator.text(line, styles: PosStyles(align: PosAlign.left));
+      for (final wrapped in formatTicketProductLines(cantidad, productName)) {
+        bytes += line(wrapped, styles: PosStyles(align: PosAlign.left));
       }
 
       // Agregar ubicación si existe
       if (detail['ubicacion'] != null) {
-        for (final line in wrapTicketText(
+        for (final wrapped in wrapTicketText(
           '  Ubic: ${detail['ubicacion']}',
         )) {
-          bytes +=
-              generator.text(line, styles: PosStyles(align: PosAlign.left));
+          bytes += line(wrapped, styles: PosStyles(align: PosAlign.left));
         }
       }
     }
@@ -516,11 +522,11 @@ class WiFiPrinterService {
     debugPrint('✅ Todos los productos agregados');
 
     // Resumen
-    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
-    bytes += generator.text('Total productos: ${details.length}', styles: PosStyles(align: PosAlign.left, bold: true));
+    bytes += line('----------------------------', styles: PosStyles(align: PosAlign.center));
+    bytes += line('Total productos: ${details.length}', styles: PosStyles(align: PosAlign.left, bold: true));
 
     // Pie de página
-    bytes += generator.text('INVENTTIA Inventario', styles: PosStyles(align: PosAlign.center));
+    bytes += line('INVENTTIA Inventario', styles: PosStyles(align: PosAlign.center));
     bytes += generator.emptyLines(1);
     
     debugPrint('📋 Recibo completado (${bytes.length} bytes)');

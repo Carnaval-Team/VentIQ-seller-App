@@ -255,6 +255,7 @@ class _HRCheckinScreenState extends State<HRCheckinScreen> {
                               rol: worker.rolNombre,
                               salarioHora: worker.salarioHora,
                               pagoPorResultado: worker.pagoPorResultado,
+                              tipoSalario: worker.tipoSalario,
                               isSelected: isSelected,
                               onChanged: (val) {
                                 setState(() {

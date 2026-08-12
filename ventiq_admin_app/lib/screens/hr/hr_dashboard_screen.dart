@@ -10,6 +10,7 @@ import '../../services/store_service.dart';
 import '../../services/subscription_service.dart';
 import '../../widgets/hr/hr_drawer.dart';
 import '../../widgets/hr/hr_kpi_card.dart';
+import '../../widgets/hr/hr_modalidad_badge.dart';
 
 class HRDashboardScreen extends StatefulWidget {
   const HRDashboardScreen({super.key});
@@ -245,13 +246,27 @@ class _HRDashboardScreenState extends State<HRDashboardScreen> {
       crossAxisSpacing: 8,
       childAspectRatio: 1.3,
       children: [
-        HRKpiCard(
-          title: 'Total Horas',
-          value: '${_summary?.totalHoras.toStringAsFixed(1) ?? "0"}h',
-          icon: Icons.access_time,
-          color: AppColors.info,
-          subtitle: '${_summary?.totalRegistros ?? 0} registros',
-        ),
+        // KPI de tiempo: se adapta a la modalidad predominante del período.
+        // Con plantilla mixta se muestran días arriba y horas como subtítulo,
+        // porque los días sí son sumables entre ambas modalidades.
+        if (_summary?.tieneDias ?? false)
+          HRKpiCard(
+            title: 'Total Dias',
+            value: _formatDias(_summary?.totalDias ?? 0),
+            icon: Icons.today,
+            color: AppColors.info,
+            subtitle: (_summary?.esMixto ?? false)
+                ? '+ ${_summary!.totalHoras.toStringAsFixed(1)}h por hora'
+                : '${_summary?.totalRegistros ?? 0} registros',
+          )
+        else
+          HRKpiCard(
+            title: 'Total Horas',
+            value: '${_summary?.totalHoras.toStringAsFixed(1) ?? "0"}h',
+            icon: Icons.access_time,
+            color: AppColors.info,
+            subtitle: '${_summary?.totalRegistros ?? 0} registros',
+          ),
         HRKpiCard(
           title: 'Salario Base',
           value: '\$${_currencyFormat.format(_summary?.totalSalarioBase ?? 0)}',
@@ -274,10 +289,22 @@ class _HRDashboardScreenState extends State<HRDashboardScreen> {
     );
   }
 
+  /// Formatea una cantidad de días sin decimales innecesarios: 12 / 12.5
+  String _formatDias(double dias) => dias == dias.roundToDouble()
+      ? dias.toStringAsFixed(0)
+      : dias.toStringAsFixed(2);
+
   Widget _buildHoursChart() {
     final dailyData = _summary?.dailyData ?? [];
+    // Si en el período hay jornadas por día, el gráfico pasa a medir días:
+    // sumar horas de quien cobra por día sugeriría que de ahí sale su pago.
+    final porDia = _summary?.tieneDias ?? false;
+    final titulo = porDia ? 'Dias Trabajados por Fecha' : 'Horas Trabajadas por Dia';
+    final sufijo = porDia ? 'd' : 'h';
+    double valorDe(HRDailyData d) => porDia ? d.dias : d.horas;
+
     if (dailyData.isEmpty) {
-      return _buildEmptyChartCard('Horas Trabajadas por Dia', 'Sin datos para este periodo');
+      return _buildEmptyChartCard(titulo, 'Sin datos para este periodo');
     }
 
     return Card(
@@ -288,9 +315,9 @@ class _HRDashboardScreenState extends State<HRDashboardScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Horas Trabajadas por Dia',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            Text(
+              titulo,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 16),
             SizedBox(
@@ -298,12 +325,12 @@ class _HRDashboardScreenState extends State<HRDashboardScreen> {
               child: BarChart(
                 BarChartData(
                   alignment: BarChartAlignment.spaceAround,
-                  maxY: dailyData.map((d) => d.horas).fold(0.0, (a, b) => a > b ? a : b) * 1.2,
+                  maxY: dailyData.map(valorDe).fold(0.0, (a, b) => a > b ? a : b) * 1.2,
                   barTouchData: BarTouchData(
                     touchTooltipData: BarTouchTooltipData(
                       getTooltipItem: (group, groupIndex, rod, rodIndex) {
                         return BarTooltipItem(
-                          '${dailyData[groupIndex].horas.toStringAsFixed(1)}h',
+                          '${valorDe(dailyData[groupIndex]).toStringAsFixed(1)}$sufijo',
                           const TextStyle(color: Colors.white, fontSize: 12),
                         );
                       },
@@ -334,7 +361,7 @@ class _HRDashboardScreenState extends State<HRDashboardScreen> {
                         reservedSize: 32,
                         getTitlesWidget: (value, meta) {
                           return Text(
-                            '${value.toInt()}h',
+                            '${value.toInt()}$sufijo',
                             style: const TextStyle(fontSize: 10),
                           );
                         },
@@ -354,7 +381,7 @@ class _HRDashboardScreenState extends State<HRDashboardScreen> {
                       x: index,
                       barRods: [
                         BarChartRodData(
-                          toY: dailyData[index].horas,
+                          toY: valorDe(dailyData[index]),
                           color: AppColors.info,
                           width: dailyData.length > 20 ? 6 : 12,
                           borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
@@ -498,14 +525,27 @@ class _HRDashboardScreenState extends State<HRDashboardScreen> {
   Widget _buildTopWorkersSection() {
     // Calcular promedios para datos de interes
     final totalWorkers = _topWorkers.length;
+    double avgDiasPerWorker = 0;
+    double avgSalarioPerDia = 0;
     double avgHorasPerWorker = 0;
     double avgSalarioPerHour = 0;
+    // Con plantilla mixta los promedios por hora solo se calculan sobre quienes
+    // realmente cobran por hora; mezclarlos falsearía la tarifa media.
+    final workersPorHora = _topWorkers.where((w) => !w.esPorDia).toList();
     if (totalWorkers > 0) {
-      final sumHoras = _topWorkers.fold<double>(0, (a, w) => a + w.totalHoras);
+      final sumDias = _topWorkers.fold<double>(0, (a, w) => a + w.totalDias);
       final sumBase = _topWorkers.fold<double>(0, (a, w) => a + w.totalSalarioBase);
-      avgHorasPerWorker = sumHoras / totalWorkers;
-      avgSalarioPerHour = sumHoras > 0 ? sumBase / sumHoras : 0;
+      avgDiasPerWorker = sumDias / totalWorkers;
+      avgSalarioPerDia = sumDias > 0 ? sumBase / sumDias : 0;
     }
+    if (workersPorHora.isNotEmpty) {
+      final sumHoras = workersPorHora.fold<double>(0, (a, w) => a + w.totalHoras);
+      final sumBaseHora =
+          workersPorHora.fold<double>(0, (a, w) => a + w.totalSalarioBase);
+      avgHorasPerWorker = sumHoras / workersPorHora.length;
+      avgSalarioPerHour = sumHoras > 0 ? sumBaseHora / sumHoras : 0;
+    }
+    final hayPorDia = _topWorkers.any((w) => w.esPorDia);
 
     return Card(
       elevation: 2,
@@ -540,11 +580,19 @@ class _HRDashboardScreenState extends State<HRDashboardScreen> {
             // Stats resumen
             if (totalWorkers > 0) ...[
               const SizedBox(height: 10),
+              // Los promedios se expresan en la unidad predominante para que
+              // el número tenga un significado real y no una mezcla de ambas.
               Row(
                 children: [
-                  _buildMiniStat('Prom. horas/persona', '${avgHorasPerWorker.toStringAsFixed(1)}h'),
-                  const SizedBox(width: 16),
-                  _buildMiniStat('Prom. \$/hora', '\$${_currencyFormat.format(avgSalarioPerHour)}'),
+                  if (hayPorDia) ...[
+                    _buildMiniStat('Prom. dias/persona', _formatDias(avgDiasPerWorker)),
+                    const SizedBox(width: 16),
+                    _buildMiniStat('Prom. \$/dia', '\$${_currencyFormat.format(avgSalarioPerDia)}'),
+                  ] else ...[
+                    _buildMiniStat('Prom. horas/persona', '${avgHorasPerWorker.toStringAsFixed(1)}h'),
+                    const SizedBox(width: 16),
+                    _buildMiniStat('Prom. \$/hora', '\$${_currencyFormat.format(avgSalarioPerHour)}'),
+                  ],
                   const SizedBox(width: 16),
                   _buildMiniStat('Costo total', '\$${_currencyFormat.format(_summary?.totalGeneral ?? 0)}'),
                 ],
@@ -589,16 +637,22 @@ class _HRDashboardScreenState extends State<HRDashboardScreen> {
                       DataColumn(label: Text('#')),
                       DataColumn(label: Text('Nombre')),
                       DataColumn(label: Text('Rol')),
+                      DataColumn(label: Text('Mod.')),
+                      DataColumn(label: Text('Dias'), numeric: true),
                       DataColumn(label: Text('Horas'), numeric: true),
                       DataColumn(label: Text('Base'), numeric: true),
                       DataColumn(label: Text('PPR'), numeric: true),
                       DataColumn(label: Text('Total'), numeric: true),
-                      DataColumn(label: Text('\$/h Prom.'), numeric: true),
+                      DataColumn(label: Text('Prom.'), numeric: true),
                       DataColumn(label: Text('')),
                     ],
                     rows: List.generate(_topWorkers.length, (i) {
                       final w = _topWorkers[i];
-                      final avgPerHour = w.totalHoras > 0 ? w.totalGeneral / w.totalHoras : 0.0;
+                      // El promedio se expresa en la unidad de SU modalidad:
+                      // $/día para quien cobra por día, $/hora para el resto.
+                      final avgPorUnidad = w.esPorDia
+                          ? (w.totalDias > 0 ? w.totalGeneral / w.totalDias : 0.0)
+                          : (w.totalHoras > 0 ? w.totalGeneral / w.totalHoras : 0.0);
                       return DataRow(
                         color: i == 0
                             ? WidgetStateProperty.all(AppColors.success.withOpacity(0.05))
@@ -619,7 +673,17 @@ class _HRDashboardScreenState extends State<HRDashboardScreen> {
                             w.rolNombre ?? '-',
                             style: TextStyle(fontSize: 10, color: Colors.grey[600]),
                           )),
-                          DataCell(Text('${w.totalHoras.toStringAsFixed(1)}h')),
+                          DataCell(HRModalidadBadge(
+                            tipoSalario: w.tipoSalario,
+                            fontSize: 8,
+                          )),
+                          DataCell(Text(w.diasFormatted)),
+                          DataCell(Text(
+                            w.horasFormatted,
+                            style: w.esPorDia
+                                ? TextStyle(color: Colors.grey[400])
+                                : null,
+                          )),
                           DataCell(Text('\$${_currencyFormat.format(w.totalSalarioBase)}')),
                           DataCell(Text(
                             '\$${_currencyFormat.format(w.totalPPR)}',
@@ -632,7 +696,7 @@ class _HRDashboardScreenState extends State<HRDashboardScreen> {
                             style: const TextStyle(fontWeight: FontWeight.w600),
                           )),
                           DataCell(Text(
-                            '\$${avgPerHour.toStringAsFixed(2)}',
+                            '\$${avgPorUnidad.toStringAsFixed(2)}${w.tipoSalario.tarifaSufijo}',
                             style: TextStyle(fontSize: 10, color: Colors.grey[600]),
                           )),
                           DataCell(
@@ -698,15 +762,21 @@ class _HRDashboardScreenState extends State<HRDashboardScreen> {
     // Acumulados
     double totalHorasAcum = 0;
     double totalGanadoAcum = 0;
-    double totalProyectado = 0; // suponiendo hasta 8h tope
+    double totalProyectado = 0; // suponiendo hasta 8h tope (solo por hora)
     for (final w in _currentlyWorking) {
       final horas = w.horasTranscurridas ?? 0;
       totalHorasAcum += horas;
-      final ganadoBase = horas * w.salarioHora;
-      totalGanadoAcum += ganadoBase;
-      final horasProyectadas = horas.clamp(0, 8).toDouble();
-      totalProyectado += horasProyectadas * w.salarioHora +
-          (w.pagoPorResultado > 0 ? w.pagoPorResultado : 0);
+      if (w.esPorDia) {
+        // Quien cobra por día devenga la jornada completa desde que ficha:
+        // sus horas transcurridas no modifican el importe.
+        totalGanadoAcum += w.salarioHora;
+        totalProyectado += w.salarioHora + w.pagoPorResultado;
+      } else {
+        totalGanadoAcum += horas * w.salarioHora;
+        final horasProyectadas = horas.clamp(0, 8).toDouble();
+        totalProyectado += horasProyectadas * w.salarioHora +
+            (w.pagoPorResultado > 0 ? w.pagoPorResultado : 0);
+      }
     }
 
     return Card(
@@ -809,20 +879,25 @@ class _HRDashboardScreenState extends State<HRDashboardScreen> {
                     columns: const [
                       DataColumn(label: Text('Nombre')),
                       DataColumn(label: Text('Rol')),
+                      DataColumn(label: Text('Mod.')),
                       DataColumn(label: Text('Entrada')),
                       DataColumn(label: Text('Tiempo'), numeric: true),
-                      DataColumn(label: Text('\$/h'), numeric: true),
+                      DataColumn(label: Text('Tarifa'), numeric: true),
                       DataColumn(label: Text('Ganado'), numeric: true),
-                      DataColumn(label: Text('Proy. (8h)'), numeric: true),
+                      DataColumn(label: Text('Proy.'), numeric: true),
                       DataColumn(label: Text('PPR'), numeric: true),
                       DataColumn(label: Text('Total proy.'), numeric: true),
                     ],
                     rows: List.generate(_currentlyWorking.length, (i) {
                       final w = _currentlyWorking[i];
                       final horas = w.horasTranscurridas ?? 0;
-                      final ganado = horas * w.salarioHora;
-                      final horasProy = horas.clamp(0, 8).toDouble();
-                      final proyBase = horasProy * w.salarioHora;
+                      // Por día: la jornada completa se devenga al fichar, así
+                      // que ganado y proyectado coinciden con la tarifa diaria.
+                      final ganado =
+                          w.esPorDia ? w.salarioHora : horas * w.salarioHora;
+                      final proyBase = w.esPorDia
+                          ? w.salarioHora
+                          : horas.clamp(0, 8).toDouble() * w.salarioHora;
                       final totalProy = proyBase +
                           (w.pagoPorResultado > 0 ? w.pagoPorResultado : 0);
                       return DataRow(
@@ -855,13 +930,17 @@ class _HRDashboardScreenState extends State<HRDashboardScreen> {
                             w.rolNombre ?? '-',
                             style: TextStyle(fontSize: 10, color: Colors.grey[600]),
                           )),
+                          DataCell(HRModalidadBadge(
+                            tipoSalario: w.tipoSalario,
+                            fontSize: 8,
+                          )),
                           DataCell(Text(
                             w.horaEntrada != null
                                 ? timeFormat.format(w.horaEntrada!)
                                 : '--:--',
                           )),
                           DataCell(Text(_formatDuration(horas))),
-                          DataCell(Text('\$${w.salarioHora.toStringAsFixed(2)}')),
+                          DataCell(Text(w.tarifaFormatted)),
                           DataCell(Text(
                             '\$${_currencyFormat.format(ganado)}',
                             style: const TextStyle(

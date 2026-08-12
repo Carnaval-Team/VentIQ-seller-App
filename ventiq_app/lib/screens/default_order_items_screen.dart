@@ -76,15 +76,19 @@ class _DefaultOrderItemsScreenState extends State<DefaultOrderItemsScreen> {
   Future<void> _saveItems() async {
     setState(() => _saving = true);
     try {
-      await _prefs.saveDefaultOrderItems(
+      final result = await _prefs.saveDefaultOrderItems(
         _items.map((i) => i.toJson()).toList(),
       );
       if (mounted) {
+        final ok = result['success'] == true;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Productos por defecto guardados'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
+          SnackBar(
+            content: Text(
+              result['message']?.toString() ??
+                  (ok ? 'Guardado' : 'Error al guardar'),
+            ),
+            backgroundColor: ok ? Colors.green : Colors.red,
+            duration: const Duration(seconds: 3),
           ),
         );
       }
@@ -93,6 +97,56 @@ class _DefaultOrderItemsScreenState extends State<DefaultOrderItemsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error guardando: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _uploadLocalToServer() async {
+    setState(() => _saving = true);
+    try {
+      // Persistir lo de pantalla en local y forzar push al servidor
+      final itemsJson = _items.map((i) => i.toJson()).toList();
+      final saveResult = await _prefs.saveDefaultOrderItems(itemsJson);
+      if (saveResult['savedServer'] == true) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                saveResult['message']?.toString() ??
+                    'Configuración subida al servidor',
+              ),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
+
+      final result = await _prefs.uploadLocalDefaultOrderItemsToServer();
+      if (mounted) {
+        final ok = result['success'] == true;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result['message']?.toString() ??
+                  (ok ? 'Subido al servidor' : 'No se pudo subir'),
+            ),
+            backgroundColor: ok ? Colors.green : Colors.orange,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al subir: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -189,13 +243,15 @@ class _DefaultOrderItemsScreenState extends State<DefaultOrderItemsScreen> {
     );
     if (confirmed == true) {
       setState(() => _items.clear());
-      await _prefs.clearDefaultOrderItems();
+      final result = await _prefs.clearDefaultOrderItems();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Lista limpiada'),
+          SnackBar(
+            content: Text(
+              result['message']?.toString() ?? 'Lista limpiada',
+            ),
             backgroundColor: Colors.orange,
-            duration: Duration(seconds: 2),
+            duration: const Duration(seconds: 2),
           ),
         );
       }
@@ -220,6 +276,11 @@ class _DefaultOrderItemsScreenState extends State<DefaultOrderItemsScreen> {
         centerTitle: true,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.cloud_upload_outlined),
+            tooltip: 'Subir configuración local al servidor',
+            onPressed: _saving ? null : _uploadLocalToServer,
+          ),
           if (_items.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.delete_sweep_outlined),
@@ -296,8 +357,10 @@ class _DefaultOrderItemsScreenState extends State<DefaultOrderItemsScreen> {
           const SizedBox(width: 10),
           const Expanded(
             child: Text(
-              'Estos productos se agregarán automáticamente al iniciar una nueva orden. '
-              'Funciona también en modo offline.',
+              'Estos productos se agregan al iniciar una nueva orden. '
+              'Se guardan en el servidor por tu usuario y tienda '
+              '(también quedan en el dispositivo para offline). '
+              'Usa el icono de nube para subir la configuración local.',
               style: TextStyle(fontSize: 12, color: Color(0xFF374151)),
             ),
           ),

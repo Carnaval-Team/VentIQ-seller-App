@@ -11,6 +11,7 @@ import '../services/payment_method_service.dart';
 import '../services/product_detail_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
+import '../services/bank_sms_service.dart';
 import '../utils/price_utils.dart';
 import '../utils/navigation_helper.dart';
 import '../widgets/bottom_navigation.dart';
@@ -18,6 +19,7 @@ import '../widgets/app_drawer.dart';
 import '../widgets/scrolling_text.dart';
 import '../widgets/notification_widget.dart';
 import '../utils/app_snackbar.dart';
+import '../utils/uuid_generator.dart';
 import 'checkout_screen.dart';
 import 'orders_screen.dart';
 
@@ -947,9 +949,25 @@ class _PreorderScreenState extends State<PreorderScreen> {
       return;
     }
 
-    // Verificar si el modo offline está activado
+    // Si algún producto se paga por transferencia, empezar a escuchar el SMS
+    // de confirmación de PAGOxMOVIL YA — antes de navegar al checkout — para
+    // no perder el mensaje del cliente que transfiere mientras el cajero
+    // termina de armar la orden. Es best-effort: si no hay permiso/soporte,
+    // el cobro sigue igual (la confirmación es informativa).
+    final tieneTransferencia = currentOrder.items.any(
+      (item) => item.paymentMethod?.esTransferencia ?? false,
+    );
+    if (tieneTransferencia) {
+      // No se espera (await) para no retrasar la navegación.
+      BankSmsService().startListening();
+    }
+
+    // Verificar si el modo offline / full offline está activado
     final isOfflineModeEnabled =
         await _userPreferencesService.isOfflineModeEnabled();
+    final stayFullyOffline =
+        await _userPreferencesService.shouldStayFullyOffline();
+    final useOfflinePath = isOfflineModeEnabled || stayFullyOffline;
 
     // Deshabilitar botón y mostrar indicador de carga mientras se verifica inventario
     setState(() {
@@ -957,9 +975,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
     });
 
     try {
-      // Verificar disponibilidad en inventario (en modo online y offline)
+      // Verificar disponibilidad en inventario (cache local si offline)
       final stockProblems = await _checkInventoryAvailability(
         currentOrder.items,
+        forceOffline: useOfflinePath,
       );
       if (!mounted) return;
 
@@ -969,23 +988,33 @@ class _PreorderScreenState extends State<PreorderScreen> {
       }
     } on _StockCheckNetworkException catch (e) {
       if (!mounted) return;
-      print('🌐 Verificación de stock falló por red: $e');
-      _showStockNetworkErrorDialog();
-      return;
-    } catch (e) {
-      if (!mounted) return;
-      if (_isNetworkError(e)) {
-        print('🌐 Verificación de stock falló por red (catch general): $e');
+      // En full offline nunca deberíamos llegar aquí; si ocurre, no bloquear.
+      if (useOfflinePath) {
+        print(
+          '📦 Full/offline: se ignora fallo de red en verificación de stock: $e',
+        );
+      } else {
+        print('🌐 Verificación de stock falló por red: $e');
         _showStockNetworkErrorDialog();
         return;
       }
-      print('⚠️ Error inesperado verificando stock: $e');
-      AppSnackBar.showPersistent(
-        context,
-        message: 'No se pudo verificar el stock: ${e.toString()}',
-        backgroundColor: Colors.red[700],
-      );
-      return;
+    } catch (e) {
+      if (!mounted) return;
+      if (useOfflinePath) {
+        print('📦 Full/offline: error stock no bloqueante: $e');
+      } else if (_isNetworkError(e)) {
+        print('🌐 Verificación de stock falló por red (catch general): $e');
+        _showStockNetworkErrorDialog();
+        return;
+      } else {
+        print('⚠️ Error inesperado verificando stock: $e');
+        AppSnackBar.showPersistent(
+          context,
+          message: 'No se pudo verificar el stock: ${e.toString()}',
+          backgroundColor: Colors.red[700],
+        );
+        return;
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -1021,20 +1050,18 @@ class _PreorderScreenState extends State<PreorderScreen> {
       return;
     }
 
-    if (isOfflineModeEnabled) {
-      // MODO OFFLINE: Respetar configuración no_solicitar_cliente
+    if (useOfflinePath) {
+      // MODO OFFLINE / FULL OFFLINE: sin servidor
       if (noSolicitarCliente && !solicitarImagenOperacion) {
-        // No solicitar cliente en modo offline tampoco
         print(
-          '🔌 Modo offline + no_solicitar_cliente - Creando orden directamente',
+          '🔌 Modo offline + no_solicitar_cliente - Creando orden localmente',
         );
         currentOrder.isOfflineOrder = true;
         await _processElaboratedProducts(currentOrder);
-        await _submitOrderDirect(currentOrder);
+        await _submitOrderDirect(currentOrder, offline: true);
       } else {
-        // Ir al checkout para capturar datos del cliente
         print(
-          '🔌 Modo offline - Saltando elaboración pero continuando al checkout para datos del cliente',
+          '🔌 Modo offline - Continuando al checkout para datos del cliente',
         );
         currentOrder.isOfflineOrder = true;
         Navigator.push(
@@ -1050,7 +1077,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
       // MODO DIRECTO: No se requieren datos del cliente, crear orden inmediatamente
       print('⚡ No se solicita cliente - Creando orden directamente');
       await _processElaboratedProducts(currentOrder);
-      await _submitOrderDirect(currentOrder);
+      await _submitOrderDirect(currentOrder, offline: false);
     } else {
       // MODO NORMAL: Elaborar productos y continuar al checkout
       print(
@@ -1072,7 +1099,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
 
   /// Busca el stock actual de un producto en el cache offline.
   /// Navega por detalles_completos.inventario y filtra por ubicacion, variante y presentacion.
-  /// Retorna null si no encuentra el producto en cache (usar fallback).
+  /// Si no hay filas de inventario, usa la cantidad del listado cacheado.
+  /// Retorna null si no encuentra el producto en cache.
   Future<double?> _getStockFromCache({
     required int idProducto,
     int? idUbicacion,
@@ -1091,37 +1119,66 @@ class _PreorderScreenState extends State<PreorderScreen> {
         final productList = List<dynamic>.from(categoryProducts as List);
         for (final prodDataRaw in productList) {
           final prodData = Map<String, dynamic>.from(prodDataRaw as Map);
-          if ((prodData['id'] as int?) != idProducto) continue;
+          final pid = prodData['id'];
+          final id = pid is int ? pid : (pid is num ? pid.toInt() : null);
+          if (id != idProducto) continue;
 
-          final detalles =
-              prodData['detalles_completos'] as Map<String, dynamic>?;
-          if (detalles == null) continue;
+          final detalles = prodData['detalles_completos'];
+          if (detalles is Map) {
+            final inventarioList = List<dynamic>.from(
+              detalles['inventario'] as List? ?? [],
+            );
 
-          final inventarioList = List<dynamic>.from(
-            detalles['inventario'] as List? ?? [],
-          );
+            double? matched;
+            double invSum = 0;
+            var hasInvRows = false;
 
-          for (final invRaw in inventarioList) {
-            final inv = Map<String, dynamic>.from(invRaw as Map);
-            final ubicacion = inv['ubicacion'] as Map<String, dynamic>?;
-            final variante = inv['variante'] as Map<String, dynamic>?;
-            final presentacion = inv['presentacion'] as Map<String, dynamic>?;
+            for (final invRaw in inventarioList) {
+              if (invRaw is! Map) continue;
+              final inv = Map<String, dynamic>.from(invRaw);
+              hasInvRows = true;
+              final qty =
+                  (inv['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
+              invSum += qty;
 
-            final invUbicacionId = ubicacion?['id'] as int?;
-            final invVarianteId = variante?['id'] as int?;
-            final invPresentacionId = presentacion?['id'] as int?;
+              final ubicacion = inv['ubicacion'] is Map
+                  ? Map<String, dynamic>.from(inv['ubicacion'] as Map)
+                  : null;
+              final variante = inv['variante'] is Map
+                  ? Map<String, dynamic>.from(inv['variante'] as Map)
+                  : null;
+              final presentacion = inv['presentacion'] is Map
+                  ? Map<String, dynamic>.from(inv['presentacion'] as Map)
+                  : null;
 
-            final ubicacionMatch =
-                idUbicacion == null || invUbicacionId == idUbicacion;
-            final varianteMatch =
-                idVariante == null || invVarianteId == idVariante;
-            final presentacionMatch =
-                idPresentacion == null || invPresentacionId == idPresentacion;
+              final invUbicacionId = ubicacion?['id'] as int?;
+              final invVarianteId = variante?['id'] as int?;
+              final invPresentacionId = presentacion?['id'] as int?;
 
-            if (ubicacionMatch && varianteMatch && presentacionMatch) {
-              return (inv['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
+              final ubicacionMatch =
+                  idUbicacion == null || invUbicacionId == idUbicacion;
+              // id_variante del cliente puede ser secuencial sintético; no exigir match estricto
+              final varianteMatch =
+                  idVariante == null ||
+                  invVarianteId == null ||
+                  invVarianteId == idVariante;
+              final presentacionMatch =
+                  idPresentacion == null ||
+                  invPresentacionId == idPresentacion;
+
+              if (ubicacionMatch && varianteMatch && presentacionMatch) {
+                matched = qty;
+                break;
+              }
             }
+
+            if (matched != null) return matched;
+            if (hasInvRows && invSum > 0) return invSum;
           }
+
+          final cachedCantidad = (prodData['cantidad'] as num?)?.toDouble();
+          if (cachedCantidad != null) return cachedCantidad;
+          return null;
         }
       }
     } catch (e) {
@@ -1135,11 +1192,15 @@ class _PreorderScreenState extends State<PreorderScreen> {
   /// Para productos normales, verifica directamente en inventario.
   /// Retorna lista de problemas: [{nombre, cantidad_pedida, stock_disponible, diferencia, presentacion}]
   Future<List<Map<String, dynamic>>> _checkInventoryAvailability(
-    List<OrderItem> items,
-  ) async {
+    List<OrderItem> items, {
+    bool forceOffline = false,
+  }) async {
     final supabase = Supabase.instance.client;
     final problems = <Map<String, dynamic>>[];
-    final isOfflineMode = await _userPreferencesService.isOfflineModeEnabled();
+    final isOfflineMode =
+        forceOffline ||
+        await _userPreferencesService.isOfflineModeEnabled() ||
+        await _userPreferencesService.shouldStayFullyOffline();
 
     for (final item in items) {
       try {
@@ -1262,7 +1323,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
           String origenStock = 'Supabase';
 
           if (isOfflineMode) {
-            // OFFLINE: leer desde cache, fallback a cantidadInicial del item
+            // OFFLINE: leer desde cache, fallback a cantidadInicial / producto
             final stockCache = await _getStockFromCache(
               idProducto: idProducto,
               idUbicacion: idUbicacion,
@@ -1277,10 +1338,11 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 '🔌 Stock offline desde cache para ${item.nombre}: $stockActual',
               );
             } else {
-              stockActual = item.cantidadInicial ?? 0.0;
-              origenStock = 'snapshot inicial';
+              stockActual =
+                  item.cantidadInicial ?? item.producto.cantidad.toDouble();
+              origenStock = 'snapshot/listado';
               print(
-                '🔌 Stock offline fallback (cantidadInicial) para ${item.nombre}: $stockActual',
+                '🔌 Stock offline fallback para ${item.nombre}: $stockActual',
               );
             }
           } else {
@@ -1544,19 +1606,21 @@ class _PreorderScreenState extends State<PreorderScreen> {
   }
 
   /// Crea la orden directamente sin pasar por CheckoutScreen (cuando no_solicitar_cliente=true)
-  Future<void> _submitOrderDirect(Order order) async {
+  Future<void> _submitOrderDirect(
+    Order order, {
+    bool offline = false,
+  }) async {
     setState(() {
       _elaboratingProducts = true;
     });
 
     try {
-      // Calcular breakdown de pagos por producto
-      final Map<String, double> paymentBreakdown = {};
+      final Map<String, double> paymentBreakdownSimple = {};
       for (final item in order.items) {
         if (item.paymentMethod != null) {
           final methodName = item.paymentMethod!.denominacion;
-          paymentBreakdown[methodName] =
-              (paymentBreakdown[methodName] ?? 0.0) + item.subtotal;
+          paymentBreakdownSimple[methodName] =
+              (paymentBreakdownSimple[methodName] ?? 0.0) + item.subtotal;
         }
       }
 
@@ -1570,7 +1634,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
         'finalTotal': order.total,
         'originalTotal': order.total,
         'idCliente': null,
-        'paymentBreakdown': paymentBreakdown,
+        'paymentBreakdown': paymentBreakdownSimple,
       };
 
       final updatedOrder = order.copyWith(
@@ -1579,6 +1643,16 @@ class _PreorderScreenState extends State<PreorderScreen> {
         buyerPhone: '',
         paymentMethod: 'Múltiples métodos',
       );
+
+      // Full offline / modo offline: guardar pendiente local, sin RPC.
+      final useOffline = offline ||
+          await _userPreferencesService.shouldStayFullyOffline() ||
+          await _userPreferencesService.isOfflineModeEnabled();
+
+      if (useOffline) {
+        await _submitOrderOfflineDirect(updatedOrder);
+        return;
+      }
 
       final result = await _orderService.finalizeOrderWithDetails(
         updatedOrder,
@@ -1633,6 +1707,120 @@ class _PreorderScreenState extends State<PreorderScreen> {
         });
       }
     }
+  }
+
+  /// Persiste la orden localmente (mismo formato que CheckoutScreen offline).
+  Future<void> _submitOrderOfflineDirect(Order order) async {
+    final userData = await _userPreferencesService.getUserData();
+    final idTienda = await _userPreferencesService.getIdTienda();
+    final idTpv = await _userPreferencesService.getIdTpv();
+    final idSeller = await _userPreferencesService.getIdSeller();
+
+    final offlineOrderId = '${DateTime.now().millisecondsSinceEpoch}';
+    final clientUuid = UuidGenerator.v4();
+
+    double subtotal = 0.0;
+    final paymentBreakdown = <String, Map<String, dynamic>>{};
+
+    for (final item in order.items) {
+      final itemTotal = item.subtotal;
+      subtotal += itemTotal;
+      final paymentMethodId =
+          item.paymentMethod?.id.toString() ?? 'sin_metodo';
+      if (!paymentBreakdown.containsKey(paymentMethodId)) {
+        paymentBreakdown[paymentMethodId] = {
+          'id_medio_pago': item.paymentMethod?.id,
+          'denominacion': item.paymentMethod?.denominacion ?? 'Sin método',
+          'monto': 0.0,
+          'es_digital': item.paymentMethod?.esDigital ?? false,
+          'es_efectivo': item.paymentMethod?.esEfectivo ?? false,
+        };
+      }
+      paymentBreakdown[paymentMethodId]!['monto'] =
+          (paymentBreakdown[paymentMethodId]!['monto'] as double) + itemTotal;
+    }
+
+    final pending = {
+      'id': offlineOrderId,
+      'client_uuid': clientUuid,
+      'id_tienda': idTienda,
+      'id_tpv': idTpv,
+      'id_vendedor': idSeller,
+      'id_usuario': userData['userId'],
+      'fecha_creacion': DateTime.now().toIso8601String(),
+      'subtotal': subtotal,
+      'total_descuentos': 0.0,
+      'total': subtotal,
+      'estado': 'pendiente_sincronizacion',
+      'estado_final': 'completada',
+      'is_pending_sync': true,
+      'created_offline_at': DateTime.now().toIso8601String(),
+      'buyer_name': order.buyerName ?? 'Cliente',
+      'buyer_phone': order.buyerPhone ?? '',
+      'extra_contacts': '',
+      'items': order.items.map((item) {
+        return {
+          'id_producto': item.producto.id,
+          'denominacion': item.producto.denominacion,
+          'cantidad': item.cantidad,
+          'precio_unitario': item.precioUnitario,
+          'subtotal': item.subtotal,
+          'id_medio_pago': item.paymentMethod?.id,
+          'metodo_pago': item.paymentMethod?.denominacion,
+          'inventory_metadata': item.inventoryData,
+        };
+      }).toList(),
+      'desglose_pagos': paymentBreakdown.values.toList(),
+    };
+
+    final openTurno = await _userPreferencesService.getOfflineTurno();
+    final localTurnoId = openTurno?['local_id']?.toString() ??
+        openTurno?['local_turno_id']?.toString();
+    if (localTurnoId != null) {
+      pending['local_turno_id'] = localTurnoId;
+    }
+
+    await _userPreferencesService.savePendingOrder(pending);
+
+    for (final item in order.items) {
+      if (item.producto.esElaborado || item.producto.esServicio) continue;
+      final inventoryMetadata = item.inventoryData;
+      if (inventoryMetadata != null) {
+        await _userPreferencesService.updateProductInventoryInCache(
+          item.producto.id,
+          (inventoryMetadata['id_variante'] as num?)?.toInt(),
+          item.cantidad.toInt(),
+          inventoryId: (inventoryMetadata['id_inventario'] as num?)?.toInt(),
+          locationId: (inventoryMetadata['id_ubicacion'] as num?)?.toInt(),
+        );
+      } else {
+        await _userPreferencesService.updateProductInventoryInCache(
+          item.producto.id,
+          null,
+          item.cantidad.toInt(),
+        );
+      }
+    }
+
+    _orderService.cancelCurrentOrder();
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          '¡Orden offline creada exitosamente!\nSe sincronizará cuando tengas conexión.',
+        ),
+        backgroundColor: Colors.green,
+        duration: Duration(seconds: 2),
+      ),
+    );
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(
+        builder: (context) => OrdersScreen(autoOpenOrderId: offlineOrderId),
+      ),
+      (route) => false,
+    );
   }
 
   /// Procesa productos elaborados en la orden

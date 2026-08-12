@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
+import 'admin_access_service.dart';
 import 'subscription_guard_service.dart';
 
 class AuthService {
@@ -64,8 +65,9 @@ class AuthService {
   Future<void> signOut() async {
     try {
       await client.auth.signOut();
-      // Limpiar caché de suscripción
+      // Limpiar caché de suscripción y rol admin
       await SubscriptionGuardService().clearCache();
+      AdminAccessService().clearMemoryCache();
       print('👋 Usuario cerró sesión exitosamente');
     } catch (e) {
       print('❌ Error al cerrar sesión: $e');

@@ -1403,13 +1403,22 @@ class CarnavalService {
   }
 
   /// Actualiza el status de una orden
-  static Future<bool> updateOrderStatus(int orderId, String newStatus) async {
+  static Future<bool> updateOrderStatus(
+    int orderId,
+    String newStatus, {
+    String? changedBy,
+  }) async {
     try {
       await _supabase
           .schema('carnavalapp')
           .from('Orders')
           .update({'status': newStatus})
           .eq('id', orderId);
+      await _logOrderStatusChange(
+        orderId,
+        newStatus,
+        changedBy: changedBy,
+      );
       return true;
     } catch (e) {
       print('❌ Error al actualizar status de orden: $e');
@@ -1417,22 +1426,67 @@ class CarnavalService {
     }
   }
 
-  /// Asigna un repartidor a una orden. Si es recogida, marca Completado.
+  /// True si el método de entrega es recogida en tienda (no requiere repartidor).
+  static bool isMetodoRecogida(String? metodoEntrega) {
+    final m = (metodoEntrega ?? '').trim().toLowerCase();
+    return m == 'recogida' || m == 'entrega cliente';
+  }
+
+  /// Completa una orden de recogida y guarda quién la completó.
+  static Future<bool> completePickupOrder(
+    int orderId, {
+    String? completedBy,
+  }) async {
+    try {
+      final updates = <String, dynamic>{
+        'status': 'Completado',
+        'completado_en': DateTime.now().toUtc().toIso8601String(),
+      };
+      if (completedBy != null && completedBy.trim().isNotEmpty) {
+        updates['completado_por'] = completedBy.trim();
+      }
+      await _supabase
+          .schema('carnavalapp')
+          .from('Orders')
+          .update(updates)
+          .eq('id', orderId);
+      await _logOrderStatusChange(
+        orderId,
+        'Completado',
+        changedBy: completedBy,
+      );
+      return true;
+    } catch (e) {
+      print('❌ Error al completar orden de recogida: $e');
+      return false;
+    }
+  }
+
+  /// Asigna un repartidor a una orden de domicilio (status → Asignado).
   static Future<bool> assignDelivery(
     int orderId,
     int repartidorId, {
     String metodoEntrega = 'Domicilio',
+    String? changedBy,
   }) async {
     try {
-      final isRecogida = metodoEntrega == 'Entrega Cliente';
+      // Recogida ya no usa este flujo; se completa con [completePickupOrder].
+      if (isMetodoRecogida(metodoEntrega)) {
+        return completePickupOrder(orderId, completedBy: changedBy);
+      }
       await _supabase
           .schema('carnavalapp')
           .from('Orders')
           .update({
-            'status': isRecogida ? 'Completado' : 'Asignado',
+            'status': 'Asignado',
             'repartidor': repartidorId,
           })
           .eq('id', orderId);
+      await _logOrderStatusChange(
+        orderId,
+        'Asignado',
+        changedBy: changedBy,
+      );
       return true;
     } catch (e) {
       print('❌ Error al asignar repartidor: $e');
@@ -1447,6 +1501,7 @@ class CarnavalService {
     int orderId,
     int repartidorId, {
     bool resetToAsignado = false,
+    String? changedBy,
   }) async {
     try {
       final updates = <String, dynamic>{'repartidor': repartidorId};
@@ -1456,10 +1511,169 @@ class CarnavalService {
           .from('Orders')
           .update(updates)
           .eq('id', orderId);
+      if (resetToAsignado) {
+        await _logOrderStatusChange(
+          orderId,
+          'Asignado',
+          changedBy: changedBy,
+        );
+      }
       return true;
     } catch (e) {
       print('❌ Error al reasignar repartidor: $e');
       return false;
+    }
+  }
+
+  static Future<void> _logOrderStatusChange(
+    int orderId,
+    String status, {
+    String? changedBy,
+  }) async {
+    try {
+      await _supabase.schema('carnavalapp').from('order_status_history').insert({
+        'order_id': orderId,
+        'status': status,
+        if (changedBy != null && changedBy.trim().isNotEmpty)
+          'changed_by': changedBy.trim(),
+      });
+    } catch (e) {
+      // Tabla puede no existir aún si no se aplicó la migración; no bloquear.
+      print('⚠️ No se pudo registrar historial de status: $e');
+    }
+  }
+
+  /// Historial de status de la orden Carnaval (si la tabla existe).
+  static Future<List<Map<String, dynamic>>> getOrderStatusHistory(
+    int orderId,
+  ) async {
+    try {
+      final response = await _supabase
+          .schema('carnavalapp')
+          .from('order_status_history')
+          .select('id, order_id, status, changed_by, created_at')
+          .eq('order_id', orderId)
+          .order('created_at', ascending: true);
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('⚠️ Historial Carnaval no disponible: $e');
+      return [];
+    }
+  }
+
+  /// Historial de estados Inventtia ligado a la operación de venta de la orden.
+  static Future<List<Map<String, dynamic>>> getVentiqEstadoHistory(
+    int operationId,
+  ) async {
+    try {
+      final response = await _supabase
+          .from('app_dat_estado_operacion')
+          .select('id, id_operacion, estado, created_at, comentario, uuid')
+          .eq('id_operacion', operationId)
+          .order('created_at', ascending: true);
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('⚠️ Historial Inventtia no disponible: $e');
+      return [];
+    }
+  }
+
+  // ==========================================================================
+  // BITÁCORA DE CAPITÁN
+  // ==========================================================================
+  // Lee la vista `carnavalapp.v_bitacora_capitan`, que se alimenta del trigger
+  // trg_orderdetails_ajustar_erp: cada cambio de cantidad, cambio de precio o
+  // borrado de línea en "OrderDetails" deja una fila con quién / qué / cuándo /
+  // por qué y qué pasó en el inventario de Inventtia.
+  //
+  // La tabla es append-only (RLS con política solo de SELECT), así que nadie
+  // puede borrar su rastro desde la app.
+  //
+  // Si el SQL todavía no se aplicó en Supabase, estos métodos devuelven lista
+  // vacía en vez de romper la pantalla.
+
+  /// Bitácora de una orden concreta.
+  ///
+  /// [proveedorFilter] acota a las líneas de una tienda: se pasa cuando quien
+  /// mira NO es la tienda principal, igual que en [getOrderDetails], para que
+  /// una tienda no vea los movimientos de las líneas de otro proveedor.
+  static Future<List<Map<String, dynamic>>> getOrderBitacora(
+    int orderId, {
+    int? proveedorFilter,
+  }) async {
+    try {
+      var query = _supabase
+          .schema('carnavalapp')
+          .from('v_bitacora_capitan')
+          .select()
+          .eq('order_id', orderId);
+
+      if (proveedorFilter != null) {
+        query = query.eq('proveedor', proveedorFilter);
+      }
+
+      final response = await query.order('created_at', ascending: false);
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('⚠️ Bitácora de la orden no disponible: $e');
+      return [];
+    }
+  }
+
+  /// Bitácora completa, paginada y filtrable. Alimenta la pantalla de bitácora
+  /// de capitán (solo tienda principal).
+  ///
+  /// [accion] filtra por el valor crudo: aumento | disminucion | eliminacion |
+  /// cambio_precio | ajuste_sistema.
+  /// [soloSinAplicar] deja solo lo que NO llegó a Inventtia (lo que hay que
+  /// revisar a mano).
+  static Future<List<Map<String, dynamic>>> getBitacora({
+    int page = 0,
+    int pageSize = 30,
+    int? orderId,
+    int? productId,
+    int? proveedorFilter,
+    String? accion,
+    String? buscarQuien,
+    DateTime? dateFrom,
+    DateTime? dateTo,
+    bool soloSinAplicar = false,
+  }) async {
+    try {
+      final from = page * pageSize;
+      final to = from + pageSize - 1;
+
+      var query = _supabase
+          .schema('carnavalapp')
+          .from('v_bitacora_capitan')
+          .select();
+
+      if (orderId != null) query = query.eq('order_id', orderId);
+      if (productId != null) query = query.eq('product_id', productId);
+      if (proveedorFilter != null) {
+        query = query.eq('proveedor', proveedorFilter);
+      }
+      if (accion != null) query = query.eq('accion', accion);
+      if (buscarQuien != null && buscarQuien.trim().isNotEmpty) {
+        query = query.ilike('quien', '%${buscarQuien.trim()}%');
+      }
+      if (dateFrom != null) {
+        final start = DateTime(dateFrom.year, dateFrom.month, dateFrom.day);
+        query = query.gte('created_at', start.toIso8601String());
+      }
+      if (dateTo != null) {
+        final end = DateTime(dateTo.year, dateTo.month, dateTo.day, 23, 59, 59);
+        query = query.lte('created_at', end.toIso8601String());
+      }
+      if (soloSinAplicar) query = query.eq('aplicado_erp', false);
+
+      final response = await query
+          .order('created_at', ascending: false)
+          .range(from, to);
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('⚠️ Bitácora no disponible: $e');
+      return [];
     }
   }
 
@@ -1800,22 +2014,52 @@ class CarnavalService {
     }
   }
 
-  /// Elimina un detalle de orden
-  static Future<bool> deleteOrderDetail(int detailId) async {
+  /// Elimina un detalle de orden y devuelve stock en Carnaval e Inventtia.
+  /// Usa RPC `fn_eliminar_order_detail_con_devolucion` (aplicar SQL en Supabase).
+  ///
+  /// [motivo] queda guardado en la bitácora de capitán. Se manda para poder
+  /// distinguir después lo que quitó el repartidor de lo que quitó la oficina.
+  static Future<bool> deleteOrderDetail(int detailId, {String? motivo}) async {
     try {
-      await _supabase
-          .schema('carnavalapp')
-          .from('OrderDetails')
-          .delete()
-          .eq('id', detailId);
-      return true;
+      final response = await _supabase.rpc(
+        'fn_eliminar_order_detail_con_devolucion',
+        params: {
+          'p_detail_id': detailId,
+          if (motivo != null && motivo.trim().isNotEmpty)
+            'p_motivo': motivo.trim(),
+        },
+      );
+
+      final result = response is Map
+          ? Map<String, dynamic>.from(response)
+          : <String, dynamic>{};
+
+      if (result['success'] == true) {
+        print(
+          '✅ Producto eliminado y stock devuelto '
+          '(carnaval: ${result['carnaval_stock_antes']} → '
+          '${result['carnaval_stock_despues']}, '
+          'operacion: ${result['operacion_id']})',
+        );
+        return true;
+      }
+
+      print('❌ Error al eliminar detalle: ${result['message']}');
+      return false;
     } catch (e) {
       print('❌ Error al eliminar detalle: $e');
       return false;
     }
   }
 
-  /// Recalcula el total de una orden sumando price*quantity de sus detalles
+  /// Recalcula el total de una orden sumando price*quantity de sus detalles.
+  ///
+  /// Con el trigger `trg_orderdetails_ajustar_erp` aplicado esto ya lo hace la
+  /// propia base de datos. Se mantiene por si el SQL aún no está aplicado, pero
+  /// NO se escribe cuando el total ya está bien: "Orders" tiene dos triggers
+  /// (`notificar-proveedores-orden`, `notificar_orden_asignada`) que llaman a
+  /// edge functions por HTTP en CADA update, así que un update de gratis son
+  /// dos notificaciones de gratis.
   static Future<bool> recalculateOrderTotal(int orderId) async {
     try {
       final details = await _supabase
@@ -1829,6 +2073,20 @@ class CarnavalService {
         final price = (d['price'] as num?)?.toDouble() ?? 0;
         final qty = (d['quantity'] as num?)?.toInt() ?? 0;
         total += price * qty;
+      }
+
+      final current = await _supabase
+          .schema('carnavalapp')
+          .from('Orders')
+          .select('total')
+          .eq('id', orderId)
+          .maybeSingle();
+      final currentTotal = (current?['total'] as num?)?.toDouble();
+
+      // `total` es float4 en la base: se compara con tolerancia porque el
+      // redondeo a 32 bits hace que casi nunca sea exactamente igual.
+      if (currentTotal != null && (currentTotal - total).abs() < 0.01) {
+        return true;
       }
 
       await _supabase
@@ -1939,5 +2197,268 @@ class CarnavalService {
       print('❌ Error al obtener orden: $e');
       return null;
     }
+  }
+
+  // ==========================================================================
+  // AUDITORÍA CARNIVAL ↔ INVENTTIA
+  // ==========================================================================
+  // Dos RPCs:
+  //  1) fn_audit_carnaval_order_lines  → cantidades en Carnaval
+  //  2) fn_audit_inventtia_carnaval_lines → extracciones Inventtia de esas órdenes
+  // La app solo cruza ambos resultados y arma las diferencias.
+
+  /// Audita órdenes Carnaval vs operaciones Inventtia vía 2 RPCs.
+  ///
+  /// Retorna:
+  /// `{ ordersChecked, diffsCount, sinOperacion, mismatches, diffs: [...] }`
+  /// donde cada diff tiene: `order_id`, `status`, `tipo`, `product_name`,
+  /// `carnaval_product_id`, `inventtia_product_id`, `qty_carnaval`,
+  /// `qty_inventtia`, `diferencia`, `operation_ids`.
+  static Future<Map<String, dynamic>> auditOrdersVsInventtia({
+    required int carnavalStoreId,
+    required bool isAdmin,
+    DateTime? dateFrom,
+    DateTime? dateTo,
+    String? statusFilter,
+    bool excludeCancelled = true,
+  }) async {
+    try {
+      print('🔎 Auditoría vía RPCs Carnaval + Inventtia...');
+
+      DateTime? fechaHasta;
+      if (dateTo != null) {
+        fechaHasta = DateTime(dateTo.year, dateTo.month, dateTo.day, 23, 59, 59);
+      }
+
+      // 1) RPC Carnaval: líneas agregadas por orden + producto
+      final carnavalRaw = await _supabase.rpc(
+        'fn_audit_carnaval_order_lines',
+        params: {
+          'p_proveedor_id': isAdmin ? null : carnavalStoreId,
+          'p_fecha_desde': dateFrom?.toIso8601String().split('T').first,
+          'p_fecha_hasta': fechaHasta?.toIso8601String(),
+          'p_status': statusFilter,
+          'p_exclude_cancelled': excludeCancelled,
+        },
+      );
+
+      final carnavalLines = List<Map<String, dynamic>>.from(
+        (carnavalRaw as List?) ?? const [],
+      );
+
+      if (carnavalLines.isEmpty) {
+        return {
+          'ordersChecked': 0,
+          'diffsCount': 0,
+          'sinOperacion': 0,
+          'mismatches': 0,
+          'diffs': <Map<String, dynamic>>[],
+        };
+      }
+
+      final orderIds =
+          carnavalLines
+              .map((r) => (r['order_id'] as num?)?.toInt())
+              .whereType<int>()
+              .toSet()
+              .toList();
+
+      final orderStatus = <int, String?>{};
+      // order_id -> product_id -> {qty, name}
+      final carnavalByOrder = <int, Map<int, Map<String, dynamic>>>{};
+      for (final row in carnavalLines) {
+        final oid = (row['order_id'] as num?)?.toInt();
+        final pid = (row['carnaval_product_id'] as num?)?.toInt();
+        if (oid == null || pid == null) continue;
+        orderStatus[oid] = row['order_status']?.toString();
+        final qty = (row['qty_carnaval'] as num?)?.toDouble() ?? 0;
+        final name = row['product_name']?.toString();
+        final products = carnavalByOrder.putIfAbsent(oid, () => {});
+        final existing = products[pid];
+        if (existing == null) {
+          products[pid] = {'qty': qty, 'name': name};
+        } else {
+          existing['qty'] = ((existing['qty'] as num?)?.toDouble() ?? 0) + qty;
+          existing['name'] ??= name;
+        }
+      }
+
+      // Tienda Inventtia (solo si no es admin)
+      int? inventtiaStoreId;
+      if (!isAdmin) {
+        try {
+          final tienda = await _supabase
+              .from('app_dat_tienda')
+              .select('id')
+              .eq('id_tienda_carnaval', carnavalStoreId)
+              .maybeSingle();
+          inventtiaStoreId = (tienda?['id'] as num?)?.toInt();
+        } catch (_) {}
+      }
+
+      // 2) RPC Inventtia: extracciones de esas órdenes
+      final inventtiaByOrder = <int, Map<int, Map<String, dynamic>>>{};
+      final opsByOrder = <int, Set<int>>{};
+
+      for (final chunk in _chunkList(orderIds, 50)) {
+        final inventtiaRaw = await _supabase.rpc(
+          'fn_audit_inventtia_carnaval_lines',
+          params: {
+            'p_order_ids': chunk,
+            'p_id_tienda': inventtiaStoreId,
+          },
+        );
+
+        for (final row in List<Map<String, dynamic>>.from(
+          (inventtiaRaw as List?) ?? const [],
+        )) {
+          final oid = (row['order_id'] as num?)?.toInt();
+          if (oid == null) continue;
+
+          final opIdsRaw = row['operation_ids'];
+          if (opIdsRaw is List) {
+            final set = opsByOrder.putIfAbsent(oid, () => <int>{});
+            for (final op in opIdsRaw) {
+              final opId = (op as num?)?.toInt();
+              if (opId != null) set.add(opId);
+            }
+          }
+
+          final carnavalPid = (row['carnaval_product_id'] as num?)?.toInt();
+          final inventtiaPid = (row['inventtia_product_id'] as num?)?.toInt();
+          // Stub de "hay operación sin líneas": solo registra operation_ids.
+          if (carnavalPid == null && inventtiaPid == null) continue;
+
+          final key = carnavalPid ?? -inventtiaPid!;
+
+          final qty = (row['qty_inventtia'] as num?)?.toDouble() ?? 0;
+          final products = inventtiaByOrder.putIfAbsent(oid, () => {});
+          final existing = products[key];
+          if (existing == null) {
+            products[key] = {
+              'qty': qty,
+              'name': row['product_name']?.toString(),
+              'inventtia_product_id': inventtiaPid,
+            };
+          } else {
+            existing['qty'] =
+                ((existing['qty'] as num?)?.toDouble() ?? 0) + qty;
+            existing['name'] ??= row['product_name']?.toString();
+            existing['inventtia_product_id'] ??= inventtiaPid;
+          }
+        }
+      }
+
+      // 3) Cruzar resultados
+      final diffs = <Map<String, dynamic>>[];
+      var sinOperacion = 0;
+      var mismatches = 0;
+
+      for (final orderId in orderIds) {
+        final status = orderStatus[orderId];
+        final carnavalProducts = carnavalByOrder[orderId] ?? const {};
+        final inventtiaProducts = inventtiaByOrder[orderId] ?? const {};
+        final opIds = (opsByOrder[orderId] ?? const <int>{}).toList()..sort();
+
+        if (opIds.isEmpty) {
+          if (carnavalProducts.isEmpty) continue;
+          sinOperacion++;
+          final totalCarnaval = carnavalProducts.values.fold<double>(
+            0,
+            (a, b) => a + ((b['qty'] as num?)?.toDouble() ?? 0),
+          );
+          diffs.add({
+            'order_id': orderId,
+            'status': status,
+            'tipo': 'sin_operacion',
+            'product_name': null,
+            'carnaval_product_id': null,
+            'inventtia_product_id': null,
+            'qty_carnaval': totalCarnaval,
+            'qty_inventtia': 0.0,
+            'diferencia': -totalCarnaval,
+            'operation_ids': <int>[],
+            'lineas_carnaval': carnavalProducts.length,
+          });
+          continue;
+        }
+
+        final allKeys = {
+          ...carnavalProducts.keys,
+          ...inventtiaProducts.keys,
+        };
+
+        for (final key in allKeys) {
+          final c = carnavalProducts[key];
+          final i = inventtiaProducts[key];
+          final qC = (c?['qty'] as num?)?.toDouble() ?? 0;
+          final qI = (i?['qty'] as num?)?.toDouble() ?? 0;
+          if ((qC - qI).abs() < 0.0001) continue;
+
+          mismatches++;
+          final String tipo;
+          if (qC > 0 && qI == 0) {
+            tipo = 'solo_carnaval';
+          } else if (qI > 0 && qC == 0) {
+            tipo = 'solo_inventtia';
+          } else {
+            tipo = 'cantidad';
+          }
+
+          diffs.add({
+            'order_id': orderId,
+            'status': status,
+            'tipo': tipo,
+            'product_name':
+                c?['name']?.toString() ??
+                i?['name']?.toString() ??
+                (key > 0
+                    ? 'Producto Carnaval #$key'
+                    : 'Producto Inventtia #${-key}'),
+            'carnaval_product_id': key > 0 ? key : null,
+            'inventtia_product_id': i?['inventtia_product_id'],
+            'qty_carnaval': qC,
+            'qty_inventtia': qI,
+            'diferencia': qI - qC,
+            'operation_ids': opIds,
+          });
+        }
+      }
+
+      diffs.sort((a, b) {
+        final oa = (a['order_id'] as num?)?.toInt() ?? 0;
+        final ob = (b['order_id'] as num?)?.toInt() ?? 0;
+        if (oa != ob) return ob.compareTo(oa);
+        return (a['tipo'] as String).compareTo(b['tipo'] as String);
+      });
+
+      print(
+        '✅ Auditoría RPC: ${orderIds.length} órdenes, '
+        '${diffs.length} diferencias '
+        '($sinOperacion sin operación, $mismatches mismatch líneas)',
+      );
+
+      return {
+        'ordersChecked': orderIds.length,
+        'diffsCount': diffs.length,
+        'sinOperacion': sinOperacion,
+        'mismatches': mismatches,
+        'diffs': diffs,
+      };
+    } catch (e, st) {
+      print('❌ Error en auditoría Carnaval ↔ Inventtia: $e');
+      print(st);
+      rethrow;
+    }
+  }
+
+  static List<List<T>> _chunkList<T>(List<T> items, int size) {
+    if (items.isEmpty) return const [];
+    final chunks = <List<T>>[];
+    for (var i = 0; i < items.length; i += size) {
+      final end = (i + size > items.length) ? items.length : i + size;
+      chunks.add(items.sublist(i, end));
+    }
+    return chunks;
   }
 }

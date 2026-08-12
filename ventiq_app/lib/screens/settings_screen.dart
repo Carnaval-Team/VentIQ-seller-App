@@ -11,6 +11,7 @@ import '../services/payment_method_service.dart';
 import '../services/turno_service.dart';
 import '../utils/uuid_generator.dart';
 import '../services/settings_integration_service.dart';
+import '../services/auto_sync_service.dart';
 import '../services/store_config_service.dart';
 import '../utils/navigation_helper.dart';
 import '../services/update_service.dart';
@@ -20,6 +21,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/sync_status_chip.dart';
+import '../widgets/selective_sync_dialog.dart';
 import '../services/connectivity_service.dart';
 import 'dart:async';
 
@@ -52,6 +54,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       false; // Cambio de modo offline en curso (deshabilita el switch)
   bool _hasOfflineTurno = false; // Turno abierto offline
   Map<String, dynamic>? _offlineTurnoInfo; // Información del turno offline
+  int _pendingOfflineTurnosCount = 0; // Cola multi-turno pendiente de sync
   bool _isModoRestauranteEnabled = false; // Modo restaurante (mesas y comensales)
   bool _isLoadingModoRestaurante = false;
 
@@ -131,8 +134,10 @@ class _SettingsScreenState extends State<SettingsScreen>
       // Verificar si el modo offline está activado
       final isOfflineMode =
           await _userPreferencesService.isOfflineModeEnabled();
+      final stayFullyOffline =
+          await _userPreferencesService.shouldStayFullyOffline();
 
-      if (hasConnection && isOfflineMode) {
+      if (hasConnection && isOfflineMode && !stayFullyOffline) {
         print(
           '🔄 Conexión detectada después de reanudar - Modo offline puede ser innecesario',
         );
@@ -152,6 +157,11 @@ class _SettingsScreenState extends State<SettingsScreen>
 
         // Recargar configuraciones para reflejar el estado actual
         _loadSettings();
+      } else if (hasConnection && stayFullyOffline) {
+        print(
+          '📦 Full offline: conexión detectada al reanudar — se ignora '
+          '(solo el admin desactiva el modo offline)',
+        );
       } else if (hasConnection) {
         print('✅ Conexión confirmada después de reanudar - Modo online activo');
       } else {
@@ -208,6 +218,8 @@ class _SettingsScreenState extends State<SettingsScreen>
         await _userPreferencesService.hasOfflineTurnoAbierto();
     final offlineTurnoInfo =
         await _userPreferencesService.getOfflineTurnoInfo();
+    final pendingTurnosCount =
+        await _userPreferencesService.getPendingOfflineTurnosCount();
 
     // Modo restaurante - leer del cache (lo más rápido) sin bloquear el resto
     bool modoRestaurante = false;
@@ -230,6 +242,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         _isOfflineModeEnabled = offlineModeEnabled;
         _hasOfflineTurno = hasOfflineTurno;
         _offlineTurnoInfo = offlineTurnoInfo;
+        _pendingOfflineTurnosCount = pendingTurnosCount;
         _isModoRestauranteEnabled = modoRestaurante;
       });
     }
@@ -652,7 +665,70 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   Future<void> _deactivateOfflineMode() async {
     try {
+      final fullOfflineReady =
+          await _userPreferencesService.isDeviceFullOfflineReady();
+      if (fullOfflineReady) {
+        final isAdmin =
+            await _userPreferencesService.isInventoryOnlySession();
+        if (!isAdmin) {
+          if (mounted) {
+            setState(() => _isOfflineModeEnabled = true);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Solo el administrador puede desactivar el modo offline '
+                  'en este dispositivo',
+                ),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 4),
+              ),
+            );
+          }
+          return;
+        }
+
+        // El dispositivo quedó preparado para full-offline: si solo se
+        // apaga `offline_mode` sin quitar esa preparación, el splash
+        // screen la vuelve a forzar a ON en el próximo inicio (ver
+        // splash_screen.dart), dejando al admin sin forma real de volver
+        // a modo online. Se confirma porque esta acción también elimina
+        // la preparación full-offline (habrá que volver a prepararla si
+        // se quiere reactivar).
+        if (!mounted) return;
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Volver a modo online'),
+            content: const Text(
+              'Este dispositivo está preparado para trabajar 100% offline. '
+              'Al continuar se desactivará el modo offline y se eliminará '
+              'la preparación full-offline del dispositivo (deberás volver '
+              'a prepararlo si quieres reactivarla). ¿Deseas continuar?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Sí, volver a online'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true) {
+          return;
+        }
+      }
+
       await _userPreferencesService.setOfflineMode(false);
+
+      if (fullOfflineReady) {
+        // Elimina la preparación full-offline para que el dispositivo deje
+        // de forzar el modo offline al reabrir la app.
+        await _userPreferencesService.clearDeviceFullOffline();
+      }
 
       if (_isSmartServicesInitialized) {
         await _integrationService.handleOfflineModeChanged(false);
@@ -665,12 +741,14 @@ class _SettingsScreenState extends State<SettingsScreen>
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
-            '🌐 Modo offline desactivado - Sincronización automática iniciada',
+            fullOfflineReady
+                ? '🌐 Modo offline desactivado por el admin — preparación full-offline eliminada, sync con el servidor habilitado'
+                : '🌐 Modo offline desactivado - Sincronización automática iniciada',
           ),
           backgroundColor: Colors.blue,
-          duration: Duration(seconds: 3),
+          duration: const Duration(seconds: 3),
         ),
       );
     } catch (e) {
@@ -1011,10 +1089,45 @@ class _SettingsScreenState extends State<SettingsScreen>
 
               const SizedBox(height: 16),
 
-              // Sección de turno offline (solo si hay turno abierto offline)
-              if (_hasOfflineTurno) ...[
-                _buildSectionHeader('Turno Offline'),
-                _buildSettingsCard([_buildOfflineTurnoTile()]),
+              // Sección de turnos offline (abierto y/o cola pendiente)
+              if (_hasOfflineTurno || _pendingOfflineTurnosCount > 0) ...[
+                _buildSectionHeader('Turnos Offline'),
+                _buildSettingsCard([
+                  if (_hasOfflineTurno) _buildOfflineTurnoTile(),
+                  if (_hasOfflineTurno && _pendingOfflineTurnosCount > 1)
+                    _buildDivider(),
+                  if (_pendingOfflineTurnosCount > 0)
+                    ListTile(
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.calendar_month,
+                          color: Colors.blue,
+                          size: 20,
+                        ),
+                      ),
+                      title: Text(
+                        '$_pendingOfflineTurnosCount turno(s) por sincronizar',
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF1F2937),
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Se subirán en orden al sincronizar (varios días OK)',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 4,
+                      ),
+                    ),
+                ]),
                 const SizedBox(height: 16),
               ],
 
@@ -1026,6 +1139,13 @@ class _SettingsScreenState extends State<SettingsScreen>
                   title: 'Sincronización Manual',
                   subtitle: 'Sincronizar datos offline pendientes',
                   onTap: () => _showSyncDialog(),
+                ),
+                _buildDivider(),
+                _buildSettingsTile(
+                  icon: Icons.checklist_outlined,
+                  title: 'Sincronizar por módulos',
+                  subtitle: 'Elegir qué subir y qué bajar',
+                  onTap: () => SelectiveSyncDialog.show(context),
                 ),
                 _buildDivider(),
                 if (_isSmartServicesInitialized)
@@ -1457,7 +1577,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         _isTogglingOfflineMode
             ? 'Procesando cambio de modo...'
             : (_isOfflineModeEnabled
-                ? 'Datos sincronizados - Puede trabajar sin conexión'
+                ? 'Activo: sin sync ni servidor hasta desactivar'
                 : 'Sincronizar datos para trabajar offline'),
         style: TextStyle(fontSize: 13, color: Colors.grey[600]),
       ),
@@ -1614,7 +1734,8 @@ class _SettingsScreenState extends State<SettingsScreen>
     final hasPendingData =
         syncSummary['pending_orders_count'] > 0 ||
         syncSummary['pending_operations_count'] > 0 ||
-        syncSummary['has_open_turno'] == true;
+        syncSummary['has_open_turno'] == true ||
+        (syncSummary['pending_turnos_count'] as int? ?? 0) > 0;
 
     if (!hasPendingData) {
       await _startManualSync();
@@ -2089,11 +2210,23 @@ class _SettingsScreenState extends State<SettingsScreen>
                   style: TextStyle(fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 12),
-                if (syncSummary['has_open_turno'] == true)
+                if ((syncSummary['pending_turnos_count'] as int? ?? 0) > 0)
+                  _buildSyncItem(
+                    Icons.calendar_month,
+                    '${syncSummary['pending_turnos_count']} turno(s) pendientes de sync',
+                    syncSummary['closed_turnos_pending_count'] != null &&
+                            (syncSummary['closed_turnos_pending_count'] as int) >
+                                0
+                        ? '${syncSummary['closed_turnos_pending_count']} cerrado(s) + '
+                            '${syncSummary['has_open_turno'] == true ? '1 abierto' : '0 abiertos'}'
+                        : 'Se subirán en orden (apertura → ventas → cierre)',
+                  ),
+                if (syncSummary['has_open_turno'] == true &&
+                    (syncSummary['pending_turnos_count'] as int? ?? 0) <= 1)
                   _buildSyncItem(
                     Icons.access_time,
                     'Turno abierto offline',
-                    'Se creará el turno en el servidor',
+                    'Se creará/actualizará el turno en el servidor',
                   ),
                 if (syncSummary['pending_orders_count'] > 0)
                   _buildSyncItem(
@@ -2105,7 +2238,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   _buildSyncItem(
                     Icons.pending_actions,
                     '${syncSummary['pending_operations_count']} operaciones pendientes',
-                    'Se procesarán aperturas, cierres y cambios',
+                    'Se procesarán egresos y cambios de estado',
                   ),
                 const SizedBox(height: 12),
                 Container(
@@ -2884,6 +3017,8 @@ class _SyncDialogState extends State<_SyncDialog> {
   String _currentTask = 'Iniciando sincronización...';
   bool _isCompleted = false;
   bool _hasError = false;
+  int _currentIndex = -1;
+  final Set<int> _failedIndexes = {};
 
   final List<Map<String, String>> _tasks = [
     {'name': 'Reautenticando usuario', 'key': 'reauth'},
@@ -2915,8 +3050,10 @@ class _SyncDialogState extends State<_SyncDialog> {
       for (int i = 0; i < _tasks.length; i++) {
         final task = _tasks[i];
         setState(() {
+          _currentIndex = i;
           _currentTask = task['name']!;
-          _progress = (i + 1) / _tasks.length;
+          // Progreso al iniciar el paso (lo hecho / total), no como si ya terminó.
+          _progress = i / _tasks.length;
         });
 
         // Procesar cada paso, continuando incluso si uno falla
@@ -2984,7 +3121,14 @@ class _SyncDialogState extends State<_SyncDialog> {
         } catch (e) {
           print('⚠️ Error en paso "${task['name']}": $e');
           failedSteps.add(task['name']!);
+          _failedIndexes.add(i);
           // Continuar con el siguiente paso incluso si este falló
+        }
+
+        if (mounted) {
+          setState(() {
+            _progress = (i + 1) / _tasks.length;
+          });
         }
       }
 
@@ -4163,7 +4307,17 @@ class _SyncDialogState extends State<_SyncDialog> {
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 14, color: Colors.grey[600]),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 8),
+            if (!_isCompleted && !_hasError)
+              Text(
+                _currentIndex < 0
+                    ? 'Preparando...'
+                    : 'Paso ${_currentIndex + 1} de ${_tasks.length}'
+                        ' · Faltan ${_tasks.length - _currentIndex}',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+              ),
+            const SizedBox(height: 16),
 
             // Barra de progreso
             if (!_isCompleted && !_hasError) ...[
@@ -4176,7 +4330,7 @@ class _SyncDialogState extends State<_SyncDialog> {
               ),
               const SizedBox(height: 8),
               Text(
-                '${(_progress * 100).toInt()}%',
+                '${(_progress * 100).toInt()}% completado',
                 style: TextStyle(
                   fontSize: 12,
                   color: Colors.grey[600],
@@ -4188,61 +4342,76 @@ class _SyncDialogState extends State<_SyncDialog> {
             // Lista de tareas
             const SizedBox(height: 16),
             Container(
+              constraints: const BoxConstraints(maxHeight: 220),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: Colors.grey[50],
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children:
-                    _tasks.asMap().entries.map((entry) {
-                      final index = entry.key;
-                      final task = entry.value;
-                      final isCompleted = _progress > (index / _tasks.length);
-                      final isCurrent =
-                          _progress > (index / _tasks.length) &&
-                          _progress <= ((index + 1) / _tasks.length);
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: _tasks.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final task = entry.value;
+                    final isFailed = _failedIndexes.contains(index);
+                    final isCompleted =
+                        !isFailed &&
+                        (_isCompleted || index < _currentIndex);
+                    final isCurrent =
+                        !_isCompleted &&
+                        !_hasError &&
+                        index == _currentIndex;
 
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          children: [
-                            Icon(
-                              isCompleted
-                                  ? Icons.check_circle
-                                  : isCurrent
-                                  ? Icons.sync
-                                  : Icons.circle_outlined,
-                              size: 16,
-                              color:
-                                  isCompleted
-                                      ? Colors.green
-                                      : isCurrent
-                                      ? Colors.blue
-                                      : Colors.grey,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                task['name']!,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color:
-                                      isCompleted || isCurrent
-                                          ? Colors.black87
-                                          : Colors.grey,
-                                  fontWeight:
-                                      isCurrent
-                                          ? FontWeight.w500
-                                          : FontWeight.normal,
-                                ),
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          Icon(
+                            isFailed
+                                ? Icons.error_outline
+                                : isCompleted
+                                    ? Icons.check_circle
+                                    : isCurrent
+                                        ? Icons.sync
+                                        : Icons.circle_outlined,
+                            size: 16,
+                            color: isFailed
+                                ? Colors.orange
+                                : isCompleted
+                                    ? Colors.green
+                                    : isCurrent
+                                        ? Colors.blue
+                                        : Colors.grey,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              task['name']!,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isCompleted || isCurrent || isFailed
+                                    ? Colors.black87
+                                    : Colors.grey,
+                                fontWeight: isCurrent
+                                    ? FontWeight.w600
+                                    : FontWeight.normal,
                               ),
                             ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
+                          ),
+                          if (!isCompleted && !isCurrent && !isFailed)
+                            Text(
+                              'Pendiente',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.grey[500],
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
               ),
             ),
           ],
@@ -4274,9 +4443,10 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
 
   final List<Map<String, String>> _tasks = [
     {'name': 'Reautenticando usuario', 'key': 'reauth'},
-    {'name': 'Creando turno offline', 'key': 'create_turno'},
-    {'name': 'Procesando órdenes pendientes', 'key': 'process_orders'},
-    {'name': 'Cerrando turno offline', 'key': 'close_turno'},
+    {
+      'name': 'Sincronizando turnos, ventas y cierres',
+      'key': 'sync_turno_queue',
+    },
     {'name': 'Descargando nuevas órdenes', 'key': 'sync_orders'},
     {'name': 'Limpiando datos offline', 'key': 'cleanup'},
   ];
@@ -4305,14 +4475,8 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
           case 'reauth':
             await _reauth();
             break;
-          case 'create_turno':
-            await _createTurnoFromOffline();
-            break;
-          case 'process_orders':
-            await _processOfflineOrders();
-            break;
-          case 'close_turno':
-            await _closeTurnoFromOffline();
+          case 'sync_turno_queue':
+            await AutoSyncService().forceSyncPendingOrders();
             break;
           case 'sync_orders':
             await _syncOrdersAfterManualSync();
@@ -4661,6 +4825,7 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
             'p_usuario': usuario,
             'p_productos': productos,
             'p_observaciones': observaciones,
+            'p_fecha_cierre': data['fecha_cierre'],
           },
         );
         cerrado = resp is Map && resp['status'] == 'success';
@@ -4690,6 +4855,8 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
           'cierre_turno',
         );
         await widget.userPreferencesService.clearOfflineTurno();
+        // Tras cerrar el turno, sí se pueden purgar ventas locales ya synced.
+        await widget.userPreferencesService.purgeFinalizedSyncedOrders();
         print('✅ Turno cerrado desde datos offline y limpiado');
       }
       break;
@@ -4699,54 +4866,16 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
   /// Sincronizar nuevas órdenes después de procesar las pendientes
   Future<void> _syncOrdersAfterManualSync() async {
     try {
-      print('🔄 Descargando nuevas órdenes desde Supabase...');
-
-      // Obtener datos del usuario
-      final userData = await widget.userPreferencesService.getUserData();
-      final idTienda = await widget.userPreferencesService.getIdTienda();
-      final idTpv = await widget.userPreferencesService.getIdTpv();
-      final userId = userData['userId'];
-
-      if (idTienda == null || idTpv == null || userId == null) {
-        print('⚠️ Faltan datos para sincronizar órdenes');
-        return;
-      }
-
-      // Llamar al RPC listar_ordenes para obtener órdenes desde Supabase
-      final response = await Supabase.instance.client.rpc(
-        'listar_ordenes',
-        params: {
-          'con_inventario_param': false,
-          'fecha_desde_param': null,
-          'fecha_hasta_param': null,
-          'id_estado_param': null, // Sin filtro de estado para obtener todas
-          'id_tienda_param': idTienda,
-          'id_tipo_operacion_param': null,
-          'id_tpv_param': idTpv,
-          'id_usuario_param': userId,
-          'limite_param': 100, // Limitar a las últimas 100 órdenes
-          'pagina_param': null,
-          'solo_pendientes_param':
-              false, // Incluir órdenes completadas/canceladas
-        },
+      print('🔄 Descargando órdenes del turno actual desde Supabase...');
+      final n = await AutoSyncService().pullServerOrdersForCurrentShift();
+      print(
+        n > 0
+            ? '💾 Cache de órdenes del turno actualizado: $n'
+            : 'ℹ️ Sin órdenes en el rango del turno',
       );
-
-      if (response is List && response.isNotEmpty) {
-        print('✅ Nuevas órdenes descargadas: ${response.length}');
-
-        // Hacer merge de las nuevas órdenes con datos existentes
-        final newOrdersData = {'orders': response.cast<Map<String, dynamic>>()};
-
-        // Usar merge para preservar otros datos offline
-        await widget.userPreferencesService.mergeOfflineData(newOrdersData);
-
-        print('💾 Cache de órdenes actualizado con ${response.length} órdenes');
-      } else {
-        print('ℹ️ No se encontraron nuevas órdenes para descargar');
-      }
     } catch (e) {
       print('❌ Error descargando nuevas órdenes: $e');
-      throw e;
+      rethrow;
     }
   }
 

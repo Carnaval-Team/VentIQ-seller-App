@@ -67,13 +67,22 @@ class ProductDetailService {
     for (final categoryProducts in products.values) {
       if (categoryProducts is! List) continue;
       for (final prod in categoryProducts) {
-        if (prod is Map && prod['id'] == productId) {
-          final detalle = prod['detalles_completos'];
-          if (detalle is Map<String, dynamic>) {
-            return _transformToProduct(detalle);
-          }
-          return null; // producto encontrado pero sin detalles completos
+        if (prod is! Map) continue;
+        final map = Map<String, dynamic>.from(prod);
+        final pid = map['id'];
+        final id = pid is int ? pid : (pid is num ? pid.toInt() : null);
+        if (id != productId) continue;
+
+        final detalle = map['detalles_completos'];
+        if (detalle is Map) {
+          final fallback =
+              (map['cantidad'] as num?)?.toDouble();
+          return _transformToProduct(
+            Map<String, dynamic>.from(detalle),
+            fallbackStock: fallback,
+          );
         }
+        return null; // producto encontrado pero sin detalles completos
       }
     }
     return null;
@@ -130,10 +139,21 @@ class ProductDetailService {
     return result;
   }
 
-  /// Transform Supabase response to Product model
-  Product _transformToProduct(Map<String, dynamic> response) {
-    final productData = response['producto'] as Map<String, dynamic>;
-    final inventoryData = response['inventario'] as List<dynamic>? ?? [];
+  /// Transform Supabase response to Product model.
+  /// [fallbackStock] se usa cuando inventario viene vacío (p.ej. sync admin
+  /// sin almacenes de vendedor) para alinear con el stock del listado offline.
+  Product _transformToProduct(
+    Map<String, dynamic> response, {
+    double? fallbackStock,
+  }) {
+    final productRaw = response['producto'];
+    if (productRaw is! Map) {
+      throw Exception('Detalle offline sin bloque producto');
+    }
+    final productData = Map<String, dynamic>.from(productRaw);
+    final inventoryData = List<dynamic>.from(
+      response['inventario'] as List? ?? [],
+    );
     print('elaborado: ${productData['es_elaborado']}');
     debugPrint(
       '🔍 Transformando producto con ${inventoryData.length} items de inventario',
@@ -174,8 +194,14 @@ class ProductDetailService {
       );
     } else {
       // If no variants, use inventory data for the product itself
-      if (inventoryData.isNotEmpty) {
-        final firstInventory = inventoryData.first as Map<String, dynamic>;
+      Map<String, dynamic>? firstInventory;
+      for (final e in inventoryData) {
+        if (e is Map) {
+          firstInventory = Map<String, dynamic>.from(e);
+          break;
+        }
+      }
+      if (firstInventory != null) {
         totalStock =
             (firstInventory['cantidad_disponible'] as num?)?.toInt() ?? 0;
 
@@ -185,8 +211,16 @@ class ProductDetailService {
           '📦 Producto sin variantes - metadata: $productInventoryMetadata',
         );
       } else {
-        totalStock = 100; // Default stock
+        totalStock = 0;
       }
+    }
+
+    // Alinear con stock del listado cuando el inventario filtrado viene vacío.
+    if (totalStock <= 0 && fallbackStock != null && fallbackStock > 0) {
+      debugPrint(
+        '📦 Usando stock del listado ($fallbackStock) — inventario vacío/filtrado',
+      );
+      totalStock = fallbackStock.round();
     }
 
     // Generate product image URL from multimedias or fallback
@@ -258,11 +292,17 @@ class ProductDetailService {
     final List<ProductVariant> variants = [];
 
     for (int i = 0; i < inventoryData.length; i++) {
-      final item = inventoryData[i] as Map<String, dynamic>;
+      final raw = inventoryData[i];
+      if (raw is! Map) continue;
+      final item = Map<String, dynamic>.from(raw);
 
       // Extract variant information
-      final variante = item['variante'] as Map<String, dynamic>?;
-      final presentacion = item['presentacion'] as Map<String, dynamic>?;
+      final variante = item['variante'] is Map
+          ? Map<String, dynamic>.from(item['variante'] as Map)
+          : null;
+      final presentacion = item['presentacion'] is Map
+          ? Map<String, dynamic>.from(item['presentacion'] as Map)
+          : null;
       final cantidadDisponible =
           (item['cantidad_disponible'] as num?)?.toInt() ?? 0;
       final reservadoCarnaval =
@@ -332,9 +372,15 @@ class ProductDetailService {
   Map<String, dynamic> _extractInventoryMetadata(
     Map<String, dynamic> inventoryItem,
   ) {
-    final variante = inventoryItem['variante'] as Map<String, dynamic>?;
-    final presentacion = inventoryItem['presentacion'] as Map<String, dynamic>?;
-    final ubicacion = inventoryItem['ubicacion'] as Map<String, dynamic>?;
+    final variante = inventoryItem['variante'] is Map
+        ? Map<String, dynamic>.from(inventoryItem['variante'] as Map)
+        : null;
+    final presentacion = inventoryItem['presentacion'] is Map
+        ? Map<String, dynamic>.from(inventoryItem['presentacion'] as Map)
+        : null;
+    final ubicacion = inventoryItem['ubicacion'] is Map
+        ? Map<String, dynamic>.from(inventoryItem['ubicacion'] as Map)
+        : null;
 
     return {
       'id_inventario': inventoryItem['id_inventario'],

@@ -168,6 +168,35 @@ class AuthService {
     await _supabase.schema('muevete').from('drivers').insert(data);
   }
 
+  /// Registra perfil driver + vehículo/carrocerías vía RPC (SECURITY DEFINER).
+  /// Requiere sesión activa tras `signUp` / login.
+  Future<Map<String, dynamic>> registerDriverProfile({
+    required Map<String, dynamic> perfil,
+    Map<String, dynamic>? vehiculo,
+    List<Map<String, dynamic>>? carrocerias,
+  }) async {
+    final response = await _supabase.schema('muevete').rpc(
+      'fn_registrar_perfil_driver',
+      params: {
+        'p_perfil': perfil,
+        'p_vehiculo': vehiculo,
+        'p_carrocerias': carrocerias,
+      },
+    );
+
+    final result = response is Map
+        ? Map<String, dynamic>.from(response)
+        : <String, dynamic>{'success': false, 'message': 'Respuesta inválida'};
+
+    if (result['success'] != true) {
+      throw Exception(
+        result['message']?.toString() ?? 'Error al registrar perfil driver',
+      );
+    }
+
+    return result;
+  }
+
   /// Inserts a row into muevete.vehiculos and returns the new vehicle id.
   Future<int?> createVehicle(Map<String, dynamic> data) async {
     final row = await _supabase

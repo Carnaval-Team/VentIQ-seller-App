@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import '../services/carnaval_service.dart';
 import '../services/user_preferences_service.dart';
+import '../utils/whatsapp_helper.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/carnaval_order_detail_sheet.dart';
+import 'carnaval_audit_screen.dart';
+import 'carnaval_bitacora_screen.dart';
 import 'carnaval_orders_dashboard_screen.dart';
 
 class CarnavalOrdersScreen extends StatefulWidget {
@@ -280,6 +283,35 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     );
   }
 
+  /// Bitácora de capitán: quién tocó las cantidades de las órdenes.
+  /// Solo para la tienda principal (mismo `_isAdmin` que asignar/cancelar),
+  /// porque muestra movimientos de todos los proveedores.
+  void _openBitacora() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const CarnavalBitacoraScreen()),
+    );
+  }
+
+  /// Auditoría: compara cantidades Carnaval vs operaciones Inventtia.
+  /// Usa los mismos filtros de fecha/estado de la lista actual.
+  void _openAudit() {
+    if (_carnavalStoreId == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder:
+            (_) => CarnavalAuditScreen(
+              carnavalStoreId: _carnavalStoreId!,
+              isAdmin: _isAdmin,
+              dateFrom: _dateFrom,
+              dateTo: _dateTo,
+              statusFilter: _selectedStatus,
+            ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -347,6 +379,28 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                               ),
                             ),
                           ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          onPressed: _openAudit,
+                          icon: const Icon(Icons.rule_folder_outlined),
+                          tooltip: 'Auditoría Carnaval vs Inventtia',
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.teal.withValues(alpha: 0.1),
+                          ),
+                        ),
+                        if (_isAdmin) ...[
+                          const SizedBox(width: 8),
+                          IconButton(
+                            onPressed: _openBitacora,
+                            icon: const Icon(Icons.fact_check_outlined),
+                            tooltip: 'Bitácora de capitán',
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.deepPurple.withValues(
+                                alpha: 0.1,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -741,6 +795,8 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                     ),
                   ],
                   const Spacer(),
+                  // El contacto por WhatsApp se hace tocando el teléfono del
+                  // cliente, más abajo en esta misma tarjeta.
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
@@ -884,12 +940,72 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                       ),
                     if (clientePhone.isNotEmpty) ...[
                       const SizedBox(width: 12),
-                      Icon(Icons.phone, size: 14, color: Colors.grey[600]),
-                      const SizedBox(width: 4),
-                      Text(
-                        clientePhone,
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                      ),
+                      // Si el número es contactable, tocarlo abre WhatsApp.
+                      // Si no lo es (vacío, relleno tipo 5555555), se muestra
+                      // como texto plano y no reacciona al toque.
+                      if (WhatsAppHelper.isContactable(clientePhone))
+                        Flexible(
+                          child: InkWell(
+                            onTap: () async {
+                              final ok = await WhatsAppHelper.openChat(
+                                clientePhone,
+                                message:
+                                    'Hola, le contactamos por su orden #$orderId.',
+                              );
+                              if (!ok && context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('No se pudo abrir WhatsApp'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            },
+                            borderRadius: BorderRadius.circular(4),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 2,
+                                vertical: 2,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.chat,
+                                    size: 14,
+                                    color: WhatsAppHelper.brandColor,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                      clientePhone,
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: WhatsAppHelper.brandColor,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        )
+                      else ...[
+                        Icon(Icons.phone, size: 14, color: Colors.grey[600]),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            clientePhone,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ],
                   ],
                 ),

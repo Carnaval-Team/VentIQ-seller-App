@@ -24,6 +24,16 @@ class InventoryService {
   static final UserPreferencesService _prefsService = UserPreferencesService();
   static final FinancialService _financialService = FinancialService();
 
+  /// Fecha calendario local `yyyy-MM-dd` para RPCs con parámetro DATE.
+  static String? _toDateParam(DateTime? date) {
+    if (date == null) return null;
+    final local = date.isUtc ? date.toLocal() : date;
+    final y = local.year.toString().padLeft(4, '0');
+    final m = local.month.toString().padLeft(2, '0');
+    final d = local.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
   /// Get motivo reception options from app_nom_motivo_recepcion table
   static Future<List<Map<String, dynamic>>> getMotivoRecepcionOptions() async {
     try {
@@ -251,8 +261,10 @@ class InventoryService {
           'p_id_tpv': null,
           'p_id_tipo_operacion': tipoOperacionId,
           'p_estados': null,
-          'p_fecha_desde': fechaDesde?.toIso8601String().split('T')[0],
-          'p_fecha_hasta': fechaHasta?.toIso8601String().split('T')[0],
+          // Usar componentes locales (yyyy-MM-dd); toIso8601String puede
+          // correr el día por zona horaria (sobre todo en web).
+          'p_fecha_desde': _toDateParam(fechaDesde),
+          'p_fecha_hasta': _toDateParam(fechaHasta),
           'p_uuid_usuario_operador': null,
           'p_busqueda': busqueda,
           'p_limite': limite,
@@ -747,7 +759,8 @@ class InventoryService {
   }
 
   /// Transferencia atómica entre layouts vía RPC en Supabase.
-  /// Extracción + recepción + vínculo + cierre en una sola transacción.
+  /// Extracción (tipo 7) + recepción (tipo 8) + vínculo.
+  /// Por defecto deja ambas operaciones en pendiente (sin autoconfirmar).
   ///
   /// Personas:
   /// - [entregadoPor]: entrega en origen → extracción.entregado_por
@@ -761,7 +774,7 @@ class InventoryService {
     required String transportadoPor,
     required String recibidoPor,
     required String observaciones,
-    bool completarOperaciones = true,
+    bool completarOperaciones = false,
     @Deprecated('Usar entregadoPor') String? autorizadoPor,
     @Deprecated('Usar completarOperaciones') int? estadoInicial,
   }) async {
@@ -997,7 +1010,7 @@ class InventoryService {
           await _supabase
               .from('app_dat_operacion_transferencia')
               .select('id_extraccion, id_recepcion')
-              .eq('id_operacion_general', idOperacionGeneral)
+              .eq('id_operacion', idOperacionGeneral)
               .single();
 
       if (operationsResponse.isEmpty) {
@@ -2639,6 +2652,43 @@ class InventoryService {
       print('   - p_uuid: $uuid');
 
       // =====================================================
+      // TRANSFERENCIA (salida/entrada): el stock ya se movió al crear.
+      // Solo cambiar estado a Completada — no recontabilizar.
+      // =====================================================
+      try {
+        final transferLink = await _supabase
+            .from('app_dat_operacion_transferencia')
+            .select('id_operacion, id_extraccion, id_recepcion')
+            .or('id_extraccion.eq.$idOperacion,id_recepcion.eq.$idOperacion')
+            .maybeSingle();
+
+        if (transferLink != null) {
+          print(
+            '🔄 Operación de transferencia detectada ($idOperacion) — '
+            'completando solo estado (inventario ya aplicado)',
+          );
+          final response = await _supabase.rpc(
+            'fn_registrar_cambio_estado_operacion',
+            params: {
+              'p_id_operacion': idOperacion,
+              'p_nuevo_estado': 2,
+              'p_uuid_usuario': uuid,
+            },
+          );
+          if (response is Map && response['status'] == 'error') {
+            return Map<String, dynamic>.from(response);
+          }
+          return {
+            'status': 'success',
+            'success': true,
+            'message': 'Operación de transferencia completada',
+          };
+        }
+      } catch (e) {
+        print('⚠️ Error detectando transferencia: $e — flujo normal');
+      }
+
+      // =====================================================
       // VALIDAR Y ASIGNAR PRESENTACIONES FALTANTES
       // =====================================================
       print('\n🔍 Validando presentaciones en productos de recepción...');
@@ -3874,5 +3924,195 @@ class InventoryService {
       print('❌ Error obteniendo stock real: $e');
       return 0.0;
     }
+  }
+
+  // --------------------------------------------------------------------------
+  // Cálculo de stock real considerando operaciones pendientes y órdenes Carnaval
+  // --------------------------------------------------------------------------
+
+  static int? _asInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString());
+  }
+
+  static double _asDouble(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is double) return value;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString()) ?? 0.0;
+  }
+
+  /// Desglose por ubicación vía RPC `fn_stock_breakdown_by_locations`
+  /// (una sola llamada). Si el RPC falla, retorna stock base sin desglose
+  /// para no romper el listado.
+  static Future<Map<String, StockBreakdown>> getStockBreakdownsByLocation(
+    List<InventoryProduct> items,
+  ) async {
+    if (items.isEmpty) return {};
+
+    final result = <String, StockBreakdown>{
+      for (final item in items)
+        _locationKey(item.idProducto, item.idUbicacion):
+            StockBreakdown.empty(item.cantidadFinal),
+    };
+
+    final productIds = items.map((i) => i.idProducto).toSet().toList();
+    final ubicIds = items.map((i) => i.idUbicacion).toSet().toList();
+    if (productIds.isEmpty || ubicIds.isEmpty) return result;
+
+    try {
+      final response = await _supabase.rpc(
+        'fn_stock_breakdown_by_locations',
+        params: {
+          'p_product_ids': productIds,
+          'p_ubicacion_ids': ubicIds,
+        },
+      );
+
+      if (response is! List) return result;
+
+      final baseByKey = <String, double>{
+        for (final item in items)
+          _locationKey(item.idProducto, item.idUbicacion): item.cantidadFinal,
+      };
+
+      for (final raw in response) {
+        final row = Map<String, dynamic>.from(raw as Map);
+        final prodId = _asInt(row['id_producto']);
+        final ubiId = _asInt(row['id_ubicacion']);
+        if (prodId == null || ubiId == null) continue;
+        final key = _locationKey(prodId, ubiId);
+        if (!baseByKey.containsKey(key)) continue;
+
+        final enPedidos = _asDouble(row['en_pedidos']);
+        final entregando = _asDouble(row['entregando']);
+        result[key] = StockBreakdown(
+          enAlmacen: baseByKey[key]! + enPedidos,
+          enPedidos: enPedidos,
+          entregando: entregando,
+        );
+      }
+    } catch (e) {
+      print(
+        '⚠️ fn_stock_breakdown_by_locations falló; '
+        'mostrando stock base sin desglose: $e',
+      );
+    }
+
+    return result;
+  }
+
+  /// Desglose por producto vía RPC `fn_stock_breakdown_by_products`
+  /// (una sola llamada). Si el RPC falla, retorna stock base sin desglose.
+  static Future<Map<int, StockBreakdown>> getStockBreakdownsByProduct(
+    List<InventorySummaryByUser> summaries, {
+    int? warehouseId,
+  }) async {
+    if (summaries.isEmpty) return {};
+
+    final result = <int, StockBreakdown>{
+      for (final s in summaries)
+        s.idProducto: StockBreakdown.empty(s.cantidadTotalEnAlmacen),
+    };
+
+    final productIds = summaries.map((s) => s.idProducto).toSet().toList();
+    if (productIds.isEmpty) return result;
+
+    try {
+      final response = await _supabase.rpc(
+        'fn_stock_breakdown_by_products',
+        params: {
+          'p_product_ids': productIds,
+          'p_id_almacen': warehouseId,
+        },
+      );
+
+      if (response is! List) return result;
+
+      final baseByProduct = <int, double>{
+        for (final s in summaries) s.idProducto: s.cantidadTotalEnAlmacen,
+      };
+
+      for (final raw in response) {
+        final row = Map<String, dynamic>.from(raw as Map);
+        final prodId = _asInt(row['id_producto']);
+        if (prodId == null || !baseByProduct.containsKey(prodId)) continue;
+
+        final enPedidos = _asDouble(row['en_pedidos']);
+        final entregando = _asDouble(row['entregando']);
+        result[prodId] = StockBreakdown(
+          enAlmacen: baseByProduct[prodId]! + enPedidos,
+          enPedidos: enPedidos,
+          entregando: entregando,
+        );
+      }
+    } catch (e) {
+      print(
+        '⚠️ fn_stock_breakdown_by_products falló; '
+        'mostrando stock base sin desglose: $e',
+      );
+    }
+
+    return result;
+  }
+
+  /// Desglose para un producto en varias ubicaciones vía
+  /// `fn_stock_breakdown_by_locations`. Si falla, stock base.
+  static Future<Map<int, StockBreakdown>> getStockBreakdownsForProduct(
+    int productId,
+    List<Map<String, dynamic>> locations,
+  ) async {
+    final result = <int, StockBreakdown>{};
+    final baseStockByUbi = <int, double>{};
+
+    for (final loc in locations) {
+      final ubiId = _asInt(loc['id_ubicacion']);
+      final base = _asDouble(loc['cantidad_final'] ?? loc['cantidad']);
+      if (ubiId != null) {
+        baseStockByUbi[ubiId] = base;
+        result[ubiId] = StockBreakdown.empty(base);
+      }
+    }
+
+    if (baseStockByUbi.isEmpty) return result;
+
+    try {
+      final response = await _supabase.rpc(
+        'fn_stock_breakdown_by_locations',
+        params: {
+          'p_product_ids': [productId],
+          'p_ubicacion_ids': baseStockByUbi.keys.toList(),
+        },
+      );
+
+      if (response is! List) return result;
+
+      for (final raw in response) {
+        final row = Map<String, dynamic>.from(raw as Map);
+        final ubiId = _asInt(row['id_ubicacion']);
+        if (ubiId == null || !baseStockByUbi.containsKey(ubiId)) continue;
+
+        final enPedidos = _asDouble(row['en_pedidos']);
+        final entregando = _asDouble(row['entregando']);
+        result[ubiId] = StockBreakdown(
+          enAlmacen: baseStockByUbi[ubiId]! + enPedidos,
+          enPedidos: enPedidos,
+          entregando: entregando,
+        );
+      }
+    } catch (e) {
+      print(
+        '⚠️ fn_stock_breakdown_by_locations (producto $productId) falló; '
+        'mostrando stock base sin desglose: $e',
+      );
+    }
+
+    return result;
+  }
+
+  static String _locationKey(int productId, int ubicacionId) {
+    return '${productId}_$ubicacionId';
   }
 }

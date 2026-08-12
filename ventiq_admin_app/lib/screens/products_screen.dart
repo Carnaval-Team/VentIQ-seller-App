@@ -9,6 +9,7 @@ import '../services/product_service.dart';
 import '../services/currency_service.dart';
 import '../services/permissions_service.dart';
 import '../services/image_picker_service.dart';
+import '../services/product_image_download_service.dart';
 import '../services/subscription_service.dart';
 import '../services/user_preferences_service.dart';
 import 'add_product_screen.dart';
@@ -986,6 +987,13 @@ class _ProductsScreenState extends State<ProductsScreen> {
                           ),
                           onPressed: () => _showBarcodeDialog(product),
                           tooltip: 'Código de barras',
+                        ),
+                      if (product.imageUrl.isNotEmpty)
+                        IconButton(
+                          icon: const Icon(Icons.download, size: 20),
+                          onPressed: () => _downloadProductImage(product),
+                          color: AppColors.info,
+                          tooltip: 'Descargar imagen',
                         ),
                       if (_canEditProduct)
                         IconButton(
@@ -2038,6 +2046,58 @@ class _ProductsScreenState extends State<ProductsScreen> {
     );
   }
 
+  /// Descarga la imagen del producto (web: archivo; móvil: compartir).
+  Future<void> _downloadProductImage(Product product) async {
+    if (product.imageUrl.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Este producto no tiene imagen'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (_) => const Center(
+            child: CircularProgressIndicator(color: AppColors.primary),
+          ),
+    );
+
+    try {
+      await ProductImageDownloadService.downloadProductImage(
+        imageUrl: product.imageUrl,
+        productName: product.name.isNotEmpty ? product.name : product.denominacion,
+        sku: product.sku,
+      );
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            kIsWeb
+                ? 'Imagen descargada'
+                : 'Imagen lista para guardar/compartir',
+          ),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al descargar imagen: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
   /// Muestra el diálogo para gestionar la imagen del producto
   Future<void> _showAddImageDialog(Product product) async {
     final canEdit = await _permissionsService.canPerformAction('product.edit');
@@ -2347,16 +2407,17 @@ class _AddImageDialogState extends State<_AddImageDialog> {
     try {
       setState(() => _isLoading = true);
 
-      final Uint8List? bytes = await ImagePickerService.pickImage();
+      final picked = await ImagePickerService.pickImage(context: context);
 
-      if (bytes != null) {
-        final fileName =
-            'product_${widget.product.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      if (picked != null) {
+        final fileName = picked.fileName.isNotEmpty
+            ? picked.fileName
+            : 'product_${widget.product.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
 
         // Subir imagen y actualizar producto
         final success = await ProductService.updateProductImage(
           productId: widget.product.id,
-          imageBytes: bytes,
+          imageBytes: picked.bytes,
           imageFileName: fileName,
         );
 
@@ -2444,6 +2505,43 @@ class _AddImageDialogState extends State<_AddImageDialog> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('❌ Error: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _downloadCurrentImage() async {
+    try {
+      setState(() => _isLoading = true);
+      await ProductImageDownloadService.downloadProductImage(
+        imageUrl: widget.product.imageUrl,
+        productName: widget.product.name.isNotEmpty
+            ? widget.product.name
+            : widget.product.denominacion,
+        sku: widget.product.sku,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            kIsWeb
+                ? '✅ Imagen descargada'
+                : '✅ Imagen lista para guardar/compartir',
+          ),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error al descargar: $e'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -2656,6 +2754,21 @@ class _AddImageDialogState extends State<_AddImageDialog> {
               ),
             ],
             if (widget.product.imageUrl.isNotEmpty) ...[
+              const Divider(height: 1),
+              ListTile(
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.teal.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Icon(Icons.download, color: Colors.teal),
+                ),
+                title: const Text('Descargar imagen'),
+                subtitle: const Text('Guardar la imagen actual en tu dispositivo'),
+                onTap: _downloadCurrentImage,
+              ),
               const Divider(height: 1),
               ListTile(
                 leading: Container(

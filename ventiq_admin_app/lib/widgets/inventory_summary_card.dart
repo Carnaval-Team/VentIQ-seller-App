@@ -4,13 +4,61 @@ import '../config/app_colors.dart';
 
 class InventorySummaryCard extends StatelessWidget {
   final InventorySummaryByUser summary;
+  final StockBreakdown? breakdown;
   final VoidCallback? onTap;
 
-  const InventorySummaryCard({Key? key, required this.summary, this.onTap})
-    : super(key: key);
+  const InventorySummaryCard({
+    Key? key,
+    required this.summary,
+    this.breakdown,
+    this.onTap,
+  }) : super(key: key);
+
+  ({Color color, String label}) _getStockStatus(double stock) {
+    if (stock <= 0) {
+      return (color: AppColors.error, label: 'Sin Stock');
+    } else if (stock < 10) {
+      return (color: AppColors.warning, label: 'Stock Bajo');
+    } else {
+      return (color: AppColors.success, label: 'Stock OK');
+    }
+  }
+
+  Widget _buildBreakdownChip({
+    required String label,
+    required Color color,
+    required IconData icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: color,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final b = breakdown;
+    final realStock = b?.enAlmacen ?? summary.cantidadTotalEnAlmacen;
+    final stockStatus = _getStockStatus(realStock);
     // print('🎨 Building InventorySummaryCard for: ${summary.productoNombre}');
     // print(
     //   '🎨 Card data - ID: ${summary.idProducto}, Quantity: ${summary.cantidadTotalEnAlmacen}, Zones: ${summary.zonasDiferentes}, Presentations: ${summary.presentacionesDiferentes}',
@@ -130,11 +178,11 @@ class InventorySummaryCard extends StatelessWidget {
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: summary.stockLevelColor,
+                          color: stockStatus.color,
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
-                          summary.stockLevel,
+                          stockStatus.label,
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 12,
@@ -151,16 +199,16 @@ class InventorySummaryCard extends StatelessWidget {
                     children: [
                       Icon(
                         Icons.inventory_2,
-                        color: summary.stockLevelColor,
+                        color: stockStatus.color,
                         size: 20,
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        '${summary.cantidadTotalEnAlmacen.toStringAsFixed(0)} unidades',
+                        '${realStock.toStringAsFixed(0)} unidades',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
-                          color: summary.stockLevelColor,
+                          color: stockStatus.color,
                         ),
                       ),
                       const Spacer(),
@@ -173,6 +221,30 @@ class InventorySummaryCard extends StatelessWidget {
                       ),
                     ],
                   ),
+                  if (b != null &&
+                      (b.enPedidos > 0 || b.entregando > 0)) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        if (b.enPedidos > 0)
+                          _buildBreakdownChip(
+                            label:
+                                'En pedidos: ${b.enPedidos.toStringAsFixed(0)}',
+                            color: AppColors.warning,
+                            icon: Icons.shopping_bag_outlined,
+                          ),
+                        if (b.enPedidos > 0 && b.entregando > 0)
+                          const SizedBox(width: 8),
+                        if (b.entregando > 0)
+                          _buildBreakdownChip(
+                            label:
+                                'Entregando: ${b.entregando.toStringAsFixed(0)}',
+                            color: AppColors.info,
+                            icon: Icons.local_shipping_outlined,
+                          ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 12),
 
                   // Distribution badges
@@ -261,6 +333,7 @@ class InventorySummaryCard extends StatelessWidget {
 // List widget for displaying multiple inventory summary cards
 class InventorySummaryList extends StatelessWidget {
   final List<InventorySummaryByUser> summaries;
+  final Map<int, StockBreakdown> breakdowns;
   final Function(InventorySummaryByUser)? onItemTap;
   final bool isLoading;
   final String? errorMessage;
@@ -269,6 +342,7 @@ class InventorySummaryList extends StatelessWidget {
   const InventorySummaryList({
     Key? key,
     required this.summaries,
+    this.breakdowns = const {},
     this.onItemTap,
     this.isLoading = false,
     this.errorMessage,
@@ -379,6 +453,7 @@ class InventorySummaryList extends StatelessWidget {
         final summary = summaries[index];
         return InventorySummaryCard(
           summary: summary,
+          breakdown: breakdowns[summary.idProducto],
           onTap: onItemTap != null ? () => onItemTap!(summary) : null,
         );
       },

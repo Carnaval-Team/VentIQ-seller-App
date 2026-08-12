@@ -28,13 +28,23 @@ import 'screens/default_order_items_screen.dart';
 import 'screens/mesas_screen.dart';
 import 'screens/mesa_detail_screen.dart';
 import 'screens/cuenta_mesa_screen.dart';
+import 'screens/admin/admin_home_screen.dart';
+import 'screens/admin/admin_stock_screen.dart';
+import 'screens/admin/admin_reception_screen.dart';
+import 'screens/admin/admin_adjustment_screen.dart';
+import 'screens/admin/admin_products_screen.dart';
+import 'screens/admin/admin_prepare_offline_screen.dart';
+import 'screens/admin/admin_turnos_offline_screen.dart';
+import 'screens/offline_user_switch_screen.dart';
 import 'services/auth_service.dart';
 import 'services/user_preferences_service.dart';
 import 'services/store_config_service.dart';
+import 'services/offline_database_service.dart';
 import 'utils/platform_utils.dart';
 import 'utils/global_navigator.dart';
 import 'widgets/sync_blocking_overlay.dart';
 import 'widgets/offline_dialog_overlay.dart';
+import 'widgets/license_reconnect_banner.dart';
 
 const double _webLayoutBreakpoint = 1200;
 
@@ -137,6 +147,14 @@ void main() async {
   // Inicializar Supabase
   await AuthService.initialize();
 
+  // Inicializar almacenamiento offline. En web no usa SQLite (ver
+  // OfflineDatabaseService); un fallo aquí no debe bloquear flutter-first-frame.
+  try {
+    await OfflineDatabaseService().initialize();
+  } catch (e) {
+    print('⚠️ OfflineDatabase init falló (continuando arranque): $e');
+  }
+
   // Pre-cargar preferencias de usuario en caché para acceso sincrónico
   await UserPreferencesService().isShowSkuEnabled();
 
@@ -165,7 +183,12 @@ class MyApp extends StatelessWidget {
       builder: (context, child) {
         return OfflineDialogOverlay(
           child: SyncBlockingOverlay(
-            child: child ?? const SizedBox.shrink(),
+            child: Column(
+              children: [
+                const LicenseReconnectBanner(),
+                Expanded(child: child ?? const SizedBox.shrink()),
+              ],
+            ),
           ),
         );
       },
@@ -232,6 +255,16 @@ class MyApp extends StatelessWidget {
           }
           return const _MesasFallback();
         },
+        '/admin-home': (context) => const AdminHomeScreen(),
+        '/admin-stock': (context) => const AdminStockScreen(),
+        '/admin-reception': (context) => const AdminReceptionScreen(),
+        '/admin-adjustment': (context) => const AdminAdjustmentScreen(),
+        '/admin-products': (context) => const AdminProductsScreen(),
+        '/admin-prepare-offline': (context) =>
+            const AdminPrepareOfflineScreen(),
+        '/admin-turnos-offline': (context) =>
+            const AdminTurnosOfflineScreen(),
+        '/offline-user-switch': (context) => const OfflineUserSwitchScreen(),
       },
     );
   }

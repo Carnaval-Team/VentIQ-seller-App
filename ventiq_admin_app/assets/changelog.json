@@ -1,9 +1,125 @@
 {
-  "current_version": "2.5.0",
-  "build": 250,
+  "current_version": "2.7.0",
+  "build": 270,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.7.0",
+      "date": "2026-08-11",
+      "title": "🕵️ Bitácora, auditoría Carnaval e impresión completa",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Nueva bitácora de capitán",
+          "description": "Desde el listado de órdenes Carnaval, el nuevo botón morado abre la bitácora completa: cada vez que alguien sube una cantidad, la baja o elimina un producto de una orden queda registrado con nombre, fecha y hora. Puedes buscar por número de orden o por persona, y filtrar por tipo de cambio o por rango de fechas."
+        },
+        {
+          "type": "feature",
+          "title": "La bitácora también dentro de cada orden",
+          "description": "Al abrir una orden, debajo del historial de estados aparecen los cambios que se le hicieron a sus productos: qué se movió, de cuánto a cuánto, cuánto dinero representa y por qué."
+        },
+        {
+          "type": "feature",
+          "title": "Nadie puede borrar su rastro",
+          "description": "La bitácora solo permite lectura: ni la app del repartidor ni la de administración pueden modificar o eliminar un registro una vez escrito."
+        },
+        {
+          "type": "fix",
+          "title": "Cambiar cantidades ahora sí ajusta el inventario",
+          "description": "Cuando el repartidor quita o añade unidades a una orden, el inventario de Inventtia se mueve solo: entra una devolución si el cliente devolvió y sale una extracción si pidió de más, sin dejar el stock en negativo. Además se corrige el dinero de la venta ya registrada."
+        },
+        {
+          "type": "fix",
+          "title": "Se acabaron los totales descuadrados",
+          "description": "El total de la orden se recalcula a partir de sus productos, así que ya no queda cobrado de más al eliminar una línea con varias unidades ni se corrompe el precio unitario al bajar la cantidad."
+        },
+        {
+          "type": "improvement",
+          "title": "Avisos cuando un movimiento no llegó al inventario",
+          "description": "Si un cambio no se pudo reflejar en Inventtia, la bitácora lo marca en naranja con el motivo. El filtro \"Sin ajustar inventario\" te deja ver de un tirón todo lo que hay que revisar a mano."
+        },
+        {
+          "type": "improvement",
+          "title": "App más liviana",
+          "description": "La versión de instalación ahora se compila optimizada y comprimida, por lo que ocupa bastante menos espacio en el teléfono."
+        },
+        {
+          "type": "feature",
+          "title": "Auditoría de órdenes Carnaval",
+          "description": "Desde el listado de órdenes Carnaval, el nuevo botón de auditoría compara las cantidades de Carnaval con las operaciones de Inventtia y te muestra diferencias: sin operación, solo en un lado o cantidades distintas."
+        },
+        {
+          "type": "feature",
+          "title": "Filtro por fecha de creación en la auditoría",
+          "description": "Puedes acotar la auditoría por el rango de fechas de creación de la orden, para revisar solo el período que te interesa."
+        },
+        {
+          "type": "improvement",
+          "title": "Auditoría más rápida y estable",
+          "description": "La comparación usa dos consultas en servidor (Carnaval e Inventtia) optimizadas para no cortarse por tiempo de espera en tiendas con muchas órdenes."
+        },
+        {
+          "type": "fix",
+          "title": "Tickets grandes por Bluetooth ya imprimen completos",
+          "description": "La impresión Bluetooth envía el ticket en paquetes pequeños con pausas, reintentos y espera a que la impresora termine, igual que en Caja. Así las órdenes largas no se cortan a medias."
+        },
+        {
+          "type": "improvement",
+          "title": "Stock más claro en el detalle del producto",
+          "description": "El detalle de producto calcula mejor las cantidades por ubicación y separa lo que está en almacén de lo que va en entregando (Carnaval), sin mezclar ambos."
+        },
+        {
+          "type": "improvement",
+          "title": "Desglose de stock más ágil",
+          "description": "El listado de inventario puede obtener el desglose de stock con menos llamadas al servidor, para que la pantalla cargue más rápido cuando hay muchos productos."
+        }
+      ]
+    },
+    {
+      "version": "2.6.0",
+      "date": "2026-08-10",
+      "title": "💬 Escríbele a tu cliente por WhatsApp con un toque",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Botón de WhatsApp en cada orden",
+          "description": "En el listado de órdenes Carnaval aparece un botón verde de WhatsApp arriba a la derecha de cada orden. Un toque y se abre el chat con tu cliente, sin copiar el número ni buscarlo en la agenda."
+        },
+        {
+          "type": "feature",
+          "title": "También al abrir la orden",
+          "description": "Dentro del detalle de la orden tienes el mismo botón, junto al de imprimir, para contactar al cliente mientras revisas su pedido."
+        },
+        {
+          "type": "improvement",
+          "title": "El mensaje ya viene escrito",
+          "description": "El chat se abre con un saludo listo que menciona el número de la orden, así el cliente sabe de inmediato de qué pedido le hablas. Puedes editarlo antes de enviarlo."
+        },
+        {
+          "type": "improvement",
+          "title": "Solo aparece cuando de verdad se puede llamar",
+          "description": "La app reconoce los teléfonos cubanos y los del exterior, y completa el código de país por ti. Si la orden no tiene teléfono o el dato guardado no sirve, el botón simplemente no se muestra y te ahorras el intento fallido."
+        }
+      ]
+    },
+    {
+      "version": "2.5.1",
+      "date": "2026-08-07",
+      "title": "📦 Stock al quitar productos Carnaval y \"debe haber\" en el conteo",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Al quitar un producto de una orden Carnaval se restaura el inventario",
+          "description": "Si eliminas un producto del detalle de una orden Carnaval, se quita de la orden y el stock vuelve tanto a Carnaval como a Inventtia (incluye ajuste de la venta vinculada). En órdenes de paquetería solo se restaura el stock de Carnaval."
+        },
+        {
+          "type": "feature",
+          "title": "Opción para mostrar el \"debe haber\" en el conteo del vendedor",
+          "description": "En Configuración Global, cuando el control de inventario en turnos está activo, aparece una subopción para decidir si el vendedor ve la cantidad esperada (\"debe haber\") al contar inventario en apertura y cierre."
+        }
+      ]
+    },
     {
       "version": "2.5.0",
       "date": "2026-08-07",

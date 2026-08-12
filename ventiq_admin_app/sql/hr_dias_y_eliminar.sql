@@ -65,7 +65,7 @@ AS $$
 DECLARE
     v_records JSONB;
 BEGIN
-    SELECT COALESCE(jsonb_agg(r ORDER BY r->>'hora_entrada' DESC), '[]'::jsonb)
+    SELECT COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.hora_entrada DESC), '[]'::jsonb)
     INTO v_records
     FROM (
         SELECT

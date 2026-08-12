@@ -1,5 +1,11 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../config/supabase_config.dart';
+
+/// Roles de entrada válidos a Caja (ventiq_app).
+enum CajaEntryRole {
+  vendedor,
+  gerente,
+  supervisor,
+}
 
 class SellerService {
   static final SellerService _instance = SellerService._internal();
@@ -35,10 +41,8 @@ class SellerService {
           .eq('uuid', userUuid);
       print('respuesta: $response $userUuid');
       if (response.isEmpty) {
-        return null; // Usuario no es vendedor
+        return null;
       }
-
-      // Retornar el primer vendedor encontrado
       return response.first as Map<String, dynamic>;
     } catch (e) {
       print('❌ Error al verificar vendedor: $e');
@@ -46,7 +50,6 @@ class SellerService {
     }
   }
 
-  // Obtener datos del trabajador por ID
   Future<Map<String, dynamic>?> getWorkerById(int idTrabajador) async {
     try {
       final response = await client
@@ -55,10 +58,8 @@ class SellerService {
           .eq('id', idTrabajador);
 
       if (response.isEmpty) {
-        return null; // Trabajador no encontrado
+        return null;
       }
-
-      // Retornar el primer trabajador encontrado
       return response.first as Map<String, dynamic>;
     } catch (e) {
       print('❌ Error al obtener datos del trabajador: $e');
@@ -68,16 +69,12 @@ class SellerService {
 
   Future<Map<String, dynamic>?> geTpvById(int idTpv) async {
     try {
-      final response = await client
-          .from('app_dat_tpv')
-          .select('*')
-          .eq('id', idTpv);
+      final response =
+          await client.from('app_dat_tpv').select('*').eq('id', idTpv);
 
       if (response.isEmpty) {
-        return null; // Trabajador no encontrado
+        return null;
       }
-
-      // Retornar el primer trabajador encontrado
       return response.first;
     } catch (e) {
       print('❌ Error al obtener datos del tpv: $e');
@@ -85,49 +82,182 @@ class SellerService {
     }
   }
 
-  // Verificar vendedor y obtener perfil completo (método combinado)
+  /// Primer TPV de la tienda (fallback para gerente/supervisor sin vendedor).
+  Future<Map<String, dynamic>?> getDefaultTpvForStore(int idTienda) async {
+    try {
+      final response = await client
+          .from('app_dat_tpv')
+          .select('*')
+          .eq('id_tienda', idTienda)
+          .order('id')
+          .limit(1);
+      if (response.isEmpty) return null;
+      return Map<String, dynamic>.from(response.first as Map);
+    } catch (e) {
+      print('❌ Error obteniendo TPV por defecto: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> _findGerenteByUuid(String userUuid) async {
+    try {
+      final response = await client
+          .from('app_dat_gerente')
+          .select('*')
+          .eq('uuid', userUuid)
+          .order('id')
+          .limit(1);
+      if (response.isEmpty) return null;
+      return Map<String, dynamic>.from(response.first as Map);
+    } catch (e) {
+      print('❌ Error consultando gerente: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> _findSupervisorByUuid(String userUuid) async {
+    try {
+      final response = await client
+          .from('app_dat_supervisor')
+          .select('*')
+          .eq('uuid', userUuid)
+          .order('id')
+          .limit(1);
+      if (response.isEmpty) return null;
+      return Map<String, dynamic>.from(response.first as Map);
+    } catch (e) {
+      print('❌ Error consultando supervisor: $e');
+      return null;
+    }
+  }
+
+  /// Verifica acceso a Caja.
+  /// Prioridad: gerente → supervisor → vendedor.
+  /// Gerente/supervisor son sesión solo-gestión (no venta).
   Future<Map<String, dynamic>> verifySellerAndGetProfile(
     String userUuid,
   ) async {
     try {
-      // 1. Verificar si es vendedor
+      // 1) Gerente (solo inventario/productos)
+      final gerente = await _findGerenteByUuid(userUuid);
+      if (gerente != null) {
+        return await _profileFromAdminRole(
+          userUuid: userUuid,
+          role: CajaEntryRole.gerente,
+          idTienda: (gerente['id_tienda'] as num).toInt(),
+          idTrabajador: (gerente['id_trabajador'] as num?)?.toInt(),
+          defaultRoll: 1,
+        );
+      }
+
+      // 2) Supervisor (solo inventario/productos)
+      final supervisor = await _findSupervisorByUuid(userUuid);
+      if (supervisor != null) {
+        return await _profileFromAdminRole(
+          userUuid: userUuid,
+          role: CajaEntryRole.supervisor,
+          idTienda: (supervisor['id_tienda'] as num).toInt(),
+          idTrabajador: (supervisor['id_trabajador'] as num?)?.toInt(),
+          defaultRoll: 2,
+        );
+      }
+
+      // 3) Vendedor (flujo de venta)
       final sellerData = await checkSellerByUuid(userUuid);
-
-      if (sellerData == null) {
-        throw Exception('Usuario no pertenece a los vendedores autorizados');
+      if (sellerData != null) {
+        return await _profileFromSeller(sellerData);
       }
 
-      print('✅ Vendedor verificado:');
-      print('  - ID: ${sellerData['id']}');
-      print('  - ID TPV: ${sellerData['id_tpv']} (desde app_dat_vendedor)');
-      print('  - ID Trabajador: ${sellerData['id_trabajador']}');
-
-      // 2. Obtener datos del trabajador
-      final workerData = await getWorkerById(sellerData['id_trabajador']);
-      final tpvData = await geTpvById(sellerData['id_tpv']);
-      if (workerData == null) {
-        throw Exception('No se encontraron datos del trabajador');
-      }
-
-      print('✅ Perfil del trabajador obtenido:');
-      print('  - Nombres: ${workerData['nombres']}');
-      print('  - Apellidos: ${workerData['apellidos']}');
-      print(
-        '  - ID Tienda: ${workerData['id_tienda']} (desde app_dat_trabajadores)',
+      throw Exception(
+        'Usuario no autorizado: debe ser vendedor, gerente o supervisor',
       );
-      print('  - ID Roll: ${workerData['id_roll']}');
-
-      // 3. Retornar datos combinados con IDs separados
-      return {
-        'seller': sellerData,
-        'worker': workerData,
-        'idTpv': sellerData['id_tpv'], // ID TPV desde app_dat_vendedor
-        'idTienda': workerData['id_tienda'], 
-        'idAlmacen':tpvData?['id_almacen']// ID Tienda desde app_dat_trabajadores
-      };
     } catch (e) {
-      print('❌ Error en verificación de vendedor: $e');
+      print('❌ Error en verificación de acceso a Caja: $e');
       rethrow;
     }
+  }
+
+  Future<Map<String, dynamic>> _profileFromSeller(
+    Map<String, dynamic> sellerData,
+  ) async {
+    print('✅ Vendedor verificado:');
+    print('  - ID: ${sellerData['id']}');
+    print('  - ID TPV: ${sellerData['id_tpv']}');
+    print('  - ID Trabajador: ${sellerData['id_trabajador']}');
+
+    final workerData = await getWorkerById(
+      (sellerData['id_trabajador'] as num).toInt(),
+    );
+    final tpvData = await geTpvById((sellerData['id_tpv'] as num).toInt());
+    if (workerData == null) {
+      throw Exception('No se encontraron datos del trabajador');
+    }
+
+    return {
+      'seller': sellerData,
+      'worker': workerData,
+      'idTpv': sellerData['id_tpv'],
+      'idTienda': workerData['id_tienda'],
+      'idAlmacen': tpvData?['id_almacen'],
+      'entryRole': CajaEntryRole.vendedor.name,
+      'inventoryOnly': false,
+    };
+  }
+
+  Future<Map<String, dynamic>> _profileFromAdminRole({
+    required String userUuid,
+    required CajaEntryRole role,
+    required int idTienda,
+    required int? idTrabajador,
+    required int defaultRoll,
+  }) async {
+    print('✅ Acceso Caja como ${role.name} (sin vendedor obligatorio)');
+    print('  - ID Tienda: $idTienda');
+    print('  - ID Trabajador: $idTrabajador');
+
+    Map<String, dynamic>? workerData;
+    if (idTrabajador != null) {
+      workerData = await getWorkerById(idTrabajador);
+    }
+
+    workerData ??= {
+      'id': idTrabajador,
+      'nombres': role == CajaEntryRole.gerente ? 'Gerente' : 'Supervisor',
+      'apellidos': '',
+      'id_tienda': idTienda,
+      'id_roll': defaultRoll,
+    };
+
+    final tpvData = await getDefaultTpvForStore(idTienda);
+    if (tpvData == null || tpvData['id'] == null) {
+      throw Exception(
+        'La tienda $idTienda no tiene TPV configurado. '
+        'Crea un TPV antes de entrar a Caja como ${role.name}.',
+      );
+    }
+
+    final idTpv = (tpvData['id'] as num).toInt();
+    final syntheticSeller = <String, dynamic>{
+      'id': 0,
+      'uuid': userUuid,
+      'id_tpv': idTpv,
+      'id_trabajador': idTrabajador ?? 0,
+      'permitir_customizar_precio_venta': true,
+      'es_admin_sin_vendedor': true,
+    };
+
+    return {
+      'seller': syntheticSeller,
+      'worker': {
+        ...workerData,
+        'id_tienda': workerData['id_tienda'] ?? idTienda,
+        'id_roll': workerData['id_roll'] ?? defaultRoll,
+      },
+      'idTpv': idTpv,
+      'idTienda': idTienda,
+      'idAlmacen': tpvData['id_almacen'],
+      'entryRole': role.name,
+      'inventoryOnly': true,
+    };
   }
 }

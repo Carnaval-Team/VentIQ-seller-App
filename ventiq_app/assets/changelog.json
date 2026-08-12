@@ -1,9 +1,61 @@
 {
-  "current_version": "2.3.9",
-  "build": 841,
+  "current_version": "2.4.1",
+  "build": 843,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.4.1",
+      "date": "2026-08-11",
+      "title": "📋 Conteo de inventario, productos por defecto y ajustes de turno",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Ver la cantidad esperada al confirmar inventario",
+          "description": "Si en la configuración de la tienda activan mostrar \"debe haber\", en el conteo de apertura y cierre verás junto a cada producto la cantidad esperada para compararla con lo que cuentas. Si está desactivado, solo ingresas la cantidad real, como hasta ahora."
+        },
+        {
+          "type": "improvement",
+          "title": "El conteo respeta la configuración de la tienda al iniciar sesión",
+          "description": "Al abrir o cerrar turno, la app usa la configuración guardada de la tienda para decidir si muestra o no el \"debe haber\", sin pasos extra por tu parte."
+        },
+        {
+          "type": "feature",
+          "title": "Productos por defecto guardados en tu cuenta",
+          "description": "La lista de productos que se agregan solos al crear una orden ahora se guarda en el servidor por tu usuario y tienda. Si cambias de teléfono, la recuperas al iniciar sesión."
+        },
+        {
+          "type": "feature",
+          "title": "Subir la configuración local al servidor",
+          "description": "Si ya tenías productos por defecto solo en el dispositivo, puedes subirlos al servidor con el botón de nube. También se migran solos la primera vez que hay conexión."
+        },
+        {
+          "type": "improvement",
+          "title": "Productos por defecto también sin internet",
+          "description": "La lista queda en el teléfono como respaldo. Offline usas la copia local; al volver a conectarte, guardar sincroniza con el servidor."
+        },
+        {
+          "type": "improvement",
+          "title": "Conteo de inventario sin productos en cero",
+          "description": "En apertura y cierre, el listado de inventario ya no incluye productos con stock 0, para que el conteo se centre en lo que realmente hay que revisar."
+        },
+        {
+          "type": "improvement",
+          "title": "Apertura con el mismo conteo que el cierre",
+          "description": "El inventario al abrir turno usa la misma lógica de conteo que el cierre: campos vacíos, guardado mientras escribes y comparación con el \"debe haber\" cuando la tienda lo tenga activo."
+        },
+        {
+          "type": "fix",
+          "title": "Editar datos del cliente en la orden",
+          "description": "Al modificar el cliente de una orden, los cambios se guardan correctamente en la base de datos (antes podían quedarse solo en pantalla)."
+        },
+        {
+          "type": "fix",
+          "title": "Teclado en el cierre de turno",
+          "description": "Al escribir cantidades en el cierre, el teclado ya no tapa los campos: la pantalla se ajusta y puedes seguir viendo lo que editas."
+        }
+      ]
+    },
     {
       "version": "2.3.9",
       "date": "2026-07-28",

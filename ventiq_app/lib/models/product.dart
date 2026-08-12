@@ -198,13 +198,25 @@ class ProductPresentation {
   });
 
   factory ProductPresentation.fromJson(Map<String, dynamic> json) {
+    final presentacionRaw = json['presentacion'];
+    final presentacion = presentacionRaw is Map
+        ? Presentation.fromJson(Map<String, dynamic>.from(presentacionRaw))
+        : Presentation(
+            id: json['id_presentacion'] is num
+                ? (json['id_presentacion'] as num).toInt()
+                : 0,
+            denominacion: 'Unidad',
+            descripcion: null,
+            skuCodigo: '',
+          );
+
     return ProductPresentation(
       id: json['id'],
       idProducto: json['id_producto'],
       idPresentacion: json['id_presentacion'],
-      cantidad: (json['cantidad'] as num).toDouble(),
+      cantidad: (json['cantidad'] as num?)?.toDouble() ?? 1.0,
       esBase: json['es_base'] ?? false,
-      presentacion: Presentation.fromJson(json['presentacion']),
+      presentacion: presentacion,
     );
   }
 }

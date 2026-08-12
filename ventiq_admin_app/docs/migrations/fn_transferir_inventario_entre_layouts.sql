@@ -31,7 +31,7 @@ CREATE OR REPLACE FUNCTION public.fn_transferir_inventario_entre_layouts(
   p_observaciones          TEXT    DEFAULT '',
   p_id_tienda              BIGINT  DEFAULT NULL,
   p_uuid                   UUID    DEFAULT NULL,
-  p_completar_operaciones  BOOLEAN DEFAULT TRUE,
+  p_completar_operaciones  BOOLEAN DEFAULT FALSE,
   p_moneda_factura         TEXT    DEFAULT 'USD',
   p_entregado_por          TEXT    DEFAULT NULL,
   p_transportado_por       TEXT    DEFAULT NULL,
@@ -174,6 +174,11 @@ BEGIN
 
   v_id_extraccion := (v_ext_result->>'id_operacion')::BIGINT;
 
+  -- Salida de transferencia: tipo 7 (no el 18 genérico de extracción)
+  UPDATE public.app_dat_operaciones
+  SET id_tipo_operacion = 7
+  WHERE id = v_id_extraccion;
+
   -- Personas en extracción: entrega = origen, recibe = transporta
   UPDATE public.app_dat_operacion_extraccion
   SET autorizado_por = v_entregado,
@@ -200,12 +205,18 @@ BEGIN
 
   v_id_recepcion := (v_rec_result->>'id_operacion')::BIGINT;
 
-  -- 3. Vínculo transferencia
+  -- Entrada de transferencia: tipo 8 (refuerzo por si el motivo no lo resolvió)
+  UPDATE public.app_dat_operaciones
+  SET id_tipo_operacion = 8
+  WHERE id = v_id_recepcion;
+
+  -- 3. Vínculo transferencia (padre = Transferencia de productos = 19)
   SELECT id
   INTO v_id_tipo_transferencia
   FROM public.app_nom_tipo_operacion
-  WHERE denominacion ILIKE '%transfer%'
-  ORDER BY id
+  WHERE id = 19
+     OR denominacion ILIKE '%transferencia de productos%'
+  ORDER BY CASE WHEN id = 19 THEN 0 ELSE 1 END, id
   LIMIT 1;
 
   IF v_id_tipo_transferencia IS NULL THEN
@@ -252,9 +263,22 @@ BEGIN
     v_entregado
   );
 
+  -- Estado pendiente del padre (la UI lista la transferencia como una sola op)
+  INSERT INTO public.app_dat_estado_operacion (
+    id_operacion,
+    estado,
+    uuid,
+    created_at
+  ) VALUES (
+    v_id_operacion_padre,
+    1,
+    p_uuid,
+    NOW()
+  );
+
   -- 4. Completar operaciones
   IF p_completar_operaciones THEN
-    FOREACH v_op_a_completar IN ARRAY ARRAY[v_id_extraccion, v_id_recepcion]
+    FOREACH v_op_a_completar IN ARRAY ARRAY[v_id_extraccion, v_id_recepcion, v_id_operacion_padre]
     LOOP
       SELECT eo.estado
       INTO v_estado_actual
@@ -281,7 +305,10 @@ BEGIN
 
   RETURN jsonb_build_object(
     'status', 'success',
-    'message', 'Transferencia entre layouts completada exitosamente',
+    'message', CASE
+      WHEN p_completar_operaciones THEN 'Transferencia entre layouts completada exitosamente'
+      ELSE 'Transferencia registrada en pendiente (extracción y recepción)'
+    END,
     'id_extraccion', v_id_extraccion,
     'id_recepcion', v_id_recepcion,
     'id_operacion_transferencia', v_id_operacion_padre,

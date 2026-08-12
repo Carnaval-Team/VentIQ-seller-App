@@ -218,13 +218,13 @@ class _ProductsScreenState extends State<ProductsScreen> {
         errorMessage = null;
       });
 
-      // Verificar si el modo offline está activado
-      final isOfflineModeEnabled =
-          await _userPreferencesService.isOfflineModeEnabled();
+      // Offline o dispositivo full-offline: siempre datos locales (sin sync/red).
+      final useLocalData =
+          await _userPreferencesService.shouldUseLocalData();
 
       // Verificar caché si no es refresh forzado y estamos online
       if (!forceRefresh &&
-          !isOfflineModeEnabled &&
+          !useLocalData &&
           _isCacheValid(widget.categoryId)) {
         final cachedProducts = _productsCache[widget.categoryId]!;
         setState(() {
@@ -238,64 +238,19 @@ class _ProductsScreenState extends State<ProductsScreen> {
 
       Map<String, List<Product>> products;
 
-      if (isOfflineModeEnabled) {
-        print('🔌 Modo offline - Cargando productos desde cache...');
-
-        // Cargar datos offline
-        final offlineData = await _userPreferencesService.getOfflineData();
-
-        if (offlineData != null && offlineData['products'] != null) {
-          final productsData = offlineData['products'] as Map<String, dynamic>;
-
-          // Buscar productos de esta categoría
-          final categoryKey = widget.categoryId.toString();
-
-          if (productsData.containsKey(categoryKey)) {
-            final categoryProducts = productsData[categoryKey] as List<dynamic>;
-
-            // Agrupar productos por subcategoría
-            products = {};
-            for (var prodData in categoryProducts) {
-              final subcategory =
-                  prodData['subcategoria'] as String? ?? 'General';
-
-              // Crear objeto Product desde datos offline
-              final product = Product(
-                id: prodData['id'] as int,
-                denominacion: prodData['denominacion'] as String,
-                descripcion: prodData['descripcion'] as String?,
-                foto: prodData['foto'] as String?,
-                precio: (prodData['precio'] as num).toDouble(),
-                cantidad: prodData['cantidad'] as num,
-                categoria: prodData['categoria'] as String,
-                esRefrigerado: false,
-                esFragil: false,
-                esPeligroso: false,
-                esVendible: true,
-                esComprable: true,
-                esInventariable: true,
-                esPorLotes: false,
-                esElaborado: false,
-                esServicio: false,
-                variantes: [],
-              );
-
-              if (!products.containsKey(subcategory)) {
-                products[subcategory] = [];
-              }
-              products[subcategory]!.add(product);
-            }
-
-            print(
-              '✅ Productos cargados desde cache offline: ${categoryProducts.length}',
-            );
-          } else {
-            products = {};
-            print('⚠️ No hay productos para esta categoría en cache offline');
-          }
-        } else {
-          throw Exception('No hay productos sincronizados en modo offline');
-        }
+      if (useLocalData) {
+        print(
+          '🔌 Offline/full-offline - Cargando productos locales '
+          '(categoría ${widget.categoryId})...',
+        );
+        products = await _productService.getProductsByCategory(
+          widget.categoryId,
+          forceLocal: true,
+        );
+        print(
+          '✅ Productos locales: '
+          '${products.values.fold(0, (sum, list) => sum + list.length)}',
+        );
       } else {
         print('🌐 Modo online - Cargando productos desde Supabase...');
         print('🔄 Loading products for category ${widget.categoryId}');

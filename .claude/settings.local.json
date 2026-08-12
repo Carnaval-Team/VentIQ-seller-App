@@ -21,7 +21,15 @@
       "PowerShell(npx -y skills find \"flutter best practices\" 2>&1 | Select-Object -First 100)",
       "WebFetch(domain:skills.sh)",
       "Bash(command -v mkdir)",
-      "Bash(Select-Object -First 40)"
+      "Read(//c/Users/cesar/Desktop/wapi/**)",
+      "mcp__supabase__execute_sql",
+      "Bash(python -c \"import json;d=json.load\\(open\\('assets/changelog.json',encoding='utf-8'\\)\\);print\\('OK',d['current_version'],d['build'],len\\(d['changelogs']\\),'versiones'\\);print\\(d['changelogs'][0]['title']\\)\")",
+      "mcp__supabase__apply_migration",
+      "Bash(echo \"=== ERROR COUNT: $\\(flutter analyze lib/models lib/services/hr lib/services/worker_service.dart lib/screens/hr lib/widgets/hr 2>&1)",
+      "Bash(python -c ' *)",
+      "Bash(echo \"=== ERRORS: $\\(flutter analyze lib/screens/workers_screen.dart lib/screens/edit_worker_multi_role_screen.dart 2>&1)",
+      "Bash(echo \"=== TOTAL ERRORS: $\\(flutter analyze 2>&1)",
+      "Bash(echo \"=== ERRORS: $\\(flutter analyze lib/screens/carnaval_orders_screen.dart 2>&1)"
     ]
   },
   "enabledMcpjsonServers": [
