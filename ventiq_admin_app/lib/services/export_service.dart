@@ -134,6 +134,7 @@ class ExportService {
     required Map<String, dynamic> operation,
     required List<Map<String, dynamic>> items,
     String almacenNombre = 'N/A',
+    String? clienteNombre,
   }) async {
     try {
       final operationId = operation['id']?.toString() ?? 'N/A';
@@ -143,6 +144,7 @@ class ExportService {
         operation: operation,
         items: items,
         almacenNombre: almacenNombre,
+        clienteNombre: clienteNombre,
       );
 
       const mimeType = 'application/pdf';
@@ -2393,6 +2395,7 @@ class ExportService {
     required Map<String, dynamic> operation,
     required List<Map<String, dynamic>> items,
     String almacenNombre = 'N/A',
+    String? clienteNombre,
   }) async {
     final pdf = pw.Document();
     final regularFont = await _getRegularFont();
@@ -2451,6 +2454,8 @@ class ExportService {
                     _buildPdfInfoRow('ID Operación:', '#${operation['id']}', boldFont, regularFont),
                     _buildPdfInfoRow('Tipo:', '${operation['tipo_operacion_nombre'] ?? 'N/A'}', boldFont, regularFont),
                     _buildPdfInfoRow('Estado:', '${operation['estado_nombre'] ?? 'N/A'}', boldFont, regularFont),
+                    if (clienteNombre != null && clienteNombre.trim().isNotEmpty)
+                      _buildPdfInfoRow('Cliente:', clienteNombre.trim(), boldFont, regularFont),
                     if (almacenNombre != 'N/A')
                       _buildPdfInfoRow('Almacén:', almacenNombre, boldFont, regularFont),
                   ],
