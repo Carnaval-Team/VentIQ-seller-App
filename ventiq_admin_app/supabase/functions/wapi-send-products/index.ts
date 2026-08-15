@@ -18,15 +18,19 @@
 // productos (ver buildSummaryMessages).
 //
 // Estrategia anti-ban actual:
-//   1. Por producto: se envía la misma imagen a TODOS los destinatarios
-//      seleccionados en PARALELO (cap MAX_PARALLEL_FANOUT). Esto explota el
-//      hecho de que mandar el mismo contenido a varios chats al mismo tiempo
-//      es indistinguible de un broadcast humano; el ban viene de "muchas
-//      cosas distintas en poco tiempo".
+//   1. Por producto: la misma imagen se manda a los destinatarios EN SERIE,
+//      con una pausa corta entre uno y otro. Antes iban en paralelo (cap 5) y
+//      eso saturaba la sesión de WAPI —que es UNA sola instancia de
+//      Puppeteer— devolviendo NETWORK_ERROR: con 1 grupo iba fino y con 4 se
+//      caía a la mitad.
 //   2. Entre productos: delay aleatorio en [delay_min, delay_max].
-//   3. Defaults 5–10s alineados con el techo recomendado de 20 msgs/min/sesión
-//      (con cap 5 paralelos: ráfaga ≤5, promedio ≤40/min — sólo se acerca al
-//      techo si seleccionas muchos grupos).
+//   3. Defaults 5–10s: enviando en serie el ritmo real queda holgadamente por
+//      debajo del techo recomendado de 20 msgs/min/sesión.
+//
+// El envío se reparte en chunks encadenados: cada invocación despacha los
+// productos que le caben en su presupuesto de wall-clock (los workers de Edge
+// mueren a los ~400s) y re-invoca esta misma función con el resto. El corte se
+// decide MIDIENDO el reloj, no estimándolo.
 //
 import { handleOptions, okResponse, errorResponse } from "../_shared/cors.ts";
 import {
@@ -37,6 +41,7 @@ import {
   AuthContext,
 } from "../_shared/auth.ts";
 import { wapi } from "../_shared/wapi_client.ts";
+import { invokeEdgeFunction } from "../_shared/invoke.ts";
 
 interface Destino {
   tipo: "numero" | "grupo";
@@ -67,6 +72,12 @@ interface SendBody {
   // su propio trozo. Si no viene, se asume `product_ids`.
   summary_product_ids?: number[];
 
+  // Uso INTERNO: esta invocación NO despacha productos, sólo manda el mensaje
+  // resumen. La usa el último chunk cuando se queda sin presupuesto de tiempo
+  // para el texto: así el resumen sale en un worker nuevo en vez de perderse.
+  // Requiere `summary_product_ids` + `destinations`.
+  summary_only?: boolean;
+
   /** ¿Mandar el mensaje resumen al final del envío? Default true. */
   send_summary?: boolean;
 }
@@ -81,10 +92,20 @@ interface SendBody {
 const RETRY_MAX_ATTEMPTS = 3;
 const RETRY_BASE_MS = 4_000;
 
-/** ¿El error merece reintento? Los 4xx de validación no (fallarían igual). */
+/**
+ * ¿El error merece reintento? Los 4xx de validación no (fallarían igual).
+ *
+ * `TIMEOUT` lo emite nuestro propio wapi_client cuando WAPI abre la conexión y
+ * no contesta dentro del plazo; casi siempre es la sesión atascada un momento,
+ * así que se reintenta. Los 429 NO se resuelven aquí: llevan
+ * `retryAfterSeconds` y los gestiona `dispatchOne`, que respeta la espera
+ * pedida en vez de insistir con backoff propio.
+ */
 function esReintentable(code: string | undefined): boolean {
   if (!code) return true;
-  if (code === "NETWORK_ERROR" || code === "SEND_ERROR") return true;
+  if (code === "NETWORK_ERROR" || code === "SEND_ERROR" || code === "TIMEOUT") {
+    return true;
+  }
   const m = /^HTTP_(\d{3})$/.exec(code);
   if (m) {
     const status = Number(m[1]);
@@ -121,13 +142,13 @@ const STOCK_BAJO = 5;
 const SUMMARY_MAX_CHARS = 3_500;
 
 /**
- * Máximo de mensajes de resumen por destino. El resumen se manda al final del
- * último chunk, dentro del mismo worker (techo ~400s): sin tope, un catálogo
- * enorme × muchos destinos se cortaría a media tanda de textos. Con 4 partes
- * caben ~180 productos; el resto se anuncia como "y N más" en vez de
- * desaparecer en silencio.
+ * Máximo de mensajes de resumen por destino. Con 6 partes caben ~270
+ * productos; el resto se anuncia como "y N más" en vez de desaparecer en
+ * silencio. El tope existe por tiempo, no por WhatsApp: cada texto tarda
+ * ~3s × destinos. Si no cupiera en el worker, el resumen se delega a una
+ * invocación nueva (`summary_only`) en vez de recortarse.
  */
-const SUMMARY_MAX_PARTS = 4;
+const SUMMARY_MAX_PARTS = 6;
 
 function pick<T>(arr: T[], seed: number): T {
   return arr[seed % arr.length];
@@ -345,6 +366,53 @@ function buildSummaryMessages(items: ProdInfo[]): string[] {
   });
 }
 
+/** Parte una lista en trozos de tamaño fijo. */
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+/**
+ * Lee TODAS las filas de una consulta paginando con `.range()`.
+ *
+ * PostgREST corta las respuestas en `max-rows` (1000 por defecto en Supabase)
+ * SIN avisar. Las tablas `app_dat_precio_venta` e
+ * `app_dat_inventario_productos` son históricos con muchas filas por
+ * producto, así que una consulta con 70 productos se truncaba: los productos
+ * cuyo último movimiento quedaba fuera del corte salían con precio 0 y
+ * "🔴 Agotado" en el mensaje aunque tuvieran stock. Paginando desaparece.
+ */
+async function fetchAllPages<T>(
+  makeQuery: (from: number, to: number) => PromiseLike<
+    { data: T[] | null; error: { message: string } | null }
+  >,
+  opts: { pageSize?: number; maxPages?: number; label?: string } = {},
+): Promise<T[]> {
+  const pageSize = opts.pageSize ?? 1000;
+  const maxPages = opts.maxPages ?? 20;
+  const label = opts.label ?? "query";
+  const out: T[] = [];
+  for (let page = 0; page < maxPages; page++) {
+    const from = page * pageSize;
+    const { data, error } = await makeQuery(from, from + pageSize - 1);
+    if (error) {
+      console.warn(`[wapi-send-products] ${label}: error paginando: ${error.message}`);
+      break;
+    }
+    const filas = data ?? [];
+    out.push(...filas);
+    if (filas.length < pageSize) return out; // última página
+    if (page === maxPages - 1) {
+      console.warn(
+        `[wapi-send-products] ${label}: tope de ${maxPages} páginas ` +
+          `(${out.length} filas) — puede faltar histórico`,
+      );
+    }
+  }
+  return out;
+}
+
 /**
  * Carga todo lo que el mensaje necesita de cada producto: nombre, imagen,
  * categoría, precio vigente, presentación base y stock disponible.
@@ -371,22 +439,38 @@ async function loadProductInfo(
   // Precio venta (último vigente por producto).
   // `app_dat_precio_venta` es un histórico: cada producto puede tener N filas
   // (una por cada cambio de precio). El precio actual es el de mayor `id`.
-  // Traemos todo el histórico ordenado por id desc y nos quedamos con la
-  // primera ocurrencia por producto (la más reciente).
-  const { data: precios } = await admin
-    .from("app_dat_precio_venta")
-    .select("id, id_producto, precio_venta_cup, precio_venta_usd")
-    .in("id_producto", ids)
-    .order("id", { ascending: false });
-
+  // Traemos el histórico ordenado por id desc y nos quedamos con la primera
+  // ocurrencia por producto (la más reciente).
+  //
+  // Se consulta en lotes de productos + paginado: con muchos productos, una
+  // sola consulta superaba el `max-rows` de PostgREST y los productos cuyo
+  // precio quedaba fuera del corte se anunciaban a $0.
   const precioMap = new Map<number, number>();
-  (precios ?? []).forEach((p: any) => {
-    if (precioMap.has(p.id_producto)) return; // ya tenemos el más reciente
-    precioMap.set(
-      p.id_producto,
-      Number(p.precio_venta_cup ?? p.precio_venta_usd ?? 0),
+  for (const lote of chunkArray(ids, 25)) {
+    const precios = await fetchAllPages<any>(
+      (from, to) =>
+        admin
+          .from("app_dat_precio_venta")
+          .select("id, id_producto, precio_venta_cup, precio_venta_usd")
+          .in("id_producto", lote)
+          .order("id", { ascending: false })
+          .range(from, to),
+      { label: "precio_venta" },
     );
-  });
+    for (const p of precios) {
+      if (precioMap.has(p.id_producto)) continue; // ya tenemos el más reciente
+      precioMap.set(
+        p.id_producto,
+        Number(p.precio_venta_cup ?? p.precio_venta_usd ?? 0),
+      );
+    }
+  }
+  if (precioMap.size < ids.length) {
+    console.warn(
+      `[wapi-send-products] precio resuelto para ${precioMap.size}/${ids.length} ` +
+        `producto(s) — el resto irá sin precio`,
+    );
+  }
 
   // ───────────────────────────────────────────────────────────────────
   // Stock disponible por producto (suma sobre todas las ubicaciones de
@@ -424,19 +508,31 @@ async function loadProductInfo(
         // Traemos todos los movimientos de inventario (histórico) para
         // los productos y ubicaciones relevantes. Después, en memoria,
         // nos quedamos con la última fila por (producto, ubicación).
-        const { data: invRows } = await admin
-          .from("app_dat_inventario_productos")
-          .select("id, id_producto, id_ubicacion, cantidad_final, created_at")
-          .in("id_producto", ids)
-          .in("id_ubicacion", ubicacionIds)
-          .order("id", { ascending: false });
-
+        //
+        // Esta es la consulta que más sufría el corte de `max-rows`: es un
+        // histórico de movimientos, así que 70 productos × N ubicaciones ×
+        // M movimientos pasa de 1000 filas con facilidad. Cuando se cortaba,
+        // los productos que quedaban fuera se anunciaban como "🔴 Agotado"
+        // teniendo stock. Lotes pequeños de productos + paginado lo evitan.
         // Mapa intermedio: (idProducto, idUbicacion) → cantidad_final más reciente.
         const latestPerPair = new Map<string, number>();
-        for (const row of invRows ?? []) {
-          const key = `${row.id_producto}_${row.id_ubicacion}`;
-          if (!latestPerPair.has(key)) {
-            latestPerPair.set(key, Number(row.cantidad_final ?? 0));
+        for (const lote of chunkArray(ids, 10)) {
+          const invRows = await fetchAllPages<any>(
+            (from, to) =>
+              admin
+                .from("app_dat_inventario_productos")
+                .select("id, id_producto, id_ubicacion, cantidad_final, created_at")
+                .in("id_producto", lote)
+                .in("id_ubicacion", ubicacionIds)
+                .order("id", { ascending: false })
+                .range(from, to),
+            { label: "inventario_productos" },
+          );
+          for (const row of invRows) {
+            const key = `${row.id_producto}_${row.id_ubicacion}`;
+            if (!latestPerPair.has(key)) {
+              latestPerPair.set(key, Number(row.cantidad_final ?? 0));
+            }
           }
         }
         // Acumulamos por producto.
@@ -538,6 +634,19 @@ async function sendTextConReintentos(
     if (r.success) return true;
 
     const code = r.error?.code ?? "SEND_ERROR";
+    // Si el server pide frenar (rate limiter o SEND_PACING) hay que respetar
+    // su plazo: reintentar antes sólo alarga el cooldown.
+    const pausaSeg = r.error?.retryAfterSeconds ??
+      (code === "SEND_PACING_LIMITED" ? 60 : undefined);
+    if (pausaSeg && pausaSeg > 0 && pausaSeg <= 60 && intento < RETRY_MAX_ATTEMPTS) {
+      console.error(
+        `[wapi-send-products] resumen chat=${chatId} ${code}: ` +
+          `el server pide ${pausaSeg}s — esperando`,
+      );
+      await new Promise((res) => setTimeout(res, pausaSeg * 1000));
+      continue;
+    }
+
     const puedeReintentar = intento < RETRY_MAX_ATTEMPTS && esReintentable(code);
     console.error(
       `[wapi-send-products] resumen fallido chat=${chatId} ` +
@@ -582,6 +691,8 @@ export async function dispatchProducts(args: {
   summaryProductIds?: number[];
   /** ¿Mandar el mensaje resumen al terminar? Default true. */
   enviarResumen?: boolean;
+  /** Ver `SendBody.summary_only`: no despacha productos, sólo el resumen. */
+  summaryOnly?: boolean;
 }) {
   const {
     admin, idSesion, idTienda, wapiSessionId, productIds,
@@ -589,6 +700,7 @@ export async function dispatchProducts(args: {
     resumeLogIds,
   } = args;
   const enviarResumen = args.enviarResumen ?? true;
+  const summaryOnly = args.summaryOnly === true;
 
   // ── MODO REANUDAR ───────────────────────────────────────────────────
   // Reconstruimos productos y destinos a partir de las filas de log que
@@ -648,54 +760,103 @@ export async function dispatchProducts(args: {
     );
   }
 
-  if (effProductIds.length === 0 || effDestinations.length === 0) {
+  // En modo sólo-resumen no hay productos que despachar: lo único
+  // imprescindible son los destinos y la lista para el texto.
+  if (effDestinations.length === 0) {
+    return { enviados: 0, fallidos: 0, batch_id: null, skipped: true };
+  }
+  if (!summaryOnly && effProductIds.length === 0) {
     return { enviados: 0, fallidos: 0, batch_id: null, skipped: true };
   }
 
   // Productos que listará el resumen final. En la primera invocación son
   // todos los pedidos; en las continuaciones viene heredado del chunk previo.
-  // (Al reanudar sólo conocemos los productos que quedaron sin enviar, así que
-  //  el resumen de una reanudación lista ese subconjunto.)
+  // (Al reanudar, la app manda la lista completa de la tanda en
+  //  `summary_product_ids`; si no llegara, el resumen listaría sólo los
+  //  productos que quedaron sin enviar.)
   const summaryIds = args.summaryProductIds?.length
     ? args.summaryProductIds
     : effProductIds;
 
   // ───────────────────────────────────────────────────────────────────
-  //  CHUNKING anti-timeout
-  //  Los background tasks de Supabase Edge se matan al llegar al techo de
-  //  ~400s de wall-clock. Con delays anti-ban de 5-10s entre productos, un
-  //  envío largo (p.ej. una programación con muchos productos) se cortaba a
-  //  la mitad y "solo mandaba unos pocos" — el resto quedaba en estado
-  //  `pendiente` sin enviarse nunca. Era invisible en el envío manual porque
-  //  ahí se seleccionan pocos productos y el total cabía bajo los 400s.
+  //  CHUNKING anti-timeout — guiado por el RELOJ, no por una estimación
   //
-  //  Solución: procesar SÓLO los productos que caben con holgura en un
-  //  presupuesto de tiempo, y re-invocar wapi-send-products con el resto.
-  //  Cada invocación arranca su propio worker con 400s frescos, así que el
-  //  envío completo se reparte en N chunks encadenados. El chunk se decide
-  //  AQUÍ (arriba), no a mitad del loop, para que los logs `pendiente` se
-  //  inserten sólo para el chunk actual (evita filas duplicadas).
+  //  Los workers de Supabase Edge mueren al llegar al techo de ~400s de
+  //  wall-clock. La versión anterior decidía antes del loop cuántos productos
+  //  caben con una fórmula que ignoraba el número de destinos
+  //  (`ceil(destinos/5)` valía 1 tanto con 1 destino como con 4), así que con
+  //  varios grupos el chunk se pasaba del presupuesto, el worker moría a
+  //  mitad y la continuación —que se encolaba DESPUÉS del loop— no llegaba a
+  //  encolarse: la cadena se rompía y de 70 productos llegaban 20 o 30.
+  //
+  //  Ahora:
+  //   · Se mide el tiempo transcurrido y se corta cuando el siguiente
+  //     producto ya no cabe con holgura, usando el peor producto observado.
+  //   · Las filas de log se insertan producto a producto, justo antes de
+  //     despacharlo: un corte no deja `pendiente` de productos no intentados.
+  //   · La continuación se encola SIEMPRE al salir del loop y ANTES del
+  //     resumen, así un resumen que se coma el worker no rompe la cadena.
   // ───────────────────────────────────────────────────────────────────
-  const MAX_PARALLEL_FANOUT = 5;
+  const startedAt = Date.now();
+  const elapsed = () => Date.now() - startedAt;
+
+  /** Presupuesto de este worker. El techo real ronda los 400s; cortamos en
+   *  270s para que quepan el último envío en curso y el encolado. */
+  const WORKER_BUDGET_MS = 270_000;
+  /** Pausa entre destinos del MISMO producto (fan-out en serie). */
+  const FANOUT_PAUSE_MS = 1_500;
+  /** Techo por producto: si su fan-out se eterniza (WAPI lento, reintentos),
+   *  se abandonan los destinos que falten de ESE producto en vez de
+   *  arrastrar el chunk entero al matadero. */
+  const PRODUCT_MAX_MS = 120_000;
+  /** Espera máxima que aceptamos cuando WAPI pide frenar. Más que esto no
+   *  cabe en un worker: se corta el chunk y queda reanudable. */
+  const PACING_WAIT_MAX_MS = 60_000;
+  /** Productos por ventana de precarga de datos (nombre, precio, stock…). */
+  const WINDOW_SIZE = 25;
+
   const minMs = Math.max(5_000, delayMin * 1000);
   const maxMs = Math.max(minMs + 1_000, delayMax * 1000);
-
-  // Presupuesto conservador (250s): deja ~150s de margen bajo el techo de
-  // 400s para el fan-out del último producto del chunk y la re-invocación.
-  const TIME_BUDGET_MS = 250_000;
   const avgDelayMs = (minMs + maxMs) / 2;
-  const fanoutBatches = Math.ceil(effDestinations.length / MAX_PARALLEL_FANOUT);
-  // Estimado de wall-time por producto: delay entre productos + fan-out
-  // (cada sub-lote ~4s por intento; con reintentos el peor caso crece, así
-  // que reservamos margen para un reintento medio por sub-lote).
-  const perProductMs = avgDelayMs + fanoutBatches * 8_000;
-  const maxProductsThisChunk = Math.max(
-    1,
-    Math.floor(TIME_BUDGET_MS / perProductMs),
-  );
 
-  const chunkIds = effProductIds.slice(0, maxProductsThisChunk);
-  const remainingIds = effProductIds.slice(maxProductsThisChunk);
+  /** Destinos con chat_id válido: WhatsApp exige `@c.us` (números) o `@g.us`
+   *  (grupos). Se deduplican — el mismo grupo repetido en la programación
+   *  duplicaría cada mensaje. Son los únicos que cuentan para los tiempos. */
+  const chatsValidos = Array.from(
+    new Set(
+      effDestinations
+        .map((d) => (typeof d.chat_id === "string" ? d.chat_id.trim() : ""))
+        .filter((c) => /@(c|g)\.us$/.test(c)),
+    ),
+  );
+  const chatsInvalidos = effDestinations
+    .map((d) => String(d.chat_id ?? "").trim())
+    .filter((c) => !/@(c|g)\.us$/.test(c));
+  if (chatsInvalidos.length > 0) {
+    console.warn(
+      `[wapi-send-products] ${chatsInvalidos.length} destino(s) con chat_id ` +
+        `inválido, ignorados: ${JSON.stringify(chatsInvalidos.slice(0, 5))}`,
+    );
+  }
+  const nDestinos = Math.max(1, chatsValidos.length);
+  /** Estimación inicial del fan-out de un producto, sin el delay anti-ban:
+   *  ~5s de envío + la pausa, por destino. Se corrige con lo medido. */
+  const envioEstimadoMs = nDestinos * (5_000 + FANOUT_PAUSE_MS);
+  let peorEnvioMs = 0;
+  /** Hueco que debe quedar libre para arrancar otro producto: lo peor visto
+   *  (+20%) más el delay anti-ban. Se topa a medio presupuesto para que un
+   *  único producto lentísimo no reduzca los chunks a un producto cada uno. */
+  const reservaProductoMs = () =>
+    Math.min(
+      WORKER_BUDGET_MS / 2,
+      Math.max(envioEstimadoMs, peorEnvioMs * 1.2) + avgDelayMs,
+    );
+
+  /** Productos que este worker no alcanzará. Se rellena cuando el reloj
+   *  manda; `reinvokeRemaining` lo lee en el momento de encolar. */
+  let remainingIds: number[] = [];
+  /** Si WAPI pidió frenar, aquí queda la espera que exigió. */
+  let pacingAbort: { retryAfterSeconds: number } | null = null;
 
   // Re-invoca wapi-send-products con los productos que NO caben en este chunk.
   // Fire-and-forget: el endpoint responde de inmediato (queued) y procesa el
@@ -705,8 +866,8 @@ export async function dispatchProducts(args: {
   // worker; si se llama dos veces (p.ej. en el early-fire y otra vez al final
   // por una ruta de error), duplicaría el chunk restante. Un flag lo evita.
   let reinvoked = false;
-  const reinvokeRemaining = async (): Promise<void> => {
-    if (remainingIds.length === 0 || reinvoked) return;
+  const reinvokeRemaining = async (): Promise<boolean> => {
+    if (remainingIds.length === 0 || reinvoked) return false;
     reinvoked = true;
 
     // En modo reanudar, la continuación también debe reanudar: si mandara
@@ -735,72 +896,78 @@ export async function dispatchProducts(args: {
       send_summary: enviarResumen,
     };
 
-    // Ruta primaria: admin.functions.invoke. El cliente `admin` ya fue
-    // construido con SUPABASE_URL + SERVICE_ROLE_KEY válidos (si faltaran, el
-    // serviceClient() habría reventado mucho antes). Esto evita depender de
-    // releer el env var crudo dentro del worker en background — que es lo que
-    // estaba fallando en silencio y cortaba la cadena tras el primer chunk.
-    try {
-      const { error } = await admin.functions.invoke("wapi-send-products", {
-        body: payload,
-      });
-      if (!error) {
-        console.log(
-          `[wapi-send-products] continuación encolada (invoke): ` +
-            `${remainingIds.length} productos restantes`,
-        );
-        return;
-      }
-      console.error(
-        `[wapi-send-products] functions.invoke falló, intento fallback fetch: ` +
-          `${error.message ?? error}`,
-      );
-    } catch (e) {
-      console.error(
-        `[wapi-send-products] functions.invoke lanzó excepción, fallback fetch: ` +
-          `${(e as Error).message ?? e}`,
-      );
-    }
-
-    // Ruta de respaldo: fetch manual al endpoint público.
-    const baseUrl = Deno.env.get("SUPABASE_URL");
-    const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (!baseUrl || !key) {
-      console.error(
-        "[wapi-send-products] CADENA ROTA: functions.invoke falló y faltan " +
-          "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY para el fallback. " +
-          `${remainingIds.length} productos quedaron SIN enviar.`,
-      );
-      return;
-    }
-    const endpoint =
-      `${baseUrl.replace(/\/$/, "")}/functions/v1/wapi-send-products`;
-    try {
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${key}`,
-          "apikey": key,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
+    const res = await invokeEdgeFunction(
+      admin,
+      "wapi-send-products",
+      payload,
+      "wapi-send-products/chunk",
+    );
+    if (res.ok) {
       console.log(
-        `[wapi-send-products] continuación encolada (fetch): ${remainingIds.length} ` +
-          `productos restantes → HTTP ${res.status}`,
+        `[wapi-send-products] continuación encolada (${res.via}): ` +
+          `${remainingIds.length} producto(s) restantes`,
+      );
+    } else {
+      console.error(
+        `[wapi-send-products] CADENA ROTA: ${remainingIds.length} producto(s) ` +
+          `quedan sin despachar (${res.error ?? "motivo desconocido"})`,
+      );
+    }
+    return res.ok;
+  };
+
+  // Cuando la cadena se rompe (no se pudo encolar la continuación) o WAPI pide
+  // una pausa que no cabe en este worker, los productos que quedan fuera no
+  // tienen fila de log: se insertan producto a producto justo antes de
+  // despacharlos. Sin fila, la UI no sabe que existen y no ofrece reanudar.
+  // Las creamos en `pendiente` para que la tanda quede recuperable con un clic.
+  const registrarPendientes = async (ids: number[]): Promise<void> => {
+    // Al reanudar las filas ya existen y siguen en `pendiente`: nada que hacer.
+    if (ids.length === 0 || esReanudacion || chatsValidos.length === 0) return;
+    const filas: Array<Record<string, unknown>> = [];
+    for (const idProd of ids) {
+      for (const chatId of chatsValidos) {
+        filas.push({
+          id_tienda: idTienda,
+          id_sesion: idSesion,
+          id_programacion: idProgramacion ?? null,
+          id_producto: idProd,
+          chat_id: chatId,
+          tipo_envio: tipoEnvio,
+          estado: "pendiente",
+        });
+      }
+    }
+    try {
+      for (const lote of chunkArray(filas, 500)) {
+        const { error } = await admin.from("app_wapi_envio_log").insert(lote);
+        if (error) throw new Error(error.message);
+      }
+      console.warn(
+        `[wapi-send-products] ${ids.length} producto(s) registrados como ` +
+          `pendiente (${filas.length} fila(s)) para poder reanudar`,
       );
     } catch (e) {
       console.error(
-        `[wapi-send-products] CADENA ROTA: fallo al encolar continuación (` +
-          `${remainingIds.length} productos restantes): ` +
+        `[wapi-send-products] no se pudieron registrar los pendientes: ` +
           `${(e as Error).message ?? e}`,
       );
     }
   };
 
-  // Datos de los productos de este chunk: nombre, imagen, categoría, precio
-  // vigente, presentación base y stock disponible.
-  const infoChunk = await loadProductInfo(admin, idTienda, chunkIds);
+  // ── Datos de producto, con caché ────────────────────────────────────
+  // Se cargan por ventanas en vez de todos de golpe: así un chunk que se
+  // corta pronto no paga las consultas de históricos de productos que nunca
+  // va a tocar, y lo ya cargado se reutiliza para el resumen final.
+  const infoCache = new Map<number, ProdInfo>();
+  const infoIntentados = new Set<number>();
+  const ensureInfo = async (ids: number[]): Promise<void> => {
+    const faltan = ids.filter((id) => !infoIntentados.has(id));
+    if (faltan.length === 0) return;
+    for (const id of faltan) infoIntentados.add(id);
+    const cargado = await loadProductInfo(admin, idTienda, faltan);
+    for (const [id, info] of cargado.entries()) infoCache.set(id, info);
+  };
 
   // ── RESUMEN FINAL ───────────────────────────────────────────────────
   // Mensaje de texto con el listado completo (nombre · cantidad ·
@@ -811,31 +978,89 @@ export async function dispatchProducts(args: {
   // agrupa/reanuda tandas a partir de ella — una fila sin `id_producto` que
   // fallara dejaría la tanda "interrumpida" para siempre, porque el modo
   // reanudar descarta los logs sin producto.
-  const enviarResumenFinal = async (): Promise<number> => {
-    try {
-      // Si el envío entero cupo en un chunk reusamos lo ya cargado; si hubo
-      // varios chunks hay que releer los productos de los anteriores.
-      const infoResumen = summaryIds.every((id) => infoChunk.has(id))
-        ? infoChunk
-        : await loadProductInfo(admin, idTienda, summaryIds);
+  const prepararResumen = async (): Promise<string[]> => {
+    await ensureInfo(summaryIds);
+    const items = summaryIds
+      .map((id) => infoCache.get(id))
+      .filter((p): p is ProdInfo => !!p);
+    if (items.length < summaryIds.length) {
+      console.warn(
+        `[wapi-send-products] resumen: ${items.length}/${summaryIds.length} ` +
+          `producto(s) resueltos`,
+      );
+    }
+    return buildSummaryMessages(items);
+  };
 
-      const items = summaryIds
-        .map((id) => infoResumen.get(id))
-        .filter((p): p is ProdInfo => !!p);
-      const mensajes = buildSummaryMessages(items);
+  const entregarResumen = async (mensajes: string[]): Promise<number> => {
+    let ok = 0;
+    for (const chatId of chatsValidos) {
+      for (const texto of mensajes) {
+        if (await sendTextConReintentos(wapiSessionId, chatId, texto)) ok++;
+        // Pausa corta entre textos (anti-ban).
+        await new Promise((res) => setTimeout(res, FANOUT_PAUSE_MS));
+      }
+    }
+    return ok;
+  };
+
+  // Delega el resumen en un worker nuevo (`summary_only`). Se usa cuando el
+  // chunk llega al final con el reloj agotado: mandarlo aquí sería perderlo a
+  // mitad, que es justo lo que hacía que el resumen listara 10 productos.
+  const encolarResumen = async (): Promise<boolean> => {
+    const res = await invokeEdgeFunction(
+      admin,
+      "wapi-send-products",
+      {
+        id_sesion: idSesion,
+        summary_only: true,
+        product_ids: [],
+        destinations: effDestinations,
+        summary_product_ids: summaryIds,
+        ...(template ? { message_template: template } : {}),
+        delay_min_seconds: delayMin,
+        delay_max_seconds: delayMax,
+        tipo_envio: tipoEnvio,
+        ...(idProgramacion ? { id_programacion: idProgramacion } : {}),
+        send_summary: true,
+      },
+      "wapi-send-products/resumen",
+    );
+    if (res.ok) {
+      console.log(
+        `[wapi-send-products] resumen delegado a un worker nuevo (${res.via})`,
+      );
+    }
+    return res.ok;
+  };
+
+  const cerrarConResumen = async (): Promise<number> => {
+    if (!enviarResumen) return 0;
+    try {
+      // Sin margen ni para preparar el texto: delegar directamente.
+      const sinMargen = !summaryOnly &&
+        elapsed() + 30_000 >= WORKER_BUDGET_MS;
+      if (sinMargen && await encolarResumen()) return 0;
+
+      const mensajes = await prepararResumen();
       if (mensajes.length === 0) return 0;
 
-      let ok = 0;
-      for (const d of effDestinations) {
-        if (!d.chat_id || !/@(c|g)\.us$/.test(d.chat_id)) continue;
-        for (const texto of mensajes) {
-          if (await sendTextConReintentos(wapiSessionId, d.chat_id, texto)) ok++;
-          // Pausa corta entre textos (anti-ban).
-          await new Promise((res) => setTimeout(res, 1_500));
-        }
+      // ¿Cabe entregarlo aquí? Cada texto tarda ~6s por destino.
+      const costeMs = mensajes.length * nDestinos * (6_000 + FANOUT_PAUSE_MS) +
+        5_000;
+      if (
+        !summaryOnly && !sinMargen &&
+        elapsed() + costeMs >= WORKER_BUDGET_MS &&
+        await encolarResumen()
+      ) {
+        return 0;
       }
+
+      // Pausa tras el último producto antes del texto (anti-ban).
+      await new Promise((res) => setTimeout(res, Math.min(minMs, 5_000)));
+      const ok = await entregarResumen(mensajes);
       console.log(
-        `[wapi-send-products] resumen: ${items.length} producto(s) en ` +
+        `[wapi-send-products] resumen: ${summaryIds.length} producto(s) en ` +
           `${mensajes.length} mensaje(s) → ${ok} entrega(s) ok`,
       );
       return ok;
@@ -848,223 +1073,178 @@ export async function dispatchProducts(args: {
     }
   };
 
-  // Construir mensajes: filtrar productos sin imagen
-  const messages: Array<{
-    chatId: string;
-    type: "image";
-    content: { image: { url: string; mimetype?: string }; caption: string };
-    // metadata propia para mapear al log
-    _meta: { id_producto: number; chat_id: string };
-  }> = [];
-
-  const skipped: Array<{ id_producto: number; reason: string }> = [];
-  let seedCounter = Math.floor(Math.random() * 1000); // rotación de iconos
-  // Recorremos en el orden pedido (chunkIds), no en el que devuelva PostgREST.
-  for (const idProd of chunkIds) {
-    const p = infoChunk.get(idProd);
-    if (!p) {
-      skipped.push({ id_producto: idProd, reason: "producto no encontrado" });
-      continue;
-    }
-    if (!p.imagen || typeof p.imagen !== "string" || !p.imagen.trim()) {
-      skipped.push({ id_producto: idProd, reason: "sin imagen" });
-      continue;
-    }
-    const imageUrl = p.imagen.trim();
-    // WAPI requiere URL pública http(s). Data URLs y blobs no funcionan.
-    if (!/^https?:\/\//i.test(imageUrl)) {
-      skipped.push({
-        id_producto: idProd,
-        reason: `imagen no es URL http(s): ${imageUrl.slice(0, 40)}…`,
-      });
-      continue;
-    }
-    const caption = buildCaption(template, p, seedCounter++);
-    // Inferir mimetype desde la extensión (algunas builds de WAPI lo exigen)
-    const ext = imageUrl.split("?")[0].split(".").pop()?.toLowerCase() ?? "";
-    const mimetype =
-      ext === "png"
-        ? "image/png"
-        : ext === "webp"
-        ? "image/webp"
-        : ext === "gif"
-        ? "image/gif"
-        : "image/jpeg";
-
-    for (const d of effDestinations) {
-      if (!d.chat_id || typeof d.chat_id !== "string") continue;
-      // chatId debe acabar en @c.us (números) o @g.us (grupos)
-      if (!/@(c|g)\.us$/.test(d.chat_id)) {
-        skipped.push({
-          id_producto: idProd,
-          reason: `chat_id inválido: ${d.chat_id}`,
-        });
-        continue;
-      }
-      // Al reanudar sólo re-despachamos los pares que realmente quedaron
-      // sin enviar; el resto del producto ya llegó y no debe repetirse.
-      if (esReanudacion && !logIdPorPar.has(`${idProd}|${d.chat_id}`)) continue;
-      messages.push({
-        chatId: d.chat_id,
-        type: "image",
-        content: { image: { url: imageUrl, mimetype }, caption },
-        _meta: { id_producto: idProd, chat_id: d.chat_id },
-      });
-    }
-  }
-  if (skipped.length) {
-    console.warn(
-      `[wapi-send-products] ${skipped.length} mensajes descartados antes del envío:`,
-      JSON.stringify(skipped.slice(0, 10)),
-    );
-  }
-
-  // En modo reanudar, los productos descartados (sin imagen válida) tienen
-  // filas de log que nadie va a tocar. Si las dejáramos en `pendiente` la
-  // tanda se quedaría eternamente "interrumpida" y el botón de reanudar
-  // reaparecería sin poder avanzar nunca. Las marcamos como fallido con la
-  // razón real para que el estado sea honesto y la tanda pueda cerrarse.
-  if (esReanudacion) {
-    const idsDescartados = new Set(
-      skipped
-        .filter((s) => chunkIds.includes(s.id_producto))
-        .map((s) => s.id_producto),
-    );
-    const logsDescartados: number[] = [];
-    let razon = "Producto sin imagen pública válida";
-    for (const [key, logId] of logIdPorPar.entries()) {
-      const idProd = Number(key.split("|")[0]);
-      if (idsDescartados.has(idProd)) {
-        logsDescartados.push(logId);
-        const s = skipped.find((x) => x.id_producto === idProd);
-        if (s) razon = s.reason;
-      }
-    }
-    if (logsDescartados.length > 0) {
-      await admin
-        .from("app_wapi_envio_log")
-        .update({
-          estado: "fallido",
-          error_code: "SKIPPED",
-          error_message: `No se puede enviar: ${razon}`,
-        })
-        .in("id", logsDescartados);
-      console.warn(
-        `[wapi-send-products] REANUDAR: ${logsDescartados.length} log(s) ` +
-          `marcados como fallido por producto descartado`,
-      );
-    }
-  }
-
-  if (messages.length === 0) {
-    // Ningún producto de este chunk produjo mensajes válidos (todos sin
-    // imagen / chat_id inválido). Aún así debemos continuar con los
-    // productos restantes — si no, la cadena de chunks se rompería aquí.
-    await reinvokeRemaining();
-    // Si además éste era el último chunk, el resumen sigue tocando: los
-    // chunks anteriores sí enviaron productos.
-    const resumen = enviarResumen && remainingIds.length === 0
-      ? await enviarResumenFinal()
-      : 0;
+  // Modo sólo-resumen: esta invocación existe únicamente para entregar el
+  // texto final que el chunk anterior no alcanzó a mandar.
+  if (summaryOnly) {
+    const entregas = await cerrarConResumen();
     return {
       enviados: 0,
       fallidos: 0,
       batch_id: null,
-      skipped: true,
-      resumen_entregas: resumen,
+      mode: "summary-only",
+      resumen_entregas: entregas,
     };
   }
 
-  // Log del envío. En modo reanudar NO insertamos: reutilizamos las filas
-  // existentes (así la tanda original se completa en vez de duplicarse) y
-  // las devolvemos a `pendiente` para que la UI muestre el progreso vivo.
-  let logIdsOrdenados: Array<number | null>;
-  if (esReanudacion) {
-    logIdsOrdenados = messages.map(
-      (m) => logIdPorPar.get(`${m._meta.id_producto}|${m._meta.chat_id}`) ?? null,
-    );
-    const aReiniciar = logIdsOrdenados.filter((v): v is number => v != null);
-    if (aReiniciar.length > 0) {
-      await admin
-        .from("app_wapi_envio_log")
-        .update({
-          estado: "pendiente",
-          error_code: null,
-          error_message: null,
-        })
-        .in("id", aReiniciar);
-    }
-  } else {
-    const logRows = messages.map((m) => ({
-      id_tienda: idTienda,
-      id_sesion: idSesion,
-      id_programacion: idProgramacion ?? null,
-      id_producto: m._meta.id_producto,
-      chat_id: m._meta.chat_id,
-      tipo_envio: tipoEnvio,
-      estado: "pendiente",
-    }));
-    const { data: insertedLogs } = await admin
-      .from("app_wapi_envio_log")
-      .insert(logRows)
-      .select("id");
-    logIdsOrdenados = messages.map((_, i) => (insertedLogs ?? [])[i]?.id ?? null);
-  }
+  // ── Preparación por producto ────────────────────────────────────────
+  // Antes se construía la lista COMPLETA de mensajes y se insertaban todas
+  // las filas de log de golpe, antes de mandar nada. Si el worker moría a
+  // mitad, las filas de los productos que nunca se intentaron quedaban en
+  // `pendiente` para siempre. Ahora cada producto se prepara —y se
+  // registra— justo antes de despacharlo.
+  type Envio = {
+    idProducto: number;
+    chatId: string;
+    url: string;
+    caption: string;
+    mimetype: string;
+    logId: number | null;
+  };
 
-  // minMs / maxMs / MAX_PARALLEL_FANOUT se declararon arriba (necesarios
-  // para estimar el presupuesto de tiempo del chunk). Aquí sólo los usamos.
-
-  // Generamos un batchId único para correlación interna (no se envía al WAPI)
-  const batchId = `b_${idTienda}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
-  const logIds = logIdsOrdenados;
-
-  // Reagrupar mensajes por id_producto. Conservar el índice global para
-  // mapear correctamente al logId correspondiente.
-  type Indexed = { idx: number; msg: typeof messages[number]; logId: number | null };
-  const grouped = new Map<number, Indexed[]>();
-  for (let i = 0; i < messages.length; i++) {
-    const m = messages[i];
-    const arr = grouped.get(m._meta.id_producto) ?? [];
-    arr.push({ idx: i, msg: m, logId: logIds[i] ?? null });
-    grouped.set(m._meta.id_producto, arr);
-  }
-  const productOrder = Array.from(grouped.keys());
-
-  if (messages[0]) {
-    const m0 = messages[0];
-    console.log(
-      `[wapi-send-products] batchId=${batchId} session=${wapiSessionId} ` +
-        `productos=${productOrder.length} msgs=${messages.length} ` +
-        `fanout=${MAX_PARALLEL_FANOUT} delay=[${minMs / 1000}s..${maxMs / 1000}s] ` +
-        `sample chatId=${m0.chatId} captionLen=${m0.content.caption.length}`,
-    );
-  }
-
+  const skipped: Array<{ id_producto: number; reason: string }> = [];
+  let seedCounter = Math.floor(Math.random() * 1000); // rotación de iconos
   let enviados = 0;
   let fallidos = 0;
+  let productosDespachados = 0;
+  let mensajesIntentados = 0;
+  // batchId para correlación interna (no se envía al WAPI).
+  const batchId = `b_${idTienda}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
 
-  // Helper: dispara UN mensaje y actualiza su log row. Devuelve success bool.
+  // Descarta un producto (sin imagen, imagen no pública…). Al reanudar hay
+  // que marcar sus filas como fallido: si quedaran en `pendiente` la tanda se
+  // vería "interrumpida" para siempre y el botón de reanudar reaparecería sin
+  // poder avanzar nunca.
+  const descartar = async (idProd: number, razon: string): Promise<void> => {
+    skipped.push({ id_producto: idProd, reason: razon });
+    if (!esReanudacion) return;
+    const logs = chatsValidos
+      .map((c) => logIdPorPar.get(`${idProd}|${c}`))
+      .filter((v): v is number => v != null);
+    if (logs.length === 0) return;
+    await admin.from("app_wapi_envio_log").update({
+      estado: "fallido",
+      error_code: "SKIPPED",
+      error_message: `No se puede enviar: ${razon}`,
+    }).in("id", logs);
+  };
+  // Valida un producto, compone el caption y registra sus filas de log.
+  // Devuelve los envíos a ejecutar, o `null` si el producto no se puede
+  // mandar (ya quedó anotado en `skipped`).
+  const prepararProducto = async (idProd: number): Promise<Envio[] | null> => {
+    const p = infoCache.get(idProd);
+    if (!p) {
+      await descartar(idProd, "producto no encontrado");
+      return null;
+    }
+    if (!p.imagen || typeof p.imagen !== "string" || !p.imagen.trim()) {
+      await descartar(idProd, "sin imagen");
+      return null;
+    }
+    const imageUrl = p.imagen.trim();
+    // WAPI requiere URL pública http(s). Data URLs y blobs no funcionan.
+    if (!/^https?:\/\//i.test(imageUrl)) {
+      await descartar(
+        idProd,
+        `imagen no es URL http(s): ${imageUrl.slice(0, 40)}…`,
+      );
+      return null;
+    }
+    const caption = buildCaption(template, p, seedCounter++);
+    // Inferir mimetype desde la extensión (algunas builds de WAPI lo exigen).
+    const ext = imageUrl.split("?")[0].split(".").pop()?.toLowerCase() ?? "";
+    const mimetype = ext === "png"
+      ? "image/png"
+      : ext === "webp"
+      ? "image/webp"
+      : ext === "gif"
+      ? "image/gif"
+      : "image/jpeg";
+
+    // Al reanudar sólo se re-despachan los pares que quedaron sin enviar; el
+    // resto del producto ya llegó a destino y no debe repetirse.
+    const chats = esReanudacion
+      ? chatsValidos.filter((c) => logIdPorPar.has(`${idProd}|${c}`))
+      : chatsValidos;
+    if (chats.length === 0) return null;
+    // Filas de log. Al reanudar se reutilizan las existentes (así la tanda
+    // original se completa en vez de duplicarse) y se devuelven a
+    // `pendiente` para que la UI muestre el progreso vivo.
+    let logIds: Array<number | null>;
+    if (esReanudacion) {
+      logIds = chats.map((c) => logIdPorPar.get(`${idProd}|${c}`) ?? null);
+      const aReiniciar = logIds.filter((v): v is number => v != null);
+      if (aReiniciar.length > 0) {
+        await admin.from("app_wapi_envio_log")
+          .update({ estado: "pendiente", error_code: null, error_message: null })
+          .in("id", aReiniciar);
+      }
+    } else {
+      const filas = chats.map((c) => ({
+        id_tienda: idTienda,
+        id_sesion: idSesion,
+        id_programacion: idProgramacion ?? null,
+        id_producto: idProd,
+        chat_id: c,
+        tipo_envio: tipoEnvio,
+        estado: "pendiente",
+      }));
+      const { data: insertados, error: logErr } = await admin
+        .from("app_wapi_envio_log")
+        .insert(filas)
+        .select("id");
+      if (logErr) {
+        // Sin log el envío seguiría funcionando, pero la UI no vería nada:
+        // preferimos avisar y continuar sin logId antes que abortar el chunk.
+        console.error(
+          `[wapi-send-products] no se pudo registrar el log del producto ` +
+            `${idProd}: ${logErr.message}`,
+        );
+      }
+      logIds = chats.map((_, i) => (insertados ?? [])[i]?.id ?? null);
+    }
+
+    return chats.map((c, i) => ({
+      idProducto: idProd,
+      chatId: c,
+      url: imageUrl,
+      caption,
+      mimetype,
+      logId: logIds[i] ?? null,
+    }));
+  };
+
+  console.log(
+    `[wapi-send-products] batchId=${batchId} session=${wapiSessionId} ` +
+      `productos=${effProductIds.length} destinos=${chatsValidos.length} ` +
+      `delay=[${minMs / 1000}s..${maxMs / 1000}s] fanout=serie ` +
+      `presupuesto=${Math.round(WORKER_BUDGET_MS / 1000)}s` +
+      (esReanudacion ? " modo=reanudar" : ""),
+  );
+  /** Resultado de un envío. `pacing` significa "WAPI pide una pausa que no
+   *  cabe en este worker": el chunk se corta y lo pendiente se reanuda. */
+  type EnvioResultado = { ok: boolean; pacing?: { retryAfterSeconds: number } };
+
+  // Dispara UN mensaje y actualiza su fila de log.
   //
   // Reintenta hasta RETRY_MAX_ATTEMPTS con backoff exponencial + jitter
   // mientras el error sea transitorio. El backoff también funciona como
   // anti-ban: si la sesión WAPI está rechazando conexiones, insistir de
   // inmediato sólo empeora las cosas.
-  const dispatchOne = async (it: Indexed): Promise<boolean> => {
-    const m = it.msg;
+  const dispatchOne = async (e: Envio): Promise<EnvioResultado> => {
     let ultimoCode = "SEND_ERROR";
     let ultimoMsg = "Error desconocido";
 
     for (let intento = 1; intento <= RETRY_MAX_ATTEMPTS; intento++) {
       const single = await wapi.sendImage(
         wapiSessionId,
-        m.chatId,
-        m.content.image.url,
-        m.content.caption,
-        m.content.image.mimetype,
+        e.chatId,
+        e.url,
+        e.caption,
+        e.mimetype,
       );
 
       if (single.success) {
-        if (it.logId) {
+        if (e.logId) {
           await admin.from("app_wapi_envio_log")
             .update({
               estado: "enviado",
@@ -1077,94 +1257,224 @@ export async function dispatchProducts(args: {
                 ? `Enviado tras ${intento} intentos`
                 : null,
             })
-            .eq("id", it.logId);
+            .eq("id", e.logId);
         }
         if (intento > 1) {
           console.log(
-            `[wapi-send-products] recuperado idx=${it.idx} chat=${m.chatId} ` +
-              `en el intento ${intento}`,
+            `[wapi-send-products] recuperado prod=${e.idProducto} ` +
+              `chat=${e.chatId} en el intento ${intento}`,
           );
         }
-        return true;
+        return { ok: true };
       }
 
       ultimoCode = single.error?.code ?? "SEND_ERROR";
       ultimoMsg = single.error?.message ?? "Error desconocido";
+      // ── 429 con pausa pedida por el server ─────────────────────────────
+      // Dos casos, ambos con `retryAfterSeconds`: el rate limiter genérico
+      // y el SEND_PACING (breaker por fallos consecutivos). Insistir antes
+      // del plazo sólo alarga el cooldown, así que se respeta o se corta.
+      const pidePausaSeg = single.error?.retryAfterSeconds ??
+        (ultimoCode === "SEND_PACING_LIMITED" ? 60 : undefined);
+      if (pidePausaSeg && pidePausaSeg > 0) {
+        const esperaMs = pidePausaSeg * 1000;
+        const cabe = intento < RETRY_MAX_ATTEMPTS &&
+          esperaMs <= PACING_WAIT_MAX_MS &&
+          elapsed() + esperaMs + 20_000 < WORKER_BUDGET_MS;
+        console.error(
+          `[wapi-send-products] prod=${e.idProducto} chat=${e.chatId} ` +
+            `${ultimoCode}: el server pide ${pidePausaSeg}s` +
+            (cabe ? " — esperando" : " — se corta el chunk y se reanuda luego"),
+        );
+        if (!cabe) {
+          // El log queda en `pendiente` a propósito: es trabajo por hacer,
+          // no un fallo. La reanudación lo recogerá.
+          return { ok: false, pacing: { retryAfterSeconds: pidePausaSeg } };
+        }
+        await new Promise((res) => setTimeout(res, esperaMs));
+        continue;
+      }
 
+      // ── Backoff normal ────────────────────────────────────────────────
+      const backoffMs = RETRY_BASE_MS * Math.pow(2, intento - 1);
+      // No arrancar una espera que nos va a dejar sin worker: más vale
+      // marcar el fallo ya y dejar que el resto del chunk siga.
+      const sinTiempo = elapsed() + backoffMs + 15_000 >= WORKER_BUDGET_MS;
       const puedeReintentar = intento < RETRY_MAX_ATTEMPTS &&
-        esReintentable(ultimoCode);
+        esReintentable(ultimoCode) && !sinTiempo;
       console.error(
-        `[wapi-send-products] fallido idx=${it.idx} chat=${m.chatId} ` +
+        `[wapi-send-products] fallido prod=${e.idProducto} chat=${e.chatId} ` +
           `intento ${intento}/${RETRY_MAX_ATTEMPTS} (${ultimoCode}): ${ultimoMsg}` +
-          (puedeReintentar ? " — reintentando" : ""),
+          (puedeReintentar
+            ? " — reintentando"
+            : sinTiempo
+            ? " — sin presupuesto para reintentar"
+            : ""),
       );
       if (!puedeReintentar) break;
 
       // Backoff exponencial (4s, 8s…) con jitter ±25% para no sincronizar
-      // los reintentos de todo un sub-lote contra el mismo instante.
-      const base = RETRY_BASE_MS * Math.pow(2, intento - 1);
-      const espera = Math.round(base * (0.75 + Math.random() * 0.5));
-      await new Promise((res) => setTimeout(res, espera));
+      // los reintentos contra el mismo instante.
+      await new Promise((res) =>
+        setTimeout(res, Math.round(backoffMs * (0.75 + Math.random() * 0.5)))
+      );
     }
 
-    if (it.logId) {
+    if (e.logId) {
       await admin.from("app_wapi_envio_log")
         .update({
           estado: "fallido",
           error_code: ultimoCode,
           error_message: `${ultimoMsg} (tras ${RETRY_MAX_ATTEMPTS} intentos)`,
         })
-        .eq("id", it.logId);
+        .eq("id", e.logId);
     }
-    return false;
+    return { ok: false };
   };
 
-  for (let p = 0; p < productOrder.length; p++) {
-    const idProd = productOrder[p];
-    const targets = grouped.get(idProd) ?? [];
+  // ── BUCLE PRINCIPAL ──────────────────────────────────────────────────
+  // Un producto a la vez y, dentro de cada producto, un destino a la vez.
+  // Antes de cada producto se comprueba si CABE en lo que queda de worker;
+  // si no cabe, el resto se corta y se encola en un worker nuevo.
+  let ventanaFin = 0;
+  for (let i = 0; i < effProductIds.length; i++) {
+    const sinPresupuesto = productosDespachados > 0
+      ? elapsed() + reservaProductoMs() > WORKER_BUDGET_MS
+      : elapsed() > WORKER_BUDGET_MS; // el primero siempre se intenta
+    if (sinPresupuesto) {
+      remainingIds = effProductIds.slice(i);
+      console.log(
+        `[wapi-send-products] corte por presupuesto a los ` +
+          `${Math.round(elapsed() / 1000)}s: ${productosDespachados} ok, ` +
+          `${remainingIds.length} para el worker siguiente`,
+      );
+      break;
+    }
+    // Precarga por ventanas: una consulta cada WINDOW_SIZE productos, en vez
+    // de una por producto (lento) o una sola gigante (se trunca).
+    if (i >= ventanaFin) {
+      const fin = Math.min(effProductIds.length, i + WINDOW_SIZE);
+      await ensureInfo(effProductIds.slice(i, fin));
+      ventanaFin = fin;
+    }
+    const idProd = effProductIds[i];
+    const envios = await prepararProducto(idProd);
+    if (!envios || envios.length === 0) continue;
 
-    // Dentro del mismo producto, lanzar en sub-lotes paralelos.
-    for (let off = 0; off < targets.length; off += MAX_PARALLEL_FANOUT) {
-      const slice = targets.slice(off, off + MAX_PARALLEL_FANOUT);
-      const results = await Promise.allSettled(slice.map(dispatchOne));
-      for (const r of results) {
-        if (r.status === "fulfilled" && r.value) enviados++;
-        else fallidos++;
+    const inicioProducto = Date.now();
+    let corteDeProducto = false;
+    // EN SERIE: la sesión WAPI es UNA instancia de Puppeteer. Dos envíos
+    // simultáneos se pisan y devuelven NETWORK_ERROR — por eso a un solo
+    // grupo iba perfecto y a cuatro se caía la mitad.
+    for (let k = 0; k < envios.length; k++) {
+      const r = await dispatchOne(envios[k]);
+      mensajesIntentados++;
+      if (r.ok) enviados++;
+      else if (!r.pacing) fallidos++;
+      if (r.pacing) {
+        // WAPI pide una pausa larga: cortar aquí y reanudar más tarde.
+        pacingAbort = r.pacing;
+        remainingIds = effProductIds.slice(i + 1);
+        corteDeProducto = true;
+        break;
       }
-      // Mini-pausa entre sub-lotes del mismo producto (1s) para no abrir
-      // demasiadas conexiones simultáneas al WAPI.
-      if (off + MAX_PARALLEL_FANOUT < targets.length) {
-        await new Promise((res) => setTimeout(res, 1_000));
+      // Guarda-raíl por producto: si UN producto se está comiendo el worker
+      // (imagen enorme, sesión pesada), se abandonan sus destinos restantes
+      // en vez de arrastrar toda la cadena. Quedan como `fallido`, así que
+      // el botón "reanudar" de la app los recoge.
+      const excedido = Date.now() - inicioProducto > PRODUCT_MAX_MS ||
+        elapsed() > WORKER_BUDGET_MS;
+      if (excedido && k < envios.length - 1) {
+        const restantes = envios.slice(k + 1);
+        const logs = restantes
+          .map((x) => x.logId)
+          .filter((v): v is number => v != null);
+        if (logs.length > 0) {
+          await admin.from("app_wapi_envio_log")
+            .update({
+              estado: "fallido",
+              error_code: "PRODUCT_TIMEOUT",
+              error_message:
+                `Producto abandonado tras ${Math.round((Date.now() - inicioProducto) / 1000)}s`,
+            })
+            .in("id", logs);
+        }
+        fallidos += restantes.length;
+        console.warn(
+          `[wapi-send-products] prod=${idProd} agotó su ventana: ` +
+            `${restantes.length} destino(s) sin enviar`,
+        );
+        corteDeProducto = true;
+        break;
+      }
+      // Pausa corta entre destinos del mismo producto: da margen a que la
+      // sesión libere el envío anterior y evita ráfagas contra el limiter.
+      if (k < envios.length - 1) {
+        await new Promise((res) => setTimeout(res, FANOUT_PAUSE_MS));
       }
     }
 
-    // Delay aleatorio entre productos (no después del último).
-    if (p < productOrder.length - 1) {
+    // Coste real del producto: alimenta `reservaProductoMs()` para que la
+    // decisión de cortar use medidas de ESTE envío, no una estimación fija.
+    peorEnvioMs = Math.max(peorEnvioMs, Date.now() - inicioProducto);
+    productosDespachados++;
+    if (pacingAbort) break;
+
+    // Delay aleatorio entre productos (anti-ban). No tras el último, ni si
+    // no cabe: mejor guardar el tiempo para encolar la continuación.
+    if (i < effProductIds.length - 1 && !corteDeProducto) {
       const jitter = minMs + Math.floor(Math.random() * (maxMs - minMs));
-      await new Promise((res) => setTimeout(res, jitter));
+      if (elapsed() + jitter < WORKER_BUDGET_MS) {
+        await new Promise((res) => setTimeout(res, jitter));
+      }
     }
   }
 
-  // Encolar el siguiente chunk (si quedaron productos fuera del presupuesto
-  // de tiempo). Cada continuación corre en su propio worker con 400s frescos.
-  await reinvokeRemaining();
-
-  // Resumen final: sólo el último chunk de la cadena lo manda.
-  let resumenEntregas = 0;
-  if (enviarResumen && remainingIds.length === 0) {
-    // Pequeña pausa tras el último producto antes del texto (anti-ban).
-    await new Promise((res) => setTimeout(res, minMs));
-    resumenEntregas = await enviarResumenFinal();
+  // ── CIERRE ───────────────────────────────────────────────────────────
+  // ORDEN CRÍTICO: primero la continuación, después el resumen. Al revés,
+  // si el resumen se come lo que queda de worker la cadena muere y los
+  // productos restantes no se envían nunca (era el bug de los 4 grupos).
+  let continuacionOk = false;
+  if (pacingAbort) {
+    // WAPI está en cooldown: encadenar sería chocar con el mismo 429 desde
+    // un worker nuevo. Se registran los pendientes para reanudar después.
+    console.warn(
+      `[wapi-send-products] cortado por pacing ` +
+        `(${pacingAbort.retryAfterSeconds}s): ${remainingIds.length} ` +
+        `producto(s) quedan pendientes de reanudar`,
+    );
+    await registrarPendientes(remainingIds);
+  } else if (remainingIds.length > 0) {
+    continuacionOk = await reinvokeRemaining();
+    if (!continuacionOk) await registrarPendientes(remainingIds);
   }
+
+  // El resumen sólo lo manda el ÚLTIMO chunk de la cadena. `cerrarConResumen`
+  // decide por sí mismo si le cabe aquí o lo delega a un worker nuevo.
+  const esUltimoChunk = remainingIds.length === 0 && !pacingAbort;
+  const resumenEntregas = esUltimoChunk ? await cerrarConResumen() : 0;
+
+  console.log(
+    `[wapi-send-products] chunk cerrado en ${Math.round(elapsed() / 1000)}s: ` +
+      `${productosDespachados} producto(s), ${mensajesIntentados} mensaje(s) ` +
+      `(${enviados} ok / ${fallidos} fallidos), ${skipped.length} descartado(s), ` +
+      `restan ${remainingIds.length}`,
+  );
 
   return {
     enviados,
     fallidos,
     batch_id: batchId,
-    mode: "fanout-per-product",
-    fanout: MAX_PARALLEL_FANOUT,
-    chunk_size: chunkIds.length,
+    mode: "serie-por-producto",
+    destinos: chatsValidos.length,
+    chunk_size: productosDespachados,
+    mensajes: mensajesIntentados,
+    skipped,
     remaining: remainingIds.length,
+    continuacion_encolada: continuacionOk,
+    ...(pacingAbort
+      ? { pacing_retry_after_seconds: pacingAbort.retryAfterSeconds }
+      : {}),
     resumen_entregas: resumenEntregas,
   };
 }
@@ -1200,13 +1510,28 @@ export async function handleSendProducts(req: Request): Promise<Response> {
     ? body.resume_log_ids.map(Number).filter((n) => Number.isFinite(n))
     : [];
   const esReanudacion = resumeLogIds.length > 0;
+  // Invocación interna que sólo manda el resumen (la lanza el último chunk
+  // cuando no le queda worker para el texto). Ver `SendBody.summary_only`.
+  const soloResumen = body.summary_only === true;
+  const summaryProductIds = Array.isArray(body.summary_product_ids)
+    ? body.summary_product_ids.map(Number).filter((n) => Number.isFinite(n))
+    : [];
 
   // Al reanudar, product_ids/destinations se derivan de los propios logs, así
   // que sólo exigimos id_sesion + la lista de logs a reintentar.
   if (!Number.isFinite(idSesion)) {
     return errorResponse("id_sesion es obligatorio", 400);
   }
-  if (!esReanudacion && (productIds.length === 0 || destinations.length === 0)) {
+  if (soloResumen) {
+    if (destinations.length === 0 || summaryProductIds.length === 0) {
+      return errorResponse(
+        "summary_only requiere destinations[] y summary_product_ids[]",
+        400,
+      );
+    }
+  } else if (
+    !esReanudacion && (productIds.length === 0 || destinations.length === 0)
+  ) {
     return errorResponse(
       "id_sesion, product_ids[] y destinations[] son obligatorios",
       400,
@@ -1233,17 +1558,19 @@ export async function handleSendProducts(req: Request): Promise<Response> {
   // entre mensajes). Respondemos inmediatamente al cliente y procesamos el
   // batch en segundo plano vía EdgeRuntime.waitUntil(). El usuario podrá
   // seguir trabajando en la app y revisar el progreso en el historial.
-  const totalMensajes = esReanudacion
+  const totalMensajes = soloResumen
+    ? summaryProductIds.length
+    : esReanudacion
     ? resumeLogIds.length
     : productIds.length * destinations.length;
-  // Con fan-out paralelo por producto, el tiempo de pared depende del
-  // número de productos (no del total de mensajes): un delay aleatorio
-  // se aplica ENTRE productos. Sub-lotes paralelos añaden ~1s extra.
+  // El envío es EN SERIE por destino, con un delay aleatorio entre productos.
+  // Estimado ≈ (nº productos - 1) × delay medio + el tiempo de los envíos.
   const productosEstimados = esReanudacion
     ? Math.max(1, Math.ceil(resumeLogIds.length / Math.max(1, destinations.length)))
     : productIds.length;
-  const estimadoSeg = Math.round(
-    Math.max(0, productosEstimados - 1) * ((delayMin + delayMax) / 2),
+  const estimadoSeg = soloResumen ? 30 : Math.round(
+    Math.max(0, productosEstimados - 1) * ((delayMin + delayMax) / 2) +
+      productosEstimados * Math.max(1, destinations.length) * 7,
   );
 
   const job = dispatchProducts({
@@ -1258,14 +1585,10 @@ export async function handleSendProducts(req: Request): Promise<Response> {
     delayMax,
     tipoEnvio: body.tipo_envio ?? "manual",
     idProgramacion: body.id_programacion,
-    enviarResumen: body.send_summary ?? true,
-    ...(Array.isArray(body.summary_product_ids) &&
-      body.summary_product_ids.length > 0
-      ? {
-        summaryProductIds: body.summary_product_ids
-          .map(Number)
-          .filter((n) => Number.isFinite(n)),
-      }
+    enviarResumen: soloResumen ? true : (body.send_summary ?? true),
+    ...(soloResumen ? { summaryOnly: true } : {}),
+    ...(summaryProductIds.length > 0
+      ? { summaryProductIds }
       : {}),
     ...(esReanudacion ? { resumeLogIds } : {}),
   }).catch((err) => {
@@ -1288,25 +1611,29 @@ export async function handleSendProducts(req: Request): Promise<Response> {
   return okResponse({
     queued: true,
     resumed: esReanudacion,
+    summary_only: soloResumen,
     total_mensajes_estimados: totalMensajes,
     tiempo_estimado_segundos: estimadoSeg,
     delay_segundos: { min: delayMin, max: delayMax },
-    message: esReanudacion
+    message: soloResumen
+      ? `Resumen en cola (${summaryProductIds.length} producto(s)).`
+      : esReanudacion
       ? `Reanudando envío: ${totalMensajes} mensaje(s) pendientes. ` +
         `Tiempo estimado: ~${Math.max(1, Math.ceil(estimadoSeg / 60))} min. ` +
         `Revisa el historial para ver el progreso.`
       : `Envío iniciado en segundo plano. ${totalMensajes} mensajes en cola. ` +
-        `Tiempo estimado: ~${Math.ceil(estimadoSeg / 60)} min. ` +
+        `Tiempo estimado: ~${Math.max(1, Math.ceil(estimadoSeg / 60))} min. ` +
         `Puedes seguir usando la app — revisa el historial para ver el progreso.`,
   });
 }
 
 // Sólo registrar el listener cuando este archivo es el entry-point real
 // de la edge function (i.e. está siendo servido como `/wapi-send-products`).
-// Cuando otro módulo lo IMPORTA (p.ej. `wapi-cron-dispatch` para reusar
-// `dispatchProducts`), `import.meta.main` es false y NO se registra el
+// Si algún otro módulo llegara a importar `dispatchProducts` o
+// `handleSendProducts`, `import.meta.main` es false y NO se registra el
 // listener — así evitamos que un Deno.serve fantasma intercepte requests
-// destinadas a la otra función.
+// destinadas a la otra función. (Hoy nadie lo importa: `wapi-cron-dispatch`
+// delega por HTTP para conseguir un worker con presupuesto fresco.)
 if (import.meta.main) {
   Deno.serve(handleSendProducts);
 }
