@@ -10,6 +10,7 @@ import '../services/printer_manager.dart';
 import '../services/wifi_printer_service.dart';
 import '../services/export_service.dart';
 import '../utils/ticket_text_utils.dart';
+import '../utils/operation_client_utils.dart';
 
 class InventoryOperationsScreen extends StatefulWidget {
   const InventoryOperationsScreen({super.key});
@@ -2443,7 +2444,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
     if (especificos is Map<String, dynamic>) {
       final clienteInfo = especificos['cliente_info'];
-      final clienteDesdeObs = _extractClienteFromObservaciones(observaciones);
+      final clienteDesdeObs = extractClienteFromObservaciones(observaciones);
 
       return Container(
         padding: const EdgeInsets.all(12),
@@ -2744,43 +2745,12 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
   Map<String, dynamic>? _extractDetallesEspecificos(
     Map<String, dynamic> operation,
-  ) {
-    final detalles = operation['detalles'];
-    if (detalles is Map<String, dynamic>) {
-      final esp = detalles['detalles_especificos'];
-      if (esp is Map<String, dynamic>) return esp;
-      if (esp is Map) return Map<String, dynamic>.from(esp);
-    }
-    return null;
-  }
-
-  /// Nombre del cliente embebido en las observaciones.
-  /// La venta por acuerdo registra `Cliente: <nombre>. Total: $X.` y la venta
-  /// desde orden usa `Cliente: <nombre>\nProductos:...`, porque en ambos casos
-  /// la venta va sin `id_cliente`.
-  static final RegExp _clienteObsRegex = RegExp(
-    r'Cliente:\s*([^\n\r]*?)\s*(?:\.\s*Total\s*:|\.\s*$|[\n\r]|$)',
-    caseSensitive: false,
-  );
-
-  String? _extractClienteFromObservaciones(dynamic observaciones) {
-    final obs = observaciones?.toString() ?? '';
-    if (obs.isEmpty) return null;
-    final nombre = _clienteObsRegex.firstMatch(obs)?.group(1)?.trim();
-    if (nombre == null || nombre.isEmpty) return null;
-    return nombre;
-  }
+  ) => extractDetallesEspecificos(operation);
 
   /// Cliente de la operación: el registrado en la venta y, si no hay
   /// (venta por acuerdo), el que quedó escrito en las observaciones.
-  String? _resolveClienteNombre(Map<String, dynamic> operation) {
-    final registrado =
-        _extractDetallesEspecificos(operation)?['nombre_cliente']
-            ?.toString()
-            .trim();
-    if (registrado != null && registrado.isNotEmpty) return registrado;
-    return _extractClienteFromObservaciones(operation['observaciones']);
-  }
+  String? _resolveClienteNombre(Map<String, dynamic> operation) =>
+      resolveOperationClienteNombre(operation);
 
   List<Widget> _buildOperationMetaSection(Map<String, dynamic> operation) {
     final esp = _extractDetallesEspecificos(operation);

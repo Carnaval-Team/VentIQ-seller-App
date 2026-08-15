@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/ticket_text_utils.dart';
+import '../utils/operation_client_utils.dart';
 
 /// Servicio para impresoras conectadas por WiFi/Red
 class WiFiPrinterService {
@@ -476,6 +477,14 @@ class WiFiPrinterService {
     
     final estado = operation['estado_nombre'] ?? operation['estado'] ?? 'N/A';
     bytes += line('Estado: $estado', styles: PosStyles(align: PosAlign.left));
+
+    // En la venta por acuerdo el cliente viaja en las observaciones
+    final clienteNombre = resolveOperationClienteNombre(operation);
+    if (clienteNombre != null) {
+      for (final wrapped in wrapTicketText('Cliente: $clienteNombre')) {
+        bytes += line(wrapped, styles: PosStyles(align: PosAlign.left));
+      }
+    }
     
     if (operation['fecha_operacion'] != null) {
       final fecha = DateTime.parse(operation['fecha_operacion'].toString());
