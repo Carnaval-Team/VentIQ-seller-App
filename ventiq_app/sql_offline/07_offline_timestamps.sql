@@ -42,9 +42,18 @@ BEGIN
     WHERE client_uuid = p_client_uuid AND tipo = 'apertura_turno';
 
     IF v_existing IS NOT NULL THEN
-        RETURN jsonb_build_object(
-            'status', 'success', 'id_turno', v_existing, 'idempotent', true
-        );
+        -- Solo reutilizar si el turno sigue abierto; si ya cerró, crear uno nuevo.
+        IF EXISTS (
+            SELECT 1 FROM app_dat_caja_turno
+            WHERE id = v_existing AND estado = 1
+        ) THEN
+            RETURN jsonb_build_object(
+                'status', 'success', 'id_turno', v_existing, 'idempotent', true
+            );
+        END IF;
+
+        DELETE FROM public.app_dat_operacion_offline_idempotencia
+        WHERE client_uuid = p_client_uuid AND tipo = 'apertura_turno';
     END IF;
 
     SELECT id INTO v_turno_abierto

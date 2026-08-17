@@ -36,6 +36,7 @@ class DeviceOfflinePrepService {
     SyncModule.promotions,
     SyncModule.categories,
     SyncModule.products,
+    SyncModule.layouts,
     SyncModule.orders,
     SyncModule.turno,
     SyncModule.egresos,

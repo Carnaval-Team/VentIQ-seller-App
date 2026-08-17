@@ -9,6 +9,7 @@ import '../services/warehouse_service.dart';
 import '../services/inventory_service.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/store_config_service.dart';
 import '../services/tpv_service.dart';
 import '../services/printer_manager.dart';
 import '../services/wifi_printer_service.dart';
@@ -37,12 +38,21 @@ class _InventoryExtractionBySaleScreenState
   static String _lastCliente = '';
   static String _lastObservaciones = '';
 
+  // Valores del cliente/observaciones de la venta actual para imprimir el ticket
+  // (se capturan antes de limpiar los controladores).
+  String _lastClientNameForPrint = '';
+  String _lastObservationsForPrint = '';
+
   List<Map<String, dynamic>> _selectedProducts = [];
   WarehouseZone? _selectedSourceLocation;
   bool _isLoading = false;
   bool _showDescriptionInSelectors = false;
   bool _isGeneratingOffer = false;
   String _offerCurrencyCode = 'CUP';
+
+  // Configuración de impresión de la tienda
+  List<String> _ticketsAImprimir = ['cliente', 'almacen'];
+  Map<String, int> _copiasPorTicket = {'cliente': 1, 'almacen': 1};
 
   // Motivos de venta
   List<Map<String, dynamic>> _motivoVentaOptions = [];
@@ -70,6 +80,29 @@ class _InventoryExtractionBySaleScreenState
     _loadMotivoVentaOptions();
     _loadMedioPagoOptions();
     _loadTPVOptions();
+    _loadStorePrintConfig();
+  }
+
+  Future<void> _loadStorePrintConfig() async {
+    try {
+      final userPrefs = UserPreferencesService();
+      final userData = await userPrefs.getUserData();
+      final idTienda = userData['idTienda'] as int?;
+      if (idTienda == null) return;
+
+      final tickets = await StoreConfigService.getTicketsAImprimir(idTienda);
+      final copias = await StoreConfigService.getCopiasPorTicket(idTienda);
+
+      if (mounted) {
+        setState(() {
+          _ticketsAImprimir = tickets.isNotEmpty ? tickets : ['cliente', 'almacen'];
+          _copiasPorTicket = copias;
+        });
+      }
+      print('🖨️ Configuración de impresión cargada: tickets=$_ticketsAImprimir, copias=$_copiasPorTicket');
+    } catch (e) {
+      print('❌ Error cargando configuración de impresión: $e');
+    }
   }
 
   void _loadPersistedValues() {
@@ -529,6 +562,10 @@ class _InventoryExtractionBySaleScreenState
   }
 
   Future<void> _submitExtraction() async {
+    // Reiniciar valores del ticket de la venta anterior
+    _lastClientNameForPrint = '';
+    _lastObservationsForPrint = '';
+
     if (!_formKey.currentState!.validate()) return;
     if (_selectedProducts.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -733,6 +770,10 @@ class _InventoryExtractionBySaleScreenState
         }
 
         if (mounted) {
+          // Capturar cliente/observaciones para el ticket antes de limpiar
+          _lastClientNameForPrint = _clienteController.text;
+          _lastObservationsForPrint = _observacionesController.text;
+
           // Limpiar campos de cliente y observaciones
           _clienteController.clear();
           _observacionesController.clear();
@@ -1815,38 +1856,57 @@ class _InventoryExtractionBySaleScreenState
       final profile = await CapabilityProfile.load();
       final generator = Generator(PaperSize.mm58, profile);
 
-      // ========== IMPRIMIR COPIA 1: COMPROBANTE PRINCIPAL ==========
-      print('📄 Imprimiendo copia 1: COMPROBANTE PRINCIPAL');
-      List<int> bytes1 = _generateExtractionTicket(generator, copyNumber: 1);
-      bool printed1 = await wifiService.sendRawBytes(bytes1);
+      // Imprimir según configuración de tienda
+      final ticketsToPrint =
+          _ticketsAImprimir.isNotEmpty ? _ticketsAImprimir : ['cliente'];
+      var allPrinted = true;
 
-      if (!printed1) {
-        await wifiService.disconnect();
-        if (!mounted) return;
-        Navigator.pop(context);
-        _showErrorDialog('Error', 'No se pudo imprimir la primera copia');
-        return;
+      for (var t = 0; t < ticketsToPrint.length; t++) {
+        final ticketType = ticketsToPrint[t];
+        final copies = _copiasPorTicket[ticketType] ?? 1;
+
+        for (var c = 0; c < copies; c++) {
+          print('📄 Imprimiendo $ticketType copia ${c + 1}/$copies');
+          final bytes = _generateExtractionTicket(
+            generator,
+            ticketType: ticketType,
+          );
+          final printed = await wifiService.sendRawBytes(bytes);
+
+          if (!printed) {
+            allPrinted = false;
+            await wifiService.disconnect();
+            if (!mounted) return;
+            Navigator.pop(context);
+            _showErrorDialog(
+              'Error',
+              'No se pudo imprimir el ticket de ${_ticketDisplayName(ticketType)}',
+            );
+            return;
+          }
+
+          // Pausa entre copias del mismo ticket
+          if (c < copies - 1) {
+            await Future.delayed(const Duration(seconds: 2));
+          }
+        }
+
+        // Pausa entre tickets distintos
+        if (t < ticketsToPrint.length - 1) {
+          await Future.delayed(const Duration(seconds: 3));
+        }
       }
-
-      // Esperar entre impresiones
-      print('⏳ Esperando 3 segundos antes de segunda copia...');
-      await Future.delayed(const Duration(seconds: 3));
-
-      // ========== IMPRIMIR COPIA 2: COMPROBANTE ALMACÉN ==========
-      print('🏭 Imprimiendo copia 2: COMPROBANTE ALMACÉN');
-      List<int> bytes2 = _generateExtractionTicket(generator, copyNumber: 2);
-      bool printed2 = await wifiService.sendRawBytes(bytes2);
 
       await wifiService.disconnect();
 
       if (!mounted) return;
       Navigator.pop(context);
 
-      if (printed1 && printed2) {
-        print('✅ Ambas copias impresas exitosamente');
+      if (allPrinted) {
+        print('✅ Copias impresas exitosamente');
         _showSuccessDialog(
           '¡Impreso!',
-          'Ambas copias se imprimieron correctamente por WiFi',
+          'Las copias configuradas se imprimieron correctamente por WiFi',
         );
         Future.delayed(const Duration(seconds: 2), () {
           if (mounted) {
@@ -1854,12 +1914,6 @@ class _InventoryExtractionBySaleScreenState
             Navigator.pop(context); // Cerrar pantalla
           }
         });
-      } else {
-        print('⚠️ Solo se imprimió la primera copia');
-        _showErrorDialog(
-          'Advertencia',
-          'Solo se pudo imprimir la primera copia',
-        );
       }
     } catch (e) {
       print('❌ Error imprimiendo por WiFi: $e');
@@ -1869,6 +1923,17 @@ class _InventoryExtractionBySaleScreenState
         } catch (_) {}
         _showErrorDialog('Error WiFi', 'Error al imprimir por WiFi: $e');
       }
+    }
+  }
+
+  String _ticketDisplayName(String ticketType) {
+    switch (ticketType) {
+      case 'cliente':
+        return 'cliente';
+      case 'almacen':
+        return 'almacén';
+      default:
+        return ticketType;
     }
   }
 
@@ -1957,39 +2022,55 @@ class _InventoryExtractionBySaleScreenState
             ),
       );
 
-      // Generar y enviar tickets (2 copias)
+      // Generar y enviar tickets según configuración de tienda
       final profile = await CapabilityProfile.load();
       final generator = Generator(PaperSize.mm58, profile);
 
-      // ========== IMPRIMIR COPIA 1: COMPROBANTE PRINCIPAL ==========
-      print('📄 Imprimiendo copia 1: COMPROBANTE PRINCIPAL');
-      List<int> bytes1 = _generateExtractionTicket(generator, copyNumber: 1);
-      bool printed1 = await bluetoothService.writeBytesSafe(
-        bytes1,
-        jobName: 'Extraction Ticket Copy 1',
-        settleAfter: false,
-      );
+      final ticketsToPrint =
+          _ticketsAImprimir.isNotEmpty ? _ticketsAImprimir : ['cliente'];
+      var allPrinted = true;
 
-      if (!printed1) {
-        await bluetoothService.disconnect();
-        if (!mounted) return;
-        Navigator.pop(context);
-        _showErrorDialog('Error', 'No se pudo imprimir la primera copia');
-        return;
+      for (var t = 0; t < ticketsToPrint.length; t++) {
+        final ticketType = ticketsToPrint[t];
+        final copies = _copiasPorTicket[ticketType] ?? 1;
+
+        for (var c = 0; c < copies; c++) {
+          print(
+            '📄 Imprimiendo $ticketType copia ${c + 1}/$copies',
+          );
+          final bytes = _generateExtractionTicket(
+            generator,
+            ticketType: ticketType,
+          );
+          final printed = await bluetoothService.writeBytesSafe(
+            bytes,
+            jobName: 'Extraction Ticket $ticketType ${c + 1}',
+            settleAfter: false,
+          );
+
+          if (!printed) {
+            allPrinted = false;
+            await bluetoothService.disconnect();
+            if (!mounted) return;
+            Navigator.pop(context);
+            _showErrorDialog(
+              'Error',
+              'No se pudo imprimir el ticket de ${_ticketDisplayName(ticketType)}',
+            );
+            return;
+          }
+
+          // Pausa entre copias del mismo ticket
+          if (c < copies - 1) {
+            await Future.delayed(const Duration(seconds: 2));
+          }
+        }
+
+        // Pausa entre tickets distintos
+        if (t < ticketsToPrint.length - 1) {
+          await Future.delayed(const Duration(seconds: 3));
+        }
       }
-
-      // Esperar entre impresiones
-      print('⏳ Esperando 3 segundos antes de segunda copia...');
-      await Future.delayed(const Duration(seconds: 3));
-
-      // ========== IMPRIMIR COPIA 2: COMPROBANTE ALMACÉN ==========
-      print('🏭 Imprimiendo copia 2: COMPROBANTE ALMACÉN');
-      List<int> bytes2 = _generateExtractionTicket(generator, copyNumber: 2);
-      bool printed2 = await bluetoothService.writeBytesSafe(
-        bytes2,
-        jobName: 'Extraction Ticket Copy 2',
-        settleAfter: true,
-      );
 
       // Desconectar
       await bluetoothService.disconnect();
@@ -2004,7 +2085,7 @@ class _InventoryExtractionBySaleScreenState
       print(' Paso 5: Mostrar resultado');
       Navigator.pop(context);
 
-      if (printed1 && printed2) {
+      if (allPrinted) {
         if (mounted) {
           _showSuccessDialog(
             '¡Ticket Impreso!',
@@ -2056,7 +2137,7 @@ class _InventoryExtractionBySaleScreenState
   /// Generar contenido del ticket de extracción
   List<int> _generateExtractionTicket(
     Generator generator, {
-    int copyNumber = 1,
+    required String ticketType,
   }) {
     List<int> bytes = [];
     List<int> line(String text, {PosStyles? styles}) {
@@ -2077,8 +2158,10 @@ class _InventoryExtractionBySaleScreenState
     );
 
     // Indicador de copia
-    String copyLabel =
-        copyNumber == 1 ? 'COMPROBANTE PRINCIPAL' : 'COMPROBANTE ALMACEN';
+    final copyLabel =
+        ticketType == 'almacen'
+            ? 'COMPROBANTE ALMACEN'
+            : 'COMPROBANTE PRINCIPAL';
     bytes += line(
       copyLabel,
       styles: PosStyles(align: PosAlign.center, bold: true),
@@ -2090,7 +2173,7 @@ class _InventoryExtractionBySaleScreenState
 
     // Información de la venta
     bytes += line(
-      'Cliente: ${_clienteController.text.isNotEmpty ? _clienteController.text : 'N/A'}',
+      'Cliente: ${_lastClientNameForPrint.isNotEmpty ? _lastClientNameForPrint : 'N/A'}',
       styles: PosStyles(align: PosAlign.left),
     );
     bytes += line(
@@ -2148,13 +2231,13 @@ class _InventoryExtractionBySaleScreenState
     );
 
     // Observaciones
-    if (_observacionesController.text.isNotEmpty) {
+    if (_lastObservationsForPrint.isNotEmpty) {
       bytes += line(
         '----------------------------',
         styles: PosStyles(align: PosAlign.center),
       );
       for (final wrapped in wrapTicketText(
-        'Obs: ${_observacionesController.text}',
+        'Obs: ${_lastObservationsForPrint}',
       )) {
         bytes += line(wrapped, styles: PosStyles(align: PosAlign.left));
       }

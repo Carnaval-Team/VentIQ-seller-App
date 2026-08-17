@@ -13,6 +13,9 @@ import '../utils/uuid_generator.dart';
 import '../services/turno_service.dart';
 import '../services/shift_workers_service.dart';
 import '../services/printer_manager.dart';
+import '../services/inventory_service.dart';
+import '../services/auto_sync_service.dart';
+import '../services/connectivity_service.dart';
 
 class CierreScreen extends StatefulWidget {
   const CierreScreen({Key? key}) : super(key: key);
@@ -87,6 +90,7 @@ class _CierreScreenState extends State<CierreScreen> {
   bool _manejaInventario =
       false; // Nueva variable para controlar si mostrar inventario
   bool _mostrarDebeHaberEnConteo = false;
+  bool _autocompletarCantidadRealConteo = false;
 
   // Worker configuration for inventory control
   bool _trabajadorManejaAperturaControl =
@@ -98,8 +102,7 @@ class _CierreScreenState extends State<CierreScreen> {
     _loadUserData();
     _loadStoreConfiguration();
     _loadWorkerConfig(); // Load worker inventory control settings
-    _loadDailySummary();
-    _calcularDatosCierre();
+    _loadDailySummary(); // también recalcula órdenes del turno
     _loadExpenses();
   }
 
@@ -164,132 +167,7 @@ class _CierreScreenState extends State<CierreScreen> {
   /// Cargar productos de inventario desde cache offline (sin categorías)
   Future<void> _loadInventoryProductsOffline() async {
     try {
-      final offlineData = await _userPrefs.getOfflineData();
-
-      if (offlineData == null || offlineData['products'] == null) {
-        print('⚠️ No hay productos cacheados para inventario offline');
-        setState(() {
-          _inventoryProducts = [];
-        });
-        return;
-      }
-
-      final productsData = Map<String, dynamic>.from(
-        offlineData['products'] as Map,
-      );
-      final Map<int, InventoryProduct> productsByIdMap = {};
-
-      for (final categoryProducts in productsData.values) {
-        final productList = List<dynamic>.from(categoryProducts as List);
-
-        for (final prodDataRaw in productList) {
-          final prodData = Map<String, dynamic>.from(prodDataRaw as Map);
-          final detalles =
-              prodData['detalles_completos'] as Map<String, dynamic>?;
-          if (detalles == null) continue;
-
-          final productoInfo = detalles['producto'] as Map<String, dynamic>?;
-          final inventarioList = detalles['inventario'] as List<dynamic>? ?? [];
-          if (productoInfo == null || inventarioList.isEmpty) continue;
-
-          // Saltar productos elaborados o servicios
-          final esElaborado = productoInfo['es_elaborado'] == true;
-          final esServicio = productoInfo['es_servicio'] == true;
-          if (esElaborado || esServicio) continue;
-
-          final productId = (productoInfo['id'] ?? prodData['id']) as int;
-          if (productsByIdMap.containsKey(productId)) continue;
-
-          final firstInventory = Map<String, dynamic>.from(
-            inventarioList.first as Map,
-          );
-          final ubicacion = Map<String, dynamic>.from(
-            firstInventory['ubicacion'] ?? {},
-          );
-          final almacen = Map<String, dynamic>.from(ubicacion['almacen'] ?? {});
-          final variante =
-              firstInventory['variante'] != null &&
-                      firstInventory['variante'] is Map
-                  ? Map<String, dynamic>.from(firstInventory['variante'])
-                  : null;
-          final presentacion =
-              firstInventory['presentacion'] != null &&
-                      firstInventory['presentacion'] is Map
-                  ? Map<String, dynamic>.from(firstInventory['presentacion'])
-                  : null;
-
-          String varianteNombre = 'Variante';
-          if (variante != null &&
-              variante['atributo'] != null &&
-              variante['opcion'] != null) {
-            final atributo = variante['atributo'] as Map<String, dynamic>?;
-            final opcion = variante['opcion'] as Map<String, dynamic>?;
-            if (atributo != null && opcion != null) {
-              varianteNombre =
-                  '${atributo['label'] ?? 'Atributo'}: ${opcion['valor'] ?? ''}';
-            }
-          }
-
-          final cantidadDisponible =
-              (firstInventory['cantidad_disponible'] as num?)?.toDouble() ??
-              0.0;
-
-          // Excluir productos sin stock del reporte/conteo del vendedor
-          if (cantidadDisponible <= 0) continue;
-
-          productsByIdMap[productId] = InventoryProduct(
-            id: productId,
-            skuProducto: firstInventory['sku_producto']?.toString() ?? '',
-            nombreProducto:
-                productoInfo['denominacion'] ??
-                prodData['denominacion'] ??
-                'Producto',
-            idCategoria: (productoInfo['id_categoria'] ?? 0) as int,
-            categoria:
-                productoInfo['categoria']?['denominacion'] ??
-                prodData['categoria'] ??
-                'Sin categoría',
-            idSubcategoria: (productoInfo['id_subcategoria'] ?? 0) as int,
-            subcategoria: prodData['subcategoria'] ?? 'General',
-            idTienda:
-                (productoInfo['id_tienda'] ?? prodData['id_tienda'] ?? 0)
-                    as int,
-            tienda: '',
-            idAlmacen: (almacen['id'] ?? 0) as int,
-            almacen: almacen['denominacion']?.toString() ?? 'Almacén',
-            idUbicacion: (ubicacion['id'] ?? 0) as int,
-            ubicacion: ubicacion['denominacion']?.toString() ?? 'Ubicación',
-            idVariante: variante?['id'] as int?,
-            variante: varianteNombre,
-            idOpcionVariante: variante?['opcion']?['id'] as int?,
-            opcionVariante:
-                (variante?['opcion']?['valor'] as String?) ?? varianteNombre,
-            idPresentacion: presentacion?['id'] as int?,
-            presentacion: presentacion?['denominacion']?.toString() ?? 'Unidad',
-            cantidadInicial: cantidadDisponible,
-            cantidadFinal: cantidadDisponible,
-            stockDisponible: cantidadDisponible,
-            stockReservado: 0,
-            stockDisponibleAjustado: cantidadDisponible,
-            esVendible: true,
-            esInventariable: true,
-            precioVenta:
-                (productoInfo['precio_actual'] ?? prodData['precio'] ?? 0)
-                    .toDouble(),
-            costoPromedio: null,
-            margenActual: null,
-            clasificacionAbc: 3,
-            abcDescripcion: '',
-            fechaUltimaActualizacion: DateTime.now(),
-            totalCount: 0,
-            resumenInventario: null,
-            infoPaginacion: null,
-          );
-        }
-      }
-
-      // Crear lista consolidada y controllers
-      final products = productsByIdMap.values.toList();
+      final products = await InventoryService.buildFromOfflineCache();
       for (var product in products) {
         if (!_inventoryControllers.containsKey(product.id)) {
           _inventoryControllers[product.id] = TextEditingController();
@@ -312,22 +190,26 @@ class _CierreScreenState extends State<CierreScreen> {
 
   Future<void> _loadStoreConfiguration() async {
     try {
-      final isOffline = await _userPrefs.isOfflineModeEnabled();
+      final isOffline = await _userPrefs.shouldUseLocalData();
       final storeConfig = await _userPrefs.getStoreConfig();
 
       if (storeConfig != null) {
         final manejaInventario = storeConfig['maneja_inventario'] ?? false;
         final mostrarDebeHaber =
             storeConfig['mostrar_debe_haber_en_conteo_inventario'] ?? false;
+        final autocompletarCantidad =
+            storeConfig['autocompletar_cantidad_real_conteo'] ?? false;
         print(
           '🏪 Configuración de tienda cargada - Maneja inventario 2: $manejaInventario, '
-          'Mostrar debe haber: $mostrarDebeHaber',
+          'Mostrar debe haber: $mostrarDebeHaber, '
+          'Autocompletar cantidad real: $autocompletarCantidad',
         );
 
         if (mounted) {
           setState(() {
             _manejaInventario = manejaInventario;
             _mostrarDebeHaberEnConteo = mostrarDebeHaber;
+            _autocompletarCantidadRealConteo = autocompletarCantidad;
             print(
               '✅ setState ejecutado - _manejaInventario ahora es: $_manejaInventario',
             );
@@ -356,6 +238,7 @@ class _CierreScreenState extends State<CierreScreen> {
           setState(() {
             _manejaInventario = false;
             _mostrarDebeHaberEnConteo = false;
+            _autocompletarCantidadRealConteo = false;
             _checkingShiftStatus = false;
           });
         }
@@ -366,6 +249,7 @@ class _CierreScreenState extends State<CierreScreen> {
         setState(() {
           _manejaInventario = false;
           _mostrarDebeHaberEnConteo = false;
+          _autocompletarCantidadRealConteo = false;
           _checkingShiftStatus = false;
         });
       }
@@ -414,131 +298,129 @@ class _CierreScreenState extends State<CierreScreen> {
         _isLoadingData = true;
       });
 
-      // Verificar si el modo offline está activado
-      final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
+      final useLocal = await _userPrefs.shouldUseLocalData();
 
-      if (isOfflineModeEnabled) {
-        print('🔌 Modo offline activado - Cargando datos desde cache...');
-        await _loadDailySummaryOffline();
-        return;
-      }
-
-      print('🌐 Modo online - Obteniendo datos desde servidor...');
-
-      // Get current open shift first
+      // Turno abierto obligatorio para el cierre.
       final turnoAbierto = await TurnoService.getTurnoAbierto();
-
       if (turnoAbierto == null) {
         print('⚠️ No open shift found');
         setState(() {
           _isLoadingData = false;
         });
-
-        // Show alert and navigate back
         if (mounted) {
           _showNoOpenShiftAlert();
         }
         return;
       }
 
-      // Use the new fn_resumen_diario_cierre function
-      final userPrefs = UserPreferencesService();
-      final idTpv = await userPrefs.getIdTpv();
-      final userID = await userPrefs.getUserId();
-
-      if (idTpv != null) {
-        print(
-          '🧪 Loading daily summary with fn_resumen_diario_cierre - TPV: $idTpv',
-        );
-
-        final resumenCierreResponse = await Supabase.instance.client.rpc(
-          'fn_resumen_diario_cierre',
-          params: {'id_tpv_param': idTpv, 'id_usuario_param': userID},
-        );
-
-        print('📈 Resumen Cierre Response: $resumenCierreResponse');
-        print('📈 Tipo de respuesta: ${resumenCierreResponse.runtimeType}');
-
-        if (resumenCierreResponse != null) {
-          Map<String, dynamic> data;
-
-          // Manejar tanto List como Map de respuesta
-          if (resumenCierreResponse is List &&
-              resumenCierreResponse.isNotEmpty) {
-            // Si es una lista, tomar el primer elemento
-            data = resumenCierreResponse[0] as Map<String, dynamic>;
-            print('📈 Datos extraídos de lista: ${data.keys.toList()}');
-          } else if (resumenCierreResponse is Map<String, dynamic>) {
-            // Si ya es un mapa, usarlo directamente
-            data = resumenCierreResponse;
-            print('📈 Datos recibidos como mapa: ${data.keys.toList()}');
-          } else {
-            print('⚠️ Formato de respuesta no reconocido en CierreScreen');
-            setState(() {
-              _isLoadingData = false;
-            });
-            return;
-          }
-
-          setState(() {
-            // Map fields according to your specifications
-            _montoInicialCaja = (data['efectivo_inicial'] ?? 0.0).toDouble();
-            _ventasTotales = (data['ventas_totales'] ?? 0.0).toDouble();
-            _productosVendidos = (data['productos_vendidos'] ?? 0).toInt();
-            _ticketPromedio = (data['ticket_promedio'] ?? 0.0).toDouble();
-            _operacionesTotales = (data['operaciones_totales'] ?? 0).toInt();
-            _operacionesPorHora =
-                (data['operaciones_por_hora'] ?? 0.0).toDouble();
-
-            // Payment methods mapping
-            _totalEfectivo = (data['efectivo_real'] ?? 0.0).toDouble();
-            _totalTransferencias = _ventasTotales - _totalEfectivo;
-            _porcentajeEfectivo =
-                (data['porcentaje_efectivo'] ?? 0.0).toDouble();
-            _porcentajeOtros = (data['porcentaje_otros'] ?? 0.0).toDouble();
-
-            // Expected cash amounts
-            _efectivoEsperado = (data['efectivo_esperado'] ?? 0.0).toDouble();
-
-            // Additional fields
-            _conciliacionEstado = data['conciliacion_estado'] ?? '';
-            _efectivoRealAjustado =
-                (data['efectivo_real_ajustado'] ?? 0.0).toDouble();
-            _diferenciaAjustada =
-                (data['diferencia_ajustada'] ?? 0.0).toDouble();
-
-            _isLoadingData = false;
-            // _manejaInventario = turnoAbierto['maneja_inventario'] ?? false; // Comentado: se usa valor de configuración
-          });
-
-          print('💰 Mapped Data:');
-          print('  - Monto inicial: $_montoInicialCaja');
-          print('  - Ventas totales: $_ventasTotales');
-          print('  - Productos vendidos: $_productosVendidos');
-          print('  - Ticket promedio: $_ticketPromedio');
-          print('  - Operaciones totales: $_operacionesTotales');
-          print('  - Operaciones por hora: $_operacionesPorHora');
-          print('  - Total efectivo: $_totalEfectivo');
-          print('  - Transferencias/otros: $_totalTransferencias');
-          print('  - Estado conciliación: $_conciliacionEstado');
-        } else {
-          // Fallback to default values if no data
-          setState(() {
-            _montoInicialCaja = 500.0; // Default fallback
-            _isLoadingData = false;
-          });
-        }
+      // Cargar solo órdenes de ESTE turno (online u offline).
+      if (useLocal) {
+        print('🔌 Modo local - Cargando datos del turno abierto...');
+        await _orderService.loadOrdersFromLocalCacheForOpenTurno();
+        await _loadDailySummaryOffline();
       } else {
-        // Fallback if no TPV ID
+        print('🌐 Modo online - Resumen del turno abierto...');
+        _orderService.clearAllOrders();
+        await _orderService.listOrdersFromSupabase();
+        final pending =
+            await _userPrefs.getSellerVisiblePendingOrders();
+        if (pending.isNotEmpty) {
+          _orderService.addPendingOrdersToList(pending);
+        }
+        await _loadDailySummaryOnline(turnoAbierto);
+      }
+
+      await _calcularDatosCierre();
+    } catch (e) {
+      print('❌ Error loading daily summary: $e');
+      if (mounted) {
         setState(() {
-          _montoInicialCaja = 500.0; // Default fallback
           _isLoadingData = false;
         });
       }
-    } catch (e) {
-      print('Error loading daily summary: $e');
+    }
+  }
+
+  Future<void> _loadDailySummaryOnline(Map<String, dynamic> turnoAbierto) async {
+    try {
+      // Preferir resumen por id de turno (no el diario, que mezcla turnos).
+      final idRaw = turnoAbierto['id'] ?? turnoAbierto['server_id_turno'];
+      final idTurno =
+          idRaw is int
+              ? idRaw
+              : (idRaw is num ? idRaw.toInt() : int.tryParse('$idRaw'));
+
+      Map<String, dynamic>? data;
+      if (idTurno != null) {
+        print('🧪 Loading summary with fn_resumen_turno_por_id ($idTurno)');
+        data = await TurnoService.getResumenTurnoPorId(idTurno);
+      }
+      data ??= await TurnoService.getResumenTurnoKPI();
+
+      if (data == null) {
+        // Último recurso: RPC diario (puede incluir más de un turno del día).
+        final idTpv = await _userPrefs.getIdTpv();
+        final userID = await _userPrefs.getUserId();
+        if (idTpv != null) {
+          print(
+            '⚠️ Fallback fn_resumen_diario_cierre - TPV: $idTpv (puede mezclar turnos)',
+          );
+          final resumenCierreResponse = await Supabase.instance.client.rpc(
+            'fn_resumen_diario_cierre',
+            params: {'id_tpv_param': idTpv, 'id_usuario_param': userID},
+          );
+          if (resumenCierreResponse is List &&
+              resumenCierreResponse.isNotEmpty) {
+            data = Map<String, dynamic>.from(
+              resumenCierreResponse[0] as Map,
+            );
+          } else if (resumenCierreResponse is Map) {
+            data = Map<String, dynamic>.from(resumenCierreResponse);
+          }
+        }
+      }
+
+      if (data == null) {
+        setState(() {
+          _isLoadingData = false;
+        });
+        return;
+      }
+
       setState(() {
-        _montoInicialCaja = 500.0; // Default fallback
+        _montoInicialCaja = (data!['efectivo_inicial'] ?? 0.0).toDouble();
+        _ventasTotales = (data['ventas_totales'] ?? 0.0).toDouble();
+        _productosVendidos = (data['productos_vendidos'] ?? 0).toInt();
+        _ticketPromedio = (data['ticket_promedio'] ?? 0.0).toDouble();
+        _operacionesTotales = (data['operaciones_totales'] ?? 0).toInt();
+        _operacionesPorHora =
+            (data['operaciones_por_hora'] ?? 0.0).toDouble();
+        _totalEfectivo =
+            (data['total_efectivo'] ?? data['efectivo_real'] ?? 0.0)
+                .toDouble();
+        _totalTransferencias =
+            (data['total_transferencias'] ??
+                    (_ventasTotales - _totalEfectivo))
+                .toDouble();
+        _porcentajeEfectivo =
+            (data['porcentaje_efectivo'] ?? 70.0).toDouble();
+        _porcentajeOtros = (data['porcentaje_otros'] ?? 30.0).toDouble();
+        _efectivoEsperado =
+            (data['efectivo_esperado'] ??
+                    _montoInicialCaja + _totalEfectivo)
+                .toDouble();
+        _conciliacionEstado =
+            data['conciliacion_estado']?.toString() ?? 'Pendiente';
+        _efectivoRealAjustado =
+            (data['efectivo_real_ajustado'] ?? _efectivoEsperado)
+                .toDouble();
+        _diferenciaAjustada =
+            (data['diferencia_ajustada'] ?? 0.0).toDouble();
+        _isLoadingData = false;
+      });
+    } catch (e) {
+      print('❌ Error loading online daily summary: $e');
+      setState(() {
         _isLoadingData = false;
       });
     }
@@ -726,8 +608,8 @@ class _CierreScreenState extends State<CierreScreen> {
   }
 
   Future<void> _loadInventoryProducts() async {
-    // Si estamos offline, usamos cache local y evitamos llamadas a Supabase
-    final isOffline = await _userPrefs.isOfflineModeEnabled();
+    // Offline / full-offline: cache local (evitar RPCs).
+    final isOffline = await _userPrefs.shouldUseLocalData();
     if (isOffline) {
       print('🔌 Modo offline - cargando inventario desde cache');
       return _loadInventoryProductsOffline();
@@ -884,7 +766,7 @@ class _CierreScreenState extends State<CierreScreen> {
     if (_inventoryProducts.isEmpty) return;
 
     try {
-      final isOffline = await _userPrefs.isOfflineModeEnabled();
+      final isOffline = await _userPrefs.shouldUseLocalData();
       if (isOffline) {
         await _loadStockRealProductosOffline();
         return;
@@ -957,63 +839,14 @@ class _CierreScreenState extends State<CierreScreen> {
   }
 
   Future<void> _loadStockRealProductosOffline() async {
-    final idAlmacen = await _userPrefs.getIdAlmacen();
-    final offlineData = await _userPrefs.getOfflineData();
-    if (offlineData == null || offlineData['products'] == null) {
-      _stockRealByProduct = {
-        for (final p in _inventoryProducts)
-          p.id: _StockRealProducto(
-            stockSistema: p.cantidadFinal,
-            pendienteCarnaval: 0,
-            enCamino: 0,
-            debeHaber: p.cantidadFinal,
-          ),
-      };
-      return;
-    }
-
-    final productsData = Map<String, dynamic>.from(
-      offlineData['products'] as Map,
-    );
-    final qtyByProduct = <int, double>{};
-
-    for (final categoryProducts in productsData.values) {
-      final productList = List<dynamic>.from(categoryProducts as List);
-      for (final prodDataRaw in productList) {
-        final prodData = Map<String, dynamic>.from(prodDataRaw as Map);
-        final detalles =
-            prodData['detalles_completos'] as Map<String, dynamic>?;
-        if (detalles == null) continue;
-        final productoInfo = detalles['producto'] as Map<String, dynamic>?;
-        if (productoInfo == null) continue;
-        final pid = (productoInfo['id'] ?? prodData['id']) as int;
-        final inventarioList = detalles['inventario'] as List<dynamic>? ?? [];
-        final seenUbic = <String>{};
-        var sum = qtyByProduct[pid] ?? 0.0;
-        for (final invRaw in inventarioList) {
-          final inv = Map<String, dynamic>.from(invRaw as Map);
-          final ubicacion = Map<String, dynamic>.from(inv['ubicacion'] ?? {});
-          final almacen = Map<String, dynamic>.from(ubicacion['almacen'] ?? {});
-          final almId = (almacen['id'] as num?)?.toInt();
-          // Solo el almacén del vendedor.
-          if (idAlmacen != null && almId != null && almId != idAlmacen) {
-            continue;
-          }
-          final locationKey = '${almId ?? 0}_${ubicacion['id'] ?? 0}';
-          if (!seenUbic.add(locationKey)) continue;
-          sum += (inv['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
-        }
-        qtyByProduct[pid] = sum;
-      }
-    }
-
+    // Usar cantidades ya resueltas por InventoryService.buildFromOfflineCache.
     _stockRealByProduct = {
       for (final p in _inventoryProducts)
         p.id: _StockRealProducto(
-          stockSistema: qtyByProduct[p.id] ?? p.cantidadFinal,
+          stockSistema: p.cantidadFinal,
           pendienteCarnaval: 0,
           enCamino: 0,
-          debeHaber: qtyByProduct[p.id] ?? p.cantidadFinal,
+          debeHaber: p.cantidadFinal,
         ),
     };
   }
@@ -1144,7 +977,8 @@ class _CierreScreenState extends State<CierreScreen> {
                     runSpacing: 4,
                     alignment: WrapAlignment.center,
                     children: [
-                      if (_mostrarDebeHaberEnConteo)
+                      if (_mostrarDebeHaberEnConteo &&
+                          _autocompletarCantidadRealConteo)
                         TextButton.icon(
                           onPressed: () {
                             for (final p in _inventoryProducts) {
@@ -1501,8 +1335,35 @@ class _CierreScreenState extends State<CierreScreen> {
     }
   }
 
-  void _calcularDatosCierre() {
-    final orders = _orderService.orders;
+  /// Órdenes del turno abierto (filtro por fecha apertura → cierre/ahora).
+  Future<List<Order>> _ordersOfOpenTurno() async {
+    final turno = await TurnoService.getTurnoAbierto();
+    if (turno == null) return const [];
+
+    final from =
+        DateTime.tryParse(turno['fecha_apertura']?.toString() ?? '')?.toUtc();
+    final to =
+        DateTime.tryParse(turno['fecha_cierre']?.toString() ?? '')?.toUtc() ??
+        DateTime.now().toUtc();
+
+    final filtered =
+        _orderService.orders.where((order) {
+          final fo = order.fechaCreacion.toUtc();
+          if (from != null && fo.isBefore(from)) return false;
+          if (fo.isAfter(to)) return false;
+          return true;
+        }).toList();
+
+    print(
+      '📅 Cierre: órdenes del turno ${filtered.length}/'
+      '${_orderService.orders.length} '
+      '(desde=${from?.toIso8601String()} hasta=${to.toIso8601String()})',
+    );
+    return filtered;
+  }
+
+  Future<void> _calcularDatosCierre() async {
+    final orders = await _ordersOfOpenTurno();
 
     // Calcular ventas totales (órdenes completadas y con pago confirmado)
     final ordersVendidas =
@@ -1510,7 +1371,8 @@ class _CierreScreenState extends State<CierreScreen> {
             .where(
               (order) =>
                   order.status == OrderStatus.completada ||
-                  order.status == OrderStatus.pagoConfirmado,
+                  order.status == OrderStatus.pagoConfirmado ||
+                  order.status == OrderStatus.pendienteDeSincronizacion,
             )
             .toList();
 
@@ -1530,8 +1392,13 @@ class _CierreScreenState extends State<CierreScreen> {
             )
             .toList();
 
+    if (!mounted) return;
     setState(() {
-      _ventasTotales = ventas;
+      // Si el resumen del turno ya trajo ventas, no pisar con 0 por lista vacía
+      // en memoria; sí actualizar pendientes siempre.
+      if (ordersVendidas.isNotEmpty || ventas > 0) {
+        _ventasTotales = ventas;
+      }
       _ordenesAbiertas = pendientes.length;
       _ordenesPendientes = pendientes;
     });
@@ -2403,7 +2270,7 @@ class _CierreScreenState extends State<CierreScreen> {
     final diferencia = montoFinal - montoEsperado;
 
     final currentPendingOrders =
-        _orderService.orders
+        (await _ordersOfOpenTurno())
             .where(
               (order) =>
                   order.status == OrderStatus.enviada ||
@@ -2608,11 +2475,18 @@ class _CierreScreenState extends State<CierreScreen> {
       // Cerrar trabajadores activos antes de cerrar el turno
       await _closeActiveWorkers();
 
-      // Verificar si el modo offline está activado
+      // Si la apertura fue offline (cola local), el cierre debe ir por la cola
+      // y, si hay red, abrir+cerrar en servidor en este momento.
       final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
+      final offlineOpen = await _userPrefs.getOfflineTurno();
+      final useOfflineTurnoPath =
+          isOfflineModeEnabled || offlineOpen != null;
 
-      if (isOfflineModeEnabled) {
-        print('🔌 Modo offline - Creando cierre offline...');
+      if (useOfflineTurnoPath) {
+        print(
+          '🔌 Cierre vía turno offline'
+          '${offlineOpen != null ? ' (${offlineOpen['local_id']})' : ''}...',
+        );
         await _createOfflineCierre(
           efectivoFinal: montoFinal,
           productos: productCounts ?? [],
@@ -2678,7 +2552,19 @@ class _CierreScreenState extends State<CierreScreen> {
         return;
       }
 
-      final idTurno = turnoAbierto['id'] as int;
+      final idRaw = turnoAbierto['id'] ?? turnoAbierto['server_id_turno'];
+      final idTurno =
+          idRaw is int
+              ? idRaw
+              : (idRaw is num
+                  ? idRaw.toInt()
+                  : int.tryParse('$idRaw'));
+      if (idTurno == null) {
+        print(
+          '⚠️ Turno offline sin id de servidor; omitiendo cierre de trabajadores',
+        );
+        return;
+      }
 
       // Obtener trabajadores del turno
       final workers = await ShiftWorkersService.getShiftWorkers(idTurno);
@@ -2819,7 +2705,8 @@ class _CierreScreenState extends State<CierreScreen> {
       final cierreId = '${DateTime.now().millisecondsSinceEpoch}';
       final clientUuid = UuidGenerator.v4();
       final openTurno = await _userPrefs.getOfflineTurno();
-      final localTurnoId = openTurno?['local_id']?.toString() ??
+      final localTurnoId =
+          openTurno?['local_id']?.toString() ??
           openTurno?['local_turno_id']?.toString();
 
       // Crear estructura de cierre offline
@@ -2870,23 +2757,89 @@ class _CierreScreenState extends State<CierreScreen> {
       await _clearInventoryCounts();
       PrinterManager().clearSavedPrinter();
 
-      // Cerrar órdenes pendientes localmente
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Cierre creado offline. Se sincronizará cuando tengas conexión.',
-            ),
-            backgroundColor: Colors.orange,
-            duration: Duration(seconds: 3),
-          ),
-        );
+      // En modo online (o con red): abrir+cerrar en servidor ahora.
+      // No depender solo del check de conectividad (puede dar falso negativo).
+      var syncedToServer = false;
+      String? syncMessage;
+      final isOnlineMode = !(await _userPrefs.isOfflineModeEnabled());
+      final hasNetwork =
+          isOnlineMode || await ConnectivityService().performImmediateCheck();
 
-        // Mostrar diálogo de éxito offline
-        _showOfflineSuccessDialog(efectivoFinal, diferencia);
+      if (hasNetwork) {
+        print(
+          '🌐 Intentando registrar cierre en servidor '
+          '(modo ${isOnlineMode ? 'online' : 'offline+red'})...',
+        );
+        final syncResult =
+            await AutoSyncService().syncOfflineTurnoAfterLocalCierre(
+              localId: localTurnoId,
+            );
+        syncedToServer = syncResult['success'] == true;
+        syncMessage = syncResult['message']?.toString();
+        print(
+          syncedToServer
+              ? '✅ Cierre sincronizado al servidor'
+              : '⚠️ Sync post-cierre no completó: $syncMessage',
+        );
+      } else {
+        print('📵 Sin red tras cierre local; queda pending sync');
+        syncMessage = 'Sin conexión a internet';
       }
 
-      print('✅ Cierre offline creado: $cierreId');
+      if (syncedToServer) {
+        await _userPrefs.clearResumenCierreCache();
+        await _userPrefs.clearTurnoResumenCache();
+      }
+
+      if (mounted) {
+        if (syncedToServer) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Cierre registrado en el servidor.',
+              ),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 3),
+            ),
+          );
+          _showSuccessDialog(efectivoFinal, diferencia);
+        } else if (isOnlineMode) {
+          // Estaba en online: no fingir éxito offline silencioso.
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                syncMessage ??
+                    'No se pudo registrar en el servidor. Quedó pendiente de sync.',
+              ),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+          _showOfflineSuccessDialog(
+            efectivoFinal,
+            diferencia,
+            syncFailedOnline: true,
+            syncMessage: syncMessage,
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Cierre guardado localmente. Se sincronizará cuando haya conexión.',
+              ),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 3),
+            ),
+          );
+          _showOfflineSuccessDialog(efectivoFinal, diferencia);
+        }
+      }
+
+      print(
+        syncedToServer
+            ? '✅ Cierre offline sincronizado al servidor: $cierreId'
+            : '✅ Cierre offline pendiente de sync: $cierreId',
+      );
     } catch (e, stackTrace) {
       print('❌ Error creando cierre offline: $e');
       print('Stack trace: $stackTrace');
@@ -2897,7 +2850,12 @@ class _CierreScreenState extends State<CierreScreen> {
     }
   }
 
-  void _showOfflineSuccessDialog(double montoFinal, double diferencia) {
+  void _showOfflineSuccessDialog(
+    double montoFinal,
+    double diferencia, {
+    bool syncFailedOnline = false,
+    String? syncMessage,
+  }) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -2905,11 +2863,22 @@ class _CierreScreenState extends State<CierreScreen> {
           (context) => AlertDialog(
             title: Row(
               children: [
-                Icon(Icons.cloud_off, color: Colors.orange[700], size: 28),
+                Icon(
+                  syncFailedOnline ? Icons.sync_problem : Icons.cloud_off,
+                  color: Colors.orange[700],
+                  size: 28,
+                ),
                 const SizedBox(width: 8),
-                const Text(
-                  'Cierre Offline Creado',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                Expanded(
+                  child: Text(
+                    syncFailedOnline
+                        ? 'Cierre pendiente de sync'
+                        : 'Cierre Offline Creado',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -2917,9 +2886,12 @@ class _CierreScreenState extends State<CierreScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'El cierre se ha guardado localmente y se sincronizará automáticamente cuando tengas conexión a internet.',
-                  style: TextStyle(fontSize: 14),
+                Text(
+                  syncFailedOnline
+                      ? (syncMessage ??
+                          'Estabas en modo online, pero no se pudo registrar el cierre en el servidor. Quedó guardado localmente para reintentar.')
+                      : 'El cierre se ha guardado localmente y se sincronizará automáticamente cuando tengas conexión a internet.',
+                  style: const TextStyle(fontSize: 14),
                 ),
                 const SizedBox(height: 16),
                 Container(
@@ -2979,20 +2951,28 @@ class _CierreScreenState extends State<CierreScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[700],
-              fontWeight: isHighlight ? FontWeight.w600 : FontWeight.normal,
+          Flexible(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[700],
+                fontWeight: isHighlight ? FontWeight.w600 : FontWeight.normal,
+              ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: color ?? (isHighlight ? Colors.black87 : Colors.black87),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: color ?? (isHighlight ? Colors.black87 : Colors.black87),
+              ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],

@@ -384,4 +384,158 @@ class StoreConfigService {
       print('❌ Error al limpiar configuración de tienda del cache: $e');
     }
   }
+
+  /// Obtiene el valor de guardar_impresora_por_defecto.
+  static Future<bool> getGuardarImpresoraPorDefecto(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config?['guardar_impresora_por_defecto'] == true;
+    } catch (e) {
+      print('❌ Error al obtener guardar_impresora_por_defecto: $e');
+      return false;
+    }
+  }
+
+  /// Actualiza guardar_impresora_por_defecto.
+  static Future<bool> setGuardarImpresoraPorDefecto(
+    int storeId,
+    bool enabled,
+  ) async {
+    return await _updateBooleanStoreConfig(
+      storeId,
+      'guardar_impresora_por_defecto',
+      enabled,
+    );
+  }
+
+  /// Obtiene la lista de tickets a imprimir.
+  static Future<List<String>> getTicketsAImprimir(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      final raw = config?['tickets_a_imprimir'];
+      if (raw is List) {
+        return raw.map((e) => e.toString()).toList();
+      }
+      return ['cliente', 'almacen'];
+    } catch (e) {
+      print('❌ Error al obtener tickets_a_imprimir: $e');
+      return ['cliente', 'almacen'];
+    }
+  }
+
+  /// Actualiza tickets_a_imprimir.
+  static Future<bool> setTicketsAImprimir(
+    int storeId,
+    List<String> tickets,
+  ) async {
+    try {
+      print('🔧 Actualizando tickets_a_imprimir=$tickets para tienda $storeId');
+      await _supabase.from('app_dat_configuracion_tienda').upsert({
+        'id_tienda': storeId,
+        'tickets_a_imprimir': tickets,
+        'updated_at': DateTime.now().toIso8601String(),
+      }, onConflict: 'id_tienda');
+      await _refreshStoreConfigCache(storeId);
+      print('✅ tickets_a_imprimir actualizado correctamente');
+      return true;
+    } catch (e) {
+      print('❌ Error al actualizar tickets_a_imprimir: $e');
+      return false;
+    }
+  }
+
+  /// Obtiene el mapa de copias por ticket.
+  static Future<Map<String, int>> getCopiasPorTicket(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      final raw = config?['copias_por_ticket'];
+      if (raw is Map) {
+        return raw.map(
+          (key, value) => MapEntry(key.toString(), (value as num).toInt()),
+        );
+      }
+      return {'cliente': 1, 'almacen': 1};
+    } catch (e) {
+      print('❌ Error al obtener copias_por_ticket: $e');
+      return {'cliente': 1, 'almacen': 1};
+    }
+  }
+
+  /// Actualiza copias_por_ticket.
+  static Future<bool> setCopiasPorTicket(
+    int storeId,
+    Map<String, int> copias,
+  ) async {
+    try {
+      print('🔧 Actualizando copias_por_ticket=$copias para tienda $storeId');
+      await _supabase.from('app_dat_configuracion_tienda').upsert({
+        'id_tienda': storeId,
+        'copias_por_ticket': copias,
+        'updated_at': DateTime.now().toIso8601String(),
+      }, onConflict: 'id_tienda');
+      await _refreshStoreConfigCache(storeId);
+      print('✅ copias_por_ticket actualizado correctamente');
+      return true;
+    } catch (e) {
+      print('❌ Error al actualizar copias_por_ticket: $e');
+      return false;
+    }
+  }
+
+  /// Obtiene el valor de autocompletar_cantidad_real_conteo.
+  static Future<bool> getAutocompletarCantidadRealConteo(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config?['autocompletar_cantidad_real_conteo'] == true;
+    } catch (e) {
+      print('❌ Error al obtener autocompletar_cantidad_real_conteo: $e');
+      return false;
+    }
+  }
+
+  /// Actualiza autocompletar_cantidad_real_conteo.
+  static Future<bool> setAutocompletarCantidadRealConteo(
+    int storeId,
+    bool enabled,
+  ) async {
+    return await _updateBooleanStoreConfig(
+      storeId,
+      'autocompletar_cantidad_real_conteo',
+      enabled,
+    );
+  }
+
+  /// Helper para actualizar un booleano en la configuración de tienda.
+  static Future<bool> _updateBooleanStoreConfig(
+    int storeId,
+    String column,
+    bool value,
+  ) async {
+    try {
+      print('🔧 Actualizando $column=$value para tienda $storeId');
+      await _supabase.from('app_dat_configuracion_tienda').upsert({
+        'id_tienda': storeId,
+        column: value,
+        'updated_at': DateTime.now().toIso8601String(),
+      }, onConflict: 'id_tienda');
+      await _refreshStoreConfigCache(storeId);
+      print('✅ $column actualizado correctamente');
+      return true;
+    } catch (e) {
+      print('❌ Error al actualizar $column: $e');
+      return false;
+    }
+  }
+
+  /// Refresca el cache local después de un update parcial.
+  static Future<void> _refreshStoreConfigCache(int storeId) async {
+    try {
+      final config = await getStoreConfigFromSupabase(storeId);
+      if (config != null) {
+        await saveStoreConfigToCache(config);
+      }
+    } catch (e) {
+      print('❌ Error refrescando cache de configuración: $e');
+    }
+  }
 }

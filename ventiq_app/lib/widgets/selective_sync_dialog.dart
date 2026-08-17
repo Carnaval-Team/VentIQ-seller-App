@@ -50,6 +50,7 @@ class _SelectiveSyncDialogState extends State<SelectiveSyncDialog> {
     SyncModule.promotions,
     SyncModule.categories,
     SyncModule.products,
+    SyncModule.layouts,
     SyncModule.turno,
     SyncModule.egresos,
     SyncModule.orders,

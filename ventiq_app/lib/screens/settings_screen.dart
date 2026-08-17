@@ -13,6 +13,7 @@ import '../utils/uuid_generator.dart';
 import '../services/settings_integration_service.dart';
 import '../services/auto_sync_service.dart';
 import '../services/store_config_service.dart';
+import '../services/printer_manager.dart';
 import '../utils/navigation_helper.dart';
 import '../services/update_service.dart';
 import '../services/subscription_guard_service.dart';
@@ -57,6 +58,10 @@ class _SettingsScreenState extends State<SettingsScreen>
   int _pendingOfflineTurnosCount = 0; // Cola multi-turno pendiente de sync
   bool _isModoRestauranteEnabled = false; // Modo restaurante (mesas y comensales)
   bool _isLoadingModoRestaurante = false;
+
+  // Impresora recordada para el turno actual
+  String? _savedPrinterDescription;
+  bool _hasSavedPrinter = false;
 
   // Nuevas variables para servicios inteligentes
   StreamSubscription<SettingsIntegrationEvent>? _integrationSubscription;
@@ -230,6 +235,17 @@ class _SettingsScreenState extends State<SettingsScreen>
       print('⚠️ No se pudo leer modo_restaurante del cache: $e');
     }
 
+    // Impresora recordada para el turno actual
+    String? savedPrinterDescription;
+    bool hasSavedPrinter = false;
+    try {
+      final printerManager = PrinterManager();
+      hasSavedPrinter = printerManager.hasSavedPrinter;
+      savedPrinterDescription = printerManager.savedPrinterDescription;
+    } catch (e) {
+      print('⚠️ No se pudo leer impresora guardada: $e');
+    }
+
     // Verificar si el widget está montado antes de actualizar el estado
     if (mounted) {
       setState(() {
@@ -244,7 +260,38 @@ class _SettingsScreenState extends State<SettingsScreen>
         _offlineTurnoInfo = offlineTurnoInfo;
         _pendingOfflineTurnosCount = pendingTurnosCount;
         _isModoRestauranteEnabled = modoRestaurante;
+        _hasSavedPrinter = hasSavedPrinter;
+        _savedPrinterDescription = savedPrinterDescription;
       });
+    }
+  }
+
+  Future<void> _clearSavedPrinter() async {
+    try {
+      PrinterManager().clearSavedPrinter();
+      setState(() {
+        _hasSavedPrinter = false;
+        _savedPrinterDescription = null;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🗑️ Impresora guardada eliminada'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ Error eliminando impresora guardada: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al eliminar impresora guardada: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -1024,6 +1071,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                   onTap: () => Navigator.pushNamed(context, '/wifi-printers'),
                 ),
                 _buildDivider(),
+                _buildSavedPrinterTile(),
+                _buildDivider(),
                 _buildStaticTextSettingsTile(),
                 _buildDivider(),
                 _buildShowSkuSettingsTile(),
@@ -1394,6 +1443,78 @@ class _SettingsScreenState extends State<SettingsScreen>
         activeColor: const Color(0xFF6B7280),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    );
+  }
+
+  Widget _buildSavedPrinterTile() {
+    Future<void> confirmAndClear() async {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder:
+            (ctx) => AlertDialog(
+              title: const Text('Olvidar impresora'),
+              content: const Text(
+                'La próxima impresión volverá a pedirte que selecciones una impresora.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancelar'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  style: TextButton.styleFrom(foregroundColor: Colors.red),
+                  child: const Text('Olvidar'),
+                ),
+              ],
+            ),
+      );
+      if (confirmed == true) await _clearSavedPrinter();
+    }
+
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color:
+              _hasSavedPrinter
+                  ? const Color(0xFF10B981).withOpacity(0.1)
+                  : Colors.grey.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(
+          _hasSavedPrinter ? Icons.print : Icons.print_disabled,
+          color: _hasSavedPrinter ? const Color(0xFF10B981) : Colors.grey,
+          size: 20,
+        ),
+      ),
+      title: const Text(
+        'Impresora del Turno',
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+          color: Color(0xFF1F2937),
+        ),
+      ),
+      subtitle: Text(
+        _hasSavedPrinter && _savedPrinterDescription != null
+            ? '$_savedPrinterDescription (pulsa para olvidar)'
+            : 'No hay impresora recordada para este turno',
+        style: TextStyle(
+          fontSize: 13,
+          color: _hasSavedPrinter ? const Color(0xFF10B981) : Colors.grey[600],
+        ),
+      ),
+      trailing:
+          _hasSavedPrinter
+              ? IconButton(
+                icon: const Icon(Icons.delete_outline, color: Colors.red),
+                tooltip: 'Eliminar impresora guardada',
+                onPressed: confirmAndClear,
+              )
+              : null,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      onTap: _hasSavedPrinter ? confirmAndClear : null,
     );
   }
 
@@ -2581,66 +2702,8 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  void _showLogoutDialog() async {
-    // 🛟 Proteger datos offline sin sincronizar: avisar antes de cerrar sesión
-    // si hay órdenes, operaciones o egresos pendientes que se perderían.
-    final hasUnsynced =
-        await _userPreferencesService.hasUnsyncedOfflineData();
-
-    if (!mounted) return;
-
-    final String contenido =
-        hasUnsynced
-            ? '⚠️ Tienes datos sin sincronizar (órdenes, turno o egresos en modo offline). '
-                'Si cierras sesión ahora podrías perderlos.\n\n'
-                'Te recomendamos conectarte y sincronizar antes de salir.\n\n'
-                '¿Cerrar sesión de todos modos?'
-            : '¿Estás seguro de que quieres cerrar sesión?';
-
-    showDialog(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Cerrar Sesión'),
-            content: Text(contenido),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancelar'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  _performLogout();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
-                ),
-                child: Text(
-                  hasUnsynced ? 'Cerrar de todos modos' : 'Cerrar Sesión',
-                ),
-              ),
-            ],
-          ),
-    );
-  }
-
-  void _performLogout() {
-    // Limpiar datos de sesión si es necesario
-    // _orderService.clearAllOrders(); // Opcional: limpiar órdenes al cerrar sesión
-
-    // Mostrar mensaje de confirmación
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('👋 Sesión cerrada exitosamente'),
-        backgroundColor: Colors.green,
-      ),
-    );
-
-    // Navegar a la pantalla de login (por ahora volvemos a categorías)
-    // En una implementación real, aquí navegarías a la pantalla de login
-    Navigator.pushNamedAndRemoveUntil(context, '/categories', (route) => false);
+  void _showLogoutDialog() {
+    AppDrawer.promptLogoutOrSwitchUser(context);
   }
 
   void _onBottomNavTap(int index) {

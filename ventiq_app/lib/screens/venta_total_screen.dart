@@ -206,8 +206,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       _orderService.clearAllOrders();
       await _orderService.listOrdersFromSupabase();
 
-      // Agregar órdenes offline pendientes (para lista y totales reales)
-      final pendingOrders = await userPrefs.getPendingOrders();
+      // Pendientes del turno activo (excluye closed_pending_sync → admin)
+      final pendingOrders = await userPrefs.getSellerVisiblePendingOrders();
       if (pendingOrders.isNotEmpty) {
         _orderService.addPendingOrdersToList(pendingOrders);
       }
@@ -1933,7 +1933,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         );
       }
 
-      final pendingOrders = await userPrefs.getPendingOrders();
+      final pendingOrders = await userPrefs.getSellerVisiblePendingOrders();
       if (pendingOrders.isNotEmpty) {
         _orderService.addPendingOrdersToList(pendingOrders);
       }

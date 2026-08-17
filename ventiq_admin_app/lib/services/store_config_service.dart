@@ -36,6 +36,10 @@ class StoreConfigService {
                   'need_master_password_to_cancel': false,
                   'need_all_orders_completed_to_continue': false,
                   'metodo_redondeo_precio_venta': 'NO_REDONDEAR',
+                  'guardar_impresora_por_defecto': false,
+                  'tickets_a_imprimir': ['cliente', 'almacen'],
+                  'copias_por_ticket': {'cliente': 1, 'almacen': 1},
+                  'autocompletar_cantidad_real_conteo': false,
                 })
                 .select()
                 .single();
@@ -71,6 +75,10 @@ class StoreConfigService {
     bool? solicitarImagenOperacion,
     bool? permitirModoOfflineCompleto,
     int? diasMaxSinValidarLicencia,
+    bool? guardarImpresoraPorDefecto,
+    List<String>? ticketsAImprimir,
+    Map<String, int>? copiasPorTicket,
+    bool? autocompletarCantidadRealConteo,
   }) async {
     try {
       print('🔧 Actualizando configuración para tienda ID: $storeId');
@@ -189,6 +197,30 @@ class StoreConfigService {
             diasMaxSinValidarLicencia;
         print(
           '  - dias_max_sin_validar_licencia: $diasMaxSinValidarLicencia',
+        );
+      }
+
+      if (guardarImpresoraPorDefecto != null) {
+        updateData['guardar_impresora_por_defecto'] =
+            guardarImpresoraPorDefecto;
+        print('  - guardar_impresora_por_defecto: $guardarImpresoraPorDefecto');
+      }
+
+      if (ticketsAImprimir != null) {
+        updateData['tickets_a_imprimir'] = ticketsAImprimir;
+        print('  - tickets_a_imprimir: $ticketsAImprimir');
+      }
+
+      if (copiasPorTicket != null) {
+        updateData['copias_por_ticket'] = copiasPorTicket;
+        print('  - copias_por_ticket: $copiasPorTicket');
+      }
+
+      if (autocompletarCantidadRealConteo != null) {
+        updateData['autocompletar_cantidad_real_conteo'] =
+            autocompletarCantidadRealConteo;
+        print(
+          '  - autocompletar_cantidad_real_conteo: $autocompletarCantidadRealConteo',
         );
       }
 
@@ -517,5 +549,94 @@ class StoreConfigService {
     int value,
   ) async {
     await updateStoreConfig(storeId, diasMaxSinValidarLicencia: value);
+  }
+
+  /// Obtiene el valor de guardar_impresora_por_defecto
+  static Future<bool> getGuardarImpresoraPorDefecto(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config['guardar_impresora_por_defecto'] ?? false;
+    } catch (e) {
+      print('❌ Error al obtener guardar_impresora_por_defecto: $e');
+      return false;
+    }
+  }
+
+  /// Actualiza guardar_impresora_por_defecto
+  static Future<void> updateGuardarImpresoraPorDefecto(
+    int storeId,
+    bool value,
+  ) async {
+    await updateStoreConfig(storeId, guardarImpresoraPorDefecto: value);
+  }
+
+  /// Obtiene la lista de tickets a imprimir
+  static Future<List<String>> getTicketsAImprimir(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      final raw = config['tickets_a_imprimir'];
+      if (raw is List) {
+        return raw.map((e) => e.toString()).toList();
+      }
+      return ['cliente', 'almacen'];
+    } catch (e) {
+      print('❌ Error al obtener tickets_a_imprimir: $e');
+      return ['cliente', 'almacen'];
+    }
+  }
+
+  /// Actualiza tickets_a_imprimir
+  static Future<void> updateTicketsAImprimir(
+    int storeId,
+    List<String> value,
+  ) async {
+    await updateStoreConfig(storeId, ticketsAImprimir: value);
+  }
+
+  /// Obtiene el mapa de copias por ticket
+  static Future<Map<String, int>> getCopiasPorTicket(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      final raw = config['copias_por_ticket'];
+      if (raw is Map) {
+        return raw.map(
+          (key, value) => MapEntry(key.toString(), (value as num).toInt()),
+        );
+      }
+      return {'cliente': 1, 'almacen': 1};
+    } catch (e) {
+      print('❌ Error al obtener copias_por_ticket: $e');
+      return {'cliente': 1, 'almacen': 1};
+    }
+  }
+
+  /// Actualiza copias_por_ticket
+  static Future<void> updateCopiasPorTicket(
+    int storeId,
+    Map<String, int> value,
+  ) async {
+    await updateStoreConfig(storeId, copiasPorTicket: value);
+  }
+
+  /// Obtiene el valor de autocompletar_cantidad_real_conteo
+  static Future<bool> getAutocompletarCantidadRealConteo(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config['autocompletar_cantidad_real_conteo'] ?? false;
+    } catch (e) {
+      print('❌ Error al obtener autocompletar_cantidad_real_conteo: $e');
+      return false;
+    }
+  }
+
+  /// Actualiza autocompletar_cantidad_real_conteo
+  static Future<void> updateAutocompletarCantidadRealConteo(
+    int storeId,
+    bool value,
+  ) async {
+    await updateStoreConfig(
+      storeId,
+      autocompletarCantidadRealConteo: value,
+    );
   }
 }

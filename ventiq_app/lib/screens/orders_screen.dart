@@ -17,6 +17,7 @@ import '../utils/price_utils.dart';
 import '../services/payment_method_service.dart';
 import '../services/printer_manager.dart';
 import '../services/user_preferences_service.dart';
+import '../services/turno_service.dart';
 import '../services/store_config_service.dart';
 import '../services/currency_service.dart';
 import '../utils/platform_utils.dart';
@@ -81,6 +82,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         _loadDiscountPermission(),
         _loadPrintPendingPermission(),
         _loadSellerModificationsPermission(),
+        _loadRememberPrinterPermission(),
       ]);
       if (widget.autoOpenOrderId != null) {
         _autoOpenOrder(widget.autoOpenOrderId!);
@@ -188,6 +190,25 @@ class _OrdersScreenState extends State<OrdersScreen> {
       }
     } catch (e) {
       print('❌ Error cargando permiso de modificación de órdenes: $e');
+    }
+  }
+
+  Future<void> _loadRememberPrinterPermission() async {
+    try {
+      final storeId = await _userPreferencesService.getIdTienda();
+      if (storeId == null) {
+        print(
+          '⚠️ No se pudo obtener id_tienda para guardar impresora por defecto',
+        );
+        return;
+      }
+      final allow = await StoreConfigService.getGuardarImpresoraPorDefecto(
+        storeId,
+      );
+      _printerManager.setAllowRememberPrinter(allow);
+      print('🖨️ guardar_impresora_por_defecto: $allow');
+    } catch (e) {
+      print('❌ Error al cargar guardar_impresora_por_defecto: $e');
     }
   }
 
@@ -616,13 +637,28 @@ class _OrdersScreenState extends State<OrdersScreen> {
     });
 
     try {
-      // Verificar si el modo offline está activado
-      final isOfflineModeEnabled =
-          await _userPreferencesService.isOfflineModeEnabled();
-      _isOfflineMode = isOfflineModeEnabled;
+      // Offline / full-offline: cache local. Online: servidor.
+      final useLocalData =
+          await _userPreferencesService.shouldUseLocalData();
+      _isOfflineMode = useLocalData;
 
-      if (isOfflineModeEnabled) {
-        print('🔌 Modo offline - Preservando cambios locales y recargando...');
+      // Sin turno abierto el vendedor no debe ver órdenes (online u offline).
+      final turnoAbierto = await TurnoService.getTurnoAbierto();
+      if (turnoAbierto == null) {
+        print('📭 Sin turno abierto — limpiando lista de órdenes del vendedor');
+        _orderService.clearAllOrders();
+        if (mounted) {
+          setState(() {
+            _filteredOrders = [];
+            _isLoading = false;
+            _isOfflineMode = useLocalData;
+          });
+        }
+        return;
+      }
+
+      if (useLocalData) {
+        print('🔌 Modo local - Preservando cambios locales y recargando...');
 
         // Guardar cambios de estado locales antes de limpiar
         final localStateChanges = <String, OrderStatus>{};
@@ -653,27 +689,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
           }
         }
 
-        // Limpiar órdenes antes de cargar las nuevas
-        _orderService.clearAllOrders();
-
-        // Cargar órdenes sincronizadas desde cache
-        final offlineData = await _userPreferencesService.getOfflineData();
-        if (offlineData != null && offlineData['orders'] != null) {
-          final ordersData = offlineData['orders'] as List<dynamic>;
-          _orderService.transformSupabaseToOrdersPublic(ordersData);
-          print(
-            '✅ Órdenes sincronizadas cargadas desde cache: ${ordersData.length}',
-          );
-        }
-
-        // Cargar órdenes pendientes de sincronización
-        final pendingOrders = await _userPreferencesService.getPendingOrders();
-        if (pendingOrders.isNotEmpty) {
-          _orderService.addPendingOrdersToList(pendingOrders);
-          print(
-            '⏳ Órdenes pendientes de sincronización: ${pendingOrders.length}',
-          );
-        }
+        // Cache + pendientes solo del turno abierto
+        await _orderService.loadOrdersFromLocalCacheForOpenTurno();
 
         // Aplicar cambios de estado offline después de cargar todas las órdenes
         if (localStateChanges.isNotEmpty) {
@@ -722,11 +739,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
           }
         }
       } else {
-        print('🌐 Modo online - Cargando órdenes desde Supabase...');
-        // Limpiar órdenes antes de cargar las nuevas para evitar mezclar usuarios
+        print('🌐 Modo online - Cargando órdenes del turno abierto...');
         _orderService.clearAllOrders();
         await _orderService.listOrdersFromSupabase();
-        print('✅ Órdenes cargadas desde Supabase');
+        final pending =
+            await _userPreferencesService.getSellerVisiblePendingOrders();
+        if (pending.isNotEmpty) {
+          _orderService.addPendingOrdersToList(pending);
+        }
+        print('✅ Órdenes del turno cargadas desde Supabase');
       }
 
       // Actualizar la UI después de cargar las órdenes
@@ -734,7 +755,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         setState(() {
           _filteredOrders = _orderService.orders;
           _isLoading = false;
-          _isOfflineMode = isOfflineModeEnabled;
+          _isOfflineMode = useLocalData;
         });
       }
     } catch (e) {
@@ -1832,7 +1853,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       Builder(
                         builder: (context) {
                           final visibleItems =
-                              order.items.where((i) => i.cantidad > 0).toList();
+                              order.items.where((i) => i.cantidad > 0).toList()
+                                ..sort((a, b) => a.nombre.compareTo(b.nombre));
                           return _buildDetailSection(
                             title: 'Productos (${visibleItems.length})',
                             icon: Icons.shopping_bag_outlined,

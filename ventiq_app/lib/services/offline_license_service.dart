@@ -108,14 +108,21 @@ class OfflineLicenseService {
   final ConnectivityService _connectivity = ConnectivityService();
   final SupabaseClient _supabase = Supabase.instance.client;
 
+  /// Último motivo de fallo al descargar licencia (para UI / logs).
+  String? lastFetchFailureMessage;
+
   /// Descarga la licencia firmada del servidor y la guarda localmente.
   Future<bool> fetchAndStoreSignedLicense(int storeId) async {
+    lastFetchFailureMessage = null;
     try {
       print('🔐 Solicitando licencia firmada para tienda $storeId...');
 
       // Sesión local `offline_mode` no sirve para RPC; reautenticar si hace falta.
       final ready = await _ensureSupabaseSessionForLicenseFetch();
       if (!ready) {
+        lastFetchFailureMessage =
+            'Inicia sesión online una vez para renovar la licencia '
+            '(faltan credenciales o sesión Supabase).';
         print(
           '❌ Sin sesión Supabase real: no se puede obtener licencia firmada',
         );
@@ -128,12 +135,17 @@ class OfflineLicenseService {
       );
 
       if (response is! Map) {
+        lastFetchFailureMessage =
+            'Respuesta inesperada del servidor al pedir la licencia.';
         print('❌ Respuesta inesperada de fn_obtener_licencia_firmada: $response');
         return false;
       }
 
       final map = Map<String, dynamic>.from(response);
       if (map['success'] != true) {
+        lastFetchFailureMessage =
+            map['message']?.toString() ??
+            'El servidor rechazó la licencia firmada.';
         print('❌ Licencia firmada rechazada: ${map['message']}');
         return false;
       }
@@ -141,12 +153,15 @@ class OfflineLicenseService {
       final licenciaRaw = map['licencia'];
       final firma = map['firma']?.toString();
       if (licenciaRaw is! Map || firma == null || firma.isEmpty) {
+        lastFetchFailureMessage = 'Payload de licencia incompleto.';
         print('❌ Payload de licencia incompleto');
         return false;
       }
 
       final licencia = Map<String, dynamic>.from(licenciaRaw);
       if (!_verifySignature(licencia, firma)) {
+        lastFetchFailureMessage =
+            'Firma de licencia inválida. Contacta a soporte.';
         print('❌ Firma HMAC inválida al recibir licencia del servidor');
         return false;
       }
@@ -160,6 +175,7 @@ class OfflineLicenseService {
       print('✅ Licencia firmada guardada localmente');
       return true;
     } catch (e) {
+      lastFetchFailureMessage = 'Error obteniendo licencia: $e';
       print('❌ Error obteniendo licencia firmada: $e');
       return false;
     }
@@ -374,9 +390,15 @@ class OfflineLicenseService {
   }
 
   /// Revalida online si hay conexión; si no, valida localmente.
+  ///
+  /// Si [forceOnlineRefresh] y el fetch fallan, **no** bloquea de inmediato:
+  /// cae a la licencia local. Solo bloquea por fallo de servidor cuando no
+  /// hay licencia local válida (o [requireOnlineSuccess] es true, p. ej.
+  /// botón "Revalidar" del usuario).
   Future<OfflineLicenseStatus> validate({
     int? storeId,
     bool forceOnlineRefresh = false,
+    bool requireOnlineSuccess = false,
   }) async {
     final resolvedStoreId = storeId ?? await _prefs.getIdTienda();
     if (resolvedStoreId == null) {
@@ -387,15 +409,32 @@ class OfflineLicenseService {
     }
 
     final online = _connectivity.isConnected;
-    if (online && (forceOnlineRefresh || await _prefs.getSignedOfflineLicense() == null)) {
+    if (online &&
+        (forceOnlineRefresh ||
+            await _prefs.getSignedOfflineLicense() == null)) {
       final fetched = await fetchAndStoreSignedLicense(resolvedStoreId);
-      if (!fetched && forceOnlineRefresh) {
-        return OfflineLicenseStatus.blocked(
-          reason: OfflineLicenseBlockReason.noLicense,
-          message:
-              'No se pudo revalidar la licencia con el servidor. '
-              'Verifica la conexión e inténtalo de nuevo.',
-        );
+      if (!fetched) {
+        final local = await validateLocalLicense(storeId: resolvedStoreId);
+        if (local.isValid && !requireOnlineSuccess) {
+          print(
+            '⚠️ Fetch de licencia falló; usando licencia local válida '
+            '(${lastFetchFailureMessage ?? 'sin detalle'})',
+          );
+          return local;
+        }
+        if (requireOnlineSuccess || !local.isValid) {
+          return OfflineLicenseStatus.blocked(
+            reason: OfflineLicenseBlockReason.noLicense,
+            message: lastFetchFailureMessage ??
+                'No se pudo revalidar la licencia con el servidor. '
+                    'Verifica la conexión e inténtalo de nuevo.',
+            fechaFin: local.fechaFin,
+            emitidoEn: local.emitidoEn,
+            diasMaxSinValidar: local.diasMaxSinValidar,
+            daysUntilForcedReconnect: local.daysUntilForcedReconnect,
+            permitirModoOfflineCompleto: local.permitirModoOfflineCompleto,
+          );
+        }
       }
     }
 

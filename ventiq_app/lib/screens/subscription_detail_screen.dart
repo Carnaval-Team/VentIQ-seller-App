@@ -6,6 +6,7 @@ import '../models/subscription.dart';
 import '../services/subscription_service.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/app_snackbar.dart';
+import '../utils/navigation_helper.dart';
 import '../services/subscription_guard_service.dart';
 import '../services/auth_service.dart';
 import '../services/connectivity_service.dart';
@@ -64,17 +65,8 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
       if (_licenseStatus != null) {
         print('🔐 Licencia offline: ${_licenseStatus!.isValid} — ${_licenseStatus!.message}');
       }
-
-      // Si la licencia firmada ya es válida, entrar a la app.
-      if (_licenseStatus?.isValid == true && mounted) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          Navigator.of(context).pushNamedAndRemoveUntil(
-            '/categories',
-            (route) => false,
-          );
-        });
-      }
+      // No auto-navegar al cargar: el usuario debe quedarse en esta pantalla
+      // si la abrió desde el menú. Entrar a la app solo con acción explícita.
     } catch (e) {
       print('❌ Error cargando datos de suscripción: $e');
       if (mounted) {
@@ -303,32 +295,45 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
   Future<void> _revalidateLicense() async {
     setState(() => _isRevalidating = true);
     try {
+      final storeId = _idTienda;
+      OfflineLicenseStatus? hardStatus;
+      if (storeId != null && _connectivity.isConnected) {
+        // Botón explícito: exigir éxito online si no hay licencia local válida.
+        hardStatus = await OfflineLicenseService().validate(
+          storeId: storeId,
+          forceOnlineRefresh: true,
+          requireOnlineSuccess: true,
+        );
+      }
+
       final ok = await _subscriptionGuard.forceCheck();
       if (!mounted) return;
 
-      final licenseStatus = _subscriptionGuard.lastOfflineStatus ??
-          await OfflineLicenseService().validateLocalLicense(
-            storeId: _idTienda,
-          );
-      final canEnter = licenseStatus.isValid || ok;
+      final licenseStatus = hardStatus?.isValid == true
+          ? hardStatus!
+          : (_subscriptionGuard.lastOfflineStatus ??
+              await OfflineLicenseService().validateLocalLicense(
+                storeId: _idTienda,
+              ));
 
-      if (canEnter && licenseStatus.isValid) {
+      _activeSubscription =
+          await _subscriptionGuard.getCurrentSubscription(forceRefresh: false);
+      if (!mounted) return;
+
+      // Licencia local/online válida → entrar
+      if (licenseStatus.isValid) {
         AppSnackBar.showPersistent(
           context,
           message: 'Licencia revalidada correctamente',
           backgroundColor: Colors.green,
         );
-        Navigator.of(context).pushNamedAndRemoveUntil(
-          '/categories',
-          (route) => false,
-        );
+        await NavigationHelper.goHome(context);
         return;
       }
 
-      // Suscripción online activa pero sin token firmado: permitir entrar
-      // en modo online (el banner ya no redirige tras un fetch fallido
-      // reiterado si no hay offline completo bloqueando).
-      if (ok && _activeSubscription?.isActive == true) {
+      // Suscripción online activa pero sin token firmado: continuar en línea
+      if (ok && (_activeSubscription?.isActive == true)) {
+        if (!mounted) return;
         AppSnackBar.showPersistent(
           context,
           message:
@@ -336,13 +341,11 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
               'puedes continuar en línea.',
           backgroundColor: Colors.orange,
         );
-        Navigator.of(context).pushNamedAndRemoveUntil(
-          '/categories',
-          (route) => false,
-        );
+        await NavigationHelper.goHome(context);
         return;
       }
 
+      if (!mounted) return;
       setState(() {
         _licenseStatus = licenseStatus;
       });
@@ -596,8 +599,8 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
     return 'Tu suscripción está activa y funcionando correctamente.';
   }
 
-  void _navigateToCategories() {
-    Navigator.pushReplacementNamed(context, '/categories');
+  Future<void> _navigateToCategories() async {
+    await NavigationHelper.goHome(context);
   }
 
   Future<void> _logout() async {

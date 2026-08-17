@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
@@ -20,6 +22,7 @@ class BluetoothPrinterService {
   List<BluetoothInfo> _pairedDevices = [];
   List<BluetoothInfo> _discoveredDevices = [];
   bool _isScanning = false;
+  Timer? _scanTimer;
 
   // Getters
   bool get isConnected => _isConnected;
@@ -251,26 +254,58 @@ class BluetoothPrinterService {
     );
   }
 
-  /// Scan for available Bluetooth devices
-  Future<void> scanDevices({int scanDurationSeconds = 10}) async {
+  /// Scan for available Bluetooth devices (paired + discovery in background).
+  ///
+  /// Loads paired devices immediately and starts a background discovery timer
+  /// without blocking the caller, matching the behavior in ventiq_app.
+  Future<void> scanDevices({int scanDurationSeconds = 5}) async {
+    if (_isScanning) return;
+
     try {
       _isScanning = true;
+
+      // Clear previous devices
+      _pairedDevices.clear();
       _discoveredDevices.clear();
-      
+
       debugPrint('🔍 Scanning for Bluetooth devices...');
-      
-      // Get paired devices
+
+      // Get paired devices first (fast)
       _pairedDevices = await PrintBluetoothThermal.pairedBluetooths;
       debugPrint('✅ Found ${_pairedDevices.length} paired devices');
-      
-      // Scan for new devices
-      await Future.delayed(Duration(seconds: scanDurationSeconds));
-      
-      _isScanning = false;
-      debugPrint('✅ Scan completed');
+
+      // Start discovery scan in the background; do not block here.
+      await _startDeviceDiscovery(scanDurationSeconds);
     } catch (e) {
-      _isScanning = false;
       debugPrint('❌ Error scanning devices: $e');
+    } finally {
+      _isScanning = false;
+      debugPrint('✅ Scan completed (paired devices ready)');
+    }
+  }
+
+  /// Start device discovery for new devices in the background.
+  Future<void> _startDeviceDiscovery(int durationSeconds) async {
+    try {
+      final enabled = await PrintBluetoothThermal.bluetoothEnabled;
+      if (!enabled) {
+        debugPrint('Bluetooth is not enabled for discovery');
+        return;
+      }
+
+      _scanTimer?.cancel();
+      _scanTimer = Timer(Duration(seconds: durationSeconds), () {
+        _isScanning = false;
+        _scanTimer?.cancel();
+        _scanTimer = null;
+        debugPrint('✅ Bluetooth discovery finished');
+      });
+
+      debugPrint(
+        'Started Bluetooth background discovery for $durationSeconds seconds',
+      );
+    } catch (e) {
+      debugPrint('Error starting Bluetooth discovery: $e');
     }
   }
 
@@ -291,6 +326,8 @@ class BluetoothPrinterService {
   /// Disconnect from current device
   Future<void> disconnect() async {
     try {
+      _scanTimer?.cancel();
+      _scanTimer = null;
       await PrintBluetoothThermal.disconnect;
       _isConnected = false;
       _selectedDevice = null;
@@ -306,11 +343,18 @@ class BluetoothPrinterService {
       return null;
     }
 
-    // Start scanning
-    await scanDevices(scanDurationSeconds: 10);
+    // Start scanning in the background; paired devices are loaded immediately
+    // so the dialog opens without waiting for the full discovery duration.
+    scanDevices(scanDurationSeconds: 5);
 
+    // If no paired devices are available right away, show an informative dialog
+    // with an option to rescan instead of blocking the UI.
     if (_pairedDevices.isEmpty && _discoveredDevices.isEmpty) {
-      _showErrorDialog(context, 'Sin dispositivos', 'No se encontraron impresoras Bluetooth.');
+      _showErrorDialog(
+        context,
+        'Sin dispositivos',
+        'No se encontraron impresoras Bluetooth. Asegúrate de emparejar la impresora en Configuración > Bluetooth.',
+      );
       return null;
     }
 

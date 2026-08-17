@@ -5,54 +5,56 @@ import '../../services/admin_inventory_service.dart';
 import '../../services/admin_ticket_printer_service.dart';
 import '../../services/user_preferences_service.dart';
 
-/// Recepción simple de mercancía (offline-first).
-class AdminReceptionScreen extends StatefulWidget {
-  const AdminReceptionScreen({super.key});
+/// Extracción de mercancía (offline-first).
+class AdminExtractionScreen extends StatefulWidget {
+  const AdminExtractionScreen({super.key});
 
   @override
-  State<AdminReceptionScreen> createState() => _AdminReceptionScreenState();
+  State<AdminExtractionScreen> createState() => _AdminExtractionScreenState();
 }
 
-class _AdminReceptionScreenState extends State<AdminReceptionScreen> {
+class _AdminExtractionScreenState extends State<AdminExtractionScreen> {
   final _service = AdminInventoryService();
-  final _entregadoCtrl = TextEditingController();
-  final _recibidoCtrl = TextEditingController();
+  final _autorizadoCtrl = TextEditingController();
   final _obsCtrl = TextEditingController();
   final _searchCtrl = TextEditingController();
   final _qtyCtrl = TextEditingController(text: '1');
 
+  List<Map<String, dynamic>> _motives = [];
+  int? _motivoId;
   List<Map<String, dynamic>> _searchResults = [];
   final List<Map<String, dynamic>> _lines = [];
   Map<String, dynamic>? _selected;
-  List<Map<String, dynamic>> _suppliers = [];
-  int? _idProveedor;
   bool _saving = false;
   bool _searching = false;
+  bool _loadingMotives = true;
 
   @override
   void initState() {
     super.initState();
-    _prefillReceiver();
-    _loadSuppliers();
+    _bootstrap();
   }
 
-  Future<void> _loadSuppliers() async {
-    final list = await _service.listCachedSuppliers();
-    if (!mounted) return;
-    setState(() => _suppliers = list);
-  }
-
-  Future<void> _prefillReceiver() async {
+  Future<void> _bootstrap() async {
     final profile = await UserPreferencesService().getWorkerProfile();
     final name =
         '${profile['nombres'] ?? ''} ${profile['apellidos'] ?? ''}'.trim();
-    if (name.isNotEmpty) _recibidoCtrl.text = name;
+    if (name.isNotEmpty) _autorizadoCtrl.text = name;
+
+    final motives = await _service.listExtractionMotives();
+    if (!mounted) return;
+    setState(() {
+      _motives = motives;
+      _motivoId = (motives.isNotEmpty)
+          ? (motives.first['id'] as num?)?.toInt()
+          : null;
+      _loadingMotives = false;
+    });
   }
 
   @override
   void dispose() {
-    _entregadoCtrl.dispose();
-    _recibidoCtrl.dispose();
+    _autorizadoCtrl.dispose();
     _obsCtrl.dispose();
     _searchCtrl.dispose();
     _qtyCtrl.dispose();
@@ -104,7 +106,6 @@ class _AdminReceptionScreenState extends State<AdminReceptionScreen> {
         'id_variante': null,
         'id_presentacion': presentationId,
         'cantidad': qty,
-        'costo_real': 0,
         'denominacion': p['denominacion'],
       });
       _selected = null;
@@ -115,10 +116,15 @@ class _AdminReceptionScreenState extends State<AdminReceptionScreen> {
   }
 
   Future<void> _save() async {
-    if (_entregadoCtrl.text.trim().isEmpty ||
-        _recibidoCtrl.text.trim().isEmpty) {
+    if (_autorizadoCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Completa entregado por y recibido por')),
+        const SnackBar(content: Text('Indica quién autoriza')),
+      );
+      return;
+    }
+    if (_motivoId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Selecciona un motivo')),
       );
       return;
     }
@@ -131,7 +137,7 @@ class _AdminReceptionScreenState extends State<AdminReceptionScreen> {
 
     setState(() => _saving = true);
     try {
-      await _service.registerReception(
+      await _service.registerExtraction(
         productos: _lines
             .map(
               (l) => {
@@ -139,37 +145,37 @@ class _AdminReceptionScreenState extends State<AdminReceptionScreen> {
                 'id_variante': l['id_variante'],
                 'id_presentacion': l['id_presentacion'],
                 'cantidad': l['cantidad'],
-                'costo_real': l['costo_real'] ?? 0,
               },
             )
             .toList(),
-        entregadoPor: _entregadoCtrl.text.trim(),
-        recibidoPor: _recibidoCtrl.text.trim(),
+        idMotivoOperacion: _motivoId!,
+        autorizadoPor: _autorizadoCtrl.text.trim(),
         observaciones: _obsCtrl.text.trim(),
-        idProveedor: _idProveedor,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Recepción registrada (se sincronizará si está offline)'),
+          content: Text(
+            'Extracción registrada (se sincronizará si está offline)',
+          ),
           backgroundColor: Colors.green,
         ),
       );
-      final proveedorNombre = _suppliers
+      final motivoLabel = _motives
           .cast<Map<String, dynamic>?>()
           .firstWhere(
-            (s) => (s?['id'] as num?)?.toInt() == _idProveedor,
+            (m) => (m?['id'] as num?)?.toInt() == _motivoId,
             orElse: () => null,
-          )?['denominacion']
-          ?.toString();
+          );
       await AdminTicketPrinterService().confirmAndPrint(
         context,
-        title: 'Recepción',
-        lines: AdminTicketPrinterService.receptionLines(
-          entregadoPor: _entregadoCtrl.text.trim(),
-          recibidoPor: _recibidoCtrl.text.trim(),
+        title: 'Extracción',
+        lines: AdminTicketPrinterService.extractionLines(
+          autorizadoPor: _autorizadoCtrl.text.trim(),
+          motivo: motivoLabel?['denominacion']?.toString() ??
+              motivoLabel?['nombre']?.toString() ??
+              '$_motivoId',
           productos: _lines,
-          proveedor: proveedorNombre,
           observaciones: _obsCtrl.text.trim(),
         ),
       );
@@ -189,7 +195,7 @@ class _AdminReceptionScreenState extends State<AdminReceptionScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Recepción'),
+        title: const Text('Extracción'),
         backgroundColor: Colors.blue[700],
         foregroundColor: Colors.white,
       ),
@@ -197,45 +203,37 @@ class _AdminReceptionScreenState extends State<AdminReceptionScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           TextField(
-            controller: _entregadoCtrl,
+            controller: _autorizadoCtrl,
             decoration: const InputDecoration(
-              labelText: 'Entregado por',
+              labelText: 'Autorizado por',
               border: OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 12),
-          TextField(
-            controller: _recibidoCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Recibido por',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<int?>(
-            value: _idProveedor,
-            isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'Proveedor (opcional)',
-              border: OutlineInputBorder(),
-            ),
-            items: [
-              const DropdownMenuItem<int?>(
-                value: null,
-                child: Text('Sin proveedor'),
+          if (_loadingMotives)
+            const LinearProgressIndicator()
+          else
+            DropdownButtonFormField<int>(
+              value: _motivoId,
+              decoration: const InputDecoration(
+                labelText: 'Motivo',
+                border: OutlineInputBorder(),
               ),
-              ..._suppliers.map(
-                (s) => DropdownMenuItem<int?>(
-                  value: (s['id'] as num?)?.toInt(),
-                  child: Text(
-                    s['denominacion']?.toString() ?? '#${s['id']}',
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
-            ],
-            onChanged: (v) => setState(() => _idProveedor = v),
-          ),
+              items: _motives
+                  .map(
+                    (m) => DropdownMenuItem<int>(
+                      value: (m['id'] as num?)?.toInt(),
+                      child: Text(
+                        m['denominacion']?.toString() ??
+                            m['nombre']?.toString() ??
+                            '#${m['id']}',
+                      ),
+                    ),
+                  )
+                  .where((i) => i.value != null)
+                  .toList(),
+              onChanged: (v) => setState(() => _motivoId = v),
+            ),
           const SizedBox(height: 12),
           TextField(
             controller: _obsCtrl,
@@ -246,12 +244,12 @@ class _AdminReceptionScreenState extends State<AdminReceptionScreen> {
             maxLines: 2,
           ),
           const SizedBox(height: 16),
-          const Text('Agregar producto', style: TextStyle(fontWeight: FontWeight.w600)),
+          Text('Productos', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           TextField(
             controller: _searchCtrl,
             decoration: InputDecoration(
-              hintText: 'Buscar producto...',
+              labelText: 'Buscar producto',
               border: const OutlineInputBorder(),
               suffixIcon: _searching
                   ? const Padding(
@@ -267,30 +265,15 @@ class _AdminReceptionScreenState extends State<AdminReceptionScreen> {
             onChanged: _search,
           ),
           if (_searchResults.isNotEmpty)
-            Container(
-              constraints: const BoxConstraints(maxHeight: 180),
-              margin: const EdgeInsets.only(top: 4),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: _searchResults.length,
-                itemBuilder: (context, i) {
-                  final p = _searchResults[i];
-                  return ListTile(
-                    dense: true,
-                    title: Text(p['denominacion']?.toString() ?? ''),
-                    onTap: () {
-                      setState(() {
-                        _selected = p;
-                        _searchCtrl.text = p['denominacion']?.toString() ?? '';
-                        _searchResults = [];
-                      });
-                    },
-                  );
-                },
+            ..._searchResults.map(
+              (p) => ListTile(
+                title: Text(p['denominacion']?.toString() ?? ''),
+                subtitle: Text('Stock: ${p['cantidad'] ?? 0}'),
+                onTap: () => setState(() {
+                  _selected = p;
+                  _searchCtrl.text = p['denominacion']?.toString() ?? '';
+                  _searchResults = [];
+                }),
               ),
             ),
           if (_selected != null) ...[
@@ -300,56 +283,49 @@ class _AdminReceptionScreenState extends State<AdminReceptionScreen> {
                 Expanded(
                   child: TextField(
                     controller: _qtyCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
-                    ],
                     decoration: const InputDecoration(
                       labelText: 'Cantidad',
                       border: OutlineInputBorder(),
                     ),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                    ],
                   ),
                 ),
                 const SizedBox(width: 8),
-                ElevatedButton(
+                FilledButton(
                   onPressed: _addLine,
                   child: const Text('Agregar'),
                 ),
               ],
             ),
           ],
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           ..._lines.asMap().entries.map((e) {
             final i = e.key;
             final l = e.value;
             return ListTile(
-              contentPadding: EdgeInsets.zero,
               title: Text(l['denominacion']?.toString() ?? 'Producto'),
               subtitle: Text('Cantidad: ${l['cantidad']}'),
               trailing: IconButton(
-                icon: const Icon(Icons.delete_outline, color: Colors.red),
+                icon: const Icon(Icons.delete_outline),
                 onPressed: () => setState(() => _lines.removeAt(i)),
               ),
             );
           }),
           const SizedBox(height: 24),
-          ElevatedButton.icon(
+          FilledButton.icon(
             onPressed: _saving ? null : _save,
             icon: _saving
                 ? const SizedBox(
-                    width: 16,
-                    height: 16,
+                    width: 18,
+                    height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.save),
-            label: Text(_saving ? 'Guardando...' : 'Registrar recepción'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue[700],
-              foregroundColor: Colors.white,
-              minimumSize: const Size.fromHeight(48),
-            ),
+                : const Icon(Icons.outbox),
+            label: Text(_saving ? 'Guardando...' : 'Registrar extracción'),
           ),
         ],
       ),

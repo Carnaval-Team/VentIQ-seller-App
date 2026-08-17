@@ -344,6 +344,59 @@ class OfflineDatabaseService {
         0;
   }
 
+  /// Historial local de ops admin (pendientes + sincronizadas), más recientes primero.
+  Future<List<Map<String, dynamic>>> getAdminOpsHistory({int limit = 100}) async {
+    await initialize();
+    if (_webPrefsMode) {
+      final ops = await _readAdminOpsPrefs();
+      final normalized = ops.map((op) {
+        final map = Map<String, dynamic>.from(op);
+        map['synced'] = map['synced'] == 1 || map['synced'] == true;
+        return map;
+      }).toList();
+      normalized.sort((a, b) {
+        final ca = a['created_at']?.toString() ?? '';
+        final cb = b['created_at']?.toString() ?? '';
+        return cb.compareTo(ca);
+      });
+      return normalized.take(limit).toList();
+    }
+
+    final db = await database;
+    final rows = await db.query(
+      'admin_pending_ops',
+      orderBy: 'id DESC',
+      limit: limit,
+    );
+    return rows.map((r) {
+      return {
+        'id': r['id'],
+        'client_uuid': r['client_uuid'],
+        'op_type': r['op_type'],
+        'payload': jsonDecode(r['payload'] as String),
+        'created_at': r['created_at'],
+        'synced_at': r['synced_at'],
+        'synced': r['synced'] == 1,
+        'last_error': r['last_error'],
+      };
+    }).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> getCachedLayouts() async {
+    final section = await getSection('layouts');
+    if (section is List) {
+      return section
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    }
+    return [];
+  }
+
+  Future<void> saveCachedLayouts(List<Map<String, dynamic>> layouts) async {
+    await mergeSections({'layouts': layouts});
+  }
+
   // --------------------------------------------------------------------------
   // API compatible con UserPreferencesService
   // --------------------------------------------------------------------------
