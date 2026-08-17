@@ -18,23 +18,52 @@ if (!BASE) {
 export interface WapiResult<T> {
   success: boolean;
   data?: T;
-  error?: { code: string; message: string };
+  error?: {
+    code: string;
+    message: string;
+    /**
+     * Segundos que el server pide esperar antes de reintentar. Viene del
+     * header `Retry-After` o del campo `retryAfterSeconds` que devuelve el
+     * SEND_PACING de WAPI en sus 429. Quien llama debe respetarlo: insistir
+     * antes sólo alarga el cooldown.
+     */
+    retryAfterSeconds?: number;
+  };
 }
+
+/**
+ * Timeouts por operación. CRÍTICO: sin esto, `fetch` espera indefinidamente.
+ * Una request que abre conexión y nunca responde (sesión WAPI colgada,
+ * Puppeteer atascado descargando una imagen) congelaba el worker hasta el
+ * techo de wall-clock de Supabase (~400s) — se lo llevaba por delante junto
+ * con toda la cadena de chunks pendientes. Ese era el "a veces se para el
+ * envío": no fallaba, se quedaba esperando.
+ */
+const TIMEOUT_DEFAULT_MS = 20_000;
+/** Los envíos con media son más lentos: WAPI descarga la imagen y la sube. */
+const TIMEOUT_MEDIA_MS = 45_000;
 
 async function call<T>(
   method: "GET" | "POST" | "DELETE",
   path: string,
   body?: unknown,
+  timeoutMs: number = TIMEOUT_DEFAULT_MS,
 ): Promise<WapiResult<T>> {
   const url = `${BASE}${path.startsWith("/") ? "" : "/"}${path}`;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (API_KEY) headers["X-API-Key"] = API_KEY;
+
+  // AbortController manual (en vez de AbortSignal.timeout) para poder limpiar
+  // el temporizador: un timer huérfano mantiene vivo el isolate sin motivo.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
 
   try {
     const res = await fetch(url, {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: ctrl.signal,
     });
 
     const text = await res.text();
@@ -51,14 +80,30 @@ async function call<T>(
         `[wapi_client] ${method} ${url} → ${res.status}`,
         JSON.stringify({ requestBody: body, responseBody: parsed ?? text }),
       );
+
+      // `retryAfterSeconds` sale del body (SEND_PACING) o del header estándar.
+      const desdeBody = Number(parsed?.retryAfterSeconds ?? parsed?.error?.retryAfterSeconds);
+      const desdeHeader = Number(res.headers.get("Retry-After") ?? "");
+      const retryAfterSeconds = Number.isFinite(desdeBody) && desdeBody > 0
+        ? desdeBody
+        : Number.isFinite(desdeHeader) && desdeHeader > 0
+        ? desdeHeader
+        : undefined;
+
       return {
         success: false,
         error: {
-          code: parsed?.error?.code ?? `HTTP_${res.status}`,
+          // El 429 del SEND_PACING trae `code` en la RAÍZ del body, no dentro
+          // de `error` (que ahí es el string "Too Many Requests"). Miramos las
+          // dos formas antes de caer al genérico HTTP_<status>.
+          code: (typeof parsed?.error === "object" ? parsed?.error?.code : undefined) ??
+            (typeof parsed?.code === "string" ? parsed.code : undefined) ??
+            `HTTP_${res.status}`,
           message:
-            parsed?.error?.message ??
+            (typeof parsed?.error === "object" ? parsed?.error?.message : undefined) ??
             parsed?.message ??
             (typeof text === "string" && text.length > 0 ? text : `HTTP ${res.status}`),
+          ...(retryAfterSeconds ? { retryAfterSeconds } : {}),
         },
       };
     }
@@ -69,13 +114,27 @@ async function call<T>(
     }
     return { success: true, data: parsed as T };
   } catch (err) {
+    const e = err as Error;
+    // Un abort es nuestro propio timeout, no un fallo de red: lo distinguimos
+    // para que quien llama pueda reintentarlo con criterio.
+    const abortado = e?.name === "AbortError" || e?.name === "TimeoutError" ||
+      ctrl.signal.aborted;
+    if (abortado) {
+      console.error(
+        `[wapi_client] ${method} ${url} → TIMEOUT tras ${timeoutMs}ms`,
+      );
+    }
     return {
       success: false,
-      error: {
-        code: "NETWORK_ERROR",
-        message: (err as Error).message ?? String(err),
-      },
+      error: abortado
+        ? {
+          code: "TIMEOUT",
+          message: `WAPI no respondió en ${Math.round(timeoutMs / 1000)}s`,
+        }
+        : { code: "NETWORK_ERROR", message: e?.message ?? String(err) },
     };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -215,6 +274,7 @@ export const wapi = {
       "POST",
       `/api/sessions/${encodeURIComponent(sessionId)}/messages/send-image`,
       body,
+      TIMEOUT_MEDIA_MS,
     );
   },
 
@@ -256,6 +316,7 @@ export const wapi = {
           stopOnError: options?.stopOnError ?? false,
         },
       },
+      TIMEOUT_MEDIA_MS,
     );
   },
 };

@@ -10,6 +10,7 @@ import '../services/printer_manager.dart';
 import '../services/wifi_printer_service.dart';
 import '../services/export_service.dart';
 import '../utils/ticket_text_utils.dart';
+import '../utils/operation_client_utils.dart';
 
 class InventoryOperationsScreen extends StatefulWidget {
   const InventoryOperationsScreen({super.key});
@@ -1784,7 +1785,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              _buildFormattedDetails(operation['detalles']),
+                              _buildFormattedDetails(
+                                operation['detalles'],
+                                observaciones: operation['observaciones'],
+                              ),
                             ],
 
                             // Completar: transferencia unificada (salida/entrada) u otras ops
@@ -2370,7 +2374,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     return 'Producto sin nombre';
   }
 
-  Widget _buildFormattedDetails(dynamic detalles) {
+  Widget _buildFormattedDetails(dynamic detalles, {dynamic observaciones}) {
     if (detalles == null) return const Text('Sin detalles específicos');
 
     if (detalles is Map<String, dynamic>) {
@@ -2398,7 +2402,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
               style: TextStyle(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 4),
-            _buildSpecificDetails(especificos),
+            _buildSpecificDetails(especificos, observaciones: observaciones),
             const SizedBox(height: 12),
           ],
           if (isTransfer) ...[
@@ -2435,11 +2439,12 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     return Text(detalles.toString());
   }
 
-  Widget _buildSpecificDetails(dynamic especificos) {
+  Widget _buildSpecificDetails(dynamic especificos, {dynamic observaciones}) {
     if (especificos == null) return const Text('Sin información específica');
 
     if (especificos is Map<String, dynamic>) {
       final clienteInfo = especificos['cliente_info'];
+      final clienteDesdeObs = extractClienteFromObservaciones(observaciones);
 
       return Container(
         padding: const EdgeInsets.all(12),
@@ -2474,11 +2479,22 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                     'tipo_ajuste',
                     'monto_total',
                   };
-                  return !hiddenKeys.contains(e.key);
+                  if (hiddenKeys.contains(e.key)) return false;
+                  // Venta por acuerdo: la venta va sin cliente registrado,
+                  // el ID vacío no aporta nada.
+                  if (e.key == 'id_cliente' && !_hasDetailText(e.value)) {
+                    return false;
+                  }
+                  return true;
                 })
                 .map((entry) {
                   String label = _formatFieldLabel(entry.key);
                   String value = _formatFieldValue(entry.value);
+                  if (entry.key == 'nombre_cliente' &&
+                      !_hasDetailText(entry.value) &&
+                      clienteDesdeObs != null) {
+                    value = clienteDesdeObs;
+                  }
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Row(
@@ -2729,15 +2745,12 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
   Map<String, dynamic>? _extractDetallesEspecificos(
     Map<String, dynamic> operation,
-  ) {
-    final detalles = operation['detalles'];
-    if (detalles is Map<String, dynamic>) {
-      final esp = detalles['detalles_especificos'];
-      if (esp is Map<String, dynamic>) return esp;
-      if (esp is Map) return Map<String, dynamic>.from(esp);
-    }
-    return null;
-  }
+  ) => extractDetallesEspecificos(operation);
+
+  /// Cliente de la operación: el registrado en la venta y, si no hay
+  /// (venta por acuerdo), el que quedó escrito en las observaciones.
+  String? _resolveClienteNombre(Map<String, dynamic> operation) =>
+      resolveOperationClienteNombre(operation);
 
   List<Widget> _buildOperationMetaSection(Map<String, dynamic> operation) {
     final esp = _extractDetallesEspecificos(operation);
@@ -2848,6 +2861,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         return 'Comentario al completar';
       case 'observaciones':
         return 'Observaciones';
+      case 'nombre_cliente':
+        return 'Cliente';
       case 'estado_extraccion':
         return 'Estado extracción';
       case 'estado_recepcion':
@@ -4664,6 +4679,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         operation: operation,
         items: items,
         almacenNombre: almacenNombre,
+        clienteNombre: _resolveClienteNombre(operation),
       );
 
       if (mounted) {
@@ -4726,6 +4742,13 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       'Estado: ${operation['estado_nombre'] ?? 'N/A'}',
       styles: PosStyles(align: PosAlign.left),
     );
+    // En la venta por acuerdo el cliente viaja en las observaciones
+    final clienteNombre = _resolveClienteNombre(operation);
+    if (clienteNombre != null) {
+      for (final wrapped in wrapTicketText('Cliente: $clienteNombre')) {
+        bytes += line(wrapped, styles: PosStyles(align: PosAlign.left));
+      }
+    }
     bytes += line(
       'Fecha: ${_formatDateTime(DateTime.parse(operation['created_at']))}',
       styles: PosStyles(align: PosAlign.left),

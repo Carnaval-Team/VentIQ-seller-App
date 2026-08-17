@@ -48,7 +48,15 @@
       "PowerShell(git add *)",
       "Bash(git commit *)",
       "PowerShell(git push *)",
-      "mcp__supabase__list_tables"
+      "mcp__supabase__list_tables",
+      "Bash(node -e ' *)",
+      "Bash(node --experimental-strip-types --no-warnings /tmp/t.ts)",
+      "Bash(node --experimental-strip-types --no-warnings ./_scratch_t.ts)",
+      "Bash(rm -f /c/tmp/pure.ts /c/tmp/t.ts)",
+      "PowerShell($d = Get-Command deno -ErrorAction SilentlyContinue; if \\($d\\) { \"DENO: $\\($d.Source\\)\" } else { \"DENO: no\" }; $f = Get-Command flutter -ErrorAction SilentlyContinue; if \\($f\\) { \"FLUTTER: $\\($f.Source\\)\" } else { \"FLUTTER: no\" }; $dt = Get-Command dart -ErrorAction SilentlyContinue; if \\($dt\\) { \"DART: $\\($dt.Source\\)\" } else { \"DART: no\" })",
+      "PowerShell($n = Get-Command node -ErrorAction SilentlyContinue; if \\($n\\) { \"NODE: $\\(node --version\\)\" } else { \"NODE: no\" }; $x = Get-Command npx -ErrorAction SilentlyContinue; if \\($x\\) { \"NPX: yes\" } else { \"NPX: no\" })",
+      "PowerShell(cd C:\\\\Users\\\\cesar\\\\Documents\\\\VentIQ-seller-App\\\\ventiq_admin_app\\\\supabase\\\\functions; $files = Get-ChildItem -Directory | Where-Object { Test-Path \\(Join-Path $_.FullName 'index.ts'\\) } | ForEach-Object { \"$\\($_.Name\\)/index.ts\" }; \"CHECKING: $\\($files -join ', '\\)\"; npx --yes deno@2 check @files 2>&1 | Select-String -Pattern 'TS[0-9]+|error:|Found ' | Select-Object -Last 30)",
+      "Bash(flutter test *)"
     ]
   },
   "enabledMcpjsonServers": [

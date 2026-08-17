@@ -862,6 +862,9 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
       final res = await _service.resumeTanda(
         idSesion: idSesion,
         logIds: pendientes,
+        // Todos los productos de la tanda, no sólo los pendientes: así el
+        // resumen final vuelve a listar el catálogo completo.
+        summaryProductIds: tanda.productos,
       );
       if (!mounted) return;
       messenger.showSnackBar(SnackBar(
