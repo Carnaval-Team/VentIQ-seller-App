@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'dart:convert';
 import '../config/app_colors.dart';
+import '../widgets_home/screens/widget_tutorial_sheet.dart';
 import '../services/user_preferences_service.dart';
 import '../services/permissions_service.dart';
 import '../services/auth_service.dart';
@@ -629,6 +631,23 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   },
                 ),
                 const Divider(height: 1),
+
+                // Widgets de pantalla de inicio (solo Android)
+                if (!kIsWeb &&
+                    defaultTargetPlatform == TargetPlatform.android)
+                  _buildDrawerItem(
+                    context,
+                    icon: Icons.widgets,
+                    title: 'Widgets de inicio',
+                    subtitle: 'Métricas en tu pantalla de inicio',
+                    onTap: () {
+                      Navigator.pop(context);
+                      WidgetTutorialSheet.show(context);
+                    },
+                  ),
+                if (!kIsWeb &&
+                    defaultTargetPlatform == TargetPlatform.android)
+                  const Divider(height: 1),
 
                 _buildDrawerItem(
                   context,

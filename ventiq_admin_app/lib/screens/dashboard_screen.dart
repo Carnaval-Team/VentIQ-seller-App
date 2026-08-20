@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../config/app_colors.dart';
+import '../main.dart' show appNavigatorKey;
+import '../widgets_home/home_widget_launcher.dart';
+import '../widgets_home/home_widget_service.dart';
+import '../widgets_home/screens/widget_tutorial_sheet.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
 import '../services/dashboard_service.dart';
@@ -67,6 +72,27 @@ class _DashboardScreenState extends State<DashboardScreen>
     _checkForChangelog();
     // Inicializar servicio de notificaciones para suscribirse a Realtime
     _notificationService.initialize();
+    // Home Screen Widgets: enrutado de aperturas, limpieza y tutorial.
+    _initHomeWidgets();
+  }
+
+  /// Arranque de los Home Screen Widgets (solo Android).
+  ///
+  /// - Atiende el flujo de configuración nativo y los deep links del widget.
+  /// - Refresca los snapshots con los datos frescos de esta sesión.
+  /// - Muestra el tutorial la primera vez, después del changelog.
+  Future<void> _initHomeWidgets() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+
+    await HomeWidgetLauncher.attach(appNavigatorKey);
+    await HomeWidgetService.pruneRemovedWidgets();
+    await HomeWidgetService.refreshAll();
+
+    if (!mounted) return;
+    // Espera a que el diálogo de changelog termine para no apilar modales.
+    await Future.delayed(const Duration(seconds: 3));
+    if (!mounted) return;
+    await WidgetTutorialSheet.showIfNeeded(context);
   }
 
   @override

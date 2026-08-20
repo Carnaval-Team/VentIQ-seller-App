@@ -1,9 +1,76 @@
 {
-  "current_version": "2.7.1",
-  "build": 271,
+  "current_version": "2.8.0",
+  "build": 280,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.8.0",
+      "date": "2026-08-20",
+      "title": "✨ Tu negocio en la pantalla de inicio del teléfono",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Ya no tienes que abrir la app para saber cómo va el día",
+          "description": "Ahora puedes poner tarjetas de Inventtia directamente en la pantalla de inicio de tu teléfono, junto a tus otras aplicaciones. Desbloqueas el celular y ahí están tus números, sin abrir nada ni esperar a que cargue. Se actualizan solas durante el día."
+        },
+        {
+          "type": "feature",
+          "title": "Tarjeta Resumen: la salud de tu tienda de un vistazo",
+          "description": "Muestra tu ganancia neta del periodo bien grande, con una flecha verde o roja que te dice si vas mejor o peor que el periodo anterior. Debajo, tus gastos, la cantidad de órdenes y el precio actual del dólar. Y un gráfico pequeño con la tendencia de tus ventas, para ver de una mirada si el negocio va subiendo o bajando. Tú eliges el periodo: del día, la semana, el mes, o hasta 3 años."
+        },
+        {
+          "type": "feature",
+          "title": "Tarjeta Ventas: cuánto has vendido, ahora mismo",
+          "description": "Elige entre dos modos. En Tiempo Real muestra las ventas del día en curso con un indicador verde que dice EN VIVO, y se va actualizando. En Rango de Fechas fijas un desde y un hasta para vigilar un periodo concreto. Ves el dinero total, cuánto entró en efectivo, cuánto por transferencia y cuánto salió en egresos."
+        },
+        {
+          "type": "feature",
+          "title": "La tarjeta de Ventas se despliega para ver TPV por TPV",
+          "description": "Toca el botón Ver TPVs y la tarjeta se abre ahí mismo, en la pantalla de inicio, mostrando cuánto vendió cada punto de venta con su efectivo y transferencia. Sin entrar a la app. Vuelves a tocar y se cierra."
+        },
+        {
+          "type": "feature",
+          "title": "Tarjeta Producto: vigila el que más te importa",
+          "description": "Escoge un producto de tu inventario y tenlo siempre a la vista: su precio de venta, cuánto te cuesta en CUP y en USD, cuántas unidades has vendido, el dinero que te ha generado y las que te quedan en existencia. Si se queda en cero, la tarjeta lo avisa con una etiqueta roja de SIN STOCK."
+        },
+        {
+          "type": "feature",
+          "title": "Una tarjeta por cada tienda que administres",
+          "description": "Si manejas varios negocios, puedes poner una tarjeta para cada uno. Al colocarla eliges de qué tienda quieres ver los números, así que puedes tener el resumen de todas tus tiendas juntas en la misma pantalla y compararlas de un golpe de vista."
+        },
+        {
+          "type": "feature",
+          "title": "Pon todas las tarjetas que quieras, cada una a tu manera",
+          "description": "Puedes tener varias tarjetas del mismo tipo con configuraciones distintas: una con las ventas de hoy y otra con las del mes pasado, o el seguimiento de tres productos diferentes. Cada tarjeta recuerda lo que le pediste."
+        },
+        {
+          "type": "feature",
+          "title": "Te explicamos cómo ponerlas la primera vez",
+          "description": "Al entrar a la app aparece una guía corta que te muestra para qué sirve cada tarjeta y cómo llevarla a tu pantalla de inicio, con un botón para añadirla al momento. Si la cierras y luego la quieres ver de nuevo, está en el menú lateral, en Widgets de inicio."
+        },
+        {
+          "type": "improvement",
+          "title": "Se ven bonitas y combinan con tu teléfono",
+          "description": "Las tarjetas tienen un diseño limpio, con esquinas redondeadas y fondos con degradado suave, al estilo de las tarjetas del clima. Si tu teléfono está en modo claro se ven claras, y si lo pones en modo oscuro cambian solas a oscuro."
+        },
+        {
+          "type": "improvement",
+          "title": "Toca una tarjeta y entras justo donde querías",
+          "description": "Si necesitas el detalle completo, toca la tarjeta y la app se abre directamente en la pantalla que corresponde: el Dashboard, Ventas o tus productos. Sin dar vueltas por el menú."
+        },
+        {
+          "type": "improvement",
+          "title": "Los mismos números que ves dentro de la app",
+          "description": "Las tarjetas no calculan nada por su cuenta: leen exactamente la misma información de tu Dashboard, de tus Ventas y de tus Productos. Lo que ves afuera es lo que verías adentro."
+        },
+        {
+          "type": "improvement",
+          "title": "Las tarjetas te dicen cuándo se actualizaron",
+          "description": "Cada tarjeta muestra abajo la hora del último refresco, para que sepas si el número que estás mirando es de hace un minuto o de hace un rato. Si algo falla, por ejemplo si no hay internet o hay que iniciar sesión otra vez, la tarjeta te lo dice en lugar de quedarse en blanco."
+        }
+      ]
+    },
     {
       "version": "2.7.1",
       "date": "2026-08-15",

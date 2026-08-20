@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:ventiq_admin_app/screens/excel_import_screen.dart';
 import 'package:ventiq_admin_app/screens/suppliers/supplier_reports_screen.dart';
 import 'package:ventiq_admin_app/widgets/supplier/supplier_alerts_widget.dart';
@@ -62,12 +63,23 @@ import 'screens/hr/hr_worker_config_screen.dart';
 import 'screens/hr/hr_attendance_history_screen.dart';
 import 'screens/importadora/importadora_facturas_screen.dart';
 import 'screens/importadora/estados_factura_screen.dart';
+import 'utils/app_route_observer.dart';
+import 'widgets_home/widget_background_scheduler.dart';
+
+/// Navigator global: lo necesita HomeWidgetLauncher para navegar cuando la app
+/// se abre desde un widget de la pantalla de inicio.
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Initialize Supabase
   await AuthService.initialize();
+
+  // Home Screen Widgets (solo Android): interactividad + refresco periódico.
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+    await WidgetBackgroundScheduler.initialize();
+  }
 
   runApp(const MyApp());
 }
@@ -80,6 +92,11 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Inventtia Gestión',
       debugShowCheckedModeBanner: false,
+      // Navigator global para las aperturas desde Home Screen Widgets.
+      navigatorKey: appNavigatorKey,
+      // Recuerda la ruta visible: evita que un widget re-navegue a la pantalla
+      // en la que ya estamos.
+      navigatorObservers: [AppRouteObserver.instance],
       // Configuración específica para web deployment
       // useInheritedMediaQuery: true,
       theme: ThemeData(

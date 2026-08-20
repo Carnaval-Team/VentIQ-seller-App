@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Paleta de los Home Screen Widgets (tema claro).
+  El archivo hermano en values-night/ define la variante oscura, de modo que
+  Android intercambia automáticamente los colores según el tema del sistema.
+-->
+<resources>
+    <!-- Superficie de la tarjeta: degradado suave -->
+    <color name="vq_widget_bg_start">#FFFFFFFF</color>
+    <color name="vq_widget_bg_end">#FFEDF2FA</color>
+    <color name="vq_widget_stroke">#1A194B8C</color>
+
+    <!-- Texto -->
+    <color name="vq_widget_text_primary">#FF1F2937</color>
+    <color name="vq_widget_text_secondary">#FF6B7280</color>
+
+    <!-- Acentos alineados con AppColors de la app -->
+    <color name="vq_widget_primary">#FF194B8C</color>
+    <color name="vq_widget_success">#FF10B981</color>
+    <color name="vq_widget_error">#FFE53935</color>
+    <color name="vq_widget_warning">#FFFF6B35</color>
+    <color name="vq_widget_info">#FF4A90E2</color>
+
+    <!-- Relleno del sparkline y de los chips -->
+    <color name="vq_widget_chip_bg">#14194B8C</color>
+    <color name="vq_widget_spark_fill">#33194B8C</color>
+</resources>
