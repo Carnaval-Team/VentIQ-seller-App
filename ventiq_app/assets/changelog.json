@@ -1,9 +1,26 @@
 {
-  "current_version": "2.4.1",
-  "build": 843,
+  "current_version": "2.4.2",
+  "build": 844,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.4.2",
+      "date": "2026-08-20",
+      "title": "🔌 Modo offline más confiable: almacenes correctos e inventario completo",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "El vendedor ya solo ve su almacén asignado offline",
+          "description": "Corregimos un problema por el que, en modo offline normal, el detalle de un producto podía mostrar ubicaciones de otros almacenes de la tienda. Ahora, igual que en modo online, solo se muestra el almacén asignado a tu TPV."
+        },
+        {
+          "type": "improvement",
+          "title": "Activar modo offline sincroniza datos frescos",
+          "description": "Al activar el modo offline ahora se fuerza una sincronización completa (productos, ubicaciones, inventario) en vez de reutilizar datos guardados de una activación anterior, evitando que quede información desactualizada en el dispositivo."
+        }
+      ]
+    },
     {
       "version": "2.4.1",
       "date": "2026-08-11",

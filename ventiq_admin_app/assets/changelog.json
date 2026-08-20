@@ -1,9 +1,36 @@
 {
-  "current_version": "2.8.0",
-  "build": 280,
+  "current_version": "2.8.1",
+  "build": 281,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.8.1",
+      "date": "2026-08-20",
+      "title": "🖨️ Impresora guardada, tickets con tu tienda y pagos más confiables",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Guarda tu impresora por defecto",
+          "description": "Al elegir una impresora Bluetooth o WiFi, la app te pregunta si quieres guardarla como predeterminada. La próxima vez te ofrece usarla directamente, sin volver a escanear ni seleccionarla. Puedes olvidarla en cualquier momento desde Configuración > Global."
+        },
+        {
+          "type": "fix",
+          "title": "Registro de pago cuando la venta la crea un gerente o supervisor",
+          "description": "Si el registro de pago vía función del servidor rechaza la venta por acuerdo porque quien la creó no es un vendedor, ahora la app hace un registro directo del pago para que la venta no quede sin su pago asociado."
+        },
+        {
+          "type": "fix",
+          "title": "Iconos y valores correctos según el tipo de promoción",
+          "description": "El listado de promociones ahora muestra el ícono y el valor correcto según el tipo: recargo (%), 2x1, puntos extra o monto fijo, en lugar de mostrar siempre un porcentaje."
+        },
+        {
+          "type": "improvement",
+          "title": "Cierre de sesión más consistente",
+          "description": "El logout se centralizó en un solo flujo que limpia sesión, preferencias y todos los cachés en memoria (roles, tiendas, suscripción, selector de tienda), evitando que quede información de la sesión anterior al entrar con otro usuario."
+        }
+      ]
+    },
     {
       "version": "2.8.0",
       "date": "2026-08-20",
