@@ -12,6 +12,7 @@ import '../services/product_detail_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
 import '../services/bank_sms_service.dart';
+import '../services/server_time_service.dart';
 import '../utils/price_utils.dart';
 import '../utils/navigation_helper.dart';
 import '../widgets/bottom_navigation.dart';
@@ -20,6 +21,7 @@ import '../widgets/scrolling_text.dart';
 import '../widgets/notification_widget.dart';
 import '../utils/app_snackbar.dart';
 import '../utils/uuid_generator.dart';
+import '../widgets/bill_count_dialog.dart';
 import 'checkout_screen.dart';
 import 'orders_screen.dart';
 
@@ -543,6 +545,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
   }
 
   Widget _buildOrderFooter(Order order) {
+    final hasEfectivo = order.items.any(
+      (item) => item.paymentMethod?.esEfectivo ?? false,
+    );
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -579,6 +584,24 @@ class _PreorderScreenState extends State<PreorderScreen> {
             ],
           ),
           const SizedBox(height: 16),
+          if (hasEfectivo)
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _showBillCountDialog(order),
+                icon: const Icon(Icons.calculate_outlined, size: 18),
+                label: const Text('Contar Billetes'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF4A90E2),
+                  side: const BorderSide(color: Color(0xFF4A90E2)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
+          if (hasEfectivo) const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
@@ -648,6 +671,25 @@ class _PreorderScreenState extends State<PreorderScreen> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  void _showBillCountDialog(Order order) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder:
+            (context) => Scaffold(
+              backgroundColor: Colors.white,
+              body: BillCountDialog(
+                order: order,
+                userPreferencesService: _userPreferencesService,
+                closeOnly: true,
+                confirmLabel: 'Cerrar',
+                onConfirmPayment: () {},
+              ),
+            ),
       ),
     );
   }
@@ -1740,6 +1782,11 @@ class _PreorderScreenState extends State<PreorderScreen> {
           (paymentBreakdown[paymentMethodId]!['monto'] as double) + itemTotal;
     }
 
+    // Hora corregida contra el servidor (ver ServerTimeService) para que
+    // fecha_creacion no quede desfasada por un reloj de dispositivo mal
+    // ajustado, y así la orden se siga asociando al turno correcto.
+    final nowServerCorrected = ServerTimeService().now();
+
     final pending = {
       'id': offlineOrderId,
       'client_uuid': clientUuid,
@@ -1747,14 +1794,14 @@ class _PreorderScreenState extends State<PreorderScreen> {
       'id_tpv': idTpv,
       'id_vendedor': idSeller,
       'id_usuario': userData['userId'],
-      'fecha_creacion': DateTime.now().toIso8601String(),
+      'fecha_creacion': nowServerCorrected.toIso8601String(),
       'subtotal': subtotal,
       'total_descuentos': 0.0,
       'total': subtotal,
       'estado': 'pendiente_sincronizacion',
       'estado_final': 'completada',
       'is_pending_sync': true,
-      'created_offline_at': DateTime.now().toIso8601String(),
+      'created_offline_at': nowServerCorrected.toIso8601String(),
       'buyer_name': order.buyerName ?? 'Cliente',
       'buyer_phone': order.buyerPhone ?? '',
       'extra_contacts': '',

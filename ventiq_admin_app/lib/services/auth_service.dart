@@ -6,6 +6,7 @@ import 'permissions_service.dart';
 import 'subscription_guard_service.dart';
 import 'user_preferences_service.dart';
 import 'native_session_vault_service.dart';
+import 'session_cache_manager.dart';
 
 class AuthService {
   static final AuthService _instance = AuthService._internal();
@@ -77,6 +78,9 @@ class AuthService {
 
       // Limpiar TODOS los datos del usuario (tienda, roles, etc.)
       await UserPreferencesService().clearUserData();
+
+      // Invalidar todos los cachés en memoria (roles, tiendas, suscripción, etc.)
+      await SessionCacheManager.clearForLogout();
 
       print('👋 Admin signed out successfully (local cleanup complete)');
     } catch (e) {

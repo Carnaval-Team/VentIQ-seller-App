@@ -14,6 +14,7 @@ import '../services/order_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
 import '../services/currency_service.dart';
+import '../services/server_time_service.dart';
 import '../services/mesa_service.dart';
 import '../services/mesa_cuenta_service.dart';
 import '../services/bank_sms_service.dart';
@@ -1690,6 +1691,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final localTurnoId = openTurno?['local_id']?.toString() ??
           openTurno?['local_turno_id']?.toString();
 
+      // Hora corregida contra el servidor (ver ServerTimeService) para que
+      // fecha_creacion no quede desfasada por un reloj de dispositivo mal
+      // ajustado, y así la orden se siga asociando al turno correcto.
+      final nowServerCorrected = ServerTimeService().now();
+
       // Crear estructura de orden virtual con datos del cliente
       final orderData = {
         'id': offlineOrderId,
@@ -1698,7 +1704,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'id_tpv': idTpv,
         'id_vendedor': idSeller,
         'id_usuario': userData['userId'],
-        'fecha_creacion': DateTime.now().toIso8601String(),
+        'fecha_creacion': nowServerCorrected.toIso8601String(),
         'subtotal': subtotal,
         'total_descuentos': totalDescuentos,
         'total': total,
@@ -1709,7 +1715,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         // (para reescribir el estado local y poder purgarla).
         'estado_final': 'completada',
         'is_pending_sync': true,
-        'created_offline_at': DateTime.now().toIso8601String(),
+        'created_offline_at': nowServerCorrected.toIso8601String(),
         if (localTurnoId != null) 'local_turno_id': localTurnoId,
         // DATOS DEL CLIENTE / MESA CAPTURADOS
         'buyer_name': buyerName,

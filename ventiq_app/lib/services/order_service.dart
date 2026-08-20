@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
 import 'mesa_cuenta_service.dart';
 import 'turno_service.dart'; // Import TurnoService
+import 'connectivity_service.dart';
 
 class OrderService {
   static final OrderService _instance = OrderService._internal();
@@ -1545,6 +1546,106 @@ class OrderService {
       if (fo == null) return false;
       return !fo.isBefore(from);
     }).toList();
+  }
+
+  /// Carga las órdenes del turno abierto combinando TODAS las fuentes
+  /// disponibles: cache offline (órdenes ya vistas, sincronizadas o no),
+  /// pendientes de sincronización aún no confirmadas por el servidor y,
+  /// si hay conectividad real, datos frescos del servidor.
+  ///
+  /// Esto evita que al pasar a modo offline habiendo ya ventas hechas en
+  /// línea (antes de perder conexión), esas órdenes "desaparezcan" de los
+  /// totales sólo por no estar en la última foto de cache. La sincronización
+  /// real de pendientes hacia el servidor la sigue manejando por separado
+  /// `auto_sync_service`; este método sólo lee/combina para totales y no
+  /// dispara ningún push.
+  Future<void> loadOrdersForOpenTurnoUnified() async {
+    final turnoAbierto = await TurnoService.getTurnoAbierto();
+    _orders.clear();
+    if (turnoAbierto == null) {
+      print('📭 Sin turno abierto — no se listan órdenes del vendedor');
+      return;
+    }
+
+    final userPrefs = UserPreferencesService();
+
+    // 1) Base: cache offline (última foto conocida, incluye ya sincronizadas).
+    final offlineData = await userPrefs.getOfflineData();
+    if (offlineData != null && offlineData['orders'] != null) {
+      final ordersData = List<dynamic>.from(offlineData['orders'] as List);
+      final filtered = _filterRawOrdersToOpenTurno(ordersData, turnoAbierto);
+      if (filtered.isNotEmpty) {
+        _transformSupabaseToOrders(filtered);
+      }
+    }
+    final cachedOrders = List<Order>.from(_orders);
+
+    // 2) Pendientes de sincronización (aún no confirmadas por el servidor).
+    _orders.clear();
+    final pending = await userPrefs.getSellerVisiblePendingOrders();
+    if (pending.isNotEmpty) {
+      addPendingOrdersToList(pending);
+    }
+    final pendingOrders = List<Order>.from(_orders);
+
+    // 3) Si hay conectividad real, refrescar con datos frescos del servidor.
+    List<Order> serverOrders = [];
+    try {
+      final hasConnection = await ConnectivityService().checkConnectivity();
+      if (hasConnection) {
+        final userData = await userPrefs.getUserData();
+        final idTienda = await userPrefs.getIdTienda();
+        final idTpv = await userPrefs.getIdTpv();
+        final fechaApertura = _parseOrderDateTime(
+          turnoAbierto['fecha_apertura'],
+        );
+        final fechaDesdeParam =
+            fechaApertura != null ? _toDateParam(fechaApertura) : null;
+
+        final response = await Supabase.instance.client.rpc(
+          'fn_listar_ordenes',
+          params: {
+            'con_inventario_param': true,
+            'fecha_desde_param': fechaDesdeParam,
+            'fecha_hasta_param': null,
+            'id_estado_param': null,
+            'id_tienda_param': idTienda,
+            'id_tipo_operacion_param': null,
+            'id_tpv_param': idTpv,
+            'id_usuario_param': userData['userId'],
+            'limite_param': null,
+            'pagina_param': null,
+            'solo_pendientes_param': false,
+          },
+        );
+        if (response is List && response.isNotEmpty) {
+          final filtered = _filterRawOrdersToOpenTurno(
+            List<dynamic>.from(response),
+            turnoAbierto,
+          );
+          _transformSupabaseToOrders(filtered);
+          serverOrders = List<Order>.from(_orders);
+        }
+      }
+    } catch (e) {
+      print('⚠️ No se pudo refrescar órdenes online para combinar: $e');
+    }
+
+    // 4) Combinar con prioridad: servidor (más fresco) > cache > pendientes.
+    final merged = <String, Order>{};
+    for (final o in pendingOrders) merged[o.id] = o;
+    for (final o in cachedOrders) merged[o.id] = o;
+    for (final o in serverOrders) merged[o.id] = o;
+
+    _orders
+      ..clear()
+      ..addAll(merged.values);
+
+    print(
+      '📦 Órdenes combinadas del turno: ${_orders.length} '
+      '(cache=${cachedOrders.length}, servidor=${serverOrders.length}, '
+      'pendientes=${pendingOrders.length})',
+    );
   }
 
   /// Carga órdenes del vendedor solo si hay turno abierto (cache local).

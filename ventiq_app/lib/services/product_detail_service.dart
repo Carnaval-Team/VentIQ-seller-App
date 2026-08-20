@@ -21,7 +21,7 @@ class ProductDetailService {
   /// paquetería, órdenes) funcionan sin conexión con variantes/inventario.
   Future<Product> getProductDetail(int productId) async {
     try {
-      final isOffline = await _userPrefs.isOfflineModeEnabled();
+      final isOffline = await _userPrefs.shouldUseLocalData();
       if (isOffline) {
         final offlineDetail = await _getProductDetailOffline(productId);
         if (offlineDetail != null) {
@@ -387,17 +387,49 @@ class ProductDetailService {
       'id_variante': variante?['id'],
       'id_opcion_variante': variante?['opcion']?['id'],
       'id_presentacion': presentacion?['id'],
-      'id_ubicacion': ubicacion?['id'],
+      'id_ubicacion':
+          inventoryItem['id_ubicacion'] ?? ubicacion?['id'],
       'sku_producto': inventoryItem['sku_producto'],
-      'sku_ubicacion': ubicacion?['sku_codigo'],
+      'sku_ubicacion':
+          inventoryItem['sku_ubicacion'] ?? ubicacion?['sku_codigo'],
       'cantidad_disponible': inventoryItem['cantidad_disponible'],
-      'ubicacion_nombre': ubicacion?['denominacion'],
-      'almacen_nombre': ubicacion?['almacen']?['denominacion'],
+      'ubicacion_nombre': (() {
+        for (final v in [
+          inventoryItem['ubicacion_nombre'],
+          inventoryItem['denominacion_ubicacion'],
+          inventoryItem['ubicacion_label'],
+          ubicacion?['denominacion'],
+        ]) {
+          final s = v?.toString();
+          if (s != null && s.isNotEmpty) return s;
+        }
+        return null;
+      })(),
+      'almacen_nombre': (() {
+        for (final v in [
+          inventoryItem['almacen_nombre'],
+          ubicacion?['almacen']?['denominacion'],
+        ]) {
+          final s = v?.toString();
+          if (s != null && s.isNotEmpty) return s;
+        }
+        return null;
+      })(),
     };
   }
 
-  /// Verifica si un producto es elaborado o servicio
+  /// Verifica si un producto es elaborado o servicio.
+  ///
+  /// Offline-aware: si el modo offline/full-offline está activo, no llama a
+  /// Supabase (fallaría con `Failed host lookup` sin conexión); usa el
+  /// mismo cache de `detalles_completos` que [getProductDetail].
   Future<bool> isProductElaborated(int productId) async {
+    if (await _userPrefs.shouldUseLocalData()) {
+      final offlineDetail = await _getProductDetailOffline(productId);
+      return (offlineDetail?.esElaborado ?? false) ||
+          (offlineDetail?.esServicio ?? false);
+    }
+
     try {
       debugPrint('🔍 Verificando si producto $productId es elaborado o servicio...');
 
@@ -420,8 +452,14 @@ class ProductDetailService {
     }
   }
 
-  /// Verifica si un producto es servicio (para diferenciar chip visual)
+  /// Verifica si un producto es servicio (para diferenciar chip visual).
+  /// Offline-aware: ver [isProductElaborated].
   Future<bool> isProductServicio(int productId) async {
+    if (await _userPrefs.shouldUseLocalData()) {
+      final offlineDetail = await _getProductDetailOffline(productId);
+      return offlineDetail?.esServicio ?? false;
+    }
+
     try {
       final response =
           await _supabase

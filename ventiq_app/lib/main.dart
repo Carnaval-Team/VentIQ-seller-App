@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
@@ -41,6 +43,7 @@ import 'services/auth_service.dart';
 import 'services/user_preferences_service.dart';
 import 'services/store_config_service.dart';
 import 'services/offline_database_service.dart';
+import 'services/server_time_service.dart';
 import 'utils/platform_utils.dart';
 import 'utils/global_navigator.dart';
 import 'widgets/sync_blocking_overlay.dart';
@@ -67,6 +70,14 @@ void main() async {
   // Pre-cargar el flag modo_restaurante en cache sincrónico para que el
   // NavigationHelper pueda decidir el destino del botón Home sin Future.
   await StoreConfigService.primeModoRestauranteCache();
+
+  // Cargar el último desfasaje de reloj conocido contra el servidor (se
+  // corrige de nuevo cada vez que hay una petición de red exitosa) para que
+  // las fechas guardadas offline (apertura/cierre/órdenes) sean lo más fieles
+  // posible a la hora real, aunque el reloj del dispositivo esté mal.
+  await ServerTimeService().loadPersistedOffset();
+  // Intento de refresco inmediato (no bloqueante si no hay red).
+  unawaited(ServerTimeService().refreshFromNetwork());
 
   runApp(const MyApp());
 }

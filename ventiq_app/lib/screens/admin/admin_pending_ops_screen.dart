@@ -167,6 +167,43 @@ class _AdminPendingOpsScreenState extends State<AdminPendingOpsScreen> {
     }
   }
 
+  Future<void> _deleteOp(Map<String, dynamic> op) async {
+    final uuid = op['client_uuid']?.toString();
+    if (uuid == null || uuid.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Eliminar operación'),
+            content: const Text(
+              '¿Seguro que quieres eliminar esta operación local? '
+              'No se sincronizará.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Eliminar'),
+              ),
+            ],
+          ),
+    );
+    if (confirmed != true) return;
+    await _db.deleteAdminOp(uuid);
+    if (!mounted) return;
+    await _load();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Operación eliminada'),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -282,15 +319,30 @@ class _AdminPendingOpsScreenState extends State<AdminPendingOpsScreen> {
                                 ],
                               ),
                               isThreeLine: true,
-                              trailing: Text(
-                                synced ? 'OK' : 'Pendiente',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: synced
-                                      ? Colors.green[700]
-                                      : Colors.orange[800],
-                                ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (!synced)
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.delete_outline,
+                                        color: Colors.red,
+                                        size: 20,
+                                      ),
+                                      onPressed:
+                                          () => _deleteOp(op),
+                                    ),
+                                  Text(
+                                    synced ? 'OK' : 'Pendiente',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: synced
+                                          ? Colors.green[700]
+                                          : Colors.orange[800],
+                                    ),
+                                  ),
+                                ],
                               ),
                             );
                           },

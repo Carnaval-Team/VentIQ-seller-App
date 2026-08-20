@@ -1479,10 +1479,61 @@ class AdminInventoryService {
     }
   }
 
+  /// Normaliza productos de recepción forzando id_ubicacion e id_presentacion.
+  Future<List<Map<String, dynamic>>> _normalizeReceptionProducts(
+    List<dynamic> productos,
+  ) async {
+    final layouts = await listCachedLayouts();
+    final defaultLocation = layouts.cast<Map?>().firstWhere(
+      (l) => true,
+      orElse: () => null,
+    );
+    final defaultLocationId = (defaultLocation?['id'] as num?)?.toInt();
+
+    final out = <Map<String, dynamic>>[];
+    for (final p in productos) {
+      if (p is! Map) continue;
+      final normalized = Map<String, dynamic>.from(p);
+      if (normalized['id_ubicacion'] == null && defaultLocationId != null) {
+        normalized['id_ubicacion'] = defaultLocationId;
+      }
+      if (normalized['id_presentacion'] == null) {
+        final productId = (normalized['id_producto'] as num?)?.toInt();
+        final product =
+            productId != null ? await _db.getProductById(productId) : null;
+        if (product != null) {
+          final detalles = product['detalles_completos'];
+          if (detalles is Map) {
+            final presentaciones = detalles['presentaciones'];
+            if (presentaciones is List && presentaciones.isNotEmpty) {
+              final base = presentaciones.cast<Map?>().firstWhere(
+                (x) => x?['es_base'] == true,
+                orElse: () => presentaciones.first as Map?,
+              );
+              final presId = (base?['id'] as num?)?.toInt() ??
+                  (base?['id_presentacion'] as num?)?.toInt();
+              if (presId != null) {
+                normalized['id_presentacion'] = presId;
+              }
+            }
+          }
+        }
+      }
+      out.add(normalized);
+    }
+    return out;
+  }
+
   Future<void> _syncReception(
     String clientUuid,
     Map<String, dynamic> payload,
   ) async {
+    final productosRaw = payload['productos'];
+    final productos =
+        productosRaw is List
+            ? await _normalizeReceptionProducts(productosRaw)
+            : <Map<String, dynamic>>[];
+
     dynamic response;
     try {
       response = await _supabase.rpc(
@@ -1494,7 +1545,7 @@ class AdminInventoryService {
           'p_monto_total': payload['monto_total'] ?? 0,
           'p_motivo': payload['motivo'] ?? 1,
           'p_observaciones': payload['observaciones'] ?? '',
-          'p_productos': payload['productos'],
+          'p_productos': productos,
           'p_recibido_por': payload['recibido_por'],
           'p_uuid': payload['uuid'],
           'p_moneda_factura': payload['moneda_factura'] ?? 'USD',
@@ -1511,7 +1562,7 @@ class AdminInventoryService {
           'p_motivo': payload['motivo'] ?? 1,
           'p_observaciones':
               '${payload['observaciones'] ?? ''} [caja:$clientUuid]',
-          'p_productos': payload['productos'],
+          'p_productos': productos,
           'p_recibido_por': payload['recibido_por'],
           'p_uuid': payload['uuid'],
           'p_moneda_factura': payload['moneda_factura'] ?? 'USD',
@@ -1519,10 +1570,35 @@ class AdminInventoryService {
       );
     }
 
-    final idProveedor = (payload['id_proveedor'] as num?)?.toInt();
-    if (idProveedor == null || response is! Map) return;
+    if (response is! Map) {
+      throw Exception(
+        'La respuesta del servidor no es válida: $response',
+      );
+    }
+    if (response['id_operacion'] == null) {
+      throw Exception(
+        'El servidor respondió sin id_operacion: $response',
+      );
+    }
+
     final opId = (response['id_operacion'] as num?)?.toInt();
-    if (opId == null) return;
+    if (opId == null) {
+      throw Exception('id_operacion inválido en respuesta: $response');
+    }
+
+    // Completar la recepción (estado 2) para que sume al inventario en el sistema.
+    try {
+      await _supabase.from('app_dat_estado_operacion').insert({
+        'id_operacion': opId,
+        'estado': 2,
+        'uuid': payload['uuid'],
+      });
+    } catch (e) {
+      print('⚠️ Completar recepción $opId: $e');
+    }
+
+    final idProveedor = (payload['id_proveedor'] as num?)?.toInt();
+    if (idProveedor == null) return;
     try {
       await _supabase
           .from('app_dat_recepcion_productos')

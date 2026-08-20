@@ -1466,28 +1466,36 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         return true;
       }
 
-      final response = await Supabase.instance.client.rpc(
-        'fn_registrar_pago_venta',
-        params: {
-          'p_id_operacion_venta': operationId,
-          'p_pagos': [
-            {
-              'id_medio_pago': idMedioPago,
-              'monto': monto,
-              'tipo_pago': tipoPago,
-              'referencia_pago': ref,
-            },
-          ],
-        },
-      );
+      try {
+        final response = await Supabase.instance.client.rpc(
+          'fn_registrar_pago_venta',
+          params: {
+            'p_id_operacion_venta': operationId,
+            'p_pagos': [
+              {
+                'id_medio_pago': idMedioPago,
+                'monto': monto,
+                'tipo_pago': tipoPago,
+                'referencia_pago': ref,
+              },
+            ],
+          },
+        );
 
-      if (response == true) {
-        print('✅ Pago registrado vía fn_registrar_pago_venta');
-        return true;
+        if (response == true) {
+          print('✅ Pago registrado vía fn_registrar_pago_venta');
+          return true;
+        }
+
+        print('⚠️ RPC retornó $response; intentando insert directo');
+      } catch (rpcError) {
+        // La función fn_registrar_pago_venta rechaza pagos cuando el creador de
+        // la venta no es un vendedor. En admin app un gerente/supervisor puede
+        // registrar pagos, así que fallback a insert directo cubierto por RLS.
+        print('⚠️ RPC falló ($rpcError); intentando insert directo');
       }
 
-      // Fallback: si el RPC falla/retorna algo inesperado, insertar directo.
-      print('⚠️ RPC retornó $response; intentando insert directo');
+      // Fallback: insertar directamente en app_dat_pago_venta.
       await Supabase.instance.client.from('app_dat_pago_venta').insert({
         'id_operacion_venta': operationId,
         'id_medio_pago': idMedioPago,
@@ -4436,6 +4444,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       // Mostrar diálogo de selección de impresora WiFi
       final selectedPrinter = await wifiService.showPrinterSelectionDialog(
         context,
+        allowSaveDefault: true,
       );
       if (selectedPrinter == null) {
         print('❌ No se seleccionó impresora WiFi');
@@ -4527,6 +4536,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       final bluetoothService = printerManager.bluetoothService;
       var selectedDevice = await bluetoothService.showDeviceSelectionDialog(
         context,
+        allowSaveDefault: true,
       );
       if (selectedDevice == null || !mounted) return;
 
@@ -4583,10 +4593,20 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
             ),
       );
 
+      // Datos de la tienda para el encabezado
+      final currentStore = await UserPreferencesService().getCurrentStoreInfo();
+      final storeName = (currentStore?['denominacion'] as String?)?.isNotEmpty == true
+          ? currentStore!['denominacion'] as String
+          : 'INVENTTIA';
+
       // Generar y enviar ticket (troceo + drenado, igual que ventiq_app)
       final profile = await CapabilityProfile.load();
       final generator = Generator(PaperSize.mm58, profile);
-      List<int> bytes = _generateOperationTicket(generator, operation);
+      List<int> bytes = _generateOperationTicket(
+        generator,
+        operation,
+        storeName: storeName,
+      );
 
       bool printed = await bluetoothService.writeBytesSafe(
         bytes,
@@ -4705,8 +4725,9 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   /// Generar contenido del ticket de operación
   List<int> _generateOperationTicket(
     Generator generator,
-    Map<String, dynamic> operation,
-  ) {
+    Map<String, dynamic> operation, {
+    required String storeName,
+  }) {
     List<int> bytes = [];
     List<int> line(String text, {PosStyles? styles}) {
       return generator.text(
@@ -4715,9 +4736,9 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       );
     }
 
-    // Header
+    // Header con datos de la tienda
     bytes += line(
-      'INVENTTIA',
+      sanitizeForThermalPrinter(storeName.toUpperCase()),
       styles: PosStyles(align: PosAlign.center, bold: true),
     );
     bytes += line(
@@ -4835,8 +4856,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       styles: PosStyles(align: PosAlign.center),
     );
     bytes += line(
-      'Gracias',
-      styles: PosStyles(align: PosAlign.center),
+      'Gracias por su compra',
+      styles: PosStyles(align: PosAlign.center, bold: true),
     );
     bytes += generator.emptyLines(2);
     bytes += generator.cut();

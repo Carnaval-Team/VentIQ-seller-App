@@ -4,6 +4,7 @@ import '../config/app_colors.dart';
 import '../services/store_config_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/subscription_service.dart';
+import '../services/printer_preferences_service.dart';
 import '../models/subscription.dart';
 import '../screens/subscription_detail_screen.dart';
 import '../utils/navigation_guard.dart';
@@ -19,6 +20,8 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   final UserPreferencesService _userPreferencesService =
       UserPreferencesService();
   final SubscriptionService _subscriptionService = SubscriptionService();
+  final PrinterPreferencesService _printerPreferencesService =
+      PrinterPreferencesService();
   final TextEditingController _masterPasswordController =
       TextEditingController();
 
@@ -48,6 +51,10 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   bool _autocompletarCantidadRealConteo = false;
   int? _storeId;
   String? _storeName;
+
+  // Impresora guardada localmente
+  Map<String, dynamic>? _savedBluetoothPrinter;
+  Map<String, dynamic>? _savedWiFiPrinter;
 
   // Variables para suscripción
   Subscription? _activeSubscription;
@@ -482,6 +489,14 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         _autocompletarCantidadRealConteo =
             config['autocompletar_cantidad_real_conteo'] ?? false;
         _isLoading = false;
+      });
+
+      // Cargar impresora por defecto guardada localmente
+      final savedBt = await _printerPreferencesService.getDefaultBluetoothPrinter();
+      final savedWifi = await _printerPreferencesService.getDefaultWiFiPrinter();
+      setState(() {
+        _savedBluetoothPrinter = savedBt;
+        _savedWiFiPrinter = savedWifi;
       });
 
       // Cargar suscripción actual (activa o vencida)
@@ -1901,6 +1916,144 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
     );
   }
 
+  Widget _buildSavedPrinterTile() {
+    final hasBluetooth = _savedBluetoothPrinter != null;
+    final hasWifi = _savedWiFiPrinter != null;
+    if (!hasBluetooth && !hasWifi) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.print_disabled, color: Colors.grey.shade400, size: 24),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'No hay impresora guardada por defecto',
+                style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.print, color: AppColors.primary, size: 24),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Impresora guardada por defecto',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1F2937),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (hasBluetooth) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(Icons.bluetooth, color: Colors.blue, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Bluetooth: ${_savedBluetoothPrinter!['name']}',
+                    style: TextStyle(fontSize: 13, color: Colors.black87),
+                  ),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(left: 26),
+              child: Text(
+                'MAC: ${_savedBluetoothPrinter!['mac']}',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+            ),
+          ],
+          if (hasWifi) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(Icons.wifi, color: Colors.green, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'WiFi: ${_savedWiFiPrinter!['ip']}:${_savedWiFiPrinter!['port']}',
+                    style: TextStyle(fontSize: 13, color: Colors.black87),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _forgetSavedPrinter,
+              icon: Icon(Icons.delete_outline, color: Colors.red, size: 18),
+              label: Text(
+                'Olvidar impresora',
+                style: TextStyle(color: Colors.red),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: Colors.red.withOpacity(0.3)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _forgetSavedPrinter() async {
+    try {
+      await _printerPreferencesService.clearAll();
+      setState(() {
+        _savedBluetoothPrinter = null;
+        _savedWiFiPrinter = null;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('🗑️ Impresora por defecto olvidada')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al olvidar impresora: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Widget _buildMasterPasswordField() {
     return Container(
       width: double.infinity,
@@ -2357,6 +2510,8 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             value: _guardarImpresoraPorDefecto,
             onChanged: _updateGuardarImpresoraPorDefectoSetting,
           ),
+          const SizedBox(height: 12),
+          _buildSavedPrinterTile(),
           const SizedBox(height: 16),
           const Text(
             'Tickets a imprimir',

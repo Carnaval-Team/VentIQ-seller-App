@@ -6,7 +6,6 @@ import '../services/user_preferences_service.dart';
 import '../services/permissions_service.dart';
 import '../services/auth_service.dart';
 import '../services/subscription_service.dart';
-import '../services/session_cache_manager.dart';
 import '../utils/navigation_guard.dart';
 import '../utils/platform_utils.dart';
 import '../utils/web_reload.dart' as web_reload;
@@ -856,16 +855,9 @@ class _AdminDrawerState extends State<AdminDrawer> {
   Future<void> _performLogout() async {
     try {
       print('🔐 Iniciando logout...');
-      SubscriptionService().invalidateCache();
-      final authService = AuthService();
-
-      // Usar AuthService.signOut() que limpia TODO correctamente
-      await authService.signOut();
-
-      // Invalidar cachés en memoria de todos los singletons. En móvil no hay
-      // reload de página, así que esta limpieza es la que evita arrastrar
-      // datos de la sesión anterior.
-      await SessionCacheManager.clearForLogout();
+      // AuthService.signOut() limpia Supabase, preferencias, cachés en memoria
+      // (roles, tiendas, suscripción, etc.) y SessionCacheManager.clearForLogout().
+      await AuthService().signOut();
 
       // Pequeña espera para asegurar que la limpieza se complete
       await Future.delayed(const Duration(milliseconds: 300));

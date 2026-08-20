@@ -38,6 +38,7 @@ DECLARE
     inventario_data jsonb[];
     almacenes_accesibles bigint[];
     tiendas_accesibles bigint[];
+    tiendas_gerencia_supervisor bigint[];
     rec record;
 BEGIN
     -- Tiendas a las que el usuario tiene acceso (gerente / supervisor /
@@ -58,8 +59,20 @@ BEGIN
         ) AS t
     ) INTO tiendas_accesibles;
 
-    -- Almacenes accesibles: vendedor (TPV), almacenero y todos los almacenes
-    -- de tiendas donde el usuario es gerente/supervisor (prep full offline).
+    -- Tiendas donde el usuario es gerente/supervisor (acceso a TODOS los
+    -- almacenes de la tienda, para prep full offline). NO incluye vendedor
+    -- ni almacenero, para no ampliar por error su alcance a otros almacenes.
+    SELECT ARRAY(
+        SELECT DISTINCT id_tienda FROM (
+            SELECT id_tienda FROM app_dat_gerente WHERE uuid = auth.uid()
+            UNION
+            SELECT id_tienda FROM app_dat_supervisor WHERE uuid = auth.uid()
+        ) AS t
+    ) INTO tiendas_gerencia_supervisor;
+
+    -- Almacenes accesibles: vendedor (SOLO el almacén de su TPV), almacenero
+    -- (SOLO su almacén) y todos los almacenes de tiendas donde el usuario es
+    -- gerente/supervisor (prep full offline).
     SELECT ARRAY(
         SELECT DISTINCT id_almacen FROM (
             SELECT tpv.id_almacen
@@ -73,7 +86,7 @@ BEGIN
             UNION
             SELECT a.id
             FROM app_dat_almacen a
-            WHERE a.id_tienda = ANY(tiendas_accesibles)
+            WHERE a.id_tienda = ANY(tiendas_gerencia_supervisor)
         ) AS alms
     ) INTO almacenes_accesibles;
 

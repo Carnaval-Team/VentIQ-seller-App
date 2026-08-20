@@ -40,33 +40,53 @@ class _AdminWarehousesScreenState extends State<AdminWarehousesScreen> {
     for (final p in products) {
       int? ubicacionId;
       String? ubicacionName;
+      String? almacenName;
       final detalles = p['detalles_completos'];
       if (detalles is Map) {
         final inv = detalles['inventario'];
         if (inv is List && inv.isNotEmpty) {
           final first = inv.first;
           if (first is Map) {
-            final ubMap = first['ubicacion'] is Map
-                ? Map<String, dynamic>.from(first['ubicacion'] as Map)
+            final firstMap = Map<String, dynamic>.from(first as Map);
+            final ubMap = firstMap['ubicacion'] is Map
+                ? Map<String, dynamic>.from(firstMap['ubicacion'] as Map)
                 : null;
-            ubicacionId = (first['id_ubicacion'] as num?)?.toInt() ??
+            final almMap = ubMap?['almacen'] is Map
+                ? Map<String, dynamic>.from(ubMap!['almacen'] as Map)
+                : null;
+            ubicacionId = (firstMap['id_ubicacion'] as num?)?.toInt() ??
                 (ubMap?['id'] as num?)?.toInt() ??
                 (p['id_ubicacion'] as num?)?.toInt();
-            ubicacionName = first['ubicacion_nombre']?.toString() ??
-                first['denominacion_ubicacion']?.toString() ??
-                first['ubicacion_label']?.toString() ??
+            ubicacionName = firstMap['ubicacion_nombre']?.toString() ??
+                firstMap['denominacion_ubicacion']?.toString() ??
+                firstMap['ubicacion_label']?.toString() ??
                 ubMap?['denominacion']?.toString() ??
                 p['ubicacion_nombre']?.toString();
+            almacenName = firstMap['almacen_nombre']?.toString() ??
+                almMap?['denominacion']?.toString() ??
+                p['almacen_nombre']?.toString();
           }
         }
       }
       ubicacionId ??= (p['id_ubicacion'] as num?)?.toInt();
       ubicacionName ??= p['ubicacion_nombre']?.toString();
+      almacenName ??= p['almacen_nombre']?.toString();
 
-      final key = ubicacionId != null
-          ? (names[ubicacionId] ?? ubicacionName ?? 'Ubicación $ubicacionId')
-          : 'Sin ubicación en cache';
-      grouped.putIfAbsent(key, () => []).add(p);
+      String displayName;
+      if (ubicacionId != null && names.containsKey(ubicacionId)) {
+        displayName = names[ubicacionId]!;
+      } else if (ubicacionName != null && ubicacionName.isNotEmpty) {
+        displayName = almacenName != null && almacenName.isNotEmpty
+            ? '$almacenName · $ubicacionName'
+            : ubicacionName;
+      } else if (almacenName != null && almacenName.isNotEmpty) {
+        displayName = almacenName;
+      } else if (ubicacionId != null) {
+        displayName = 'Ubicación $ubicacionId';
+      } else {
+        displayName = 'Sin ubicación en cache';
+      }
+      grouped.putIfAbsent(displayName, () => []).add(p);
     }
 
     final sortedKeys = grouped.keys.toList()..sort();

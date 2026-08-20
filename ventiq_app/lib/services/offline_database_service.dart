@@ -327,6 +327,24 @@ class OfflineDatabaseService {
     );
   }
 
+  /// Elimina una operación admin pendiente por su client_uuid.
+  Future<void> deleteAdminOp(String clientUuid) async {
+    await initialize();
+    if (_webPrefsMode) {
+      final ops = await _readAdminOpsPrefs();
+      ops.removeWhere((op) => op['client_uuid'] == clientUuid);
+      await _writeAdminOpsPrefs(ops);
+      return;
+    }
+
+    final db = await database;
+    await db.delete(
+      'admin_pending_ops',
+      where: 'client_uuid = ?',
+      whereArgs: [clientUuid],
+    );
+  }
+
   Future<int> countPendingAdminOps() async {
     await initialize();
     if (_webPrefsMode) {
@@ -521,6 +539,7 @@ class OfflineDatabaseService {
 
     if (key == 'products' && value is Map) {
       await txn.delete('offline_products');
+      var inserted = 0;
       final productsMap = Map<String, dynamic>.from(value);
       for (final catEntry in productsMap.entries) {
         final categoryId = catEntry.key.toString();
@@ -544,8 +563,10 @@ class OfflineDatabaseService {
             },
             conflictAlgorithm: ConflictAlgorithm.replace,
           );
+          inserted++;
         }
       }
+      print('💾 SQLite productos: $inserted insertados (tabla borrada antes)');
       await txn.delete(
         'offline_sections',
         where: 'section_key = ?',

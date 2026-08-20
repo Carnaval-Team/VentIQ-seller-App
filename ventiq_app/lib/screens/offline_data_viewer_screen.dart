@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/user_preferences_service.dart';
+import '../services/server_time_service.dart';
 
 /// Visor de diagnóstico (solo lectura) de los datos guardados para trabajar
 /// offline. Entrada oculta en el drawer, visible solo para superadmins.
@@ -20,6 +21,7 @@ class _OfflineDataViewerScreenState extends State<OfflineDataViewerScreen> {
   final _prefs = UserPreferencesService();
   bool _loading = true;
   bool _offlineModeEnabled = false;
+  bool _refreshingClock = false;
 
   /// Secciones a mostrar: título, conteo (o null si no aplica) y el valor.
   final List<_OfflineSection> _sections = [];
@@ -186,10 +188,94 @@ class _OfflineDataViewerScreenState extends State<OfflineDataViewerScreen> {
                       subtitle: Text('${_sections.length} secciones'),
                     ),
                   ),
+                  _buildClockOffsetCard(),
                   ..._sections.map(_buildSectionTile),
                 ],
               ),
     );
+  }
+
+  /// Tarjeta de diagnóstico del desfasaje de reloj vs. servidor, para poder
+  /// verificar por qué fechas guardadas offline (apertura/cierre/órdenes)
+  /// podrían no coincidir con la hora real del servidor.
+  Widget _buildClockOffsetCard() {
+    final service = ServerTimeService();
+    final offset = service.offset;
+    final syncedAt = service.lastSyncedAt;
+    final hasOffset = offset != Duration.zero;
+    final offsetSeconds = offset.inSeconds;
+    final sign = offsetSeconds >= 0 ? '+' : '';
+
+    return Card(
+      color: hasOffset ? Colors.orange[50] : Colors.blue[50],
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.schedule,
+                  color: hasOffset ? Colors.orange : Colors.blueGrey,
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'Desfasaje de reloj vs. servidor',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              hasOffset
+                  ? 'Offset actual: $sign${offsetSeconds}s '
+                      '(el servidor va ${offset.isNegative ? "atrás" : "adelante"} '
+                      'del reloj del dispositivo)'
+                  : 'Sin desfasaje detectado (o aún no se ha medido).',
+            ),
+            Text(
+              'Última medición: '
+              '${syncedAt != null ? syncedAt.toIso8601String() : "nunca"}',
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+            Text(
+              'Hora local: ${DateTime.now().toIso8601String()}',
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+            Text(
+              'Hora corregida (usada al guardar offline): '
+              '${service.now().toIso8601String()}',
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: _refreshingClock ? null : _refreshClockOffset,
+                icon:
+                    _refreshingClock
+                        ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                        : const Icon(Icons.sync),
+                label: const Text('Medir contra el servidor'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _refreshClockOffset() async {
+    setState(() => _refreshingClock = true);
+    await ServerTimeService().refreshFromNetwork();
+    if (mounted) {
+      setState(() => _refreshingClock = false);
+    }
   }
 
   Widget _buildSectionTile(_OfflineSection section) {

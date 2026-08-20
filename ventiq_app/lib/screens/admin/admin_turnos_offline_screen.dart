@@ -459,6 +459,30 @@ class _AdminTurnosOfflineScreenState extends State<AdminTurnosOfflineScreen> {
                   ),
                   const SizedBox(height: 8),
                 ],
+                // Diagnóstico/resolución manual: disponible tanto para
+                // turnos "Cerrado · pendiente sync" atascados (el replay
+                // los rechaza siempre por mismatch de TPV) como para
+                // turnos que quedaron "Abierto" localmente por días sin
+                // poder sincronizar la apertura.
+                OutlinedButton.icon(
+                  onPressed: _syncing
+                      ? null
+                      : () {
+                          Navigator.pop(context);
+                          _forceResolveTurno(turno);
+                        },
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.deepOrange,
+                    side: const BorderSide(color: Colors.deepOrange),
+                  ),
+                  icon: const Icon(Icons.build_circle_outlined),
+                  label: Text(
+                    closedPending
+                        ? 'Diagnosticar / forzar cierre'
+                        : 'Diagnosticar turno atascado',
+                  ),
+                ),
+                const SizedBox(height: 8),
                 OutlinedButton.icon(
                   onPressed: () async {
                     await AdminTicketPrinterService().confirmAndPrint(
@@ -479,6 +503,89 @@ class _AdminTurnosOfflineScreenState extends State<AdminTurnosOfflineScreen> {
         );
       },
     );
+  }
+
+  /// Diagnostica un turno `closed_pending_sync` atascado (p.ej. el replay
+  /// automático lo rechaza siempre con "no se encontró un turno abierto
+  /// para el TPV X") y, si el admin confirma, intenta resolverlo: cerrarlo
+  /// con el TPV real del servidor si sigue abierto ahí, o descartarlo de la
+  /// cola local si el servidor ya no lo tiene abierto.
+  Future<void> _forceResolveTurno(Map<String, dynamic> turno) async {
+    final localId = turno['local_id']?.toString() ?? '';
+    if (localId.isEmpty) return;
+
+    if (!_connectivity.isConnected) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sin conexión. Conéctate a internet para diagnosticar.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    Map<String, dynamic> diag;
+    try {
+      diag = await _autoSync.diagnoseStuckTurno(localId);
+    } catch (e) {
+      diag = {'found': true, 'message': 'Error diagnosticando: $e'};
+    }
+
+    if (!mounted) return;
+    Navigator.pop(context); // Cerrar el loading.
+
+    final canAct = diag['found'] == true;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Diagnóstico del turno'),
+        content: Text(diag['message']?.toString() ?? 'Sin información.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cerrar'),
+          ),
+          if (canAct)
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Forzar resolución'),
+            ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    Map<String, dynamic> result;
+    try {
+      result = await _autoSync.forceResolveStuckTurno(localId);
+    } catch (e) {
+      result = {'success': false, 'message': 'Error: $e'};
+    }
+
+    if (!mounted) return;
+    Navigator.pop(context); // Cerrar el loading.
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result['message']?.toString() ?? 'Sin resultado'),
+        backgroundColor:
+            result['success'] == true ? Colors.green : Colors.red,
+        duration: const Duration(seconds: 5),
+      ),
+    );
+    await _load();
   }
 
   Widget _row(String label, String value, {bool emphasize = false}) {

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../services/turno_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/payment_method_service.dart';
+import '../services/server_time_service.dart';
 import '../models/payment_method.dart';
 
 class EgresoScreen extends StatefulWidget {
@@ -576,12 +577,17 @@ class _EgresoScreenState extends State<EgresoScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: TextStyle(fontSize: 14, color: Colors.grey[600])),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: Color(0xFF1F2937),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF1F2937),
+              ),
             ),
           ),
         ],
@@ -734,7 +740,9 @@ class _EgresoScreenState extends State<EgresoScreen> {
         'nombre_autoriza': nombreAutoriza,
         'nombre_recibe': nombreRecibe,
         'id_medio_pago': _selectedPaymentMethod?.id,
-        'fecha_entrega': DateTime.now().toIso8601String(),
+        // Hora corregida contra el servidor (ver ServerTimeService) para que
+        // el egreso no quede fuera del rango del turno por desfase de reloj.
+        'fecha_entrega': ServerTimeService().now().toIso8601String(),
         'es_digital': _selectedPaymentMethod?.esDigital ?? false,
         'medio_pago': _selectedPaymentMethod?.denominacion ?? 'Efectivo',
       };

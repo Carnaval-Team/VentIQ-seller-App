@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../services/user_preferences_service.dart';
 import '../services/auto_sync_service.dart';
 import '../services/turno_service.dart';
+import '../services/server_time_service.dart';
 import '../services/inventory_service.dart';
 import '../utils/uuid_generator.dart';
 import '../models/inventory_product.dart';
@@ -991,11 +992,11 @@ class _AperturaScreenState extends State<AperturaScreen> {
                     ),
                     const SizedBox(height: 16),
                     _buildInfoRow(
-                      'Fecha:',
+                      'Fecha actual:',
                       _formatDate(DateTime.now().toLocal()),
                     ),
                     _buildInfoRow(
-                      'Hora:',
+                      'Hora actual:',
                       _formatTime(DateTime.now().toLocal()),
                     ),
                     _buildInfoRow('Usuario:', _userName),
@@ -1635,12 +1636,22 @@ class _AperturaScreenState extends State<AperturaScreen> {
   }
 
   bool _isOfflineTurno(Map<String, dynamic> turno) {
+    // Marcador explícito de origen (ver `saveOfflineTurno` en
+    // UserPreferencesService): una apertura hecha en línea y luego cacheada
+    // para resiliencia offline queda marcada 'online' aunque estructuralmente
+    // viva dentro de la misma cola de turnos offline. Sin este marcador,
+    // campos como `local_id`/`tipo_operacion` (presentes en TODA entrada de
+    // la cola, sin importar su origen real) hacían que una apertura online
+    // se mostrara incorrectamente como "creada offline".
+    final origen = turno['origen_apertura'];
+    if (origen == 'online') return false;
+    if (origen == 'offline') return true;
+
+    // Sin marcador (entradas antiguas persistidas antes de este cambio):
+    // usar `created_offline_at` como única señal de origen real offline.
     final turnoId = turno['id'];
-    return turnoId is String ||
-        turno['created_offline_at'] != null ||
-        turno['tipo_operacion'] == 'apertura' ||
-        turno['local_id'] != null ||
-        turno['status'] == UserPreferencesService.offlineTurnoStatusOpen;
+    return turno['created_offline_at'] != null ||
+        (turnoId is String && turno['server_id_turno'] == null);
   }
 
   String _formatInventoryCount(double quantity) {
@@ -2498,6 +2509,11 @@ class _AperturaScreenState extends State<AperturaScreen> {
       final clientUuid = UuidGenerator.v4();
       final localId = UuidGenerator.v4();
 
+      // Usar la hora corregida contra el servidor (ver ServerTimeService)
+      // para que fecha_apertura no quede desfasada si el reloj del
+      // dispositivo está mal ajustado.
+      final nowServerCorrected = ServerTimeService().now();
+
       // Crear estructura de apertura offline
       final aperturaData = {
         'id': localId,
@@ -2508,12 +2524,13 @@ class _AperturaScreenState extends State<AperturaScreen> {
         'id_vendedor': idVendedor,
         'usuario': usuario,
         'tipo_operacion': 'apertura',
+        'origen_apertura': 'offline',
         'efectivo_inicial': efectivoInicial,
-        'fecha_apertura': DateTime.now().toIso8601String(),
+        'fecha_apertura': nowServerCorrected.toIso8601String(),
         'observaciones': observaciones ?? '',
         'maneja_inventario': _manejaInventario,
         'productos': productos ?? [],
-        'created_offline_at': DateTime.now().toIso8601String(),
+        'created_offline_at': nowServerCorrected.toIso8601String(),
       };
 
       // Cola multi-turno: crea entrada status=open (no sobrescribe cerrados).

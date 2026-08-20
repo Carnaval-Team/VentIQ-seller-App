@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'dart:convert';
 import '../services/admin_access_service.dart';
 import '../services/auth_service.dart';
+import '../services/auto_sync_service.dart';
 import '../services/connectivity_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
@@ -39,6 +40,20 @@ Future<void> _promptLogoutOrSwitchUser(BuildContext context) async {
     final fullOfflineReady = await prefs.isDeviceFullOfflineReady();
     final stayFullyOffline = await prefs.shouldStayFullyOffline();
     final online = ConnectivityService().isConnected;
+
+    // Si hay conexión real, reconciliar la cola local de turnos contra el
+    // servidor antes de decidir si hay "pendientes de sincronizar": una
+    // entrada local puede haber quedado huérfana (turno ya cerrado o
+    // resuelto en el servidor por otra vía) y sin esto el aviso aparecería
+    // siempre aunque en el servidor ya no quede nada pendiente.
+    if (online) {
+      try {
+        await AutoSyncService().reconcileStaleOfflineTurnos();
+      } catch (e) {
+        print('⚠️ No se pudo reconciliar turnos offline antes del logout: $e');
+      }
+    }
+
     final hasUnsynced = await prefs.hasUnsyncedOfflineData();
     final storeId = await prefs.getOfflineInventoryStoreId();
 

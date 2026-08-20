@@ -107,6 +107,51 @@ class Promotion {
     return false;
   }
 
+  bool get isFixedDiscount {
+    final denominacion = (tipoPromocionNombre ?? '').toLowerCase();
+    final tipoDenominacion =
+        (tipoPromocion?.denominacion ?? '').toLowerCase();
+    return denominacion.contains('fijo') ||
+        denominacion.contains('monto') ||
+        tipoDenominacion.contains('fijo') ||
+        tipoDenominacion.contains('monto');
+  }
+
+  bool get is2x1 {
+    final denominacion = (tipoPromocionNombre ?? '').toLowerCase();
+    final tipoDenominacion =
+        (tipoPromocion?.denominacion ?? '').toLowerCase();
+    return denominacion.contains('2x1') ||
+        denominacion.contains('dos por uno') ||
+        tipoDenominacion.contains('2x1') ||
+        tipoDenominacion.contains('dos por uno');
+  }
+
+  bool get isPuntosExtra {
+    final denominacion = (tipoPromocionNombre ?? '').toLowerCase();
+    final tipoDenominacion =
+        (tipoPromocion?.denominacion ?? '').toLowerCase();
+    return denominacion.contains('puntos') ||
+        denominacion.contains('puntos extra') ||
+        tipoDenominacion.contains('puntos');
+  }
+
+  String get discountValueText {
+    if (isChargePromotion) {
+      return '+${valorDescuento.toStringAsFixed(0)}%';
+    }
+    if (is2x1) {
+      return '2x1';
+    }
+    if (isPuntosExtra) {
+      return '+${valorDescuento.toStringAsFixed(0)} pts';
+    }
+    if (isFixedDiscount) {
+      return '\$${valorDescuento.toStringAsFixed(2)}';
+    }
+    return '${valorDescuento.toStringAsFixed(0)}%';
+  }
+
   String get chargeWarningMessage {
     return '⚠️ Esta promoción aumentará el precio de venta de los productos afectados';
   }

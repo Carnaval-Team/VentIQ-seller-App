@@ -51,6 +51,7 @@ class _InventoryExtractionBySaleScreenState
   String _offerCurrencyCode = 'CUP';
 
   // Configuración de impresión de la tienda
+  bool _guardarImpresoraPorDefecto = false;
   List<String> _ticketsAImprimir = ['cliente', 'almacen'];
   Map<String, int> _copiasPorTicket = {'cliente': 1, 'almacen': 1};
 
@@ -71,6 +72,9 @@ class _InventoryExtractionBySaleScreenState
 
   // ID de la operación pendiente (para cancelar si el usuario regresa)
   int? _pendingOperationId;
+  // ID y fecha de la última operación registrada para impresión del ticket
+  int? _lastOperationIdForPrint;
+  DateTime? _lastOperationCreatedAtForPrint;
 
   @override
   void initState() {
@@ -90,16 +94,18 @@ class _InventoryExtractionBySaleScreenState
       final idTienda = userData['idTienda'] as int?;
       if (idTienda == null) return;
 
+      final guardar = await StoreConfigService.getGuardarImpresoraPorDefecto(idTienda);
       final tickets = await StoreConfigService.getTicketsAImprimir(idTienda);
       final copias = await StoreConfigService.getCopiasPorTicket(idTienda);
 
       if (mounted) {
         setState(() {
+          _guardarImpresoraPorDefecto = guardar;
           _ticketsAImprimir = tickets.isNotEmpty ? tickets : ['cliente', 'almacen'];
           _copiasPorTicket = copias;
         });
       }
-      print('🖨️ Configuración de impresión cargada: tickets=$_ticketsAImprimir, copias=$_copiasPorTicket');
+      print('🖨️ Configuración de impresión cargada: guardar=$guardar, tickets=$_ticketsAImprimir, copias=$_copiasPorTicket');
     } catch (e) {
       print('❌ Error cargando configuración de impresión: $e');
     }
@@ -686,8 +692,11 @@ class _InventoryExtractionBySaleScreenState
           throw Exception('No se recibió ID de operación válido del servidor');
         }
 
-        // Guardar ID por si el usuario regresa antes de completar
-        setState(() => _pendingOperationId = operationId);
+        // Guardar ID por si el usuario regresa antes de completar y para imprimir
+        setState(() {
+          _pendingOperationId = operationId;
+          _lastOperationIdForPrint = operationId;
+        });
 
         print('✅ Venta registrada con ID: $operationId');
 
@@ -728,20 +737,42 @@ class _InventoryExtractionBySaleScreenState
             );
           }
         } catch (pagoError, stackTrace) {
-          print('❌ Error al registrar pago: $pagoError');
+          print('❌ Error al registrar pago vía RPC: $pagoError');
           print('🔴 Stack trace: $stackTrace');
 
-          // Mostrar advertencia pero no fallar la operación
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Advertencia: Venta registrada pero error en pago: $pagoError',
+          // Fallback: si fn_registrar_pago_venta rechaza el pago porque el
+          // creador de la venta no es vendedor (ej. venta creada por gerente),
+          // insertamos directamente en app_dat_pago_venta usando la RLS de
+          // gerente/supervisor.
+          try {
+            final totalVenta = _calculateTotal();
+            final idMedioPago = _selectedMedioPago!['id'];
+            await Supabase.instance.client.from('app_dat_pago_venta').insert({
+              'id_operacion_venta': operationId,
+              'id_medio_pago': idMedioPago,
+              'monto': totalVenta,
+              'referencia_pago':
+                  'Venta por Acuerdo - ${DateTime.now().millisecondsSinceEpoch}',
+              'creado_por': userUuid,
+              'importe_sin_descuento': totalVenta,
+              'fecha_pago': DateTime.now().toIso8601String(),
+            });
+            print('✅ Pago registrado directamente (fallback)');
+          } catch (fallbackError) {
+            print('❌ Error al registrar pago (fallback): $fallbackError');
+
+            // Mostrar advertencia pero no fallar la operación
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Advertencia: Venta registrada pero error en pago: $pagoError',
+                  ),
+                  backgroundColor: Colors.orange,
+                  duration: const Duration(seconds: 5),
                 ),
-                backgroundColor: Colors.orange,
-                duration: const Duration(seconds: 5),
-              ),
-            );
+              );
+            }
           }
         }
 
@@ -1810,6 +1841,7 @@ class _InventoryExtractionBySaleScreenState
       // Mostrar diálogo de selección de impresora WiFi
       final selectedPrinter = await wifiService.showPrinterSelectionDialog(
         context,
+        allowSaveDefault: _guardarImpresoraPorDefecto,
       );
       if (selectedPrinter == null) {
         print('❌ No se seleccionó impresora WiFi');
@@ -1856,6 +1888,26 @@ class _InventoryExtractionBySaleScreenState
       final profile = await CapabilityProfile.load();
       final generator = Generator(PaperSize.mm58, profile);
 
+      final currentStore = await UserPreferencesService().getCurrentStoreInfo();
+      final storeName = (currentStore?['denominacion'] as String?)?.isNotEmpty == true
+          ? currentStore!['denominacion'] as String
+          : 'INVENTTIA';
+      final operationId = _lastOperationIdForPrint;
+      DateTime? operationCreatedAt = _lastOperationCreatedAtForPrint;
+      if (operationId != null && operationCreatedAt == null) {
+        try {
+          final opData = await Supabase.instance.client
+              .from('app_dat_operaciones')
+              .select('created_at')
+              .eq('id', operationId)
+              .single();
+          operationCreatedAt = DateTime.parse(opData['created_at'] as String);
+          _lastOperationCreatedAtForPrint = operationCreatedAt;
+        } catch (e) {
+          print('⚠️ No se pudo obtener fecha de la operación: $e');
+        }
+      }
+
       // Imprimir según configuración de tienda
       final ticketsToPrint =
           _ticketsAImprimir.isNotEmpty ? _ticketsAImprimir : ['cliente'];
@@ -1870,6 +1922,9 @@ class _InventoryExtractionBySaleScreenState
           final bytes = _generateExtractionTicket(
             generator,
             ticketType: ticketType,
+            storeName: storeName,
+            operationId: operationId,
+            operationCreatedAt: operationCreatedAt,
           );
           final printed = await wifiService.sendRawBytes(bytes);
 
@@ -1956,6 +2011,7 @@ class _InventoryExtractionBySaleScreenState
       final bluetoothService = printerManager.bluetoothService;
       var selectedDevice = await bluetoothService.showDeviceSelectionDialog(
         context,
+        allowSaveDefault: _guardarImpresoraPorDefecto,
       );
       if (selectedDevice == null || !mounted) return;
 
@@ -2026,6 +2082,26 @@ class _InventoryExtractionBySaleScreenState
       final profile = await CapabilityProfile.load();
       final generator = Generator(PaperSize.mm58, profile);
 
+      final currentStore = await UserPreferencesService().getCurrentStoreInfo();
+      final storeName = (currentStore?['denominacion'] as String?)?.isNotEmpty == true
+          ? currentStore!['denominacion'] as String
+          : 'INVENTTIA';
+      final operationId = _lastOperationIdForPrint;
+      DateTime? operationCreatedAt = _lastOperationCreatedAtForPrint;
+      if (operationId != null && operationCreatedAt == null) {
+        try {
+          final opData = await Supabase.instance.client
+              .from('app_dat_operaciones')
+              .select('created_at')
+              .eq('id', operationId)
+              .single();
+          operationCreatedAt = DateTime.parse(opData['created_at'] as String);
+          _lastOperationCreatedAtForPrint = operationCreatedAt;
+        } catch (e) {
+          print('⚠️ No se pudo obtener fecha de la operación: $e');
+        }
+      }
+
       final ticketsToPrint =
           _ticketsAImprimir.isNotEmpty ? _ticketsAImprimir : ['cliente'];
       var allPrinted = true;
@@ -2041,6 +2117,9 @@ class _InventoryExtractionBySaleScreenState
           final bytes = _generateExtractionTicket(
             generator,
             ticketType: ticketType,
+            storeName: storeName,
+            operationId: operationId,
+            operationCreatedAt: operationCreatedAt,
           );
           final printed = await bluetoothService.writeBytesSafe(
             bytes,
@@ -2138,6 +2217,9 @@ class _InventoryExtractionBySaleScreenState
   List<int> _generateExtractionTicket(
     Generator generator, {
     required String ticketType,
+    required String storeName,
+    int? operationId,
+    DateTime? operationCreatedAt,
   }) {
     List<int> bytes = [];
     List<int> line(String text, {PosStyles? styles}) {
@@ -2147,9 +2229,9 @@ class _InventoryExtractionBySaleScreenState
       );
     }
 
-    // Header
+    // Header con datos de la tienda
     bytes += line(
-      'INVENTTIA',
+      sanitizeForThermalPrinter(storeName.toUpperCase()),
       styles: PosStyles(align: PosAlign.center, bold: true),
     );
     bytes += line(
@@ -2172,6 +2254,11 @@ class _InventoryExtractionBySaleScreenState
     );
 
     // Información de la venta
+    final opIdText = operationId != null ? operationId.toString() : 'N/A';
+    bytes += line(
+      'ID: $opIdText',
+      styles: PosStyles(align: PosAlign.left, bold: true),
+    );
     bytes += line(
       'Cliente: ${_lastClientNameForPrint.isNotEmpty ? _lastClientNameForPrint : 'N/A'}',
       styles: PosStyles(align: PosAlign.left),
@@ -2184,8 +2271,11 @@ class _InventoryExtractionBySaleScreenState
       'Pago: ${_selectedMedioPago?['denominacion'] ?? 'N/A'}',
       styles: PosStyles(align: PosAlign.left),
     );
+    final fechaText = operationCreatedAt != null
+        ? _formatDateTime(operationCreatedAt)
+        : _formatDateTime(DateTime.now());
     bytes += line(
-      'Fecha: ${DateTime.now().toString().split('.')[0]}',
+      'Fecha: $fechaText',
       styles: PosStyles(align: PosAlign.left),
     );
     bytes += line(
@@ -2250,12 +2340,22 @@ class _InventoryExtractionBySaleScreenState
     );
     bytes += line(
       'Gracias por su compra',
-      styles: PosStyles(align: PosAlign.center),
+      styles: PosStyles(align: PosAlign.center, bold: true),
     );
     bytes += generator.emptyLines(2);
     bytes += generator.cut();
 
     return bytes;
+  }
+
+  /// Formatea una fecha/hora para impresión en ticket.
+  String _formatDateTime(DateTime date) {
+    final local = date.toLocal();
+    return '${local.day.toString().padLeft(2, '0')}/'
+        '${local.month.toString().padLeft(2, '0')}/'
+        '${local.year} '
+        '${local.hour.toString().padLeft(2, '0')}:'
+        '${local.minute.toString().padLeft(2, '0')}';
   }
 
   /// Mostrar diálogo de error

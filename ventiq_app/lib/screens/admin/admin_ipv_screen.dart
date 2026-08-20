@@ -63,21 +63,39 @@ class _AdminIpvScreenState extends State<AdminIpvScreen> {
   }
 
   String _ubicacionOf(Map<String, dynamic> p) {
-    final top = p['ubicacion_nombre']?.toString();
-    if (top != null && top.isNotEmpty) return top;
+    final topUbi = p['ubicacion_nombre']?.toString() ?? '';
+    final topAlm = p['almacen_nombre']?.toString() ?? '';
+    if (topUbi.isNotEmpty || topAlm.isNotEmpty) {
+      if (topUbi.isEmpty) return topAlm;
+      if (topAlm.isEmpty) return topUbi;
+      return '$topAlm · $topUbi';
+    }
     final detalles = p['detalles_completos'];
     if (detalles is Map) {
       final inv = detalles['inventario'];
       if (inv is List && inv.isNotEmpty && inv.first is Map) {
         final first = Map<String, dynamic>.from(inv.first as Map);
-        final ub = first['ubicacion'];
-        if (ub is Map) {
-          return ub['denominacion']?.toString() ?? '';
-        }
-        return first['ubicacion_nombre']?.toString() ??
+        final alm = first['almacen_nombre']?.toString() ??
+            ((first['ubicacion'] is Map
+                    ? (first['ubicacion'] as Map)['almacen']
+                    : null)
+                is Map
+                ? ((first['ubicacion'] as Map)['almacen'] as Map)['denominacion']
+                    ?.toString()
+                : null) ??
+            '';
+        final ubi = first['ubicacion_nombre']?.toString() ??
             first['denominacion_ubicacion']?.toString() ??
             first['ubicacion_label']?.toString() ??
+            (first['ubicacion'] is Map
+                ? (first['ubicacion'] as Map)['denominacion']?.toString()
+                : null) ??
             '';
+        if (ubi.isNotEmpty || alm.isNotEmpty) {
+          if (ubi.isEmpty) return alm;
+          if (alm.isEmpty) return ubi;
+          return '$alm · $ubi';
+        }
       }
     }
     return '';

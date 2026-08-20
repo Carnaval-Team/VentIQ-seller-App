@@ -16,6 +16,8 @@ import '../services/printer_manager.dart';
 import '../services/inventory_service.dart';
 import '../services/auto_sync_service.dart';
 import '../services/connectivity_service.dart';
+import '../services/server_time_service.dart';
+import '../widgets/cash_count_dialog.dart';
 
 class CierreScreen extends StatefulWidget {
   const CierreScreen({Key? key}) : super(key: key);
@@ -82,6 +84,11 @@ class _CierreScreenState extends State<CierreScreen> {
 
   // Shift workers closed
   int _trabajadoresCerrados = 0;
+
+  // Fecha/hora real de apertura del turno que se está cerrando (para mostrar
+  // en el encabezado junto a la hora actual y evitar confusiones cuando el
+  // turno lleva abierto varios días).
+  DateTime? _fechaAperturaTurno;
 
   // Orders data
   int _ordenesAbiertas = 0;
@@ -292,6 +299,96 @@ class _CierreScreenState extends State<CierreScreen> {
     }
   }
 
+  double _parseDouble(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString()) ?? 0.0;
+  }
+
+  /// Calcula totales de cierre a partir de las órdenes locales. Soporta pagos
+  /// mixtos y usa las mismas claves que devuelve listar_ordenes.
+  ({double ventas, double efectivo, double transferencia, int productos, int operaciones})
+  _calculateClosureTotalsFromOrders(List<Order> orders) {
+    double ventas = 0.0;
+    double efectivo = 0.0;
+    double transferencia = 0.0;
+    int productos = 0;
+    int operaciones = 0;
+
+    for (final order in orders) {
+      final isVendida =
+          order.status == OrderStatus.completada ||
+          order.status == OrderStatus.pagoConfirmado ||
+          order.status == OrderStatus.pendienteDeSincronizacion ||
+          order.status == OrderStatus.enviada;
+
+      if (!isVendida) continue;
+
+      operaciones++;
+      ventas += order.total;
+      productos += order.items.fold<int>(
+        0,
+        (sum, item) => sum + item.cantidad.toInt(),
+      );
+
+      double efectivoOrden = 0.0;
+      double transferenciaOrden = 0.0;
+      final pagos = order.pagos;
+
+      if (pagos != null && pagos.isNotEmpty) {
+        for (final pago in pagos) {
+          if (pago is! Map) continue;
+          final monto = _parseDouble(
+            pago['monto'] ??
+                pago['monto_pago'] ??
+                pago['monto_total'] ??
+                pago['monto_entrega'] ??
+                pago['total'],
+          );
+          final esEfectivo =
+              pago['es_efectivo'] == true ||
+              pago['medio_pago_es_efectivo'] == true ||
+              pago['id_medio_pago'] == 1 ||
+              pago['medio_pago_id'] == 1;
+          final esDigital =
+              pago['es_digital'] == true ||
+              pago['medio_pago_es_digital'] == true;
+
+          if (esEfectivo) {
+            efectivoOrden += monto;
+          } else if (esDigital) {
+            transferenciaOrden += monto;
+          } else {
+            transferenciaOrden += monto;
+          }
+        }
+      }
+
+      // Fallback solo para órdenes offline sin pagos desglosados.
+      if (order.isOfflineOrder &&
+          efectivoOrden + transferenciaOrden == 0 &&
+          order.total > 0) {
+        final method = (order.paymentMethod ?? '').toLowerCase();
+        if (method.contains('efectivo') || method.contains('cash')) {
+          efectivoOrden = order.total;
+        } else {
+          transferenciaOrden = order.total;
+        }
+      }
+
+      efectivo += efectivoOrden;
+      transferencia += transferenciaOrden;
+    }
+
+    return (
+      ventas: ventas,
+      efectivo: efectivo,
+      transferencia: transferencia,
+      productos: productos,
+      operaciones: operaciones,
+    );
+  }
+
   Future<void> _loadDailySummary() async {
     try {
       setState(() {
@@ -313,20 +410,23 @@ class _CierreScreenState extends State<CierreScreen> {
         return;
       }
 
-      // Cargar solo órdenes de ESTE turno (online u offline).
+      _fechaAperturaTurno = DateTime.tryParse(
+        turnoAbierto['fecha_apertura']?.toString() ?? '',
+      )?.toLocal();
+
+      // Cargar TODAS las órdenes de ESTE turno combinando cache offline +
+      // pendientes de sincronización + (si hay conexión real) datos frescos
+      // del servidor. Así, si se pasó a modo offline habiendo ya ventas
+      // hechas en línea, esas ventas se siguen sumando en el cierre. La
+      // sincronización de pendientes hacia el servidor sigue siendo
+      // responsabilidad independiente de auto_sync_service.
+      await _orderService.loadOrdersForOpenTurnoUnified();
+
       if (useLocal) {
-        print('🔌 Modo local - Cargando datos del turno abierto...');
-        await _orderService.loadOrdersFromLocalCacheForOpenTurno();
+        print('🔌 Modo local - Resumen del turno abierto...');
         await _loadDailySummaryOffline();
       } else {
         print('🌐 Modo online - Resumen del turno abierto...');
-        _orderService.clearAllOrders();
-        await _orderService.listOrdersFromSupabase();
-        final pending =
-            await _userPrefs.getSellerVisiblePendingOrders();
-        if (pending.isNotEmpty) {
-          _orderService.addPendingOrdersToList(pending);
-        }
         await _loadDailySummaryOnline(turnoAbierto);
       }
 
@@ -1335,51 +1435,26 @@ class _CierreScreenState extends State<CierreScreen> {
     }
   }
 
-  /// Órdenes del turno abierto (filtro por fecha apertura → cierre/ahora).
+  /// Órdenes del turno abierto.
+  ///
+  /// `_orderService.orders` ya viene acotado al turno abierto por
+  /// [OrderService.loadOrdersForOpenTurnoUnified] (que prioriza el match por
+  /// id de turno y sólo cae a un filtro por fecha como respaldo). Volver a
+  /// filtrar aquí por fecha de forma estricta podía descartar órdenes
+  /// válidas del turno por pequeñas diferencias de zona horaria entre el
+  /// `fecha_creacion` de la orden y el `fecha_apertura` del turno, por eso
+  /// simplemente se devuelve la lista ya cargada.
   Future<List<Order>> _ordersOfOpenTurno() async {
-    final turno = await TurnoService.getTurnoAbierto();
-    if (turno == null) return const [];
-
-    final from =
-        DateTime.tryParse(turno['fecha_apertura']?.toString() ?? '')?.toUtc();
-    final to =
-        DateTime.tryParse(turno['fecha_cierre']?.toString() ?? '')?.toUtc() ??
-        DateTime.now().toUtc();
-
-    final filtered =
-        _orderService.orders.where((order) {
-          final fo = order.fechaCreacion.toUtc();
-          if (from != null && fo.isBefore(from)) return false;
-          if (fo.isAfter(to)) return false;
-          return true;
-        }).toList();
-
-    print(
-      '📅 Cierre: órdenes del turno ${filtered.length}/'
-      '${_orderService.orders.length} '
-      '(desde=${from?.toIso8601String()} hasta=${to.toIso8601String()})',
-    );
-    return filtered;
+    return List<Order>.from(_orderService.orders);
   }
 
   Future<void> _calcularDatosCierre() async {
     final orders = await _ordersOfOpenTurno();
 
-    // Calcular ventas totales (órdenes completadas y con pago confirmado)
-    final ordersVendidas =
-        orders
-            .where(
-              (order) =>
-                  order.status == OrderStatus.completada ||
-                  order.status == OrderStatus.pagoConfirmado ||
-                  order.status == OrderStatus.pendienteDeSincronizacion,
-            )
-            .toList();
-
-    double ventas = 0.0;
-    for (final order in ordersVendidas) {
-      ventas += order.total;
-    }
+    // Calcular totales reales desde las órdenes locales (online + offline).
+    // Esto asegura que el cierre refleje los pagos reales, incluyendo ajustes
+    // parciales hechos en el desglose de pagos.
+    final totals = _calculateClosureTotalsFromOrders(orders);
 
     // Órdenes pendientes que deben cerrarse
     final pendientes =
@@ -1394,10 +1469,18 @@ class _CierreScreenState extends State<CierreScreen> {
 
     if (!mounted) return;
     setState(() {
-      // Si el resumen del turno ya trajo ventas, no pisar con 0 por lista vacía
-      // en memoria; sí actualizar pendientes siempre.
-      if (ordersVendidas.isNotEmpty || ventas > 0) {
-        _ventasTotales = ventas;
+      // Solo pisar los totales si tenemos órdenes cargadas; si no, conservar
+      // los valores que vengan del resumen del servidor/cache.
+      if (orders.isNotEmpty) {
+        _ventasTotales = totals.ventas;
+        _totalEfectivo = totals.efectivo;
+        _totalTransferencias = totals.transferencia;
+        _productosVendidos = totals.productos;
+        _operacionesTotales = totals.operaciones;
+        _ticketPromedio =
+            totals.operaciones > 0 ? totals.ventas / totals.operaciones : 0.0;
+        // Recalcular efectivo esperado con los valores reales de este turno.
+        _efectivoEsperado = _montoInicialCaja + _totalEfectivo;
       }
       _ordenesAbiertas = pendientes.length;
       _ordenesPendientes = pendientes;
@@ -1471,13 +1554,20 @@ class _CierreScreenState extends State<CierreScreen> {
                     ),
                     const SizedBox(height: 16),
                     _buildInfoRow(
-                      'Fecha:',
+                      'Fecha actual:',
                       _formatDate(DateTime.now().toLocal()),
                     ),
                     _buildInfoRow(
-                      'Hora:',
+                      'Hora actual:',
                       _formatTime(DateTime.now().toLocal()),
                     ),
+                    if (_fechaAperturaTurno != null) ...[
+                      _buildInfoRow(
+                        'Turno abierto desde:',
+                        '${_formatDate(_fechaAperturaTurno!)} '
+                            '${_formatTime(_fechaAperturaTurno!)}',
+                      ),
+                    ],
                     _buildInfoRow('Usuario:', _userName),
                   ],
                 ),
@@ -1769,6 +1859,26 @@ class _CierreScreenState extends State<CierreScreen> {
                       style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                     ),
                     const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _showCashCountDialog,
+                        icon: const Icon(Icons.calculate_outlined,
+                            color: Color(0xFF4A90E2)),
+                        label: const Text(
+                          'Contar billetes',
+                          style: TextStyle(color: Color(0xFF4A90E2)),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFF4A90E2)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     TextFormField(
                       controller: _montoFinalController,
                       keyboardType: const TextInputType.numberWithOptions(
@@ -2013,17 +2123,36 @@ class _CierreScreenState extends State<CierreScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: TextStyle(fontSize: 14, color: Colors.grey[600])),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: isNegative ? Colors.red : Color(0xFF1F2937),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: isNegative ? Colors.red : Color(0xFF1F2937),
+              ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _showCashCountDialog() async {
+    final total = await showDialog<double>(
+      context: context,
+      builder: (context) => CashCountDialog(
+        userPreferencesService: _userPrefs,
+      ),
+    );
+    if (total != null && mounted) {
+      setState(() {
+        _montoFinalController.text = total.toStringAsFixed(2);
+      });
+    }
   }
 
   Widget _buildDiferencia(double montoEsperado) {
@@ -2694,7 +2823,22 @@ class _CierreScreenState extends State<CierreScreen> {
   }) async {
     try {
       final userData = await _userPrefs.getUserData();
-      final idTpv = await _userPrefs.getIdTpv();
+      final openTurno = await _userPrefs.getOfflineTurno();
+      // Usar el mismo id_tpv con el que se abrió ESTE turno, no el TPV
+      // seleccionado actualmente en preferencias (puede haber cambiado entre
+      // la apertura y el cierre). Si no está disponible, caer al de prefs.
+      final aperturaTpvRaw =
+          openTurno?['id_tpv'] ??
+          (openTurno?['apertura'] is Map
+              ? (openTurno!['apertura'] as Map)['id_tpv']
+              : null);
+      final idTpv =
+          (aperturaTpvRaw is int
+              ? aperturaTpvRaw
+              : (aperturaTpvRaw is num
+                  ? aperturaTpvRaw.toInt()
+                  : int.tryParse('$aperturaTpvRaw'))) ??
+          await _userPrefs.getIdTpv();
       final userUuid = userData['userId'];
 
       if (idTpv == null || userUuid == null) {
@@ -2704,10 +2848,13 @@ class _CierreScreenState extends State<CierreScreen> {
       // Generar ID único para el cierre offline + client_uuid de idempotencia.
       final cierreId = '${DateTime.now().millisecondsSinceEpoch}';
       final clientUuid = UuidGenerator.v4();
-      final openTurno = await _userPrefs.getOfflineTurno();
       final localTurnoId =
           openTurno?['local_id']?.toString() ??
           openTurno?['local_turno_id']?.toString();
+
+      // Hora corregida contra el servidor (ver ServerTimeService), para que
+      // fecha_cierre no quede desfasada si el reloj del dispositivo está mal.
+      final nowServerCorrected = ServerTimeService().now();
 
       // Crear estructura de cierre offline
       final cierreData = {
@@ -2718,11 +2865,11 @@ class _CierreScreenState extends State<CierreScreen> {
         'tipo_operacion': 'cierre',
         'efectivo_final': efectivoFinal,
         'diferencia': diferencia,
-        'fecha_cierre': DateTime.now().toIso8601String(),
+        'fecha_cierre': nowServerCorrected.toIso8601String(),
         'observaciones': observaciones.isEmpty ? null : observaciones,
         'maneja_inventario': _manejaInventario,
         'productos': productos,
-        'created_offline_at': DateTime.now().toIso8601String(),
+        'created_offline_at': nowServerCorrected.toIso8601String(),
         if (localTurnoId != null) 'local_turno_id': localTurnoId,
       };
 
@@ -2758,12 +2905,17 @@ class _CierreScreenState extends State<CierreScreen> {
       PrinterManager().clearSavedPrinter();
 
       // En modo online (o con red): abrir+cerrar en servidor ahora.
-      // No depender solo del check de conectividad (puede dar falso negativo).
+      // Si el modo offline está activo O el dispositivo quedó preparado
+      // para trabajar 100% full-offline, NUNCA se debe intentar contactar
+      // al servidor aquí: el cierre queda guardado localmente y la cola de
+      // auto_sync se encarga de subirlo cuando corresponda.
       var syncedToServer = false;
       String? syncMessage;
-      final isOnlineMode = !(await _userPrefs.isOfflineModeEnabled());
+      final useLocalData = await _userPrefs.shouldUseLocalData();
+      final isOnlineMode = !useLocalData;
       final hasNetwork =
-          isOnlineMode || await ConnectivityService().performImmediateCheck();
+          !useLocalData &&
+          await ConnectivityService().performImmediateCheck();
 
       if (hasNetwork) {
         print(

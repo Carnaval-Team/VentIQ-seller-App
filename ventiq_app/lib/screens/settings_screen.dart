@@ -24,6 +24,7 @@ import '../widgets/app_drawer.dart';
 import '../widgets/sync_status_chip.dart';
 import '../widgets/selective_sync_dialog.dart';
 import '../services/connectivity_service.dart';
+import '../services/smart_offline_manager.dart';
 import 'dart:async';
 
 class SettingsScreen extends StatefulWidget {
@@ -647,18 +648,29 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   Future<void> _activateOfflineMode() async {
     try {
-      final hasOfflineData = await _userPreferencesService.hasOfflineData();
+      final hadOfflineData = await _userPreferencesService.hasOfflineData();
 
-      if (!hasOfflineData) {
-        final synced = await _forceSyncNow(blockWhenRunning: false);
-        if (!synced) {
-          if (mounted) {
-            setState(() {
-              _isOfflineModeEnabled = false;
-            });
-          }
-          return;
+      // Siempre intentar una sincronización fresca antes de activar el modo
+      // offline: si ya había datos offline de una sesión/sync anterior (p.ej.
+      // de antes de un cambio de almacén del TPV o un fix en el servidor),
+      // activar directamente con ese cache dejaba al vendedor con datos
+      // desactualizados (inventario, ubicaciones, precios, etc.) hasta el
+      // próximo ciclo del AutoSyncService. Solo si la sincronización falla Y
+      // no había datos previos bloqueamos la activación; si falla pero ya
+      // había datos, seguimos con el cache existente (mejor que nada).
+      final synced = await _forceSyncNow(blockWhenRunning: false);
+      if (!synced && !hadOfflineData) {
+        if (mounted) {
+          setState(() {
+            _isOfflineModeEnabled = false;
+          });
         }
+        return;
+      }
+      if (!synced && hadOfflineData) {
+        _showAutoSyncBlockedMessage(
+          '⚠️ No se pudo sincronizar; se usarán los últimos datos offline guardados.',
+        );
       }
 
       final isReady = await _userPreferencesService.hasOfflineData();
@@ -676,8 +688,14 @@ class _SettingsScreenState extends State<SettingsScreen>
 
       await _userPreferencesService.setOfflineMode(true);
 
+      // Notificar siempre al SmartOfflineManager (no solo cuando los
+      // servicios inteligentes de esta pantalla están inicializados), para
+      // que cualquier widget que escuche su eventStream (p.ej. el ícono de
+      // conexión en otras pantallas) se actualice de inmediato.
       if (_isSmartServicesInitialized) {
         await _integrationService.handleOfflineModeChanged(true);
+      } else {
+        await SmartOfflineManager().onOfflineModeManuallyEnabled();
       }
 
       if (mounted) {
@@ -777,8 +795,14 @@ class _SettingsScreenState extends State<SettingsScreen>
         await _userPreferencesService.clearDeviceFullOffline();
       }
 
+      // Notificar siempre al SmartOfflineManager (ver comentario análogo en
+      // _activateOfflineMode) para que el ícono de conexión y demás
+      // widgets que dependen de su eventStream no queden desactualizados
+      // mostrando "Offline" tras desactivarlo manualmente desde Ajustes.
       if (_isSmartServicesInitialized) {
         await _integrationService.handleOfflineModeChanged(false);
+      } else {
+        await SmartOfflineManager().onOfflineModeManuallyDisabled();
       }
 
       if (mounted) {
@@ -2264,6 +2288,18 @@ class _SettingsScreenState extends State<SettingsScreen>
                     _showClearOrdersDialog();
                   },
                 ),
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.store_outlined, color: Colors.orange),
+                  title: const Text('Turnos offline pendientes'),
+                  subtitle: Text(
+                    '$_pendingOfflineTurnosCount turno(s) por sincronizar',
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showPendingTurnosDialog();
+                  },
+                ),
               ],
             ),
             actions: [
@@ -3019,7 +3055,24 @@ class _SettingsScreenState extends State<SettingsScreen>
         ),
       );
 
-      await _integrationService.forceSyncNow();
+      // Sincronizar todos los módulos como hace la sync por módulos.
+      final wasOffline =
+          await _userPreferencesService.isOfflineModeEnabled();
+      if (wasOffline) {
+        await _userPreferencesService.setOfflineMode(false);
+      }
+      try {
+        final result = await AutoSyncService().syncModules(
+          SyncModule.values.toSet(),
+        );
+        if (!result.success) {
+          throw Exception(result.errors.join('; '));
+        }
+      } finally {
+        if (wasOffline) {
+          await _userPreferencesService.setOfflineMode(true);
+        }
+      }
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -3058,6 +3111,207 @@ class _SettingsScreenState extends State<SettingsScreen>
     } else {
       return '${dateTime.day.toString().padLeft(2, '0')}/${dateTime.month.toString().padLeft(2, '0')}/${dateTime.year} ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
     }
+  }
+
+  /// Mostrar diálogo con los turnos offline pendientes de sincronizar.
+  void _showPendingTurnosDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        var refreshKey = 0;
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Turnos offline pendientes'),
+              content: FutureBuilder<List<Map<String, dynamic>>>(
+                key: ValueKey(refreshKey),
+                future: _userPreferencesService.getOfflineTurnosPendingSync(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const SizedBox(
+                      height: 120,
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  final turnos = snapshot.data ?? [];
+                  if (turnos.isEmpty) {
+                    return const Text(
+                        'No hay turnos pendientes de sincronizar.');
+                  }
+                  return SizedBox(
+                    width: double.maxFinite,
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: turnos.length,
+                      itemBuilder: (context, index) {
+                        final t = turnos[index];
+                        final localId = t['local_id']?.toString() ?? 'N/A';
+                        final status = t['status']?.toString() ?? '';
+                        final fechaApertura =
+                            t['fecha_apertura']?.toString() ?? '';
+                        final estado =
+                            status == 'open'
+                                ? 'Abierto'
+                                : 'Cerrado (pendiente)';
+                        return ListTile(
+                          leading: Icon(
+                            status == 'open'
+                                ? Icons.lock_open
+                                : Icons.lock_outline,
+                            color:
+                                status == 'open' ? Colors.green : Colors.orange,
+                          ),
+                          title: Text('Turno $localId'),
+                          subtitle: Text(
+                            'Apertura: $fechaApertura\nEstado: $estado',
+                          ),
+                          isThreeLine: true,
+                          trailing: IconButton(
+                            icon: const Icon(Icons.sync,
+                                color: Color(0xFF4A90E2)),
+                            onPressed: () async {
+                              await _syncSingleTurno(localId);
+                              setDialogState(() => refreshKey++);
+                            },
+                          ),
+                          onTap:
+                              () => _showTurnoDetailDialog(
+                                t,
+                                onSync:
+                                    () =>
+                                        setDialogState(() => refreshKey++),
+                              ),
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cerrar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// Muestra la información de apertura y cierre de un turno offline.
+  void _showTurnoDetailDialog(
+    Map<String, dynamic> turno, {
+    VoidCallback? onSync,
+  }) {
+    final localId = turno['local_id']?.toString() ?? 'N/A';
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Text('Cierre de caja - $localId'),
+            content: FutureBuilder<Map<String, dynamic>>(
+              future: _userPreferencesService.getOfflineTurnoCuadre(turno),
+              builder: (context, snapshot) {
+                final apertura = turno['apertura'] ?? {};
+                final cierre = turno['cierre'] ?? {};
+                final cuadre = snapshot.data ?? {};
+
+                final fechaApertura =
+                    apertura['fecha_apertura']?.toString() ??
+                    turno['fecha_apertura']?.toString() ??
+                    'N/A';
+                final efectivoInicial =
+                    (apertura['efectivo_inicial'] as num? ??
+                            turno['efectivo_inicial'] as num? ??
+                            0)
+                        .toDouble();
+                final fechaCierre =
+                    cierre['fecha_cierre']?.toString() ?? 'Sin cierre';
+                final totalVentas =
+                    (cuadre['total_ventas'] as num? ??
+                            cuadre['ventas_totales'] as num? ??
+                            0)
+                        .toDouble();
+                final totalEfectivo =
+                    (cuadre['total_efectivo'] as num? ??
+                            cuadre['efectivo_real'] as num? ??
+                            0)
+                        .toDouble();
+                final totalTransferencias =
+                    (cuadre['total_transferencias'] as num? ?? 0)
+                        .toDouble();
+                final efectivoEsperado =
+                    (cuadre['efectivo_esperado'] as num? ??
+                            efectivoInicial + totalEfectivo)
+                        .toDouble();
+
+                return SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Apertura: $fechaApertura',
+                        style: const TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                      Text('Efectivo inicial: \$${efectivoInicial.toStringAsFixed(2)}'),
+                      Text('Cierre: $fechaCierre'),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Resumen:',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      Text('Total ventas: \$${totalVentas.toStringAsFixed(2)}'),
+                      Text('Efectivo: \$${totalEfectivo.toStringAsFixed(2)}'),
+                      Text('Transferencias: \$${totalTransferencias.toStringAsFixed(2)}'),
+                      Text('Efectivo esperado: \$${efectivoEsperado.toStringAsFixed(2)}'),
+                    ],
+                  ),
+                );
+              },
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cerrar'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  Navigator.pop(context);
+                  await _syncSingleTurno(localId);
+                  onSync?.call();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF4A90E2),
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Sincronizar'),
+              ),
+            ],
+          ),
+    );
+  }
+
+  /// Sincroniza un único turno (apertura + órdenes + cierre).
+  Future<void> _syncSingleTurno(String localId) async {
+    final sync = AutoSyncService();
+    final result =
+        await sync.syncOfflineTurnoAfterLocalCierre(localId: localId);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result['success'] == true
+              ? 'Sincronización del turno completada'
+              : 'Error: ${result['message'] ?? 'No especificado'}',
+        ),
+        backgroundColor:
+            result['success'] == true ? Colors.green : Colors.red,
+      ),
+    );
+    setState(() {});
   }
 }
 

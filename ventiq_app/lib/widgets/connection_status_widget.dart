@@ -26,17 +26,26 @@ class _ConnectionStatusWidgetState extends State<ConnectionStatusWidget> {
   StreamSubscription<SmartOfflineEvent>? _smartOfflineSubscription;
   SmartOfflineStatus? _status;
   bool _isLoading = true;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _loadStatus();
     _setupListeners();
+    // Red de seguridad: si algún cambio de modo offline/online no dispara un
+    // evento de SmartOfflineManager (p.ej. al desactivarlo desde Ajustes),
+    // este refresco periódico evita que el indicador quede desactualizado.
+    _refreshTimer = Timer.periodic(
+      const Duration(seconds: 10),
+      (_) => _loadStatus(),
+    );
   }
 
   @override
   void dispose() {
     _smartOfflineSubscription?.cancel();
+    _refreshTimer?.cancel();
     super.dispose();
   }
 
@@ -221,19 +230,18 @@ class _ConnectionStatusWidgetState extends State<ConnectionStatusWidget> {
     );
   }
 
-  Widget _buildDetailedWidget() {
+  /// [decorated] controla si se envuelve en una tarjeta con borde propia.
+  /// Cuando se muestra dentro de un [AlertDialog] esa tarjeta es redundante
+  /// (el diálogo ya actúa como contenedor) y sólo resta espacio útil, así
+  /// que ahí se pasa `false`.
+  Widget _buildDetailedWidget({bool decorated = true}) {
     final status = _status!;
-    
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (decorated) ...[
           Row(
             children: [
               Icon(
@@ -242,9 +250,9 @@ class _ConnectionStatusWidgetState extends State<ConnectionStatusWidget> {
                 size: 20,
               ),
               const SizedBox(width: 8),
-              Text(
+              const Text(
                 'Estado de Conexión',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                 ),
@@ -252,53 +260,59 @@ class _ConnectionStatusWidgetState extends State<ConnectionStatusWidget> {
             ],
           ),
           const SizedBox(height: 12),
-          _buildStatusRow(
-            'Conexión',
-            status.isConnected ? 'Conectado' : 'Desconectado',
-            status.isConnected ? Colors.green : Colors.red,
-          ),
-          _buildStatusRow(
-            'Modo Offline',
-            status.isOfflineModeEnabled ? 'Activado' : 'Desactivado',
-            status.isOfflineModeEnabled ? Colors.orange : Colors.grey,
-          ),
-          _buildStatusRow(
-            'Sincronización Auto',
-            status.isAutoSyncRunning ? 'Ejecutándose' : 'Detenida',
-            status.isAutoSyncRunning ? Colors.blue : Colors.grey,
-          ),
-          if (status.syncStats['lastSyncTime'] != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Última sincronización: ${_formatDateTime(DateTime.parse(status.syncStats['lastSyncTime']))}',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
-              ),
-            ),
-            Text(
-              'Sincronizaciones: ${status.syncStats['syncCount']}',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
-              ),
-            ),
-          ],
         ],
+        _buildStatusRow(
+          'Conexión',
+          status.isConnected ? 'Conectado' : 'Desconectado',
+          status.isConnected ? Colors.green : Colors.red,
+        ),
+        _buildStatusRow(
+          'Modo Offline',
+          status.isOfflineModeEnabled ? 'Activado' : 'Desactivado',
+          status.isOfflineModeEnabled ? Colors.orange : Colors.grey,
+        ),
+        _buildStatusRow(
+          'Sincronización Auto',
+          status.isAutoSyncRunning ? 'Ejecutándose' : 'Detenida',
+          status.isAutoSyncRunning ? Colors.blue : Colors.grey,
+        ),
+        if (status.syncStats['lastSyncTime'] != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Última sincronización: ${_formatDateTime(DateTime.parse(status.syncStats['lastSyncTime']))}',
+            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+          ),
+          Text(
+            'Sincronizaciones: ${status.syncStats['syncCount']}',
+            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+          ),
+        ],
+      ],
+    );
+
+    if (!decorated) return content;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[300]!),
       ),
+      child: content,
     );
   }
 
   Widget _buildStatusRow(String label, String value, Color color) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: const TextStyle(fontSize: 14),
+          Expanded(
+            child: Text(label, style: const TextStyle(fontSize: 14)),
           ),
+          const SizedBox(width: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
@@ -324,13 +338,25 @@ class _ConnectionStatusWidgetState extends State<ConnectionStatusWidget> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Estado de Conexión'),
+        title: Row(
+          children: [
+            Icon(
+              _status!.isConnected ? Icons.wifi : Icons.wifi_off,
+              color: _status!.isConnected ? Colors.green : Colors.red,
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            const Text('Estado de Conexión'),
+          ],
+        ),
         content: SizedBox(
           width: double.maxFinite,
-          child: ConnectionStatusWidget(
-            showDetails: false,
-            compact: false,
-          ),
+          // No se reutiliza el Container con borde/fondo blanco de
+          // `_buildDetailedWidget` (decorated=true): dentro del diálogo esa
+          // tarjeta es redundante, deja espacio sin usar y provocaba
+          // overflow por el padding duplicado. Aquí se pinta el contenido
+          // directamente, con el título del diálogo como cabecera.
+          child: _buildDetailedWidget(decorated: false),
         ),
         actions: [
           TextButton(
@@ -369,6 +395,7 @@ class ConnectionStatusIcon extends StatefulWidget {
 class _ConnectionStatusIconState extends State<ConnectionStatusIcon> {
   final SmartOfflineManager _smartOfflineManager = SmartOfflineManager();
   StreamSubscription<SmartOfflineEvent>? _subscription;
+  Timer? _refreshTimer;
   bool _isConnected = true;
   bool _isOfflineMode = false;
 
@@ -377,11 +404,17 @@ class _ConnectionStatusIconState extends State<ConnectionStatusIcon> {
     super.initState();
     _loadStatus();
     _setupListener();
+    // Red de seguridad: ver comentario en _ConnectionStatusWidgetState.
+    _refreshTimer = Timer.periodic(
+      const Duration(seconds: 10),
+      (_) => _loadStatus(),
+    );
   }
 
   @override
   void dispose() {
     _subscription?.cancel();
+    _refreshTimer?.cancel();
     super.dispose();
   }
 

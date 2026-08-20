@@ -468,6 +468,22 @@ class AutoSyncService {
         }
       }
 
+      // Métricas de ubicación para diagnóstico.
+      var withDetalles = 0;
+      var withUbicacion = 0;
+      for (final p in allProducts) {
+        if (p['detalles_completos'] != null) withDetalles++;
+        if (p['ubicacion_nombre'] != null &&
+            p['ubicacion_nombre'].toString().isNotEmpty) {
+          withUbicacion++;
+        }
+      }
+      print(
+        '  📍 Categoría "${category.name}": '
+        '$withDetalles/${allProducts.length} productos con detalles, '
+        '$withUbicacion con ubicación',
+      );
+
       productsByCategory[category.id.toString()] = allProducts;
       print(
         '  ✅ Categoría "${category.name}": ${allProducts.length} productos sincronizados',
@@ -654,6 +670,47 @@ class AutoSyncService {
     return null;
   }
 
+  /// Resuelve el UUID EXACTO que exige `cerrar_turno` en el servidor para
+  /// poder cerrar el turno abierto de [idTpv].
+  ///
+  /// La función real (`fn_cerrar_turno_tpv`, verificada directamente en la
+  /// base) filtra así:
+  /// ```sql
+  /// WHERE ct.id_tpv = p_id_tpv AND ct.estado = 1 AND ct.creado_por = p_usuario
+  /// ```
+  /// Es decir, `p_usuario` debe coincidir con `app_dat_caja_turno.creado_por`
+  /// (el usuario que ejecutó la apertura), NO con el UUID del vendedor en
+  /// `app_dat_vendedor.uuid` (son campos distintos; usar el segundo es lo
+  /// que causaba que el cierre siguiera fallando aunque "coincidiera" el
+  /// vendedor). Se lee `creado_por` directo de la fila del turno.
+  Future<String?> _resolveUsuarioForOpenTpvTurno(int idTpv) async {
+    try {
+      final turnoRow =
+          await Supabase.instance.client
+              .from('app_dat_caja_turno')
+              .select('creado_por')
+              .eq('id_tpv', idTpv)
+              .eq('estado', 1)
+              .order('fecha_apertura', ascending: false, nullsFirst: false)
+              .limit(1)
+              .maybeSingle();
+      final creadoPor = turnoRow?['creado_por']?.toString();
+      if (creadoPor != null && creadoPor.isNotEmpty) {
+        print(
+          '  🔎 Usuario real (creado_por) del turno TPV $idTpv → $creadoPor',
+        );
+        return creadoPor;
+      }
+      return null;
+    } catch (e) {
+      print(
+        '  ⚠️ No se pudo resolver creado_por del turno abierto para TPV '
+        '$idTpv: $e',
+      );
+      return null;
+    }
+  }
+
   Future<Map<String, dynamic>?> _getOnlineOpenShift({
     required int idTpv,
     required int idVendedor,
@@ -695,6 +752,321 @@ class AutoSyncService {
     }
   }
 
+  /// Diagnostica un turno `closed_pending_sync` atascado: consulta en el
+  /// servidor el estado real y el `id_tpv` real del turno para detectar
+  /// discrepancias. Caso típico: el turno sigue abierto en el servidor pero
+  /// para un TPV distinto al guardado localmente, por lo que
+  /// `fn_cerrar_turno_offline`/`cerrar_turno` (que busca por TPV) nunca lo
+  /// encuentra y el cierre queda atascado en la cola para siempre.
+  Future<Map<String, dynamic>> diagnoseStuckTurno(String localId) async {
+    final entry = await _userPreferencesService.getOfflineTurnoByLocalId(
+      localId,
+    );
+    if (entry == null) {
+      return {
+        'found': false,
+        'message': 'El turno ya no está en la cola local.',
+      };
+    }
+
+    final serverId = _parseTurnoId(entry['server_id_turno']);
+    if (serverId == null) {
+      return {
+        'found': true,
+        'hasServerId': false,
+        'message':
+            'Este turno nunca llegó a abrirse en el servidor '
+            '(sin server_id_turno registrado).',
+      };
+    }
+
+    try {
+      final row =
+          await Supabase.instance.client
+              .from('app_dat_caja_turno')
+              .select('id, id_tpv, id_vendedor, estado')
+              .eq('id', serverId)
+              .maybeSingle();
+
+      if (row == null) {
+        return {
+          'found': true,
+          'hasServerId': true,
+          'serverId': serverId,
+          'existsOnServer': false,
+          'message': 'El turno $serverId ya no existe en el servidor.',
+        };
+      }
+
+      final serverEstado = (row['estado'] as num?)?.toInt();
+      final serverIdTpv = _parseTurnoId(row['id_tpv']);
+      final localIdTpv = _parseTurnoId(entry['id_tpv']);
+      final tpvMismatch =
+          serverIdTpv != null &&
+          localIdTpv != null &&
+          serverIdTpv != localIdTpv;
+
+      return {
+        'found': true,
+        'hasServerId': true,
+        'serverId': serverId,
+        'existsOnServer': true,
+        'serverEstado': serverEstado,
+        'serverIsOpen': serverEstado == 1,
+        'serverIdTpv': serverIdTpv,
+        'localIdTpv': localIdTpv,
+        'tpvMismatch': tpvMismatch,
+        'message':
+            tpvMismatch
+                ? 'El turno $serverId sigue abierto en el servidor pero para '
+                    'el TPV $serverIdTpv, no para el TPV $localIdTpv guardado '
+                    'localmente. Por eso el cierre falla ("no se encontró un '
+                    'turno abierto para el TPV $localIdTpv").'
+                : (serverEstado == 1
+                    ? 'El turno $serverId sigue abierto en el servidor '
+                        '(TPV $serverIdTpv).'
+                    : 'El turno $serverId ya está cerrado en el servidor '
+                        '(estado=$serverEstado).'),
+      };
+    } catch (e) {
+      return {
+        'found': true,
+        'error': e.toString(),
+        'message': 'No se pudo consultar el servidor: $e',
+      };
+    }
+  }
+
+  /// Reconciliación automática y silenciosa de la cola de turnos offline
+  /// contra el estado real del servidor. Pensada para llamarse antes de
+  /// mostrar avisos de "hay datos sin sincronizar" (p.ej. al cerrar sesión):
+  /// si una entrada local quedó huérfana (el servidor ya no la tiene abierta
+  /// o ya no existe, algo que puede pasar tras resoluciones manuales o
+  /// cierres hechos desde el backoffice), se retira de la cola local sin
+  /// pedir confirmación. Nunca fuerza el cierre de un turno que el servidor
+  /// SÍ reporta como abierto (eso requiere el flujo normal o la resolución
+  /// manual desde Admin). Requiere conexión; si falla, no hace nada.
+  Future<void> reconcileStaleOfflineTurnos() async {
+    List<Map<String, dynamic>> pending;
+    try {
+      pending = await _userPreferencesService.getOfflineTurnosPendingSync();
+    } catch (e) {
+      print('⚠️ reconcileStaleOfflineTurnos: no se pudo leer la cola: $e');
+      return;
+    }
+    if (pending.isEmpty) return;
+
+    for (final t in pending) {
+      final localId = t['local_id']?.toString();
+      if (localId == null || localId.isEmpty) continue;
+      try {
+        final diag = await diagnoseStuckTurno(localId);
+        final orphaned =
+            diag['found'] == true &&
+            (diag['hasServerId'] != true ||
+                diag['existsOnServer'] == false ||
+                diag['serverIsOpen'] == false);
+        if (orphaned) {
+          print(
+            '🧹 reconcileStaleOfflineTurnos: turno $localId huérfano '
+            '(${diag['message']}); retirando de la cola local',
+          );
+          await _userPreferencesService.markOfflineTurnoSynced(localId);
+        }
+      } catch (e) {
+        print('⚠️ reconcileStaleOfflineTurnos: error con $localId: $e');
+      }
+    }
+  }
+
+  /// Intenta resolver manualmente (desde Admin) un turno
+  /// `closed_pending_sync` atascado que el replay normal no puede cerrar:
+  ///  - Si el servidor ya no tiene ese turno abierto (cerrado o inexistente),
+  ///    no hay nada que cerrar: se retira la entrada de la cola local.
+  ///  - Si sigue abierto pero para un TPV distinto (ver [diagnoseStuckTurno]),
+  ///    se reintenta el cierre usando el `id_tpv` REAL reportado por el
+  ///    servidor en vez del guardado localmente.
+  Future<Map<String, dynamic>> forceResolveStuckTurno(String localId) async {
+    final diag = await diagnoseStuckTurno(localId);
+    if (diag['found'] != true) {
+      return {'success': false, 'message': diag['message']};
+    }
+
+    // Sin server_id o turno inexistente en servidor: no hay nada que cerrar
+    // remotamente. Descartar la entrada local (turno huérfano).
+    if (diag['hasServerId'] != true || diag['existsOnServer'] == false) {
+      final removed = await _userPreferencesService.markOfflineTurnoSynced(
+        localId,
+      );
+      return {
+        'success': removed,
+        'discarded': true,
+        'message':
+            removed
+                ? '${diag['message']} Se retiró de la cola local.'
+                : 'No se pudo retirar el turno de la cola local.',
+      };
+    }
+
+    if (diag['serverIsOpen'] != true) {
+      // Ya cerrado en servidor: nada que cerrar, solo purgar localmente.
+      final removed = await _userPreferencesService.markOfflineTurnoSynced(
+        localId,
+      );
+      return {
+        'success': removed,
+        'discarded': true,
+        'message':
+            removed
+                ? 'El turno ya estaba cerrado en el servidor; se retiró de '
+                    'la cola local.'
+                : 'No se pudo retirar el turno de la cola local.',
+      };
+    }
+
+    final entry = await _userPreferencesService.getOfflineTurnoByLocalId(
+      localId,
+    );
+    if (entry == null) {
+      return {'success': false, 'message': 'El turno ya no está en la cola.'};
+    }
+
+    // Sin datos de cierre locales (turno todavía "open", nunca se llegó a
+    // pedir el cierre desde la app): no hay efectivo final/productos reales
+    // que enviar, así que no se puede forzar un cierre aquí sin arriesgar
+    // datos incorrectos. Sólo se informa al admin.
+    final cierreRaw = entry['cierre'];
+    if (cierreRaw is! Map) {
+      return {
+        'success': false,
+        'message':
+            'El turno sigue abierto en el servidor (TPV ${diag['serverIdTpv']}) '
+            'y no tiene un cierre local pendiente de enviar. Debe cerrarse '
+            'normalmente desde la app del vendedor (verifica que el TPV '
+            'configurado en el dispositivo coincida con el TPV '
+            '${diag['serverIdTpv']}).',
+      };
+    }
+
+    // Sigue abierto y SÍ hay datos de cierre pendientes: reintentar con el
+    // id_tpv REAL del servidor.
+    final serverIdTpv = diag['serverIdTpv'] as int?;
+    if (serverIdTpv == null) {
+      return {
+        'success': false,
+        'message': 'No se pudo determinar el TPV real del turno en servidor.',
+      };
+    }
+
+    // Ver comentario en `_clearStaleFechaCierre`: un `fecha_cierre` residual
+    // de un cierre/apertura anterior puede hacer que `cerrar_turno` no
+    // encuentre el turno como abierto aunque `estado=1`.
+    final serverIdForCierre = diag['serverId'] as int?;
+    if (serverIdForCierre != null) {
+      await _clearStaleFechaCierre(serverIdForCierre);
+    }
+
+    final cierreData = Map<String, dynamic>.from(cierreRaw);
+    // Igual que en _syncCierreForQueueEntry: priorizar el UUID real del
+    // vendedor propietario del turno en el servidor.
+    final resolvedRealUsuarioForce =
+        await _resolveUsuarioForOpenTpvTurno(serverIdTpv);
+    final aperturaRawForce = entry['apertura'];
+    final aperturaUsuarioForce =
+        aperturaRawForce is Map
+            ? aperturaRawForce['usuario']?.toString()
+            : null;
+    final usuario =
+        resolvedRealUsuarioForce ??
+        ((aperturaUsuarioForce != null && aperturaUsuarioForce.isNotEmpty)
+            ? aperturaUsuarioForce
+            : (entry['usuario'] ?? cierreData['usuario']));
+    final efectivoFinal = cierreData['efectivo_final'] ?? 0.0;
+    final observaciones = cierreData['observaciones'] as String?;
+    final productos =
+        (cierreData['productos'] as List<dynamic>? ?? [])
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+    final clientUuid =
+        entry['client_uuid_cierre']?.toString() ??
+        cierreData['client_uuid']?.toString() ??
+        UuidGenerator.v4();
+
+    try {
+      final resp = await Supabase.instance.client.rpc(
+        'fn_cerrar_turno_offline',
+        params: {
+          'p_client_uuid': clientUuid,
+          'p_id_tpv': serverIdTpv,
+          'p_efectivo_real': efectivoFinal,
+          'p_usuario': usuario,
+          'p_productos': productos,
+          'p_observaciones': observaciones,
+        },
+      );
+      final map = _asRpcMap(resp);
+      final ok = _rpcStatusSuccess(map);
+      if (ok) {
+        final removed = await _userPreferencesService.markOfflineTurnoSynced(
+          localId,
+        );
+        return {
+          'success': removed,
+          'message':
+              'Cierre forzado con el TPV real ($serverIdTpv) exitoso.',
+        };
+      }
+      return {
+        'success': false,
+        'message':
+            'El servidor rechazó el cierre incluso con el TPV correcto: '
+            '${map?['message'] ?? resp}',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Error forzando el cierre: $e'};
+    }
+  }
+
+  /// Garantiza que la entrada de la cola tenga un `usuario` (UUID) válido
+  /// guardado (a nivel superior y dentro de `apertura`). Si falta —típico
+  /// en entradas antiguas o en turnos abiertos online y luego cacheados—
+  /// usa como fallback el usuario actualmente autenticado y PERSISTE el
+  /// resultado, para que apertura y cierre usen siempre el mismo usuario
+  /// (`cerrar_turno` resuelve el vendedor a partir de `p_usuario`; si no
+  /// coincide con el que abrió el turno, el servidor no lo encuentra).
+  /// Devuelve el usuario resuelto, o `null` si no hay ninguno disponible.
+  Future<String?> _ensureEntryHasUsuario(
+    Map<String, dynamic> entry,
+    Map<String, dynamic> aperturaData,
+    String localId,
+  ) async {
+    var usuario =
+        (aperturaData['usuario'] ?? entry['usuario'] ?? '').toString();
+    if (usuario.isNotEmpty) return usuario;
+
+    final userData = await _userPreferencesService.getUserData();
+    usuario = (userData['userId'] ?? '').toString();
+    if (usuario.isEmpty) {
+      print(
+        '  ❌ Turno $localId sin usuario válido (ni guardado ni '
+        'autenticado)',
+      );
+      return null;
+    }
+
+    print(
+      '  ⚠️ Turno $localId sin usuario guardado; usando usuario '
+      'autenticado actual como fallback',
+    );
+    aperturaData['usuario'] = usuario;
+    await _userPreferencesService.upsertOfflineTurno({
+      ...entry,
+      'usuario': usuario,
+      'apertura': aperturaData,
+    });
+    return usuario;
+  }
+
   /// Asegura en servidor la apertura de UN turno de la cola offline.
   /// Devuelve el `server_id_turno` (abierto) o null si falló.
   Future<int?> _ensureAperturaForQueueEntry(Map<String, dynamic> entry) async {
@@ -708,6 +1080,20 @@ class AutoSyncService {
     if (existingId != null) {
       if (await _isServerTurnoOpen(existingId)) {
         print('  ✅ Turno $localId ya abierto en servidor (id=$existingId)');
+        // Aunque el turno ya esté abierto (no se llama a la apertura RPC
+        // en este camino), igualmente hay que garantizar que la entrada
+        // tenga un `usuario` válido guardado: el cierre posterior lo usa
+        // para que `cerrar_turno` resuelva el mismo vendedor. Sin este
+        // chequeo aquí, una entrada antigua sin usuario nunca se corrige
+        // porque este camino (turno ya abierto) nunca llega al bloque de
+        // resolución de usuario más abajo.
+        final aperturaRawEarly = entry['apertura'];
+        final aperturaDataEarly =
+            aperturaRawEarly is Map
+                ? Map<String, dynamic>.from(aperturaRawEarly)
+                : <String, dynamic>{};
+        await _ensureEntryHasUsuario(entry, aperturaDataEarly, localId);
+        await _clearStaleFechaCierre(existingId);
         return existingId;
       }
       print(
@@ -762,8 +1148,8 @@ class AutoSyncService {
 
     final efectivoInicial =
         (aperturaData['efectivo_inicial'] as num?)?.toDouble() ?? 0.0;
-    final usuario =
-        (aperturaData['usuario'] ?? entry['usuario'] ?? '').toString();
+    final usuario = await _ensureEntryHasUsuario(entry, aperturaData, localId);
+    if (usuario == null) return null;
     final manejaInventario =
         aperturaData['maneja_inventario'] as bool? ?? false;
     final observaciones = aperturaData['observaciones'] as String?;
@@ -904,7 +1290,39 @@ class AutoSyncService {
     }
 
     await _userPreferencesService.setOfflineTurnoServerId(localId, serverId!);
+    await _clearStaleFechaCierre(serverId!);
     return serverId;
+  }
+
+  /// Un turno reabierto (misma fila reutilizada tras cerrar/reabrir varias
+  /// veces) puede conservar un `fecha_cierre` de un cierre anterior aunque
+  /// `estado` vuelva a 1 (abierto) — visto en logs con
+  /// `fecha_cierre` anterior a `fecha_apertura` y duración negativa. Un
+  /// `fecha_cierre` residual puede hacer que `cerrar_turno` en el servidor
+  /// no encuentre el turno como realmente abierto ("No se encontró un
+  /// turno abierto para el TPV X") aunque `estado=1`. Se limpia por las
+  /// dudas cada vez que confirmamos que un turno está abierto.
+  Future<void> _clearStaleFechaCierre(int serverId) async {
+    try {
+      final row =
+          await Supabase.instance.client
+              .from('app_dat_caja_turno')
+              .select('fecha_cierre')
+              .eq('id', serverId)
+              .maybeSingle();
+      if (row != null && row['fecha_cierre'] != null) {
+        print(
+          '  🧹 Turno $serverId abierto con fecha_cierre residual '
+          '(${row['fecha_cierre']}); limpiando',
+        );
+        await Supabase.instance.client
+            .from('app_dat_caja_turno')
+            .update({'fecha_cierre': null})
+            .eq('id', serverId);
+      }
+    } catch (e) {
+      print('  ⚠️ No se pudo verificar/limpiar fecha_cierre residual: $e');
+    }
   }
 
   /// Compat: asegura el turno OPEN de la cola (o false si no hay).
@@ -1269,11 +1687,38 @@ class AutoSyncService {
     }
     final cierreData = Map<String, dynamic>.from(cierreRaw);
 
+    // Priorizar el id_tpv con el que se ABRIÓ este turno (top-level de la
+    // entrada, poblado en la apertura) por sobre el que se guardó en el
+    // payload de cierre o el de preferencias actuales del dispositivo. Si el
+    // TPV activo cambió entre la apertura y el cierre, usar el de la apertura
+    // evita que `fn_cerrar_turno_offline` busque un turno abierto en el TPV
+    // equivocado y falle con "No se encontró un turno abierto para el TPV X".
+    final aperturaRaw = latest['apertura'];
+    final aperturaIdTpv =
+        aperturaRaw is Map ? aperturaRaw['id_tpv'] : null;
     final idTpv =
-        cierreData['id_tpv'] ??
         latest['id_tpv'] ??
+        aperturaIdTpv ??
+        cierreData['id_tpv'] ??
         await _userPreferencesService.getIdTpv();
-    final usuario = cierreData['usuario'] ?? latest['usuario'];
+
+    // Prioridad para `p_usuario`:
+    //  1) El UUID real del vendedor propietario del turno en el servidor
+    //     (fuente de verdad; ver `_resolveUsuarioForOpenTpvTurno`).
+    //  2) El usuario con el que se ABRIÓ el turno localmente.
+    //  3) El usuario guardado en la entrada / en el payload de cierre.
+    // `cerrar_turno` resuelve/valida el vendedor a partir de `p_usuario`,
+    // así que debe coincidir con quien realmente abrió el turno — no con
+    // quien cerró localmente ni con la sesión actual del dispositivo.
+    final resolvedRealUsuario =
+        idTpv != null ? await _resolveUsuarioForOpenTpvTurno(idTpv) : null;
+    final aperturaUsuario =
+        aperturaRaw is Map ? aperturaRaw['usuario']?.toString() : null;
+    final usuario =
+        resolvedRealUsuario ??
+        ((aperturaUsuario != null && aperturaUsuario.isNotEmpty)
+            ? aperturaUsuario
+            : (latest['usuario'] ?? cierreData['usuario']));
     final efectivoFinal = cierreData['efectivo_final'] ?? 0.0;
     final observaciones = cierreData['observaciones'] as String?;
     var productosRaw = cierreData['productos'] as List<dynamic>? ?? [];
