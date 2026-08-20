@@ -21,6 +21,15 @@ class PrinterManager {
   // Tipo de impresora seleccionada en móvil
   String _mobileprinterType = 'bluetooth'; // 'bluetooth' o 'wifi'
 
+  // Control desde configuración de tienda: permite recordar impresora o no
+  bool _allowRememberPrinter = true;
+
+  /// Habilita/deshabilita la opción de recordar la impresora durante el turno.
+  void setAllowRememberPrinter(bool value) {
+    _allowRememberPrinter = value;
+    print('🖨️ setAllowRememberPrinter: $value');
+  }
+
   // ── Selección guardada durante el turno ─────────────────────────────────
   // Una vez que el trabajador elige tipo + dispositivo y confirma guardar,
   // se reutiliza automáticamente hasta que llame a clearSavedPrinter().
@@ -29,9 +38,12 @@ class PrinterManager {
   Map<String, dynamic>? _savedWifiPrinter; // {'ip': ..., 'port': ...}
   bool _rememberPrinterForShift = false;
 
-  /// Devuelve true si ya hay una selección guardada para la sesión
+  /// Devuelve true si ya hay una selección guardada para la sesión y la
+  /// configuración de tienda permite recordar impresoras.
   bool get hasSavedPrinter =>
-      _rememberPrinterForShift && _savedPrinterType != null;
+      _allowRememberPrinter &&
+      _rememberPrinterForShift &&
+      _savedPrinterType != null;
 
   /// Nombre descriptivo de la impresora guardada (para mostrar en UI)
   String get savedPrinterDescription {
@@ -767,6 +779,11 @@ class PrinterManager {
     String printerType,
     dynamic deviceOrPrinter,
   ) async {
+    // Si la tienda deshabilitó recordar la impresora, comportamiento “solo esta vez”.
+    if (!_allowRememberPrinter) {
+      return false;
+    }
+
     final description =
         printerType == 'bluetooth'
             ? (deviceOrPrinter.name as String? ?? 'Bluetooth')

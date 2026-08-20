@@ -415,4 +415,15 @@ class StoreSelectorService extends ChangeNotifier {
       ),
     ];
   }
+
+  /// Limpia el caché en memoria de tiendas y selección. Usar al cerrar sesión
+  /// para forzar la recarga de tiendas/roles del nuevo usuario.
+  void clear() {
+    _userStores = [];
+    _selectedStore = null;
+    _isInitialized = false;
+    _initializationFuture = null;
+    notifyListeners();
+    print('🧹 StoreSelectorService limpiado (logout)');
+  }
 }

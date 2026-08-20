@@ -3,14 +3,173 @@ import 'package:flutter/services.dart';
 import 'dart:convert';
 import '../services/admin_access_service.dart';
 import '../services/auth_service.dart';
+import '../services/auto_sync_service.dart';
+import '../services/connectivity_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
+import '../utils/global_navigator.dart';
 
 class AppDrawer extends StatefulWidget {
   const AppDrawer({Key? key}) : super(key: key);
 
+  /// Cerrar sesión o abrir selector local (full offline).
+  /// Usable desde AppBar / tiles fuera del drawer.
+  static Future<void> promptLogoutOrSwitchUser(BuildContext context) =>
+      _promptLogoutOrSwitchUser(context);
+
   @override
   State<AppDrawer> createState() => _AppDrawerState();
+}
+
+void _goAfterLogout(String routeName) {
+  final nav = globalNavigatorKey.currentState;
+  if (nav != null) {
+    nav.pushNamedAndRemoveUntil(routeName, (route) => false);
+    return;
+  }
+  // Fallback si el key aún no está montado
+  final ctx = globalNavigatorKey.currentContext;
+  if (ctx != null) {
+    Navigator.of(ctx).pushNamedAndRemoveUntil(routeName, (route) => false);
+  }
+}
+
+Future<void> _promptLogoutOrSwitchUser(BuildContext context) async {
+  try {
+    final prefs = UserPreferencesService();
+    final fullOfflineReady = await prefs.isDeviceFullOfflineReady();
+    final stayFullyOffline = await prefs.shouldStayFullyOffline();
+    final online = ConnectivityService().isConnected;
+
+    // Si hay conexión real, reconciliar la cola local de turnos contra el
+    // servidor antes de decidir si hay "pendientes de sincronizar": una
+    // entrada local puede haber quedado huérfana (turno ya cerrado o
+    // resuelto en el servidor por otra vía) y sin esto el aviso aparecería
+    // siempre aunque en el servidor ya no quede nada pendiente.
+    if (online) {
+      try {
+        await AutoSyncService().reconcileStaleOfflineTurnos();
+      } catch (e) {
+        print('⚠️ No se pudo reconciliar turnos offline antes del logout: $e');
+      }
+    }
+
+    final hasUnsynced = await prefs.hasUnsyncedOfflineData();
+    final storeId = await prefs.getOfflineInventoryStoreId();
+
+    // Selector local solo si el dispositivo está preparado Y
+    // (sin red O modo offline completo activo). Con red + modo online
+    // hay que cerrar la sesión real en Supabase.
+    final useLocalSwitch =
+        fullOfflineReady && (!online || stayFullyOffline);
+
+    // Usar el navigator raíz: el context del drawer se desmonta al cerrarlo.
+    final dialogContext =
+        globalNavigatorKey.currentContext ?? context;
+
+    if (useLocalSwitch) {
+      final bool? confirm = await showDialog<bool>(
+        context: dialogContext,
+        builder: (BuildContext ctx) {
+          return AlertDialog(
+            title: const Text('Cambiar de usuario'),
+            content: Text(
+              hasUnsynced
+                  ? 'Hay operaciones sin sincronizar (se conservan). '
+                      'Se abrirá el selector local sin salir al servidor.'
+                  : 'Se abrirá el selector local (admin/vendedor) sin '
+                      'conexión al servidor. Inventario de la tienda'
+                      '${storeId != null ? ' #$storeId' : ''} conservado.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancelar'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Cambiar usuario'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (confirm == true) {
+        // Si hay red, cerrar JWT de Supabase para no dejar sesión del
+        // trabajador abierta en el servidor.
+        if (online) {
+          try {
+            await AuthService().signOut();
+          } catch (e) {
+            print('⚠️ signOut en cambio local (continuando): $e');
+            AdminAccessService().clearMemoryCache();
+          }
+        } else {
+          AdminAccessService().clearMemoryCache();
+        }
+        await prefs.clearSessionKeepingStoreOffline();
+        _goAfterLogout('/offline-user-switch');
+      }
+      return;
+    }
+
+    final bool? confirm = await showDialog<bool>(
+      context: dialogContext,
+      builder: (BuildContext ctx) {
+        return AlertDialog(
+          title: const Text('Cerrar Sesión'),
+          content: Text(
+            hasUnsynced
+                ? 'Hay ventas u operaciones sin sincronizar. '
+                    'El inventario de la tienda${storeId != null ? ' #$storeId' : ''} '
+                    'se conserva. ¿Cerrar sesión?'
+                : '¿Cerrar sesión? El inventario local se conserva.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Cerrar Sesión'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm != true) return;
+
+    // Cierre real online: siempre signOut de Supabase.
+    try {
+      await AuthService().signOut();
+    } catch (e) {
+      print('⚠️ signOut falló, limpiando sesión local igual: $e');
+      AdminAccessService().clearMemoryCache();
+    }
+
+    if (fullOfflineReady) {
+      await prefs.clearSessionKeepingStoreOffline();
+      print('🔓 Sesión cerrada → selector local de usuarios');
+      _goAfterLogout('/offline-user-switch');
+    } else {
+      await prefs.clearUserData();
+      print('🔓 Sesión cerrada → login');
+      _goAfterLogout('/login');
+    }
+  } catch (e) {
+    print('❌ Error al cerrar sesión: $e');
+    final messenger = globalScaffoldMessengerKey.currentState;
+    messenger?.showSnackBar(
+      SnackBar(
+        content: Text('Error al cerrar sesión: $e'),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
 }
 
 class _AppDrawerState extends State<AppDrawer> {
@@ -274,6 +433,28 @@ class _AppDrawerState extends State<AppDrawer> {
                     },
                   ),
                   const Divider(height: 1),
+                  _buildDrawerItem(
+                    context,
+                    icon: Icons.money_off,
+                    title: 'Crear Egreso',
+                    subtitle: 'Registrar salida de dinero',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(context, '/egreso');
+                    },
+                  ),
+                  const Divider(height: 1),
+                  _buildDrawerItem(
+                    context,
+                    icon: Icons.settings,
+                    title: 'Configuración',
+                    subtitle: 'Sync, offline y preferencias',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(context, '/settings');
+                    },
+                  ),
+                  const Divider(height: 1),
                 ] else ...[
                   // Modo restaurante: el item de mesas va primero como entrada
                   // principal de la operación. La "Venta de Productos" se
@@ -412,7 +593,13 @@ class _AppDrawerState extends State<AppDrawer> {
                       ? 'Cambiar usuario / Salir'
                       : 'Cerrar Sesión',
                   subtitle: 'Salir o cambiar de cuenta en este dispositivo',
-                  onTap: () => _handleLogout(context),
+                  onTap: () {
+                    // Cerrar drawer; la navegación post-logout usa globalNavigatorKey.
+                    Navigator.pop(context);
+                    AppDrawer.promptLogoutOrSwitchUser(
+                      globalNavigatorKey.currentContext ?? context,
+                    );
+                  },
                 ),
               ],
             ),
@@ -438,106 +625,6 @@ class _AppDrawerState extends State<AppDrawer> {
         ],
       ),
     );
-  }
-
-  // Manejar logout / cambio local de usuario
-  Future<void> _handleLogout(BuildContext context) async {
-    try {
-      final prefs = UserPreferencesService();
-      final fullOffline = await prefs.isDeviceFullOfflineReady();
-      final hasUnsynced = await prefs.hasUnsyncedOfflineData();
-      final storeId = await prefs.getOfflineInventoryStoreId();
-
-      if (fullOffline) {
-        final bool? confirm = await showDialog<bool>(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: const Text('Cambiar de usuario'),
-              content: Text(
-                hasUnsynced
-                    ? 'Hay operaciones sin sincronizar (se conservan). '
-                        'Se abrirá el selector local sin salir al servidor.'
-                    : 'Se abrirá el selector local (admin/vendedor) sin '
-                        'conexión al servidor. Inventario de la tienda'
-                        '${storeId != null ? ' #$storeId' : ''} conservado.',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('Cancelar'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  child: const Text('Cambiar usuario'),
-                ),
-              ],
-            );
-          },
-        );
-
-        if (confirm == true) {
-          await prefs.clearSessionKeepingStoreOffline();
-          AdminAccessService().clearMemoryCache();
-          if (context.mounted) {
-            Navigator.of(context).pushNamedAndRemoveUntil(
-              '/offline-user-switch',
-              (route) => false,
-            );
-          }
-        }
-        return;
-      }
-
-      final bool? confirm = await showDialog<bool>(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: const Text('Cerrar Sesión'),
-            content: Text(
-              hasUnsynced
-                  ? 'Hay ventas u operaciones sin sincronizar. '
-                      'El inventario de la tienda${storeId != null ? ' #$storeId' : ''} '
-                      'se conserva. ¿Cerrar sesión?'
-                  : '¿Cerrar sesión? El inventario local se conserva.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Cancelar'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                style: TextButton.styleFrom(foregroundColor: Colors.red),
-                child: const Text('Cerrar Sesión'),
-              ),
-            ],
-          );
-        },
-      );
-
-      if (confirm == true) {
-        await AuthService().signOut();
-        await UserPreferencesService().clearUserData();
-        print('🔓 Sesión cerrada (inventario de tienda conservado)');
-
-        if (context.mounted) {
-          Navigator.of(
-            context,
-          ).pushNamedAndRemoveUntil('/login', (route) => false);
-        }
-      }
-    } catch (e) {
-      print('❌ Error al cerrar sesión: $e');
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al cerrar sesión: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
   }
 
   Widget _buildDrawerItem(

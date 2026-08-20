@@ -327,6 +327,24 @@ class OfflineDatabaseService {
     );
   }
 
+  /// Elimina una operación admin pendiente por su client_uuid.
+  Future<void> deleteAdminOp(String clientUuid) async {
+    await initialize();
+    if (_webPrefsMode) {
+      final ops = await _readAdminOpsPrefs();
+      ops.removeWhere((op) => op['client_uuid'] == clientUuid);
+      await _writeAdminOpsPrefs(ops);
+      return;
+    }
+
+    final db = await database;
+    await db.delete(
+      'admin_pending_ops',
+      where: 'client_uuid = ?',
+      whereArgs: [clientUuid],
+    );
+  }
+
   Future<int> countPendingAdminOps() async {
     await initialize();
     if (_webPrefsMode) {
@@ -342,6 +360,59 @@ class OfflineDatabaseService {
           ),
         ) ??
         0;
+  }
+
+  /// Historial local de ops admin (pendientes + sincronizadas), más recientes primero.
+  Future<List<Map<String, dynamic>>> getAdminOpsHistory({int limit = 100}) async {
+    await initialize();
+    if (_webPrefsMode) {
+      final ops = await _readAdminOpsPrefs();
+      final normalized = ops.map((op) {
+        final map = Map<String, dynamic>.from(op);
+        map['synced'] = map['synced'] == 1 || map['synced'] == true;
+        return map;
+      }).toList();
+      normalized.sort((a, b) {
+        final ca = a['created_at']?.toString() ?? '';
+        final cb = b['created_at']?.toString() ?? '';
+        return cb.compareTo(ca);
+      });
+      return normalized.take(limit).toList();
+    }
+
+    final db = await database;
+    final rows = await db.query(
+      'admin_pending_ops',
+      orderBy: 'id DESC',
+      limit: limit,
+    );
+    return rows.map((r) {
+      return {
+        'id': r['id'],
+        'client_uuid': r['client_uuid'],
+        'op_type': r['op_type'],
+        'payload': jsonDecode(r['payload'] as String),
+        'created_at': r['created_at'],
+        'synced_at': r['synced_at'],
+        'synced': r['synced'] == 1,
+        'last_error': r['last_error'],
+      };
+    }).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> getCachedLayouts() async {
+    final section = await getSection('layouts');
+    if (section is List) {
+      return section
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    }
+    return [];
+  }
+
+  Future<void> saveCachedLayouts(List<Map<String, dynamic>> layouts) async {
+    await mergeSections({'layouts': layouts});
   }
 
   // --------------------------------------------------------------------------
@@ -468,6 +539,7 @@ class OfflineDatabaseService {
 
     if (key == 'products' && value is Map) {
       await txn.delete('offline_products');
+      var inserted = 0;
       final productsMap = Map<String, dynamic>.from(value);
       for (final catEntry in productsMap.entries) {
         final categoryId = catEntry.key.toString();
@@ -491,8 +563,10 @@ class OfflineDatabaseService {
             },
             conflictAlgorithm: ConflictAlgorithm.replace,
           );
+          inserted++;
         }
       }
+      print('💾 SQLite productos: $inserted insertados (tabla borrada antes)');
       await txn.delete(
         'offline_sections',
         where: 'section_key = ?',

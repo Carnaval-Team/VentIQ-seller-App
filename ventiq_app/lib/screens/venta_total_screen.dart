@@ -35,6 +35,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   double _totalProductos = 0.0;
   double _totalEgresado = 0.0; // Cambio: era _totalCosto
   double _totalEfectivoReal = 0.0; // Cambio: era _totalDescuentos
+  double _totalEfectivo = 0.0; // Ventas pagadas en efectivo
+  double _totalTransferencia = 0.0; // Ventas pagadas con transferencia/digital
   bool _isLoading = true;
 
   // Expenses data
@@ -60,100 +62,88 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     return double.tryParse(value.toString()) ?? 0.0;
   }
 
-  int _parseInt(dynamic value) {
-    if (value == null) return 0;
-    if (value is num) return value.toInt();
-    return int.tryParse(value.toString()) ?? 0;
-  }
+  /// Calcula el desglose de pagos (efectivo/transferencia) y el total de ventas
+  /// a partir de las órdenes locales. Soporta órdenes con pagos mixtos.
+  ({double efectivo, double transferencia, double total, int productos})
+  _calculatePaymentBreakdownFromOrders(List<Order> orders) {
+    double efectivo = 0.0;
+    double transferencia = 0.0;
+    double total = 0.0;
+    int productos = 0;
 
-  bool _isExcludedPendingOrder(Map<String, dynamic> orderData) {
-    final rawStatus = orderData['estado'] ?? orderData['status'];
+    for (final order in orders) {
+      final isCompletedOrOffline =
+          order.status == OrderStatus.completada ||
+          order.status == OrderStatus.pagoConfirmado ||
+          order.status == OrderStatus.pendienteDeSincronizacion ||
+          order.status == OrderStatus.enviada;
 
-    if (rawStatus is String) {
-      final normalized = rawStatus.toLowerCase();
-      return normalized == 'cancelada' || normalized == 'devuelta';
-    }
+      if (!isCompletedOrOffline) continue;
 
-    if (rawStatus is num) {
-      final statusIndex = rawStatus.toInt();
-      return statusIndex == OrderStatus.cancelada.index ||
-          statusIndex == OrderStatus.devuelta.index;
-    }
-
-    return false;
-  }
-
-  Map<String, dynamic> _calculatePendingOrdersTotals(
-    List<Map<String, dynamic>> pendingOrders,
-  ) {
-    double ventasOffline = 0.0;
-    double efectivoOffline = 0.0;
-    double transferenciasOffline = 0.0;
-    int productosOffline = 0;
-
-    for (final orderData in pendingOrders) {
-      if (_isExcludedPendingOrder(orderData)) {
-        continue;
-      }
-      final total = _parseDouble(
-        orderData['total'] ??
-            orderData['total_operacion'] ??
-            orderData['total_venta'],
+      total += order.total;
+      productos += order.items.fold<int>(
+        0,
+        (sum, item) => sum + item.cantidad.toInt(),
       );
-      ventasOffline += total;
 
-      final items = orderData['items'];
-      if (items is List) {
-        for (final item in items) {
-          if (item is Map) {
-            productosOffline += _parseInt(item['cantidad']);
-          }
-        }
-      }
-
-      final pagos = orderData['pagos'] ?? orderData['desglose_pagos'];
       double efectivoOrden = 0.0;
       double transferenciaOrden = 0.0;
+      final pagos = order.pagos;
 
-      if (pagos is List && pagos.isNotEmpty) {
+      if (pagos != null && pagos.isNotEmpty) {
         for (final pago in pagos) {
-          if (pago is Map) {
-            final monto = _parseDouble(
-              pago['monto'] ??
-                  pago['monto_pago'] ??
-                  pago['monto_total'] ??
-                  pago['monto_entrega'],
-            );
-            final esEfectivo =
-                pago['es_efectivo'] == true || pago['id_medio_pago'] == 1;
-            final esDigital = pago['es_digital'] == true;
+          if (pago is! Map) continue;
+          final monto = _parseDouble(
+            pago['monto'] ??
+                pago['monto_pago'] ??
+                pago['monto_total'] ??
+                pago['monto_entrega'] ??
+                pago['total'],
+          );
+          final esEfectivo =
+              pago['es_efectivo'] == true ||
+              pago['medio_pago_es_efectivo'] == true ||
+              pago['id_medio_pago'] == 1 ||
+              pago['medio_pago_id'] == 1;
+          final esDigital =
+              pago['es_digital'] == true ||
+              pago['medio_pago_es_digital'] == true;
 
-            if (esEfectivo) {
-              efectivoOrden += monto;
-            } else if (esDigital) {
-              transferenciaOrden += monto;
-            } else {
-              transferenciaOrden += monto;
-            }
+          if (esEfectivo) {
+            efectivoOrden += monto;
+          } else if (esDigital) {
+            transferenciaOrden += monto;
+          } else {
+            // Cualquier otro medio se considera transferencia/digital
+            transferenciaOrden += monto;
           }
         }
       }
 
-      if (total > 0 && (efectivoOrden + transferenciaOrden) == 0) {
-        efectivoOrden = total * 0.7;
-        transferenciaOrden = total * 0.3;
+      // Fallback: solo para órdenes offline que no tengan pagos desglosados.
+      // No usar paymentMethod de órdenes online porque en listar_ordenes se
+      // asigna 'Efectivo' por defecto, lo que haría que todo parezca efectivo.
+      if (order.isOfflineOrder &&
+          efectivoOrden + transferenciaOrden == 0 &&
+          order.total > 0) {
+        final method = (order.paymentMethod ?? '').toLowerCase();
+        if (method.contains('efectivo') || method.contains('cash')) {
+          efectivoOrden = order.total;
+        } else {
+          transferenciaOrden = order.total;
+        }
       }
 
-      efectivoOffline += efectivoOrden;
-      transferenciasOffline += transferenciaOrden;
+      efectivo += efectivoOrden;
+      transferencia += transferenciaOrden;
     }
 
-    return {
-      'ventasOffline': ventasOffline,
-      'efectivoOffline': efectivoOffline,
-      'transferenciasOffline': transferenciasOffline,
-      'productosOffline': productosOffline,
-    };
+    return (
+      efectivo: efectivo,
+      transferencia: transferencia,
+      total: total,
+      productos: productos,
+    );
   }
 
   Future<void> _initializeData() async {
@@ -202,16 +192,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       // Modo online: cargar desde Supabase
       print('🌐 Modo online - Cargando datos desde servidor...');
 
-      // Primero cargar las órdenes desde Supabase
-      _orderService.clearAllOrders();
-      await _orderService.listOrdersFromSupabase();
-
-      // Agregar órdenes offline pendientes (para lista y totales reales)
-      final pendingOrders = await userPrefs.getPendingOrders();
-      if (pendingOrders.isNotEmpty) {
-        _orderService.addPendingOrdersToList(pendingOrders);
-      }
-      final offlineTotals = _calculatePendingOrdersTotals(pendingOrders);
+      // Cargar TODAS las órdenes del turno combinando cache offline +
+      // pendientes de sincronización + datos frescos del servidor, para que
+      // ninguna venta hecha en línea antes de pasar a offline se pierda.
+      await _orderService.loadOrdersForOpenTurnoUnified();
 
       // Obtener datos del turno abierto
       final turnoAbierto = await TurnoService.getTurnoAbierto();
@@ -280,37 +264,26 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
             }
           }
 
+          // Calcular totales y desglose por tipo de pago desde las órdenes
+          // locales (online + pendientes offline). Esto evita duplicar ventas
+          // y asegura que el efectivo/transferencia cuadren con los pagos reales.
+          final breakdown = _calculatePaymentBreakdownFromOrders(ordenesVendidas);
+
           setState(() {
             _productosVendidos = productosVendidos;
             _ordenesVendidas = ordenesVendidas;
 
-            final offlineVentas =
-                (offlineTotals['ventasOffline'] ?? 0.0).toDouble();
-            final offlineProductos =
-                (offlineTotals['productosOffline'] ?? 0).toDouble();
-            final offlineEfectivo =
-                (offlineTotals['efectivoOffline'] ?? 0.0).toDouble();
+            _totalVentas = breakdown.total;
+            _totalProductos = breakdown.productos.toDouble();
 
-            final ventasTotalesBase =
-                (data['ventas_totales'] ?? 0.0).toDouble();
-            final efectivoRealBase = (data['efectivo_real'] ?? 0.0).toDouble();
-            final efectivoEsperadoBase =
-                (data['efectivo_esperado'] ?? 0.0).toDouble();
+            _totalEfectivo = breakdown.efectivo;
+            _totalTransferencia = breakdown.transferencia;
 
-            // Totales reales = resumen online + ventas offline pendientes
-            final ventasTotales = ventasTotalesBase + offlineVentas;
-            final efectivoReal = efectivoRealBase + offlineEfectivo;
-            final efectivoEsperado = efectivoEsperadoBase + offlineEfectivo;
+            // Efectivo real en caja: ventas en efectivo menos egresos en efectivo
+            _totalEfectivoReal = breakdown.efectivo - _egresosEfectivo;
 
-            _totalVentas = ventasTotales;
-            _totalProductos =
-                (data['productos_vendidos'] ?? 0).toDouble() + offlineProductos;
-
-            // Calcular egresado: ventas_totales - efectivo_real + egresos en efectivo
-            _totalEgresado = ventasTotales - efectivoReal + _egresosEfectivo;
-
-            // Efectivo real: efectivo_esperado - egresos en efectivo
-            _totalEfectivoReal = efectivoEsperado - _egresosEfectivo;
+            // Compatibilidad con UI antigua: transferencia = ventas transferencia
+            _totalEgresado = _totalTransferencia + _egresosEfectivo;
 
             _isLoading = false;
           });
@@ -321,11 +294,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           print('Órdenes cargadas: ${orders.length}');
           print('Órdenes completadas: ${ordenesVendidas.length}');
           print('Productos vendidos: ${productosVendidos.length}');
+          print('Efectivo: \$${_totalEfectivo.toStringAsFixed(2)}');
+          print('Transferencia: \$${_totalTransferencia.toStringAsFixed(2)}');
           print(
-            'Total Egresado: $_totalEgresado (incluye egresos efectivo: $_egresosEfectivo)',
-          );
-          print(
-            'Efectivo Real: $_totalEfectivoReal (descontando egresos efectivo)',
+            'Efectivo Real: \$${_totalEfectivoReal.toStringAsFixed(2)} (descontando egresos efectivo)',
           );
         }
       }
@@ -335,8 +307,6 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       final orders = _orderService.orders;
       final productosVendidos = <OrderItem>[];
       final ordenesVendidas = <Order>[];
-      double totalVentas = 0.0;
-      double totalProductos = 0.0;
 
       for (final order in orders) {
         final isCompletedOrOffline =
@@ -347,22 +317,23 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
         if (isCompletedOrOffline) {
           ordenesVendidas.add(order);
-          totalVentas += order.total;
-
           for (final item in order.items) {
             productosVendidos.add(item);
-            totalProductos += item.cantidad;
           }
         }
       }
 
+      final breakdown = _calculatePaymentBreakdownFromOrders(ordenesVendidas);
+
       setState(() {
         _productosVendidos = productosVendidos;
         _ordenesVendidas = ordenesVendidas;
-        _totalVentas = totalVentas;
-        _totalProductos = totalProductos;
-        _totalEgresado = 0.0;
-        _totalEfectivoReal = 0.0;
+        _totalVentas = breakdown.total;
+        _totalProductos = breakdown.productos.toDouble();
+        _totalEfectivo = breakdown.efectivo;
+        _totalTransferencia = breakdown.transferencia;
+        _totalEgresado = breakdown.transferencia + _egresosEfectivo;
+        _totalEfectivoReal = breakdown.efectivo - _egresosEfectivo;
         _isLoading = false;
       });
     }
@@ -564,7 +535,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                         Expanded(
                           child: _buildClickableSummaryCard(
                             'Total Transferencia',
-                            '\$${((_totalEgresado - _egresosEfectivo) > 0 ? (_totalEgresado - _egresosEfectivo) : 0).toStringAsFixed(0)}',
+                            '\$${_totalTransferencia.toStringAsFixed(0)}',
                             Icons.credit_card,
                             Colors.orange,
                             onTap: _showTransferOrders,
@@ -729,7 +700,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
   void _showCashOrders() {
     print('🔍 Mostrando órdenes pagadas con efectivo...');
-    print('💰 Efectivo real: $_totalEfectivoReal');
+    print('💰 Efectivo: $_totalEfectivo');
 
     final completedOrders =
         _orderService.orders
@@ -750,7 +721,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               filter: PaymentFilter.cash,
               title: 'Órdenes - Efectivo',
               orders: completedOrders,
-              totalAmount: _totalEfectivoReal,
+              totalAmount: _totalEfectivo,
             ),
       ),
     );
@@ -758,7 +729,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
   void _showTransferOrders() {
     print('🔍 Mostrando órdenes pagadas con transferencias...');
-    print('💳 Total transferencias: ${(_totalEgresado - _egresosEfectivo)}');
+    print('💳 Total transferencias: $_totalTransferencia');
 
     final completedOrders =
         _orderService.orders
@@ -779,7 +750,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               filter: PaymentFilter.transfer,
               title: 'Órdenes - Transferencias',
               orders: completedOrders,
-              totalAmount: (_totalEgresado - _egresosEfectivo),
+              totalAmount: _totalTransferencia,
             ),
       ),
     );
@@ -1924,20 +1895,11 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
       final userPrefs = UserPreferencesService();
 
-      // Cargar órdenes offline (sincronizadas + pendientes)
-      _orderService.clearAllOrders();
-      final offlineData = await userPrefs.getOfflineData();
-      if (offlineData != null && offlineData['orders'] != null) {
-        _orderService.transformSupabaseToOrdersPublic(
-          offlineData['orders'] as List<dynamic>,
-        );
-      }
-
-      final pendingOrders = await userPrefs.getPendingOrders();
-      if (pendingOrders.isNotEmpty) {
-        _orderService.addPendingOrdersToList(pendingOrders);
-      }
-      final offlineTotals = _calculatePendingOrdersTotals(pendingOrders);
+      // Cargar TODAS las órdenes del turno combinando cache offline +
+      // pendientes de sincronización + (si hay conexión real) datos frescos
+      // del servidor, así ninguna venta ya hecha en línea se pierde al
+      // pasar a modo offline.
+      await _orderService.loadOrdersForOpenTurnoUnified();
 
       // Obtener resumen de cierre base desde cache
       final resumenCierre = await userPrefs.getResumenCierreCache();
@@ -1967,50 +1929,26 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           }
         }
 
+        // Calcular totales y desglose por tipo de pago desde las órdenes
+        // locales (offline + pendientes). Evita duplicar ventas si el resumen
+        // cache ya incluye órdenes offline.
+        final breakdown = _calculatePaymentBreakdownFromOrders(ordenesVendidas);
+
         setState(() {
           _productosVendidos = productosVendidos;
           _ordenesVendidas = ordenesVendidas;
 
-          // Usar datos del resumen de cierre (ya incluye órdenes offline)
-          // Mapear correctamente los nombres de campos del cache
-          final ventasTotalesBase =
-              (resumenCierre['ventas_totales'] ??
-                      resumenCierre['total_ventas'] ??
-                      0.0)
-                  .toDouble();
-          final productosBase =
-              (resumenCierre['productos_vendidos'] ?? 0).toDouble();
+          _totalVentas = breakdown.total;
+          _totalProductos = breakdown.productos.toDouble();
 
-          final offlineVentas =
-              (offlineTotals['ventasOffline'] ?? 0.0).toDouble();
-          final offlineProductos =
-              (offlineTotals['productosOffline'] ?? 0).toDouble();
-          final offlineEfectivo =
-              (offlineTotals['efectivoOffline'] ?? 0.0).toDouble();
+          _totalEfectivo = breakdown.efectivo;
+          _totalTransferencia = breakdown.transferencia;
 
-          // Calcular valores reales incluyendo pendientes offline
-          final ventasTotales = ventasTotalesBase + offlineVentas;
-          final efectivoReal =
-              (resumenCierre['efectivo_real'] ??
-                      resumenCierre['total_efectivo'] ??
-                      ventasTotalesBase * 0.7)
-                  .toDouble() +
-              offlineEfectivo;
+          // Efectivo real en caja: ventas en efectivo menos egresos en efectivo
+          _totalEfectivoReal = breakdown.efectivo - _egresosEfectivo;
 
-          // Egresado: ventas_totales - efectivo_real + egresos en efectivo
-          _totalEgresado = ventasTotales - efectivoReal + _egresosEfectivo;
-
-          // Efectivo real: efectivo_esperado - egresos en efectivo
-          final efectivoEsperadoCache = resumenCierre['efectivo_esperado'];
-          final efectivoEsperado =
-              efectivoEsperadoCache != null
-                  ? _parseDouble(efectivoEsperadoCache) + offlineEfectivo
-                  : _parseDouble(resumenCierre['efectivo_inicial'] ?? 500.0) +
-                      efectivoReal;
-
-          _totalVentas = ventasTotales;
-          _totalProductos = productosBase + offlineProductos;
-          _totalEfectivoReal = efectivoEsperado - _egresosEfectivo;
+          // Compatibilidad con UI antigua
+          _totalEgresado = _totalTransferencia + _egresosEfectivo;
 
           _isLoading = false;
         });
@@ -2029,10 +1967,11 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         );
 
         // Mostrar información de órdenes offline si las hay
-        if (pendingOrders.isNotEmpty) {
+        final offlineOrdersCount =
+            orders.where((o) => o.isOfflineOrder).length;
+        if (offlineOrdersCount > 0) {
           print('📱 Órdenes offline incluidas en el cálculo:');
-          print('  - Órdenes offline: ${pendingOrders.length}');
-          print('  - Ventas offline: \$${offlineTotals['ventasOffline']}');
+          print('  - Órdenes offline: $offlineOrdersCount');
         }
       } else {
         print('⚠️ No hay resumen de cierre en cache - usando cálculo local');
@@ -2052,8 +1991,6 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       final orders = _orderService.orders;
       final productosVendidos = <OrderItem>[];
       final ordenesVendidas = <Order>[];
-      double totalVentas = 0.0;
-      double totalProductos = 0.0;
 
       for (final order in orders) {
         if (order.status == OrderStatus.completada ||
@@ -2061,25 +1998,25 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
             order.status == OrderStatus.pendienteDeSincronizacion ||
             order.status == OrderStatus.enviada) {
           ordenesVendidas.add(order);
-          totalVentas += order.total;
-
           for (final item in order.items) {
             productosVendidos.add(item);
-            totalProductos += item.cantidad;
           }
         }
       }
 
+      final breakdown = _calculatePaymentBreakdownFromOrders(ordenesVendidas);
+
       setState(() {
         _productosVendidos = productosVendidos;
         _ordenesVendidas = ordenesVendidas;
-        _totalVentas = totalVentas;
-        _totalProductos = totalProductos;
+        _totalVentas = breakdown.total;
+        _totalProductos = breakdown.productos.toDouble();
 
-        // Estimaciones básicas
-        final efectivoEstimado = totalVentas * 0.7; // 70% efectivo
-        _totalEgresado = totalVentas - efectivoEstimado + _egresosEfectivo;
-        _totalEfectivoReal = efectivoEstimado - _egresosEfectivo;
+        _totalEfectivo = breakdown.efectivo;
+        _totalTransferencia = breakdown.transferencia;
+
+        _totalEfectivoReal = breakdown.efectivo - _egresosEfectivo;
+        _totalEgresado = _totalTransferencia + _egresosEfectivo;
 
         _isLoading = false;
       });

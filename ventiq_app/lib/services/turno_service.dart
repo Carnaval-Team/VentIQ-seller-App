@@ -154,10 +154,10 @@ class TurnoService {
 
   static Future<Map<String, dynamic>?> getTurnoAbierto() async {
     try {
-      // Verificar si el modo offline está activado
-      final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
-      if (isOfflineModeEnabled) {
-        print('🔌 Modo offline - Obteniendo turno offline...');
+      // Full-offline / modo offline: solo cola local.
+      final useLocal = await _userPrefs.shouldUseLocalData();
+      if (useLocal) {
+        print('🔌 Modo local - Obteniendo turno offline...');
         final turnoOffline = await _userPrefs.getOfflineTurno();
         if (turnoOffline != null) {
           print('📱 Turno offline encontrado: ${turnoOffline['id']}');
@@ -207,7 +207,7 @@ class TurnoService {
       }
 
       print('⚠️ No open shift found for TPV: $idTpv, Seller: $idSeller');
-      // Fallback: intentar turno offline guardado
+      // Fallback: turno offline open (p.ej. recién abierto y aún no en server)
       final turnoOffline = await _userPrefs.getOfflineTurno();
       if (turnoOffline != null) {
         print('📱 Usando turno offline como fallback: ${turnoOffline['id']}');

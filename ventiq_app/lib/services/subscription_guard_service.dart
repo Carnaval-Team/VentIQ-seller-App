@@ -324,6 +324,15 @@ class SubscriptionGuardService {
     print('🧹 Caché de suscripción limpiado');
   }
 
+  /// Solo memoria: no borra suscripción/licencia firmada del dispositivo
+  /// (cambio de usuario en full offline).
+  void clearMemoryCacheOnly() {
+    _cachedSubscription = null;
+    _cachedStoreId = null;
+    _lastCheck = null;
+    _lastOfflineStatus = null;
+  }
+
   /// Fuerza una verificación de suscripción / revalidación de licencia.
   /// Con red, siempre intenta descargar la licencia firmada primero.
   Future<bool> forceCheck() async {

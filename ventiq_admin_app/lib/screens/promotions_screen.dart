@@ -709,10 +709,14 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
                   _buildInfoChip(
                     promotion.isChargePromotion
                         ? Icons.trending_up
+                        : promotion.isFixedDiscount
+                        ? Icons.attach_money
+                        : promotion.is2x1
+                        ? Icons.looks_two
+                        : promotion.isPuntosExtra
+                        ? Icons.star
                         : Icons.local_offer,
-                    promotion.isChargePromotion
-                        ? '+${promotion.valorDescuento}%'
-                        : '${promotion.valorDescuento}%',
+                    promotion.discountValueText,
                     color: promotion.isChargePromotion ? Colors.orange : null,
                   ),
                   const SizedBox(width: 8),

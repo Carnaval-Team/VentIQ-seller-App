@@ -4,7 +4,6 @@ import 'dart:convert';
 import '../../config/app_colors.dart';
 import '../../services/user_preferences_service.dart';
 import '../../services/auth_service.dart';
-import '../../services/session_cache_manager.dart';
 import '../../utils/platform_utils.dart';
 import '../../utils/web_reload.dart' as web_reload;
 
@@ -341,8 +340,9 @@ class _HRDrawerState extends State<HRDrawer> {
                       ? null
                       : () async {
                           setState(() => isLoading = true);
+                          // AuthService.signOut() limpia Supabase, preferencias
+                          // y todos los cachés en memoria (roles, tiendas, etc.).
                           await AuthService().signOut();
-                          await SessionCacheManager.clearForLogout();
                           await Future.delayed(const Duration(milliseconds: 300));
                           if (dialogContext.mounted) {
                             Navigator.of(dialogContext).pop();

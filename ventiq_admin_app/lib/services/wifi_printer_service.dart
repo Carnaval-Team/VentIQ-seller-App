@@ -6,6 +6,10 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/ticket_text_utils.dart';
 import '../utils/operation_client_utils.dart';
+import '../services/user_preferences_service.dart';
+import '../services/printer_preferences_service.dart';
+
+enum _SavedPrinterChoice { use, forget, chooseAnother }
 
 /// Servicio para impresoras conectadas por WiFi/Red
 class WiFiPrinterService {
@@ -344,7 +348,13 @@ class WiFiPrinterService {
     try {
       debugPrint('🖨️ Iniciando impresión de operación: ${operation['id']}');
       debugPrint('📦 Operación tiene ${details.length} productos');
-      
+
+      // Datos de la tienda para el encabezado
+      final currentStore = await UserPreferencesService().getCurrentStoreInfo();
+      final storeName = (currentStore?['denominacion'] as String?)?.isNotEmpty == true
+          ? currentStore!['denominacion'] as String
+          : 'INVENTTIA';
+
       // Crear perfil ESC/POS
       final profile = await CapabilityProfile.load();
       final generator = Generator(PaperSize.mm58, profile);
@@ -352,7 +362,13 @@ class WiFiPrinterService {
       // ========== IMPRIMIR COPIA 1: COMPROBANTE PRINCIPAL ==========
       debugPrint('📄 Imprimiendo copia 1 (Comprobante Principal)...');
       List<int> bytes1 = [];
-      bytes1 += _buildInventoryOperationReceipt(generator, operation, details, copyNumber: 1);
+      bytes1 += _buildInventoryOperationReceipt(
+        generator,
+        operation,
+        details,
+        storeName: storeName,
+        copyNumber: 1,
+      );
       bytes1 += generator.emptyLines(1);
       bytes1 += generator.cut();
       
@@ -370,7 +386,13 @@ class WiFiPrinterService {
       // ========== IMPRIMIR COPIA 2: COMPROBANTE DE ALMACÉN ==========
       debugPrint('🏭 Imprimiendo copia 2 (Comprobante de Almacén)...');
       List<int> bytes2 = [];
-      bytes2 += _buildInventoryOperationReceipt(generator, operation, details, copyNumber: 2);
+      bytes2 += _buildInventoryOperationReceipt(
+        generator,
+        operation,
+        details,
+        storeName: storeName,
+        copyNumber: 2,
+      );
       bytes2 += generator.emptyLines(1);
       bytes2 += generator.cut();
       
@@ -443,11 +465,12 @@ class WiFiPrinterService {
 
   /// Construir recibo de operación de inventario
   List<int> _buildInventoryOperationReceipt(
-    Generator generator, 
-    Map<String, dynamic> operation, 
-    List<Map<String, dynamic>> details,
-    {int copyNumber = 1}
-  ) {
+    Generator generator,
+    Map<String, dynamic> operation,
+    List<Map<String, dynamic>> details, {
+    required String storeName,
+    int copyNumber = 1,
+  }) {
     List<int> bytes = [];
     List<int> line(String text, {PosStyles? styles}) {
       return generator.text(
@@ -457,11 +480,14 @@ class WiFiPrinterService {
     }
 
     debugPrint('📋 Construyendo recibo de operación ${operation['id']} - Copia $copyNumber');
-    
-    // Encabezado
-    bytes += line('INVENTTIA', styles: PosStyles(align: PosAlign.center, bold: true));
+
+    // Encabezado con datos de la tienda
+    bytes += line(
+      sanitizeForThermalPrinter(storeName.toUpperCase()),
+      styles: PosStyles(align: PosAlign.center, bold: true),
+    );
     bytes += line('OPERACION INVENTARIO', styles: PosStyles(align: PosAlign.center, bold: true));
-    
+
     // Indicar número de copia
     final copyLabel = copyNumber == 1 ? 'COMPROBANTE PRINCIPAL' : 'COMPROBANTE ALMACEN';
     bytes += line(copyLabel, styles: PosStyles(align: PosAlign.center, bold: true));
@@ -535,7 +561,8 @@ class WiFiPrinterService {
     bytes += line('Total productos: ${details.length}', styles: PosStyles(align: PosAlign.left, bold: true));
 
     // Pie de página
-    bytes += line('INVENTTIA Inventario', styles: PosStyles(align: PosAlign.center));
+    bytes += line('----------------------------', styles: PosStyles(align: PosAlign.center));
+    bytes += line('Gracias por su compra', styles: PosStyles(align: PosAlign.center, bold: true));
     bytes += generator.emptyLines(1);
     
     debugPrint('📋 Recibo completado (${bytes.length} bytes)');
@@ -552,8 +579,13 @@ class WiFiPrinterService {
            "${localDate.minute.toString().padLeft(2, '0')}";
   }
 
-  /// Mostrar diálogo de selección de impresora WiFi con entrada manual
-  Future<Map<String, dynamic>?> showPrinterSelectionDialog(BuildContext context) async {
+  /// Mostrar diálogo de selección de impresora WiFi con entrada manual.
+  /// Si [allowSaveDefault] es true, después de seleccionar se pregunta si se
+  /// guarda como impresora por defecto.
+  Future<Map<String, dynamic>?> showPrinterSelectionDialog(
+    BuildContext context, {
+    bool allowSaveDefault = true,
+  }) async {
     // Variables fuera del builder para que persistan entre rebuilds
     bool isScanning = false;
     List<Map<String, dynamic>> printers = [];
@@ -569,8 +601,20 @@ class WiFiPrinterService {
       scanMessage = '⭐ ${savedPrinters.length} impresora(s) guardada(s)';
       debugPrint('⭐ Mostrando ${savedPrinters.length} impresoras guardadas');
     }
-    
-    return showDialog<Map<String, dynamic>>(
+
+    // Si hay una impresora WiFi por defecto guardada, ofrecer usarla primero.
+    final defaultWifi = await PrinterPreferencesService().getDefaultWiFiPrinter();
+    if (defaultWifi != null && context.mounted) {
+      final choice = await _showSavedWiFiPrinterDialog(context, defaultWifi);
+      if (choice == _SavedPrinterChoice.use) {
+        debugPrint('✅ Usando impresora WiFi guardada: ${defaultWifi['ip']}');
+        return defaultWifi;
+      } else if (choice == _SavedPrinterChoice.forget) {
+        await PrinterPreferencesService().clearDefaultWiFiPrinter();
+      }
+    }
+
+    final selected = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) {
@@ -882,6 +926,85 @@ class WiFiPrinterService {
         },
       ),
     );
+
+    if (selected != null && allowSaveDefault) {
+      final shouldSave = await _showSaveWifiPrinterDialog(
+        context,
+        selected['ip']?.toString() ?? '',
+      );
+      if (shouldSave) {
+        await PrinterPreferencesService().saveDefaultWiFiPrinter(
+          selected['ip']?.toString() ?? '',
+          (selected['port'] as num?)?.toInt() ?? 9100,
+        );
+        debugPrint('💾 Impresora WiFi por defecto guardada: ${selected['ip']}');
+      }
+    }
+
+    return selected;
+  }
+
+  Future<bool> _showSaveWifiPrinterDialog(BuildContext context, String ip) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text('Guardar impresora'),
+            content: Text(
+              '¿Deseas guardar la impresora WiFi "$ip" como impresora por defecto?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text('No'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text('Guardar'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  Future<_SavedPrinterChoice> _showSavedWiFiPrinterDialog(
+    BuildContext context,
+    Map<String, dynamic> savedPrinter,
+  ) async {
+    final ip = savedPrinter['ip']?.toString() ?? '';
+    final port = (savedPrinter['port'] as num?)?.toInt() ?? 9100;
+    return await showDialog<_SavedPrinterChoice>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.wifi, color: const Color(0xFF10B981)),
+                SizedBox(width: 8),
+                Expanded(child: Text('Impresora guardada')),
+              ],
+            ),
+            content: Text(
+              '¿Usar la impresora WiFi guardada por defecto?\n\n'
+              'IP: $ip\n'
+              'Puerto: $port',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, _SavedPrinterChoice.forget),
+                child: Text('Olvidar', style: TextStyle(color: Colors.red)),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, _SavedPrinterChoice.chooseAnother),
+                child: Text('Elegir otra'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, _SavedPrinterChoice.use),
+                child: Text('Usar'),
+              ),
+            ],
+          ),
+        ) ??
+        _SavedPrinterChoice.chooseAnother;
   }
 
   /// Dispose resources

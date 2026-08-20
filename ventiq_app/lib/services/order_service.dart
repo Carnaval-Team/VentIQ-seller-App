@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
 import 'mesa_cuenta_service.dart';
 import 'turno_service.dart'; // Import TurnoService
+import 'connectivity_service.dart';
 
 class OrderService {
   static final OrderService _instance = OrderService._internal();
@@ -1384,9 +1385,16 @@ class OrderService {
     }
   }
 
-  // Listar órdenes desde Supabase
+  // Listar órdenes desde Supabase (solo del turno abierto del vendedor).
   Future<void> listOrdersFromSupabase() async {
     try {
+      final turnoAbierto = await TurnoService.getTurnoAbierto();
+      if (turnoAbierto == null) {
+        print('📭 Sin turno abierto — no se listan órdenes del vendedor');
+        _orders.clear();
+        return;
+      }
+
       final userPrefs = UserPreferencesService();
       final userData = await userPrefs.getUserData();
 
@@ -1395,19 +1403,28 @@ class OrderService {
       final idTpv = await userPrefs.getIdTpv();
       final userId = userData['userId'];
 
+      final fechaApertura = _parseOrderDateTime(
+        turnoAbierto['fecha_apertura'],
+      );
+      final fechaDesdeParam =
+          fechaApertura != null
+              ? _toDateParam(fechaApertura)
+              : null;
+
       print('=== DEBUG PARAMETROS LISTAR ORDENES ===');
       print('idTienda: $idTienda');
       print('idTpv: $idTpv');
       print('userId: $userId');
-      print('Sin filtro de fecha - mostrando todas las órdenes');
+      print('turno abierto: ${turnoAbierto['id']}');
+      print('fecha_apertura: $fechaApertura');
       print('======================================');
 
-      // Preparar parámetros para listar_ordenes sin filtro de fecha
+      // Preparar parámetros: acotar por día de apertura; filtro fino por hora abajo.
       final rpcParams = {
         'con_inventario_param':
             true, // ✅ Activar para obtener datos de inventario
-        'fecha_desde_param': null, // Sin filtro de fecha desde
-        'fecha_hasta_param': null, // Sin filtro de fecha hasta
+        'fecha_desde_param': fechaDesdeParam,
+        'fecha_hasta_param': null,
         'id_estado_param': null, // Todos los estados
         'id_tienda_param': idTienda,
         'id_tipo_operacion_param': null, // Todas las operaciones
@@ -1420,12 +1437,8 @@ class OrderService {
 
       print('=== PARAMETROS RPC listar_ordenes ===');
       print('con_inventario_param: ${rpcParams['con_inventario_param']}');
-      print(
-        'fecha_desde_param: ${rpcParams['fecha_desde_param']} (SIN FILTRO)',
-      );
-      print(
-        'fecha_hasta_param: ${rpcParams['fecha_hasta_param']} (SIN FILTRO)',
-      );
+      print('fecha_desde_param: ${rpcParams['fecha_desde_param']}');
+      print('fecha_hasta_param: ${rpcParams['fecha_hasta_param']}');
       print('id_estado_param: ${rpcParams['id_estado_param']}');
       print('id_tienda_param: ${rpcParams['id_tienda_param']}');
       print('id_tipo_operacion_param: ${rpcParams['id_tipo_operacion_param']}');
@@ -1447,22 +1460,220 @@ class OrderService {
       print(
         'Cantidad de órdenes: ${response is List ? response.length : 'No es lista'}',
       );
-      print('Respuesta completa:');
-      print(response);
       print('===============================');
 
       if (response is List && response.isNotEmpty) {
-        print('=== PRIMERA ORDEN (EJEMPLO) ===');
-        print(response.first);
-        print('==============================');
-
-        // Transformar respuesta de Supabase a modelo Order
-        _transformSupabaseToOrders(response);
+        final filtered = _filterRawOrdersToOpenTurno(
+          List<dynamic>.from(response),
+          turnoAbierto,
+        );
+        print(
+          '📅 Órdenes del turno abierto: ${filtered.length}/${response.length}',
+        );
+        _transformSupabaseToOrders(filtered);
+      } else {
+        _orders.clear();
       }
     } catch (e, stackTrace) {
       print('Error en listOrdersFromSupabase: $e');
       print('Stack trace: $stackTrace');
       rethrow;
+    }
+  }
+
+  String? _toDateParam(DateTime dt) {
+    final local = dt.toLocal();
+    final y = local.year.toString().padLeft(4, '0');
+    final m = local.month.toString().padLeft(2, '0');
+    final d = local.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
+  DateTime? _parseOrderDateTime(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is DateTime) return raw.toUtc();
+    return DateTime.tryParse(raw.toString())?.toUtc();
+  }
+
+  /// Filtra filas crudas de listar_ordenes / cache al turno abierto.
+  List<dynamic> _filterRawOrdersToOpenTurno(
+    List<dynamic> orders,
+    Map<String, dynamic> turnoAbierto,
+  ) {
+    final from = _parseOrderDateTime(turnoAbierto['fecha_apertura']);
+    final openLocalId =
+        turnoAbierto['local_id']?.toString() ??
+        turnoAbierto['local_turno_id']?.toString();
+    final openServerId = () {
+      final raw = turnoAbierto['server_id_turno'] ?? turnoAbierto['id'];
+      if (raw is int) return raw;
+      if (raw is num) return raw.toInt();
+      return int.tryParse('$raw');
+    }();
+
+    return orders.where((raw) {
+      if (raw is! Map) return false;
+      final row = Map<String, dynamic>.from(raw);
+
+      final lid = row['local_turno_id']?.toString();
+      if (lid != null &&
+          lid.isNotEmpty &&
+          openLocalId != null &&
+          openLocalId.isNotEmpty) {
+        return lid == openLocalId;
+      }
+
+      final rowTurno = row['id_turno'];
+      final rowTurnoId =
+          rowTurno is int
+              ? rowTurno
+              : (rowTurno is num ? rowTurno.toInt() : int.tryParse('$rowTurno'));
+      if (rowTurnoId != null && openServerId != null) {
+        // Si el id parece UUID local (no int server), no comparar aquí.
+        if (rowTurno is! String || int.tryParse(rowTurno) != null) {
+          return rowTurnoId == openServerId;
+        }
+      }
+
+      if (from == null) return false;
+      final fo = _parseOrderDateTime(
+        row['fecha_operacion'] ??
+            row['fecha_creacion'] ??
+            row['created_at'] ??
+            row['created_offline_at'] ??
+            row['fecha'],
+      );
+      if (fo == null) return false;
+      return !fo.isBefore(from);
+    }).toList();
+  }
+
+  /// Carga las órdenes del turno abierto combinando TODAS las fuentes
+  /// disponibles: cache offline (órdenes ya vistas, sincronizadas o no),
+  /// pendientes de sincronización aún no confirmadas por el servidor y,
+  /// si hay conectividad real, datos frescos del servidor.
+  ///
+  /// Esto evita que al pasar a modo offline habiendo ya ventas hechas en
+  /// línea (antes de perder conexión), esas órdenes "desaparezcan" de los
+  /// totales sólo por no estar en la última foto de cache. La sincronización
+  /// real de pendientes hacia el servidor la sigue manejando por separado
+  /// `auto_sync_service`; este método sólo lee/combina para totales y no
+  /// dispara ningún push.
+  Future<void> loadOrdersForOpenTurnoUnified() async {
+    final turnoAbierto = await TurnoService.getTurnoAbierto();
+    _orders.clear();
+    if (turnoAbierto == null) {
+      print('📭 Sin turno abierto — no se listan órdenes del vendedor');
+      return;
+    }
+
+    final userPrefs = UserPreferencesService();
+
+    // 1) Base: cache offline (última foto conocida, incluye ya sincronizadas).
+    final offlineData = await userPrefs.getOfflineData();
+    if (offlineData != null && offlineData['orders'] != null) {
+      final ordersData = List<dynamic>.from(offlineData['orders'] as List);
+      final filtered = _filterRawOrdersToOpenTurno(ordersData, turnoAbierto);
+      if (filtered.isNotEmpty) {
+        _transformSupabaseToOrders(filtered);
+      }
+    }
+    final cachedOrders = List<Order>.from(_orders);
+
+    // 2) Pendientes de sincronización (aún no confirmadas por el servidor).
+    _orders.clear();
+    final pending = await userPrefs.getSellerVisiblePendingOrders();
+    if (pending.isNotEmpty) {
+      addPendingOrdersToList(pending);
+    }
+    final pendingOrders = List<Order>.from(_orders);
+
+    // 3) Si hay conectividad real, refrescar con datos frescos del servidor.
+    List<Order> serverOrders = [];
+    try {
+      final hasConnection = await ConnectivityService().checkConnectivity();
+      if (hasConnection) {
+        final userData = await userPrefs.getUserData();
+        final idTienda = await userPrefs.getIdTienda();
+        final idTpv = await userPrefs.getIdTpv();
+        final fechaApertura = _parseOrderDateTime(
+          turnoAbierto['fecha_apertura'],
+        );
+        final fechaDesdeParam =
+            fechaApertura != null ? _toDateParam(fechaApertura) : null;
+
+        final response = await Supabase.instance.client.rpc(
+          'fn_listar_ordenes',
+          params: {
+            'con_inventario_param': true,
+            'fecha_desde_param': fechaDesdeParam,
+            'fecha_hasta_param': null,
+            'id_estado_param': null,
+            'id_tienda_param': idTienda,
+            'id_tipo_operacion_param': null,
+            'id_tpv_param': idTpv,
+            'id_usuario_param': userData['userId'],
+            'limite_param': null,
+            'pagina_param': null,
+            'solo_pendientes_param': false,
+          },
+        );
+        if (response is List && response.isNotEmpty) {
+          final filtered = _filterRawOrdersToOpenTurno(
+            List<dynamic>.from(response),
+            turnoAbierto,
+          );
+          _transformSupabaseToOrders(filtered);
+          serverOrders = List<Order>.from(_orders);
+        }
+      }
+    } catch (e) {
+      print('⚠️ No se pudo refrescar órdenes online para combinar: $e');
+    }
+
+    // 4) Combinar con prioridad: servidor (más fresco) > cache > pendientes.
+    final merged = <String, Order>{};
+    for (final o in pendingOrders) merged[o.id] = o;
+    for (final o in cachedOrders) merged[o.id] = o;
+    for (final o in serverOrders) merged[o.id] = o;
+
+    _orders
+      ..clear()
+      ..addAll(merged.values);
+
+    print(
+      '📦 Órdenes combinadas del turno: ${_orders.length} '
+      '(cache=${cachedOrders.length}, servidor=${serverOrders.length}, '
+      'pendientes=${pendingOrders.length})',
+    );
+  }
+
+  /// Carga órdenes del vendedor solo si hay turno abierto (cache local).
+  Future<void> loadOrdersFromLocalCacheForOpenTurno() async {
+    final turnoAbierto = await TurnoService.getTurnoAbierto();
+    _orders.clear();
+    if (turnoAbierto == null) {
+      print('📭 Sin turno abierto — cache de órdenes vacío para el vendedor');
+      return;
+    }
+
+    final userPrefs = UserPreferencesService();
+    final offlineData = await userPrefs.getOfflineData();
+    if (offlineData != null && offlineData['orders'] != null) {
+      final ordersData = List<dynamic>.from(offlineData['orders'] as List);
+      final filtered = _filterRawOrdersToOpenTurno(ordersData, turnoAbierto);
+      print(
+        '📅 Cache local filtrado al turno: ${filtered.length}/${ordersData.length}',
+      );
+      if (filtered.isNotEmpty) {
+        _transformSupabaseToOrders(filtered);
+      }
+    }
+
+    final pending = await userPrefs.getSellerVisiblePendingOrders();
+    if (pending.isNotEmpty) {
+      addPendingOrdersToList(pending);
+      print('⏳ Pendientes del turno abierto: ${pending.length}');
     }
   }
 
