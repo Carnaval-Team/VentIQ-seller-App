@@ -20,6 +20,8 @@ class UserPreferencesService {
   // Seller data keys
   static const String _idTpvKey = 'id_tpv';
   static const String _idTrabajadorKey = 'id_trabajador';
+  static const String _manejaAperturaControlCacheKey =
+      'maneja_apertura_control_cache';
   static const String _idSellerKey = 'id_seller';
   static const String _nombresKey = 'nombres';
   static const String _apellidosKey = 'apellidos';
@@ -298,9 +300,27 @@ class UserPreferencesService {
   /// Cargar configuración de maneja_apertura_control del trabajador desde la base de datos
   /// Retorna true si el trabajador debe manejar inventario en apertura/cierre
   /// Retorna true por defecto si no se encuentra el trabajador (comportamiento seguro)
+  ///
+  /// Offline-aware: si el modo offline/full-offline está activo, no llama a
+  /// Supabase (fallaría con `Failed host lookup` sin conexión); usa el
+  /// último valor cacheado (o `true` por defecto si nunca se cacheó).
   Future<bool> loadWorkerManejaAperturaControl() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    if (await shouldUseLocalData()) {
+      final cached = prefs.getBool(_manejaAperturaControlCacheKey);
+      if (cached != null) {
+        print('🔌 maneja_apertura_control desde cache offline: $cached');
+        return cached;
+      }
+      print(
+        '🔌 Offline sin cache de maneja_apertura_control; usando valor por '
+        'defecto (true)',
+      );
+      return true;
+    }
+
     try {
-      final prefs = await SharedPreferences.getInstance();
       final idTrabajador = prefs.getInt(_idTrabajadorKey);
 
       if (idTrabajador == null) {
@@ -331,10 +351,17 @@ class UserPreferencesService {
           response['maneja_apertura_control'] as bool? ?? true;
       print('✅ maneja_apertura_control cargado: $manejaAperturaControl');
 
+      await prefs.setBool(
+        _manejaAperturaControlCacheKey,
+        manejaAperturaControl,
+      );
+
       return manejaAperturaControl;
     } catch (e) {
       print('❌ Error cargando maneja_apertura_control: $e');
-      return true; // Comportamiento seguro en caso de error
+      // Ante un error de red, usar el último valor cacheado si existe.
+      final cached = prefs.getBool(_manejaAperturaControlCacheKey);
+      return cached ?? true; // Comportamiento seguro en caso de error
     }
   }
 
@@ -936,6 +963,7 @@ class UserPreferencesService {
   // Currency denominations keys
   static const String _monedasDenominacionKey = 'monedas_denominacion';
   static const String _cambioCupUsdKey = 'cambio_cup_usd';
+  static const String _hiddenDenominationsKey = 'hidden_denominations';
 
   Future<void> saveTurnoData(Map<String, dynamic> turnoData) async {
     final prefs = await SharedPreferences.getInstance();
@@ -1371,6 +1399,52 @@ class UserPreferencesService {
 
     final decoded = jsonDecode(pendingOrdersJson) as List<dynamic>;
     return decoded.map((item) => item as Map<String, dynamic>).toList();
+  }
+
+  /// Órdenes pendientes visibles para el vendedor.
+  ///
+  /// Solo del turno **open** actual. Sin turno abierto → lista vacía.
+  /// También excluye turnos `closed_pending_sync` (los ve el admin).
+  Future<List<Map<String, dynamic>>> getSellerVisiblePendingOrders() async {
+    final open = await getOpenOfflineTurno();
+    if (open == null) return [];
+
+    final openLocalId = open['local_id']?.toString();
+    if (openLocalId == null || openLocalId.isEmpty) return [];
+
+    final from = DateTime.tryParse(open['fecha_apertura']?.toString() ?? '');
+    final orders = await getPendingOrders();
+    final closedIds = await _closedPendingSyncLocalTurnoIds();
+
+    return orders.where((order) {
+      final lid = order['local_turno_id']?.toString();
+      if (lid != null && lid.isNotEmpty) {
+        if (closedIds.contains(lid)) return false;
+        return lid == openLocalId;
+      }
+      // Legacy sin local_turno_id: ventana desde apertura del open.
+      if (from == null) return false;
+      final created = DateTime.tryParse(
+        (order['fecha_creacion'] ?? order['created_offline_at'])?.toString() ??
+            '',
+      );
+      if (created == null) return false;
+      return !created.toUtc().isBefore(from.toUtc());
+    }).toList();
+  }
+
+  Future<Set<String>> _closedPendingSyncLocalTurnoIds() async {
+    final turnos = await getOfflineTurnos();
+    return turnos
+        .where((t) => t['status'] == offlineTurnoStatusClosedPending)
+        .map((t) => t['local_id']?.toString())
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
+  Future<int> getSellerVisiblePendingOrdersCount() async {
+    return (await getSellerVisiblePendingOrders()).length;
   }
 
   /// Eliminar una orden pendiente específica (después de sincronizar)
@@ -1831,12 +1905,30 @@ class UserPreferencesService {
     return base;
   }
 
+  /// Serializa mutaciones de la cola para evitar lost-updates (lectura/escritura
+  /// entrelazada durante awaits largos de RPC).
+  static Future<void> _turnosWriteChain = Future.value();
+
+  Future<T> _withOfflineTurnosLock<T>(Future<T> Function() action) {
+    final done = _turnosWriteChain.then((_) => action());
+    _turnosWriteChain = done.then((_) {}, onError: (_, __) {});
+    return done;
+  }
+
   Future<void> _persistOfflineTurnos(List<Map<String, dynamic>> turnos) async {
     final prefs = await SharedPreferences.getInstance();
     if (turnos.isEmpty) {
+      // remove() puede devolver false si la clave ya no existía.
       await prefs.remove(_offlineTurnosKey);
     } else {
-      await prefs.setString(_offlineTurnosKey, jsonEncode(turnos));
+      final encoded = jsonEncode(turnos);
+      final ok = await prefs.setString(_offlineTurnosKey, encoded);
+      if (!ok) {
+        throw StateError(
+          'No se pudo guardar offline_turnos '
+          '(¿payload demasiado grande? ${encoded.length} chars)',
+        );
+      }
     }
     // Mantener legacy en sync con el open (compat lecturas antiguas).
     Map<String, dynamic>? open;
@@ -1847,10 +1939,13 @@ class UserPreferencesService {
       }
     }
     if (open != null) {
-      await prefs.setString(
+      final ok = await prefs.setString(
         _offlineTurnoKey,
         jsonEncode(_openTurnoView(open)),
       );
+      if (!ok) {
+        throw StateError('No se pudo guardar offline_turno legacy');
+      }
     } else {
       await prefs.remove(_offlineTurnoKey);
     }
@@ -1942,15 +2037,17 @@ class UserPreferencesService {
     if (localId == null || localId.isEmpty) {
       throw ArgumentError('upsertOfflineTurno requiere local_id');
     }
-    final all = await getOfflineTurnos();
-    final idx = all.indexWhere((t) => t['local_id']?.toString() == localId);
-    if (idx >= 0) {
-      all[idx] = {...all[idx], ...entry};
-    } else {
-      all.add(entry);
-    }
-    await _persistOfflineTurnos(all);
-    print('💾 Turno offline upsert: $localId (${entry['status']})');
+    await _withOfflineTurnosLock(() async {
+      final all = await getOfflineTurnos();
+      final idx = all.indexWhere((t) => t['local_id']?.toString() == localId);
+      if (idx >= 0) {
+        all[idx] = {...all[idx], ...entry, 'local_id': localId};
+      } else {
+        all.add({...entry, 'local_id': localId});
+      }
+      await _persistOfflineTurnos(all);
+      print('💾 Turno offline upsert: $localId (${entry['status']})');
+    });
   }
 
   /// Crea un turno abierto en la cola (falla si ya hay uno open).
@@ -1983,7 +2080,12 @@ class UserPreferencesService {
       'usuario': payload['usuario'],
       'fecha_apertura': payload['fecha_apertura'],
       'apertura': payload,
-      'server_id_turno': null,
+      // Si el payload ya es un turno de servidor (cache online), conservar el id.
+      'server_id_turno':
+          payload['server_id_turno'] ??
+          (payload['id'] is int
+              ? payload['id']
+              : (payload['id'] is num ? (payload['id'] as num).toInt() : null)),
     };
     await upsertOfflineTurno(entry);
     return entry;
@@ -1996,40 +2098,42 @@ class UserPreferencesService {
     required Map<String, dynamic> cierrePayload,
     Map<String, dynamic>? resumen,
   }) async {
-    final all = await getOfflineTurnos();
-    String? id = localId;
-    if (id == null) {
-      for (final t in all) {
-        if (t['status'] == offlineTurnoStatusOpen) {
-          id = t['local_id']?.toString();
-          break;
+    await _withOfflineTurnosLock(() async {
+      final all = await getOfflineTurnos();
+      String? id = localId;
+      if (id == null) {
+        for (final t in all) {
+          if (t['status'] == offlineTurnoStatusOpen) {
+            id = t['local_id']?.toString();
+            break;
+          }
         }
       }
-    }
-    if (id == null) {
-      throw StateError('No hay turno open para cerrar offline');
-    }
+      if (id == null) {
+        throw StateError('No hay turno open para cerrar offline');
+      }
 
-    final clientUuidCierre =
-        cierrePayload['client_uuid']?.toString() ?? UuidGenerator.v4();
-    final cierre = Map<String, dynamic>.from(cierrePayload)
-      ..['client_uuid'] = clientUuidCierre
-      ..['local_turno_id'] = id;
+      final clientUuidCierre =
+          cierrePayload['client_uuid']?.toString() ?? UuidGenerator.v4();
+      final cierre = Map<String, dynamic>.from(cierrePayload)
+        ..['client_uuid'] = clientUuidCierre
+        ..['local_turno_id'] = id;
 
-    final idx = all.indexWhere((t) => t['local_id']?.toString() == id);
-    if (idx < 0) throw StateError('Turno $id no encontrado en cola');
+      final idx = all.indexWhere((t) => t['local_id']?.toString() == id);
+      if (idx < 0) throw StateError('Turno $id no encontrado en cola');
 
-    all[idx] = {
-      ...all[idx],
-      'status': offlineTurnoStatusClosedPending,
-      'client_uuid_cierre': clientUuidCierre,
-      'fecha_cierre':
-          cierre['fecha_cierre'] ?? DateTime.now().toIso8601String(),
-      'cierre': cierre,
-      if (resumen != null) 'resumen': resumen,
-    };
-    await _persistOfflineTurnos(all);
-    print('🔒 Turno offline cerrado (pending sync): $id');
+      all[idx] = {
+        ...all[idx],
+        'status': offlineTurnoStatusClosedPending,
+        'client_uuid_cierre': clientUuidCierre,
+        'fecha_cierre':
+            cierre['fecha_cierre'] ?? DateTime.now().toIso8601String(),
+        'cierre': cierre,
+        if (resumen != null) 'resumen': resumen,
+      };
+      await _persistOfflineTurnos(all);
+      print('🔒 Turno offline cerrado (pending sync): $id');
+    });
   }
 
   /// Turnos cerrados pendientes de sync (cuadres locales).
@@ -2081,11 +2185,13 @@ class UserPreferencesService {
           // Fallback legacy por ventana de fechas
           final created = o['fecha_creacion'] ?? o['created_offline_at'];
           if (created == null) return false;
-          final dt = DateTime.tryParse(created.toString());
+          final dt = DateTime.tryParse(created.toString())?.toUtc();
           final from = DateTime.tryParse(
             '${turnoEntry['fecha_apertura'] ?? ''}',
-          );
-          final to = DateTime.tryParse('${turnoEntry['fecha_cierre'] ?? ''}');
+          )?.toUtc();
+          final to = DateTime.tryParse(
+            '${turnoEntry['fecha_cierre'] ?? ''}',
+          )?.toUtc();
           if (dt == null || from == null) return false;
           if (dt.isBefore(from)) return false;
           if (to != null && dt.isAfter(to)) return false;
@@ -2177,31 +2283,56 @@ class UserPreferencesService {
   }
 
   Future<void> setOfflineTurnoServerId(String localId, int serverId) async {
-    final all = await getOfflineTurnos();
-    final idx = all.indexWhere((t) => t['local_id']?.toString() == localId);
-    if (idx < 0) return;
-    all[idx]['server_id_turno'] = serverId;
-    final apertura = all[idx]['apertura'];
-    if (apertura is Map) {
-      all[idx]['apertura'] = {
-        ...Map<String, dynamic>.from(apertura),
-        'server_id_turno': serverId,
-        'id': serverId,
-      };
-    }
-    await _persistOfflineTurnos(all);
+    await _withOfflineTurnosLock(() async {
+      final all = await getOfflineTurnos();
+      final idx = all.indexWhere((t) => t['local_id']?.toString() == localId);
+      if (idx < 0) return;
+      all[idx]['server_id_turno'] = serverId;
+      final apertura = all[idx]['apertura'];
+      if (apertura is Map) {
+        all[idx]['apertura'] = {
+          ...Map<String, dynamic>.from(apertura),
+          'server_id_turno': serverId,
+          'id': serverId,
+        };
+      }
+      await _persistOfflineTurnos(all);
+    });
   }
 
-  Future<void> markOfflineTurnoSynced(String localId) async {
-    final all = await getOfflineTurnos();
-    final idx = all.indexWhere((t) => t['local_id']?.toString() == localId);
-    if (idx < 0) return;
-    all[idx]['status'] = offlineTurnoStatusSynced;
-    all[idx]['synced_at'] = DateTime.now().toIso8601String();
-    // Quitar synced de la cola activa para no crecer sin límite.
-    all.removeAt(idx);
-    await _persistOfflineTurnos(all);
-    print('✅ Turno offline sincronizado y retirado de cola: $localId');
+  /// Marca un turno como sincronizado y lo retira de la cola.
+  /// Devuelve `true` solo si ya no queda como pendiente tras persistir.
+  Future<bool> markOfflineTurnoSynced(String localId) async {
+    if (localId.isEmpty) return false;
+
+    return _withOfflineTurnosLock(() async {
+      final all = await getOfflineTurnos();
+      final idx = all.indexWhere((t) => t['local_id']?.toString() == localId);
+      if (idx < 0) {
+        // Ya no está en cola → tratado como sincronizado.
+        print('ℹ️ markOfflineTurnoSynced: $localId ya no está en cola');
+        return true;
+      }
+
+      all.removeAt(idx);
+      await _persistOfflineTurnos(all);
+
+      // Verificar lectura real (evita reportar OK si SharedPreferences falló).
+      final still = await getOfflineTurnoByLocalId(localId);
+      final pending =
+          still != null &&
+          (still['status'] == offlineTurnoStatusOpen ||
+              still['status'] == offlineTurnoStatusClosedPending);
+      if (pending) {
+        print(
+          '❌ markOfflineTurnoSynced: $localId sigue pendiente tras persistir',
+        );
+        return false;
+      }
+
+      print('✅ Turno offline sincronizado y retirado de cola: $localId');
+      return true;
+    });
   }
 
   /// Purga órdenes synced+finales de un local_turno_id concreto.
@@ -2231,11 +2362,32 @@ class UserPreferencesService {
   }
 
   /// Guardar / actualizar el turno **abierto** (compat). Actualiza la cola.
+  /// Guarda/actualiza en cache el turno abierto que llegó del SERVIDOR
+  /// (apertura hecha online), para poder seguir operando si luego se pierde
+  /// la conexión. Marca explícitamente `origen_apertura: 'online'` y limpia
+  /// `created_offline_at`/`tipo_operacion` heredados de una entrada previa
+  /// de la cola offline, para que no se confunda con una apertura hecha
+  /// realmente offline (ver `_isOfflineTurno` en apertura_screen.dart).
   Future<void> saveOfflineTurno(Map<String, dynamic> turnoData) async {
+    // La fila cruda de `app_dat_caja_turno` (turnoData) no tiene columna
+    // `usuario` (UUID), sólo `id_vendedor` (int). Sin este fallback, un
+    // turno abierto online y cacheado aquí para resiliencia offline puede
+    // quedar sin usuario válido, y el replay posterior falla con
+    // "invalid input syntax for type uuid" al intentar reabrirlo.
+    Future<String?> resolveUsuario() async {
+      final direct = turnoData['usuario']?.toString();
+      if (direct != null && direct.isNotEmpty) return direct;
+      final userData = await getUserData();
+      final current = userData['userId']?.toString();
+      return (current != null && current.isNotEmpty) ? current : null;
+    }
+
     final open = await getOpenOfflineTurno();
     if (open != null) {
       final localId = open['local_id']?.toString();
       if (localId == null) return;
+      final usuario =
+          await resolveUsuario() ?? open['usuario']?.toString();
       final mergedApertura = {
         ...Map<String, dynamic>.from(
           open['apertura'] is Map
@@ -2245,6 +2397,9 @@ class UserPreferencesService {
         ...turnoData,
         'local_id': localId,
         'local_turno_id': localId,
+        'origen_apertura': 'online',
+        'created_offline_at': null,
+        if (usuario != null) 'usuario': usuario,
       };
       await upsertOfflineTurno({
         ...open,
@@ -2253,7 +2408,7 @@ class UserPreferencesService {
             turnoData['fecha_apertura'] ?? open['fecha_apertura'],
         'id_tpv': turnoData['id_tpv'] ?? open['id_tpv'],
         'id_vendedor': turnoData['id_vendedor'] ?? open['id_vendedor'],
-        'usuario': turnoData['usuario'] ?? open['usuario'],
+        if (usuario != null) 'usuario': usuario,
         'server_id_turno':
             turnoData['server_id_turno'] ??
             (turnoData['id'] is int ? turnoData['id'] : open['server_id_turno']),
@@ -2264,7 +2419,14 @@ class UserPreferencesService {
     }
 
     // Sin open: crear uno desde el payload (p.ej. cache de turno online).
-    await createOpenOfflineTurno(aperturaPayload: turnoData);
+    final usuario = await resolveUsuario();
+    await createOpenOfflineTurno(
+      aperturaPayload: {
+        ...turnoData,
+        'origen_apertura': 'online',
+        if (usuario != null) 'usuario': usuario,
+      },
+    );
   }
 
   /// Obtener turno abierto offline (compat: vista aplanada del open).
@@ -2276,11 +2438,13 @@ class UserPreferencesService {
 
   /// Quita el turno abierto de la cola (no borra cerrados pendientes).
   Future<void> clearOfflineTurno() async {
-    final all = await getOfflineTurnos();
-    final filtered =
-        all.where((t) => t['status'] != offlineTurnoStatusOpen).toList();
-    await _persistOfflineTurnos(filtered);
-    print('🗑️ Turno offline abierto eliminado (cola de cerrados conservada)');
+    await _withOfflineTurnosLock(() async {
+      final all = await getOfflineTurnos();
+      final filtered =
+          all.where((t) => t['status'] != offlineTurnoStatusOpen).toList();
+      await _persistOfflineTurnos(filtered);
+      print('🗑️ Turno offline abierto eliminado (cola de cerrados conservada)');
+    });
   }
 
   /// Borra toda la cola de turnos offline.
@@ -2470,24 +2634,70 @@ class UserPreferencesService {
 
   /// ¿Hay datos offline sin sincronizar que se perderían al hacer logout?
   /// Considera órdenes pendientes, operaciones pendientes y turnos offline.
+  ///
+  /// Registra en el log CUÁL de las categorías disparó el resultado, para
+  /// poder diagnosticar reportes de "dice que hay pendientes pero no hay
+  /// nada" sin adivinar.
   Future<bool> hasUnsyncedOfflineData() async {
     try {
       final pendingOrders = await getPendingOrders();
-      final unsyncedOrders = pendingOrders.where((o) => o['synced'] != true);
-      if (unsyncedOrders.isNotEmpty) return true;
+      final unsyncedOrders =
+          pendingOrders.where((o) => o['synced'] != true).toList();
+      if (unsyncedOrders.isNotEmpty) {
+        print(
+          '🔎 hasUnsyncedOfflineData: ${unsyncedOrders.length} orden(es) '
+          'sin sincronizar: ${unsyncedOrders.map((o) => o['id']).toList()}',
+        );
+        return true;
+      }
 
       final operations = await getPendingOperations();
-      final unsyncedOps = operations.where((o) => o['synced'] != true);
-      if (unsyncedOps.isNotEmpty) return true;
+      final unsyncedOps =
+          operations.where((o) => o['synced'] != true).toList();
+      if (unsyncedOps.isNotEmpty) {
+        print(
+          '🔎 hasUnsyncedOfflineData: ${unsyncedOps.length} operación(es) '
+          'pendiente(s): ${unsyncedOps.map((o) => o['type']).toList()}',
+        );
+        return true;
+      }
 
+      // Un turno "open" con `server_id_turno` ya asignado significa que su
+      // apertura SÍ está sincronizada en el servidor (solo sigue activo);
+      // no hay nada de esa apertura pendiente de subir. Sólo cuenta como
+      // pendiente real un turno cerrado sin sincronizar, o uno abierto que
+      // todavía no se ha podido registrar en el servidor.
       final pendingTurnos = await getOfflineTurnosPendingSync();
-      if (pendingTurnos.isNotEmpty) return true;
+      final trulyPendingTurnos =
+          pendingTurnos.where((t) {
+            if (t['status'] == offlineTurnoStatusClosedPending) return true;
+            return t['server_id_turno'] == null;
+          }).toList();
+      if (trulyPendingTurnos.isNotEmpty) {
+        print(
+          '🔎 hasUnsyncedOfflineData: ${trulyPendingTurnos.length} turno(s) '
+          'pendiente(s): ${trulyPendingTurnos.map((t) => '${t['local_id']}(status=${t['status']}, server_id_turno=${t['server_id_turno']})').toList()}',
+        );
+        return true;
+      }
 
       final egresos = await getEgresosOffline();
-      if (egresos.isNotEmpty) return true;
+      if (egresos.isNotEmpty) {
+        print(
+          '🔎 hasUnsyncedOfflineData: ${egresos.length} egreso(s) '
+          'sin sincronizar',
+        );
+        return true;
+      }
 
       final adminPending = await OfflineDatabaseService().countPendingAdminOps();
-      if (adminPending > 0) return true;
+      if (adminPending > 0) {
+        print(
+          '🔎 hasUnsyncedOfflineData: $adminPending operación(es) admin '
+          'pendiente(s)',
+        );
+        return true;
+      }
 
       return false;
     } catch (e) {
@@ -2631,96 +2841,40 @@ class UserPreferencesService {
     }
   }
 
-  /// Actualizar resumen de cierre con órdenes offline
-  /// Suma las nuevas órdenes offline al resumen existente
+  /// Actualizar resumen de cierre con órdenes del **turno abierto**.
+  ///
+  /// No usa el resumen diario crudo ni órdenes de otros turnos: reconstruye
+  /// el cuadre desde la cola offline (local_turno_id / ventana de fechas).
   Future<Map<String, dynamic>?> getResumenCierreWithOfflineOrders() async {
     try {
-      // Obtener resumen base desde cache
-      final resumenBase = await getResumenCierreCache();
-      if (resumenBase == null) {
-        print('ℹ️ No hay resumen de cierre base para actualizar');
-        return null;
+      final open = await getOpenOfflineTurno();
+      if (open != null) {
+        final cuadre = await buildOfflineTurnoCuadreFromLocalData(open);
+        final base = await getResumenCierreCache();
+        final merged = <String, dynamic>{
+          if (base != null) ...base,
+          ...cuadre,
+          'total_ventas': cuadre['ventas_totales'],
+          'ventas_totales': cuadre['ventas_totales'],
+          'efectivo_real': cuadre['total_efectivo'],
+          'total_efectivo': cuadre['total_efectivo'],
+          'efectivo_esperado': cuadre['efectivo_esperado'],
+          'ordenes_locales': cuadre['ordenes_locales'],
+        };
+        print(
+          '📊 Resumen de cierre desde turno open '
+          '${open['local_id']}: ventas=${cuadre['ventas_totales']} '
+          'ops=${cuadre['operaciones_totales']}',
+        );
+        return merged;
       }
 
-      // Obtener órdenes offline pendientes
-      final orderService = OrderService();
-      final ordenes = orderService.orders;
-
-      // Filtrar órdenes offline (las que no han sido sincronizadas)
-      final ordenesOffline =
-          ordenes
-              .where(
-                (orden) =>
-                    orden.status.name == 'pendienteDeSincronizacion' ||
-                    orden.status.name == 'enviada',
-              )
-              .toList();
-
-      if (ordenesOffline.isEmpty) {
-        print('ℹ️ No hay órdenes offline para agregar al resumen');
-        return resumenBase;
-      }
-
-      // Calcular totales de órdenes offline
-      double ventasOffline = 0.0;
-      double efectivoOffline = 0.0;
-      double transferenciasOffline = 0.0;
-      int productosVendidosOffline = 0;
-
-      for (final orden in ordenesOffline) {
-        ventasOffline += orden.total;
-        productosVendidosOffline += orden.items.fold<double>(
-          0.0,
-          (sum, item) => sum + item.cantidad,
-        ).round();
-
-        // Estimar método de pago (70% efectivo, 30% transferencias)
-        final efectivoOrden = orden.total * 0.7;
-        final transferenciasOrden = orden.total * 0.3;
-        efectivoOffline += efectivoOrden;
-        transferenciasOffline += transferenciasOrden;
-      }
-
-      // Crear resumen actualizado
-      final resumenActualizado = Map<String, dynamic>.from(resumenBase);
-
-      // Sumar valores offline a los existentes usando los nombres correctos del cache
-      final ventasBase =
-          (resumenBase['ventas_totales'] ?? resumenBase['total_ventas'] ?? 0.0)
-              as double;
-      final efectivoBase =
-          (resumenBase['efectivo_real'] ?? resumenBase['total_efectivo'] ?? 0.0)
-              as double;
-      final transferenciasBase =
-          (resumenBase['total_transferencias'] ?? 0.0) as double;
-      final productosBase = (resumenBase['productos_vendidos'] ?? 0) as int;
-
-      // Actualizar con nombres consistentes (usar los del cache original)
-      resumenActualizado['ventas_totales'] = ventasBase + ventasOffline;
-      resumenActualizado['efectivo_real'] = efectivoBase + efectivoOffline;
-      resumenActualizado['total_transferencias'] =
-          transferenciasBase + transferenciasOffline;
-      resumenActualizado['productos_vendidos'] =
-          productosBase + productosVendidosOffline;
-      resumenActualizado['ordenes_offline'] = ordenesOffline.length;
-      resumenActualizado['ventas_offline'] = ventasOffline;
-
-      // Recalcular totales
-      final totalVentas = resumenActualizado['ventas_totales'] as double;
-      final totalProductos = resumenActualizado['productos_vendidos'] as int;
-      resumenActualizado['ticket_promedio'] =
-          totalProductos > 0 ? totalVentas / totalProductos : 0.0;
-
-      print('📊 Resumen de cierre actualizado con órdenes offline:');
-      print('  - Órdenes offline: ${ordenesOffline.length}');
-      print('  - Ventas offline: \$${ventasOffline.toStringAsFixed(2)}');
-      print('  - Total ventas: \$${totalVentas.toStringAsFixed(2)}');
-      print('  - Productos vendidos: $totalProductos');
-
-      return resumenActualizado;
+      // Sin turno open local: no mezclar órdenes ajenas al resumen base.
+      print('ℹ️ No hay turno open offline; se usa resumen base sin sumar órdenes');
+      return await getResumenCierreCache();
     } catch (e) {
       print('❌ Error actualizando resumen con órdenes offline: $e');
-      return await getResumenCierreCache(); // Fallback al resumen base
+      return await getResumenCierreCache();
     }
   }
 
@@ -3403,6 +3557,31 @@ class UserPreferencesService {
     } catch (e) {
       print('❌ Error obteniendo denominaciones para $codigoMoneda: $e');
       return [];
+    }
+  }
+
+  /// IDs de denominaciones que el vendedor decidió ocultar del contador.
+  Future<Set<int>> getHiddenDenominations() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final hiddenJson = prefs.getString(_hiddenDenominationsKey);
+      if (hiddenJson == null) return {};
+      final hiddenList = jsonDecode(hiddenJson) as List<dynamic>;
+      return hiddenList.map((e) => e as int).toSet();
+    } catch (e) {
+      print('❌ Error cargando denominaciones ocultas: $e');
+      return {};
+    }
+  }
+
+  Future<void> saveHiddenDenominations(Set<int> ids) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final hiddenJson = jsonEncode(ids.toList());
+      await prefs.setString(_hiddenDenominationsKey, hiddenJson);
+      print('💰 Denominaciones ocultas guardadas: ${ids.length}');
+    } catch (e) {
+      print('❌ Error guardando denominaciones ocultas: $e');
     }
   }
 

@@ -72,7 +72,8 @@ class _PendingOrdersFABState extends State<PendingOrdersFAB>
   }
 
   Future<void> _loadPendingOrders() async {
-    final orders = await _userPrefs.getPendingOrders();
+    // Vendedor: no listar órdenes de turnos closed_pending_sync (admin sync).
+    final orders = await _userPrefs.getSellerVisiblePendingOrders();
     // Solo las que aún no se subieron al servidor
     final unsynced =
         orders.where((o) => o['synced'] != true).toList(growable: false);

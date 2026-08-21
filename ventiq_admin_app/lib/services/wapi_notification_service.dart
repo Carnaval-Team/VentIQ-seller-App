@@ -204,9 +204,14 @@ class WapiNotificationService {
   /// El backend reutiliza esas mismas filas de `app_wapi_envio_log` (no
   /// inserta nuevas), así que la tanda original se completa en el historial
   /// en lugar de duplicarse.
+  ///
+  /// [summaryProductIds] son los productos de la tanda COMPLETA (no sólo los
+  /// pendientes). Sin ellos, el resumen final listaría únicamente lo que se
+  /// reanudó — el usuario vería "10 productos" tras un envío de 70.
   Future<Map<String, dynamic>> resumeTanda({
     required int idSesion,
     required List<int> logIds,
+    List<int> summaryProductIds = const <int>[],
     int delayMinSeconds = 5,
     int delayMaxSeconds = 10,
   }) async {
@@ -216,6 +221,8 @@ class WapiNotificationService {
     return _invoke('wapi-send-products', {
       'id_sesion': idSesion,
       'resume_log_ids': logIds,
+      if (summaryProductIds.isNotEmpty)
+        'summary_product_ids': summaryProductIds,
       // El backend los deriva de los logs; van vacíos para satisfacer el
       // contrato del endpoint.
       'product_ids': <int>[],

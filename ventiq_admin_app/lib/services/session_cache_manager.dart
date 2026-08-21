@@ -2,6 +2,7 @@ import 'permissions_service.dart';
 import 'subscription_guard_service.dart';
 import 'subscription_service.dart';
 import 'consignacion_service.dart';
+import 'store_selector_service.dart';
 
 /// Punto único para invalidar los cachés en memoria de los servicios
 /// singleton. En Flutter Web los singletons sobreviven a la navegación SPA,
@@ -38,6 +39,9 @@ class SessionCacheManager {
     await SubscriptionGuardService().clearCache();
 
     ConsignacionService.clearAllCache();
+
+    // Tiendas y selección actual del selector de tienda.
+    StoreSelectorService().clear();
 
     print('🧹 SessionCacheManager: todos los cachés invalidados (logout)');
   }

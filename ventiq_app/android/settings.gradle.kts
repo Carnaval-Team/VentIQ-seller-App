@@ -23,3 +23,17 @@ plugins {
 }
 
 include(":app")
+
+// another_telephony 0.4.1 requests AGP 7.1.3 (never published). Rewrite before its buildscript resolves.
+gradle.beforeProject {
+    if (name != "another_telephony") return@beforeProject
+    buildscript.configurations.configureEach {
+        if (name != "classpath") return@configureEach
+        resolutionStrategy.eachDependency {
+            if (requested.group == "com.android.tools.build" && requested.name == "gradle") {
+                useVersion("8.11.1")
+                because("Replace nonexistent AGP 7.1.3 from another_telephony")
+            }
+        }
+    }
+}

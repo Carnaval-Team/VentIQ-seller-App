@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Textos visibles en el selector de widgets del lanzador. -->
+<resources>
+    <string name="vq_widget_mini_dashboard_label">Inventtia · Resumen</string>
+    <string name="vq_widget_mini_dashboard_desc">Gastos, ganancia neta, órdenes y tasa del dólar del periodo que elijas.</string>
+
+    <string name="vq_widget_sales_label">Inventtia · Ventas</string>
+    <string name="vq_widget_sales_desc">Ventas en tiempo real o por rango de fechas, con desglose por TPV.</string>
+
+    <string name="vq_widget_product_label">Inventtia · Producto</string>
+    <string name="vq_widget_product_desc">Precio, costo en CUP y USD, ventas e inventario de un producto.</string>
+</resources>

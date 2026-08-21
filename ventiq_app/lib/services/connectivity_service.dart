@@ -4,6 +4,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../config/supabase_config.dart';
+import 'server_time_service.dart';
 
 /// Servicio para monitorear el estado de conectividad de la aplicación
 /// Detecta cambios en la conexión de red y valida conectividad real a internet
@@ -165,6 +166,11 @@ class ConnectivityService {
           'apikey': SupabaseConfig.supabaseAnonKey,
         },
       ).timeout(_timeoutDuration);
+      // Aprovechar esta respuesta para corregir el desfasaje de reloj del
+      // dispositivo contra la hora real del servidor (header HTTP `Date`).
+      // Así, fecha_apertura/fecha_cierre/fecha_creacion guardadas offline
+      // pueden corregirse aunque el reloj local esté mal ajustado.
+      unawaited(ServerTimeService().syncFromHeaders(response.headers));
       // Cualquier respuesta HTTP del servidor (incluso 4xx) confirma conexión.
       // Solo 5xx o errores de red indican problemas reales.
       final hasConnection =

@@ -64,11 +64,15 @@ class _AdminPrepareOfflineScreenState extends State<AdminPrepareOfflineScreen> {
       final storeId = await _prefs.getIdTienda();
       if (storeId != null && email != null) {
         final users = await _prefs.getOfflineUsersForStore(storeId);
-        _adminRegistered = users.any(
+        final adminCreds = await _prefs.getDeviceFullOfflineAdminCredentials();
+        final hasAdminInUsers = users.any(
           (u) =>
               u['email']?.toString().toLowerCase() == email.toLowerCase() &&
               (u['entryRole'] == 'gerente' || u['entryRole'] == 'supervisor'),
         );
+        _adminRegistered = hasAdminInUsers &&
+            (adminCreds['email']?.isNotEmpty ?? false) &&
+            (adminCreds['password']?.isNotEmpty ?? false);
       }
     } catch (e) {
       _error = e.toString();

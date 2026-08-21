@@ -733,8 +733,28 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                   'sku_producto': item['sku_producto'],
                   'sku_ubicacion': ubicacionData?['sku_codigo'],
                   'cantidad_disponible': cantidadDisponible,
-                  'ubicacion_nombre': ubicacionData?['denominacion'],
-                  'almacen_nombre': almacenData?['denominacion'],
+                  'ubicacion_nombre': (() {
+                    for (final v in [
+                      item['ubicacion_nombre'],
+                      item['denominacion_ubicacion'],
+                      item['ubicacion_label'],
+                      ubicacionData?['denominacion'],
+                    ]) {
+                      final s = v?.toString();
+                      if (s != null && s.isNotEmpty) return s;
+                    }
+                    return null;
+                  })(),
+                  'almacen_nombre': (() {
+                    for (final v in [
+                      item['almacen_nombre'],
+                      almacenData?['denominacion'],
+                    ]) {
+                      final s = v?.toString();
+                      if (s != null && s.isNotEmpty) return s;
+                    }
+                    return null;
+                  })(),
                 };
 
                 variantes.add(

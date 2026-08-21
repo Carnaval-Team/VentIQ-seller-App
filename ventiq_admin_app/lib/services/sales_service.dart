@@ -317,13 +317,17 @@ class SalesService {
     DateTime? fechaHasta,
     /// 'creacion' | 'completado'
     String filtroFecha = 'creacion',
+    /// Tienda a consultar. Si es null se usa la tienda activa de las
+    /// preferencias. Lo usan los Home Screen Widgets, donde cada instancia
+    /// puede apuntar a una tienda distinta de la activa en la app.
+    int? storeId,
   }) async {
     final sw = Stopwatch()..start();
     print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     print('📊 [getProductSalesReport] Iniciando...');
     try {
       final userPrefs = UserPreferencesService();
-      final idTienda = await userPrefs.getIdTienda();
+      final idTienda = storeId ?? await userPrefs.getIdTienda();
       if (idTienda == null) {
         print('❌ [getProductSalesReport] No se pudo obtener id_tienda');
         return [];
@@ -560,11 +564,14 @@ class SalesService {
   static Future<List<ProductAnalysis>> getProductAnalysis({
     DateTime? fechaDesde,
     DateTime? fechaHasta,
+    /// Tienda a consultar; null = tienda activa. Necesario para los Home
+    /// Screen Widgets, que pueden apuntar a otra tienda.
+    int? storeId,
   }) async {
     try {
       // Get store ID from preferences
       final userPrefs = UserPreferencesService();
-      final idTienda = await userPrefs.getIdTienda();
+      final idTienda = storeId ?? await userPrefs.getIdTienda();
       if (idTienda == null) {
         print('Error: No se pudo obtener el ID de tienda');
         return [];
@@ -685,11 +692,14 @@ class SalesService {
     DateTime? fechaHasta,
     String? uuidUsuario,
     bool hastaCierreTurno = false,
+    /// Tienda a consultar; null = tienda activa. Necesario para los Home
+    /// Screen Widgets, que pueden apuntar a otra tienda.
+    int? storeId,
   }) async {
     try {
       // Get store ID from preferences
       final userPrefs = UserPreferencesService();
-      final idTienda = await userPrefs.getIdTienda();
+      final idTienda = storeId ?? await userPrefs.getIdTienda();
       if (idTienda == null) {
         print('Error: No se pudo obtener el ID de tienda');
         return [];

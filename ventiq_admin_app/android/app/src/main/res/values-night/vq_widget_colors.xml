@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Variante oscura de la paleta de los Home Screen Widgets.
+  Mismos nombres que values/vq_widget_colors.xml: Android resuelve cuál usar
+  según el tema activo del sistema, sin código extra.
+-->
+<resources>
+    <color name="vq_widget_bg_start">#FF141A24</color>
+    <color name="vq_widget_bg_end">#FF1C2735</color>
+    <color name="vq_widget_stroke">#33FFFFFF</color>
+
+    <color name="vq_widget_text_primary">#FFF3F5F9</color>
+    <color name="vq_widget_text_secondary">#FFA0AAB8</color>
+
+    <color name="vq_widget_primary">#FF7FA9E8</color>
+    <color name="vq_widget_success">#FF34D399</color>
+    <color name="vq_widget_error">#FFFF7A73</color>
+    <color name="vq_widget_warning">#FFFF9560</color>
+    <color name="vq_widget_info">#FF7CB8F5</color>
+
+    <color name="vq_widget_chip_bg">#1FFFFFFF</color>
+    <color name="vq_widget_spark_fill">#4D7FA9E8</color>
+</resources>

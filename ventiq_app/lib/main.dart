@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
@@ -35,11 +37,22 @@ import 'screens/admin/admin_adjustment_screen.dart';
 import 'screens/admin/admin_products_screen.dart';
 import 'screens/admin/admin_prepare_offline_screen.dart';
 import 'screens/admin/admin_turnos_offline_screen.dart';
+import 'screens/admin/admin_pending_ops_screen.dart';
+import 'screens/admin/admin_extraction_screen.dart';
+import 'screens/admin/admin_transfer_screen.dart';
+import 'screens/admin/admin_warehouses_screen.dart';
+import 'screens/admin/admin_sale_agreement_screen.dart';
+import 'screens/admin/admin_suppliers_screen.dart';
+import 'screens/admin/admin_customers_screen.dart';
+import 'screens/admin/admin_ipv_screen.dart';
+import 'screens/admin/admin_tpv_prices_screen.dart';
+import 'screens/admin/admin_tpv_vendors_screen.dart';
 import 'screens/offline_user_switch_screen.dart';
 import 'services/auth_service.dart';
 import 'services/user_preferences_service.dart';
 import 'services/store_config_service.dart';
 import 'services/offline_database_service.dart';
+import 'services/server_time_service.dart';
 import 'utils/platform_utils.dart';
 import 'utils/global_navigator.dart';
 import 'widgets/sync_blocking_overlay.dart';
@@ -162,6 +175,14 @@ void main() async {
   // NavigationHelper pueda decidir el destino del botón Home sin Future.
   await StoreConfigService.primeModoRestauranteCache();
 
+  // Cargar el último desfasaje de reloj conocido contra el servidor (se
+  // corrige de nuevo cada vez que hay una petición de red exitosa) para que
+  // las fechas guardadas offline (apertura/cierre/órdenes) sean lo más fieles
+  // posible a la hora real, aunque el reloj del dispositivo esté mal.
+  await ServerTimeService().loadPersistedOffset();
+  // Intento de refresco inmediato (no bloqueante si no hay red).
+  unawaited(ServerTimeService().refreshFromNetwork());
+
   runApp(const MyApp());
 }
 
@@ -257,9 +278,20 @@ class MyApp extends StatelessWidget {
         },
         '/admin-home': (context) => const AdminHomeScreen(),
         '/admin-stock': (context) => const AdminStockScreen(),
+        '/admin-warehouses': (context) => const AdminWarehousesScreen(),
         '/admin-reception': (context) => const AdminReceptionScreen(),
+        '/admin-extraction': (context) => const AdminExtractionScreen(),
+        '/admin-transfer': (context) => const AdminTransferScreen(),
+        '/admin-sale-agreement': (context) =>
+            const AdminSaleAgreementScreen(),
+        '/admin-suppliers': (context) => const AdminSuppliersScreen(),
+        '/admin-customers': (context) => const AdminCustomersScreen(),
+        '/admin-ipv': (context) => const AdminIpvScreen(),
+        '/admin-tpv-prices': (context) => const AdminTpvPricesScreen(),
+        '/admin-tpv-vendors': (context) => const AdminTpvVendorsScreen(),
         '/admin-adjustment': (context) => const AdminAdjustmentScreen(),
         '/admin-products': (context) => const AdminProductsScreen(),
+        '/admin-pending-ops': (context) => const AdminPendingOpsScreen(),
         '/admin-prepare-offline': (context) =>
             const AdminPrepareOfflineScreen(),
         '/admin-turnos-offline': (context) =>

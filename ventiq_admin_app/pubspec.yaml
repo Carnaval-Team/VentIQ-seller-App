@@ -4,10 +4,12 @@ publish_to: 'none'
 
 # Debe ir en paralelo con assets/changelog.json (current_version + build): la
 # app muestra la versión leyendo ese JSON, no el pubspec.
-version: 2.7.0+270
+version: 2.8.0+280
 
 environment:
-  sdk: ^3.7.0
+  # Elevado de ^3.7.0 a ^3.10.0: requisito de home_widget 0.9.3
+  # (Flutter 3.44 / Dart 3.12 instalado ya lo cumple).
+  sdk: ^3.10.0
 
 dependencies:
   flutter:
@@ -75,6 +77,13 @@ dependencies:
 
   # Detección de zona horaria IANA del dispositivo (para programaciones WAPI)
   flutter_timezone: ^5.0.2
+
+  # Home Screen Widgets (Android). home_widget arrastra androidx.glance:glance-appwidget,
+  # por eso los widgets nativos se escriben con Jetpack Glance/Compose.
+  home_widget: ^0.9.3
+
+  # Refresco periódico de los widgets en background (mínimo real de Android: 15 min)
+  workmanager: ^0.10.9
 
 dev_dependencies:
   flutter_test:

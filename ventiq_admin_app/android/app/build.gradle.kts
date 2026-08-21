@@ -1,6 +1,8 @@
 plugins {
     id("com.android.application")
     id("kotlin-android")
+    // Compose compiler: requerido por los widgets de pantalla de inicio (Jetpack Glance).
+    id("org.jetbrains.kotlin.plugin.compose")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
@@ -39,6 +41,11 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+    buildFeatures {
+        // Jetpack Glance (Home Screen Widgets) se escribe con Compose.
+        compose = true
+    }
 }
 
 flutter {
@@ -49,4 +56,19 @@ dependencies {
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     // Core library desugaring for flutter_local_notifications
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+
+    // ── Home Screen Widgets (Jetpack Glance) ──────────────────────────────────
+    // Los receivers de Glance extienden clases de home_widget
+    // (HomeWidgetGlanceStateDefinition, HomeWidgetGlanceWidgetReceiver...), y el
+    // classpath que inyecta Flutter no las expone al módulo :app. Se declara el
+    // proyecto del plugin explícitamente; `:home_widget` lo incluye
+    // FlutterAppPluginLoaderPlugin en settings.gradle.kts.
+    implementation(project(":home_widget"))
+
+    // glance-appwidget ya viene del plugin; se fija la versión y se añade
+    // material3 para GlanceTheme/colores dinámicos.
+    implementation("androidx.glance:glance-appwidget:1.1.1")
+    implementation("androidx.glance:glance-material3:1.1.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
 }

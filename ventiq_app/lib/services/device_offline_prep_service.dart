@@ -36,6 +36,7 @@ class DeviceOfflinePrepService {
     SyncModule.promotions,
     SyncModule.categories,
     SyncModule.products,
+    SyncModule.layouts,
     SyncModule.orders,
     SyncModule.turno,
     SyncModule.egresos,
@@ -368,16 +369,50 @@ class DeviceOfflinePrepService {
       );
     }
     final storeId = await _prefs.getIdTienda();
-    final adminCreds = await _prefs.getDeviceFullOfflineAdminCredentials();
-    if (storeId == null ||
-        adminCreds['email'] == null ||
-        adminCreds['password'] == null) {
+    if (storeId == null) {
       throw Exception('Falta registrar al administrador');
     }
+
+    final adminCreds = await _prefs.getDeviceFullOfflineAdminCredentials();
+    final String adminEmail;
+    final String adminPassword;
+    if (adminCreds['email'] != null && adminCreds['password'] != null) {
+      adminEmail = adminCreds['email']!;
+      adminPassword = adminCreds['password']!;
+    } else {
+      // Si el admin está registrado en offline_users pero faltan las claves
+      // de dispositivo full-offline, recuperarlas del perfil guardado.
+      final users = await _prefs.getOfflineUsersForStore(storeId);
+      final admin = users.firstWhere(
+        (u) {
+          final role = u['entryRole']?.toString();
+          return (role == 'gerente' || role == 'supervisor') &&
+              u['email'] != null &&
+              u['password'] != null;
+        },
+        orElse: () => <String, dynamic>{},
+      );
+      final recoveredEmail = admin['email']?.toString();
+      final recoveredPassword = admin['password']?.toString();
+      if (recoveredEmail == null ||
+          recoveredEmail.isEmpty ||
+          recoveredPassword == null ||
+          recoveredPassword.isEmpty) {
+        throw Exception('Falta registrar al administrador');
+      }
+      adminEmail = recoveredEmail;
+      adminPassword = recoveredPassword;
+      await _prefs.setDeviceFullOfflineReady(
+        storeId: storeId,
+        adminEmail: recoveredEmail,
+        adminPassword: recoveredPassword,
+      );
+    }
+
     await _prefs.setDeviceFullOfflineReady(
       storeId: storeId,
-      adminEmail: adminCreds['email']!,
-      adminPassword: adminCreds['password']!,
+      adminEmail: adminEmail,
+      adminPassword: adminPassword,
     );
 
     await activateAppOfflineMode();

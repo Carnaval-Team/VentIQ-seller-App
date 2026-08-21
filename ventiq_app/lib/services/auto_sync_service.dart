@@ -15,6 +15,8 @@ import 'promotion_service.dart';
 import 'product_detail_service.dart';
 import 'offline_license_service.dart';
 import 'admin_inventory_service.dart';
+import 'inventory_service.dart';
+import 'offline_database_service.dart';
 import '../utils/uuid_generator.dart';
 
 /// Servicio para sincronización automática periódica de datos
@@ -234,6 +236,7 @@ class AutoSyncService {
     }
     if (_syncCount == 0 || _syncCount % 5 == 0) {
       modules.add(SyncModule.products);
+      modules.add(SyncModule.layouts);
     }
     if (_syncCount % 2 == 0) {
       modules.add(SyncModule.orders);
@@ -401,6 +404,7 @@ class AutoSyncService {
           final detalle = detallesPorId[product['id'] as int];
           if (detalle != null) {
             product['detalles_completos'] = detalle;
+            _normalizeInventarioUbicaciones(product);
             _alignProductCantidadWithInventario(product);
           }
         }
@@ -464,6 +468,22 @@ class AutoSyncService {
         }
       }
 
+      // Métricas de ubicación para diagnóstico.
+      var withDetalles = 0;
+      var withUbicacion = 0;
+      for (final p in allProducts) {
+        if (p['detalles_completos'] != null) withDetalles++;
+        if (p['ubicacion_nombre'] != null &&
+            p['ubicacion_nombre'].toString().isNotEmpty) {
+          withUbicacion++;
+        }
+      }
+      print(
+        '  📍 Categoría "${category.name}": '
+        '$withDetalles/${allProducts.length} productos con detalles, '
+        '$withUbicacion con ubicación',
+      );
+
       productsByCategory[category.id.toString()] = allProducts;
       print(
         '  ✅ Categoría "${category.name}": ${allProducts.length} productos sincronizados',
@@ -494,6 +514,73 @@ class AutoSyncService {
     }
     if (sum > 0) {
       product['cantidad'] = sum;
+    }
+  }
+
+  /// Aplana `ubicacion` anidada del RPC a campos que Admin Lite / POS usan:
+  /// `id_ubicacion`, `ubicacion_nombre`, `denominacion_ubicacion`, `almacen_nombre`.
+  void _normalizeInventarioUbicaciones(Map<String, dynamic> product) {
+    final detalle = product['detalles_completos'];
+    if (detalle is! Map) return;
+    final invRaw = detalle['inventario'];
+    if (invRaw is! List || invRaw.isEmpty) return;
+
+    final normalized = <Map<String, dynamic>>[];
+    for (final row in invRaw) {
+      if (row is! Map) continue;
+      final inv = Map<String, dynamic>.from(row);
+      final ubicacion = inv['ubicacion'] is Map
+          ? Map<String, dynamic>.from(inv['ubicacion'] as Map)
+          : null;
+      final almacen = ubicacion?['almacen'] is Map
+          ? Map<String, dynamic>.from(ubicacion!['almacen'] as Map)
+          : null;
+
+      final idUbicacion = (inv['id_ubicacion'] as num?)?.toInt() ??
+          (ubicacion?['id'] as num?)?.toInt();
+      final nombreUbicacion = inv['ubicacion_nombre']?.toString() ??
+          inv['denominacion_ubicacion']?.toString() ??
+          ubicacion?['denominacion']?.toString();
+      final nombreAlmacen = inv['almacen_nombre']?.toString() ??
+          almacen?['denominacion']?.toString();
+
+      if (idUbicacion != null) {
+        inv['id_ubicacion'] = idUbicacion;
+      }
+      if (nombreUbicacion != null && nombreUbicacion.isNotEmpty) {
+        inv['ubicacion_nombre'] = nombreUbicacion;
+        inv['denominacion_ubicacion'] = nombreUbicacion;
+        // String corto para UIs que hacen `ubicacion.toString()` sobre el map.
+        if (inv['ubicacion'] is! String) {
+          inv['ubicacion_label'] = nombreUbicacion;
+        }
+      }
+      if (nombreAlmacen != null && nombreAlmacen.isNotEmpty) {
+        inv['almacen_nombre'] = nombreAlmacen;
+      }
+      if (ubicacion != null && inv['sku_ubicacion'] == null) {
+        inv['sku_ubicacion'] = ubicacion['sku_codigo'];
+      }
+      normalized.add(inv);
+    }
+
+    product['detalles_completos'] = {
+      ...Map<String, dynamic>.from(detalle),
+      'inventario': normalized,
+    };
+
+    // Primer ubicación a nivel producto (atajos admin / ajuste).
+    final first = normalized.isNotEmpty ? normalized.first : null;
+    if (first != null) {
+      if (first['id_ubicacion'] != null) {
+        product['id_ubicacion'] = first['id_ubicacion'];
+      }
+      if (first['ubicacion_nombre'] != null) {
+        product['ubicacion_nombre'] = first['ubicacion_nombre'];
+      }
+      if (first['almacen_nombre'] != null) {
+        product['almacen_nombre'] = first['almacen_nombre'];
+      }
     }
   }
 
@@ -583,6 +670,47 @@ class AutoSyncService {
     return null;
   }
 
+  /// Resuelve el UUID EXACTO que exige `cerrar_turno` en el servidor para
+  /// poder cerrar el turno abierto de [idTpv].
+  ///
+  /// La función real (`fn_cerrar_turno_tpv`, verificada directamente en la
+  /// base) filtra así:
+  /// ```sql
+  /// WHERE ct.id_tpv = p_id_tpv AND ct.estado = 1 AND ct.creado_por = p_usuario
+  /// ```
+  /// Es decir, `p_usuario` debe coincidir con `app_dat_caja_turno.creado_por`
+  /// (el usuario que ejecutó la apertura), NO con el UUID del vendedor en
+  /// `app_dat_vendedor.uuid` (son campos distintos; usar el segundo es lo
+  /// que causaba que el cierre siguiera fallando aunque "coincidiera" el
+  /// vendedor). Se lee `creado_por` directo de la fila del turno.
+  Future<String?> _resolveUsuarioForOpenTpvTurno(int idTpv) async {
+    try {
+      final turnoRow =
+          await Supabase.instance.client
+              .from('app_dat_caja_turno')
+              .select('creado_por')
+              .eq('id_tpv', idTpv)
+              .eq('estado', 1)
+              .order('fecha_apertura', ascending: false, nullsFirst: false)
+              .limit(1)
+              .maybeSingle();
+      final creadoPor = turnoRow?['creado_por']?.toString();
+      if (creadoPor != null && creadoPor.isNotEmpty) {
+        print(
+          '  🔎 Usuario real (creado_por) del turno TPV $idTpv → $creadoPor',
+        );
+        return creadoPor;
+      }
+      return null;
+    } catch (e) {
+      print(
+        '  ⚠️ No se pudo resolver creado_por del turno abierto para TPV '
+        '$idTpv: $e',
+      );
+      return null;
+    }
+  }
+
   Future<Map<String, dynamic>?> _getOnlineOpenShift({
     required int idTpv,
     required int idVendedor,
@@ -603,15 +731,376 @@ class AutoSyncService {
     return null;
   }
 
+  int? _parseTurnoId(dynamic raw) {
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    return int.tryParse('$raw');
+  }
+
+  Future<bool> _isServerTurnoOpen(int serverId) async {
+    try {
+      final row =
+          await Supabase.instance.client
+              .from('app_dat_caja_turno')
+              .select('id, estado')
+              .eq('id', serverId)
+              .maybeSingle();
+      return row != null && (row['estado'] as num?)?.toInt() == 1;
+    } catch (e) {
+      print('  ⚠️ No se pudo verificar estado del turno $serverId: $e');
+      return false;
+    }
+  }
+
+  /// Diagnostica un turno `closed_pending_sync` atascado: consulta en el
+  /// servidor el estado real y el `id_tpv` real del turno para detectar
+  /// discrepancias. Caso típico: el turno sigue abierto en el servidor pero
+  /// para un TPV distinto al guardado localmente, por lo que
+  /// `fn_cerrar_turno_offline`/`cerrar_turno` (que busca por TPV) nunca lo
+  /// encuentra y el cierre queda atascado en la cola para siempre.
+  Future<Map<String, dynamic>> diagnoseStuckTurno(String localId) async {
+    final entry = await _userPreferencesService.getOfflineTurnoByLocalId(
+      localId,
+    );
+    if (entry == null) {
+      return {
+        'found': false,
+        'message': 'El turno ya no está en la cola local.',
+      };
+    }
+
+    final serverId = _parseTurnoId(entry['server_id_turno']);
+    if (serverId == null) {
+      return {
+        'found': true,
+        'hasServerId': false,
+        'message':
+            'Este turno nunca llegó a abrirse en el servidor '
+            '(sin server_id_turno registrado).',
+      };
+    }
+
+    try {
+      final row =
+          await Supabase.instance.client
+              .from('app_dat_caja_turno')
+              .select('id, id_tpv, id_vendedor, estado')
+              .eq('id', serverId)
+              .maybeSingle();
+
+      if (row == null) {
+        return {
+          'found': true,
+          'hasServerId': true,
+          'serverId': serverId,
+          'existsOnServer': false,
+          'message': 'El turno $serverId ya no existe en el servidor.',
+        };
+      }
+
+      final serverEstado = (row['estado'] as num?)?.toInt();
+      final serverIdTpv = _parseTurnoId(row['id_tpv']);
+      final localIdTpv = _parseTurnoId(entry['id_tpv']);
+      final tpvMismatch =
+          serverIdTpv != null &&
+          localIdTpv != null &&
+          serverIdTpv != localIdTpv;
+
+      return {
+        'found': true,
+        'hasServerId': true,
+        'serverId': serverId,
+        'existsOnServer': true,
+        'serverEstado': serverEstado,
+        'serverIsOpen': serverEstado == 1,
+        'serverIdTpv': serverIdTpv,
+        'localIdTpv': localIdTpv,
+        'tpvMismatch': tpvMismatch,
+        'message':
+            tpvMismatch
+                ? 'El turno $serverId sigue abierto en el servidor pero para '
+                    'el TPV $serverIdTpv, no para el TPV $localIdTpv guardado '
+                    'localmente. Por eso el cierre falla ("no se encontró un '
+                    'turno abierto para el TPV $localIdTpv").'
+                : (serverEstado == 1
+                    ? 'El turno $serverId sigue abierto en el servidor '
+                        '(TPV $serverIdTpv).'
+                    : 'El turno $serverId ya está cerrado en el servidor '
+                        '(estado=$serverEstado).'),
+      };
+    } catch (e) {
+      return {
+        'found': true,
+        'error': e.toString(),
+        'message': 'No se pudo consultar el servidor: $e',
+      };
+    }
+  }
+
+  /// Reconciliación automática y silenciosa de la cola de turnos offline
+  /// contra el estado real del servidor. Pensada para llamarse antes de
+  /// mostrar avisos de "hay datos sin sincronizar" (p.ej. al cerrar sesión):
+  /// si una entrada local quedó huérfana (el servidor ya no la tiene abierta
+  /// o ya no existe, algo que puede pasar tras resoluciones manuales o
+  /// cierres hechos desde el backoffice), se retira de la cola local sin
+  /// pedir confirmación. Nunca fuerza el cierre de un turno que el servidor
+  /// SÍ reporta como abierto (eso requiere el flujo normal o la resolución
+  /// manual desde Admin). Requiere conexión; si falla, no hace nada.
+  Future<void> reconcileStaleOfflineTurnos() async {
+    List<Map<String, dynamic>> pending;
+    try {
+      pending = await _userPreferencesService.getOfflineTurnosPendingSync();
+    } catch (e) {
+      print('⚠️ reconcileStaleOfflineTurnos: no se pudo leer la cola: $e');
+      return;
+    }
+    if (pending.isEmpty) return;
+
+    for (final t in pending) {
+      final localId = t['local_id']?.toString();
+      if (localId == null || localId.isEmpty) continue;
+      try {
+        final diag = await diagnoseStuckTurno(localId);
+        final orphaned =
+            diag['found'] == true &&
+            (diag['hasServerId'] != true ||
+                diag['existsOnServer'] == false ||
+                diag['serverIsOpen'] == false);
+        if (orphaned) {
+          print(
+            '🧹 reconcileStaleOfflineTurnos: turno $localId huérfano '
+            '(${diag['message']}); retirando de la cola local',
+          );
+          await _userPreferencesService.markOfflineTurnoSynced(localId);
+        }
+      } catch (e) {
+        print('⚠️ reconcileStaleOfflineTurnos: error con $localId: $e');
+      }
+    }
+  }
+
+  /// Intenta resolver manualmente (desde Admin) un turno
+  /// `closed_pending_sync` atascado que el replay normal no puede cerrar:
+  ///  - Si el servidor ya no tiene ese turno abierto (cerrado o inexistente),
+  ///    no hay nada que cerrar: se retira la entrada de la cola local.
+  ///  - Si sigue abierto pero para un TPV distinto (ver [diagnoseStuckTurno]),
+  ///    se reintenta el cierre usando el `id_tpv` REAL reportado por el
+  ///    servidor en vez del guardado localmente.
+  Future<Map<String, dynamic>> forceResolveStuckTurno(String localId) async {
+    final diag = await diagnoseStuckTurno(localId);
+    if (diag['found'] != true) {
+      return {'success': false, 'message': diag['message']};
+    }
+
+    // Sin server_id o turno inexistente en servidor: no hay nada que cerrar
+    // remotamente. Descartar la entrada local (turno huérfano).
+    if (diag['hasServerId'] != true || diag['existsOnServer'] == false) {
+      final removed = await _userPreferencesService.markOfflineTurnoSynced(
+        localId,
+      );
+      return {
+        'success': removed,
+        'discarded': true,
+        'message':
+            removed
+                ? '${diag['message']} Se retiró de la cola local.'
+                : 'No se pudo retirar el turno de la cola local.',
+      };
+    }
+
+    if (diag['serverIsOpen'] != true) {
+      // Ya cerrado en servidor: nada que cerrar, solo purgar localmente.
+      final removed = await _userPreferencesService.markOfflineTurnoSynced(
+        localId,
+      );
+      return {
+        'success': removed,
+        'discarded': true,
+        'message':
+            removed
+                ? 'El turno ya estaba cerrado en el servidor; se retiró de '
+                    'la cola local.'
+                : 'No se pudo retirar el turno de la cola local.',
+      };
+    }
+
+    final entry = await _userPreferencesService.getOfflineTurnoByLocalId(
+      localId,
+    );
+    if (entry == null) {
+      return {'success': false, 'message': 'El turno ya no está en la cola.'};
+    }
+
+    // Sin datos de cierre locales (turno todavía "open", nunca se llegó a
+    // pedir el cierre desde la app): no hay efectivo final/productos reales
+    // que enviar, así que no se puede forzar un cierre aquí sin arriesgar
+    // datos incorrectos. Sólo se informa al admin.
+    final cierreRaw = entry['cierre'];
+    if (cierreRaw is! Map) {
+      return {
+        'success': false,
+        'message':
+            'El turno sigue abierto en el servidor (TPV ${diag['serverIdTpv']}) '
+            'y no tiene un cierre local pendiente de enviar. Debe cerrarse '
+            'normalmente desde la app del vendedor (verifica que el TPV '
+            'configurado en el dispositivo coincida con el TPV '
+            '${diag['serverIdTpv']}).',
+      };
+    }
+
+    // Sigue abierto y SÍ hay datos de cierre pendientes: reintentar con el
+    // id_tpv REAL del servidor.
+    final serverIdTpv = diag['serverIdTpv'] as int?;
+    if (serverIdTpv == null) {
+      return {
+        'success': false,
+        'message': 'No se pudo determinar el TPV real del turno en servidor.',
+      };
+    }
+
+    // Ver comentario en `_clearStaleFechaCierre`: un `fecha_cierre` residual
+    // de un cierre/apertura anterior puede hacer que `cerrar_turno` no
+    // encuentre el turno como abierto aunque `estado=1`.
+    final serverIdForCierre = diag['serverId'] as int?;
+    if (serverIdForCierre != null) {
+      await _clearStaleFechaCierre(serverIdForCierre);
+    }
+
+    final cierreData = Map<String, dynamic>.from(cierreRaw);
+    // Igual que en _syncCierreForQueueEntry: priorizar el UUID real del
+    // vendedor propietario del turno en el servidor.
+    final resolvedRealUsuarioForce =
+        await _resolveUsuarioForOpenTpvTurno(serverIdTpv);
+    final aperturaRawForce = entry['apertura'];
+    final aperturaUsuarioForce =
+        aperturaRawForce is Map
+            ? aperturaRawForce['usuario']?.toString()
+            : null;
+    final usuario =
+        resolvedRealUsuarioForce ??
+        ((aperturaUsuarioForce != null && aperturaUsuarioForce.isNotEmpty)
+            ? aperturaUsuarioForce
+            : (entry['usuario'] ?? cierreData['usuario']));
+    final efectivoFinal = cierreData['efectivo_final'] ?? 0.0;
+    final observaciones = cierreData['observaciones'] as String?;
+    final productos =
+        (cierreData['productos'] as List<dynamic>? ?? [])
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+    final clientUuid =
+        entry['client_uuid_cierre']?.toString() ??
+        cierreData['client_uuid']?.toString() ??
+        UuidGenerator.v4();
+
+    try {
+      final resp = await Supabase.instance.client.rpc(
+        'fn_cerrar_turno_offline',
+        params: {
+          'p_client_uuid': clientUuid,
+          'p_id_tpv': serverIdTpv,
+          'p_efectivo_real': efectivoFinal,
+          'p_usuario': usuario,
+          'p_productos': productos,
+          'p_observaciones': observaciones,
+        },
+      );
+      final map = _asRpcMap(resp);
+      final ok = _rpcStatusSuccess(map);
+      if (ok) {
+        final removed = await _userPreferencesService.markOfflineTurnoSynced(
+          localId,
+        );
+        return {
+          'success': removed,
+          'message':
+              'Cierre forzado con el TPV real ($serverIdTpv) exitoso.',
+        };
+      }
+      return {
+        'success': false,
+        'message':
+            'El servidor rechazó el cierre incluso con el TPV correcto: '
+            '${map?['message'] ?? resp}',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Error forzando el cierre: $e'};
+    }
+  }
+
+  /// Garantiza que la entrada de la cola tenga un `usuario` (UUID) válido
+  /// guardado (a nivel superior y dentro de `apertura`). Si falta —típico
+  /// en entradas antiguas o en turnos abiertos online y luego cacheados—
+  /// usa como fallback el usuario actualmente autenticado y PERSISTE el
+  /// resultado, para que apertura y cierre usen siempre el mismo usuario
+  /// (`cerrar_turno` resuelve el vendedor a partir de `p_usuario`; si no
+  /// coincide con el que abrió el turno, el servidor no lo encuentra).
+  /// Devuelve el usuario resuelto, o `null` si no hay ninguno disponible.
+  Future<String?> _ensureEntryHasUsuario(
+    Map<String, dynamic> entry,
+    Map<String, dynamic> aperturaData,
+    String localId,
+  ) async {
+    var usuario =
+        (aperturaData['usuario'] ?? entry['usuario'] ?? '').toString();
+    if (usuario.isNotEmpty) return usuario;
+
+    final userData = await _userPreferencesService.getUserData();
+    usuario = (userData['userId'] ?? '').toString();
+    if (usuario.isEmpty) {
+      print(
+        '  ❌ Turno $localId sin usuario válido (ni guardado ni '
+        'autenticado)',
+      );
+      return null;
+    }
+
+    print(
+      '  ⚠️ Turno $localId sin usuario guardado; usando usuario '
+      'autenticado actual como fallback',
+    );
+    aperturaData['usuario'] = usuario;
+    await _userPreferencesService.upsertOfflineTurno({
+      ...entry,
+      'usuario': usuario,
+      'apertura': aperturaData,
+    });
+    return usuario;
+  }
+
   /// Asegura en servidor la apertura de UN turno de la cola offline.
-  /// Devuelve el `server_id_turno` o null si falló.
+  /// Devuelve el `server_id_turno` (abierto) o null si falló.
   Future<int?> _ensureAperturaForQueueEntry(Map<String, dynamic> entry) async {
     final localId = entry['local_id']?.toString();
     if (localId == null) return null;
 
-    final existingServer = entry['server_id_turno'];
-    if (existingServer is int) return existingServer;
-    if (existingServer is num) return existingServer.toInt();
+    // Si ya hay server_id, solo reutilizarlo si SIGUE abierto.
+    // Un id de un turno ya cerrado hace fallar el cierre ("no hay turno abierto").
+    final existingRaw = entry['server_id_turno'];
+    final existingId = _parseTurnoId(existingRaw);
+    if (existingId != null) {
+      if (await _isServerTurnoOpen(existingId)) {
+        print('  ✅ Turno $localId ya abierto en servidor (id=$existingId)');
+        // Aunque el turno ya esté abierto (no se llama a la apertura RPC
+        // en este camino), igualmente hay que garantizar que la entrada
+        // tenga un `usuario` válido guardado: el cierre posterior lo usa
+        // para que `cerrar_turno` resuelva el mismo vendedor. Sin este
+        // chequeo aquí, una entrada antigua sin usuario nunca se corrige
+        // porque este camino (turno ya abierto) nunca llega al bloque de
+        // resolución de usuario más abajo.
+        final aperturaRawEarly = entry['apertura'];
+        final aperturaDataEarly =
+            aperturaRawEarly is Map
+                ? Map<String, dynamic>.from(aperturaRawEarly)
+                : <String, dynamic>{};
+        await _ensureEntryHasUsuario(entry, aperturaDataEarly, localId);
+        await _clearStaleFechaCierre(existingId);
+        return existingId;
+      }
+      print(
+        '  ⚠️ server_id_turno=$existingId ya cerrado/inexistente; '
+        'se reabre la apertura offline',
+      );
+    }
 
     final aperturaRaw = entry['apertura'];
     final aperturaData =
@@ -619,11 +1108,21 @@ class AutoSyncService {
             ? Map<String, dynamic>.from(aperturaRaw)
             : Map<String, dynamic>.from(entry);
 
+    final idTpvRaw = entry['id_tpv'] ?? aperturaData['id_tpv'];
+    final idVendedorRaw = entry['id_vendedor'] ?? aperturaData['id_vendedor'];
     final idTpv =
-        (entry['id_tpv'] ?? aperturaData['id_tpv']) as int? ??
+        (idTpvRaw is int
+            ? idTpvRaw
+            : (idTpvRaw is num
+                ? idTpvRaw.toInt()
+                : int.tryParse('$idTpvRaw'))) ??
         await _userPreferencesService.getIdTpv();
     final idVendedor =
-        (entry['id_vendedor'] ?? aperturaData['id_vendedor']) as int? ??
+        (idVendedorRaw is int
+            ? idVendedorRaw
+            : (idVendedorRaw is num
+                ? idVendedorRaw.toInt()
+                : int.tryParse('$idVendedorRaw'))) ??
         await _userPreferencesService.getIdSeller();
 
     if (idTpv == null || idVendedor == null) {
@@ -648,48 +1147,64 @@ class AutoSyncService {
     }
 
     final efectivoInicial =
-        (aperturaData['efectivo_inicial'] ?? 0.0).toDouble();
-    final usuario = (aperturaData['usuario'] ?? entry['usuario'] ?? '').toString();
+        (aperturaData['efectivo_inicial'] as num?)?.toDouble() ?? 0.0;
+    final usuario = await _ensureEntryHasUsuario(entry, aperturaData, localId);
+    if (usuario == null) return null;
     final manejaInventario =
         aperturaData['maneja_inventario'] as bool? ?? false;
     final observaciones = aperturaData['observaciones'] as String?;
     final productosRaw = aperturaData['productos'] as List<dynamic>? ?? [];
     final productos =
-        productosRaw.map((item) => item as Map<String, dynamic>).toList();
+        productosRaw.map((item) => Map<String, dynamic>.from(item as Map)).toList();
     final fechaApertura =
         entry['fecha_apertura'] ?? aperturaData['fecha_apertura'];
 
-    print('  🔄 Apertura cola turno $localId...');
+    print('  🔄 Apertura cola turno $localId (TPV $idTpv)...');
     bool aperturaOk = false;
     int? serverId;
 
-    try {
+    Future<void> tryAperturaRpc({required bool withFecha}) async {
+      final params = <String, dynamic>{
+        'p_client_uuid': clientUuid,
+        'p_efectivo_inicial': efectivoInicial,
+        'p_id_tpv': idTpv,
+        'p_id_vendedor': idVendedor,
+        'p_usuario': usuario,
+        'p_maneja_inventario': manejaInventario,
+        'p_productos': productos,
+        'p_observaciones': observaciones,
+      };
+      if (withFecha && fechaApertura != null) {
+        params['p_fecha_apertura'] = fechaApertura;
+      }
       final resp = await Supabase.instance.client.rpc(
         'fn_apertura_turno_offline',
-        params: {
-          'p_client_uuid': clientUuid,
-          'p_efectivo_inicial': efectivoInicial,
-          'p_id_tpv': idTpv,
-          'p_id_vendedor': idVendedor,
-          'p_usuario': usuario,
-          'p_maneja_inventario': manejaInventario,
-          'p_productos': productos,
-          'p_observaciones': observaciones,
-          'p_fecha_apertura': fechaApertura,
-        },
+        params: params,
       );
-      if (resp is Map && resp['status'] == 'success') {
+      final map = _asRpcMap(resp);
+      if (_rpcStatusSuccess(map)) {
         aperturaOk = true;
-        final rawId = resp['id_turno'];
-        if (rawId is int) {
-          serverId = rawId;
-        } else if (rawId is num) {
-          serverId = rawId.toInt();
-        }
+        serverId = _parseTurnoId(map!['id_turno']);
         print(
           '  ✅ Apertura $localId → id_turno=$serverId'
-          '${resp['idempotent'] == true ? ' (idempotente)' : ''}',
+          '${map['idempotent'] == true ? ' (idempotente)' : ''}',
         );
+      }
+    }
+
+    try {
+      try {
+        await tryAperturaRpc(withFecha: true);
+      } catch (e) {
+        final msg = e.toString();
+        if (msg.contains('PGRST202') || msg.contains('Could not find the function')) {
+          print(
+            '  ⚠️ fn_apertura_turno_offline con fecha no disponible; reintento sin p_fecha_apertura',
+          );
+          await tryAperturaRpc(withFecha: false);
+        } else {
+          rethrow;
+        }
       }
     } catch (e) {
       print(
@@ -707,6 +1222,43 @@ class AutoSyncService {
       aperturaOk = result['success'] == true;
     }
 
+    // Idempotencia stale: el RPC puede devolver un id_turno YA CERRADO.
+    if (aperturaOk && serverId != null && !await _isServerTurnoOpen(serverId!)) {
+      print(
+        '  ⚠️ Apertura idempotente devolvió turno cerrado $serverId; '
+        'forzando nueva apertura en servidor',
+      );
+      final result = await TurnoService.registrarAperturaTurno(
+        efectivoInicial: efectivoInicial,
+        idTpv: idTpv,
+        idVendedor: idVendedor,
+        usuario: usuario,
+        manejaInventario: manejaInventario,
+        productos: productos.isEmpty ? null : productos,
+        observaciones: observaciones,
+      );
+      aperturaOk = result['success'] == true;
+      serverId = null;
+    }
+
+    // Si la apertura falló (p.ej. "ya hay turno abierto"), reutilizar el
+    // turno abierto existente en servidor para este TPV/vendedor.
+    if (!aperturaOk || serverId == null) {
+      final online = await _getOnlineOpenShift(
+        idTpv: idTpv,
+        idVendedor: idVendedor,
+      );
+      final existingOpenId = _parseTurnoId(online?['id']);
+      if (existingOpenId != null && await _isServerTurnoOpen(existingOpenId)) {
+        print(
+          '  ♻️ Reutilizando turno ya abierto en servidor id=$existingOpenId '
+          'para cola $localId',
+        );
+        aperturaOk = true;
+        serverId = existingOpenId;
+      }
+    }
+
     if (!aperturaOk) return null;
 
     if (serverId == null) {
@@ -714,13 +1266,8 @@ class AutoSyncService {
         idTpv: idTpv,
         idVendedor: idVendedor,
       );
-      final raw = online?['id'];
-      if (raw is int) {
-        serverId = raw;
-      } else if (raw is num) {
-        serverId = raw.toInt();
-      }
-      if (online != null && fechaApertura != null) {
+      serverId = _parseTurnoId(online?['id']);
+      if (online != null && fechaApertura != null && serverId != null) {
         try {
           await Supabase.instance.client
               .from('app_dat_caja_turno')
@@ -732,10 +1279,50 @@ class AutoSyncService {
       }
     }
 
-    if (serverId != null) {
-      await _userPreferencesService.setOfflineTurnoServerId(localId, serverId);
+    if (serverId == null) {
+      print('  ❌ Apertura OK pero sin id_turno resoluble para $localId');
+      return null;
     }
+
+    if (!await _isServerTurnoOpen(serverId!)) {
+      print('  ❌ Tras apertura, el turno $serverId no quedó abierto');
+      return null;
+    }
+
+    await _userPreferencesService.setOfflineTurnoServerId(localId, serverId!);
+    await _clearStaleFechaCierre(serverId!);
     return serverId;
+  }
+
+  /// Un turno reabierto (misma fila reutilizada tras cerrar/reabrir varias
+  /// veces) puede conservar un `fecha_cierre` de un cierre anterior aunque
+  /// `estado` vuelva a 1 (abierto) — visto en logs con
+  /// `fecha_cierre` anterior a `fecha_apertura` y duración negativa. Un
+  /// `fecha_cierre` residual puede hacer que `cerrar_turno` en el servidor
+  /// no encuentre el turno como realmente abierto ("No se encontró un
+  /// turno abierto para el TPV X") aunque `estado=1`. Se limpia por las
+  /// dudas cada vez que confirmamos que un turno está abierto.
+  Future<void> _clearStaleFechaCierre(int serverId) async {
+    try {
+      final row =
+          await Supabase.instance.client
+              .from('app_dat_caja_turno')
+              .select('fecha_cierre')
+              .eq('id', serverId)
+              .maybeSingle();
+      if (row != null && row['fecha_cierre'] != null) {
+        print(
+          '  🧹 Turno $serverId abierto con fecha_cierre residual '
+          '(${row['fecha_cierre']}); limpiando',
+        );
+        await Supabase.instance.client
+            .from('app_dat_caja_turno')
+            .update({'fecha_cierre': null})
+            .eq('id', serverId);
+      }
+    } catch (e) {
+      print('  ⚠️ No se pudo verificar/limpiar fecha_cierre residual: $e');
+    }
   }
 
   /// Compat: asegura el turno OPEN de la cola (o false si no hay).
@@ -775,29 +1362,367 @@ class AutoSyncService {
     return true;
   }
 
+  /// Normaliza respuestas RPC jsonb (Map, List\<Map\> o String JSON).
+  Map<String, dynamic>? _asRpcMap(dynamic resp) {
+    if (resp == null) return null;
+    if (resp is Map) return Map<String, dynamic>.from(resp);
+    if (resp is List && resp.isNotEmpty && resp.first is Map) {
+      return Map<String, dynamic>.from(resp.first as Map);
+    }
+    if (resp is String && resp.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(resp);
+        return _asRpcMap(decoded);
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  bool _rpcStatusSuccess(Map<String, dynamic>? map) {
+    if (map == null) return false;
+    final status = map['status']?.toString().toLowerCase();
+    return status == 'success' || map['success'] == true;
+  }
+
+  int? _asPositiveInt(dynamic raw) {
+    final n =
+        raw is int
+            ? raw
+            : (raw is num ? raw.toInt() : int.tryParse('$raw'));
+    if (n == null || n <= 0) return null;
+    return n;
+  }
+
+  int? _ubicacionIdFromInvRow(Map<String, dynamic> inv) {
+    final direct = _asPositiveInt(inv['id_ubicacion']);
+    if (direct != null) return direct;
+    final ubic = inv['ubicacion'];
+    if (ubic is Map) {
+      return _asPositiveInt(ubic['id']);
+    }
+    return _asPositiveInt(inv['ubicacion_id']);
+  }
+
+  int? _almacenIdFromInvRow(Map<String, dynamic> inv) {
+    final direct = _asPositiveInt(inv['id_almacen']);
+    if (direct != null) return direct;
+    final ubic = inv['ubicacion'];
+    if (ubic is Map) {
+      final alm = ubic['almacen'];
+      if (alm is Map) return _asPositiveInt(alm['id']);
+      return _asPositiveInt(ubic['id_almacen']);
+    }
+    return null;
+  }
+
+  Future<int?> _fallbackUbicacionId(int? idAlmacen) async {
+    try {
+      final layouts = await OfflineDatabaseService().getCachedLayouts();
+      for (final l in layouts) {
+        final alm = _asPositiveInt(l['id_almacen']);
+        if (idAlmacen != null && alm != null && alm != idAlmacen) continue;
+        final id = _asPositiveInt(l['id']);
+        if (id != null) return id;
+      }
+    } catch (e) {
+      print('  ⚠️ No se pudo leer layouts cache para ubicación: $e');
+    }
+    return null;
+  }
+
+  /// Índice productoId → filas de inventario offline (con ubicación válida).
+  Future<Map<int, List<Map<String, dynamic>>>> _offlineInventarioByProduct({
+    int? idAlmacen,
+  }) async {
+    final byProduct = <int, List<Map<String, dynamic>>>{};
+    Map<String, dynamic>? productsData;
+    try {
+      final offlineData = await _userPreferencesService.getOfflineData();
+      final raw = offlineData?['products'];
+      if (raw is Map && raw.isNotEmpty) {
+        productsData = Map<String, dynamic>.from(raw);
+      }
+    } catch (_) {}
+    if (productsData == null || productsData.isEmpty) {
+      final grouped =
+          await OfflineDatabaseService().getProductsGroupedByCategory();
+      if (grouped.isNotEmpty) {
+        productsData = {for (final e in grouped.entries) e.key: e.value};
+      }
+    }
+    if (productsData == null) return byProduct;
+
+    for (final categoryProducts in productsData.values) {
+      if (categoryProducts is! List) continue;
+      for (final prodDataRaw in categoryProducts) {
+        if (prodDataRaw is! Map) continue;
+        final prodData = Map<String, dynamic>.from(prodDataRaw);
+        final detallesRaw = prodData['detalles_completos'];
+        final detalles =
+            detallesRaw is Map ? Map<String, dynamic>.from(detallesRaw) : null;
+        final productoInfo =
+            detalles?['producto'] is Map
+                ? Map<String, dynamic>.from(detalles!['producto'] as Map)
+                : null;
+        final productId =
+            _asPositiveInt(productoInfo?['id']) ??
+            _asPositiveInt(prodData['id']);
+        if (productId == null) continue;
+
+        final invRaw = detalles?['inventario'];
+        if (invRaw is! List) continue;
+        for (final row in invRaw) {
+          if (row is! Map) continue;
+          final inv = Map<String, dynamic>.from(row);
+          final almId = _almacenIdFromInvRow(inv);
+          if (idAlmacen != null && almId != null && almId != idAlmacen) {
+            continue;
+          }
+          final ubicId = _ubicacionIdFromInvRow(inv);
+          if (ubicId == null) continue;
+          final variante =
+              inv['variante'] is Map
+                  ? Map<String, dynamic>.from(inv['variante'] as Map)
+                  : null;
+          final presentacion =
+              inv['presentacion'] is Map
+                  ? Map<String, dynamic>.from(inv['presentacion'] as Map)
+                  : null;
+          byProduct.putIfAbsent(productId, () => []).add({
+            'id_producto': productId,
+            'id_variante': _asPositiveInt(variante?['id'] ?? inv['id_variante']),
+            'id_ubicacion': ubicId,
+            'id_presentacion': _asPositiveInt(
+              presentacion?['id'] ?? inv['id_presentacion'],
+            ),
+            'cantidad_disponible':
+                (inv['cantidad_disponible'] as num?)?.toDouble() ?? 0.0,
+          });
+        }
+      }
+    }
+    return byProduct;
+  }
+
+  /// Si el cierre offline guardó `productos: []` (o con ubicaciones inválidas)
+  /// y el turno maneja inventario, reconstruye filas válidas para el RPC.
+  Future<List<Map<String, dynamic>>> _resolveCierreProductos({
+    required Map<String, dynamic> latest,
+    required Map<String, dynamic> cierreData,
+    required List<Map<String, dynamic>> productos,
+    int? idTpv,
+  }) async {
+    final apertura =
+        latest['apertura'] is Map
+            ? Map<String, dynamic>.from(latest['apertura'] as Map)
+            : <String, dynamic>{};
+    final manejaInventario =
+        cierreData['maneja_inventario'] == true ||
+        apertura['maneja_inventario'] == true;
+
+    if (!manejaInventario) {
+      return productos;
+    }
+
+    final counts = await _userPreferencesService.getInventoryCountCierre(idTpv);
+    final idAlmacen = await _userPreferencesService.getIdAlmacen();
+    final invByProduct = await _offlineInventarioByProduct(idAlmacen: idAlmacen);
+    final fallbackUbic = await _fallbackUbicacionId(idAlmacen);
+
+    List<Map<String, dynamic>> sanitize(List<Map<String, dynamic>> src) {
+      final out = <Map<String, dynamic>>[];
+      for (final raw in src) {
+        final id = _asPositiveInt(raw['id_producto'] ?? raw['id']);
+        if (id == null) continue;
+        var ubic = _asPositiveInt(raw['id_ubicacion']);
+        if (ubic == null) {
+          final invRows = invByProduct[id];
+          if (invRows != null && invRows.isNotEmpty) {
+            ubic = _asPositiveInt(invRows.first['id_ubicacion']);
+          }
+        }
+        ubic ??= fallbackUbic;
+        if (ubic == null) {
+          print('  ⚠️ Producto $id sin id_ubicacion válido; se omite');
+          continue;
+        }
+        final qty =
+            (raw['cantidad'] as num?)?.toDouble() ??
+            counts[id.toString()] ??
+            0.0;
+        out.add({
+          'id_producto': id,
+          'id_variante': _asPositiveInt(raw['id_variante']),
+          'id_ubicacion': ubic,
+          'id_presentacion': _asPositiveInt(raw['id_presentacion']),
+          'cantidad': qty,
+        });
+      }
+      return out;
+    }
+
+    // 1) Sanear los que ya venían en el payload (puede traer ubicacion=0).
+    var rebuilt = sanitize(productos);
+
+    // 2) Plantilla de apertura.
+    if (rebuilt.isEmpty) {
+      final aperturaProds = apertura['productos'];
+      if (aperturaProds is List && aperturaProds.isNotEmpty) {
+        final mapped = <Map<String, dynamic>>[];
+        for (final raw in aperturaProds) {
+          if (raw is! Map) continue;
+          final p = Map<String, dynamic>.from(raw);
+          final id = _asPositiveInt(p['id_producto'] ?? p['id']);
+          if (id == null) continue;
+          mapped.add({
+            ...p,
+            'cantidad':
+                counts[id.toString()] ??
+                (p['cantidad'] as num?)?.toDouble() ??
+                0.0,
+          });
+        }
+        rebuilt = sanitize(mapped);
+      }
+    }
+
+    // 3) Filas reales de inventario offline (ubicación válida).
+    if (rebuilt.isEmpty) {
+      print(
+        '  ⚠️ Cierre con inventario sin productos válidos; '
+        'reconstruyendo desde inventario offline...',
+      );
+      final seen = <String>{};
+      for (final entry in invByProduct.entries) {
+        final productId = entry.key;
+        final qtyCounted = counts[productId.toString()];
+        for (final row in entry.value) {
+          final ubic = _asPositiveInt(row['id_ubicacion']);
+          if (ubic == null) continue;
+          final key = '$productId|$ubic|${row['id_variante']}|${row['id_presentacion']}';
+          if (!seen.add(key)) continue;
+          rebuilt.add({
+            'id_producto': productId,
+            'id_variante': row['id_variante'],
+            'id_ubicacion': ubic,
+            'id_presentacion': row['id_presentacion'],
+            // Si hay conteo por producto, úsalo en la primera ubicación;
+            // si no, cantidad disponible del cache.
+            'cantidad':
+                qtyCounted ??
+                (row['cantidad_disponible'] as num?)?.toDouble() ??
+                0.0,
+          });
+          // El conteo de cierre es por producto (no por ubicación): solo una vez.
+          if (qtyCounted != null) break;
+        }
+      }
+    }
+
+    // 4) Último recurso: productos del InventoryService + layout fallback.
+    if (rebuilt.isEmpty && fallbackUbic != null) {
+      try {
+        final cached = await InventoryService.buildFromOfflineCache();
+        for (final product in cached) {
+          final ubic = _asPositiveInt(product.idUbicacion) ?? fallbackUbic;
+          rebuilt.add({
+            'id_producto': product.id,
+            'id_variante': product.idVariante,
+            'id_ubicacion': ubic,
+            'id_presentacion': product.idPresentacion,
+            'cantidad':
+                counts[product.id.toString()] ?? product.cantidadFinal,
+          });
+        }
+      } catch (e) {
+        print('  ⚠️ No se pudo reconstruir productos desde cache: $e');
+      }
+    }
+
+    final invalid = rebuilt.where((p) => _asPositiveInt(p['id_ubicacion']) == null).length;
+    if (invalid > 0) {
+      rebuilt =
+          rebuilt
+              .where((p) => _asPositiveInt(p['id_ubicacion']) != null)
+              .toList();
+    }
+
+    print(
+      '  📦 Productos para cierre: ${rebuilt.length} '
+      '(con id_ubicacion válido)',
+    );
+    return rebuilt;
+  }
+
   /// Cierra en servidor un turno de la cola (closed_pending_sync).
+  /// Solo retorna true si el servidor aceptó el cierre Y se retiró de la cola local.
   Future<bool> _syncCierreForQueueEntry(Map<String, dynamic> entry) async {
-    if (entry['status'] !=
-        UserPreferencesService.offlineTurnoStatusClosedPending) {
+    final localId = entry['local_id']?.toString() ?? '';
+    if (localId.isEmpty) {
+      print('  ❌ Cierre omitido: turno sin local_id');
       return false;
     }
 
-    final cierreRaw = entry['cierre'];
+    // Releer desde disco para no usar un snapshot stale sin `cierre`.
+    final latest =
+        await _userPreferencesService.getOfflineTurnoByLocalId(localId) ??
+        entry;
+
+    if (latest['status'] !=
+        UserPreferencesService.offlineTurnoStatusClosedPending) {
+      print(
+        '  ℹ️ Turno $localId ya no está closed_pending '
+        '(status=${latest['status']}); se omite cierre',
+      );
+      return latest['status'] ==
+          UserPreferencesService.offlineTurnoStatusSynced;
+    }
+
+    final cierreRaw = latest['cierre'];
     if (cierreRaw is! Map) {
-      print('  ⚠️ Turno ${entry['local_id']} closed sin payload de cierre');
+      print('  ⚠️ Turno $localId closed sin payload de cierre');
       return false;
     }
     final cierreData = Map<String, dynamic>.from(cierreRaw);
 
+    // Priorizar el id_tpv con el que se ABRIÓ este turno (top-level de la
+    // entrada, poblado en la apertura) por sobre el que se guardó en el
+    // payload de cierre o el de preferencias actuales del dispositivo. Si el
+    // TPV activo cambió entre la apertura y el cierre, usar el de la apertura
+    // evita que `fn_cerrar_turno_offline` busque un turno abierto en el TPV
+    // equivocado y falle con "No se encontró un turno abierto para el TPV X".
+    final aperturaRaw = latest['apertura'];
+    final aperturaIdTpv =
+        aperturaRaw is Map ? aperturaRaw['id_tpv'] : null;
     final idTpv =
+        latest['id_tpv'] ??
+        aperturaIdTpv ??
         cierreData['id_tpv'] ??
-        entry['id_tpv'] ??
         await _userPreferencesService.getIdTpv();
-    final usuario = cierreData['usuario'] ?? entry['usuario'];
+
+    // Prioridad para `p_usuario`:
+    //  1) El UUID real del vendedor propietario del turno en el servidor
+    //     (fuente de verdad; ver `_resolveUsuarioForOpenTpvTurno`).
+    //  2) El usuario con el que se ABRIÓ el turno localmente.
+    //  3) El usuario guardado en la entrada / en el payload de cierre.
+    // `cerrar_turno` resuelve/valida el vendedor a partir de `p_usuario`,
+    // así que debe coincidir con quien realmente abrió el turno — no con
+    // quien cerró localmente ni con la sesión actual del dispositivo.
+    final resolvedRealUsuario =
+        idTpv != null ? await _resolveUsuarioForOpenTpvTurno(idTpv) : null;
+    final aperturaUsuario =
+        aperturaRaw is Map ? aperturaRaw['usuario']?.toString() : null;
+    final usuario =
+        resolvedRealUsuario ??
+        ((aperturaUsuario != null && aperturaUsuario.isNotEmpty)
+            ? aperturaUsuario
+            : (latest['usuario'] ?? cierreData['usuario']));
     final efectivoFinal = cierreData['efectivo_final'] ?? 0.0;
     final observaciones = cierreData['observaciones'] as String?;
-    final productosRaw = cierreData['productos'] as List<dynamic>? ?? [];
-    final productos =
+    var productosRaw = cierreData['productos'] as List<dynamic>? ?? [];
+    var productos =
         productosRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
 
     if (idTpv == null || usuario == null) {
@@ -805,37 +1730,124 @@ class AutoSyncService {
       return false;
     }
 
+    // Turnos con inventario rechazan p_productos vacío / id_ubicacion inválido.
+    productos = await _resolveCierreProductos(
+      latest: latest,
+      cierreData: cierreData,
+      productos: productos,
+      idTpv: idTpv is int ? idTpv : int.tryParse('$idTpv'),
+    );
+    final manejaInventario =
+        cierreData['maneja_inventario'] == true ||
+        (latest['apertura'] is Map &&
+            latest['apertura']['maneja_inventario'] == true);
+    if (manejaInventario && productos.isEmpty) {
+      print(
+        '  ❌ No hay productos con id_ubicacion válido para cerrar '
+        'un turno con inventario',
+      );
+      return false;
+    }
+    if (productos.isNotEmpty) {
+      // Persistir payload saneado (ubicaciones válidas) para reintentos.
+      await _userPreferencesService.upsertOfflineTurno({
+        ...latest,
+        'cierre': {...cierreData, 'productos': productos},
+      });
+    }
+
     var clientUuid =
-        entry['client_uuid_cierre']?.toString() ??
+        latest['client_uuid_cierre']?.toString() ??
         cierreData['client_uuid']?.toString();
     if (clientUuid == null || clientUuid.isEmpty) {
       clientUuid = UuidGenerator.v4();
+      // Persistir uuid antes del RPC para reintentos idempotentes.
+      await _userPreferencesService.upsertOfflineTurno({
+        ...latest,
+        'client_uuid_cierre': clientUuid,
+        'cierre': {...cierreData, 'client_uuid': clientUuid, 'productos': productos},
+      });
     }
 
-    print('  🔄 Cierre cola turno ${entry['local_id']} (TPV $idTpv)...');
+    print(
+      '  🔄 Cierre cola turno $localId (TPV $idTpv, '
+      '${productos.length} productos)...',
+    );
     bool cerrado = false;
+    String? cierreMessage;
+    Map<String, dynamic>? cierreRespMap;
 
-    try {
+    bool _isMissingRpc(Object e) {
+      final msg = e.toString();
+      return msg.contains('PGRST202') ||
+          msg.contains('Could not find the function');
+    }
+
+    Future<void> tryCierreRpc({required bool withFecha}) async {
+      final params = <String, dynamic>{
+        'p_client_uuid': clientUuid,
+        'p_id_tpv': idTpv,
+        'p_efectivo_real': efectivoFinal,
+        'p_usuario': usuario,
+        'p_productos': productos,
+        'p_observaciones': observaciones,
+      };
+      if (withFecha) {
+        final fecha = cierreData['fecha_cierre'] ?? latest['fecha_cierre'];
+        if (fecha != null) params['p_fecha_cierre'] = fecha;
+      }
       final resp = await Supabase.instance.client.rpc(
         'fn_cerrar_turno_offline',
-        params: {
-          'p_client_uuid': clientUuid,
-          'p_id_tpv': idTpv,
-          'p_efectivo_real': efectivoFinal,
-          'p_usuario': usuario,
-          'p_productos': productos,
-          'p_observaciones': observaciones,
-          'p_fecha_cierre':
-              cierreData['fecha_cierre'] ?? entry['fecha_cierre'],
-        },
+        params: params,
       );
-      cerrado = resp is Map && resp['status'] == 'success';
+      cierreRespMap = _asRpcMap(resp);
+      cerrado = _rpcStatusSuccess(cierreRespMap);
+      cierreMessage = cierreRespMap?['message']?.toString();
       if (cerrado) {
-        print('  ✅ Cierre sincronizado (idempotent=${resp['idempotent']})');
+        print(
+          '  ✅ Cierre sincronizado (idempotent=${cierreRespMap?['idempotent']}'
+          '${cierreMessage != null ? ", msg=$cierreMessage" : ""})',
+        );
       } else {
         print('  ⚠️ Cierre offline rechazado: $resp');
       }
+    }
+
+    try {
+      // Preferir firma desplegada (sin p_fecha_cierre).
+      try {
+        await tryCierreRpc(withFecha: false);
+      } catch (e) {
+        if (_isMissingRpc(e)) {
+          print(
+            '  ⚠️ Firma sin fecha no encontrada; reintento con p_fecha_cierre',
+          );
+          await tryCierreRpc(withFecha: true);
+        } else {
+          // Error de negocio (p.ej. productos vacíos): no usar fallback engañoso.
+          print('  ❌ Cierre offline rechazado por servidor: $e');
+          return false;
+        }
+      }
+
+      // Alinear fecha_cierre offline si el RPC desplegado no la acepta.
+      if (cerrado) {
+        final fecha = cierreData['fecha_cierre'] ?? latest['fecha_cierre'];
+        final sid = _parseTurnoId(latest['server_id_turno']);
+        if (fecha != null && sid != null) {
+          try {
+            await Supabase.instance.client
+                .from('app_dat_caja_turno')
+                .update({'fecha_cierre': fecha})
+                .eq('id', sid);
+          } catch (_) {}
+        }
+      }
     } catch (e) {
+      if (!_isMissingRpc(e)) {
+        print('  ❌ Cierre offline falló: $e');
+        return false;
+      }
       print('  ⚠️ fn_cerrar_turno_offline no disponible ($e). Fallback.');
       try {
         final result = await TurnoService.cerrarTurnoDetailed(
@@ -849,17 +1861,88 @@ class AutoSyncService {
       }
     }
 
-    if (cerrado) {
-      final localId = entry['local_id']?.toString();
-      if (localId != null) {
-        await _userPreferencesService.purgeFinalizedSyncedOrdersForTurno(
-          localId,
+    if (!cerrado) return false;
+
+    // Si el servidor dijo "nada que cerrar", confirmar que nuestro turno
+    // (si tenemos server_id) ya no está abierto. Si sigue abierto, fallar.
+    final noOpenMsg = (cierreMessage ?? '').toLowerCase().contains(
+      'no hay turno abierto',
+    );
+    if (noOpenMsg) {
+      final sid = _parseTurnoId(latest['server_id_turno']);
+      if (sid != null && await _isServerTurnoOpen(sid)) {
+        print(
+          '  ❌ Servidor reportó "sin turno abierto" pero id=$sid '
+          'sigue abierto; no se marca synced',
         );
-        await _userPreferencesService.markOfflineTurnoSynced(localId);
+        return false;
       }
-      return true;
     }
-    return false;
+
+    await _userPreferencesService.purgeFinalizedSyncedOrdersForTurno(localId);
+    final marked = await _userPreferencesService.markOfflineTurnoSynced(
+      localId,
+    );
+    if (!marked) {
+      print(
+        '  ❌ Cierre OK en servidor pero NO se pudo retirar $localId de la cola',
+      );
+      return false;
+    }
+    return true;
+  }
+
+  /// Sincroniza UN turno de la cola (apertura → ventas → egresos → cierre).
+  /// No se detiene por fallos de otros turnos.
+  Future<bool> _syncSingleOfflineTurnoEntry(Map<String, dynamic> entry) async {
+    final localId = entry['local_id']?.toString() ?? '';
+    if (localId.isEmpty) return false;
+
+    print('  ——— Sync forzado turno $localId (${entry['status']}) ———');
+
+    final serverId = await _ensureAperturaForQueueEntry(entry);
+    if (serverId == null) {
+      print('  ❌ No se pudo abrir turno $localId en servidor');
+      return false;
+    }
+
+    final refreshed =
+        await _userPreferencesService.getOfflineTurnoByLocalId(localId) ??
+        entry;
+
+    await _syncOfflineSales(forTurno: refreshed);
+    await _syncOfflineEgresos(
+      forLocalTurnoId: localId,
+      serverIdTurno: serverId,
+    );
+    await _remapShiftWorkerOpsForTurno(localId, serverId);
+
+    try {
+      await ShiftWorkersService.syncPendingOperations();
+    } catch (e) {
+      print('  ⚠️ Workers sync: $e');
+    }
+
+    final latest =
+        await _userPreferencesService.getOfflineTurnoByLocalId(localId) ??
+        refreshed;
+
+    if (latest['status'] !=
+        UserPreferencesService.offlineTurnoStatusClosedPending) {
+      // Solo apertura (sin cierre) — considerado OK para ese caso.
+      print(
+        '  ℹ️ Turno $localId status=${latest['status']} tras apertura; '
+        'sin cierre pendiente',
+      );
+      return latest['status'] !=
+          UserPreferencesService.offlineTurnoStatusOpen;
+    }
+
+    final ok = await _syncCierreForQueueEntry(latest);
+    if (!ok) {
+      print('  ❌ Cierre en servidor falló para $localId');
+    }
+    return ok;
   }
 
   /// Replay ordenado: por cada turno pending → apertura → ventas → egresos → cierre.
@@ -869,7 +1952,14 @@ class AutoSyncService {
     final pending = await _userPreferencesService.getOfflineTurnosPendingSync();
     if (pending.isEmpty) {
       print('  📝 No hay turnos offline pendientes en cola');
-      return {'turnos': 0, 'sales': 0, 'egresos': 0, 'cierres': 0};
+      return {
+        'turnos': 0,
+        'sales': 0,
+        'egresos': 0,
+        'cierres': 0,
+        'closed_remaining': 0,
+        'pending_remaining': 0,
+      };
     }
 
     print('  🔄 Replay de ${pending.length} turno(s) offline...');
@@ -877,9 +1967,14 @@ class AutoSyncService {
     int egresosTotal = 0;
     int cierres = 0;
     int aperturas = 0;
+    final failedCierres = <String>[];
 
     for (final entry in pending) {
-      final localId = entry['local_id']?.toString() ?? '?';
+      final localId = entry['local_id']?.toString() ?? '';
+      if (localId.isEmpty) {
+        print('  ⚠️ Entrada de cola sin local_id; se omite');
+        continue;
+      }
       print('  ——— Turno $localId (${entry['status']}) ———');
 
       final serverId = await _ensureAperturaForQueueEntry(entry);
@@ -912,6 +2007,7 @@ class AutoSyncService {
         if (ok) {
           cierres++;
         } else {
+          failedCierres.add(localId);
           print('  ❌ Cierre falló para $localId; se detiene el replay');
           break;
         }
@@ -925,11 +2021,25 @@ class AutoSyncService {
       print('  ⚠️ Error sync trabajadores tras cola: $e');
     }
 
+    final remaining =
+        await _userPreferencesService.getOfflineTurnosPendingSync();
+    final closedRemaining =
+        remaining
+            .where(
+              (t) =>
+                  t['status'] ==
+                  UserPreferencesService.offlineTurnoStatusClosedPending,
+            )
+            .length;
+
     return {
       'turnos': aperturas,
       'sales': salesTotal,
       'egresos': egresosTotal,
       'cierres': cierres,
+      'closed_remaining': closedRemaining,
+      'pending_remaining': remaining.length,
+      'failed_cierres': failedCierres,
     };
   }
 
@@ -947,13 +2057,23 @@ class AutoSyncService {
             .map((t) => t['client_uuid_apertura']?.toString())
             .whereType<String>()
             .toSet();
+    final knownLocalIds =
+        existing
+            .map((t) => t['local_id']?.toString())
+            .whereType<String>()
+            .toSet();
 
     for (final op in aperturas) {
       final data = op['data'];
       if (data is! Map) continue;
       final map = Map<String, dynamic>.from(data);
       final cu = map['client_uuid']?.toString();
+      final legacyLocalId =
+          map['local_id']?.toString() ?? map['local_turno_id']?.toString();
       if (cu != null && knownClients.contains(cu)) continue;
+      if (legacyLocalId != null && knownLocalIds.contains(legacyLocalId)) {
+        continue;
+      }
 
       // ¿Hay cierre legacy pareado? (mismo id_tpv, posterior)
       Map<String, dynamic>? cierreMatch;
@@ -2078,6 +3198,214 @@ class AutoSyncService {
   }
 
 
+  /// Sincroniza la cola de turnos offline (apertura → ventas → egresos → cierre).
+  /// Pensado para Admin Lite en full offline cuando el gerente tiene red.
+  Future<Map<String, dynamic>> syncOfflineTurnosFromAdmin({
+    bool includeRelatedUploads = true,
+  }) async {
+    if (_isSyncing) {
+      throw Exception('Ya hay una sincronización en curso');
+    }
+
+    final wasOffline = await _userPreferencesService.isOfflineModeEnabled();
+    if (wasOffline) {
+      await _userPreferencesService.setOfflineMode(false);
+    }
+
+    _isSyncing = true;
+    final start = DateTime.now();
+    try {
+      final isAuthenticated = await _reauthService.ensureAuthenticated();
+      if (!isAuthenticated) {
+        throw Exception(
+          'No se pudo autenticar. Inicia sesión online o registra '
+          'credenciales en Preparar dispositivo.',
+        );
+      }
+
+      _syncEventController.add(
+        AutoSyncEvent(
+          type: AutoSyncEventType.syncStarted,
+          timestamp: start,
+          message: 'Sincronizando turnos offline (admin)',
+        ),
+      );
+
+      final queue = await _syncOfflineTurnoQueue();
+      final related = <String, dynamic>{};
+
+      if (includeRelatedUploads) {
+        try {
+          related['shift_workers'] =
+              await ShiftWorkersService.syncPendingOperations();
+        } catch (e) {
+          print('⚠️ Admin sync workers: $e');
+          related['shift_workers_error'] = e.toString();
+        }
+        try {
+          related['admin_ops'] =
+              await AdminInventoryService().syncPendingOps();
+        } catch (e) {
+          print('⚠️ Admin sync ops: $e');
+          related['admin_ops_error'] = e.toString();
+        }
+      }
+
+      final duration = DateTime.now().difference(start);
+      _syncEventController.add(
+        AutoSyncEvent(
+          type: AutoSyncEventType.syncCompleted,
+          timestamp: DateTime.now(),
+          message: 'Turnos offline sincronizados',
+          duration: duration,
+        ),
+      );
+
+      return {
+        'success': true,
+        'queue': queue,
+        'related': related,
+        'duration_ms': duration.inMilliseconds,
+      };
+    } catch (e) {
+      _syncEventController.add(
+        AutoSyncEvent(
+          type: AutoSyncEventType.syncFailed,
+          timestamp: DateTime.now(),
+          message: 'Error sincronizando turnos: $e',
+          error: e.toString(),
+        ),
+      );
+      rethrow;
+    } finally {
+      _isSyncing = false;
+      if (wasOffline) {
+        await _userPreferencesService.setOfflineMode(true);
+      }
+    }
+  }
+
+  /// Tras un cierre local de un turno offline: intenta ahora
+  /// apertura → ventas → egresos → cierre en el servidor.
+  ///
+  /// Prioriza [localId] (no se bloquea por otros turnos fallidos de la cola).
+  /// Retorna un mapa: `{success: bool, message: String?}`.
+  Future<Map<String, dynamic>> syncOfflineTurnoAfterLocalCierre({
+    String? localId,
+  }) async {
+    // Esperar a que termine un sync automático en curso (puede ser largo).
+    for (var attempt = 0; attempt < 3; attempt++) {
+      await waitUntilIdle(timeout: const Duration(seconds: 60));
+      if (!_isSyncing) break;
+      print(
+        '⏳ syncOfflineTurnoAfterLocalCierre: esperando sync '
+        '(intento ${attempt + 1}/3)...',
+      );
+    }
+
+    if (_isSyncing) {
+      // Evitar perder el cierre: encolar un pase al terminar el actual.
+      _pendingSyncRequested = true;
+      print(
+        '⚠️ syncOfflineTurnoAfterLocalCierre: sync aún ocupado; '
+        'se encola pase al terminar',
+      );
+      return {
+        'success': false,
+        'message':
+            'Hay una sincronización en curso. El cierre quedó pendiente '
+            'y se reintentará automáticamente.',
+      };
+    }
+
+    final wasOffline = await _userPreferencesService.isOfflineModeEnabled();
+    _isSyncing = true;
+    try {
+      if (wasOffline) {
+        await _userPreferencesService.setOfflineMode(false);
+      }
+
+      final isAuthenticated = await _reauthService.ensureAuthenticated();
+      if (!isAuthenticated) {
+        return {
+          'success': false,
+          'message':
+              'No se pudo autenticar. El cierre quedó pendiente de sync.',
+        };
+      }
+
+      print(
+        '🔄 Cierre offline → sync inmediato'
+        '${localId != null ? ' ($localId)' : ''} '
+        '(apertura + cierre en servidor)...',
+      );
+
+      var ok = false;
+      String? detail;
+
+      if (localId != null && localId.isNotEmpty) {
+        final entry =
+            await _userPreferencesService.getOfflineTurnoByLocalId(localId);
+        if (entry == null) {
+          // Ya no está en cola → tratado como sincronizado.
+          ok = true;
+          detail = 'Turno ya no estaba pendiente';
+        } else {
+          ok = await _syncSingleOfflineTurnoEntry(entry);
+          if (!ok) {
+            detail =
+                'No se pudo abrir/cerrar el turno en el servidor. '
+                'Revisa inventario/productos o reintenta desde Admin.';
+          }
+        }
+      } else {
+        final result = await _syncOfflineTurnoQueue();
+        print('📊 Resultado sync post-cierre: $result');
+        ok = (result['closed_remaining'] as int? ?? 1) == 0;
+        if (!ok) {
+          final failed = result['failed_cierres'];
+          detail =
+              failed is List && failed.isNotEmpty
+                  ? 'Falló el cierre de: ${failed.join(", ")}'
+                  : 'Quedaron turnos pendientes de sincronizar';
+        }
+      }
+
+      // Intentar drenar otros pendientes sin tumbar el resultado del actual.
+      if (ok) {
+        try {
+          await _syncOfflineTurnoQueue();
+        } catch (e) {
+          print('⚠️ Sync cola restante post-cierre: $e');
+        }
+      }
+
+      return {
+        'success': ok,
+        'message': detail,
+      };
+    } catch (e) {
+      print('❌ syncOfflineTurnoAfterLocalCierre falló: $e');
+      return {
+        'success': false,
+        'message': 'Error sincronizando el cierre: $e',
+      };
+    } finally {
+      _isSyncing = false;
+      if (wasOffline) {
+        await _userPreferencesService.setOfflineMode(true);
+      }
+      // Si alguien pidió sync mientras estábamos aquí, lanzarlo.
+      if (_pendingSyncRequested &&
+          !(await _userPreferencesService.isOfflineModeEnabled())) {
+        _pendingSyncRequested = false;
+        // fire-and-forget
+        // ignore: unawaited_futures
+        _performSync();
+      }
+    }
+  }
+
   /// Sincroniza turno (apertura) + ventas pendientes + baja operaciones del
   /// servidor + cierre (si aplica). Replay ordenado de la cola multi-turno.
   Future<int> forceSyncPendingOrders() async {
@@ -2241,6 +3569,7 @@ class AutoSyncService {
         SyncModule.promotions,
         SyncModule.categories,
         SyncModule.products,
+        SyncModule.layouts,
         SyncModule.turno,
         SyncModule.egresos,
         SyncModule.orders,
@@ -2365,6 +3694,35 @@ class AutoSyncService {
         final productsData = syncedData['products'];
         if (productsData is Map<String, dynamic> && productsData.isNotEmpty) {
           await _syncProductPromotions(productsData);
+        }
+        try {
+          final crm = await AdminInventoryService().syncCrmCacheFromServer();
+          print(
+            '✅ CRM cache admin: ${crm['suppliers']} proveedores, '
+            '${crm['customers']} clientes',
+          );
+        } catch (e) {
+          print('⚠️ Sync CRM admin (no bloqueante): $e');
+        }
+        try {
+          final tpv = await AdminInventoryService().syncTpvsAndPricesFromServer();
+          print(
+            '✅ TPV cache admin: ${tpv['tpvs']} TPVs, '
+            '${tpv['tpv_prices']} precios',
+          );
+        } catch (e) {
+          print('⚠️ Sync precios TPV admin (no bloqueante): $e');
+        }
+      });
+
+      await run(SyncModule.layouts, 'Ubicaciones / layouts', () async {
+        final n = await AdminInventoryService().syncLayoutsFromServer();
+        print('✅ Layouts/ubicaciones cacheados: $n');
+        if (n == 0) {
+          throw Exception(
+            'No se obtuvieron layouts/ubicaciones. '
+            'Verifica almacenes de la tienda y sesión.',
+          );
         }
       });
 
@@ -2510,6 +3868,7 @@ enum SyncModule {
   promotions,
   categories,
   products,
+  layouts,
   orders,
   turno,
   egresos,
@@ -2545,6 +3904,7 @@ extension SyncModuleX on SyncModule {
         SyncModule.promotions => 'Promociones',
         SyncModule.categories => 'Categorías',
         SyncModule.products => 'Productos',
+        SyncModule.layouts => 'Ubicaciones / layouts',
         SyncModule.orders => 'Órdenes',
         SyncModule.turno => 'Turno',
         SyncModule.egresos => 'Egresos',

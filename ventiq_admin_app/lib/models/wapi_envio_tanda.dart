@@ -23,9 +23,11 @@ enum WapiTandaEstado {
 /// Agrupación de [WapiEnvioLog] que representa UN envío desde el punto de vista
 /// del usuario ("la difusión de las 9:00").
 ///
-/// El backend inserta los logs por chunks (ver `wapi-send-products`: procesa ~21
-/// productos por invocación y re-invoca con el resto), así que un mismo envío
-/// lógico genera varios grupos de filas con `created_at` distintos. Aquí los
+/// El backend inserta los logs por chunks (ver `wapi-send-products`: despacha
+/// productos hasta agotar su presupuesto de worker —~270s— y re-invoca con el
+/// resto), así que un mismo envío lógico genera varios grupos de filas con
+/// `created_at` distintos. Cuántos productos entran en cada chunk depende del
+/// número de destinos y de lo que tarde WAPI, no de una cifra fija. Aquí los
 /// reunimos en una sola tanda para que el historial se lea como una lista de
 /// envíos, no como cientos de filas sueltas.
 class WapiEnvioTanda {

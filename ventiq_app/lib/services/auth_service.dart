@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
 import 'admin_access_service.dart';
 import 'subscription_guard_service.dart';
+import 'user_preferences_service.dart';
 
 class AuthService {
   static final AuthService _instance = AuthService._internal();
@@ -62,11 +63,23 @@ class AuthService {
   }
 
   // Cerrar sesión
-  Future<void> signOut() async {
+  Future<void> signOut({bool preserveOfflineLicense = false}) async {
     try {
       await client.auth.signOut();
-      // Limpiar caché de suscripción y rol admin
-      await SubscriptionGuardService().clearCache();
+      // Limpiar caché de suscripción y rol admin.
+      // En dispositivo full-offline no borrar la licencia firmada:
+      // el siguiente vendedor local la necesita sin volver al servidor.
+      if (preserveOfflineLicense) {
+        SubscriptionGuardService().clearMemoryCacheOnly();
+      } else {
+        final fullOffline =
+            await UserPreferencesService().isDeviceFullOfflineReady();
+        if (fullOffline) {
+          SubscriptionGuardService().clearMemoryCacheOnly();
+        } else {
+          await SubscriptionGuardService().clearCache();
+        }
+      }
       AdminAccessService().clearMemoryCache();
       print('👋 Usuario cerró sesión exitosamente');
     } catch (e) {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../services/admin_inventory_service.dart';
+import '../../services/admin_ticket_printer_service.dart';
 
 /// Ajuste de inventario (offline-first).
 class AdminAdjustmentScreen extends StatefulWidget {
@@ -115,6 +116,20 @@ class _AdminAdjustmentScreenState extends State<AdminAdjustmentScreen> {
           backgroundColor: Colors.green,
         ),
       );
+      await AdminTicketPrinterService().confirmAndPrint(
+        context,
+        title: 'Ajuste inventario',
+        lines: AdminTicketPrinterService.adjustmentLines(
+          producto: p['denominacion']?.toString() ?? '#${p['id']}',
+          anterior: anterior,
+          nueva: nueva,
+          motivo: _motivoCtrl.text.trim().isEmpty
+              ? 'Ajuste desde Caja'
+              : _motivoCtrl.text.trim(),
+          observaciones: _obsCtrl.text.trim(),
+        ),
+      );
+      if (!mounted) return;
       Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;

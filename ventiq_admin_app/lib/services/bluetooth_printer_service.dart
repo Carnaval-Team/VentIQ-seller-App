@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../utils/ticket_text_utils.dart';
+import '../services/printer_preferences_service.dart';
+
+enum _SavedPrinterChoice { use, forget, chooseAnother }
 
 /// Servicio para manejar impresión Bluetooth térmica
 class BluetoothPrinterService {
@@ -20,6 +25,7 @@ class BluetoothPrinterService {
   List<BluetoothInfo> _pairedDevices = [];
   List<BluetoothInfo> _discoveredDevices = [];
   bool _isScanning = false;
+  Timer? _scanTimer;
 
   // Getters
   bool get isConnected => _isConnected;
@@ -251,26 +257,58 @@ class BluetoothPrinterService {
     );
   }
 
-  /// Scan for available Bluetooth devices
-  Future<void> scanDevices({int scanDurationSeconds = 10}) async {
+  /// Scan for available Bluetooth devices (paired + discovery in background).
+  ///
+  /// Loads paired devices immediately and starts a background discovery timer
+  /// without blocking the caller, matching the behavior in ventiq_app.
+  Future<void> scanDevices({int scanDurationSeconds = 5}) async {
+    if (_isScanning) return;
+
     try {
       _isScanning = true;
+
+      // Clear previous devices
+      _pairedDevices.clear();
       _discoveredDevices.clear();
-      
+
       debugPrint('🔍 Scanning for Bluetooth devices...');
-      
-      // Get paired devices
+
+      // Get paired devices first (fast)
       _pairedDevices = await PrintBluetoothThermal.pairedBluetooths;
       debugPrint('✅ Found ${_pairedDevices.length} paired devices');
-      
-      // Scan for new devices
-      await Future.delayed(Duration(seconds: scanDurationSeconds));
-      
-      _isScanning = false;
-      debugPrint('✅ Scan completed');
+
+      // Start discovery scan in the background; do not block here.
+      await _startDeviceDiscovery(scanDurationSeconds);
     } catch (e) {
-      _isScanning = false;
       debugPrint('❌ Error scanning devices: $e');
+    } finally {
+      _isScanning = false;
+      debugPrint('✅ Scan completed (paired devices ready)');
+    }
+  }
+
+  /// Start device discovery for new devices in the background.
+  Future<void> _startDeviceDiscovery(int durationSeconds) async {
+    try {
+      final enabled = await PrintBluetoothThermal.bluetoothEnabled;
+      if (!enabled) {
+        debugPrint('Bluetooth is not enabled for discovery');
+        return;
+      }
+
+      _scanTimer?.cancel();
+      _scanTimer = Timer(Duration(seconds: durationSeconds), () {
+        _isScanning = false;
+        _scanTimer?.cancel();
+        _scanTimer = null;
+        debugPrint('✅ Bluetooth discovery finished');
+      });
+
+      debugPrint(
+        'Started Bluetooth background discovery for $durationSeconds seconds',
+      );
+    } catch (e) {
+      debugPrint('Error starting Bluetooth discovery: $e');
     }
   }
 
@@ -291,6 +329,8 @@ class BluetoothPrinterService {
   /// Disconnect from current device
   Future<void> disconnect() async {
     try {
+      _scanTimer?.cancel();
+      _scanTimer = null;
       await PrintBluetoothThermal.disconnect;
       _isConnected = false;
       _selectedDevice = null;
@@ -299,22 +339,55 @@ class BluetoothPrinterService {
     }
   }
 
-  /// Show enhanced device selection dialog with scanning
-  Future<BluetoothInfo?> showDeviceSelectionDialog(BuildContext context) async {
+  /// Show enhanced device selection dialog with scanning.
+  /// If [allowSaveDefault] is true, after selecting a device the user is asked
+  /// whether to save it as the default printer for this device.
+  Future<BluetoothInfo?> showDeviceSelectionDialog(
+    BuildContext context, {
+    bool allowSaveDefault = true,
+  }) async {
     bool initialized = await initializeBluetooth(context);
     if (!initialized) {
       return null;
     }
 
-    // Start scanning
-    await scanDevices(scanDurationSeconds: 10);
+    // Load paired devices immediately (discovery runs in the background).
+    // We await so the list is populated before opening the dialog.
+    await scanDevices(scanDurationSeconds: 1);
 
-    if (_pairedDevices.isEmpty && _discoveredDevices.isEmpty) {
-      _showErrorDialog(context, 'Sin dispositivos', 'No se encontraron impresoras Bluetooth.');
-      return null;
+    // Si hay una impresora Bluetooth guardada, ofrecer usarla primero.
+    final savedPrinter = await PrinterPreferencesService().getDefaultBluetoothPrinter();
+    if (savedPrinter != null && context.mounted) {
+      final choice = await _showSavedBluetoothPrinterDialog(context, savedPrinter);
+      if (choice == _SavedPrinterChoice.use) {
+        final savedMac = savedPrinter['mac'] as String;
+        BluetoothInfo? savedDevice;
+        for (final d in _pairedDevices) {
+          if (d.macAdress == savedMac) {
+            savedDevice = d;
+            break;
+          }
+        }
+        if (savedDevice == null) {
+          for (final d in _discoveredDevices) {
+            if (d.macAdress == savedMac) {
+              savedDevice = d;
+              break;
+            }
+          }
+        }
+        if (savedDevice != null) {
+          debugPrint('✅ Usando impresora Bluetooth guardada: ${savedDevice.name}');
+          return savedDevice;
+        }
+        debugPrint('⚠️ Impresora guardada no encontrada entre dispositivos visibles');
+      } else if (choice == _SavedPrinterChoice.forget) {
+        await PrinterPreferencesService().clearDefaultBluetoothPrinter();
+      }
+      // chooseAnother: continuar con el diálogo normal
     }
 
-    return showDialog<BluetoothInfo>(
+    final selected = await showDialog<BluetoothInfo>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
@@ -429,6 +502,81 @@ class BluetoothPrinterService {
         ),
       ),
     );
+
+    if (selected == null || !allowSaveDefault) return selected;
+
+    final shouldSave = await _showSavePrinterDialog(context, selected.name);
+    if (shouldSave) {
+      await PrinterPreferencesService().saveDefaultBluetoothPrinter(
+        selected.name.isNotEmpty ? selected.name : 'Dispositivo BT',
+        selected.macAdress,
+      );
+      debugPrint('💾 Impresora Bluetooth por defecto guardada: ${selected.macAdress}');
+    }
+    return selected;
+  }
+
+  Future<_SavedPrinterChoice> _showSavedBluetoothPrinterDialog(
+    BuildContext context,
+    Map<String, dynamic> savedPrinter,
+  ) async {
+    final name = savedPrinter['name']?.toString() ?? 'Impresora guardada';
+    final mac = savedPrinter['mac']?.toString() ?? '';
+    return await showDialog<_SavedPrinterChoice>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.bluetooth, color: const Color(0xFF4A90E2)),
+                SizedBox(width: 8),
+                Expanded(child: Text('Impresora guardada')),
+              ],
+            ),
+            content: Text(
+              '¿Usar la impresora Bluetooth guardada por defecto?\n\n'
+              'Nombre: $name\n'
+              'MAC: $mac',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, _SavedPrinterChoice.forget),
+                child: Text('Olvidar', style: TextStyle(color: Colors.red)),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, _SavedPrinterChoice.chooseAnother),
+                child: Text('Elegir otra'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, _SavedPrinterChoice.use),
+                child: Text('Usar'),
+              ),
+            ],
+          ),
+        ) ??
+        _SavedPrinterChoice.chooseAnother;
+  }
+
+  Future<bool> _showSavePrinterDialog(BuildContext context, String printerName) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text('Guardar impresora'),
+            content: Text(
+              '¿Deseas guardar "$printerName" como impresora por defecto para futuras impresiones?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text('No'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text('Guardar'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 
   /// Build device card widget

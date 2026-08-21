@@ -76,7 +76,7 @@ class _OfflineStatusBadgeState extends State<OfflineStatusBadge> {
 
   Future<void> _refreshPendingCount() async {
     try {
-      final orders = await _prefs.getPendingOrdersCount();
+      final orders = await _prefs.getSellerVisiblePendingOrdersCount();
       final egresos = await _prefs.getEgresosOfflineCount();
       final ops = (await _prefs.getPendingOperations()).length;
       final turnos = await _prefs.getPendingOfflineTurnosCount();

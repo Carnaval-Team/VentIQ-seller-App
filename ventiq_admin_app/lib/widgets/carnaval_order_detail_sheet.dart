@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/carnaval_service.dart';
 import '../services/printer_manager.dart';
 import '../services/wifi_printer_service.dart';
@@ -198,11 +199,101 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
 
   Future<void> _acceptOrder() async {
     final by = await _currentAdminName();
-    await _doAction(() => CarnavalService.updateOrderStatus(
-          _order['id'],
-          'Procesando',
-          changedBy: by,
-        ));
+
+    // Para órdenes en "En Revision" o "Pendiente de Pago" pagadas con Transferencia,
+    // solicitar el número de transacción y agregarlo a las observaciones de la operación.
+    final status = (_order['status'] as String? ?? '').trim().toLowerCase();
+    final metodoPago = (_order['metodo_pago'] as String? ?? '').trim().toLowerCase();
+    final requiresTransaction =
+        (status == 'en revision' || status == 'pendiente de pago') &&
+            metodoPago.contains('transferencia');
+
+    String? transactionNumber;
+    if (requiresTransaction) {
+      transactionNumber = await _showTransactionNumberDialog();
+      if (transactionNumber == null || transactionNumber.trim().isEmpty) {
+        // El usuario canceló; no continuar con el procesamiento.
+        return;
+      }
+    }
+
+    await _doAction(() async {
+      final ok = await CarnavalService.updateOrderStatus(
+        _order['id'],
+        'Procesando',
+        changedBy: by,
+      );
+      if (!ok) return false;
+
+      if (transactionNumber != null && transactionNumber.trim().isNotEmpty) {
+        await _appendTransactionToOperationObservations(
+          transactionNumber.trim(),
+        );
+      }
+      return true;
+    });
+  }
+
+  Future<String?> _showTransactionNumberDialog() async {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Número de transacción'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: TextInputType.text,
+          decoration: const InputDecoration(
+            labelText: 'Número de transacción de transferencia',
+            hintText: 'Ej. TRX-123456',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Aceptar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _appendTransactionToOperationObservations(
+    String transactionNumber,
+  ) async {
+    try {
+      final orderId = _order['id'] as int?;
+      if (orderId == null) return;
+
+      final opId = await CarnavalService.getVentiqOperationId(orderId);
+      if (opId == null) {
+        print('⚠️ No se encontró operación VentIQ para orden #$orderId');
+        return;
+      }
+
+      final response = await Supabase.instance.client
+          .from('app_dat_operaciones')
+          .select('observaciones')
+          .eq('id', opId)
+          .single();
+      final currentObs = response['observaciones']?.toString() ?? '';
+      final newObs = currentObs.isEmpty
+          ? 'Número de transacción: $transactionNumber'
+          : '$currentObs\nNúmero de transacción: $transactionNumber';
+
+      await Supabase.instance.client
+          .from('app_dat_operaciones')
+          .update({'observaciones': newObs})
+          .eq('id', opId);
+      print('✅ Número de transacción agregado a observaciones de op. $opId');
+    } catch (e) {
+      print('❌ Error agregando número de transacción a observaciones: $e');
+    }
   }
 
   Future<void> _validatePayment() async {
@@ -1568,8 +1659,10 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
       final operation = _buildOperationForPrint();
       final details = _buildDetailsForPrint();
 
-      final selectedPrinter =
-          await wifiService.showPrinterSelectionDialog(context);
+      final selectedPrinter = await wifiService.showPrinterSelectionDialog(
+        context,
+        allowSaveDefault: true,
+      );
       if (selectedPrinter == null || !mounted) return;
 
       showDialog(
@@ -1641,8 +1734,10 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
       if (!shouldPrint || !mounted) return;
 
       final bluetoothService = printerManager.bluetoothService;
-      var selectedDevice =
-          await bluetoothService.showDeviceSelectionDialog(context);
+      var selectedDevice = await bluetoothService.showDeviceSelectionDialog(
+        context,
+        allowSaveDefault: true,
+      );
       if (selectedDevice == null || !mounted) return;
 
       showDialog(

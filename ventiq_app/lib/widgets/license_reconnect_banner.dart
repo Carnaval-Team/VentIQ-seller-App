@@ -27,6 +27,16 @@ class _LicenseReconnectBannerState extends State<LicenseReconnectBanner> {
 
   OfflineLicenseStatus? _status;
   bool _visible = false;
+  DateTime? _lastOnlineFetchAt;
+
+  static const _onlineFetchThrottle = Duration(minutes: 10);
+  static const _allowedRoutes = {
+    '/subscription-detail',
+    '/login',
+    '/login-mobile',
+    '/login-web',
+    '/',
+  };
 
   @override
   void initState() {
@@ -47,6 +57,26 @@ class _LicenseReconnectBannerState extends State<LicenseReconnectBanner> {
     super.dispose();
   }
 
+  bool _shouldForceOnlineRefresh() {
+    if (!_connectivity.isConnected) return false;
+    final last = _lastOnlineFetchAt;
+    if (last == null) return true;
+    return DateTime.now().difference(last) >= _onlineFetchThrottle;
+  }
+
+  /// Ruta nombrada actual del navigator raíz. Null si no se puede determinar.
+  String? _currentRouteName() {
+    final nav = globalNavigatorKey.currentState;
+    if (nav == null) return null;
+
+    String? name;
+    nav.popUntil((route) {
+      name = route.settings.name;
+      return true; // no pop
+    });
+    return name;
+  }
+
   Future<void> _refresh() async {
     try {
       final storeId = await _prefs.getIdTienda();
@@ -62,11 +92,17 @@ class _LicenseReconnectBannerState extends State<LicenseReconnectBanner> {
         return;
       }
 
-      // Con red: renovar/descargar licencia si falta o está inválida.
-      // Antes solo se validaba local y bloqueaba aunque hubiera internet.
-      var status = await _licenseService.validate(
+      final forceOnline = _shouldForceOnlineRefresh();
+      if (forceOnline) {
+        _lastOnlineFetchAt = DateTime.now();
+      }
+
+      // Nunca bloquear por fallo transitorio de fetch si la licencia local
+      // sigue válida (requireOnlineSuccess: false).
+      final status = await _licenseService.validate(
         storeId: storeId,
-        forceOnlineRefresh: _connectivity.isConnected,
+        forceOnlineRefresh: forceOnline,
+        requireOnlineSuccess: false,
       );
 
       final days = status.daysUntilForcedReconnect;
@@ -79,15 +115,14 @@ class _LicenseReconnectBannerState extends State<LicenseReconnectBanner> {
         });
       }
 
-      // Bloqueo total: si la licencia no es válida y no estamos en
-      // pantallas permitidas, redirigir a subscription-detail.
+      // Bloqueo total solo con licencia inválida y ruta conocida fuera de
+      // las permitidas. Si route == null, no redirigir (evita bounce).
       if (!status.isValid) {
         final nav = globalNavigatorKey.currentState;
-        final route = ModalRoute.of(globalNavigatorKey.currentContext ?? context)
-            ?.settings
-            .name;
-        const allowed = {'/subscription-detail', '/login', '/'};
-        if (nav != null && (route == null || !allowed.contains(route))) {
+        final route = _currentRouteName();
+        if (nav != null &&
+            route != null &&
+            !_allowedRoutes.contains(route)) {
           nav.pushNamedAndRemoveUntil('/subscription-detail', (r) => false);
         }
       }

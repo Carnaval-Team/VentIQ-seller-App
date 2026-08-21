@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -18,6 +19,8 @@ import '../utils/price_utils.dart';
 import '../services/payment_method_service.dart';
 import '../services/printer_manager.dart';
 import '../services/user_preferences_service.dart';
+import '../services/turno_service.dart';
+import '../services/auto_sync_service.dart';
 import '../services/store_config_service.dart';
 import '../services/currency_service.dart';
 import '../utils/platform_utils.dart';
@@ -82,6 +85,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         _loadDiscountPermission(),
         _loadPrintPendingPermission(),
         _loadSellerModificationsPermission(),
+        _loadRememberPrinterPermission(),
       ]);
       if (widget.autoOpenOrderId != null) {
         _autoOpenOrder(widget.autoOpenOrderId!);
@@ -189,6 +193,25 @@ class _OrdersScreenState extends State<OrdersScreen> {
       }
     } catch (e) {
       print('❌ Error cargando permiso de modificación de órdenes: $e');
+    }
+  }
+
+  Future<void> _loadRememberPrinterPermission() async {
+    try {
+      final storeId = await _userPreferencesService.getIdTienda();
+      if (storeId == null) {
+        print(
+          '⚠️ No se pudo obtener id_tienda para guardar impresora por defecto',
+        );
+        return;
+      }
+      final allow = await StoreConfigService.getGuardarImpresoraPorDefecto(
+        storeId,
+      );
+      _printerManager.setAllowRememberPrinter(allow);
+      print('🖨️ guardar_impresora_por_defecto: $allow');
+    } catch (e) {
+      print('❌ Error al cargar guardar_impresora_por_defecto: $e');
     }
   }
 
@@ -617,117 +640,124 @@ class _OrdersScreenState extends State<OrdersScreen> {
     });
 
     try {
-      // Verificar si el modo offline está activado
-      final isOfflineModeEnabled =
-          await _userPreferencesService.isOfflineModeEnabled();
-      _isOfflineMode = isOfflineModeEnabled;
+      // Offline / full-offline: cache local. Online: servidor.
+      final useLocalData =
+          await _userPreferencesService.shouldUseLocalData();
+      _isOfflineMode = useLocalData;
 
-      if (isOfflineModeEnabled) {
-        print('🔌 Modo offline - Preservando cambios locales y recargando...');
-
-        // Guardar cambios de estado locales antes de limpiar
-        final localStateChanges = <String, OrderStatus>{};
-        final pendingOperations =
-            await _userPreferencesService.getPendingOperations();
-
-        // Identificar órdenes que han sido modificadas offline
-        for (final order in _orderService.orders) {
-          // Capturar órdenes pendientes de sincronización
-          if (order.status == OrderStatus.pendienteDeSincronizacion) {
-            localStateChanges[order.id] = order.status;
-          }
-
-          // Capturar órdenes que tienen operaciones pendientes de cambio de estado
-          for (final operation in pendingOperations) {
-            if (operation['type'] == 'order_status_change' &&
-                operation['order_id'] == order.id) {
-              final newStatusString = operation['new_status'] as String;
-              final newStatus = _stringToOrderStatus(newStatusString);
-              if (newStatus != null) {
-                localStateChanges[order.id] = newStatus;
-                print(
-                  '📋 Cambio de estado offline detectado: ${order.id} -> $newStatusString',
-                );
-              }
-              break;
-            }
-          }
-        }
-
-        // Limpiar órdenes antes de cargar las nuevas
+      // Sin turno abierto el vendedor no debe ver órdenes (online u offline).
+      final turnoAbierto = await TurnoService.getTurnoAbierto();
+      if (turnoAbierto == null) {
+        print('📭 Sin turno abierto — limpiando lista de órdenes del vendedor');
         _orderService.clearAllOrders();
+        if (mounted) {
+          setState(() {
+            _filteredOrders = [];
+            _isLoading = false;
+            _isOfflineMode = useLocalData;
+          });
+        }
+        return;
+      }
 
-        // Cargar órdenes sincronizadas desde cache
-        final offlineData = await _userPreferencesService.getOfflineData();
-        if (offlineData != null && offlineData['orders'] != null) {
-          final ordersData = offlineData['orders'] as List<dynamic>;
-          _orderService.transformSupabaseToOrdersPublic(ordersData);
-          print(
-            '✅ Órdenes sincronizadas cargadas desde cache: ${ordersData.length}',
-          );
+      // Guardar cambios de estado locales antes de recargar (aplican tanto
+      // en modo local como online, ya que pueden venir de operaciones aún
+      // no sincronizadas).
+      final localStateChanges = <String, OrderStatus>{};
+      final pendingOperations =
+          await _userPreferencesService.getPendingOperations();
+
+      // Identificar órdenes que han sido modificadas offline
+      for (final order in _orderService.orders) {
+        // Capturar órdenes pendientes de sincronización
+        if (order.status == OrderStatus.pendienteDeSincronizacion) {
+          localStateChanges[order.id] = order.status;
         }
 
-        // Cargar órdenes pendientes de sincronización
-        final pendingOrders = await _userPreferencesService.getPendingOrders();
-        if (pendingOrders.isNotEmpty) {
-          _orderService.addPendingOrdersToList(pendingOrders);
-          print(
-            '⏳ Órdenes pendientes de sincronización: ${pendingOrders.length}',
-          );
+        // Capturar órdenes que tienen operaciones pendientes de cambio de estado
+        for (final operation in pendingOperations) {
+          if (operation['type'] == 'order_status_change' &&
+              operation['order_id'] == order.id) {
+            final newStatusString = operation['new_status'] as String;
+            final newStatus = _stringToOrderStatus(newStatusString);
+            if (newStatus != null) {
+              localStateChanges[order.id] = newStatus;
+              print(
+                '📋 Cambio de estado offline detectado: ${order.id} -> $newStatusString',
+              );
+            }
+            break;
+          }
         }
+      }
 
-        // Aplicar cambios de estado offline después de cargar todas las órdenes
-        if (localStateChanges.isNotEmpty) {
-          print(
-            '🔄 Aplicando ${localStateChanges.length} cambios de estado offline...',
+      // Cargar TODAS las órdenes del turno abierto combinando cache offline
+      // + pendientes de sincronización + (si hay conexión real) datos
+      // frescos del servidor. El mismo mecanismo que usan cierre_screen.dart
+      // y venta_total_screen.dart, para que el conteo de órdenes del turno
+      // sea consistente en toda la app.
+      await _orderService.loadOrdersForOpenTurnoUnified();
+
+      // Si hay conexión real (no estamos en offline/full-offline), dejar
+      // también esas órdenes guardadas en el cache offline: así, si luego
+      // se pierde la conexión, esta información ya está disponible sin
+      // depender de que corra el auto-sync periódico primero.
+      if (!useLocalData) {
+        unawaited(
+          AutoSyncService().pullServerOrdersForCurrentShift().catchError((
+            e,
+          ) {
+            print('⚠️ No se pudo cachear órdenes para uso offline: $e');
+            return 0;
+          }),
+        );
+      }
+
+      // Aplicar cambios de estado offline después de cargar todas las órdenes
+      if (localStateChanges.isNotEmpty) {
+        print(
+          '🔄 Aplicando ${localStateChanges.length} cambios de estado offline...',
+        );
+        for (final entry in localStateChanges.entries) {
+          final orderId = entry.key;
+          final newStatus = entry.value;
+
+          final orderIndex = _orderService.orders.indexWhere(
+            (order) => order.id == orderId,
           );
-          for (final entry in localStateChanges.entries) {
-            final orderId = entry.key;
-            final newStatus = entry.value;
+          if (orderIndex != -1) {
+            final currentOrder = _orderService.orders[orderIndex];
 
-            final orderIndex = _orderService.orders.indexWhere(
-              (order) => order.id == orderId,
-            );
-            if (orderIndex != -1) {
-              final currentOrder = _orderService.orders[orderIndex];
-
-              // Solo actualizar si el estado actual es diferente al cambio offline
-              if (currentOrder.status != newStatus) {
-                final updatedOrder = currentOrder.copyWith(status: newStatus);
-                _orderService.orders[orderIndex] = updatedOrder;
-                print(
-                  '🔄 Estado aplicado: $orderId -> ${currentOrder.status} → ${newStatus.toString()}',
-                );
-              } else {
-                print(
-                  'ℹ️ Estado ya correcto: $orderId -> ${newStatus.toString()}',
-                );
-              }
+            // Solo actualizar si el estado actual es diferente al cambio offline
+            if (currentOrder.status != newStatus) {
+              final updatedOrder = currentOrder.copyWith(status: newStatus);
+              _orderService.orders[orderIndex] = updatedOrder;
+              print(
+                '🔄 Estado aplicado: $orderId -> ${currentOrder.status} → ${newStatus.toString()}',
+              );
             } else {
-              print('⚠️ Orden no encontrada para restaurar estado: $orderId');
+              print(
+                'ℹ️ Estado ya correcto: $orderId -> ${newStatus.toString()}',
+              );
             }
-          }
-
-          // Verificar si hay operaciones pendientes que necesitan ser aplicadas
-          final hasChanges = await _applyPendingStatusChanges();
-
-          // Actualizar UI después de aplicar todos los cambios
-          if (hasChanges) {
-            print(
-              '🔄 Forzando actualización de UI después de cambios de estado...',
-            );
-            setState(() {
-              _filteredOrders = List.from(_orderService.orders);
-              _filterOrders(); // Re-aplicar filtros si los hay
-            });
+          } else {
+            print('⚠️ Orden no encontrada para restaurar estado: $orderId');
           }
         }
-      } else {
-        print('🌐 Modo online - Cargando órdenes desde Supabase...');
-        // Limpiar órdenes antes de cargar las nuevas para evitar mezclar usuarios
-        _orderService.clearAllOrders();
-        await _orderService.listOrdersFromSupabase();
-        print('✅ Órdenes cargadas desde Supabase');
+
+        // Verificar si hay operaciones pendientes que necesitan ser aplicadas
+        final hasChanges = await _applyPendingStatusChanges();
+
+        // Actualizar UI después de aplicar todos los cambios
+        if (hasChanges) {
+          print(
+            '🔄 Forzando actualización de UI después de cambios de estado...',
+          );
+          setState(() {
+            _filteredOrders = List.from(_orderService.orders);
+            _filterOrders(); // Re-aplicar filtros si los hay
+          });
+        }
       }
 
       // Actualizar la UI después de cargar las órdenes
@@ -735,7 +765,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         setState(() {
           _filteredOrders = _orderService.orders;
           _isLoading = false;
-          _isOfflineMode = isOfflineModeEnabled;
+          _isOfflineMode = useLocalData;
         });
       }
     } catch (e) {
@@ -1840,7 +1870,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       Builder(
                         builder: (context) {
                           final visibleItems =
-                              order.items.where((i) => i.cantidad > 0).toList();
+                              order.items.where((i) => i.cantidad > 0).toList()
+                                ..sort((a, b) => a.nombre.compareTo(b.nombre));
                           return _buildDetailSection(
                             title: 'Productos (${visibleItems.length})',
                             icon: Icons.shopping_bag_outlined,
@@ -3008,23 +3039,23 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
   }
 
-  /// Mostrar diálogo de conteo de billetes
+  /// Mostrar pantalla de conteo de billetes
   void _showBillCountDialog(Order order) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      isDismissible: false, // No se puede cerrar tocando fuera
-      enableDrag: false, // No se puede cerrar arrastrando
-      builder:
-          (context) => BillCountDialog(
-            order: order,
-            userPreferencesService: _userPreferencesService,
-            onConfirmPayment: () {
-              // Confirmar el pago después del conteo
-              _updateOrderStatus(order, OrderStatus.completada);
-            },
-          ),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder:
+            (context) => Scaffold(
+              backgroundColor: Colors.white,
+              body: BillCountDialog(
+                order: order,
+                userPreferencesService: _userPreferencesService,
+                onConfirmPayment: () {
+                  _updateOrderStatus(order, OrderStatus.completada);
+                },
+              ),
+            ),
+      ),
     );
   }
 
@@ -4254,9 +4285,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
           },
         );
       },
-    );
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    ).whenComplete(() {
       amountController.dispose();
     });
   }

@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import '../services/user_preferences_service.dart';
 import '../services/auto_sync_service.dart';
 import '../services/turno_service.dart';
+import '../services/server_time_service.dart';
+import '../services/inventory_service.dart';
 import '../utils/uuid_generator.dart';
 import '../models/inventory_product.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -30,6 +32,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
   bool _isLoadingPreviousShift = true;
   bool _manejaInventario = false; // Se cargará desde configuración de tienda
   bool _mostrarDebeHaberEnConteo = false;
+  bool _autocompletarCantidadRealConteo = false;
   bool _isLoadingStoreConfig = true;
   String _userName = 'Cargando...';
 
@@ -59,6 +62,11 @@ class _AperturaScreenState extends State<AperturaScreen> {
   double _previousShiftCash = 0.0;
   int _previousShiftProducts = 0;
   double _previousShiftTicketAvg = 0.0;
+
+  /// Si ya hay turno abierto: mostrar detalles en lugar del formulario.
+  bool _checkingExistingShift = true;
+  Map<String, dynamic>? _existingOpenTurno;
+  bool _existingTurnoIsOffline = false;
 
   @override
   void initState() {
@@ -352,47 +360,61 @@ class _AperturaScreenState extends State<AperturaScreen> {
   Future<void> _checkExistingShift() async {
     try {
       final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
+      final offlineOpen = await _userPrefs.getOfflineTurno();
 
-      // Solo bloquear si hay un turno OPEN local (cerrados pendientes no impiden
-      // abrir uno nuevo tras el cierre offline).
-      final hasOpenOffline = await _userPrefs.hasOfflineTurnoAbierto();
-      if (hasOpenOffline) {
-        if (isOfflineModeEnabled) {
-          if (mounted) {
-            _showExistingShiftAlert();
-          }
-          return;
-        }
-        // Online: intentar sync del open pendiente, pero no bloquear por
-        // aperturas históricas cerradas.
+      // Online con turno offline pendiente: intentar sync, pero si sigue
+      // abierto se muestran sus detalles (no se permite otra apertura).
+      if (!isOfflineModeEnabled && offlineOpen != null) {
         await _triggerPendingAperturaSync();
-        print(
-          'ℹ️ Turno offline abierto detectado en modo online. Se permitirá crear turno online si el servidor no tiene uno.',
-        );
       }
 
       final turnoAbierto = await TurnoService.getTurnoAbierto();
+      final offlineOpenAfterSync = await _userPrefs.getOfflineTurno();
 
-      if (turnoAbierto != null) {
-        final isOfflineTurno = _isOfflineTurno(turnoAbierto);
-        if (!isOfflineModeEnabled && isOfflineTurno) {
-          print(
-            'ℹ️ Turno offline detectado en modo online. Se ignora para crear turno.',
-          );
-        } else {
-          if (mounted) {
-            _showExistingShiftAlert();
-          }
-          return;
-        }
+      Map<String, dynamic>? existing;
+      var isOffline = false;
+
+      if (isOfflineModeEnabled) {
+        existing = offlineOpenAfterSync ?? turnoAbierto;
+        isOffline =
+            existing != null &&
+            (_isOfflineTurno(existing) || offlineOpenAfterSync != null);
+      } else if (turnoAbierto != null && !_isOfflineTurno(turnoAbierto)) {
+        existing = turnoAbierto;
+        isOffline = false;
+      } else if (offlineOpenAfterSync != null) {
+        existing = offlineOpenAfterSync;
+        isOffline = true;
+      } else if (turnoAbierto != null) {
+        existing = turnoAbierto;
+        isOffline = _isOfflineTurno(turnoAbierto);
       }
 
-      // If no open shift, proceed with normal initialization
-      _loadUserData();
+      await _loadUserData();
+
+      if (existing != null) {
+        print(
+          'ℹ️ Turno abierto detectado (${isOffline ? 'OFFLINE' : 'ONLINE'}): ${existing['id']}',
+        );
+        if (mounted) {
+          setState(() {
+            _existingOpenTurno = existing;
+            _existingTurnoIsOffline = isOffline;
+            _checkingExistingShift = false;
+          });
+        }
+        return;
+      }
+
+      if (mounted) {
+        setState(() => _checkingExistingShift = false);
+      }
       _loadPreviousShiftSummary();
     } catch (e) {
       print('Error checking existing shift: $e');
-      // If error, proceed with normal initialization
+      if (mounted) {
+        setState(() => _checkingExistingShift = false);
+      }
       _loadUserData();
       _loadPreviousShiftSummary();
     }
@@ -404,32 +426,6 @@ class _AperturaScreenState extends State<AperturaScreen> {
     } catch (e) {
       print('⚠️ No se pudo iniciar la sincronización del turno: $e');
     }
-  }
-
-  void _showExistingShiftAlert() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Turno ya abierto'),
-            content: const Text(
-              'Ya existe un turno abierto para este TPV. Debe cerrar el turno actual antes de abrir uno nuevo.',
-            ),
-            actions: [
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  Navigator.pop(context);
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4A90E2),
-                ),
-                child: const Text('Volver'),
-              ),
-            ],
-          ),
-    );
   }
 
   Future<void> _loadUserData() async {
@@ -454,133 +450,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
         _isLoadingInventory = true;
       });
 
-      final offlineData = await _userPrefs.getOfflineData();
-
-      if (offlineData == null || offlineData['products'] == null) {
-        print('⚠️ No hay productos cacheados para inventario offline');
-        setState(() {
-          _inventoryProducts = [];
-          _isLoadingInventory = false;
-        });
-        return;
-      }
-
-      final productsData = Map<String, dynamic>.from(
-        offlineData['products'] as Map,
-      );
-      final Map<int, InventoryProduct> productsByIdMap = {};
-
-      for (final categoryProducts in productsData.values) {
-        final productList = List<dynamic>.from(categoryProducts as List);
-
-        for (final prodDataRaw in productList) {
-          final prodData = Map<String, dynamic>.from(prodDataRaw as Map);
-          final detalles =
-              prodData['detalles_completos'] as Map<String, dynamic>?;
-          if (detalles == null) continue;
-
-          final productoInfo = detalles['producto'] as Map<String, dynamic>?;
-          final inventarioList = detalles['inventario'] as List<dynamic>? ?? [];
-          if (productoInfo == null || inventarioList.isEmpty) continue;
-
-          // Saltar productos elaborados o servicios
-          final esElaborado = productoInfo['es_elaborado'] == true;
-          final esServicio = productoInfo['es_servicio'] == true;
-          if (esElaborado || esServicio) continue;
-
-          final productId = (productoInfo['id'] ?? prodData['id']) as int;
-          if (productsByIdMap.containsKey(productId)) continue;
-
-          final firstInventory = Map<String, dynamic>.from(
-            inventarioList.first as Map,
-          );
-          final ubicacion = Map<String, dynamic>.from(
-            firstInventory['ubicacion'] ?? {},
-          );
-          final almacen = Map<String, dynamic>.from(ubicacion['almacen'] ?? {});
-          final variante =
-              firstInventory['variante'] != null &&
-                      firstInventory['variante'] is Map
-                  ? Map<String, dynamic>.from(firstInventory['variante'])
-                  : null;
-          final presentacion =
-              firstInventory['presentacion'] != null &&
-                      firstInventory['presentacion'] is Map
-                  ? Map<String, dynamic>.from(firstInventory['presentacion'])
-                  : null;
-
-          String varianteNombre = 'Variante';
-          if (variante != null &&
-              variante['atributo'] != null &&
-              variante['opcion'] != null) {
-            final atributo = variante['atributo'] as Map<String, dynamic>?;
-            final opcion = variante['opcion'] as Map<String, dynamic>?;
-            if (atributo != null && opcion != null) {
-              varianteNombre =
-                  '${atributo['label'] ?? 'Atributo'}: ${opcion['valor'] ?? ''}';
-            }
-          }
-
-          final cantidadDisponible =
-              (firstInventory['cantidad_disponible'] as num?)?.toDouble() ??
-              0.0;
-
-          // Excluir productos sin stock del reporte/conteo del vendedor
-          if (cantidadDisponible <= 0) continue;
-
-          productsByIdMap[productId] = InventoryProduct(
-            id: productId,
-            skuProducto: firstInventory['sku_producto']?.toString() ?? '',
-            nombreProducto:
-                productoInfo['denominacion'] ??
-                prodData['denominacion'] ??
-                'Producto',
-            idCategoria: (productoInfo['id_categoria'] ?? 0) as int,
-            categoria:
-                productoInfo['categoria']?['denominacion'] ??
-                prodData['categoria'] ??
-                'Sin categoría',
-            idSubcategoria: (productoInfo['id_subcategoria'] ?? 0) as int,
-            subcategoria: prodData['subcategoria'] ?? 'General',
-            idTienda:
-                (productoInfo['id_tienda'] ?? prodData['id_tienda'] ?? 0)
-                    as int,
-            tienda: '',
-            idAlmacen: (almacen['id'] ?? 0) as int,
-            almacen: almacen['denominacion']?.toString() ?? 'Almacén',
-            idUbicacion: (ubicacion['id'] ?? 0) as int,
-            ubicacion: ubicacion['denominacion']?.toString() ?? 'Ubicación',
-            idVariante: variante?['id'] as int?,
-            variante: varianteNombre,
-            idOpcionVariante: variante?['opcion']?['id'] as int?,
-            opcionVariante:
-                (variante?['opcion']?['valor'] as String?) ?? varianteNombre,
-            idPresentacion: presentacion?['id'] as int?,
-            presentacion: presentacion?['denominacion']?.toString() ?? 'Unidad',
-            cantidadInicial: cantidadDisponible,
-            cantidadFinal: cantidadDisponible,
-            stockDisponible: cantidadDisponible,
-            stockReservado: 0,
-            stockDisponibleAjustado: cantidadDisponible,
-            esVendible: true,
-            esInventariable: true,
-            precioVenta:
-                (productoInfo['precio_actual'] ?? prodData['precio'] ?? 0)
-                    .toDouble(),
-            costoPromedio: null,
-            margenActual: null,
-            clasificacionAbc: 3,
-            abcDescripcion: '',
-            fechaUltimaActualizacion: DateTime.now(),
-            totalCount: 0,
-            resumenInventario: null,
-            infoPaginacion: null,
-          );
-        }
-      }
-
-      // Crear lista consolidada y controllers
-      final products = productsByIdMap.values.toList();
+      final products = await InventoryService.buildFromOfflineCache();
       for (var product in products) {
         if (!_inventoryControllers.containsKey(product.id)) {
           _inventoryControllers[product.id] = TextEditingController();
@@ -681,22 +551,26 @@ class _AperturaScreenState extends State<AperturaScreen> {
         _isLoadingStoreConfig = true;
       });
 
-      final isOffline = await _userPrefs.isOfflineModeEnabled();
+      final isOffline = await _userPrefs.shouldUseLocalData();
       final storeConfig = await _userPrefs.getStoreConfig();
 
       if (storeConfig != null) {
         final manejaInventario = storeConfig['maneja_inventario'] ?? false;
         final mostrarDebeHaber =
             storeConfig['mostrar_debe_haber_en_conteo_inventario'] ?? false;
+        final autocompletarCantidad =
+            storeConfig['autocompletar_cantidad_real_conteo'] ?? false;
         print(
           '🏪 Configuración de tienda cargada - Maneja inventario: $manejaInventario, '
-          'Mostrar debe haber: $mostrarDebeHaber',
+          'Mostrar debe haber: $mostrarDebeHaber, '
+          'Autocompletar cantidad real: $autocompletarCantidad',
         );
 
         if (mounted) {
           setState(() {
             _manejaInventario = manejaInventario;
             _mostrarDebeHaberEnConteo = mostrarDebeHaber;
+            _autocompletarCantidadRealConteo = autocompletarCantidad;
             _isLoadingStoreConfig = false;
           });
 
@@ -722,6 +596,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
         setState(() {
           _manejaInventario = false;
           _mostrarDebeHaberEnConteo = false;
+          _autocompletarCantidadRealConteo = false;
           _isLoadingStoreConfig = false;
           _checkingInventoryStatus = false;
         });
@@ -731,6 +606,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
       setState(() {
         _manejaInventario = false;
         _mostrarDebeHaberEnConteo = false;
+        _autocompletarCantidadRealConteo = false;
         _isLoadingStoreConfig = false;
         _checkingInventoryStatus = false;
       });
@@ -906,7 +782,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
       // Cargar productos ANTES de mostrar el modal
       if (_inventoryProducts.isEmpty) {
         print('📦 Cargando productos antes de mostrar modal...');
-        final isOffline = await _userPrefs.isOfflineModeEnabled();
+        final isOffline = await _userPrefs.shouldUseLocalData();
         if (isOffline) {
           await _loadInventoryProductsOffline();
         } else {
@@ -958,7 +834,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
     if (_inventoryProducts.isEmpty) return;
 
     try {
-      final isOffline = await _userPrefs.isOfflineModeEnabled();
+      final isOffline = await _userPrefs.shouldUseLocalData();
       if (isOffline) {
         await _loadStockRealProductosOffline();
         return;
@@ -1029,62 +905,14 @@ class _AperturaScreenState extends State<AperturaScreen> {
   }
 
   Future<void> _loadStockRealProductosOffline() async {
-    final idAlmacen = await _userPrefs.getIdAlmacen();
-    final offlineData = await _userPrefs.getOfflineData();
-    if (offlineData == null || offlineData['products'] == null) {
-      _stockRealByProduct = {
-        for (final p in _inventoryProducts)
-          p.id: _StockRealProductoApertura(
-            stockSistema: p.cantidadFinal,
-            pendienteCarnaval: 0,
-            enCamino: 0,
-            debeHaber: p.cantidadFinal,
-          ),
-      };
-      return;
-    }
-
-    final productsData = Map<String, dynamic>.from(
-      offlineData['products'] as Map,
-    );
-    final qtyByProduct = <int, double>{};
-
-    for (final categoryProducts in productsData.values) {
-      final productList = List<dynamic>.from(categoryProducts as List);
-      for (final prodDataRaw in productList) {
-        final prodData = Map<String, dynamic>.from(prodDataRaw as Map);
-        final detalles =
-            prodData['detalles_completos'] as Map<String, dynamic>?;
-        if (detalles == null) continue;
-        final productoInfo = detalles['producto'] as Map<String, dynamic>?;
-        if (productoInfo == null) continue;
-        final pid = (productoInfo['id'] ?? prodData['id']) as int;
-        final inventarioList = detalles['inventario'] as List<dynamic>? ?? [];
-        final seenUbic = <String>{};
-        var sum = qtyByProduct[pid] ?? 0.0;
-        for (final invRaw in inventarioList) {
-          final inv = Map<String, dynamic>.from(invRaw as Map);
-          final ubicacion = Map<String, dynamic>.from(inv['ubicacion'] ?? {});
-          final almacen = Map<String, dynamic>.from(ubicacion['almacen'] ?? {});
-          final almId = (almacen['id'] as num?)?.toInt();
-          if (idAlmacen != null && almId != null && almId != idAlmacen) {
-            continue;
-          }
-          final locationKey = '${almId ?? 0}_${ubicacion['id'] ?? 0}';
-          if (!seenUbic.add(locationKey)) continue;
-          sum += (inv['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
-        }
-        qtyByProduct[pid] = sum;
-      }
-    }
-
+    // Usar cantidades ya resueltas por InventoryService.buildFromOfflineCache.
     _stockRealByProduct = {
       for (final p in _inventoryProducts)
         p.id: _StockRealProductoApertura(
-          stockSistema: qtyByProduct[p.id] ?? p.cantidadFinal,
+          stockSistema: p.cantidadFinal,
           pendienteCarnaval: 0,
           enCamino: 0,
-          debeHaber: qtyByProduct[p.id] ?? p.cantidadFinal,
+          debeHaber: p.cantidadFinal,
         ),
     };
   }
@@ -1096,9 +924,9 @@ class _AperturaScreenState extends State<AperturaScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF4A90E2),
         elevation: 0,
-        title: const Text(
-          'Crear Apertura',
-          style: TextStyle(
+        title: Text(
+          _existingOpenTurno != null ? 'Turno abierto' : 'Crear Apertura',
+          style: const TextStyle(
             color: Colors.white,
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -1118,7 +946,16 @@ class _AperturaScreenState extends State<AperturaScreen> {
           ),
         ],
       ),
-      body: Form(
+      body:
+          _checkingExistingShift
+              ? const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4A90E2)),
+                ),
+              )
+              : _existingOpenTurno != null
+              ? _buildExistingOpenTurnoView()
+              : Form(
         key: _formKey,
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -1155,11 +992,11 @@ class _AperturaScreenState extends State<AperturaScreen> {
                     ),
                     const SizedBox(height: 16),
                     _buildInfoRow(
-                      'Fecha:',
+                      'Fecha actual:',
                       _formatDate(DateTime.now().toLocal()),
                     ),
                     _buildInfoRow(
-                      'Hora:',
+                      'Hora actual:',
                       _formatTime(DateTime.now().toLocal()),
                     ),
                     _buildInfoRow('Usuario:', _userName),
@@ -1543,19 +1380,244 @@ class _AperturaScreenState extends State<AperturaScreen> {
     );
   }
 
+  Widget _buildExistingOpenTurnoView() {
+    final turno = _existingOpenTurno!;
+    final isOffline = _existingTurnoIsOffline;
+    final typeColor = isOffline ? Colors.orange : const Color(0xFF059669);
+    final typeBg =
+        isOffline ? Colors.orange.shade50 : const Color(0xFFECFDF5);
+    final typeBorder =
+        isOffline ? Colors.orange.shade200 : const Color(0xFFA7F3D0);
+
+    final fechaRaw = turno['fecha_apertura']?.toString();
+    DateTime? fecha;
+    if (fechaRaw != null && fechaRaw.isNotEmpty) {
+      fecha = DateTime.tryParse(fechaRaw)?.toLocal();
+    }
+
+    final efectivo = _parseMonto(
+      turno['efectivo_inicial'] ?? turno['monto_inicial'],
+    );
+    final usuario =
+        (turno['usuario']?.toString().trim().isNotEmpty == true)
+            ? turno['usuario'].toString()
+            : _userName;
+    final observaciones = (turno['observaciones']?.toString() ?? '').trim();
+    final idDisplay =
+        (turno['server_id_turno'] ?? turno['id'] ?? turno['local_id'])
+            ?.toString() ??
+        '—';
+    final localId = turno['local_id']?.toString();
+    final idTpv = turno['id_tpv']?.toString() ?? '—';
+    final idVendedor = turno['id_vendedor']?.toString() ?? '—';
+    final manejaInventario = turno['maneja_inventario'] == true;
+    final productos = turno['productos'];
+    final productosCount =
+        productos is List ? productos.length : 0;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: typeBg,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: typeBorder),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  isOffline ? Icons.cloud_off : Icons.cloud_done,
+                  color: typeColor,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isOffline
+                            ? 'Apertura OFFLINE'
+                            : 'Apertura ONLINE',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: typeColor,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        isOffline
+                            ? 'Turno creado sin conexión (pendiente de sincronizar o local).'
+                            : 'Turno registrado en el servidor.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: typeColor,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    isOffline ? 'Offline' : 'Online',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey[300]!),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.lock_open,
+                      color: Color(0xFF4A90E2),
+                      size: 22,
+                    ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Detalles de la apertura',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1F2937),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                _buildInfoRow('ID turno:', idDisplay),
+                if (isOffline &&
+                    localId != null &&
+                    localId.isNotEmpty &&
+                    localId != idDisplay)
+                  _buildInfoRow('ID local:', localId),
+                if (fecha != null) ...[
+                  _buildInfoRow('Fecha:', _formatDate(fecha)),
+                  _buildInfoRow('Hora:', _formatTime(fecha)),
+                ] else
+                  _buildInfoRow('Fecha apertura:', fechaRaw ?? '—'),
+                _buildInfoRow('Usuario:', usuario),
+                _buildInfoRow('TPV:', idTpv),
+                _buildInfoRow('Vendedor:', idVendedor),
+                _buildInfoRow(
+                  'Efectivo inicial:',
+                  '\$${efectivo.toStringAsFixed(2)}',
+                ),
+                _buildInfoRow(
+                  'Inventario:',
+                  manejaInventario
+                      ? (productosCount > 0
+                          ? 'Sí ($productosCount productos)'
+                          : 'Sí')
+                      : 'No',
+                ),
+                if (observaciones.isNotEmpty)
+                  _buildInfoRow('Observaciones:', observaciones),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.amber.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.amber.shade200),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline, color: Colors.amber.shade800),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Ya existe un turno abierto para este TPV. Debe cerrarlo antes de abrir uno nuevo.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.amber.shade900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4A90E2),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text(
+                'Volver',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  double _parseMonto(dynamic value) {
+    if (value == null) return 0;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString()) ?? 0;
+  }
+
   Widget _buildInfoRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label, style: TextStyle(fontSize: 14, color: Colors.grey[600])),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: Color(0xFF1F2937),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF1F2937),
+              ),
             ),
           ),
         ],
@@ -1574,10 +1636,22 @@ class _AperturaScreenState extends State<AperturaScreen> {
   }
 
   bool _isOfflineTurno(Map<String, dynamic> turno) {
+    // Marcador explícito de origen (ver `saveOfflineTurno` en
+    // UserPreferencesService): una apertura hecha en línea y luego cacheada
+    // para resiliencia offline queda marcada 'online' aunque estructuralmente
+    // viva dentro de la misma cola de turnos offline. Sin este marcador,
+    // campos como `local_id`/`tipo_operacion` (presentes en TODA entrada de
+    // la cola, sin importar su origen real) hacían que una apertura online
+    // se mostrara incorrectamente como "creada offline".
+    final origen = turno['origen_apertura'];
+    if (origen == 'online') return false;
+    if (origen == 'offline') return true;
+
+    // Sin marcador (entradas antiguas persistidas antes de este cambio):
+    // usar `created_offline_at` como única señal de origen real offline.
     final turnoId = turno['id'];
-    return turnoId is String ||
-        turno['created_offline_at'] != null ||
-        turno['tipo_operacion'] == 'apertura';
+    return turno['created_offline_at'] != null ||
+        (turnoId is String && turno['server_id_turno'] == null);
   }
 
   String _formatInventoryCount(double quantity) {
@@ -2149,7 +2223,8 @@ class _AperturaScreenState extends State<AperturaScreen> {
                         runSpacing: 4,
                         alignment: WrapAlignment.center,
                         children: [
-                          if (_mostrarDebeHaberEnConteo)
+                          if (_mostrarDebeHaberEnConteo &&
+                              _autocompletarCantidadRealConteo)
                             TextButton.icon(
                               onPressed: () {
                                 for (final p in _inventoryProducts) {
@@ -2434,6 +2509,11 @@ class _AperturaScreenState extends State<AperturaScreen> {
       final clientUuid = UuidGenerator.v4();
       final localId = UuidGenerator.v4();
 
+      // Usar la hora corregida contra el servidor (ver ServerTimeService)
+      // para que fecha_apertura no quede desfasada si el reloj del
+      // dispositivo está mal ajustado.
+      final nowServerCorrected = ServerTimeService().now();
+
       // Crear estructura de apertura offline
       final aperturaData = {
         'id': localId,
@@ -2444,12 +2524,13 @@ class _AperturaScreenState extends State<AperturaScreen> {
         'id_vendedor': idVendedor,
         'usuario': usuario,
         'tipo_operacion': 'apertura',
+        'origen_apertura': 'offline',
         'efectivo_inicial': efectivoInicial,
-        'fecha_apertura': DateTime.now().toIso8601String(),
+        'fecha_apertura': nowServerCorrected.toIso8601String(),
         'observaciones': observaciones ?? '',
         'maneja_inventario': _manejaInventario,
         'productos': productos ?? [],
-        'created_offline_at': DateTime.now().toIso8601String(),
+        'created_offline_at': nowServerCorrected.toIso8601String(),
       };
 
       // Cola multi-turno: crea entrada status=open (no sobrescribe cerrados).

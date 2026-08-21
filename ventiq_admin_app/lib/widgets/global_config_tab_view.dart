@@ -4,6 +4,7 @@ import '../config/app_colors.dart';
 import '../services/store_config_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/subscription_service.dart';
+import '../services/printer_preferences_service.dart';
 import '../models/subscription.dart';
 import '../screens/subscription_detail_screen.dart';
 import '../utils/navigation_guard.dart';
@@ -19,6 +20,8 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   final UserPreferencesService _userPreferencesService =
       UserPreferencesService();
   final SubscriptionService _subscriptionService = SubscriptionService();
+  final PrinterPreferencesService _printerPreferencesService =
+      PrinterPreferencesService();
   final TextEditingController _masterPasswordController =
       TextEditingController();
 
@@ -42,8 +45,16 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   bool _showMasterPasswordField = false;
   bool _obscureMasterPassword = true;
   bool _showDescriptionInSelectors = false;
+  bool _guardarImpresoraPorDefecto = false;
+  List<String> _ticketsAImprimir = ['cliente', 'almacen'];
+  Map<String, int> _copiasPorTicket = {'cliente': 1, 'almacen': 1};
+  bool _autocompletarCantidadRealConteo = false;
   int? _storeId;
   String? _storeName;
+
+  // Impresora guardada localmente
+  Map<String, dynamic>? _savedBluetoothPrinter;
+  Map<String, dynamic>? _savedWiFiPrinter;
 
   // Variables para suscripción
   Subscription? _activeSubscription;
@@ -458,7 +469,34 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         _hasMasterPassword = hasMasterPassword;
         _showMasterPasswordField = _needMasterPasswordToCancel;
         _showDescriptionInSelectors = showDescriptionInSelectors;
+        _guardarImpresoraPorDefecto =
+            config['guardar_impresora_por_defecto'] ?? false;
+        final rawTickets = config['tickets_a_imprimir'];
+        _ticketsAImprimir =
+            (rawTickets is List)
+                ? rawTickets.map((e) => e.toString()).toList()
+                : ['cliente', 'almacen'];
+        final rawCopias = config['copias_por_ticket'];
+        _copiasPorTicket =
+            (rawCopias is Map)
+                ? rawCopias.map(
+                  (key, value) => MapEntry(
+                    key.toString(),
+                    (value as num).toInt(),
+                  ),
+                )
+                : {'cliente': 1, 'almacen': 1};
+        _autocompletarCantidadRealConteo =
+            config['autocompletar_cantidad_real_conteo'] ?? false;
         _isLoading = false;
+      });
+
+      // Cargar impresora por defecto guardada localmente
+      final savedBt = await _printerPreferencesService.getDefaultBluetoothPrinter();
+      final savedWifi = await _printerPreferencesService.getDefaultWiFiPrinter();
+      setState(() {
+        _savedBluetoothPrinter = savedBt;
+        _savedWiFiPrinter = savedWifi;
       });
 
       // Cargar suscripción actual (activa o vencida)
@@ -1066,6 +1104,168 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
     }
   }
 
+  Future<void> _updateGuardarImpresoraPorDefectoSetting(bool value) async {
+    if (_storeId == null) return;
+
+    try {
+      print('🔧 Actualizando guardar_impresora_por_defecto: $value');
+      await StoreConfigService.updateGuardarImpresoraPorDefecto(
+        _storeId!,
+        value,
+      );
+      setState(() => _guardarImpresoraPorDefecto = value);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              value
+                  ? '✅ Los vendedores pueden guardar la impresora por defecto para el turno'
+                  : '🔒 La impresora no se recordará automáticamente entre impresiones',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+      print('✅ guardar_impresora_por_defecto actualizado');
+    } catch (e) {
+      print('❌ Error al actualizar guardar_impresora_por_defecto: $e');
+      setState(() => _guardarImpresoraPorDefecto = !value);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuración: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateTicketsAImprimir() async {
+    if (_storeId == null) return;
+
+    final newTickets =
+        _ticketsAImprimir.toSet().toList()..sort((a, b) => a.compareTo(b));
+    final previous = List<String>.from(_ticketsAImprimir);
+    setState(() => _ticketsAImprimir = newTickets);
+
+    try {
+      print('🔧 Actualizando tickets_a_imprimir: $newTickets');
+      await StoreConfigService.updateTicketsAImprimir(_storeId!, newTickets);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              newTickets.isEmpty
+                  ? '⚠️ No se imprimirá ningún ticket'
+                  : '✅ Tickets configurados: ${newTickets.map(_ticketDisplayName).join(', ')}',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+      print('✅ tickets_a_imprimir actualizado');
+    } catch (e) {
+      print('❌ Error al actualizar tickets_a_imprimir: $e');
+      setState(() => _ticketsAImprimir = previous);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuración: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateCopiasPorTicket() async {
+    if (_storeId == null) return;
+
+    final previous = Map<String, int>.from(_copiasPorTicket);
+    // Sanitize values
+    _copiasPorTicket = _copiasPorTicket.map(
+      (key, value) => MapEntry(key, value.clamp(1, 10)),
+    );
+    setState(() {});
+
+    try {
+      print('🔧 Actualizando copias_por_ticket: $_copiasPorTicket');
+      await StoreConfigService.updateCopiasPorTicket(
+        _storeId!,
+        _copiasPorTicket,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Cantidad de copias actualizada'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+      print('✅ copias_por_ticket actualizado');
+    } catch (e) {
+      print('❌ Error al actualizar copias_por_ticket: $e');
+      setState(() => _copiasPorTicket = previous);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuración: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateAutocompletarCantidadRealConteoSetting(bool value) async {
+    if (_storeId == null) return;
+
+    try {
+      print('🔧 Actualizando autocompletar_cantidad_real_conteo: $value');
+      await StoreConfigService.updateAutocompletarCantidadRealConteo(
+        _storeId!,
+        value,
+      );
+      setState(() => _autocompletarCantidadRealConteo = value);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              value
+                  ? '✅ En apertura/cierre se podrá copiar la cantidad esperada como real'
+                  : '🔒 El vendedor deberá ingresar manualmente cada cantidad real',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+      print('✅ autocompletar_cantidad_real_conteo actualizado');
+    } catch (e) {
+      print('❌ Error al actualizar autocompletar_cantidad_real_conteo: $e');
+      setState(() => _autocompletarCantidadRealConteo = !value);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuración: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  String _ticketDisplayName(String ticket) {
+    switch (ticket) {
+      case 'cliente':
+        return 'Cliente';
+      case 'almacen':
+        return 'Almacén';
+      default:
+        return ticket;
+    }
+  }
+
   Future<void> _updateMasterPassword() async {
     if (_storeId == null) return;
 
@@ -1223,6 +1423,24 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                 onChanged: _updateMostrarDebeHaberEnConteoSetting,
               ),
             ),
+            // Subopción: autocompletar cantidad real (depende de mostrar debe haber)
+            if (_mostrarDebeHaberEnConteoInventario) ...[
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.only(left: 48),
+                child: _buildConfigCard(
+                  icon: Icons.auto_fix_high_outlined,
+                  iconColor: Colors.teal,
+                  title: 'Copiar cantidad esperada como real',
+                  subtitle:
+                      _autocompletarCantidadRealConteo
+                          ? 'El vendedor puede pulsar un botón para usar la cantidad esperada como conteo real'
+                          : 'El vendedor escribe manualmente la cantidad real contada',
+                  value: _autocompletarCantidadRealConteo,
+                  onChanged: _updateAutocompletarCantidadRealConteoSetting,
+                ),
+              ),
+            ],
           ],
 
           const SizedBox(height: 16),
@@ -1354,6 +1572,11 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
 
           // Configuración de Precio Regido por USD
           _buildPrecioRegidoPorUsdCard(),
+
+          const SizedBox(height: 24),
+
+          // Configuración de impresión de tickets
+          _buildPrintConfigSection(),
 
           const SizedBox(height: 24),
 
@@ -1691,6 +1914,144 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         ],
       ),
     );
+  }
+
+  Widget _buildSavedPrinterTile() {
+    final hasBluetooth = _savedBluetoothPrinter != null;
+    final hasWifi = _savedWiFiPrinter != null;
+    if (!hasBluetooth && !hasWifi) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.print_disabled, color: Colors.grey.shade400, size: 24),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'No hay impresora guardada por defecto',
+                style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.print, color: AppColors.primary, size: 24),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Impresora guardada por defecto',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1F2937),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (hasBluetooth) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(Icons.bluetooth, color: Colors.blue, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Bluetooth: ${_savedBluetoothPrinter!['name']}',
+                    style: TextStyle(fontSize: 13, color: Colors.black87),
+                  ),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(left: 26),
+              child: Text(
+                'MAC: ${_savedBluetoothPrinter!['mac']}',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+            ),
+          ],
+          if (hasWifi) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(Icons.wifi, color: Colors.green, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'WiFi: ${_savedWiFiPrinter!['ip']}:${_savedWiFiPrinter!['port']}',
+                    style: TextStyle(fontSize: 13, color: Colors.black87),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _forgetSavedPrinter,
+              icon: Icon(Icons.delete_outline, color: Colors.red, size: 18),
+              label: Text(
+                'Olvidar impresora',
+                style: TextStyle(color: Colors.red),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: Colors.red.withOpacity(0.3)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _forgetSavedPrinter() async {
+    try {
+      await _printerPreferencesService.clearAll();
+      setState(() {
+        _savedBluetoothPrinter = null;
+        _savedWiFiPrinter = null;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('🗑️ Impresora por defecto olvidada')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al olvidar impresora: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildMasterPasswordField() {
@@ -2078,6 +2439,255 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildPrintConfigSection() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4A90E2).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.print_outlined,
+                  color: Color(0xFF4A90E2),
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Configuración de Impresión',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1F2937),
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Define qué tickets imprimir y cuántas copias',
+                      style: TextStyle(fontSize: 13, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _buildConfigCard(
+            icon: Icons.save_outlined,
+            iconColor: Colors.indigo,
+            title: 'Guardar Impresora por Defecto',
+            subtitle:
+                _guardarImpresoraPorDefecto
+                    ? '✅ El vendedor puede recordar la impresora seleccionada durante el turno'
+                    : '🔒 El vendedor debe elegir la impresora en cada impresión',
+            value: _guardarImpresoraPorDefecto,
+            onChanged: _updateGuardarImpresoraPorDefectoSetting,
+          ),
+          const SizedBox(height: 12),
+          _buildSavedPrinterTile(),
+          const SizedBox(height: 16),
+          const Text(
+            'Tickets a imprimir',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _buildTicketChip(
+                  key: 'cliente',
+                  label: 'Cliente',
+                  icon: Icons.receipt_outlined,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildTicketChip(
+                  key: 'almacen',
+                  label: 'Almacén',
+                  icon: Icons.warehouse_outlined,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Copias por ticket',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ..._copiasPorTicket.entries.map(
+            (entry) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _ticketDisplayName(entry.key),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.remove_circle_outline),
+                        color: const Color(0xFF4A90E2),
+                        onPressed:
+                            (entry.value > 1)
+                                ? () {
+                                  setState(() {
+                                    _copiasPorTicket[entry.key] =
+                                        entry.value - 1;
+                                  });
+                                  _updateCopiasPorTicket();
+                                }
+                                : null,
+                      ),
+                      Text(
+                        '${entry.value}',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add_circle_outline),
+                        color: const Color(0xFF4A90E2),
+                        onPressed:
+                            (entry.value < 10)
+                                ? () {
+                                  setState(() {
+                                    _copiasPorTicket[entry.key] =
+                                        entry.value + 1;
+                                  });
+                                  _updateCopiasPorTicket();
+                                }
+                                : null,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.blue.withOpacity(0.2)),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.info_outline, size: 16, color: Colors.blue),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Esta configuración se aplica a todos los vendedores de la tienda.',
+                    style: TextStyle(fontSize: 12, color: Colors.blue),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTicketChip({
+    required String key,
+    required String label,
+    required IconData icon,
+  }) {
+    final selected = _ticketsAImprimir.contains(key);
+    return InkWell(
+      onTap: () {
+        setState(() {
+          if (selected) {
+            _ticketsAImprimir.remove(key);
+          } else {
+            _ticketsAImprimir.add(key);
+          }
+        });
+        _updateTicketsAImprimir();
+      },
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        decoration: BoxDecoration(
+          color:
+              selected
+                  ? const Color(0xFF4A90E2).withOpacity(0.1)
+                  : Colors.grey[100],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: selected ? const Color(0xFF4A90E2) : Colors.grey[300]!,
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 18,
+              color: selected ? const Color(0xFF4A90E2) : Colors.grey[600],
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: selected ? const Color(0xFF4A90E2) : Colors.grey[800],
+              ),
+            ),
+            if (selected) ...[
+              const SizedBox(width: 6),
+              const Icon(Icons.check_circle, color: Color(0xFF4A90E2), size: 16),
+            ],
+          ],
+        ),
       ),
     );
   }

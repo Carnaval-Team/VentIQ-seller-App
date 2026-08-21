@@ -1128,6 +1128,14 @@ class ProductService {
 
     String productId,
 
+    {
+
+    /// Tienda a consultar; null = tienda activa. Necesario para los Home
+    /// Screen Widgets, que pueden apuntar a otra tienda.
+    int? storeId,
+
+    }
+
   ) async {
 
     try {
@@ -1138,7 +1146,7 @@ class ProductService {
 
       final userPrefs = UserPreferencesService();
 
-      final idTienda = await userPrefs.getIdTienda();
+      final idTienda = storeId ?? await userPrefs.getIdTienda();
 
       if (idTienda == null) {
 

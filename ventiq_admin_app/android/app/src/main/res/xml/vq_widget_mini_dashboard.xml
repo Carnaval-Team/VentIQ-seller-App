@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Mini Dashboard: 4x2 celdas aprox. El layout inicial es el de carga que provee
+  Glance; `android:configure` abre MainActivity, donde Dart detecta el modo
+  configuración (HomeWidget.initiallyLaunchedFromHomeWidgetConfigure) y muestra
+  la pantalla de ajustes de esta instancia.
+
+  updatePeriodMillis=1800000 (30 min) es el mínimo que respeta Android para este
+  atributo; el refresco fino lo maneja WorkManager desde Dart.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:initialLayout="@layout/glance_default_loading_layout"
+    android:minWidth="250dp"
+    android:minHeight="150dp"
+    android:minResizeWidth="180dp"
+    android:minResizeHeight="110dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="3"
+    android:description="@string/vq_widget_mini_dashboard_desc"
+    android:configure="com.example.ventiq_admin_app.MainActivity"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:updatePeriodMillis="1800000" />
