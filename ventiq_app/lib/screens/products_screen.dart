@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import '../models/product.dart';
+import '../widgets/cocina_chip.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/currency_service.dart';
@@ -1279,10 +1280,14 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                           ),
                         ),
                         const SizedBox(width: 6),
-                        // Estado de stock, elaborado o servicio
+                        // Estado de stock, elaborado o servicio.
+                        // Si el plato va a cocina, manda la disponibilidad de
+                        // esa estacion: "3 porciones" / "Hasta 5" / "Agotado".
                         Flexible(
                           child: Text(
-                            widget.product.esElaborado
+                            widget.product.vaACocina
+                                ? widget.product.etiquetaDisponibilidad
+                                : widget.product.esElaborado
                                 ? '(elaborado)'
                                 : widget.product.esServicio
                                 ? '(servicio)'
@@ -1292,7 +1297,14 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                             style: TextStyle(
                               fontSize: 13,
                               color:
-                                  widget.product.esElaborado
+                                  widget.product.vaACocina
+                                      ? (widget.product.cantidadReal > 0 ||
+                                              widget.product.ilimitado
+                                          ? (widget.product.esPorTanda
+                                              ? Colors.amber[800]
+                                              : Colors.indigo[500])
+                                          : Colors.red[600])
+                                      : widget.product.esElaborado
                                       ? Colors.orange[600]
                                       : widget.product.esServicio
                                       ? Colors.blue[600]
@@ -1304,6 +1316,18 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        // Estacion de cocina: el vendedor necesita saber a
+                        // donde va el plato antes de prometerlo al cliente.
+                        if (widget.product.vaACocina &&
+                            widget.product.cocina != null) ...[
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: CocinaChip(
+                              product: widget.product,
+                              compacto: true,
+                            ),
+                          ),
+                        ],
                         if (widget.product.reservadoCarnaval > 0) ...[
                           const SizedBox(width: 6),
                           Container(
@@ -1559,7 +1583,9 @@ class _ProductCardState extends State<_ProductCard>
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
-                                  widget.product.esElaborado
+                                  widget.product.vaACocina
+                                      ? widget.product.etiquetaDisponibilidad
+                                      : widget.product.esElaborado
                                       ? '(elaborado)'
                                       : widget.product.esServicio
                                       ? '(servicio)'
@@ -1571,6 +1597,17 @@ class _ProductCardState extends State<_ProductCard>
                                   ),
                                 ),
                               ),
+                              // Estacion de cocina en la vista de cuadricula.
+                              if (widget.product.vaACocina &&
+                                  widget.product.cocina != null) ...[
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: CocinaChip(
+                                    product: widget.product,
+                                    compacto: true,
+                                  ),
+                                ),
+                              ],
                               if (widget.product.reservadoCarnaval > 0) ...[
                                 const SizedBox(width: 6),
                                 Container(

@@ -40,6 +40,8 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   bool _cambiarFechaCreacionOperacionAlCierre = false;
   bool _solicitarImagenOperacion = false;
   bool _permitirModoOfflineCompleto = false;
+  bool _modoRestaurante = false;
+  bool _cocinaActiva = false;
   int _diasMaxSinValidarLicencia = 7;
   String _metodoRedondeoPrecioVenta = 'NO_REDONDEAR';
   bool _hasMasterPassword = false;
@@ -465,6 +467,8 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             config['solicitar_imagen_operacion'] ?? false;
         _permitirModoOfflineCompleto =
             config['permitir_modo_offline_completo'] ?? false;
+        _modoRestaurante = config['modo_restaurante'] ?? false;
+        _cocinaActiva = config['cocina_activa'] ?? false;
         _diasMaxSinValidarLicencia =
             config['dias_max_sin_validar_licencia'] ?? 7;
         _metodoRedondeoPrecioVenta =
@@ -954,6 +958,98 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
           ),
         );
       }
+    }
+  }
+
+  /// Activa o desactiva el modo restaurante (mesas y cuentas abiertas).
+  ///
+  /// Al desactivarlo se apaga también la cocina: las comandas salen de las
+  /// cuentas de mesa, así que sin mesas el módulo quedaría produciendo pedidos
+  /// que nadie puede abrir.
+  Future<void> _updateModoRestauranteSetting(bool value) async {
+    if (_storeId == null) return;
+
+    final apagabaCocina = !value && _cocinaActiva;
+
+    setState(() {
+      _modoRestaurante = value;
+      if (apagabaCocina) _cocinaActiva = false;
+    });
+
+    try {
+      await StoreConfigService.updateModoRestaurante(_storeId!, value);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            value
+                ? 'Modo restaurante activado: los vendedores gestionan mesas y cuentas abiertas'
+                : apagabaCocina
+                ? 'Modo restaurante desactivado. También se desactivó la cocina (depende de las mesas).'
+                : 'Modo restaurante desactivado: venta directa sin mesas',
+          ),
+          backgroundColor: AppColors.success,
+          duration: Duration(seconds: apagabaCocina ? 5 : 3),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _modoRestaurante = !value;
+        if (apagabaCocina) _cocinaActiva = true;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al actualizar modo restaurante: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  /// Activa o desactiva el módulo de cocina (estaciones y comandas).
+  ///
+  /// Al activarlo se enciende el modo restaurante si faltaba.
+  Future<void> _updateCocinaActivaSetting(bool value) async {
+    if (_storeId == null) return;
+
+    final activabaRestaurante = value && !_modoRestaurante;
+
+    setState(() {
+      _cocinaActiva = value;
+      if (activabaRestaurante) _modoRestaurante = true;
+    });
+
+    try {
+      await StoreConfigService.updateCocinaActiva(_storeId!, value);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            !value
+                ? 'Módulo de cocina desactivado'
+                : activabaRestaurante
+                ? 'Cocina activada. También se activó el modo restaurante (las comandas salen de las cuentas de mesa).'
+                : 'Módulo de cocina activado: los platos se enrutan a sus estaciones',
+          ),
+          backgroundColor: AppColors.success,
+          duration: Duration(seconds: activabaRestaurante ? 5 : 3),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _cocinaActiva = !value;
+        if (activabaRestaurante) _modoRestaurante = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al actualizar módulo de cocina: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -1568,6 +1664,34 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                     : '🔒 Solo gerente/supervisor pueden registrar ventas a pago pendiente',
             value: _vendedoresPuedenCrearCxc,
             onChanged: _updateVendedoresPuedenCrearCxcSetting,
+          // ── Restaurante y cocina ──────────────────────────────────────────
+          // Van juntas porque están acopladas: la cocina depende de las mesas.
+          _buildConfigCard(
+            icon: Icons.table_restaurant,
+            iconColor: Colors.brown,
+            title: 'Modo Restaurante',
+            subtitle:
+                _modoRestaurante
+                    ? '🍽️ Los vendedores gestionan mesas y cuentas abiertas'
+                    : '🧾 Venta directa sin mesas',
+            value: _modoRestaurante,
+            onChanged: _updateModoRestauranteSetting,
+          ),
+
+          const SizedBox(height: 16),
+
+          _buildConfigCard(
+            icon: Icons.soup_kitchen,
+            iconColor: Colors.deepOrange,
+            title: 'Módulo de Cocina',
+            subtitle:
+                _cocinaActiva
+                    ? '👨‍🍳 Los platos se enrutan a sus estaciones de cocina'
+                    : _modoRestaurante
+                    ? 'Los platos no se enrutan a ninguna cocina'
+                    : 'Al activarlo se habilitará también el modo restaurante',
+            value: _cocinaActiva,
+            onChanged: _updateCocinaActivaSetting,
           ),
 
           const SizedBox(height: 16),

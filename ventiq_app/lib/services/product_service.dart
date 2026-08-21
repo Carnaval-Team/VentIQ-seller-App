@@ -61,22 +61,35 @@ class ProductService {
         throw Exception('No se recibieron datos de productos');
       }
 
+      // Catálogo dual: a los productos de barra se suman los platos de las
+      // cocinas ligadas a este TPV. Un plato que se cocina en la "Cocina
+      // caliente" no tiene inventario en el almacén de la barra, así que la
+      // consulta de arriba no lo ve.
+      final productosCocina = await _fetchProductosCocina(
+        categoryId: categoryId,
+        idTienda: idTienda,
+        idTpv: idTpv,
+      );
+
+      final List<dynamic> todos = [...response, ...productosCocina];
+
       debugPrint(
-        '📦 Respuesta de productos: ${response.length} productos encontrados',
+        '📦 Respuesta de productos: ${response.length} de barra + '
+        '${productosCocina.length} de cocina = ${todos.length}',
       );
 
       // Check if response is empty
-      if (response.isEmpty) {
+      if (todos.isEmpty) {
         debugPrint('📭 No hay productos en esta categoría');
         throw Exception('No hay productos disponibles en esta categoría');
       }
 
-      debugPrint('🔍 Estructura de respuesta: ${response[0]}');
+      debugPrint('🔍 Estructura de respuesta: ${todos[0]}');
 
       // Group products by subcategory_nombre
       final Map<String, List<Product>> productsBySubcategory = {};
 
-      for (final item in response) {
+      for (final item in todos) {
         final productData = item as Map<String, dynamic>;
         debugPrint('📝 Procesando producto: ${productData['denominacion']}');
 
@@ -207,8 +220,18 @@ class ProductService {
 
       if (response == null) return [];
 
+      // Catálogo dual también en la búsqueda: si el vendedor busca "bistec"
+      // debe encontrarlo aunque se cocine en otra estación.
+      final productosCocina = await _fetchProductosCocina(
+        categoryId: categoryId,
+        idTienda: idTienda,
+        idTpv: idTpv,
+        textSearch: trimmed,
+        soloDisponibles: soloDisponibles,
+      );
+
       final results =
-          (response as List)
+          [...(response as List), ...productosCocina]
               .map(
                 (item) =>
                     _convertSupabaseToProduct(item as Map<String, dynamic>),
@@ -224,8 +247,48 @@ class ProductService {
     }
   }
 
+  /// Platos que este TPV puede vender por vía de cocina.
+  ///
+  /// Llama a `fn_productos_cocina_tpv`, que devuelve las mismas columnas que el
+  /// catálogo de barra para poder concatenar sin transformar nada. Ya excluye
+  /// los productos con stock en el almacén del TPV, así que no hay duplicados.
+  ///
+  /// Ante cualquier error devuelve lista vacía en lugar de propagar: si la
+  /// tienda no usa cocinas o el `09` todavía no está aplicado, el catálogo de
+  /// barra debe seguir funcionando igual.
+  Future<List<dynamic>> _fetchProductosCocina({
+    required int? categoryId,
+    required int idTienda,
+    required int? idTpv,
+    String? textSearch,
+    bool soloDisponibles = false,
+  }) async {
+    if (idTpv == null) return const [];
+
+    try {
+      final response = await _supabase.rpc(
+        'fn_productos_cocina_tpv',
+        params: {
+          'id_categoria_param': categoryId,
+          'id_tienda_param': idTienda,
+          'id_tpv_param': idTpv,
+          'text_search': textSearch,
+          'solo_disponibles_param': soloDisponibles,
+        },
+      );
+
+      if (response is List) return response;
+      return const [];
+    } catch (e) {
+      debugPrint('⚠️ Catálogo de cocina no disponible: $e');
+      return const [];
+    }
+  }
+
   /// Convert Supabase product response to Product model
   Product _convertSupabaseToProduct(Map<String, dynamic> data) {
+    final metadata = data['metadata'] as Map<String, dynamic>?;
+
     return Product(
       id: data['id_producto'] as int? ?? 0,
       denominacion: data['denominacion'] as String? ?? 'Sin nombre',
@@ -247,23 +310,31 @@ class ProductService {
       esInventariable: true, // Default value
       esPorLotes: false, // Default value
       esElaborado:
-          (data['metadata'] != null && data['metadata']['es_elaborado'] != null)
-              ? data['metadata']['es_elaborado'] as bool
+          (metadata != null && metadata['es_elaborado'] != null)
+              ? metadata['es_elaborado'] as bool
               : data['es_elaborado'] as bool? ?? false,
       esServicio:
-          (data['metadata'] != null && data['metadata']['es_servicio'] != null)
-              ? data['metadata']['es_servicio'] as bool
+          (metadata != null && metadata['es_servicio'] != null)
+              ? metadata['es_servicio'] as bool
               : data['es_servicio'] as bool? ?? false,
       esPaquete:
-          (data['metadata'] != null && data['metadata']['es_paquete'] != null)
-              ? data['metadata']['es_paquete'] as bool
+          (metadata != null && metadata['es_paquete'] != null)
+              ? metadata['es_paquete'] as bool
               : data['es_paquete'] as bool? ?? false,
       categoria: data['categoria_nombre'] as String? ?? 'Sin categoría',
       variantes: [], // Empty variants for now
       reservadoCarnaval:
-          (data['metadata'] != null && data['metadata']['reservado_carnaval'] != null)
-              ? data['metadata']['reservado_carnaval'] as num
+          (metadata != null && metadata['reservado_carnaval'] != null)
+              ? metadata['reservado_carnaval'] as num
               : 0,
+      // Datos de cocina: solo vienen de fn_productos_cocina_tpv. Un producto
+      // de barra los deja en null y se comporta igual que siempre.
+      idCocina: (metadata?['id_cocina'] as num?)?.toInt(),
+      cocina: metadata?['cocina'] as String?,
+      idAlmacenCocina: (metadata?['id_almacen_cocina'] as num?)?.toInt(),
+      impresoraCocina: metadata?['impresora'] as String?,
+      modoElaboracion: metadata?['modo_elaboracion'] as String?,
+      ilimitado: metadata?['ilimitado'] as bool? ?? false,
     );
   }
 
