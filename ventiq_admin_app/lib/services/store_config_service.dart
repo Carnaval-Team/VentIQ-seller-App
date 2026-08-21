@@ -233,6 +233,7 @@ class StoreConfigService {
         print(
           '  - vendedores_pueden_crear_cxc: $vendedoresPuedenCrearCxc',
         );
+      }
       if (modoRestaurante != null) {
         updateData['modo_restaurante'] = modoRestaurante;
         print('  - modo_restaurante: $modoRestaurante');

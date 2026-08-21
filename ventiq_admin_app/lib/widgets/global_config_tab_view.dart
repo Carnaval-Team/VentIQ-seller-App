@@ -1664,6 +1664,10 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                     : '🔒 Solo gerente/supervisor pueden registrar ventas a pago pendiente',
             value: _vendedoresPuedenCrearCxc,
             onChanged: _updateVendedoresPuedenCrearCxcSetting,
+          ),
+
+          const SizedBox(height: 16),
+
           // ── Restaurante y cocina ──────────────────────────────────────────
           // Van juntas porque están acopladas: la cocina depende de las mesas.
           _buildConfigCard(

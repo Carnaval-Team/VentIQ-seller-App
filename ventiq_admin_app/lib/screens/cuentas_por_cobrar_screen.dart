@@ -263,14 +263,15 @@ class _CuentasPorCobrarScreenState extends State<CuentasPorCobrarScreen> {
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 4),
-          child: Row(
+          child: Wrap(
+            spacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text(
                 '${cliente.ordenesPendientes} orden(es) pendiente(s)',
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
               ),
-              if (dias != null) ...[
-                const SizedBox(width: 8),
+              if (dias != null)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                   decoration: BoxDecoration(
@@ -282,7 +283,6 @@ class _CuentasPorCobrarScreenState extends State<CuentasPorCobrarScreen> {
                     style: TextStyle(fontSize: 11, color: badgeColor),
                   ),
                 ),
-              ],
             ],
           ),
         ),
