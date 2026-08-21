@@ -1704,6 +1704,62 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         ),
                       ),
 
+                      // ── Cuenta por Cobrar ─────────────────────────────────
+                      FutureBuilder<bool>(
+                        future: _orderService.isVentaPendienteDePago(order),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return const SizedBox.shrink();
+                          }
+                          if (snapshot.hasData && snapshot.data == true) {
+                            final montoPendiente = order.items
+                                .where(
+                                  (item) =>
+                                      item.paymentMethod?.esPagoPendiente ??
+                                      false,
+                                )
+                                .fold<double>(
+                                  0.0,
+                                  (sum, item) => sum + item.subtotal,
+                                );
+                            return Column(
+                              children: [
+                                _buildDetailSection(
+                                  title: 'Cuenta por Cobrar',
+                                  icon: Icons.account_balance_wallet_outlined,
+                                  child: Column(
+                                    children: [
+                                      _buildDetailRowNew(
+                                        'Estado',
+                                        'Pago pendiente',
+                                        valueStyle: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.orange[800],
+                                        ),
+                                      ),
+                                      if (montoPendiente > 0)
+                                        _buildDetailRowNew(
+                                          'Monto pendiente',
+                                          '\$${montoPendiente.toStringAsFixed(2)}',
+                                          valueStyle: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.red[700],
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                              ],
+                            );
+                          }
+                          return const SizedBox.shrink();
+                        },
+                      ),
+
                       // ── Estado Carnaval ───────────────────────────────────
                       if (_getCarnavalOrderId(order.notas) != null) ...[
                         const SizedBox(height: 12),
