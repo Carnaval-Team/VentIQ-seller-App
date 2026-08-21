@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:fl_chart/fl_chart.dart';
 import '../config/app_colors.dart';
 import '../services/products_analytics_service.dart';
 import '../services/permissions_service.dart';
@@ -36,7 +35,8 @@ class _ProductsDashboardWebScreenState
   List<Map<String, dynamic>> _alerts = [];
   Map<String, dynamic> _bcgAnalysis = {};
 
-  int _pieTouchedIndex = -1;
+  /// Fila de categoria bajo el cursor, para resaltarla.
+  int _hoveredCategoryIndex = -1;
 
   static const double _kMaxContentWidth = 1400;
 
@@ -1041,7 +1041,7 @@ class _ProductsDashboardWebScreenState
     return _buildSectionCard(
       title: 'Distribución por Categoría',
       subtitle: 'Composición del catálogo por tipo de producto',
-      icon: Icons.pie_chart_outline,
+      icon: Icons.bar_chart_outlined,
       iconColor: AppColors.primary,
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
       child: _buildCategoryChartContent(),
@@ -1051,7 +1051,7 @@ class _ProductsDashboardWebScreenState
   Widget _buildCategoryChartContent() {
     if (_isLoadingCharts) {
       return const SizedBox(
-        height: 260,
+        height: 200,
         child: Center(
           child: CircularProgressIndicator(color: AppColors.primary),
         ),
@@ -1060,203 +1060,225 @@ class _ProductsDashboardWebScreenState
 
     if (_categoryDistribution.isEmpty ||
         (_categoryDistribution.first['cantidad'] ?? 0) == 0) {
-      return SizedBox(
-        height: 260,
-        child: _buildEmptyState(
-          icon: Icons.pie_chart_outline,
-          title: 'Sin datos',
-          description: 'Aún no hay productos clasificados por categoría.',
-        ),
+      return _buildEmptyState(
+        icon: Icons.bar_chart_outlined,
+        title: 'Sin datos',
+        description: 'Aún no hay productos clasificados por categoría.',
       );
     }
 
-    final totalProductos = _categoryDistribution.fold<int>(
+    // El servicio devuelve las categorías en orden de map (arbitrario). Se
+    // ordenan de mayor a menor para que el ranking se lea de un vistazo y el
+    // color de cada categoría sea estable entre recargas.
+    final ranked = List<Map<String, dynamic>>.from(_categoryDistribution)
+      ..sort((a, b) => ((b['cantidad'] ?? 0) as num)
+          .toInt()
+          .compareTo(((a['cantidad'] ?? 0) as num).toInt()));
+
+    final totalProductos = ranked.fold<int>(
       0,
       (sum, e) => sum + ((e['cantidad'] ?? 0) as num).toInt(),
     );
+    // Las barras se escalan contra la categoría mayor, no contra el 100%: con
+    // un catálogo desbalanceado, escalar al total dejaría casi todas las
+    // barras invisibles.
+    final maxCantidad = ranked
+        .map((e) => ((e['cantidad'] ?? 0) as num).toInt())
+        .fold<int>(1, (a, b) => a > b ? a : b);
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final chart = AspectRatio(
-          aspectRatio: 1,
-          child: Stack(
-              alignment: Alignment.center,
-              children: [
-                PieChart(
-                  PieChartData(
-                    sections: _buildPieSections(),
-                    centerSpaceRadius: 56,
-                    sectionsSpace: 3,
-                    startDegreeOffset: -90,
-                    pieTouchData: PieTouchData(
-                      touchCallback: (event, response) {
-                        setState(() {
-                          if (!event.isInterestedForInteractions ||
-                              response == null ||
-                              response.touchedSection == null) {
-                            _pieTouchedIndex = -1;
-                            return;
-                          }
-                          _pieTouchedIndex =
-                              response.touchedSection!.touchedSectionIndex;
-                        });
-                      },
-                    ),
-                  ),
-                ),
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '$totalProductos',
-                      style: const TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textPrimary,
-                        height: 1,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    const Text(
-                      'productos',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AppColors.textSecondary,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.3,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          );
-
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(height: 240, child: Center(child: chart)),
-            const SizedBox(height: 16),
-            _buildCategoryLegend(),
-          ],
-        );
-      },
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildCategorySummaryStrip(totalProductos, ranked.length),
+        const SizedBox(height: 14),
+        for (int i = 0; i < ranked.length; i++)
+          _buildCategoryBarRow(
+            data: ranked[i],
+            index: i,
+            maxCantidad: maxCantidad,
+          ),
+      ],
     );
   }
 
-  List<PieChartSectionData> _buildPieSections() {
-    return _categoryDistribution.asMap().entries.map((entry) {
-      final index = entry.key;
-      final data = entry.value;
-      final porcentaje = (data['porcentaje'] ?? 0.0) as double;
-      final isTouched = index == _pieTouchedIndex;
-      final color = _categoryPalette[index % _categoryPalette.length];
-
-      return PieChartSectionData(
-        color: color,
-        value: porcentaje,
-        title: '${porcentaje.toStringAsFixed(1)}%',
-        radius: isTouched ? 72 : 62,
-        titleStyle: TextStyle(
-          fontSize: isTouched ? 13 : 11,
-          fontWeight: FontWeight.w800,
-          color: Colors.white,
-          shadows: [
-            Shadow(color: Colors.black.withOpacity(0.25), blurRadius: 3),
-          ],
-        ),
-        borderSide: BorderSide(
-          color: Colors.white.withOpacity(isTouched ? 0.9 : 0.7),
-          width: isTouched ? 2.5 : 1.5,
-        ),
-      );
-    }).toList();
+  /// Totales del catálogo: sustituye el número que antes vivía en el centro
+  /// del donut.
+  Widget _buildCategorySummaryStrip(int totalProductos, int totalCategorias) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceVariant.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          _categorySummaryItem(
+            '$totalProductos',
+            'productos en total',
+            AppColors.primary,
+          ),
+          Container(
+            width: 1,
+            height: 30,
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            color: AppColors.border,
+          ),
+          _categorySummaryItem(
+            '$totalCategorias',
+            totalCategorias == 1 ? 'categoría' : 'categorías',
+            AppColors.info,
+          ),
+        ],
+      ),
+    );
   }
 
-  Widget _buildCategoryLegend() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _categorySummaryItem(String value, String label, Color color) {
+    return Row(
       mainAxisSize: MainAxisSize.min,
-      children: _categoryDistribution.asMap().entries.map((entry) {
-          final index = entry.key;
-          final data = entry.value;
-          final color = _categoryPalette[index % _categoryPalette.length];
-          final cantidad = data['cantidad'] ?? 0;
-          final porcentaje = (data['porcentaje'] ?? 0.0) as double;
-          final categoria = data['categoria'] ?? 'Sin categoría';
-          final isHighlighted = index == _pieTouchedIndex;
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+            color: color,
+            height: 1,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 2),
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
-          return MouseRegion(
-            onEnter: (_) => setState(() => _pieTouchedIndex = index),
-            onExit: (_) => setState(() => _pieTouchedIndex = -1),
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 6),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+  Widget _buildCategoryBarRow({
+    required Map<String, dynamic> data,
+    required int index,
+    required int maxCantidad,
+  }) {
+    final color = _categoryPalette[index % _categoryPalette.length];
+    final cantidad = ((data['cantidad'] ?? 0) as num).toInt();
+    final porcentaje = (data['porcentaje'] ?? 0.0) as double;
+    final categoria = data['categoria'] ?? 'Sin categoría';
+    final isHighlighted = index == _hoveredCategoryIndex;
+
+    // Suelo del 2% para que una categoría con un solo producto siga dibujando
+    // una barra perceptible en lugar de una línea de 1px.
+    final factor = (cantidad / maxCantidad).clamp(0.02, 1.0);
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hoveredCategoryIndex = index),
+      onExit: (_) => setState(() => _hoveredCategoryIndex = -1),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        decoration: BoxDecoration(
+          color: isHighlighted ? color.withOpacity(0.06) : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 10,
+              height: 10,
               decoration: BoxDecoration(
-                color: isHighlighted
-                    ? color.withOpacity(0.08)
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: isHighlighted
-                      ? color.withOpacity(0.3)
-                      : Colors.transparent,
-                ),
+                color: color,
+                borderRadius: BorderRadius.circular(3),
               ),
-              child: Row(
+            ),
+            const SizedBox(width: 10),
+            // Ancho fijo para la etiqueta: alinea verticalmente el arranque de
+            // todas las barras y las hace comparables entre si.
+            SizedBox(
+              width: 170,
+              child: Text(
+                categoria,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Stack(
                 children: [
                   Container(
-                    width: 10,
-                    height: 10,
+                    height: 22,
                     decoration: BoxDecoration(
-                      color: color,
-                      borderRadius: BorderRadius.circular(3),
+                      color: AppColors.surfaceVariant.withOpacity(0.7),
+                      borderRadius: BorderRadius.circular(6),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      categoria,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  Text(
-                    '$cantidad',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      '${porcentaje.toStringAsFixed(1)}%',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: color,
+                  FractionallySizedBox(
+                    widthFactor: factor,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      height: 22,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            color.withOpacity(isHighlighted ? 1 : 0.85),
+                            color.withOpacity(isHighlighted ? 0.8 : 0.65),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(6),
                       ),
                     ),
                   ),
                 ],
               ),
             ),
-          );
-        }).toList(),
+            const SizedBox(width: 12),
+            SizedBox(
+              width: 34,
+              child: Text(
+                '$cantidad',
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              width: 54,
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                '${porcentaje.toStringAsFixed(1)}%',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: color,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

@@ -43,6 +43,7 @@ import 'screens/financial_expenses_screen.dart';
 import 'screens/production_costs_screen.dart';
 import 'screens/customers_screen.dart';
 import 'screens/workers_screen.dart';
+import 'screens/workers_web_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/warehouse_screen.dart';
 import 'screens/warehouse_web_screen.dart';
@@ -66,6 +67,7 @@ import 'screens/interacciones_clientes_screen.dart';
 import 'screens/precios_productos_screen.dart';
 import 'screens/carnaval_orders_screen.dart';
 import 'screens/hr/hr_dashboard_screen.dart';
+import 'screens/hr/hr_dashboard_web_screen.dart';
 import 'screens/hr/hr_checkin_screen.dart';
 import 'screens/hr/hr_checkout_screen.dart';
 import 'screens/hr/hr_salary_report_screen.dart';
@@ -221,7 +223,7 @@ class MyApp extends StatelessWidget {
         '/excel-import': (context) => const ExcelImportScreen(),
         '/add-supplier': (context) => const AddEditSupplierScreen(),
         '/edit-supplier': (context) => const AddEditSupplierScreen(),
-        '/workers': (context) => const WorkersScreen(),
+        '/workers': (context) => const PlatformAwareWorkersScreen(),
         '/settings': (context) => const SettingsScreen(),
         '/warehouse': (context) => const PlatformAwareWarehouseScreen(),
         '/add-warehouse':
@@ -244,7 +246,7 @@ class MyApp extends StatelessWidget {
         '/wifi-printers': (context) => const WiFiPrintersScreen(),
         '/interacciones-clientes': (context) => const InteraccionesClientesScreen(),
         '/carnaval-orders': (context) => const CarnavalOrdersScreen(),
-        '/hr-dashboard': (context) => const HRDashboardScreen(),
+        '/hr-dashboard': (context) => const PlatformAwareHRDashboardScreen(),
         '/hr-checkin': (context) => const HRCheckinScreen(),
         '/hr-checkout': (context) => const HRCheckoutScreen(),
         '/hr-salary-report': (context) => const HRSalaryReportScreen(),
@@ -290,6 +292,34 @@ class PlatformAwareProductsScreen extends StatelessWidget {
       return const ProductsWebScreen();
     } else {
       return const ProductsScreen();
+    }
+  }
+}
+
+/// Widget que detecta la plataforma y redirige al dashboard de RR.HH. apropiado
+class PlatformAwareHRDashboardScreen extends StatelessWidget {
+  const PlatformAwareHRDashboardScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    if (_shouldUseWebLayout(context)) {
+      return const HRDashboardWebScreen();
+    } else {
+      return const HRDashboardScreen();
+    }
+  }
+}
+
+/// Widget que detecta la plataforma y redirige a personal apropiado
+class PlatformAwareWorkersScreen extends StatelessWidget {
+  const PlatformAwareWorkersScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    if (_shouldUseWebLayout(context)) {
+      return const WorkersWebScreen();
+    } else {
+      return const WorkersScreen();
     }
   }
 }

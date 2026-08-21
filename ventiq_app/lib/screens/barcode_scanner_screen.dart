@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../services/barcode_service.dart';
-import 'product_details_screen.dart';
 
 class BarcodeScannerScreen extends StatefulWidget {
   const BarcodeScannerScreen({Key? key}) : super(key: key);
@@ -232,14 +231,15 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
       if (result.encontrado && result.producto != null) {
         // Match exacto → ir a detalles
         print('Producto encontrado: ${result.producto!.denominacion}');
-        Navigator.push(
+        // Ruta nombrada para que el selector de main.dart decida entre la
+        // vista web y la móvil.
+        Navigator.pushNamed(
           context,
-          MaterialPageRoute(
-            builder: (context) => ProductDetailsScreen(
-              product: result.producto!,
-              categoryColor: const Color(0xFF4A90E2),
-            ),
-          ),
+          '/product-details',
+          arguments: {
+            'product': result.producto!,
+            'categoryColor': const Color(0xFF4A90E2),
+          },
         );
       } else {
         // No encontrado → mostrar diálogo con similares si hay
