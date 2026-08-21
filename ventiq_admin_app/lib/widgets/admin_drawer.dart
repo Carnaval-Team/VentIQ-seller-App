@@ -490,6 +490,38 @@ class _AdminDrawerState extends State<AdminDrawer> {
                 ),
                 const Divider(height: 1),
 
+                // Cuentas por Cobrar (solo gerente/supervisor)
+                FutureBuilder<bool>(
+                  future: NavigationGuard.canNavigate(
+                    '/cuentas-por-cobrar',
+                    context,
+                    showDialog: false,
+                  ),
+                  builder: (context, snapshot) {
+                    if (snapshot.data == true) {
+                      return Column(
+                        children: [
+                          _buildDrawerItem(
+                            context,
+                            icon: Icons.account_balance_wallet,
+                            title: 'Cuentas por Cobrar',
+                            subtitle: 'Ventas a pago pendiente y cobros',
+                            onTap: () {
+                              Navigator.pop(context);
+                              NavigationGuard.navigateWithPermission(
+                                context,
+                                '/cuentas-por-cobrar',
+                              );
+                            },
+                          ),
+                          const Divider(height: 1),
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
+
                 // Notificación a Clientes — Difusión WhatsApp.
                 // Visible para todos los clientes; el acceso real se valida
                 // dentro de la pantalla contra la licencia WAPI específica.

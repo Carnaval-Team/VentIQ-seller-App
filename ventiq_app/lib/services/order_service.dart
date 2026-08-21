@@ -386,17 +386,18 @@ class OrderService {
         };
       }
 
-      // Buscar id_cliente de la operación
+      // Buscar id_cliente / id_cliente_cxc de la operación
       final operation =
           await Supabase.instance.client
               .from('app_dat_operacion_venta')
-              .select('id_cliente')
+              .select('id_cliente, id_cliente_cxc')
               .eq('id_operacion', operationId)
               .maybeSingle();
 
+      final idClienteCxc = operation?['id_cliente_cxc'] as int?;
       final idCliente = operation?['id_cliente'] as int?;
 
-      if (idCliente == null) {
+      if (idClienteCxc == null && idCliente == null) {
         return {
           'success': false,
           'error':
@@ -404,15 +405,14 @@ class OrderService {
         };
       }
 
-      // Persistencia directa en app_dat_clientes
+      // Preparar datos a actualizar
       final updateData = <String, dynamic>{};
       if (buyerName != null && buyerName.isNotEmpty) {
         updateData['nombre_completo'] = buyerName;
       }
       if (buyerPhone != null) {
         // Permitir limpiar teléfono enviando string vacío → null
-        updateData['telefono'] =
-            buyerPhone.isEmpty ? null : buyerPhone;
+        updateData['telefono'] = buyerPhone.isEmpty ? null : buyerPhone;
       }
       if (updateData.isEmpty) {
         return {
@@ -421,10 +421,19 @@ class OrderService {
         };
       }
 
-      await Supabase.instance.client
-          .from('app_dat_clientes')
-          .update(updateData)
-          .eq('id', idCliente);
+      // Las ventas a "Pago Pendiente" usan la tabla independiente
+      // app_dat_cliente_cxc (no app_dat_clientes).
+      if (idClienteCxc != null) {
+        await Supabase.instance.client
+            .from('app_dat_cliente_cxc')
+            .update(updateData)
+            .eq('id', idClienteCxc);
+      } else if (idCliente != null) {
+        await Supabase.instance.client
+            .from('app_dat_clientes')
+            .update(updateData)
+            .eq('id', idCliente);
+      }
 
       // Actualizar cache local
       final idx = _orders.indexWhere((o) => o.id == order.id);
@@ -970,6 +979,41 @@ class OrderService {
     }
   }
 
+  /// `true` si la orden quedó (total o parcialmente) como cuenta por cobrar
+  /// ("Pago Pendiente"). Para órdenes ya sincronizadas consulta
+  /// `es_pagada` en el servidor; para órdenes locales/offline lo deduce del
+  /// desglose de pagos guardado (id_medio_pago sentinel 998).
+  Future<bool> isVentaPendienteDePago(Order order) async {
+    final operationId = order.operationId;
+    if (operationId != null) {
+      try {
+        final response = await Supabase.instance.client
+            .from('app_dat_operacion_venta')
+            .select('es_pagada')
+            .eq('id_operacion', operationId)
+            .maybeSingle();
+        if (response != null) {
+          return response['es_pagada'] == false;
+        }
+      } catch (e) {
+        print('⚠️ Error verificando es_pagada de la operación $operationId: $e');
+      }
+    }
+
+    // Fallback local: revisar el desglose de pagos guardado en la orden o
+    // el método de pago de sus ítems.
+    final rawPayments = order.pagos;
+    if (rawPayments != null) {
+      final tienePendienteEnPagos = rawPayments.whereType<Map>().any(
+        (p) => p['id_medio_pago'] == PaymentMethod.pagoPendienteId,
+      );
+      if (tienePendienteEnPagos) return true;
+    }
+    return order.items.any(
+      (item) => item.paymentMethod?.esPagoPendiente ?? false,
+    );
+  }
+
   // Registrar venta en Supabase usando fn_registrar_venta
   Future<Map<String, dynamic>> _registerSaleInSupabase(
     Order order,
@@ -1173,6 +1217,35 @@ class OrderService {
               .eq('id_operacion', operationId);
         }
 
+        // Cuentas por cobrar: si algún ítem quedó como "Pago Pendiente", la
+        // venta NO se marca como pagada (fn_registrar_venta la crea con
+        // es_pagada = true por defecto). El monto pendiente simplemente no
+        // genera fila en app_dat_pago_venta (ver _registerPaymentsInSupabase),
+        // quedando como saldo a favor de la tienda contra ese cliente.
+        final montoPendienteCxc = order.items
+            .where((item) => item.paymentMethod?.esPagoPendiente ?? false)
+            .fold<double>(0.0, (sum, item) => sum + item.subtotal);
+        if (montoPendienteCxc > 0) {
+          try {
+            // id_cliente_cxc apunta a app_dat_cliente_cxc, una tabla
+            // INDEPENDIENTE de app_dat_clientes (donde no se registró este
+            // cliente, precisamente para no seguir engordando esa tabla).
+            final idClienteCxc = orderData['idClienteCxc'];
+            await Supabase.instance.client
+                .from('app_dat_operacion_venta')
+                .update({
+                  'es_pagada': false,
+                  if (idClienteCxc != null) 'id_cliente_cxc': idClienteCxc,
+                })
+                .eq('id_operacion', operationId);
+            print(
+              '💳 Venta $operationId marcada como pago pendiente (CxC): \$${montoPendienteCxc.toStringAsFixed(2)} - Cliente CxC: $idClienteCxc',
+            );
+          } catch (e) {
+            print('⚠️ No se pudo marcar es_pagada=false en $operationId: $e');
+          }
+        }
+
         final paymentResult = await _registerPaymentsInSupabase(
           order,
           operationId,
@@ -1226,6 +1299,16 @@ class OrderService {
 
       for (final item in order.items) {
         if (item.paymentMethod != null) {
+          // "Pago Pendiente" (cuenta por cobrar): no genera fila en
+          // app_dat_pago_venta. El monto queda como saldo pendiente (ver
+          // es_pagada = false en _registerSaleInSupabase).
+          if (item.paymentMethod!.esPagoPendiente) {
+            print(
+              'Item: ${item.nombre} -> Pago Pendiente (CxC), no se registra como pago',
+            );
+            continue;
+          }
+
           // Convertir método especial "Pago Regular (Efectivo)" (ID 999) a efectivo (ID 1)
           int actualMethodId = item.paymentMethod!.id;
           int tipoPago = 1; // Por defecto tipo 1 (efectivo)
@@ -1265,7 +1348,16 @@ class OrderService {
       print('Payments by method: $paymentsByMethod');
       print('Payment types by method: $paymentTypeByMethod');
 
+      final hayItemsPagoPendiente = order.items.any(
+        (item) => item.paymentMethod?.esPagoPendiente ?? false,
+      );
+
       if (paymentsByMethod.isEmpty) {
+        if (hayItemsPagoPendiente) {
+          // Toda la venta quedó como pago pendiente (CxC): no hay pagos que
+          // registrar, es un resultado válido (no un error).
+          return {'success': true, 'data': true, 'paymentsRegistered': 0};
+        }
         return {
           'success': false,
           'error':

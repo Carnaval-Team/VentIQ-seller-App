@@ -882,6 +882,9 @@ class WiFiPrinterService {
       );
     }
 
+    // Forma de pago
+    bytes += _addPaymentMethodSummary(generator, order);
+
     // Pie de página compacto
     bytes += generator.text(
       'Gracias por su compra',
@@ -897,6 +900,50 @@ class WiFiPrinterService {
 
     bytes += generator.emptyLines(1);
 
+    return bytes;
+  }
+
+  /// Imprime el desglose de forma de pago usada en la orden (uno o varios
+  /// métodos, agrupados por producto). Incluye "Pago Pendiente" (cuenta por
+  /// cobrar) cuando corresponde, para que el ticket siempre refleje cómo
+  /// quedó cobrada la venta.
+  List<int> _addPaymentMethodSummary(Generator generator, Order order) {
+    final Map<String, double> totalsByMethod = {};
+    for (final item in order.items) {
+      final method = item.paymentMethod;
+      if (method == null) continue;
+      final itemTotal = item.cantidad * item.precioUnitario;
+      totalsByMethod[method.displayName] =
+          (totalsByMethod[method.displayName] ?? 0.0) + itemTotal;
+    }
+
+    if (totalsByMethod.isEmpty) return [];
+
+    List<int> bytes = [];
+    bytes += generator.text(
+      '----------------------------',
+      styles: PosStyles(align: PosAlign.center),
+    );
+    bytes += generator.text(
+      'FORMA DE PAGO',
+      styles: PosStyles(align: PosAlign.left, bold: true),
+    );
+    for (final entry in totalsByMethod.entries) {
+      var label = entry.key;
+      if (label.length > 20) label = '${label.substring(0, 20)}...';
+      bytes += generator.row([
+        PosColumn(
+          text: label,
+          width: 8,
+          styles: PosStyles(align: PosAlign.left),
+        ),
+        PosColumn(
+          text: '\$${entry.value.toStringAsFixed(0)}',
+          width: 4,
+          styles: PosStyles(align: PosAlign.right),
+        ),
+      ]);
+    }
     return bytes;
   }
 

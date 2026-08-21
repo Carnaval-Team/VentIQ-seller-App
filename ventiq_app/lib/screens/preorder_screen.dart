@@ -232,6 +232,22 @@ class _PreorderScreenState extends State<PreorderScreen> {
       // Agregar al inicio de la lista para que aparezca primero
       final methodsWithSpecial = [pagoRegularEfectivo, ...paymentMethods];
 
+      // "Pago Pendiente" (cuenta por cobrar): solo si la tienda lo permite
+      // para vendedores, o si quien vende es gerente/supervisor.
+      try {
+        final idTienda = await _userPreferencesService.getIdTienda();
+        final isAdminSession =
+            await _userPreferencesService.isInventoryOnlySession();
+        final vendedoresPuedenCrearCxc = (idTienda != null && !isOfflineModeEnabled)
+            ? await StoreConfigService.getVendedoresPuedenCrearCxc(idTienda)
+            : false;
+        if (isAdminSession || vendedoresPuedenCrearCxc) {
+          methodsWithSpecial.add(pm.PaymentMethod.pagoPendiente());
+        }
+      } catch (e) {
+        print('⚠️ No se pudo verificar permiso de pago pendiente: $e');
+      }
+
       setState(() {
         _paymentMethods = methodsWithSpecial;
         _loadingPaymentMethods = false;
@@ -1092,9 +1108,17 @@ class _PreorderScreenState extends State<PreorderScreen> {
       return;
     }
 
+    // Las ventas con "Pago Pendiente" (cuenta por cobrar) siempre deben pasar
+    // por el checkout: necesitan sí o sí un cliente asociado (buscado o
+    // creado ahí), sin importar que la tienda tenga activado
+    // "no_solicitar_cliente" para las ventas normales.
+    final tienePagoPendiente = currentOrder.items.any(
+      (item) => item.paymentMethod?.esPagoPendiente ?? false,
+    );
+
     if (useOfflinePath) {
       // MODO OFFLINE / FULL OFFLINE: sin servidor
-      if (noSolicitarCliente && !solicitarImagenOperacion) {
+      if (noSolicitarCliente && !solicitarImagenOperacion && !tienePagoPendiente) {
         print(
           '🔌 Modo offline + no_solicitar_cliente - Creando orden localmente',
         );
@@ -1115,7 +1139,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
           setState(() {});
         });
       }
-    } else if (noSolicitarCliente && !solicitarImagenOperacion) {
+    } else if (noSolicitarCliente && !solicitarImagenOperacion && !tienePagoPendiente) {
       // MODO DIRECTO: No se requieren datos del cliente, crear orden inmediatamente
       print('⚡ No se solicita cliente - Creando orden directamente');
       await _processElaboratedProducts(currentOrder);

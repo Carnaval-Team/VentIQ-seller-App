@@ -296,6 +296,20 @@ class StoreConfigService {
     }
   }
 
+  /// Obtiene si los vendedores pueden crear ventas a pago pendiente (cuentas
+  /// por cobrar) libremente desde el checkout.
+  static Future<bool> getVendedoresPuedenCrearCxc(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      final value = config?['vendedores_pueden_crear_cxc'] ?? false;
+      print('✅ vendedores_pueden_crear_cxc: $value para tienda $storeId');
+      return value;
+    } catch (e) {
+      print('❌ Error al obtener vendedores_pueden_crear_cxc: $e');
+      return false;
+    }
+  }
+
   /// Obtiene el valor de permitir_imprimir_pendientes
   static Future<bool> getAllowPrintPending(int storeId) async {
     try {

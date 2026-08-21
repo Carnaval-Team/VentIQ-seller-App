@@ -568,6 +568,17 @@ class _AppDrawerState extends State<AppDrawer> {
                     ),
                     const Divider(height: 1),
                   ],
+                  _buildDrawerItem(
+                    context,
+                    icon: Icons.settings,
+                    title: 'Configuración',
+                    subtitle: 'Sync, offline y preferencias',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(context, '/settings');
+                    },
+                  ),
+                  const Divider(height: 1),
                 ],
 
                 // Entrada oculta: solo visible para superadmins. Diagnóstico de

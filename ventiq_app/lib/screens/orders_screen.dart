@@ -2943,17 +2943,31 @@ class _OrdersScreenState extends State<OrdersScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          // Botones de pago - Contar Billetes y Confirmar Pago
-          FutureBuilder<bool>(
-            future: _hasEffectivoPayment(order),
+          // Botones de pago - Contar Billetes y Confirmar Pago/Orden
+          FutureBuilder<List<bool>>(
+            future: Future.wait([
+              _hasEffectivoPayment(order),
+              _orderService.isVentaPendienteDePago(order),
+            ]),
             builder: (context, snapshot) {
-              final hasEfectivo = snapshot.data ?? false;
+              final hasEfectivo = snapshot.data?[0] ?? false;
+              // Órdenes con saldo a "Pago Pendiente" (cuenta por cobrar) no
+              // reciben dinero al confirmarlas, así que el botón dice
+              // "Confirmar Orden" en vez de "Confirmar Pago".
+              final esPagoPendiente = snapshot.data?[1] ?? false;
+              final confirmLabel =
+                  esPagoPendiente ? 'Confirmar Orden' : 'Confirmar Pago';
+              final confirmMessage = esPagoPendiente
+                  ? '¿Confirmas esta orden? Queda registrada como cuenta por cobrar pendiente de cobro.'
+                  : '¿Confirmas que el pago de esta orden ha sido recibido?';
+              final confirmIcon =
+                  esPagoPendiente ? Icons.check_circle_outline : Icons.payment;
 
               if (hasEfectivo) {
                 // Si tiene efectivo, mostrar ambos botones
                 return Column(
                   children: [
-                    // Fila con Contar Billetes y Confirmar Pago
+                    // Fila con Contar Billetes y Confirmar Pago/Orden
                     Row(
                       children: [
                         // Botón Contar Billetes
@@ -2975,20 +2989,20 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        // Botón Confirmar Pago
+                        // Botón Confirmar Pago / Confirmar Orden
                         Expanded(
                           child: ElevatedButton.icon(
                             onPressed:
                                 () => _showConfirmationDialog(
                                   order,
                                   OrderStatus.completada,
-                                  'Confirmar Pago',
-                                  '¿Confirmas que el pago de esta orden ha sido recibido?',
+                                  confirmLabel,
+                                  confirmMessage,
                                   const Color(0xFF10B981),
                                   detailContext: detailContext,
                                 ),
-                            icon: const Icon(Icons.payment),
-                            label: const Text('Confirmar Pago'),
+                            icon: Icon(confirmIcon),
+                            label: Text(confirmLabel),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF10B981),
                               foregroundColor: Colors.white,
@@ -3001,7 +3015,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   ],
                 );
               } else {
-                // Si no tiene efectivo, solo mostrar Confirmar Pago
+                // Si no tiene efectivo, solo mostrar Confirmar Pago / Orden
                 return SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
@@ -3009,13 +3023,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         () => _showConfirmationDialog(
                           order,
                           OrderStatus.completada,
-                          'Confirmar Pago',
-                          '¿Confirmas que el pago de esta orden ha sido recibido?',
+                          confirmLabel,
+                          confirmMessage,
                           const Color(0xFF10B981),
                           detailContext: detailContext,
                         ),
-                    icon: const Icon(Icons.payment),
-                    label: const Text('Confirmar Pago'),
+                    icon: Icon(confirmIcon),
+                    label: Text(confirmLabel),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF10B981),
                       foregroundColor: Colors.white,

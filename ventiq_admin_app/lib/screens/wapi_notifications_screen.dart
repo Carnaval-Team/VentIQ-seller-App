@@ -586,7 +586,7 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
             ),
         ],
       ),
-      drawer: const AdminDrawer(),
+      endDrawer: const AdminDrawer(),
       floatingActionButton: (!isWeb && showSendButton)
           ? FloatingActionButton.extended(
               backgroundColor: AppColors.primary,

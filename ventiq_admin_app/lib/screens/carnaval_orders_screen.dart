@@ -316,7 +316,7 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Órdenes Carnaval')),
-      drawer: const AdminDrawer(),
+      endDrawer: const AdminDrawer(),
       body:
           _isLoading && _orders.isEmpty
               ? const Center(child: CircularProgressIndicator())

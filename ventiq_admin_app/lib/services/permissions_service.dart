@@ -640,6 +640,9 @@ class PermissionsService {
     // Consignaciones
     '/consignacion': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
 
+    // Cuentas por Cobrar (solo gerente/supervisor)
+    '/cuentas-por-cobrar': [UserRole.gerente, UserRole.supervisor],
+
     // Dispositivos
     '/wifi-printers': [UserRole.gerente, UserRole.auditor],
 
@@ -783,6 +786,11 @@ class PermissionsService {
     'consignacion.edit': [UserRole.gerente, UserRole.supervisor],
     'consignacion.delete': [UserRole.gerente, UserRole.supervisor],
     'consignacion.confirm': [UserRole.gerente, UserRole.supervisor],
+
+    // Cuentas por Cobrar
+    'cxc.view': [UserRole.gerente, UserRole.supervisor],
+    'cxc.liquidate': [UserRole.gerente, UserRole.supervisor],
+    'cxc.block': [UserRole.gerente, UserRole.supervisor],
 
     // Impresoras / dispositivos
     'printers.edit': [UserRole.gerente],

@@ -2606,10 +2606,28 @@ class _CierreScreenState extends State<CierreScreen> {
 
       // Si la apertura fue offline (cola local), el cierre debe ir por la cola
       // y, si hay red, abrir+cerrar en servidor en este momento.
+      //
+      // OJO: cualquier turno abierto se cachea localmente en la cola offline
+      // "por resiliencia" (ver `saveOfflineTurno`) aunque se haya operado
+      // 100% online, marcado con `apertura.origen_apertura == 'online'`. Si
+      // forzamos SIEMPRE el camino de la cola offline solo porque existe esa
+      // copia cacheada, un cierre que en realidad es online termina pasando
+      // por la cola (con sus reintentos automáticos) y puede quedar
+      // "pendiente de sync" indefinidamente si algo en ese camino falla,
+      // aunque hubiera red disponible en todo momento. Por eso, si hay red
+      // ahora mismo y la copia local es solo ese cache de resiliencia (no un
+      // turno genuinamente creado offline), preferimos el cierre directo.
       final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
       final offlineOpen = await _userPrefs.getOfflineTurno();
+      final aperturaOffline = offlineOpen?['apertura'];
+      final isCachedOnlineTurno =
+          aperturaOffline is Map && aperturaOffline['origen_apertura'] == 'online';
+      final hasNetworkNow =
+          !isOfflineModeEnabled &&
+          await ConnectivityService().performImmediateCheck();
       final useOfflineTurnoPath =
-          isOfflineModeEnabled || offlineOpen != null;
+          isOfflineModeEnabled ||
+          (offlineOpen != null && !(isCachedOnlineTurno && hasNetworkNow));
 
       if (useOfflineTurnoPath) {
         print(
