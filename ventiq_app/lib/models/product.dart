@@ -22,6 +22,56 @@ class Product {
   inventoryMetadata; // Store inventory data for products without variants
   final num reservadoCarnaval;
 
+  // ── Cocina (Fase 1 restaurante/cocina) ─────────────────────────────────
+  // Se llenan solo para los productos que vienen de fn_productos_cocina_tpv.
+  // Un producto de barra los deja en null y se comporta igual que antes.
+
+  /// Cocina a la que se enruta este plato, si va a alguna.
+  final int? idCocina;
+
+  /// Nombre de la cocina, para mostrarlo al vendedor ("Cocina caliente").
+  final String? cocina;
+
+  /// Almacén de esa cocina: de ahí sale su materia prima o sus tandas.
+  final int? idAlmacenCocina;
+
+  /// Impresora de la estación, si tiene una configurada.
+  final String? impresoraCocina;
+
+  /// 'al_pedido' (se cocina al pedirlo) o 'por_tanda' (se sirve de lo hecho).
+  final String? modoElaboracion;
+
+  /// True cuando no aplica control de disponibilidad (servicios).
+  final bool ilimitado;
+
+  /// Este plato se prepara en una cocina, no se toma de la barra.
+  bool get vaACocina => idCocina != null;
+
+  /// Se produce por lotes: la disponibilidad son porciones ya hechas.
+  bool get esPorTanda => modoElaboracion == 'por_tanda';
+
+  /// Se cocina en el momento: la disponibilidad la limita la materia prima.
+  bool get esAlPedido => vaACocina && modoElaboracion != 'por_tanda';
+
+  /// Texto corto para el chip de la tarjeta, en el lenguaje del vendedor.
+  ///
+  /// Un mesero entiende "3 porciones" o "Hasta 5", no "stock_disponible: 3".
+  String get etiquetaDisponibilidad {
+    if (ilimitado) return 'Disponible';
+    final n = cantidadReal;
+    if (n <= 0) return 'Agotado';
+    if (!vaACocina) return _formatearCantidad(n);
+    if (esPorTanda) {
+      return n == 1 ? '1 porción' : '${_formatearCantidad(n)} porciones';
+    }
+    return 'Hasta ${_formatearCantidad(n)}';
+  }
+
+  static String _formatearCantidad(num n) {
+    if (n is int || n == n.roundToDouble()) return n.toInt().toString();
+    return n.toStringAsFixed(2);
+  }
+
   /// Stock real descontando reservas de Carnaval
   num get cantidadReal => (cantidad - reservadoCarnaval).clamp(0, double.infinity);
 
@@ -47,6 +97,12 @@ class Product {
     this.variantes = const [],
     this.inventoryMetadata,
     this.reservadoCarnaval = 0,
+    this.idCocina,
+    this.cocina,
+    this.idAlmacenCocina,
+    this.impresoraCocina,
+    this.modoElaboracion,
+    this.ilimitado = false,
   });
 
   factory Product.fromJson(Map<String, dynamic> json) {
@@ -75,6 +131,12 @@ class Product {
               .toList() ??
           [],
       reservadoCarnaval: json['reservado_carnaval'] ?? 0,
+      idCocina: json['id_cocina'] as int?,
+      cocina: json['cocina'] as String?,
+      idAlmacenCocina: json['id_almacen_cocina'] as int?,
+      impresoraCocina: json['impresora'] as String?,
+      modoElaboracion: json['modo_elaboracion'] as String?,
+      ilimitado: json['ilimitado'] ?? false,
     );
   }
 
@@ -102,6 +164,13 @@ class Product {
       'variantes': variantes.map((v) => v.toJson()).toList(),
       'inventoryMetadata': inventoryMetadata,
       'reservado_carnaval': reservadoCarnaval,
+      // Cocina: se persisten para que el modo offline conserve el enrutamiento.
+      'id_cocina': idCocina,
+      'cocina': cocina,
+      'id_almacen_cocina': idAlmacenCocina,
+      'impresora': impresoraCocina,
+      'modo_elaboracion': modoElaboracion,
+      'ilimitado': ilimitado,
     };
   }
 }

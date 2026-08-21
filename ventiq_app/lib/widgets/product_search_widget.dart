@@ -80,10 +80,31 @@ class _ProductSearchWidgetState extends State<ProductSearchWidget> {
         },
       );
 
-      print('📋 Respuesta de búsqueda: ${response?.length ?? 0} productos encontrados');
+      // Catálogo dual: sumar los platos de las cocinas ligadas a este TPV.
+      // No tienen inventario en el almacén de la barra, así que el RPC de
+      // arriba no los devuelve. Ante error se sigue con la barra sola.
+      List<dynamic> responseCocina = const [];
+      try {
+        final r = await Supabase.instance.client.rpc(
+          'fn_productos_cocina_tpv',
+          params: {
+            'id_categoria_param': null,
+            'id_tienda_param': idTienda,
+            'id_tpv_param': idTpv,
+            'text_search': null,
+            'solo_disponibles_param': false,
+          },
+        );
+        if (r is List) responseCocina = r;
+      } catch (e) {
+        print('⚠️ Catálogo de cocina no disponible en búsqueda: $e');
+      }
+
+      print('📋 Respuesta de búsqueda: ${response?.length ?? 0} de barra + ${responseCocina.length} de cocina');
 
       if (response != null) {
-        final products = (response as List).map((productData) {
+        final products = [...(response as List), ...responseCocina].map((productData) {
+          final metadata = productData['metadata'] as Map<String, dynamic>?;
           return Product(
             id: productData['id_producto'] ?? 0,
             denominacion: productData['denominacion'] ?? 'Sin nombre',
@@ -97,15 +118,22 @@ class _ProductSearchWidgetState extends State<ProductSearchWidget> {
             esComprable: true, // Default value
             esInventariable: true, // Default value
             esPorLotes: false, // Default value
-            esElaborado: (productData['metadata'] != null && productData['metadata']['es_elaborado'] != null) 
-                ? productData['metadata']['es_elaborado'] as bool 
+            esElaborado: (metadata != null && metadata['es_elaborado'] != null)
+                ? metadata['es_elaborado'] as bool
                 : false,
-            esServicio: (productData['metadata'] != null && productData['metadata']['es_servicio'] != null) 
-                ? productData['metadata']['es_servicio'] as bool 
+            esServicio: (metadata != null && metadata['es_servicio'] != null)
+                ? metadata['es_servicio'] as bool
                 : false,
             descripcion: productData['descripcion'],
             foto: productData['imagen'],
             variantes: [], // Se cargarán después al seleccionar
+            // Cocina: null en los productos de barra.
+            idCocina: (metadata?['id_cocina'] as num?)?.toInt(),
+            cocina: metadata?['cocina'] as String?,
+            idAlmacenCocina: (metadata?['id_almacen_cocina'] as num?)?.toInt(),
+            impresoraCocina: metadata?['impresora'] as String?,
+            modoElaboracion: metadata?['modo_elaboracion'] as String?,
+            ilimitado: metadata?['ilimitado'] as bool? ?? false,
           );
         }).toList();
 

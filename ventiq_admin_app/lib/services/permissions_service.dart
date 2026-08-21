@@ -605,6 +605,13 @@ class PermissionsService {
       UserRole.supervisor,
       UserRole.auditor,
     ],
+    // Cocinas: configuración de estaciones (Fase 1 restaurante/cocina).
+    // El almacenero no entra: administra almacenes de venta, no estaciones.
+    '/cocinas-management': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.auditor,
+    ],
 
     // Recursos Humanos (Gerente, Supervisor y Recursos Humanos)
     '/hr-dashboard': [

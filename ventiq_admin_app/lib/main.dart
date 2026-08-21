@@ -21,6 +21,7 @@ import 'screens/inventory_screen.dart';
 import 'screens/sales_screen.dart';
 import 'screens/tpv_prices_screen.dart';
 import 'screens/tpv_management_screen.dart';
+import 'screens/cocinas_management_screen.dart';
 import 'screens/promotions_screen.dart';
 import 'screens/marketing_dashboard_screen.dart';
 import 'screens/analytics_screen.dart';
@@ -199,6 +200,7 @@ class MyApp extends StatelessWidget {
         '/sales': (context) => const SalesScreen(),
         '/tpv-prices': (context) => const TpvPricesScreen(),
         '/tpv-management': (context) => const TpvManagementScreen(),
+        '/cocinas-management': (context) => const CocinasManagementScreen(),
         '/financial': (context) => const FinancialScreen(),
         '/financial-setup': (context) => const FinancialSetupScreen(),
         '/financial-dashboard': (context) => const FinancialDashboardScreen(),
