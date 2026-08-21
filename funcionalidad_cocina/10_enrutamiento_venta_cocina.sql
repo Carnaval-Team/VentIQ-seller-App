@@ -173,7 +173,7 @@ BEGIN
 
     SELECT EXISTS (
         SELECT 1 FROM app_dat_producto_ingredientes pi
-         WHERE pi.id_producto = p_id_producto
+         WHERE pi.id = p_id_producto
     ) INTO v_tiene_receta;
 
     -- ── RUTA 2 · sin cocina: barra (comportamiento previo intacto) ────────
@@ -328,9 +328,13 @@ GRANT EXECUTE ON FUNCTION public.fn_resolver_origen_venta(bigint, bigint)
 -- ---------------------------------------
 -- Para un producto de barra normal, las funciones de venta YA insertan su
 -- movimiento de inventario (el bloque INSERT ... origen_cambio 3). Por eso este
--- helper acepta p_ya_descontado_sku: cuando el 11 lo llame para una linea de
--- barra le pasara true y aqui solo se validara/enrutara sin volver a descontar.
--- Asi no se descuenta dos veces lo mismo.
+-- helper acepta p_ya_descontado_sku, que indica si la venta ya lo descontó.
+--
+-- El default es TRUE a proposito (fail-safe): si alguien llama esta funcion
+-- desde una ruta de venta sin pasar el parametro, lo peor que puede pasar es
+-- que NO se descuente (error visible al cuadrar) en lugar de que se descuente
+-- DOS VECES (perdida silenciosa de inventario). Las rutas de cocina ignoran
+-- este flag: ahi la venta nunca inserto nada.
 --
 -- El descuento de 'sku' propio SI se aplica cuando el origen es la cocina
 -- (por_tanda), porque ahi la venta no inserto nada: el SKU vive en el almacen
@@ -342,7 +346,7 @@ CREATE OR REPLACE FUNCTION public.fn_descontar_venta_enrutada(
     p_id_tpv             bigint,
     p_id_extraccion      bigint  DEFAULT NULL,
     p_origen_cambio      integer DEFAULT 4,
-    p_ya_descontado_sku  boolean DEFAULT false
+    p_ya_descontado_sku  boolean DEFAULT true
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -734,6 +738,16 @@ BEGIN;
     UPDATE app_dat_producto SET id_cocina = NULL WHERE id = 219;
     SELECT public.fn_resolver_origen_venta(216, 18) AS ruta_harina_barra;
     -- esperado: origen 'barra', id_almacen 12, descontar 'sku'
+
+    -- ── 9b. Default fail-safe de p_ya_descontado_sku ──────────────────────
+    -- Sin pasar el parametro, una linea de BARRA no debe descontarse aqui: ya
+    -- la descuenta la funcion de venta. Preferimos no descontar (visible al
+    -- cuadrar) antes que descontar dos veces (perdida silenciosa).
+    SELECT public.fn_descontar_venta_enrutada(216, 1, 18) AS barra_default;
+    -- esperado: descontado false
+
+    SELECT public.fn_stock_producto_almacen(216, 12) AS harina_barra_intacta;
+    -- esperado: 5.0  <- sin cambio
 
     -- ── 10. Casos borde ───────────────────────────────────────────────────
     SELECT public.fn_descontar_venta_enrutada(219, 0, 18)      AS cantidad_cero;
