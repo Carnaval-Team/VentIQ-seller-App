@@ -55,6 +55,7 @@ class StoreConfigService {
       await _userPreferencesService.saveStoreConfig(config);
       // Reflejar el flag de modo restaurante en el cache sincrónico.
       _modoRestauranteCached = config['modo_restaurante'] == true;
+      _cocinaActivaCached = config['cocina_activa'] == true;
 
       print('✅ Configuración de tienda guardada en cache offline');
       print(
@@ -227,12 +228,21 @@ class StoreConfigService {
   static bool _modoRestauranteCached = false;
   static bool get modoRestauranteSync => _modoRestauranteCached;
 
+  // Cache sincronico de cocina_activa. La Fase 2 ("pedir != cobrar") solo se
+  // activa cuando la tienda tiene el modulo de cocina encendido; si esta
+  // apagado, agregar a la cuenta sigue siendo puramente contable como antes.
+  // Se necesita sincronico porque OrderService.addItemToCurrentOrder decide la
+  // ruta sin poder esperar un Future.
+  static bool _cocinaActivaCached = false;
+  static bool get cocinaActivaSync => _cocinaActivaCached;
+
   /// Carga el valor cacheado desde SharedPreferences de forma async. Llamar
   /// una vez en `main()` antes de runApp para que el primer render del drawer
   /// y del bottom-nav ya tenga el estado correcto.
   static Future<void> primeModoRestauranteCache() async {
     final config = await getStoreConfigFromCache();
     _modoRestauranteCached = config?['modo_restaurante'] == true;
+    _cocinaActivaCached = config?['cocina_activa'] == true;
     print('🍽️ modo_restaurante (cache sincrónico): $_modoRestauranteCached');
   }
 

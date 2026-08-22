@@ -2,10 +2,12 @@ import '../models/order.dart';
 import '../models/product.dart';
 import '../models/payment_method.dart';
 import '../models/mesa_cuenta.dart';
+import '../models/pedido_resultado.dart';
 import '../utils/promotion_rules.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
 import 'mesa_cuenta_service.dart';
+import 'store_config_service.dart';
 import 'turno_service.dart'; // Import TurnoService
 import 'connectivity_service.dart';
 
@@ -72,6 +74,13 @@ class OrderService {
     return _currentOrder!;
   }
 
+  /// Resultado del ultimo item pedido por la ruta de Fase 2. Lo consulta la UI
+  /// justo despues de addItemToCurrentOrder para saber si el plato se envio a
+  /// cocina y con que numero de comanda, sin tener que recargar la cuenta.
+  /// Es null cuando la linea no paso por fn_pedir_item_cuenta.
+  PedidoResultado? _ultimoPedido;
+  PedidoResultado? get ultimoPedido => _ultimoPedido;
+
   // Agregar item a la orden actual
   //
   // En modo restaurante, si hay una cuenta de mesa activa
@@ -98,35 +107,69 @@ class OrderService {
     final idCuentaActiva = cuentaService.activeCuentaId;
     if (idCuentaActiva != null) {
       final inv = inventoryData ?? const {};
+      final idOpcionVariante = inv['id_opcion_variante'] is num
+          ? (inv['id_opcion_variante'] as num).toInt()
+          : null;
+      final idPresentacion = inv['id_presentacion'] is num
+          ? (inv['id_presentacion'] as num).toInt()
+          : null;
+      final idUbicacion = inv['id_ubicacion'] is num
+          ? (inv['id_ubicacion'] as num).toInt()
+          : null;
+
       try {
-        await cuentaService.agregarItem(
-          idCuenta: idCuentaActiva,
-          idProducto: producto.id,
-          cantidad: cantidad,
-          precioUnitario: precio,
-          idVariante: variante?.id,
-          idOpcionVariante:
-              inv['id_opcion_variante'] is num
-                  ? (inv['id_opcion_variante'] as num).toInt()
-                  : null,
-          idPresentacion:
-              inv['id_presentacion'] is num
-                  ? (inv['id_presentacion'] as num).toInt()
-                  : null,
-          idUbicacion:
-              inv['id_ubicacion'] is num
-                  ? (inv['id_ubicacion'] as num).toInt()
-                  : null,
-          precioBase: precioOriginal,
-          promotionData: promotionData,
-          inventoryData: inventoryData,
-          skuProducto: producto.sku,
-          skuUbicacion: inv['sku_ubicacion'] as String?,
-        );
-        print(
-          '🍽️ Item "${producto.denominacion}" agregado a cuenta $idCuentaActiva',
-        );
+        // ══════════════════════════════════════════════════════════════════
+        // FASE 2 · pedir != cobrar
+        //
+        // Con cocina_activa la linea se PIDE: se descuenta el inventario del
+        // almacen correcto (barra o cocina) y, si el plato va a cocina, se
+        // dispara la comanda. Sin cocina, se agrega igual que siempre y el
+        // inventario se mueve al cobrar.
+        //
+        // La bifurcacion vive aqui, en un solo punto: todas las pantallas
+        // (categorias, detalle, escaner, busqueda) pasan por este metodo.
+        // ══════════════════════════════════════════════════════════════════
+        if (StoreConfigService.cocinaActivaSync) {
+          final res = await cuentaService.pedirItem(
+            idCuenta: idCuentaActiva,
+            idProducto: producto.id,
+            cantidad: cantidad,
+            precioUnitario: precio,
+            idVariante: variante?.id,
+            idOpcionVariante: idOpcionVariante,
+            idPresentacion: idPresentacion,
+            idUbicacion: idUbicacion,
+            precioBase: precioOriginal,
+            promotionData: promotionData,
+            inventoryData: inventoryData,
+            skuProducto: producto.sku,
+            skuUbicacion: inv['sku_ubicacion'] as String?,
+          );
+          _ultimoPedido = res;
+          print('🍽️ ${res.mensaje} (cuenta $idCuentaActiva)');
+        } else {
+          _ultimoPedido = null;
+          await cuentaService.agregarItem(
+            idCuenta: idCuentaActiva,
+            idProducto: producto.id,
+            cantidad: cantidad,
+            precioUnitario: precio,
+            idVariante: variante?.id,
+            idOpcionVariante: idOpcionVariante,
+            idPresentacion: idPresentacion,
+            idUbicacion: idUbicacion,
+            precioBase: precioOriginal,
+            promotionData: promotionData,
+            inventoryData: inventoryData,
+            skuProducto: producto.sku,
+            skuUbicacion: inv['sku_ubicacion'] as String?,
+          );
+          print(
+            '🍽️ Item "${producto.denominacion}" agregado a cuenta $idCuentaActiva',
+          );
+        }
       } catch (e) {
+        _ultimoPedido = null;
         print('❌ Error agregando item a cuenta de mesa: $e');
         rethrow;
       }

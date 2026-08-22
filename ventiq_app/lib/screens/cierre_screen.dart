@@ -2389,10 +2389,121 @@ class _CierreScreenState extends State<CierreScreen> {
     );
   }
 
+  /// Comprueba si las cocinas de este TPV tienen comandas sin servir y, si las
+  /// hay, pide confirmacion. Devuelve true si se puede seguir con el cierre.
+  ///
+  /// Si la consulta falla (sin red, cocina no configurada) NO se interrumpe el
+  /// cierre: cuadrar la caja no puede depender de que responda esta RPC.
+  Future<bool> _confirmarComandasPendientes() async {
+    try {
+      final idTpv = await _userPrefs.getIdTpv();
+      if (idTpv == null) return true;
+
+      final res = await Supabase.instance.client.rpc(
+        'fn_comandas_abiertas_turno',
+        params: {'p_id_tpv': idTpv},
+      );
+
+      final mapa = res is Map
+          ? Map<String, dynamic>.from(res)
+          : (res is List && res.isNotEmpty && res.first is Map
+              ? Map<String, dynamic>.from(res.first as Map)
+              : null);
+
+      if (mapa == null || mapa['status'] != 'success') return true;
+
+      final total = (mapa['total'] as num?)?.toInt() ?? 0;
+      if (total == 0) return true;
+
+      final sinCobrar = (mapa['con_cuenta_abierta'] as num?)?.toInt() ?? 0;
+      final comandas = mapa['comandas'];
+      final detalle = <String>[];
+      if (comandas is List) {
+        for (final c in comandas.take(6)) {
+          if (c is! Map) continue;
+          final mesa = c['mesa'] ?? 'Mostrador';
+          final estado = c['estado_texto'] ?? '';
+          final min = c['espera_minutos'] ?? 0;
+          detalle.add('#${c['numero']} · $mesa · $estado · $min min');
+        }
+        if (comandas.length > 6) {
+          detalle.add('... y ${comandas.length - 6} mas');
+        }
+      }
+
+      if (!mounted) return true;
+
+      final seguir = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.soup_kitchen_outlined,
+                  color: sinCobrar > 0 ? Colors.red.shade700 : Colors.orange.shade800),
+              const SizedBox(width: 8),
+              const Expanded(child: Text('Hay comandas sin servir')),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                mapa['message']?.toString() ?? '$total comanda(s) pendientes',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              if (sinCobrar > 0) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Ojo: hay mesas sin cobrar. Al cerrar el turno esa venta '
+                  'queda sin registrar.',
+                  style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+                ),
+              ],
+              if (detalle.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                for (final d in detalle)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 3),
+                    child: Text(d, style: const TextStyle(fontSize: 12)),
+                  ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Revisar cocina'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor:
+                    sinCobrar > 0 ? Colors.red.shade700 : null,
+              ),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Cerrar igual'),
+            ),
+          ],
+        ),
+      );
+
+      return seguir == true;
+    } catch (e) {
+      print('⚠️ No se pudo consultar comandas pendientes: $e');
+      return true;
+    }
+  }
+
   void _crearCierre() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
+
+    // Fase 5: comandas de cocina sin servir. Cerrar un turno con platos en
+    // cocina significa comida cocinada que nadie cobro, o comensales que
+    // siguen esperando. Se AVISA y no se bloquea: si la cocina se fue sin
+    // marcar los tickets, bloquear dejaria al vendedor sin cuadrar la caja.
+    if (!await _confirmarComandasPendientes()) return;
 
     final montoFinal = double.parse(_montoFinalController.text.trim());
     final montoEsperado = _montoInicialCaja + _totalEfectivo - _egresosEfectivo;
