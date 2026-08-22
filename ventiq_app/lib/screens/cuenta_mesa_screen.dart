@@ -4,6 +4,7 @@ import '../models/mesa_cuenta.dart';
 import '../services/mesa_cuenta_service.dart';
 import '../services/order_service.dart';
 import '../utils/price_utils.dart';
+import '../widgets/estado_servicio_chip.dart';
 
 /// Pantalla de **cuenta abierta** de una mesa.
 ///
@@ -199,6 +200,36 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
       return;
     }
 
+    // Fase 2: avisar si la cocina todavia tiene platos. No se BLOQUEA el cobro
+    // (el cliente puede querer pagar y llevarselo, o el plato puede estar en
+    // camino), pero cobrar sin darse cuenta de que falta comida es el error que
+    // se paga con una reclamacion en la puerta.
+    if (_cuenta!.tieneComandasPendientes) {
+      final n = _cuenta!.itemsEnCocina;
+      final seguir = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Hay platos en cocina'),
+          content: Text(
+            n == 1
+                ? 'Todavia queda 1 plato sin servir.'
+                : 'Todavia quedan $n platos sin servir.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Esperar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Cobrar igual'),
+            ),
+          ],
+        ),
+      );
+      if (seguir != true) return;
+    }
+
     // El order_service.dart se encargará de:
     //   1. Hidratar una orden local desde los items de la cuenta.
     //   2. Marcar mesa activa + cuenta activa.
@@ -314,6 +345,9 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
         children: [
           _buildHeaderCard(),
+          // Fase 2: aviso de cocina. Solo se pinta si hay platos en cocina o
+          // listos en el pase; si no, devuelve SizedBox.shrink().
+          ResumenCocinaBanner(cuenta: c),
           const SizedBox(height: 12),
           _buildAddProductButton(),
           const SizedBox(height: 12),
@@ -569,6 +603,33 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
                   _miniChip(item.presentacionNombre!, Icons.inventory_2_outlined),
                 if (item.ubicacionNombre != null)
                   _miniChip(item.ubicacionNombre!, Icons.location_on_outlined),
+              ],
+            ),
+          ],
+          // Fase 2: estado de servicio. Solo aparece en líneas que pasaron por
+          // cocina; un producto de barra devuelve SizedBox.shrink().
+          if (item.etiquetaServicio != null) ...[
+            const SizedBox(height: 6),
+            EstadoServicioChip(item: item),
+          ],
+          if (item.notas != null && item.notas!.trim().isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.sticky_note_2_outlined,
+                    size: 13, color: Colors.orange[800]),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    item.notas!,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontStyle: FontStyle.italic,
+                      color: Colors.orange[900],
+                    ),
+                  ),
+                ),
               ],
             ),
           ],

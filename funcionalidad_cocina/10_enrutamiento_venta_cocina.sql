@@ -173,7 +173,7 @@ BEGIN
 
     SELECT EXISTS (
         SELECT 1 FROM app_dat_producto_ingredientes pi
-         WHERE pi.id = p_id_producto
+         WHERE pi.id_producto_elaborado = p_id_producto
     ) INTO v_tiene_receta;
 
     -- ── RUTA 2 · sin cocina: barra (comportamiento previo intacto) ────────

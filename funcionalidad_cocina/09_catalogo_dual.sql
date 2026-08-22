@@ -239,7 +239,7 @@ BEGIN
                 -- al_pedido con receta: limite segun la MP de esa cocina.
                 WHEN EXISTS (
                     SELECT 1 FROM app_dat_producto_ingredientes pi
-                     WHERE pi.id = b.id
+                     WHERE pi.id_producto_elaborado = b.id
                 ) THEN (
                     SELECT COALESCE(MIN(
                                floor(

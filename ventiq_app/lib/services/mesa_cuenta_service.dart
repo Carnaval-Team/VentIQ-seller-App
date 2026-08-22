@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/mesa_cuenta.dart';
 import '../models/order.dart';
 import '../models/payment_method.dart';
+import '../models/pedido_resultado.dart';
 import 'user_preferences_service.dart';
 
 /// Servicio para gestionar **cuentas abiertas** de mesas en modo restaurante.
@@ -207,6 +208,151 @@ class MesaCuentaService {
       skuProducto: inv['sku_producto'] as String?,
       skuUbicacion: inv['sku_ubicacion'] as String?,
     );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // Fase 2 · pedir != cobrar
+  //
+  // `pedirItem` es la ruta nueva: además de agregar la línea, clasifica el
+  // producto, mueve el inventario del almacén correcto (barra o cocina) y
+  // dispara la comanda si el plato va a cocina.
+  //
+  // `agregarItem` (arriba) sigue existiendo y no cambia: las líneas que crea
+  // quedan con stock_movido = false y se descuentan al cobrar, como siempre.
+  // Es la vía de escape si algo va mal con la ruta nueva.
+  // ══════════════════════════════════════════════════════════════════════
+
+  /// Pide un item: lo agrega a la cuenta, descuenta inventario y manda a
+  /// cocina si corresponde.
+  ///
+  /// Devuelve el jsonb completo de `fn_pedir_item_cuenta`, que trae el origen
+  /// resuelto, si se movió stock, y los datos de la comanda cuando la hay.
+  /// Lanza [PedidoException] si la RPC responde con `status: error`, para que
+  /// la UI pueda distinguir "no hay stock" de "esta cocina no atiende a este
+  /// TPV" y mostrar el mensaje correcto.
+  Future<PedidoResultado> pedirItem({
+    required int idCuenta,
+    required int idProducto,
+    required double cantidad,
+    required double precioUnitario,
+    int? idVariante,
+    int? idOpcionVariante,
+    int? idPresentacion,
+    int? idUbicacion,
+    double? precioBase,
+    int? idMetodoPago,
+    Map<String, dynamic>? promotionData,
+    Map<String, dynamic>? inventoryData,
+    String? notas,
+    String? skuProducto,
+    String? skuUbicacion,
+    String? uuidVendedor,
+    bool forzarSinStock = false,
+  }) async {
+    final response = await _supabase.rpc(
+      'fn_pedir_item_cuenta',
+      params: {
+        'p_id_cuenta': idCuenta,
+        'p_id_producto': idProducto,
+        'p_cantidad': cantidad,
+        'p_precio_unitario': precioUnitario,
+        'p_id_variante': idVariante,
+        'p_id_opcion_variante': idOpcionVariante,
+        'p_id_presentacion': idPresentacion,
+        'p_id_ubicacion': idUbicacion,
+        'p_precio_base': precioBase,
+        'p_id_metodo_pago': idMetodoPago,
+        'p_promotion_data': promotionData,
+        'p_inventory_data': inventoryData,
+        'p_notas': notas,
+        'p_sku_producto': skuProducto,
+        'p_sku_ubicacion': skuUbicacion,
+        'p_uuid_vendedor': uuidVendedor,
+        'p_forzar_sin_stock': forzarSinStock,
+      },
+    );
+
+    final mapa = _comoMapa(response);
+    if (mapa == null) {
+      throw Exception('fn_pedir_item_cuenta devolvió formato inesperado: $response');
+    }
+
+    if (mapa['status'] != 'success') {
+      throw PedidoException.fromJson(mapa);
+    }
+
+    return PedidoResultado.fromJson(mapa);
+  }
+
+  /// Atajo con un `OrderItem`, equivalente a [agregarOrderItem] pero por la
+  /// ruta de Fase 2.
+  Future<PedidoResultado> pedirOrderItem({
+    required int idCuenta,
+    required OrderItem item,
+    String? uuidVendedor,
+    bool forzarSinStock = false,
+  }) async {
+    final inv = item.inventoryData ?? const {};
+    return pedirItem(
+      idCuenta: idCuenta,
+      idProducto: item.producto.id,
+      cantidad: item.cantidad,
+      precioUnitario: item.precioUnitario,
+      idVariante: item.variante?.id,
+      idOpcionVariante: inv['id_opcion_variante'] is num
+          ? (inv['id_opcion_variante'] as num).toInt()
+          : null,
+      idPresentacion: inv['id_presentacion'] is num
+          ? (inv['id_presentacion'] as num).toInt()
+          : null,
+      idUbicacion: inv['id_ubicacion'] is num
+          ? (inv['id_ubicacion'] as num).toInt()
+          : null,
+      precioBase: item.precioBase,
+      idMetodoPago: item.paymentMethod?.id,
+      promotionData: item.promotionData,
+      inventoryData: item.inventoryData,
+      skuProducto: inv['sku_producto'] as String?,
+      skuUbicacion: inv['sku_ubicacion'] as String?,
+      uuidVendedor: uuidVendedor,
+      forzarSinStock: forzarSinStock,
+    );
+  }
+
+  /// Cancela un item ya pedido.
+  ///
+  /// Si el plato **no** se sirvió, devuelve el stock y cancela la comanda. Si
+  /// ya se sirvió, se retira de la cuenta como merma y [motivo] es obligatorio
+  /// (la RPC responde `MOTIVO_REQUERIDO` si falta).
+  Future<CancelacionResultado> cancelarItemPedido({
+    required int idItem,
+    String? motivo,
+  }) async {
+    final response = await _supabase.rpc(
+      'fn_cancelar_item_pedido',
+      params: {'p_id_item': idItem, 'p_motivo': motivo},
+    );
+
+    final mapa = _comoMapa(response);
+    if (mapa == null) {
+      throw Exception('fn_cancelar_item_pedido devolvió formato inesperado: $response');
+    }
+
+    if (mapa['status'] != 'success') {
+      throw PedidoException.fromJson(mapa);
+    }
+
+    return CancelacionResultado.fromJson(mapa);
+  }
+
+  /// Normaliza la respuesta de una RPC que devuelve jsonb: Supabase puede
+  /// entregarla como Map o como lista de un elemento.
+  Map<String, dynamic>? _comoMapa(dynamic response) {
+    if (response is Map) return Map<String, dynamic>.from(response);
+    if (response is List && response.isNotEmpty && response.first is Map) {
+      return Map<String, dynamic>.from(response.first as Map);
+    }
+    return null;
   }
 
   Future<void> actualizarCantidad({
