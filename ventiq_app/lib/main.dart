@@ -94,6 +94,7 @@ class MyApp extends StatelessWidget {
       title: 'Inventtia Caja',
       debugShowCheckedModeBanner: false,
       navigatorKey: globalNavigatorKey,
+      navigatorObservers: [routeObserver],
       scaffoldMessengerKey: globalScaffoldMessengerKey,
       theme: ThemeData(
         useMaterial3: true,

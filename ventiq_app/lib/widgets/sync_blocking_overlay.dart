@@ -22,6 +22,9 @@ class _SyncBlockingOverlayState extends State<SyncBlockingOverlay> {
   bool _pendingOfflineSync = false;
   bool _isVisible = false;
   String _detailMessage = 'Preparando sincronización...';
+  String? _resultBanner;
+  Color? _resultBannerColor;
+  Timer? _resultHideTimer;
 
   @override
   void initState() {
@@ -34,6 +37,7 @@ class _SyncBlockingOverlayState extends State<SyncBlockingOverlay> {
   void dispose() {
     _syncSubscription?.cancel();
     _smartSubscription?.cancel();
+    _resultHideTimer?.cancel();
     super.dispose();
   }
 
@@ -67,6 +71,8 @@ class _SyncBlockingOverlayState extends State<SyncBlockingOverlay> {
     switch (event.type) {
       case AutoSyncEventType.syncStarted:
         if (!_pendingOfflineSync) return;
+        _resultHideTimer?.cancel();
+        _resultBanner = null;
         _isVisible = true;
         _pendingOfflineSync = false;
         _detailMessage = 'Iniciando sincronización...';
@@ -77,6 +83,13 @@ class _SyncBlockingOverlayState extends State<SyncBlockingOverlay> {
         break;
       case AutoSyncEventType.syncCompleted:
       case AutoSyncEventType.syncFailed:
+        final wasBlocking = _isVisible || _pendingOfflineSync;
+        _isVisible = false;
+        _pendingOfflineSync = false;
+        if (wasBlocking) {
+          _showResultBanner(event);
+        }
+        break;
       case AutoSyncEventType.stopped:
         _isVisible = false;
         _pendingOfflineSync = false;
@@ -90,6 +103,33 @@ class _SyncBlockingOverlayState extends State<SyncBlockingOverlay> {
     }
   }
 
+  void _showResultBanner(AutoSyncEvent event) {
+    final ok = event.itemsSynced?.length ?? 0;
+    final skipped = event.skippedItems?.length ?? 0;
+    final partial = event.isPartial || (ok > 0 && event.error != null);
+    if (event.type == AutoSyncEventType.syncFailed && ok == 0) {
+      _resultBanner =
+          'Sincronización fallida${event.error != null ? ": ${event.error}" : ""}';
+      _resultBannerColor = Colors.red.shade800;
+    } else if (partial || event.type == AutoSyncEventType.syncFailed) {
+      _resultBanner =
+          'Sincronización parcial: $ok OK'
+          '${skipped > 0 ? ", $skipped pendiente(s)" : ""}'
+          '. Se reanudará automáticamente.';
+      _resultBannerColor = Colors.orange.shade800;
+    } else {
+      _resultBanner = 'Sincronización completada ($ok módulos)';
+      _resultBannerColor = Colors.green.shade700;
+    }
+    _resultHideTimer?.cancel();
+    _resultHideTimer = Timer(const Duration(seconds: 6), () {
+      if (!mounted) return;
+      setState(() {
+        _resultBanner = null;
+      });
+    });
+  }
+
   String _formatProgressMessage(String? message) {
     if (message == null || message.trim().isEmpty) {
       return 'Sincronizando datos...';
@@ -101,7 +141,46 @@ class _SyncBlockingOverlayState extends State<SyncBlockingOverlay> {
   @override
   Widget build(BuildContext context) {
     return Stack(
-      children: [widget.child, if (_isVisible) _buildOverlay(context)],
+      children: [
+        widget.child,
+        if (_isVisible) _buildOverlay(context),
+        if (_resultBanner != null) _buildResultBanner(context),
+      ],
+    );
+  }
+
+  Widget _buildResultBanner(BuildContext context) {
+    return Positioned(
+      left: 16,
+      right: 16,
+      bottom: 24,
+      child: Material(
+        elevation: 8,
+        borderRadius: BorderRadius.circular(12),
+        color: _resultBannerColor ?? Colors.orange.shade800,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              const Icon(Icons.sync_problem, color: Colors.white, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  _resultBanner!,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                onPressed: () {
+                  setState(() => _resultBanner = null);
+                },
+                icon: const Icon(Icons.close, color: Colors.white, size: 18),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 

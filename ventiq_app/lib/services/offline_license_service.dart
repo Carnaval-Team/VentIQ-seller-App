@@ -110,81 +110,151 @@ class OfflineLicenseService {
 
   /// Último motivo de fallo al descargar licencia (para UI / logs).
   String? lastFetchFailureMessage;
+  Future<bool>? _inflightFetch;
 
   /// Descarga la licencia firmada del servidor y la guarda localmente.
+  /// Solo se llama con conexión; sin red se usa la licencia ya persistida.
   Future<bool> fetchAndStoreSignedLicense(int storeId) async {
-    lastFetchFailureMessage = null;
+    final inflight = _inflightFetch;
+    if (inflight != null) {
+      print('⏳ Fetch de licencia ya en curso — reutilizando');
+      return inflight;
+    }
+    final future = _fetchAndStoreSignedLicenseGuarded(storeId);
+    _inflightFetch = future;
     try {
-      print('🔐 Solicitando licencia firmada para tienda $storeId...');
-
-      // Sesión local `offline_mode` no sirve para RPC; reautenticar si hace falta.
-      final ready = await _ensureSupabaseSessionForLicenseFetch();
-      if (!ready) {
-        lastFetchFailureMessage =
-            'Inicia sesión online una vez para renovar la licencia '
-            '(faltan credenciales o sesión Supabase).';
-        print(
-          '❌ Sin sesión Supabase real: no se puede obtener licencia firmada',
-        );
-        return false;
+      return await future;
+    } finally {
+      if (identical(_inflightFetch, future)) {
+        _inflightFetch = null;
       }
+    }
+  }
 
-      final response = await _supabase.rpc(
-        'fn_obtener_licencia_firmada',
-        params: {'p_id_tienda': storeId},
+  Future<bool> _fetchAndStoreSignedLicenseGuarded(int storeId) async {
+    lastFetchFailureMessage = null;
+
+    // Probe silencioso: no emite connectionStatusStream (evita bucle con
+    // SmartOfflineManager / LicenseReconnectBanner).
+    final reallyOnline = await _connectivity.probeInternetSilent();
+    if (!reallyOnline) {
+      print(
+        '📵 Sin conexión — no se solicita licencia al servidor '
+        '(se usará la guardada en el dispositivo)',
       );
+      return false;
+    }
 
-      if (response is! Map) {
-        lastFetchFailureMessage =
-            'Respuesta inesperada del servidor al pedir la licencia.';
-        print('❌ Respuesta inesperada de fn_obtener_licencia_firmada: $response');
-        return false;
-      }
+    print('🔐 Solicitando licencia firmada para tienda $storeId...');
 
-      final map = Map<String, dynamic>.from(response);
-      if (map['success'] != true) {
-        lastFetchFailureMessage =
-            map['message']?.toString() ??
-            'El servidor rechazó la licencia firmada.';
-        print('❌ Licencia firmada rechazada: ${map['message']}');
-        return false;
-      }
-
-      final licenciaRaw = map['licencia'];
-      final firma = map['firma']?.toString();
-      if (licenciaRaw is! Map || firma == null || firma.isEmpty) {
-        lastFetchFailureMessage = 'Payload de licencia incompleto.';
-        print('❌ Payload de licencia incompleto');
-        return false;
-      }
-
-      final licencia = Map<String, dynamic>.from(licenciaRaw);
-      if (!_verifySignature(licencia, firma)) {
-        lastFetchFailureMessage =
-            'Firma de licencia inválida. Contacta a soporte.';
-        print('❌ Firma HMAC inválida al recibir licencia del servidor');
-        return false;
-      }
-
-      await _prefs.saveSignedOfflineLicense(
-        licencia: licencia,
-        firma: firma,
+    var ready = await _ensureSupabaseSessionForLicenseFetch();
+    if (!ready) {
+      lastFetchFailureMessage =
+          'Inicia sesión online una vez para renovar la licencia '
+          '(faltan credenciales o sesión Supabase).';
+      print(
+        '❌ Sin sesión Supabase real: no se puede obtener licencia firmada',
       );
-      await _prefs.updateLastSeenTimestamp();
+      return false;
+    }
 
-      print('✅ Licencia firmada guardada localmente');
-      return true;
+    try {
+      return await _fetchAndStoreSignedLicenseOnce(storeId);
     } catch (e) {
+      if (_looksLikeAuthError(e)) {
+        print(
+          '🔑 RPC de licencia falló por auth — reautenticando y reintentando...',
+        );
+        final reauthed = await _ensureSupabaseSessionForLicenseFetch(
+          forceReauth: true,
+        );
+        if (reauthed) {
+          try {
+            return await _fetchAndStoreSignedLicenseOnce(storeId);
+          } catch (e2) {
+            if (_looksLikeNetworkError(e2)) {
+              print('❌ Sin red al reintentar licencia: $e2');
+              lastFetchFailureMessage = null;
+              return false;
+            }
+            lastFetchFailureMessage = 'Error obteniendo licencia: $e2';
+            print('❌ Error obteniendo licencia firmada (retry): $e2');
+            return false;
+          }
+        }
+      }
+      if (_looksLikeNetworkError(e)) {
+        print('❌ Sin red al pedir licencia firmada: $e');
+        lastFetchFailureMessage = null;
+        return false;
+      }
       lastFetchFailureMessage = 'Error obteniendo licencia: $e';
       print('❌ Error obteniendo licencia firmada: $e');
       return false;
     }
   }
 
+  Future<bool> _fetchAndStoreSignedLicenseOnce(int storeId) async {
+    final response = await _supabase.rpc(
+      'fn_obtener_licencia_firmada',
+      params: {'p_id_tienda': storeId},
+    );
+
+    final map = _parseRpcMap(response);
+    if (map == null) {
+      lastFetchFailureMessage =
+          'Respuesta inesperada del servidor al pedir la licencia.';
+      print('❌ Respuesta inesperada de fn_obtener_licencia_firmada: $response');
+      return false;
+    }
+
+    if (map['success'] != true) {
+      lastFetchFailureMessage =
+          map['message']?.toString() ??
+          'El servidor rechazó la licencia firmada.';
+      print('❌ Licencia firmada rechazada: ${map['message']}');
+      return false;
+    }
+
+    final licenciaRaw = map['licencia'];
+    final firma = map['firma']?.toString();
+    if (licenciaRaw is! Map || firma == null || firma.isEmpty) {
+      lastFetchFailureMessage = 'Payload de licencia incompleto.';
+      print('❌ Payload de licencia incompleto');
+      return false;
+    }
+
+    final licencia = Map<String, dynamic>.from(licenciaRaw);
+    if (!_verifySignature(licencia, firma)) {
+      lastFetchFailureMessage =
+          'Firma de licencia inválida. Contacta a soporte.';
+      print(
+        '❌ Firma HMAC inválida al recibir licencia. '
+        'Canónico=${_canonicalString(licencia)}',
+      );
+      return false;
+    }
+
+    await _prefs.saveSignedOfflineLicense(
+      licencia: licencia,
+      firma: firma,
+    );
+    await _prefs.updateLastSeenTimestamp();
+
+    print('✅ Licencia firmada guardada localmente');
+    return true;
+  }
+
   /// Garantiza un JWT real de Supabase antes del RPC de licencia.
-  Future<bool> _ensureSupabaseSessionForLicenseFetch() async {
-    final session = _supabase.auth.currentSession;
-    if (session != null && !session.isExpired) {
+  Future<bool> _ensureSupabaseSessionForLicenseFetch({
+    bool forceReauth = false,
+  }) async {
+    if (!_connectivity.isConnected) {
+      print('📵 Sin conexión — no se reautentica para pedir licencia');
+      return false;
+    }
+
+    if (!forceReauth && _sessionUsable(_supabase.auth.currentSession)) {
       return true;
     }
 
@@ -409,9 +479,8 @@ class OfflineLicenseService {
     }
 
     final online = _connectivity.isConnected;
-    if (online &&
-        (forceOnlineRefresh ||
-            await _prefs.getSignedOfflineLicense() == null)) {
+    final stored = await _prefs.getSignedOfflineLicense();
+    if (online && (forceOnlineRefresh || stored == null)) {
       final fetched = await fetchAndStoreSignedLicense(resolvedStoreId);
       if (!fetched) {
         final local = await validateLocalLicense(storeId: resolvedStoreId);
@@ -448,6 +517,13 @@ class OfflineLicenseService {
   }
 
   String? _computeSignature(Map<String, dynamic> licencia) {
+    final canonico = _canonicalString(licencia);
+    if (canonico == null) return null;
+    final hmac = Hmac(sha256, utf8.encode(_hmacSecret));
+    return hmac.convert(utf8.encode(canonico)).toString();
+  }
+
+  String? _canonicalString(Map<String, dynamic> licencia) {
     final idTienda = _asInt(licencia['id_tienda']);
     final fechaFinEpoch = _asInt(licencia['fecha_fin_epoch']);
     final emitidoEnEpoch = _asInt(licencia['emitido_en_epoch']);
@@ -466,11 +542,54 @@ class OfflineLicenseService {
         ? '1'
         : '0';
 
-    final canonico =
-        '$idTienda|$fechaFinEpoch|$emitidoEnEpoch|$diasMax|$idPlan|$permitir';
+    return '$idTienda|$fechaFinEpoch|$emitidoEnEpoch|$diasMax|$idPlan|$permitir';
+  }
 
-    final hmac = Hmac(sha256, utf8.encode(_hmacSecret));
-    return hmac.convert(utf8.encode(canonico)).toString();
+  static bool _sessionUsable(Session? session) {
+    if (session == null || session.isExpired) return false;
+    final token = session.accessToken;
+    return token.isNotEmpty && token != 'offline_mode' && token.length > 40;
+  }
+
+  static bool _looksLikeNetworkError(Object e) {
+    final text = e.toString().toLowerCase();
+    return text.contains('socket') ||
+        text.contains('failed host lookup') ||
+        text.contains('network is unreachable') ||
+        text.contains('connection failed') ||
+        text.contains('connection refused') ||
+        text.contains('timed out') ||
+        text.contains('timeout') ||
+        text.contains('clientexception');
+  }
+
+  static bool _looksLikeAuthError(Object e) {
+    final text = e.toString().toLowerCase();
+    return text.contains('jwt') ||
+        text.contains('401') ||
+        text.contains('403') ||
+        text.contains('unauthorized') ||
+        text.contains('not authenticated') ||
+        text.contains('invalid claim') ||
+        text.contains('session');
+  }
+
+  static Map<String, dynamic>? _parseRpcMap(dynamic response) {
+    if (response is Map) {
+      return Map<String, dynamic>.from(response);
+    }
+    if (response is String) {
+      try {
+        final decoded = jsonDecode(response);
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+    }
+    if (response is List &&
+        response.isNotEmpty &&
+        response.first is Map) {
+      return Map<String, dynamic>.from(response.first as Map);
+    }
+    return null;
   }
 
   static int? _asInt(dynamic value) {

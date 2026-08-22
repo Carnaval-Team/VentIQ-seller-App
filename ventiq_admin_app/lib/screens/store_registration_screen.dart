@@ -176,7 +176,8 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     );
   }
 
-  Future<void> _loadCountries() async {
+  Future<void> _loadCountries({bool preserveSelection = false}) async {
+    final previousCountry = _selectedCountry;
     setState(() {
       _loadingCountries = true;
     });
@@ -186,6 +187,14 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
         setState(() {
           _countries = countries;
           _loadingCountries = false;
+          if (preserveSelection && previousCountry != null) {
+            for (final country in countries) {
+              if (country['countryCode'] == previousCountry['countryCode']) {
+                _selectedCountry = country;
+                break;
+              }
+            }
+          }
         });
       }
     } catch (e) {
@@ -200,13 +209,19 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     }
   }
 
-  Future<void> _loadStates(String countryCode) async {
+  Future<void> _loadStates(
+    String countryCode, {
+    bool clearSelection = true,
+  }) async {
+    final previousState = _selectedState;
     setState(() {
       _loadingStates = true;
-      _states = [];
-      _selectedState = null;
-      _cities = [];
-      _selectedCity = null;
+      if (clearSelection) {
+        _states = [];
+        _selectedState = null;
+        _cities = [];
+        _selectedCity = null;
+      }
     });
     try {
       final states = await GeonamesService.getStates(countryCode);
@@ -214,6 +229,14 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
         setState(() {
           _states = states;
           _loadingStates = false;
+          if (!clearSelection && previousState != null) {
+            for (final state in states) {
+              if (state['adminCode1'] == previousState['adminCode1']) {
+                _selectedState = state;
+                break;
+              }
+            }
+          }
         });
       }
     } catch (e) {
@@ -228,11 +251,18 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     }
   }
 
-  Future<void> _loadCities(String countryCode, String adminCode) async {
+  Future<void> _loadCities(
+    String countryCode,
+    String adminCode, {
+    bool clearSelection = true,
+  }) async {
+    final previousCity = _selectedCity;
     setState(() {
       _loadingCities = true;
-      _cities = [];
-      _selectedCity = null;
+      if (clearSelection) {
+        _cities = [];
+        _selectedCity = null;
+      }
     });
     try {
       final cities = await GeonamesService.getCities(countryCode, adminCode);
@@ -240,6 +270,14 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
         setState(() {
           _cities = cities;
           _loadingCities = false;
+          if (!clearSelection && previousCity != null) {
+            for (final city in cities) {
+              if (city['name'] == previousCity['name']) {
+                _selectedCity = city;
+                break;
+              }
+            }
+          }
         });
       }
     } catch (e) {
@@ -252,6 +290,75 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
         ).showSnackBar(SnackBar(content: Text('Error al cargar ciudades: $e')));
       }
     }
+  }
+
+  void _reloadCountries() => _loadCountries(preserveSelection: true);
+
+  void _reloadStates() {
+    final country = _selectedCountry;
+    if (country == null) return;
+    _loadStates(country['countryCode'], clearSelection: false);
+  }
+
+  void _reloadCities() {
+    final country = _selectedCountry;
+    final state = _selectedState;
+    if (country == null || state == null) return;
+    _loadCities(
+      country['countryCode'],
+      state['adminCode1'] ?? '',
+      clearSelection: false,
+    );
+  }
+
+  Widget _locationPlaceholder(String message) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(message, style: const TextStyle(color: Colors.grey)),
+    );
+  }
+
+  Widget _locationLoadingIndicator() {
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 16),
+      child: Center(child: CircularProgressIndicator()),
+    );
+  }
+
+  /// Selector geográfico con botón de recarga manual a la derecha.
+  Widget _buildLocationSelectorRow({
+    required Widget child,
+    required VoidCallback? onReload,
+    bool isLoading = false,
+    String reloadTooltip = 'Recargar',
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: child),
+        const SizedBox(width: 8),
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: IconButton.outlined(
+            onPressed: isLoading ? null : onReload,
+            tooltip: reloadTooltip,
+            icon:
+                isLoading
+                    ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                    : const Icon(Icons.refresh),
+          ),
+        ),
+      ],
+    );
   }
 
   String _formatPopulation(int population) {
@@ -1080,356 +1187,306 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                 const SizedBox(height: 16),
 
                 // Dropdown de País con búsqueda y bandera
-                _loadingCountries
-                    ? const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: CircularProgressIndicator(),
-                    )
-                    : DropdownSearch<Map<String, dynamic>>(
-                      items: _countries,
-                      itemAsString: (item) => item['countryName'] ?? '',
-                      selectedItem: _selectedCountry,
-                      popupProps: PopupProps.menu(
-                        showSearchBox: true,
-                        searchFieldProps: const TextFieldProps(
-                          decoration: InputDecoration(
-                            hintText: 'Buscar país...',
-                            border: OutlineInputBorder(),
-                            contentPadding: EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                          ),
-                        ),
-                        itemBuilder: (context, item, isSelected) {
-                          final countryCode = item['countryCode'] ?? '';
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                            child: Row(
-                              children: [
-                                CountryFlag.fromCountryCode(
-                                  countryCode,
-                                  height: 24,
-                                  width: 32,
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    item['countryName'] ?? '',
-                                    style: const TextStyle(fontSize: 14),
+                _buildLocationSelectorRow(
+                  isLoading: _loadingCountries,
+                  onReload: _reloadCountries,
+                  reloadTooltip: 'Recargar países',
+                  child:
+                      _loadingCountries && _countries.isEmpty
+                          ? _locationLoadingIndicator()
+                          : DropdownSearch<Map<String, dynamic>>(
+                            items: _countries,
+                            itemAsString: (item) => item['countryName'] ?? '',
+                            selectedItem: _selectedCountry,
+                            popupProps: PopupProps.menu(
+                              showSearchBox: true,
+                              searchFieldProps: const TextFieldProps(
+                                decoration: InputDecoration(
+                                  hintText: 'Buscar país...',
+                                  border: OutlineInputBorder(),
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
                                   ),
                                 ),
-                              ],
+                              ),
+                              itemBuilder: (context, item, isSelected) {
+                                final countryCode = item['countryCode'] ?? '';
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      CountryFlag.fromCountryCode(
+                                        countryCode,
+                                        height: 24,
+                                        width: 32,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          item['countryName'] ?? '',
+                                          style: const TextStyle(fontSize: 14),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                              menuProps: const MenuProps(
+                                borderRadius: BorderRadius.vertical(
+                                  bottom: Radius.circular(8),
+                                ),
+                                elevation: 8,
+                              ),
                             ),
-                          );
-                        },
-                        menuProps: const MenuProps(
-                          borderRadius: BorderRadius.vertical(
-                            bottom: Radius.circular(8),
+                            dropdownDecoratorProps: DropDownDecoratorProps(
+                              dropdownSearchDecoration: InputDecoration(
+                                labelText: 'País',
+                                prefixIcon:
+                                    _selectedCountry != null
+                                        ? Padding(
+                                          padding: const EdgeInsets.all(8),
+                                          child: CountryFlag.fromCountryCode(
+                                            _selectedCountry!['countryCode'] ??
+                                                '',
+                                            height: 24,
+                                            width: 32,
+                                          ),
+                                        )
+                                        : const Icon(Icons.public),
+                                border: const OutlineInputBorder(),
+                              ),
+                            ),
+                            onChanged: (country) {
+                              if (country != null) {
+                                setState(() {
+                                  _selectedCountry = country;
+                                });
+                                _loadStates(country['countryCode']);
+                              }
+                            },
+                            validator: (value) {
+                              if (value == null) {
+                                return 'Selecciona un país';
+                              }
+                              return null;
+                            },
                           ),
-                          elevation: 8,
-                        ),
-                      ),
-                      dropdownDecoratorProps: DropDownDecoratorProps(
-                        dropdownSearchDecoration: InputDecoration(
-                          labelText: 'País',
-                          prefixIcon:
-                              _selectedCountry != null
-                                  ? Padding(
-                                    padding: const EdgeInsets.all(8),
-                                    child: CountryFlag.fromCountryCode(
-                                      _selectedCountry!['countryCode'] ?? '',
-                                      height: 24,
-                                      width: 32,
-                                    ),
-                                  )
-                                  : const Icon(Icons.public),
-                          border: const OutlineInputBorder(),
-                          suffixIcon: IconButton(
-                            onPressed: _loadCountries,
-                            icon: const Icon(Icons.refresh),
-                            tooltip: 'Recargar países',
-                          ),
-                        ),
-                      ),
-                      onChanged: (country) {
-                        if (country != null) {
-                          setState(() {
-                            _selectedCountry = country;
-                          });
-                          _loadStates(country['countryCode']);
-                        }
-                      },
-                      validator: (value) {
-                        if (value == null) {
-                          return 'Selecciona un país';
-                        }
-                        return null;
-                      },
-                    ),
+                ),
                 const SizedBox(height: 16),
 
                 // Dropdown de Estado con búsqueda
-                if (_selectedCountry == null)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text(
-                      'Selecciona un país primero',
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  )
-                else if (_loadingStates)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 16),
-                    child: CircularProgressIndicator(),
-                  )
-                else if (_states.isEmpty)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text(
-                      'Este país no tiene estados registrados',
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  )
-                else
-                  DropdownSearch<Map<String, dynamic>>(
-                    items: _states,
-                    itemAsString: (item) => item['name'] ?? '',
-                    selectedItem: _selectedState,
-                    popupProps: PopupProps.menu(
-                      showSearchBox: true,
-                      searchFieldProps: const TextFieldProps(
-                        decoration: InputDecoration(
-                          hintText: 'Buscar estado...',
-                          border: OutlineInputBorder(),
-                          contentPadding: EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                        ),
-                      ),
-                      itemBuilder: (context, item, isSelected) {
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                item['name'] ?? '',
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              if (item['adminName1'] != null &&
-                                  item['adminName1'] != item['name'])
-                                Text(
-                                  item['adminName1'],
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey,
+                _buildLocationSelectorRow(
+                  isLoading: _loadingStates,
+                  onReload: _selectedCountry != null ? _reloadStates : null,
+                  reloadTooltip: 'Recargar estados',
+                  child:
+                      _selectedCountry == null
+                          ? _locationPlaceholder('Selecciona un país primero')
+                          : _loadingStates && _states.isEmpty
+                          ? _locationLoadingIndicator()
+                          : _states.isEmpty
+                          ? _locationPlaceholder(
+                            'Este país no tiene estados registrados',
+                          )
+                          : DropdownSearch<Map<String, dynamic>>(
+                            items: _states,
+                            itemAsString: (item) => item['name'] ?? '',
+                            selectedItem: _selectedState,
+                            popupProps: PopupProps.menu(
+                              showSearchBox: true,
+                              searchFieldProps: const TextFieldProps(
+                                decoration: InputDecoration(
+                                  hintText: 'Buscar estado...',
+                                  border: OutlineInputBorder(),
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
                                   ),
                                 ),
-                            ],
-                          ),
-                        );
-                      },
-                      menuProps: const MenuProps(
-                        borderRadius: BorderRadius.vertical(
-                          bottom: Radius.circular(8),
-                        ),
-                        elevation: 8,
-                      ),
-                    ),
-                    dropdownDecoratorProps: DropDownDecoratorProps(
-                      dropdownSearchDecoration: InputDecoration(
-                        labelText: 'Estado/Provincia',
-                        prefixIcon: const Icon(Icons.location_city),
-                        border: const OutlineInputBorder(),
-                        suffixIcon:
-                            _selectedCountry != null
-                                ? IconButton(
-                                  onPressed:
-                                      () => _loadStates(
-                                        _selectedCountry!['countryCode'],
+                              ),
+                              itemBuilder: (context, item, isSelected) {
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        item['name'] ?? '',
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                        ),
                                       ),
-                                  icon: const Icon(Icons.refresh),
-                                  tooltip: 'Recargar estados',
-                                )
-                                : null,
-                      ),
-                    ),
-                    validator: (value) {
-                      if (_states.isNotEmpty && value == null) {
-                        return 'Selecciona un estado';
-                      }
-                      return null;
-                    },
-                    onChanged: (state) {
-                      setState(() {
-                        _selectedState = state;
-                      });
-                      if (state != null && _selectedCountry != null) {
-                        _loadCities(
-                          _selectedCountry!['countryCode'],
-                          state['adminCode1'] ?? '',
-                        );
-                      }
-                    },
-                  ),
+                                      if (item['adminName1'] != null &&
+                                          item['adminName1'] != item['name'])
+                                        Text(
+                                          item['adminName1'],
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                );
+                              },
+                              menuProps: const MenuProps(
+                                borderRadius: BorderRadius.vertical(
+                                  bottom: Radius.circular(8),
+                                ),
+                                elevation: 8,
+                              ),
+                            ),
+                            dropdownDecoratorProps: DropDownDecoratorProps(
+                              dropdownSearchDecoration: const InputDecoration(
+                                labelText: 'Estado/Provincia',
+                                prefixIcon: Icon(Icons.location_city),
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                            validator: (value) {
+                              if (_states.isNotEmpty && value == null) {
+                                return 'Selecciona un estado';
+                              }
+                              return null;
+                            },
+                            onChanged: (state) {
+                              setState(() {
+                                _selectedState = state;
+                              });
+                              if (state != null && _selectedCountry != null) {
+                                _loadCities(
+                                  _selectedCountry!['countryCode'],
+                                  state['adminCode1'] ?? '',
+                                );
+                              }
+                            },
+                          ),
+                ),
                 const SizedBox(height: 16),
 
                 // Dropdown de Ciudad con búsqueda
-                if (_selectedState == null)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text(
-                      'Selecciona un estado primero',
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  )
-                else if (_loadingCities)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 16),
-                    child: CircularProgressIndicator(),
-                  )
-                else if (_cities.isEmpty)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text(
-                      'No hay ciudades disponibles para este estado',
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  )
-                else
-                  DropdownSearch<Map<String, dynamic>>(
-                    items: _cities,
-                    itemAsString: (item) {
-                      final name = item['name'] ?? '';
-                      final population = item['population'] ?? 0;
-                      return population > 0
-                          ? '$name (${_formatPopulation(population)})'
-                          : name;
-                    },
-                    selectedItem: _selectedCity,
-                    popupProps: PopupProps.menu(
-                      showSearchBox: true,
-                      searchFieldProps: const TextFieldProps(
-                        decoration: InputDecoration(
-                          hintText: 'Buscar ciudad...',
-                          border: OutlineInputBorder(),
-                          contentPadding: EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                        ),
-                      ),
-                      itemBuilder: (context, item, isSelected) {
-                        final name = item['name'] ?? '';
-                        final population = item['population'] ?? 0;
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                name,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              if (population > 0)
-                                Text(
-                                  'Población: ${_formatPopulation(population)}',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey,
+                _buildLocationSelectorRow(
+                  isLoading: _loadingCities,
+                  onReload: _selectedState != null ? _reloadCities : null,
+                  reloadTooltip: 'Recargar ciudades',
+                  child:
+                      _selectedState == null
+                          ? _locationPlaceholder('Selecciona un estado primero')
+                          : _loadingCities && _cities.isEmpty
+                          ? _locationLoadingIndicator()
+                          : _cities.isEmpty
+                          ? _locationPlaceholder(
+                            'No hay ciudades disponibles para este estado',
+                          )
+                          : DropdownSearch<Map<String, dynamic>>(
+                            items: _cities,
+                            itemAsString: (item) {
+                              final name = item['name'] ?? '';
+                              final population = item['population'] ?? 0;
+                              return population > 0
+                                  ? '$name (${_formatPopulation(population)})'
+                                  : name;
+                            },
+                            selectedItem: _selectedCity,
+                            popupProps: PopupProps.menu(
+                              showSearchBox: true,
+                              searchFieldProps: const TextFieldProps(
+                                decoration: InputDecoration(
+                                  hintText: 'Buscar ciudad...',
+                                  border: OutlineInputBorder(),
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
                                   ),
                                 ),
-                            ],
-                          ),
-                        );
-                      },
-                      menuProps: const MenuProps(
-                        borderRadius: BorderRadius.vertical(
-                          bottom: Radius.circular(8),
-                        ),
-                        elevation: 8,
-                      ),
-                    ),
-                    dropdownDecoratorProps: DropDownDecoratorProps(
-                      dropdownSearchDecoration: InputDecoration(
-                        labelText: 'Ciudad',
-                        prefixIcon: const Icon(Icons.location_on),
-                        border: const OutlineInputBorder(),
-                        suffixIcon:
-                            _selectedState != null
-                                ? IconButton(
-                                  onPressed:
-                                      () => _loadCities(
-                                        _selectedCountry!['countryCode'],
-                                        _selectedState!['adminCode1'] ?? '',
+                              ),
+                              itemBuilder: (context, item, isSelected) {
+                                final name = item['name'] ?? '';
+                                final population = item['population'] ?? 0;
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        name,
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                        ),
                                       ),
-                                  icon: const Icon(Icons.refresh),
-                                  tooltip: 'Recargar ciudades',
-                                )
-                                : null,
-                      ),
-                    ),
-                    onChanged: (city) {
-                      setState(() {
-                        _selectedCity = city;
-                        if (city != null) {
-                          // Solo usar las coordenadas de la ciudad como punto inicial del mapa
-                          // El usuario puede cambiar la ubicación en el mapa interactivo
-                          try {
-                            _storeLatitude =
-                                double.tryParse(city['lat'].toString()) ?? 0.0;
-                            _storeLogitude =
-                                double.tryParse(city['lng'].toString()) ?? 0.0;
-                          } catch (e) {
-                            print('Error al convertir coordenadas: $e');
-                            _storeLatitude = 0.0;
-                            _storeLogitude = 0.0;
-                          }
-                        }
-                      });
-                    },
-                    validator: (value) {
-                      if (_cities.isNotEmpty && value == null) {
-                        return 'Selecciona una ciudad';
-                      }
-                      return null;
-                    },
-                  ),
+                                      if (population > 0)
+                                        Text(
+                                          'Población: ${_formatPopulation(population)}',
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                );
+                              },
+                              menuProps: const MenuProps(
+                                borderRadius: BorderRadius.vertical(
+                                  bottom: Radius.circular(8),
+                                ),
+                                elevation: 8,
+                              ),
+                            ),
+                            dropdownDecoratorProps: DropDownDecoratorProps(
+                              dropdownSearchDecoration: const InputDecoration(
+                                labelText: 'Ciudad',
+                                prefixIcon: Icon(Icons.location_on),
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                            onChanged: (city) {
+                              setState(() {
+                                _selectedCity = city;
+                                if (city != null) {
+                                  try {
+                                    _storeLatitude =
+                                        double.tryParse(
+                                          city['lat'].toString(),
+                                        ) ??
+                                        0.0;
+                                    _storeLogitude =
+                                        double.tryParse(
+                                          city['lng'].toString(),
+                                        ) ??
+                                        0.0;
+                                  } catch (e) {
+                                    print('Error al convertir coordenadas: $e');
+                                    _storeLatitude = 0.0;
+                                    _storeLogitude = 0.0;
+                                  }
+                                }
+                              });
+                            },
+                            validator: (value) {
+                              if (_cities.isNotEmpty && value == null) {
+                                return 'Selecciona una ciudad';
+                              }
+                              return null;
+                            },
+                          ),
+                ),
                 const SizedBox(height: 24),
 
                 // Sección de localización en mapa

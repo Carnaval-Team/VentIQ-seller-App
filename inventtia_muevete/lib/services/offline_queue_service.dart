@@ -69,15 +69,24 @@ class OfflineQueueService {
     _prefs.remove(_key);
   }
 
-  /// Check internet connectivity with a DNS lookup (3s timeout).
+  /// Check internet connectivity. Prefer the app's Supabase host, then a public DNS.
   static Future<bool> hasInternetConnection() async {
-    try {
-      final result = await InternetAddress.lookup('google.com')
-          .timeout(const Duration(seconds: 3));
-      return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
-    } catch (_) {
-      return false;
+    const hosts = [
+      'vsieeihstajlrdvpuooh.supabase.co',
+      'google.com',
+    ];
+    for (final host in hosts) {
+      try {
+        final result = await InternetAddress.lookup(host)
+            .timeout(const Duration(seconds: 4));
+        if (result.isNotEmpty && result[0].rawAddress.isNotEmpty) {
+          return true;
+        }
+      } catch (_) {
+        continue;
+      }
     }
+    return false;
   }
 
   List<Map<String, dynamic>> _readList() {

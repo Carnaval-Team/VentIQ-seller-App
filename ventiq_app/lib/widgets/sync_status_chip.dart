@@ -101,12 +101,11 @@ class _SyncStatusChipState extends State<SyncStatusChip> with SingleTickerProvid
           break;
           
         case AutoSyncEventType.syncProgress:
-          // Calcular progreso basado en el mensaje del evento
-          final progress = _calculateProgress(event.message);
+          final fraction = event.progressFraction;
           setState(() {
-            _isVisible = true; // Asegurar visibilidad durante el progreso
-            _syncProgress = progress;
-            _syncMessage = event.message ?? 'Sincronizando...';
+            _isVisible = true;
+            _syncProgress = fraction ?? _calculateProgress(event.message);
+            _syncMessage = event.message;
           });
           break;
           
@@ -117,32 +116,54 @@ class _SyncStatusChipState extends State<SyncStatusChip> with SingleTickerProvid
           // Cancelar timer anterior si existe
           _autoHideTimer?.cancel();
           
-          print('✅ SyncStatusChip: Sincronización completada - Ocultando en 3s');
+          final partial = event.isPartial;
+          print(
+            partial
+                ? '⚠️ SyncStatusChip: Sync parcial — Ocultando en 5s'
+                : '✅ SyncStatusChip: Sincronización completada - Ocultando en 3s',
+          );
           setState(() {
             _isSyncing = false;
             _syncProgress = 1.0;
-            _syncMessage = 'Sincronizado';
+            _syncMessage =
+                partial
+                    ? (event.message.length > 48
+                        ? 'Parcial · ver detalle'
+                        : event.message)
+                    : 'Sincronizado';
             _lastSyncTime = event.timestamp;
           });
           
-          // Ocultar automáticamente después de 3 segundos usando Timer
-          _autoHideTimer = Timer(const Duration(seconds: 3), () {
-            if (mounted && !_isSyncing) {
-              print('⏰ SyncStatusChip: Auto-ocultando widget');
-              setState(() {
-                _isVisible = false;
-              });
-            }
-          });
+          _autoHideTimer = Timer(
+            Duration(seconds: partial ? 5 : 3),
+            () {
+              if (mounted && !_isSyncing) {
+                setState(() {
+                  _isVisible = false;
+                });
+              }
+            },
+          );
           break;
           
         case AutoSyncEventType.syncFailed:
           _pulseController.stop();
           _pulseController.reset();
+          _autoHideTimer?.cancel();
           setState(() {
             _isSyncing = false;
             _syncProgress = 0.0;
-            _syncMessage = 'Error en sincronización';
+            _syncMessage =
+                event.itemsSynced != null && event.itemsSynced!.isNotEmpty
+                    ? 'Parcial con errores'
+                    : 'Error en sincronización';
+          });
+          _autoHideTimer = Timer(const Duration(seconds: 5), () {
+            if (mounted && !_isSyncing) {
+              setState(() {
+                _isVisible = false;
+              });
+            }
           });
           break;
           

@@ -48,12 +48,14 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
         throw Exception('No se pudo obtener el ID de la tienda');
       }
 
-      // Forzar actualización del guard para refrescar el caché
+      // Forzar actualización del guard: con red renueva la licencia;
+      // sin red solo valida la que ya está guardada en el dispositivo.
       print('🔄 Forzando actualización del guard...');
       await _subscriptionGuard.forceCheck();
-      
-      // Cargar suscripción activa desde el guard (que ahora tiene datos frescos)
-      _activeSubscription = await _subscriptionGuard.getCurrentSubscription(forceRefresh: true);
+
+      _activeSubscription = await _subscriptionGuard.getCurrentSubscription(
+        forceRefresh: _connectivity.isConnected,
+      );
       _licenseStatus = _subscriptionGuard.lastOfflineStatus;
       
       // Cargar historial de suscripciones (solo online)
@@ -297,13 +299,18 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
     try {
       final storeId = _idTienda;
       OfflineLicenseStatus? hardStatus;
-      if (storeId != null && _connectivity.isConnected) {
-        // Botón explícito: exigir éxito online si no hay licencia local válida.
-        hardStatus = await OfflineLicenseService().validate(
-          storeId: storeId,
-          forceOnlineRefresh: true,
-          requireOnlineSuccess: true,
-        );
+      if (storeId != null) {
+        var online = _connectivity.isConnected;
+        if (!online) {
+          online = await _connectivity.performImmediateCheck();
+        }
+        if (online) {
+          hardStatus = await OfflineLicenseService().validate(
+            storeId: storeId,
+            forceOnlineRefresh: true,
+            requireOnlineSuccess: true,
+          );
+        }
       }
 
       final ok = await _subscriptionGuard.forceCheck();
@@ -404,8 +411,8 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
             const SizedBox(height: 12),
             _buildContactButton(
               icon: Icons.email,
-              label: 'Email: supportinventtia@gmail.com',
-              onTap: () => _launchEmail('supportinventtia@gmail.com'),
+              label: 'Email: soporteinventtia@gmail.com',
+              onTap: () => _launchEmail('soporteinventtia@gmail.com'),
             ),
           ],
         ),

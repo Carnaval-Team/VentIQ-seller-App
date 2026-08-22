@@ -15,6 +15,7 @@ import '../services/offline_database_service.dart';
 import '../models/product.dart';
 import '../widgets/changelog_dialog.dart';
 import '../widgets/sales_monitor_fab.dart';
+import '../services/smart_offline_manager.dart';
 import 'dart:async';
 
 class CategoriesWebScreen extends StatefulWidget {
@@ -30,7 +31,9 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
   final UserPreferencesService _preferencesService = UserPreferencesService();
   final ChangelogService _changelogService = ChangelogService();
   final ProductService _productService = ProductService();
+  final SmartOfflineManager _smartOfflineManager = SmartOfflineManager();
   final FocusNode _searchFocusNode = FocusNode();
+  StreamSubscription<SmartOfflineEvent>? _smartOfflineSubscription;
   List<Category> _categories = [];
   bool _isLoading = true;
   String? _errorMessage;
@@ -57,6 +60,7 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
     _loadUsdRate();
     _loadOfflineModeSettings();
     _loadShowSkuSetting();
+    _setupSmartOfflineListener();
     _searchController.addListener(() {
       _onSearchChanged(_searchController.text);
     });
@@ -72,6 +76,7 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _smartOfflineSubscription?.cancel();
     _searchDebounce?.cancel();
     _searchController.dispose();
     _searchFocusNode.dispose();
@@ -81,6 +86,7 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _loadOfflineModeSettings();
       setState(() {});
     }
   }
@@ -214,6 +220,24 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
         _isOfflineModeEnabled = isEnabled;
       });
     }
+  }
+
+  void _setupSmartOfflineListener() {
+    _smartOfflineSubscription = _smartOfflineManager.eventStream.listen((
+      event,
+    ) {
+      switch (event.type) {
+        case SmartOfflineEventType.offlineModeAutoDeactivated:
+        case SmartOfflineEventType.offlineModeManuallyDisabled:
+        case SmartOfflineEventType.offlineModeAutoActivated:
+        case SmartOfflineEventType.offlineModeManuallyEnabled:
+        case SmartOfflineEventType.offlineModeActive:
+          _loadOfflineModeSettings();
+          break;
+        default:
+          break;
+      }
+    });
   }
 
   // ---------- Global search ----------
@@ -896,7 +920,9 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
         break;
       case 3:
         Navigator.pushNamed(context, '/settings').then((_) {
-          setState(() {});
+          if (!mounted) return;
+          _loadOfflineModeSettings();
+          _loadShowSkuSetting();
         });
         break;
     }

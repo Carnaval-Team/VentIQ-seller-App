@@ -191,6 +191,26 @@ class ConnectivityService {
     }
   }
 
+  /// Comprueba internet y actualiza [_isConnected] **sin emitir streams**.
+  /// Usar desde validación de licencia para no reentrar en
+  /// connectionRestored → forceCheck → fetch → check → loop.
+  Future<bool> probeInternetSilent() async {
+    try {
+      final connectivityResults = await _connectivity.checkConnectivity();
+      final hasConnection = connectivityResults.any(
+        (result) => result != ConnectivityResult.none,
+      );
+      final online =
+          hasConnection ? await _hasInternetConnection() : false;
+      _isConnected = online;
+      return online;
+    } catch (e) {
+      print('❌ Error en probe silencioso de conectividad: $e');
+      _isConnected = false;
+      return false;
+    }
+  }
+
   /// Forzar una verificación inmediata de conectividad y actualizar el estado.
   /// Usado por el botón "Reintentar" del diálogo de pérdida de conexión.
   Future<bool> performImmediateCheck() async {
@@ -223,6 +243,9 @@ class ConnectivityService {
   /// Actualizar el estado de conexión
   Future<void> _updateConnectionStatus(bool isConnected, String reason) async {
     final wasConnected = _isConnected;
+    if (wasConnected == isConnected) {
+      return;
+    }
     _isConnected = isConnected;
 
     final now = DateTime.now();

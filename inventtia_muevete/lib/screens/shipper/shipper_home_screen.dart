@@ -15,6 +15,7 @@ import '../../providers/theme_provider.dart';
 import '../../widgets/carga_fechas_section.dart';
 import '../../widgets/carga_mercancia_equipo_section.dart';
 import '../../widgets/route_map_widget.dart';
+import '../../widgets/shared_filter_widgets.dart';
 import 'cargo_location_picker_screen.dart';
 import 'carrier_directory_screen.dart';
 import '../common/unified_profile_screen.dart';
@@ -184,10 +185,12 @@ class _MisCargasTabState extends State<_MisCargasTab> {
         final val = (c.tipoMercancia ?? '').toLowerCase();
         if (!val.contains(merc)) return false;
       }
-      // Tipo FTL/LTL
+      // Tipo FTL/LTL — prefer esLtl, fallback to abreviación/tipo
       if (_tipoSeleccionado != null) {
-        if (_tipoSeleccionado == 'LTL' && !c.esLtl) return false;
-        if (_tipoSeleccionado == 'FTL' && c.esLtl) return false;
+        final abr = (c.tipoCargaAbreviacion ?? c.tipo).toUpperCase();
+        final isLtl = c.esLtl || abr == 'LTL' || abr.contains('PARCIAL');
+        if (_tipoSeleccionado == 'LTL' && !isLtl) return false;
+        if (_tipoSeleccionado == 'FTL' && isLtl) return false;
       }
       // Prioridad
       if (_prioridadSeleccionada != null && c.prioridad != _prioridadSeleccionada) {
@@ -254,77 +257,75 @@ class _MisCargasTabState extends State<_MisCargasTab> {
     return Column(
       children: [
         // ── Filter toolbar ────────────────────────────────────────────────
-        Container(
-          color: isDark ? AppTheme.darkCard : Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${filtered.length} carga${filtered.length != 1 ? 's' : ''}',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white70 : Colors.grey[700],
-                  ),
-                ),
-              ),
-              if (_hasActiveFilters)
-                TextButton.icon(
-                  onPressed: _clearFilters,
-                  icon: const Icon(Icons.clear, size: 14),
-                  label: const Text('Limpiar', style: TextStyle(fontSize: 12)),
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppTheme.error,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                ),
-              IconButton(
-                onPressed: () => setState(() => _showFilters = !_showFilters),
-                icon: Icon(
-                  _showFilters ? Icons.filter_list_off : Icons.filter_list,
-                  color: _hasActiveFilters ? AppTheme.primaryColor : (isDark ? Colors.white54 : Colors.grey[600]),
-                ),
-                tooltip: 'Filtros',
-                visualDensity: VisualDensity.compact,
-              ),
-            ],
-          ),
+        FilterToolbar(
+          isDark: isDark,
+          summary:
+              '${filtered.length} carga${filtered.length != 1 ? 's' : ''}',
+          expanded: _showFilters,
+          hasActiveFilters: _hasActiveFilters,
+          onToggle: () => setState(() => _showFilters = !_showFilters),
+          onClear: _clearFilters,
         ),
 
         // ── Filter panel ──────────────────────────────────────────────────
         if (_showFilters)
-          Container(
-            color: isDark ? AppTheme.darkSurface : Colors.grey[50],
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+          FilterPanelContainer(
+            isDark: isDark,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Row 1: Origen / Destino
                 Row(
                   children: [
-                    Expanded(child: _FilterField(ctrl: _origenCtrl, label: 'Origen', isDark: isDark, onChanged: () => setState(() {}))),
+                    Expanded(
+                      child: SharedFilterField(
+                        controller: _origenCtrl,
+                        label: 'Origen',
+                        isDark: isDark,
+                        icon: Icons.trip_origin,
+                        onChanged: () => setState(() {}),
+                      ),
+                    ),
                     const SizedBox(width: 8),
-                    Expanded(child: _FilterField(ctrl: _destinoCtrl, label: 'Destino', isDark: isDark, onChanged: () => setState(() {}))),
+                    Expanded(
+                      child: SharedFilterField(
+                        controller: _destinoCtrl,
+                        label: 'Destino',
+                        isDark: isDark,
+                        icon: Icons.flag_outlined,
+                        onChanged: () => setState(() {}),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 // Row 2: Mercancía / Tipo
                 Row(
                   children: [
-                    Expanded(child: _FilterField(ctrl: _mercanciaCtrl, label: 'Mercancía', isDark: isDark, onChanged: () => setState(() {}))),
+                    Expanded(
+                      child: SharedFilterField(
+                        controller: _mercanciaCtrl,
+                        label: 'Mercancía',
+                        isDark: isDark,
+                        icon: Icons.inventory_2_outlined,
+                        onChanged: () => setState(() {}),
+                      ),
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: _FilterDropdown<String>(
+                      child: SharedFilterDropdown<String>(
                         label: 'Tipo',
                         value: _tipoSeleccionado,
                         items: const [
-                          DropdownMenuItem(value: 'FTL', child: Text('FTL – Completo')),
-                          DropdownMenuItem(value: 'LTL', child: Text('LTL – Parcial')),
+                          DropdownMenuItem(
+                              value: 'FTL', child: Text('FTL – Completo')),
+                          DropdownMenuItem(
+                              value: 'LTL', child: Text('LTL – Parcial')),
                         ],
                         isDark: isDark,
-                        onChanged: (v) => setState(() => _tipoSeleccionado = v),
+                        icon: Icons.local_shipping_outlined,
+                        onChanged: (v) =>
+                            setState(() => _tipoSeleccionado = v),
                       ),
                     ),
                   ],
@@ -334,37 +335,58 @@ class _MisCargasTabState extends State<_MisCargasTab> {
                 Row(
                   children: [
                     Expanded(
-                      child: _FilterDropdown<String>(
+                      child: SharedFilterDropdown<String>(
                         label: 'Prioridad',
                         value: _prioridadSeleccionada,
                         items: const [
-                          DropdownMenuItem(value: 'normal', child: Text('Normal')),
-                          DropdownMenuItem(value: 'alta', child: Text('Alta')),
-                          DropdownMenuItem(value: 'urgente', child: Text('Urgente')),
+                          DropdownMenuItem(
+                              value: 'normal', child: Text('Normal')),
+                          DropdownMenuItem(
+                              value: 'alta', child: Text('Alta')),
+                          DropdownMenuItem(
+                              value: 'urgente', child: Text('Urgente')),
                         ],
                         isDark: isDark,
-                        onChanged: (v) => setState(() => _prioridadSeleccionada = v),
+                        icon: Icons.priority_high,
+                        onChanged: (v) =>
+                            setState(() => _prioridadSeleccionada = v),
                       ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: _FilterDropdown<String>(
+                      child: SharedFilterDropdown<String>(
                         label: 'Estado',
                         value: _estadoSeleccionado,
                         items: const [
-                          DropdownMenuItem(value: 'publicada', child: Text('Publicada')),
-                          DropdownMenuItem(value: 'en_matching', child: Text('En Matching')),
-                          DropdownMenuItem(value: 'ofertada', child: Text('Con Ofertas')),
-                          DropdownMenuItem(value: 'aceptada', child: Text('Aceptada')),
-                          DropdownMenuItem(value: 'tomada', child: Text('Tomada')),
-                          DropdownMenuItem(value: 'en_transito', child: Text('En Tránsito')),
-                          DropdownMenuItem(value: 'completada_carrier', child: Text('Completada (Carrier)')),
-                          DropdownMenuItem(value: 'entregada', child: Text('Entregada')),
-                          DropdownMenuItem(value: 'completada', child: Text('Completada')),
-                          DropdownMenuItem(value: 'cancelada', child: Text('Cancelada')),
+                          DropdownMenuItem(
+                              value: 'publicada', child: Text('Publicada')),
+                          DropdownMenuItem(
+                              value: 'en_matching',
+                              child: Text('En Matching')),
+                          DropdownMenuItem(
+                              value: 'ofertada', child: Text('Con Ofertas')),
+                          DropdownMenuItem(
+                              value: 'aceptada', child: Text('Aceptada')),
+                          DropdownMenuItem(
+                              value: 'tomada', child: Text('Tomada')),
+                          DropdownMenuItem(
+                              value: 'en_transito',
+                              child: Text('En Tránsito')),
+                          DropdownMenuItem(
+                              value: 'completada_carrier',
+                              child: Text('Completada (Carrier)')),
+                          DropdownMenuItem(
+                              value: 'entregada', child: Text('Entregada')),
+                          DropdownMenuItem(
+                              value: 'completada',
+                              child: Text('Completada')),
+                          DropdownMenuItem(
+                              value: 'cancelada', child: Text('Cancelada')),
                         ],
                         isDark: isDark,
-                        onChanged: (v) => setState(() => _estadoSeleccionado = v),
+                        icon: Icons.flag_circle_outlined,
+                        onChanged: (v) =>
+                            setState(() => _estadoSeleccionado = v),
                       ),
                     ),
                   ],
@@ -374,19 +396,20 @@ class _MisCargasTabState extends State<_MisCargasTab> {
                 Wrap(
                   spacing: 8,
                   children: [
-                    _FilterChip(
+                    SharedFilterChip(
                       label: 'Refrigeración',
                       value: _requiereRefrigeracion,
-                      onChanged: (v) => setState(() => _requiereRefrigeracion = v),
+                      onChanged: (v) =>
+                          setState(() => _requiereRefrigeracion = v),
                       isDark: isDark,
                     ),
-                    _FilterChip(
+                    SharedFilterChip(
                       label: 'Seguro',
                       value: _requiereSeguro,
                       onChanged: (v) => setState(() => _requiereSeguro = v),
                       isDark: isDark,
                     ),
-                    _FilterChip(
+                    SharedFilterChip(
                       label: 'Destacada',
                       value: _destacada,
                       onChanged: (v) => setState(() => _destacada = v),
@@ -536,139 +559,6 @@ class _MisCargasTabState extends State<_MisCargasTab> {
 
   void _showDetalle(BuildContext context, CargaModel carga, bool isDark) {
     Navigator.push(context, MaterialPageRoute(builder: (_) => _DetalleCargaScreen(carga: carga)));
-  }
-}
-
-// ── Filter helpers ─────────────────────────────────────────────────────────────
-
-class _FilterField extends StatelessWidget {
-  final TextEditingController ctrl;
-  final String label;
-  final bool isDark;
-  final VoidCallback onChanged;
-  const _FilterField({required this.ctrl, required this.label, required this.isDark, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: ctrl,
-      onChanged: (_) => onChanged(),
-      style: TextStyle(fontSize: 13, color: isDark ? Colors.white : Colors.black87),
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : Colors.grey[600]),
-        isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-        suffixIcon: ctrl.text.isNotEmpty
-            ? IconButton(
-                icon: const Icon(Icons.clear, size: 14),
-                onPressed: () { ctrl.clear(); onChanged(); },
-                padding: EdgeInsets.zero,
-                visualDensity: VisualDensity.compact,
-              )
-            : null,
-        filled: true,
-        fillColor: isDark ? AppTheme.darkCard : Colors.white,
-      ),
-    );
-  }
-}
-
-class _FilterDropdown<T> extends StatelessWidget {
-  final String label;
-  final T? value;
-  final List<DropdownMenuItem<T>> items;
-  final bool isDark;
-  final ValueChanged<T?> onChanged;
-  const _FilterDropdown({required this.label, required this.value, required this.items, required this.isDark, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return InputDecorator(
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : Colors.grey[600]),
-        isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-        filled: true,
-        fillColor: isDark ? AppTheme.darkCard : Colors.white,
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<T>(
-          value: value,
-          isDense: true,
-          isExpanded: true,
-          hint: Text('Todos', style: TextStyle(fontSize: 12, color: isDark ? Colors.white38 : Colors.grey[400])),
-          dropdownColor: isDark ? AppTheme.darkCard : Colors.white,
-          style: TextStyle(fontSize: 12, color: isDark ? Colors.white : Colors.black87),
-          items: [
-            DropdownMenuItem<T>(value: null, child: Text('Todos', style: TextStyle(color: isDark ? Colors.white54 : Colors.grey[600]))),
-            ...items,
-          ],
-          onChanged: onChanged,
-        ),
-      ),
-    );
-  }
-}
-
-class _FilterChip extends StatelessWidget {
-  final String label;
-  final bool? value;
-  final ValueChanged<bool?> onChanged;
-  final bool isDark;
-  const _FilterChip({required this.label, required this.value, required this.onChanged, required this.isDark});
-
-  @override
-  Widget build(BuildContext context) {
-    final active = value != null;
-    return GestureDetector(
-      onTap: () {
-        if (value == null) onChanged(true);
-        else if (value == true) onChanged(false);
-        else onChanged(null);
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: value == true
-              ? AppTheme.primaryColor.withValues(alpha: 0.15)
-              : value == false
-                  ? Colors.red.withValues(alpha: 0.12)
-                  : (isDark ? AppTheme.darkCard : Colors.white),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: value == true
-                ? AppTheme.primaryColor
-                : value == false
-                    ? Colors.red
-                    : (isDark ? AppTheme.darkBorder : Colors.grey[300]!),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (active)
-              Icon(value == true ? Icons.check : Icons.close,
-                  size: 12,
-                  color: value == true ? AppTheme.primaryColor : Colors.red),
-            if (active) const SizedBox(width: 4),
-            Text(label,
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: active ? FontWeight.w600 : FontWeight.normal,
-                    color: value == true
-                        ? AppTheme.primaryColor
-                        : value == false
-                            ? Colors.red
-                            : (isDark ? Colors.white54 : Colors.grey[600]))),
-          ],
-        ),
-      ),
-    );
   }
 }
 

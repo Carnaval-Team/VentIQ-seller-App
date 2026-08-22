@@ -57,19 +57,41 @@ class _CarrierDirectoryScreenState extends State<CarrierDirectoryScreen> {
       _error = null;
     });
     try {
-      // Load carrier_carga drivers with their carrocerias
-      final data = await _supabase
-          .schema('muevete')
-          .from('drivers')
-          .select(
-            'id, uuid, name, email, telefono, estado, kyc, image, categoria, '
-            'pais, province, municipality, '
-            'carrocerias(id, marca, modelo, matricula)',
-          )
-          .eq('tipo_usuario', 'carrier_carga')
-          .order('name', ascending: true);
+      // Load system carriers. Prefer rows with auth uuid (registered accounts).
+      // carrocerias join is optional — if the relation fails we fall back.
+      List<dynamic> data;
+      try {
+        data = await _supabase
+            .schema('muevete')
+            .from('drivers')
+            .select(
+              'id, uuid, name, email, telefono, estado, kyc, image, categoria, '
+              'pais, province, municipality, dispatcher_id, '
+              'carrocerias(id, marca, modelo, matricula)',
+            )
+            .eq('tipo_usuario', 'carrier_carga')
+            .order('name', ascending: true);
+      } catch (_) {
+        data = await _supabase
+            .schema('muevete')
+            .from('drivers')
+            .select(
+              'id, uuid, name, email, telefono, estado, kyc, image, categoria, '
+              'pais, province, municipality, dispatcher_id',
+            )
+            .eq('tipo_usuario', 'carrier_carga')
+            .order('name', ascending: true);
+      }
 
-      final list = List<Map<String, dynamic>>.from(data as List);
+      // Prefer independent/system carriers (registered), keep fleet ones too
+      final list = List<Map<String, dynamic>>.from(data)
+        ..sort((a, b) {
+          final aSys = a['uuid'] != null && a['dispatcher_id'] == null ? 0 : 1;
+          final bSys = b['uuid'] != null && b['dispatcher_id'] == null ? 0 : 1;
+          if (aSys != bSys) return aSys.compareTo(bSys);
+          return ((a['name'] as String?) ?? '')
+              .compareTo((b['name'] as String?) ?? '');
+        });
 
       // Build distinct filter values
       final paises = <String>{};

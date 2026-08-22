@@ -101,6 +101,8 @@ class _SplashScreenState extends State<SplashScreen> {
 
         // No valid session or saved credentials, go to login
         if (mounted) {
+          await SettingsIntegrationService().stop();
+          await AutoSyncService().stopAutoSync();
           Navigator.of(context).pushReplacementNamed('/login');
         }
       }
@@ -108,6 +110,8 @@ class _SplashScreenState extends State<SplashScreen> {
       print('Error checking auth status: $e');
       // On error, go to login screen
       if (mounted) {
+        await SettingsIntegrationService().stop();
+        await AutoSyncService().stopAutoSync();
         Navigator.of(context).pushReplacementNamed('/login');
       }
     }
@@ -149,6 +153,8 @@ class _SplashScreenState extends State<SplashScreen> {
       } else {
         // Auto-login failed, go to login screen
         if (mounted) {
+          await SettingsIntegrationService().stop();
+          await AutoSyncService().stopAutoSync();
           Navigator.of(context).pushReplacementNamed('/login');
         }
       }
@@ -156,6 +162,8 @@ class _SplashScreenState extends State<SplashScreen> {
       print('Auto-login failed: $e');
       // Auto-login failed, go to login screen
       if (mounted) {
+        await SettingsIntegrationService().stop();
+        await AutoSyncService().stopAutoSync();
         Navigator.of(context).pushReplacementNamed('/login');
       }
     }

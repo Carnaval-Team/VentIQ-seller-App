@@ -56,7 +56,7 @@ BEGIN
                     'sku', COALESCE(primer_producto.sku, 'CONTACT-ADMIN'),
                     'denominacion', 'CONTACTAR A ADMINISTRACION',
                     'nombre_comercial', 'Contacto Administración',
-                    'descripcion', 'escribir a supportinventtia@gmail.com o via whatsapp al 53765120',
+                    'descripcion', 'escribir a soporteinventtia@gmail.com o via whatsapp al 53765120',
                     'um', COALESCE(primer_producto.um, 'Unidad'),
                     'es_refrigerado', COALESCE(primer_producto.es_refrigerado, FALSE),
                     'es_fragil', COALESCE(primer_producto.es_fragil, FALSE),

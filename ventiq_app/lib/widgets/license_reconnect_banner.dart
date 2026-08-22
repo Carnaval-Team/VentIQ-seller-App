@@ -27,6 +27,7 @@ class _LicenseReconnectBannerState extends State<LicenseReconnectBanner> {
 
   OfflineLicenseStatus? _status;
   bool _visible = false;
+  bool _refreshInFlight = false;
   DateTime? _lastOnlineFetchAt;
 
   static const _onlineFetchThrottle = Duration(minutes: 10);
@@ -78,6 +79,8 @@ class _LicenseReconnectBannerState extends State<LicenseReconnectBanner> {
   }
 
   Future<void> _refresh() async {
+    if (_refreshInFlight) return;
+    _refreshInFlight = true;
     try {
       final storeId = await _prefs.getIdTienda();
       if (storeId == null) {
@@ -128,6 +131,8 @@ class _LicenseReconnectBannerState extends State<LicenseReconnectBanner> {
       }
     } catch (_) {
       if (mounted) setState(() => _visible = false);
+    } finally {
+      _refreshInFlight = false;
     }
   }
 

@@ -18,6 +18,9 @@ import 'offline_license_service.dart';
 import 'admin_inventory_service.dart';
 import 'inventory_service.dart';
 import 'offline_database_service.dart';
+import 'order_service.dart';
+import 'connectivity_service.dart';
+import '../models/order.dart';
 import '../utils/uuid_generator.dart';
 
 /// Servicio para sincronización automática periódica de datos
@@ -37,7 +40,9 @@ class AutoSyncService {
   bool _isRunning = false;
   bool _isSyncing = false;
   bool _pendingSyncRequested = false;
+  bool _pendingReconnectSync = false;
   DateTime? _lastSyncTime;
+  DateTime? _lastReconnectSyncAt;
   int _syncCount = 0;
 
   // Configuración
@@ -45,6 +50,8 @@ class AutoSyncService {
   static const Duration _syncTimeout = Duration(
     minutes: 5,
   ); // Timeout de 5 minutos
+  /// Evita sync ligera en ráfaga (Wi‑Fi inestable, resume + stream duplicado).
+  static const Duration _reconnectSyncDebounce = Duration(seconds: 45);
 
   // Stream para notificar eventos de sincronización
   final StreamController<AutoSyncEvent> _syncEventController =
@@ -57,6 +64,28 @@ class AutoSyncService {
   DateTime? get lastSyncTime => _lastSyncTime;
   int get syncCount => _syncCount;
 
+  /// ¿Hay contexto mínimo (sesión + tienda) para sincronizar con el servidor?
+  Future<bool> _canRunSync(String reason) async {
+    if (await _userPreferencesService.isOfflineModeEnabled()) {
+      print('🔌 Sync omitida ($reason): modo offline activo');
+      return false;
+    }
+
+    final loggedIn = await _userPreferencesService.isLoggedIn();
+    if (!loggedIn) {
+      print('🚫 Sync omitida ($reason): no hay usuario logueado');
+      return false;
+    }
+
+    final idTienda = await _userPreferencesService.getIdTienda();
+    if (idTienda == null) {
+      print('🚫 Sync omitida ($reason): sin tienda configurada');
+      return false;
+    }
+
+    return true;
+  }
+
   /// Iniciar la sincronización automática periódica
   Future<void> startAutoSync() async {
     if (_isRunning) {
@@ -64,9 +93,7 @@ class AutoSyncService {
       return;
     }
 
-    // Si el modo offline está activo, no iniciar (prep usa syncModules).
-    if (await _userPreferencesService.isOfflineModeEnabled()) {
-      print('🔌 Modo offline activado - No se inicia sincronización automática');
+    if (!await _canRunSync('startAutoSync')) {
       return;
     }
 
@@ -75,25 +102,10 @@ class AutoSyncService {
 
     _isRunning = true;
 
-    // Ejecutar primera sincronización inmediatamente
+    // Pasada inicial completa (login / arranque con sesión).
     await _performSync();
 
-    // Programar sincronizaciones periódicas
-    _syncTimer = Timer.periodic(_syncInterval, (_) async {
-      if (!_isRunning) return;
-
-      // Verificar si el modo offline está activado
-      final isOfflineModeEnabled =
-          await _userPreferencesService.isOfflineModeEnabled();
-
-      if (isOfflineModeEnabled) {
-        print('🔌 Modo offline activado - Pausando sincronización automática');
-        await stopAutoSync();
-        return;
-      }
-
-      await _performSync();
-    });
+    _startPeriodicSyncTimer();
 
     _syncEventController.add(
       AutoSyncEvent(
@@ -106,18 +118,92 @@ class AutoSyncService {
     print('✅ Sincronización automática iniciada');
   }
 
+  /// Programa el timer periódico sin ejecutar sync inmediata (p.ej. tras reconexión).
+  Future<void> ensurePeriodicSyncScheduled() async {
+    if (_isRunning) return;
+    if (!await _canRunSync('ensurePeriodicSyncScheduled')) return;
+
+    print('⏰ Programando sync periódica (sin pasada completa inmediata)...');
+    _isRunning = true;
+    _startPeriodicSyncTimer();
+
+    _syncEventController.add(
+      AutoSyncEvent(
+        type: AutoSyncEventType.started,
+        timestamp: DateTime.now(),
+        message: 'Sincronización periódica programada',
+      ),
+    );
+  }
+
+  void _startPeriodicSyncTimer() {
+    _syncTimer?.cancel();
+    _syncTimer = Timer.periodic(_syncInterval, (_) async {
+      if (!_isRunning) return;
+
+      if (!await _canRunSync('timer')) {
+        await stopAutoSync();
+        return;
+      }
+
+      await _performSync();
+    });
+  }
+
+  /// Sync ligera al recuperar conexión: sube pendientes + datos operativos del
+  /// turno. **No** baja catálogo completo (productos/categorías/layouts).
+  Future<void> performReconnectSync() async {
+    if (!await _canRunSync('performReconnectSync')) return;
+
+    final now = DateTime.now();
+    if (_lastReconnectSyncAt != null &&
+        now.difference(_lastReconnectSyncAt!) < _reconnectSyncDebounce) {
+      print(
+        '⏳ Sync por reconexión omitida (debounce '
+        '${_reconnectSyncDebounce.inSeconds}s)',
+      );
+      return;
+    }
+
+    if (_isSyncing) {
+      _pendingReconnectSync = true;
+      print('⏳ Sync en curso; reconexión encolada');
+      return;
+    }
+
+    _lastReconnectSyncAt = now;
+    _isSyncing = true;
+
+    try {
+      print('📶 Sync ligera por reconexión (pendientes + turno)...');
+      await syncModules(_modulesForReconnectPass(), acquireLock: false);
+      print('✅ Sync ligera por reconexión completada');
+    } catch (e) {
+      print('❌ Error en sync por reconexión: $e');
+      _syncEventController.add(
+        AutoSyncEvent(
+          type: AutoSyncEventType.syncFailed,
+          timestamp: DateTime.now(),
+          message: 'Error en sync por reconexión: $e',
+          error: e.toString(),
+        ),
+      );
+    } finally {
+      _isSyncing = false;
+      if (_pendingReconnectSync) {
+        _pendingReconnectSync = false;
+        unawaited(performReconnectSync());
+      }
+    }
+  }
+
   /// Ejecutar una sincronización inmediata sin iniciar el timer periódico
   /// Útil para ejecutar la primera sincronización rápidamente
   Future<void> performImmediateSync() async {
     try {
       print('⚡ Ejecutando sincronización inmediata...');
 
-      // Verificar si el modo offline está activado
-      final isOfflineModeEnabled =
-          await _userPreferencesService.isOfflineModeEnabled();
-
-      if (isOfflineModeEnabled) {
-        print('🔌 Modo offline activado - Omitiendo sincronización inmediata');
+      if (!await _canRunSync('performImmediateSync')) {
         return;
       }
 
@@ -160,6 +246,11 @@ class AutoSyncService {
 
   /// Realizar una sincronización completa (delega en [syncModules]).
   Future<void> _performSync() async {
+    if (!await _canRunSync('_performSync')) {
+      _pendingSyncRequested = false;
+      return;
+    }
+
     // Guarda defensiva: si el modo offline ya está activado, no sincronizar.
     // (La prep admin / sync selectiva usa [syncModules] directamente.)
     if (await _userPreferencesService.isOfflineModeEnabled()) {
@@ -179,7 +270,7 @@ class AutoSyncService {
     try {
       print('🔄 Iniciando sincronización automática #${_syncCount + 1}...');
       final modules = _modulesForAutoSyncPass();
-      final result = await syncModules(modules);
+      final result = await syncModules(modules, acquireLock: false);
 
       if (result.syncedItems.isNotEmpty || result.success) {
         _lastSyncTime = DateTime.now();
@@ -244,6 +335,24 @@ class AutoSyncService {
     }
 
     return modules;
+  }
+
+  /// Pasada al recuperar conexión: prioriza subir pendientes y refrescar turno.
+  Set<SyncModule> _modulesForReconnectPass() {
+    return {
+      SyncModule.uploadTurno,
+      SyncModule.uploadSales,
+      SyncModule.uploadEgresos,
+      SyncModule.uploadShiftWorkers,
+      SyncModule.uploadAdminOps,
+      SyncModule.license,
+      SyncModule.storeConfig,
+      SyncModule.paymentMethods,
+      SyncModule.promotions,
+      SyncModule.turno,
+      SyncModule.egresos,
+      SyncModule.orders,
+    };
   }
 
   /// Sincronizar credenciales del usuario
@@ -1010,6 +1119,7 @@ class AutoSyncService {
       if (ok) {
         final removed = await _userPreferencesService.markOfflineTurnoSynced(
           localId,
+          serverIdTurno: serverIdForCierre,
         );
         return {
           'success': removed,
@@ -1072,15 +1182,30 @@ class AutoSyncService {
   /// Devuelve el `server_id_turno` (abierto) o null si falló.
   Future<int?> _ensureAperturaForQueueEntry(Map<String, dynamic> entry) async {
     final localId = entry['local_id']?.toString();
-    if (localId == null) return null;
+    if (localId == null) {
+      print('[TURNO_SYNC] ❌ _ensureApertura: sin local_id');
+      return null;
+    }
+
+    print(
+      '[TURNO_SYNC] ▶ _ensureApertura START '
+      '${UserPreferencesService.describeOfflineTurnoEntry(entry)}',
+    );
 
     // Si ya hay server_id, solo reutilizarlo si SIGUE abierto.
     // Un id de un turno ya cerrado hace fallar el cierre ("no hay turno abierto").
     final existingRaw = entry['server_id_turno'];
     final existingId = _parseTurnoId(existingRaw);
     if (existingId != null) {
-      if (await _isServerTurnoOpen(existingId)) {
-        print('  ✅ Turno $localId ya abierto en servidor (id=$existingId)');
+      final stillOpen = await _isServerTurnoOpen(existingId);
+      print(
+        '[TURNO_SYNC] _ensureApertura server_id=$existingId '
+        'stillOpenOnServer=$stillOpen',
+      );
+      if (stillOpen) {
+        print(
+          '[TURNO_SYNC] ✅ reutiliza server_id=$existingId (sigue abierto)',
+        );
         // Aunque el turno ya esté abierto (no se llama a la apertura RPC
         // en este camino), igualmente hay que garantizar que la entrada
         // tenga un `usuario` válido guardado: el cierre posterior lo usa
@@ -1097,6 +1222,18 @@ class AutoSyncService {
         await _clearStaleFechaCierre(existingId);
         return existingId;
       }
+
+      // closed_pending cuyo server_id YA está cerrado: no reabrir.
+      // El cierre ya se aplicó en servidor; el sync solo debe marcar synced.
+      if (entry['status'] ==
+          UserPreferencesService.offlineTurnoStatusClosedPending) {
+        print(
+          '[TURNO_SYNC] ✅ closed_pending $localId ya cerrado en servidor '
+          '(id=$existingId) — no se reabre',
+        );
+        return existingId;
+      }
+
       print(
         '  ⚠️ server_id_turno=$existingId ya cerrado/inexistente; '
         'se reabre la apertura offline',
@@ -1131,6 +1268,29 @@ class AutoSyncService {
         '  ⚠️ No se pudo obtener TPV o vendedor para turno $localId',
       );
       return null;
+    }
+
+    // Preferir reutilizar un turno YA abierto en servidor para este
+    // TPV/vendedor ANTES de crear otro. Sin esto, syncs concurrentes o
+    // reintentos dejan 2+ filas estado=1 y fn_cerrar_turno_tpv falla
+    // ("query returned more than one row") dejando el turno abierto online.
+    final alreadyOpen = await _getOnlineOpenShift(
+      idTpv: idTpv,
+      idVendedor: idVendedor,
+    );
+    final alreadyOpenId = _parseTurnoId(alreadyOpen?['id']);
+    if (alreadyOpenId != null && await _isServerTurnoOpen(alreadyOpenId)) {
+      print(
+        '[TURNO_SYNC] ✅ _ensureApertura reutiliza turno ya abierto '
+        'id=$alreadyOpenId (sin nueva apertura)',
+      );
+      await _userPreferencesService.setOfflineTurnoServerId(
+        localId,
+        alreadyOpenId,
+      );
+      await _ensureEntryHasUsuario(entry, aperturaData, localId);
+      await _clearStaleFechaCierre(alreadyOpenId);
+      return alreadyOpenId;
     }
 
     var clientUuid =
@@ -1211,16 +1371,28 @@ class AutoSyncService {
       print(
         '  ⚠️ fn_apertura_turno_offline no disponible ($e). Fallback.',
       );
-      final result = await TurnoService.registrarAperturaTurno(
-        efectivoInicial: efectivoInicial,
+      // Antes del fallback: otra pasada pudo haber abierto el turno.
+      final raced = await _getOnlineOpenShift(
         idTpv: idTpv,
         idVendedor: idVendedor,
-        usuario: usuario,
-        manejaInventario: manejaInventario,
-        productos: productos.isEmpty ? null : productos,
-        observaciones: observaciones,
       );
-      aperturaOk = result['success'] == true;
+      final racedId = _parseTurnoId(raced?['id']);
+      if (racedId != null && await _isServerTurnoOpen(racedId)) {
+        aperturaOk = true;
+        serverId = racedId;
+        print('  ♻️ Fallback omitido; turno $racedId ya abierto');
+      } else {
+        final result = await TurnoService.registrarAperturaTurno(
+          efectivoInicial: efectivoInicial,
+          idTpv: idTpv,
+          idVendedor: idVendedor,
+          usuario: usuario,
+          manejaInventario: manejaInventario,
+          productos: productos.isEmpty ? null : productos,
+          observaciones: observaciones,
+        );
+        aperturaOk = result['success'] == true;
+      }
     }
 
     // Idempotencia stale: el RPC puede devolver un id_turno YA CERRADO.
@@ -1283,6 +1455,20 @@ class AutoSyncService {
     if (serverId == null) {
       print('  ❌ Apertura OK pero sin id_turno resoluble para $localId');
       return null;
+    }
+
+    // closed_pending cuyo id ya está cerrado: OK (idempotente).
+    final alreadyClosedPending =
+        entry['status'] ==
+            UserPreferencesService.offlineTurnoStatusClosedPending &&
+        !await _isServerTurnoOpen(serverId!);
+    if (alreadyClosedPending) {
+      print(
+        '[TURNO_SYNC] ✅ apertura/cierre ya aplicados en servidor '
+        'id=$serverId para $localId',
+      );
+      await _userPreferencesService.setOfflineTurnoServerId(localId, serverId!);
+      return serverId;
     }
 
     if (!await _isServerTurnoOpen(serverId!)) {
@@ -1657,25 +1843,150 @@ class AutoSyncService {
     return rebuilt;
   }
 
+  /// UUID `creado_por` de un turno concreto en servidor.
+  Future<String?> _resolveUsuarioForServerTurnoId(int serverId) async {
+    try {
+      final row =
+          await Supabase.instance.client
+              .from('app_dat_caja_turno')
+              .select('creado_por')
+              .eq('id', serverId)
+              .maybeSingle();
+      final creadoPor = row?['creado_por']?.toString();
+      if (creadoPor != null && creadoPor.isNotEmpty) {
+        print(
+          '  🔎 creado_por del turno $serverId → $creadoPor',
+        );
+        return creadoPor;
+      }
+    } catch (e) {
+      print('  ⚠️ No se pudo leer creado_por del turno $serverId: $e');
+    }
+    return null;
+  }
+
+  /// Cierra TODOS los turnos abiertos de un TPV/usuario (post-cierre limpio).
+  Future<void> _closeAllRemainingOpenTurnos({
+    required int idTpv,
+    required String usuario,
+  }) async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('app_dat_caja_turno')
+          .select('id')
+          .eq('id_tpv', idTpv)
+          .eq('estado', 1)
+          .eq('creado_por', usuario);
+      for (final row in rows as List) {
+        final id = _parseTurnoId((row as Map)['id']);
+        if (id == null) continue;
+        await Supabase.instance.client
+            .from('app_dat_caja_turno')
+            .update({
+              'estado': 2,
+              'fecha_cierre': DateTime.now().toUtc().toIso8601String(),
+              'observaciones':
+                  'Cierre automático residual (sync offline)',
+              'cerrado_por': usuario,
+            })
+            .eq('id', id)
+            .eq('estado', 1);
+        print('[TURNO_SYNC] 🧹 residual abierto $id cerrado');
+      }
+    } catch (e) {
+      print('[TURNO_SYNC] ⚠️ closeAllRemaining falló: $e');
+    }
+  }
+
+  /// Si hay varios turnos abiertos del mismo TPV/usuario (sync duplicado),
+  /// deja solo [keepServerId] (o el más reciente) y cierra el resto con
+  /// update directo. Así `fn_cerrar_turno_tpv` no falla por multi-row.
+  Future<int?> _collapseDuplicateOpenTurnos({
+    required int idTpv,
+    required String usuario,
+    int? keepServerId,
+  }) async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('app_dat_caja_turno')
+          .select('id, fecha_apertura, creado_por')
+          .eq('id_tpv', idTpv)
+          .eq('estado', 1)
+          .eq('creado_por', usuario)
+          .order('fecha_apertura', ascending: false, nullsFirst: false);
+
+      final opens = List<Map<String, dynamic>>.from(
+        (rows as List).map((e) => Map<String, dynamic>.from(e as Map)),
+      );
+      if (opens.length <= 1) {
+        return keepServerId ?? _parseTurnoId(opens.isEmpty ? null : opens.first['id']);
+      }
+
+      print(
+        '[TURNO_SYNC] ⚠️ ${opens.length} turnos abiertos duplicados '
+        'TPV=$idTpv usuario=$usuario — colapsando',
+      );
+
+      int? keep = keepServerId;
+      if (keep == null || !opens.any((o) => _parseTurnoId(o['id']) == keep)) {
+        keep = _parseTurnoId(opens.first['id']);
+      }
+
+      for (final row in opens) {
+        final id = _parseTurnoId(row['id']);
+        if (id == null || id == keep) continue;
+        try {
+          await Supabase.instance.client
+              .from('app_dat_caja_turno')
+              .update({
+                'estado': 2,
+                'fecha_cierre': DateTime.now().toUtc().toIso8601String(),
+                'observaciones':
+                    'Cierre automático de duplicado (sync offline)',
+                'cerrado_por': usuario,
+              })
+              .eq('id', id)
+              .eq('estado', 1);
+          print('[TURNO_SYNC] 🧹 duplicado $id cerrado; se conserva $keep');
+        } catch (e) {
+          print('[TURNO_SYNC] ⚠️ no se pudo cerrar duplicado $id: $e');
+        }
+      }
+      return keep;
+    } catch (e) {
+      print('[TURNO_SYNC] ⚠️ collapse duplicados falló: $e');
+      return keepServerId;
+    }
+  }
+
   /// Cierra en servidor un turno de la cola (closed_pending_sync).
-  /// Solo retorna true si el servidor aceptó el cierre Y se retiró de la cola local.
+  /// Solo retorna true si el servidor aceptó el cierre Y se marcó synced local.
   Future<bool> _syncCierreForQueueEntry(Map<String, dynamic> entry) async {
     final localId = entry['local_id']?.toString() ?? '';
     if (localId.isEmpty) {
-      print('  ❌ Cierre omitido: turno sin local_id');
+      print('[TURNO_SYNC] ❌ _syncCierre: sin local_id');
       return false;
     }
 
+    print(
+      '[TURNO_SYNC] ▶ _syncCierreForQueueEntry START '
+      '${UserPreferencesService.describeOfflineTurnoEntry(entry)}',
+    );
+
     // Releer desde disco para no usar un snapshot stale sin `cierre`.
-    final latest =
+    var latest =
         await _userPreferencesService.getOfflineTurnoByLocalId(localId) ??
         entry;
+    print(
+      '[TURNO_SYNC] _syncCierre re-leído desde disco: '
+      '${UserPreferencesService.describeOfflineTurnoEntry(latest)}',
+    );
 
     if (latest['status'] !=
         UserPreferencesService.offlineTurnoStatusClosedPending) {
       print(
-        '  ℹ️ Turno $localId ya no está closed_pending '
-        '(status=${latest['status']}); se omite cierre',
+        '[TURNO_SYNC] ℹ️ _syncCierre omitido: status=${latest['status']} '
+        '(esperado closed_pending_sync)',
       );
       return latest['status'] ==
           UserPreferencesService.offlineTurnoStatusSynced;
@@ -1683,74 +1994,125 @@ class AutoSyncService {
 
     final cierreRaw = latest['cierre'];
     if (cierreRaw is! Map) {
-      print('  ⚠️ Turno $localId closed sin payload de cierre');
+      print(
+        '[TURNO_SYNC] ❌ _syncCierre: closed_pending SIN payload cierre',
+      );
       return false;
     }
     final cierreData = Map<String, dynamic>.from(cierreRaw);
 
-    // Priorizar el id_tpv con el que se ABRIÓ este turno (top-level de la
-    // entrada, poblado en la apertura) por sobre el que se guardó en el
-    // payload de cierre o el de preferencias actuales del dispositivo. Si el
-    // TPV activo cambió entre la apertura y el cierre, usar el de la apertura
-    // evita que `fn_cerrar_turno_offline` busque un turno abierto en el TPV
-    // equivocado y falle con "No se encontró un turno abierto para el TPV X".
+    // Idempotencia: si el server_id ya está cerrado, solo marcar synced.
+    final earlyServerId = _parseTurnoId(latest['server_id_turno']);
+    if (earlyServerId != null &&
+        !await _isServerTurnoOpen(earlyServerId)) {
+      print(
+        '[TURNO_SYNC] ✅ _syncCierre: turno $earlyServerId ya cerrado '
+        'en servidor — marcando synced',
+      );
+      await _userPreferencesService.purgeFinalizedSyncedOrdersForTurno(
+        localId,
+      );
+      return _userPreferencesService.markOfflineTurnoSynced(
+        localId,
+        serverIdTurno: earlyServerId,
+      );
+    }
+
     final aperturaRaw = latest['apertura'];
     final aperturaIdTpv =
         aperturaRaw is Map ? aperturaRaw['id_tpv'] : null;
-    final idTpv =
+    final idTpvRaw =
         latest['id_tpv'] ??
         aperturaIdTpv ??
         cierreData['id_tpv'] ??
         await _userPreferencesService.getIdTpv();
+    final idTpv =
+        idTpvRaw is int
+            ? idTpvRaw
+            : (idTpvRaw is num
+                ? idTpvRaw.toInt()
+                : int.tryParse('$idTpvRaw'));
 
-    // Prioridad para `p_usuario`:
-    //  1) El UUID real del vendedor propietario del turno en el servidor
-    //     (fuente de verdad; ver `_resolveUsuarioForOpenTpvTurno`).
-    //  2) El usuario con el que se ABRIÓ el turno localmente.
-    //  3) El usuario guardado en la entrada / en el payload de cierre.
-    // `cerrar_turno` resuelve/valida el vendedor a partir de `p_usuario`,
-    // así que debe coincidir con quien realmente abrió el turno — no con
-    // quien cerró localmente ni con la sesión actual del dispositivo.
+    var serverId = _parseTurnoId(latest['server_id_turno']);
+    final resolvedByServer =
+        serverId != null
+            ? await _resolveUsuarioForServerTurnoId(serverId)
+            : null;
     final resolvedRealUsuario =
-        idTpv != null ? await _resolveUsuarioForOpenTpvTurno(idTpv) : null;
+        resolvedByServer ??
+        (idTpv != null
+            ? await _resolveUsuarioForOpenTpvTurno(idTpv)
+            : null);
     final aperturaUsuario =
         aperturaRaw is Map ? aperturaRaw['usuario']?.toString() : null;
-    final usuario =
+    final usuarioRaw =
         resolvedRealUsuario ??
         ((aperturaUsuario != null && aperturaUsuario.isNotEmpty)
             ? aperturaUsuario
             : (latest['usuario'] ?? cierreData['usuario']));
-    final efectivoFinal = cierreData['efectivo_final'] ?? 0.0;
+    final usuario = usuarioRaw?.toString();
+    final efectivoFinal = (cierreData['efectivo_final'] as num?)?.toDouble() ??
+        0.0;
     final observaciones = cierreData['observaciones'] as String?;
     var productosRaw = cierreData['productos'] as List<dynamic>? ?? [];
     var productos =
         productosRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
 
-    if (idTpv == null || usuario == null) {
-      print('  ⚠️ Cierre sin id_tpv/usuario; se omite');
+    print(
+      '[TURNO_SYNC] _syncCierre params: '
+      'idTpv=$idTpv '
+      'usuario=$usuario '
+      '(creado_por=$resolvedRealUsuario apertura_u=$aperturaUsuario '
+      'entry_u=${latest['usuario']} cierre_u=${cierreData['usuario']}) '
+      'efectivo_final=$efectivoFinal '
+      'productos_raw=${productos.length} '
+      'server_id=$serverId '
+      'uuid_cierre=${latest['client_uuid_cierre'] ?? cierreData['client_uuid']}',
+    );
+
+    if (idTpv == null || usuario == null || usuario.isEmpty) {
+      print(
+        '[TURNO_SYNC] ❌ _syncCierre abortado: id_tpv=$idTpv usuario=$usuario',
+      );
       return false;
     }
 
-    // Turnos con inventario rechazan p_productos vacío / id_ubicacion inválido.
+    // Colapsar duplicados ANTES del RPC de cierre.
+    final keepId = await _collapseDuplicateOpenTurnos(
+      idTpv: idTpv,
+      usuario: usuario,
+      keepServerId: serverId,
+    );
+    if (keepId != null && keepId != serverId) {
+      serverId = keepId;
+      await _userPreferencesService.setOfflineTurnoServerId(localId, keepId);
+      latest =
+          await _userPreferencesService.getOfflineTurnoByLocalId(localId) ??
+          latest;
+    }
+
     productos = await _resolveCierreProductos(
       latest: latest,
       cierreData: cierreData,
       productos: productos,
-      idTpv: idTpv is int ? idTpv : int.tryParse('$idTpv'),
+      idTpv: idTpv,
+    );
+    print(
+      '[TURNO_SYNC] _syncCierre productos tras resolve=${productos.length}',
     );
     final manejaInventario =
         cierreData['maneja_inventario'] == true ||
         (latest['apertura'] is Map &&
             latest['apertura']['maneja_inventario'] == true);
     if (manejaInventario && productos.isEmpty) {
+      // No abortar el cierre: el servidor rechazará si realmente exige
+      // inventario; si el turno en BD no maneja inventario, debe cerrar.
       print(
-        '  ❌ No hay productos con id_ubicacion válido para cerrar '
-        'un turno con inventario',
+        '[TURNO_SYNC] ⚠️ cierre con inventario declarado pero sin productos; '
+        'se intenta el cierre igual (el servidor valida)',
       );
-      return false;
     }
     if (productos.isNotEmpty) {
-      // Persistir payload saneado (ubicaciones válidas) para reintentos.
       await _userPreferencesService.upsertOfflineTurno({
         ...latest,
         'cierre': {...cierreData, 'productos': productos},
@@ -1762,23 +2124,23 @@ class AutoSyncService {
         cierreData['client_uuid']?.toString();
     if (clientUuid == null || clientUuid.isEmpty) {
       clientUuid = UuidGenerator.v4();
-      // Persistir uuid antes del RPC para reintentos idempotentes.
+      print('[TURNO_SYNC] _syncCierre generó client_uuid_cierre=$clientUuid');
       await _userPreferencesService.upsertOfflineTurno({
         ...latest,
         'client_uuid_cierre': clientUuid,
-        'cierre': {...cierreData, 'client_uuid': clientUuid, 'productos': productos},
+        'cierre': {
+          ...cierreData,
+          'client_uuid': clientUuid,
+          'productos': productos,
+        },
       });
     }
 
-    print(
-      '  🔄 Cierre cola turno $localId (TPV $idTpv, '
-      '${productos.length} productos)...',
-    );
     bool cerrado = false;
     String? cierreMessage;
     Map<String, dynamic>? cierreRespMap;
 
-    bool _isMissingRpc(Object e) {
+    bool isMissingRpc(Object e) {
       final msg = e.toString();
       return msg.contains('PGRST202') ||
           msg.contains('Could not find the function');
@@ -1797,6 +2159,13 @@ class AutoSyncService {
         final fecha = cierreData['fecha_cierre'] ?? latest['fecha_cierre'];
         if (fecha != null) params['p_fecha_cierre'] = fecha;
       }
+      print(
+        '[TURNO_SYNC] RPC fn_cerrar_turno_offline '
+        'withFecha=$withFecha params=${{
+          ...params,
+          'p_productos': '(${productos.length} items)',
+        }}',
+      );
       final resp = await Supabase.instance.client.rpc(
         'fn_cerrar_turno_offline',
         params: params,
@@ -1804,92 +2173,194 @@ class AutoSyncService {
       cierreRespMap = _asRpcMap(resp);
       cerrado = _rpcStatusSuccess(cierreRespMap);
       cierreMessage = cierreRespMap?['message']?.toString();
-      if (cerrado) {
-        print(
-          '  ✅ Cierre sincronizado (idempotent=${cierreRespMap?['idempotent']}'
-          '${cierreMessage != null ? ", msg=$cierreMessage" : ""})',
+      print(
+        '[TURNO_SYNC] RPC respuesta: cerrado=$cerrado '
+        'resp=$resp map=$cierreRespMap',
+      );
+    }
+
+    Future<bool> tryFallbackCierre() async {
+      try {
+        final result = await TurnoService.cerrarTurnoDetailed(
+          efectivoReal: efectivoFinal,
+          productos: productos,
+          observaciones: observaciones,
         );
-      } else {
-        print('  ⚠️ Cierre offline rechazado: $resp');
+        print(
+          '[TURNO_SYNC] fallback cerrarTurnoDetailed '
+          'success=${result.success} msg=${result.message}',
+        );
+        return result.success;
+      } catch (e2) {
+        print('[TURNO_SYNC] ❌ fallback cierre falló: $e2');
+        return false;
       }
     }
 
     try {
-      // Preferir firma desplegada (sin p_fecha_cierre).
       try {
         await tryCierreRpc(withFecha: false);
       } catch (e) {
-        if (_isMissingRpc(e)) {
+        if (isMissingRpc(e)) {
           print(
-            '  ⚠️ Firma sin fecha no encontrada; reintento con p_fecha_cierre',
+            '[TURNO_SYNC] ⚠️ firma sin fecha no encontrada; reintento con fecha',
           );
           await tryCierreRpc(withFecha: true);
         } else {
-          // Error de negocio (p.ej. productos vacíos): no usar fallback engañoso.
-          print('  ❌ Cierre offline rechazado por servidor: $e');
-          return false;
+          print('[TURNO_SYNC] ⚠️ RPC cierre error: $e — reintento tras colapsar');
+          await _collapseDuplicateOpenTurnos(
+            idTpv: idTpv,
+            usuario: usuario,
+            keepServerId: serverId,
+          );
+          try {
+            await tryCierreRpc(withFecha: false);
+          } catch (e2) {
+            print('[TURNO_SYNC] ❌ RPC cierre rechazado: $e2');
+            cerrado = await tryFallbackCierre();
+          }
         }
       }
 
-      // Alinear fecha_cierre offline si el RPC desplegado no la acepta.
       if (cerrado) {
         final fecha = cierreData['fecha_cierre'] ?? latest['fecha_cierre'];
-        final sid = _parseTurnoId(latest['server_id_turno']);
+        final sid = serverId ?? _parseTurnoId(latest['server_id_turno']);
         if (fecha != null && sid != null) {
           try {
             await Supabase.instance.client
                 .from('app_dat_caja_turno')
                 .update({'fecha_cierre': fecha})
                 .eq('id', sid);
-          } catch (_) {}
+            print(
+              '[TURNO_SYNC] fecha_cierre alineada en servidor id=$sid → $fecha',
+            );
+          } catch (e) {
+            print('[TURNO_SYNC] ⚠️ no se pudo alinear fecha_cierre: $e');
+          }
         }
       }
     } catch (e) {
-      if (!_isMissingRpc(e)) {
-        print('  ❌ Cierre offline falló: $e');
-        return false;
-      }
-      print('  ⚠️ fn_cerrar_turno_offline no disponible ($e). Fallback.');
-      try {
-        final result = await TurnoService.cerrarTurnoDetailed(
-          efectivoReal: (efectivoFinal as num).toDouble(),
-          productos: productos,
-          observaciones: observaciones,
-        );
-        cerrado = result.success;
-      } catch (e2) {
-        print('  ❌ Error en fallback de cierre offline: $e2');
-      }
-    }
-
-    if (!cerrado) return false;
-
-    // Si el servidor dijo "nada que cerrar", confirmar que nuestro turno
-    // (si tenemos server_id) ya no está abierto. Si sigue abierto, fallar.
-    final noOpenMsg = (cierreMessage ?? '').toLowerCase().contains(
-      'no hay turno abierto',
-    );
-    if (noOpenMsg) {
-      final sid = _parseTurnoId(latest['server_id_turno']);
-      if (sid != null && await _isServerTurnoOpen(sid)) {
+      if (!isMissingRpc(e)) {
+        print('[TURNO_SYNC] ❌ _syncCierre falló: $e');
+        cerrado = await tryFallbackCierre();
+      } else {
         print(
-          '  ❌ Servidor reportó "sin turno abierto" pero id=$sid '
-          'sigue abierto; no se marca synced',
+          '[TURNO_SYNC] ⚠️ fn_cerrar_turno_offline no disponible → fallback',
+        );
+        cerrado = await tryFallbackCierre();
+      }
+    }
+
+    // Si el RPC dijo OK por "no hay turno abierto" pero nuestro id sigue
+    // abierto, no marcar synced. Si hay otros abiertos, cerrarlos.
+    final sidCheck = serverId ?? _parseTurnoId(latest['server_id_turno']);
+    if (cerrado) {
+      final noOpenMsg = (cierreMessage ?? '').toLowerCase().contains(
+        'no hay turno abierto',
+      );
+      if (sidCheck != null && await _isServerTurnoOpen(sidCheck)) {
+        print(
+          '[TURNO_SYNC] ⚠️ RPC OK pero turno $sidCheck sigue abierto'
+          '${noOpenMsg ? ' (msg sin turno abierto)' : ''} — reintento',
+        );
+        await _collapseDuplicateOpenTurnos(
+          idTpv: idTpv,
+          usuario: usuario,
+          keepServerId: sidCheck,
+        );
+        try {
+          await tryCierreRpc(withFecha: false);
+        } catch (_) {
+          cerrado = await tryFallbackCierre();
+        }
+        if (await _isServerTurnoOpen(sidCheck)) {
+          // Último recurso: cerrar la fila concreta.
+          try {
+            await Supabase.instance.client
+                .from('app_dat_caja_turno')
+                .update({
+                  'estado': 2,
+                  'efectivo_real': efectivoFinal,
+                  'fecha_cierre':
+                      cierreData['fecha_cierre'] ??
+                      DateTime.now().toUtc().toIso8601String(),
+                  'observaciones':
+                      observaciones ??
+                      'Cierre sync offline (forzado por id)',
+                  'cerrado_por': usuario,
+                })
+                .eq('id', sidCheck)
+                .eq('estado', 1);
+            cerrado = !await _isServerTurnoOpen(sidCheck);
+            print(
+              '[TURNO_SYNC] forzado por id $sidCheck → cerrado=$cerrado',
+            );
+          } catch (e) {
+            print('[TURNO_SYNC] ❌ forzado por id falló: $e');
+            cerrado = false;
+          }
+        }
+      }
+    }
+
+    if (!cerrado) {
+      // Aún puede quedar abierto: un último intento de colapso + fallback.
+      await _collapseDuplicateOpenTurnos(
+        idTpv: idTpv,
+        usuario: usuario,
+        keepServerId: sidCheck,
+      );
+      cerrado = await tryFallbackCierre();
+      if (!cerrado &&
+          sidCheck != null &&
+          await _isServerTurnoOpen(sidCheck)) {
+        print(
+          '[TURNO_SYNC] ❌ _syncCierre: servidor NO cerró '
+          'msg=$cierreMessage resp=$cierreRespMap sid=$sidCheck',
+        );
+        return false;
+      }
+      if (!cerrado && sidCheck != null) {
+        // Ya no está abierto → tratar como cerrado.
+        cerrado = true;
+      }
+      if (!cerrado) {
+        print(
+          '[TURNO_SYNC] ❌ _syncCierre: servidor NO cerró '
+          'msg=$cierreMessage resp=$cierreRespMap',
         );
         return false;
       }
     }
 
-    await _userPreferencesService.purgeFinalizedSyncedOrdersForTurno(localId);
-    final marked = await _userPreferencesService.markOfflineTurnoSynced(
-      localId,
-    );
-    if (!marked) {
+    // Verificar estado final: nuestro server_id (si existe) no debe seguir abierto.
+    if (sidCheck != null && await _isServerTurnoOpen(sidCheck)) {
       print(
-        '  ❌ Cierre OK en servidor pero NO se pudo retirar $localId de la cola',
+        '[TURNO_SYNC] ❌ post-cierre: turno $sidCheck sigue estado=1',
       );
       return false;
     }
+
+    // Cerrar cualquier otro abierto residual del mismo TPV/usuario.
+    await _closeAllRemainingOpenTurnos(idTpv: idTpv, usuario: usuario);
+
+    await _userPreferencesService.purgeFinalizedSyncedOrdersForTurno(localId);
+    final sid = sidCheck ?? _parseTurnoId(cierreRespMap?['id_turno']);
+    print(
+      '[TURNO_SYNC] marcando synced localId=$localId serverId=$sid',
+    );
+    final marked = await _userPreferencesService.markOfflineTurnoSynced(
+      localId,
+      serverIdTurno: sid,
+    );
+    if (!marked) {
+      print(
+        '[TURNO_SYNC] ❌ cierre OK en servidor pero markSynced falló '
+        'localId=$localId',
+      );
+      return false;
+    }
+    print('[TURNO_SYNC] ✅ _syncCierreForQueueEntry OK localId=$localId');
     return true;
   }
 
@@ -1897,68 +2368,102 @@ class AutoSyncService {
   /// No se detiene por fallos de otros turnos.
   Future<bool> _syncSingleOfflineTurnoEntry(Map<String, dynamic> entry) async {
     final localId = entry['local_id']?.toString() ?? '';
-    if (localId.isEmpty) return false;
+    if (localId.isEmpty) {
+      print('[TURNO_SYNC] ❌ _syncSingle: sin local_id');
+      return false;
+    }
 
-    print('  ——— Sync forzado turno $localId (${entry['status']}) ———');
+    print(
+      '[TURNO_SYNC] ▶▶▶ _syncSingleOfflineTurnoEntry START '
+      '${UserPreferencesService.describeOfflineTurnoEntry(entry)}',
+    );
+    await _userPreferencesService.dumpOfflineTurnosQueue(
+      'ANTES _syncSingle ($localId)',
+    );
+
+    if (entry['status'] == UserPreferencesService.offlineTurnoStatusSynced) {
+      print('[TURNO_SYNC] ℹ️ _syncSingle: $localId ya synced → OK');
+      return true;
+    }
 
     final serverId = await _ensureAperturaForQueueEntry(entry);
+    print(
+      '[TURNO_SYNC] _syncSingle apertura → serverId=$serverId '
+      'localId=$localId',
+    );
     if (serverId == null) {
-      print('  ❌ No se pudo abrir turno $localId en servidor');
+      print('[TURNO_SYNC] ❌ _syncSingle: no se pudo abrir en servidor');
+      await _userPreferencesService.dumpOfflineTurnosQueue(
+        'FALLO apertura ($localId)',
+      );
       return false;
     }
 
     final refreshed =
         await _userPreferencesService.getOfflineTurnoByLocalId(localId) ??
         entry;
+    print(
+      '[TURNO_SYNC] _syncSingle tras apertura: '
+      '${UserPreferencesService.describeOfflineTurnoEntry(refreshed)}',
+    );
 
-    await _syncOfflineSales(forTurno: refreshed);
-    await _syncOfflineEgresos(
+    final sales = await _syncOfflineSales(forTurno: refreshed);
+    print('[TURNO_SYNC] _syncSingle ventas synced=$sales');
+    final egresos = await _syncOfflineEgresos(
       forLocalTurnoId: localId,
       serverIdTurno: serverId,
     );
+    print('[TURNO_SYNC] _syncSingle egresos synced=$egresos');
     await _remapShiftWorkerOpsForTurno(localId, serverId);
 
     try {
       await ShiftWorkersService.syncPendingOperations();
     } catch (e) {
-      print('  ⚠️ Workers sync: $e');
+      print('[TURNO_SYNC] ⚠️ workers sync: $e');
     }
 
     final latest =
         await _userPreferencesService.getOfflineTurnoByLocalId(localId) ??
         refreshed;
+    print(
+      '[TURNO_SYNC] _syncSingle antes de cierre: '
+      '${UserPreferencesService.describeOfflineTurnoEntry(latest)}',
+    );
 
     if (latest['status'] !=
         UserPreferencesService.offlineTurnoStatusClosedPending) {
-      // Solo apertura (sin cierre) — considerado OK para ese caso: ya se
-      // sincronizaron apertura/ventas/egresos arriba y no hay cierre
-      // pendiente que aplicar todavía (el turno sigue "open", que es el
-      // estado normal de un turno activo). Antes este `return` estaba
-      // invertido y devolvía `false` justo para status == 'open', haciendo
-      // que la sincronización individual de un turno abierto (sin cierre
-      // aún) siempre se reportara como fallida aunque todo se hubiera
-      // sincronizado correctamente.
       print(
-        '  ℹ️ Turno $localId status=${latest['status']} tras apertura; '
-        'sin cierre pendiente',
+        '[TURNO_SYNC] ℹ️ _syncSingle: sin cierre pendiente '
+        '(status=${latest['status']}) → OK (solo apertura)',
+      );
+      await _userPreferencesService.dumpOfflineTurnosQueue(
+        'FIN _syncSingle sin cierre ($localId)',
       );
       return true;
     }
 
     final ok = await _syncCierreForQueueEntry(latest);
-    if (!ok) {
-      print('  ❌ Cierre en servidor falló para $localId');
-    }
+    print(
+      '[TURNO_SYNC] ◀◀◀ _syncSingleOfflineTurnoEntry END '
+      'localId=$localId ok=$ok',
+    );
+    await _userPreferencesService.dumpOfflineTurnosQueue(
+      'DESPUÉS _syncSingle ($localId ok=$ok)',
+    );
     return ok;
   }
 
   /// Replay ordenado: por cada turno pending → apertura → ventas → egresos → cierre.
   Future<Map<String, dynamic>> _syncOfflineTurnoQueue() async {
+    print('[TURNO_SYNC] ▶ _syncOfflineTurnoQueue START');
     await _hydrateTurnosFromLegacyPendingOps();
 
     final pending = await _userPreferencesService.getOfflineTurnosPendingSync();
+    await _userPreferencesService.dumpOfflineTurnosQueue(
+      'cola pending=${pending.length}',
+    );
     if (pending.isEmpty) {
-      print('  📝 No hay turnos offline pendientes en cola');
+      print('[TURNO_SYNC] cola vacía — nada que sync');
       return {
         'turnos': 0,
         'sales': 0,
@@ -1969,7 +2474,7 @@ class AutoSyncService {
       };
     }
 
-    print('  🔄 Replay de ${pending.length} turno(s) offline...');
+    print('[TURNO_SYNC] Replay de ${pending.length} turno(s)...');
     int salesTotal = 0;
     int egresosTotal = 0;
     int cierres = 0;
@@ -1979,14 +2484,19 @@ class AutoSyncService {
     for (final entry in pending) {
       final localId = entry['local_id']?.toString() ?? '';
       if (localId.isEmpty) {
-        print('  ⚠️ Entrada de cola sin local_id; se omite');
+        print('[TURNO_SYNC] ⚠️ entrada sin local_id; omitida');
         continue;
       }
-      print('  ——— Turno $localId (${entry['status']}) ———');
+      print(
+        '[TURNO_SYNC] ——— queue item '
+        '${UserPreferencesService.describeOfflineTurnoEntry(entry)} ———',
+      );
 
       final serverId = await _ensureAperturaForQueueEntry(entry);
       if (serverId == null) {
-        print('  ❌ No se pudo abrir turno $localId; se detiene el replay');
+        print(
+          '[TURNO_SYNC] ❌ no se pudo abrir $localId; se DETIENE el replay',
+        );
         break;
       }
       aperturas++;
@@ -1998,12 +2508,14 @@ class AutoSyncService {
 
       final sales = await _syncOfflineSales(forTurno: refreshed);
       salesTotal += sales;
+      print('[TURNO_SYNC] queue $localId ventas=$sales');
 
       final egresos = await _syncOfflineEgresos(
         forLocalTurnoId: localId,
         serverIdTurno: serverId,
       );
       egresosTotal += egresos;
+      print('[TURNO_SYNC] queue $localId egresos=$egresos');
 
       // Workers: remapear id_turno local → server antes de sync global.
       await _remapShiftWorkerOpsForTurno(localId, serverId);
@@ -2013,11 +2525,19 @@ class AutoSyncService {
         final ok = await _syncCierreForQueueEntry(refreshed);
         if (ok) {
           cierres++;
+          print('[TURNO_SYNC] ✅ cierre OK en queue: $localId');
         } else {
           failedCierres.add(localId);
-          print('  ❌ Cierre falló para $localId; se detiene el replay');
+          print(
+            '[TURNO_SYNC] ❌ cierre FALLÓ en queue: $localId; se detiene replay',
+          );
           break;
         }
+      } else {
+        print(
+          '[TURNO_SYNC] queue $localId status=${refreshed['status']} '
+          '— sin cierre en este pase',
+        );
       }
     }
 
@@ -2025,7 +2545,7 @@ class AutoSyncService {
     try {
       await ShiftWorkersService.syncPendingOperations();
     } catch (e) {
-      print('  ⚠️ Error sync trabajadores tras cola: $e');
+      print('[TURNO_SYNC] ⚠️ Error sync trabajadores tras cola: $e');
     }
 
     final remaining =
@@ -2039,7 +2559,7 @@ class AutoSyncService {
             )
             .length;
 
-    return {
+    final result = {
       'turnos': aperturas,
       'sales': salesTotal,
       'egresos': egresosTotal,
@@ -2048,6 +2568,11 @@ class AutoSyncService {
       'pending_remaining': remaining.length,
       'failed_cierres': failedCierres,
     };
+    print('[TURNO_SYNC] ◀ _syncOfflineTurnoQueue END $result');
+    await _userPreferencesService.dumpOfflineTurnosQueue(
+      'FIN queue result=$result',
+    );
+    return result;
   }
 
   /// Incorpora apertura/cierre legacy de pending_operations a la cola.
@@ -2185,12 +2710,26 @@ class AutoSyncService {
     return false;
   }
 
-  /// Sincronizar resumen de turno anterior
+  /// Sincronizar resumen de turno anterior (solo turnos cerrados).
+  /// No usar getResumenTurnoKPI a ciegas: si el TPV tiene turno abierto,
+  /// el KPI pisa el cache del cierre y la apertura muestra datos vacíos/malos.
   Future<void> _syncTurnoResumen() async {
-    final resumenTurno = await TurnoService.getResumenTurnoKPI();
+    final resumenTurno = await TurnoService.getResumenUltimoTurnoCerrado();
 
     if (resumenTurno != null) {
-      await _userPreferencesService.saveTurnoResumenCache(resumenTurno);
+      final normalized =
+          _userPreferencesService.normalizePreviousShiftSummary(resumenTurno);
+      await _userPreferencesService.saveTurnoResumenCache({
+        ...normalized,
+        'cerrado_online': true,
+        'status': UserPreferencesService.offlineTurnoStatusSynced,
+      });
+      await _userPreferencesService.saveResumenCierreCache({
+        ...normalized,
+        'total_ventas': normalized['ventas_totales'],
+        'efectivo_real':
+            normalized['efectivo_real'] ?? normalized['efectivo_final'],
+      });
     }
   }
 
@@ -2681,6 +3220,85 @@ class AutoSyncService {
     }
 
     return syncedCount;
+  }
+
+  /// Sube cambios de estado hechos offline sobre órdenes ya existentes en el
+  /// servidor (creadas en modo online).
+  Future<int> _syncOrderStatusChanges() async {
+    final ops = await _userPreferencesService.getPendingOperations();
+    final statusOps =
+        ops.where((o) => o['type'] == 'order_status_change').toList();
+    if (statusOps.isEmpty) return 0;
+
+    print('  🔄 Sincronizando ${statusOps.length} cambios de estado...');
+    final remaining = ops
+        .where((o) => o['type'] != 'order_status_change')
+        .map((o) => Map<String, dynamic>.from(o))
+        .toList();
+    var synced = 0;
+
+    for (final op in statusOps) {
+      try {
+        final orderId = op['order_id']?.toString() ?? '';
+        final rawOp = op['id_operacion'];
+        int? operationId = rawOp is int
+            ? rawOp
+            : (rawOp is num ? rawOp.toInt() : int.tryParse('$rawOp'));
+        operationId ??=
+            int.tryParse(orderId.replaceFirst(RegExp(r'^ORD-'), ''));
+
+        if (operationId == null) {
+          // Orden 100% local: el estado viaja con pending_orders al subirla.
+          remaining.add(Map<String, dynamic>.from(op));
+          continue;
+        }
+
+        final statusStr = op['new_status']?.toString() ?? 'completada';
+        final status = _orderStatusFromString(statusStr);
+        if (status == null) {
+          remaining.add(Map<String, dynamic>.from(op));
+          continue;
+        }
+
+        final result = await OrderService().updateOrderStatusInSupabase(
+          operationId,
+          status,
+        );
+        if (result['success'] == true) {
+          synced++;
+          print('    ✅ Estado sync $orderId (op $operationId) -> $statusStr');
+        } else {
+          remaining.add(Map<String, dynamic>.from(op));
+          print('    ⚠️ Estado no sync $orderId: ${result['error']}');
+        }
+      } catch (e) {
+        remaining.add(Map<String, dynamic>.from(op));
+        print('    ❌ Error sync cambio de estado: $e');
+      }
+    }
+
+    await _userPreferencesService.savePendingOperations(remaining);
+    return synced;
+  }
+
+  OrderStatus? _orderStatusFromString(String status) {
+    switch (status.toLowerCase()) {
+      case 'enviada':
+      case 'pendiente':
+      case 'procesando':
+        return OrderStatus.enviada;
+      case 'pago_confirmado':
+      case 'pagoconfirmado':
+        return OrderStatus.pagoConfirmado;
+      case 'completada':
+        return OrderStatus.completada;
+      case 'cancelada':
+        return OrderStatus.cancelada;
+      case 'devuelta':
+        return OrderStatus.devuelta;
+      default:
+        return null;
+    }
   }
 
   /// Sincronizar una sola orden pendiente (para reintentos manuales desde la UI)
@@ -3321,22 +3939,28 @@ class AutoSyncService {
   Future<Map<String, dynamic>> syncOfflineTurnoAfterLocalCierre({
     String? localId,
   }) async {
+    print(
+      '[TURNO_SYNC] ▶▶▶ syncOfflineTurnoAfterLocalCierre START '
+      'localId=$localId isSyncing=$_isSyncing',
+    );
+    await _userPreferencesService.dumpOfflineTurnosQueue(
+      'ENTRADA syncOfflineTurnoAfterLocalCierre',
+    );
+
     // Esperar a que termine un sync automático en curso (puede ser largo).
     for (var attempt = 0; attempt < 3; attempt++) {
       await waitUntilIdle(timeout: const Duration(seconds: 60));
       if (!_isSyncing) break;
       print(
-        '⏳ syncOfflineTurnoAfterLocalCierre: esperando sync '
+        '[TURNO_SYNC] ⏳ syncOfflineTurnoAfterLocalCierre esperando sync '
         '(intento ${attempt + 1}/3)...',
       );
     }
 
     if (_isSyncing) {
-      // Evitar perder el cierre: encolar un pase al terminar el actual.
       _pendingSyncRequested = true;
       print(
-        '⚠️ syncOfflineTurnoAfterLocalCierre: sync aún ocupado; '
-        'se encola pase al terminar',
+        '[TURNO_SYNC] ⚠️ sync aún ocupado; se encola pase al terminar',
       );
       return {
         'success': false,
@@ -3347,6 +3971,7 @@ class AutoSyncService {
     }
 
     final wasOffline = await _userPreferencesService.isOfflineModeEnabled();
+    print('[TURNO_SYNC] wasOffline=$wasOffline → forzando online temporal');
     _isSyncing = true;
     try {
       if (wasOffline) {
@@ -3354,6 +3979,7 @@ class AutoSyncService {
       }
 
       final isAuthenticated = await _reauthService.ensureAuthenticated();
+      print('[TURNO_SYNC] autenticado=$isAuthenticated');
       if (!isAuthenticated) {
         return {
           'success': false,
@@ -3362,12 +3988,6 @@ class AutoSyncService {
         };
       }
 
-      print(
-        '🔄 Cierre offline → sync inmediato'
-        '${localId != null ? ' ($localId)' : ''} '
-        '(apertura + cierre en servidor)...',
-      );
-
       var ok = false;
       String? detail;
 
@@ -3375,10 +3995,22 @@ class AutoSyncService {
         final entry =
             await _userPreferencesService.getOfflineTurnoByLocalId(localId);
         if (entry == null) {
-          // Ya no está en cola → tratado como sincronizado.
           ok = true;
           detail = 'Turno ya no estaba pendiente';
+          print('[TURNO_SYNC] entry null para $localId → tratado synced');
+        } else if (entry['status'] ==
+            UserPreferencesService.offlineTurnoStatusSynced) {
+          ok = true;
+          detail = 'Turno ya sincronizado';
+          print(
+            '[TURNO_SYNC] entry ya synced: '
+            '${UserPreferencesService.describeOfflineTurnoEntry(entry)}',
+          );
         } else {
+          print(
+            '[TURNO_SYNC] syncando entry: '
+            '${UserPreferencesService.describeOfflineTurnoEntry(entry)}',
+          );
           ok = await _syncSingleOfflineTurnoEntry(entry);
           if (!ok) {
             detail =
@@ -3388,7 +4020,7 @@ class AutoSyncService {
         }
       } else {
         final result = await _syncOfflineTurnoQueue();
-        print('📊 Resultado sync post-cierre: $result');
+        print('[TURNO_SYNC] Resultado sync post-cierre (cola): $result');
         ok = (result['closed_remaining'] as int? ?? 1) == 0;
         if (!ok) {
           final failed = result['failed_cierres'];
@@ -3399,21 +4031,29 @@ class AutoSyncService {
         }
       }
 
-      // Intentar drenar otros pendientes sin tumbar el resultado del actual.
       if (ok) {
         try {
           await _syncOfflineTurnoQueue();
         } catch (e) {
-          print('⚠️ Sync cola restante post-cierre: $e');
+          print('[TURNO_SYNC] ⚠️ Sync cola restante post-cierre: $e');
         }
       }
+
+      print(
+        '[TURNO_SYNC] ◀◀◀ syncOfflineTurnoAfterLocalCierre END '
+        'ok=$ok detail=$detail',
+      );
+      await _userPreferencesService.dumpOfflineTurnosQueue(
+        'SALIDA syncOfflineTurnoAfterLocalCierre ok=$ok',
+      );
 
       return {
         'success': ok,
         'message': detail,
       };
-    } catch (e) {
-      print('❌ syncOfflineTurnoAfterLocalCierre falló: $e');
+    } catch (e, st) {
+      print('[TURNO_SYNC] ❌ syncOfflineTurnoAfterLocalCierre falló: $e');
+      print(st);
       return {
         'success': false,
         'message': 'Error sincronizando el cierre: $e',
@@ -3422,12 +4062,11 @@ class AutoSyncService {
       _isSyncing = false;
       if (wasOffline) {
         await _userPreferencesService.setOfflineMode(true);
+        print('[TURNO_SYNC] restaurado modo offline=true');
       }
-      // Si alguien pidió sync mientras estábamos aquí, lanzarlo.
       if (_pendingSyncRequested &&
           !(await _userPreferencesService.isOfflineModeEnabled())) {
         _pendingSyncRequested = false;
-        // fire-and-forget
         // ignore: unawaited_futures
         _performSync();
       }
@@ -3455,6 +4094,12 @@ class AutoSyncService {
       await _pullServerOrdersIntoCache();
     } catch (e) {
       print('⚠️ No se pudieron descargar órdenes del servidor: ');
+    }
+
+    try {
+      await _syncOrderStatusChanges();
+    } catch (e) {
+      print('⚠️ No se pudieron sincronizar cambios de estado: $e');
     }
 
     return synced;
@@ -3549,16 +4194,43 @@ class AutoSyncService {
 
   // ========== SYNC SELECTIVA POR MÓDULOS (Fase 4) ==========
 
-  /// Sincroniza solo los módulos indicados.
-  /// La licencia firmada se incluye siempre si hay alguno de descarga.
+  /// Sincroniza solo los módulos indicados, por partes y con recuperación.
+  ///
+  /// - Timeout por módulo (no cuelga indefinido si cae la red).
+  /// - Si se pierde la conexión, aborta el resto y guarda checkpoint.
+  /// - En la siguiente corrida reanuda saltando módulos ya OK.
+  /// - El resultado reporta OK / fallidos / omitidos aunque sea parcial.
+  ///
+  /// [acquireLock]: false cuando el caller ya puso [_isSyncing] (auto/reconnect).
   Future<SyncResult> syncModules(
     Set<SyncModule> modules, {
     bool requireAuth = true,
+    bool acquireLock = true,
+    bool resumeFromCheckpoint = true,
   }) async {
     final startTime = DateTime.now();
     final syncedItems = <String>[];
     final errors = <String>[];
+    final skippedItems = <String>[];
+    final completedModuleNames = <String>[];
     final syncedData = <String, dynamic>{};
+    final connectivity = ConnectivityService();
+
+    var tookLock = false;
+    if (acquireLock) {
+      if (_isSyncing) {
+        return SyncResult(
+          success: false,
+          interrupted: false,
+          syncedItems: const [],
+          errors: const ['Ya hay una sincronización en curso'],
+          skippedItems: modules.map((m) => m.label).toList(),
+          duration: Duration.zero,
+        );
+      }
+      _isSyncing = true;
+      tookLock = true;
+    }
 
     // Licencia siempre si hay módulos de descarga
     final hasDownload = modules.any((m) => m.isDownload);
@@ -3579,7 +4251,7 @@ class AutoSyncService {
         AutoSyncEvent(
           type: AutoSyncEventType.syncStarted,
           timestamp: startTime,
-          message: 'Sincronización selectiva iniciada',
+          message: 'Sincronización iniciada',
         ),
       );
 
@@ -3602,8 +4274,59 @@ class AutoSyncService {
         SyncModule.egresos,
         SyncModule.orders,
       ];
-      final totalSteps = pipelineOrder.where(effective.contains).length;
+      final ordered = pipelineOrder.where(effective.contains).toList();
+      final totalSteps = ordered.length;
       var stepIndex = 0;
+
+      final skipCompleted = <SyncModule>{};
+      if (resumeFromCheckpoint) {
+        final cp = await _userPreferencesService.getSyncModulesCheckpoint();
+        if (cp != null) {
+          final completed =
+              (cp['completed'] as List?)?.map((e) => '$e').toSet() ?? {};
+          for (final m in ordered) {
+            if (completed.contains(m.name)) {
+              skipCompleted.add(m);
+            }
+          }
+          if (skipCompleted.isNotEmpty) {
+            print(
+              '♻️ Reanudando sync: saltando ${skipCompleted.length} '
+              'módulo(s) ya OK del checkpoint',
+            );
+          }
+        }
+      }
+
+      var aborted = false;
+      String? abortReason;
+      final deadline = startTime.add(_syncTimeout);
+
+      Future<bool> connectionAlive({bool probe = false}) async {
+        if (!connectivity.isConnected || probe) {
+          return connectivity.probeInternetSilent();
+        }
+        return true;
+      }
+
+      Future<void> persistCheckpoint() async {
+        final pending =
+            ordered
+                .where((m) => !completedModuleNames.contains(m.name))
+                .map((m) => m.name)
+                .toList();
+        if (completedModuleNames.isEmpty && pending.isEmpty) return;
+        if (errors.isEmpty && pending.isEmpty) {
+          await _userPreferencesService.clearSyncModulesCheckpoint();
+          return;
+        }
+        await _userPreferencesService.saveSyncModulesCheckpoint(
+          completedModules: List<String>.from(completedModuleNames),
+          pendingModules: pending,
+          errors: List<String>.from(errors),
+          abortReason: abortReason,
+        );
+      }
 
       Future<void> run(
         SyncModule module,
@@ -3611,7 +4334,47 @@ class AutoSyncService {
         Future<void> Function() action,
       ) async {
         if (!effective.contains(module)) return;
+
+        if (aborted) {
+          skippedItems.add(label);
+          return;
+        }
+
+        if (DateTime.now().isAfter(deadline)) {
+          aborted = true;
+          abortReason = 'Tiempo máximo de sincronización agotado';
+          errors.add(abortReason!);
+          skippedItems.add(label);
+          return;
+        }
+
         stepIndex++;
+
+        if (skipCompleted.contains(module)) {
+          syncedItems.add('$label (reanudado)');
+          completedModuleNames.add(module.name);
+          _syncEventController.add(
+            AutoSyncEvent(
+              type: AutoSyncEventType.syncProgress,
+              timestamp: DateTime.now(),
+              message: '$label (ya OK)',
+              progressCurrent: stepIndex,
+              progressTotal: totalSteps,
+            ),
+          );
+          return;
+        }
+
+        final online = await connectionAlive();
+        if (!online) {
+          aborted = true;
+          abortReason = 'Conexión perdida';
+          errors.add('Interrumpido: conexión perdida antes de $label');
+          skippedItems.add(label);
+          await persistCheckpoint();
+          return;
+        }
+
         try {
           _syncEventController.add(
             AutoSyncEvent(
@@ -3622,11 +4385,32 @@ class AutoSyncService {
               progressTotal: totalSteps,
             ),
           );
-          await action();
+          await action().timeout(_timeoutForModule(module));
           syncedItems.add(label);
+          completedModuleNames.add(module.name);
+          await persistCheckpoint();
+        } on TimeoutException catch (e) {
+          print('⏱️ Timeout en módulo $label: $e');
+          errors.add('$label: tiempo agotado (posible pérdida de red)');
+          final stillOnline = await connectionAlive(probe: true);
+          if (!stillOnline) {
+            aborted = true;
+            abortReason = 'Conexión perdida';
+            errors.add('Interrumpido tras timeout en $label');
+          }
+          await persistCheckpoint();
         } catch (e) {
           print('❌ Error en módulo $label: $e');
           errors.add('$label: $e');
+          if (_looksLikeConnectionError(e)) {
+            final stillOnline = await connectionAlive(probe: true);
+            if (!stillOnline) {
+              aborted = true;
+              abortReason = 'Conexión perdida';
+              errors.add('Interrumpido por red en $label');
+            }
+          }
+          await persistCheckpoint();
         }
       }
 
@@ -3651,6 +4435,10 @@ class AutoSyncService {
         } else {
           final n = await _syncOfflineSales();
           if (n > 0) syncedData['offline_sales'] = n;
+        }
+        final statusN = await _syncOrderStatusChanges();
+        if (statusN > 0) {
+          syncedData['order_status_changes'] = statusN;
         }
       });
 
@@ -3785,55 +4573,161 @@ class AutoSyncService {
         );
       });
 
+      // Si abortamos a mitad, marcar el resto del pipeline como omitido.
+      if (aborted) {
+        for (final m in ordered) {
+          if (completedModuleNames.contains(m.name)) continue;
+          final label = m.label;
+          if (!skippedItems.contains(label) &&
+              !syncedItems.any((s) => s.startsWith(label)) &&
+              !errors.any((e) => e.startsWith(label))) {
+            skippedItems.add(label);
+          }
+        }
+      }
+
       if (syncedData.isNotEmpty) {
         await _userPreferencesService.mergeOfflineData(syncedData);
       }
 
       final duration = DateTime.now().difference(startTime);
-      final success = errors.isEmpty;
+      final fullyOk = errors.isEmpty && !aborted;
+      final isPartial =
+          syncedItems.isNotEmpty && (errors.isNotEmpty || aborted);
+      final hardFail = syncedItems.isEmpty && (errors.isNotEmpty || aborted);
+
+      if (fullyOk) {
+        await _userPreferencesService.clearSyncModulesCheckpoint();
+      } else {
+        await persistCheckpoint();
+      }
+
+      final summary = SyncResult.buildSummary(
+        syncedItems: syncedItems,
+        errors: errors,
+        skippedItems: skippedItems,
+        interrupted: aborted,
+        abortReason: abortReason,
+      );
 
       _syncEventController.add(
         AutoSyncEvent(
           type:
-              success
-                  ? AutoSyncEventType.syncCompleted
-                  : AutoSyncEventType.syncFailed,
+              hardFail
+                  ? AutoSyncEventType.syncFailed
+                  : AutoSyncEventType.syncCompleted,
           timestamp: DateTime.now(),
-          message:
-              success
-                  ? 'Sincronización selectiva completada: ${syncedItems.join(", ")}'
-                  : 'Sincronización selectiva con errores: ${errors.join("; ")}',
+          message: summary,
           duration: duration,
           itemsSynced: syncedItems,
-          error: success ? null : errors.join('; '),
+          skippedItems: skippedItems,
+          error: fullyOk ? null : errors.join('; '),
+          isPartial: isPartial || aborted,
+          progressCurrent: totalSteps,
+          progressTotal: totalSteps,
         ),
       );
 
       return SyncResult(
-        success: success,
+        success: fullyOk,
+        interrupted: aborted,
         syncedItems: syncedItems,
         errors: errors,
+        skippedItems: skippedItems,
         duration: duration,
+        abortReason: abortReason,
       );
     } catch (e) {
       final duration = DateTime.now().difference(startTime);
       errors.add(e.toString());
+      if (completedModuleNames.isNotEmpty || syncedItems.isNotEmpty) {
+        await _userPreferencesService.saveSyncModulesCheckpoint(
+          completedModules: completedModuleNames,
+          pendingModules:
+              modules
+                  .where((m) => !completedModuleNames.contains(m.name))
+                  .map((m) => m.name)
+                  .toList(),
+          errors: errors,
+          abortReason: e.toString(),
+        );
+      }
+
+      final summary = SyncResult.buildSummary(
+        syncedItems: syncedItems,
+        errors: errors,
+        skippedItems: skippedItems,
+        interrupted: true,
+        abortReason: e.toString(),
+      );
+
       _syncEventController.add(
         AutoSyncEvent(
-          type: AutoSyncEventType.syncFailed,
+          type:
+              syncedItems.isEmpty
+                  ? AutoSyncEventType.syncFailed
+                  : AutoSyncEventType.syncCompleted,
           timestamp: DateTime.now(),
-          message: 'Error en sincronización selectiva: $e',
+          message: summary,
           duration: duration,
+          itemsSynced: syncedItems,
+          skippedItems: skippedItems,
           error: e.toString(),
+          isPartial: syncedItems.isNotEmpty,
         ),
       );
       return SyncResult(
         success: false,
+        interrupted: true,
         syncedItems: syncedItems,
         errors: errors,
+        skippedItems: skippedItems,
         duration: duration,
+        abortReason: e.toString(),
       );
+    } finally {
+      if (tookLock) {
+        _isSyncing = false;
+        if (_pendingSyncRequested) {
+          _pendingSyncRequested = false;
+          unawaited(_performSync());
+        } else if (_pendingReconnectSync) {
+          _pendingReconnectSync = false;
+          unawaited(performReconnectSync());
+        }
+      }
     }
+  }
+
+  Duration _timeoutForModule(SyncModule module) {
+    switch (module) {
+      case SyncModule.products:
+        return const Duration(seconds: 120);
+      case SyncModule.uploadTurno:
+        return const Duration(minutes: 3);
+      case SyncModule.uploadSales:
+      case SyncModule.orders:
+        return const Duration(seconds: 120);
+      case SyncModule.layouts:
+      case SyncModule.categories:
+        return const Duration(seconds: 90);
+      default:
+        return const Duration(seconds: 60);
+    }
+  }
+
+  bool _looksLikeConnectionError(Object e) {
+    if (e is TimeoutException || e is SocketException) return true;
+    final s = e.toString().toLowerCase();
+    return s.contains('socket') ||
+        s.contains('network') ||
+        s.contains('connection') ||
+        s.contains('timed out') ||
+        s.contains('timeout') ||
+        s.contains('failed host lookup') ||
+        s.contains('clientexception') ||
+        s.contains('connection closed') ||
+        s.contains('software caused connection abort');
   }
 }
 
@@ -3854,11 +4748,14 @@ class AutoSyncEvent {
   final String message;
   final Duration? duration;
   final List<String>? itemsSynced;
+  final List<String>? skippedItems;
   final String? error;
   /// Paso actual (1-based) durante [syncProgress].
   final int? progressCurrent;
   /// Total de pasos del pase actual.
   final int? progressTotal;
+  /// True si hubo avance parcial (algunos módulos OK, otros no).
+  final bool isPartial;
 
   AutoSyncEvent({
     required this.type,
@@ -3866,9 +4763,11 @@ class AutoSyncEvent {
     required this.message,
     this.duration,
     this.itemsSynced,
+    this.skippedItems,
     this.error,
     this.progressCurrent,
     this.progressTotal,
+    this.isPartial = false,
   });
 
   double? get progressFraction {
@@ -3882,7 +4781,7 @@ class AutoSyncEvent {
   String toString() {
     return 'AutoSyncEvent(type: $type, timestamp: $timestamp, message: $message, '
         'duration: $duration, itemsSynced: $itemsSynced, error: $error, '
-        'progress: $progressCurrent/$progressTotal)';
+        'progress: $progressCurrent/$progressTotal, partial: $isPartial)';
   }
 }
 
@@ -3945,15 +4844,71 @@ extension SyncModuleX on SyncModule {
 }
 
 class SyncResult {
+  /// True solo si todos los módulos pedidos terminaron sin error.
   final bool success;
+  /// True si se cortó el pipeline (red caída, timeout global, etc.).
+  final bool interrupted;
   final List<String> syncedItems;
   final List<String> errors;
+  final List<String> skippedItems;
   final Duration duration;
+  final String? abortReason;
 
   const SyncResult({
     required this.success,
     required this.syncedItems,
     required this.errors,
     required this.duration,
+    this.interrupted = false,
+    this.skippedItems = const [],
+    this.abortReason,
   });
+
+  bool get isPartial =>
+      syncedItems.isNotEmpty && (errors.isNotEmpty || interrupted);
+
+  bool get hasProgress => syncedItems.isNotEmpty;
+
+  String get userSummary => buildSummary(
+        syncedItems: syncedItems,
+        errors: errors,
+        skippedItems: skippedItems,
+        interrupted: interrupted,
+        abortReason: abortReason,
+      );
+
+  static String buildSummary({
+    required List<String> syncedItems,
+    required List<String> errors,
+    required List<String> skippedItems,
+    required bool interrupted,
+    String? abortReason,
+  }) {
+    final parts = <String>[];
+    if (syncedItems.isNotEmpty) {
+      parts.add('OK (${syncedItems.length}): ${syncedItems.join(", ")}');
+    }
+    if (errors.isNotEmpty) {
+      parts.add('Errores (${errors.length}): ${errors.join("; ")}');
+    }
+    if (skippedItems.isNotEmpty) {
+      parts.add(
+        'Pendientes (${skippedItems.length}): ${skippedItems.join(", ")}',
+      );
+    }
+    if (interrupted) {
+      parts.insert(
+        0,
+        'Sincronización interrumpida'
+            '${abortReason != null ? " ($abortReason)" : ""}',
+      );
+    } else if (errors.isEmpty && skippedItems.isEmpty) {
+      return 'Sincronización completada: ${syncedItems.join(", ")}';
+    } else if (syncedItems.isNotEmpty) {
+      parts.insert(0, 'Sincronización parcial');
+    } else {
+      parts.insert(0, 'Sincronización fallida');
+    }
+    return parts.join(' · ');
+  }
 }

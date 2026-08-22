@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/connectivity_service.dart';
 import '../services/auto_sync_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/smart_offline_manager.dart';
 
 /// Badge compacto que muestra el estado del modo offline al usuario:
 ///   - 🟢 Online        : hay conexión y no se está sincronizando.
@@ -28,22 +29,40 @@ class _OfflineStatusBadgeState extends State<OfflineStatusBadge> {
   final ConnectivityService _connectivity = ConnectivityService();
   final AutoSyncService _autoSync = AutoSyncService();
   final UserPreferencesService _prefs = UserPreferencesService();
+  final SmartOfflineManager _smartOffline = SmartOfflineManager();
 
   StreamSubscription<bool>? _connSub;
   StreamSubscription<AutoSyncEvent>? _syncSub;
+  StreamSubscription<SmartOfflineEvent>? _smartSub;
   Timer? _pendingTimer;
 
   bool _isConnected = true;
   bool _isSyncing = false;
+  bool _isOfflineMode = false;
   int _pendingCount = 0;
 
   @override
   void initState() {
     super.initState();
     _isConnected = _connectivity.isConnected;
+    _refreshOfflineMode();
 
     _connSub = _connectivity.connectionStatusStream.listen((connected) {
       if (mounted) setState(() => _isConnected = connected);
+    });
+
+    _smartSub = _smartOffline.eventStream.listen((event) {
+      switch (event.type) {
+        case SmartOfflineEventType.offlineModeAutoActivated:
+        case SmartOfflineEventType.offlineModeAutoDeactivated:
+        case SmartOfflineEventType.offlineModeManuallyEnabled:
+        case SmartOfflineEventType.offlineModeManuallyDisabled:
+        case SmartOfflineEventType.offlineModeActive:
+          _refreshOfflineMode();
+          break;
+        default:
+          break;
+      }
     });
 
     _syncSub = _autoSync.syncEventStream.listen((event) {
@@ -74,6 +93,11 @@ class _OfflineStatusBadgeState extends State<OfflineStatusBadge> {
     );
   }
 
+  Future<void> _refreshOfflineMode() async {
+    final enabled = await _prefs.isOfflineModeEnabled();
+    if (mounted) setState(() => _isOfflineMode = enabled);
+  }
+
   Future<void> _refreshPendingCount() async {
     try {
       final orders = await _prefs.getSellerVisiblePendingOrdersCount();
@@ -91,11 +115,13 @@ class _OfflineStatusBadgeState extends State<OfflineStatusBadge> {
   void dispose() {
     _connSub?.cancel();
     _syncSub?.cancel();
+    _smartSub?.cancel();
     _pendingTimer?.cancel();
     super.dispose();
   }
 
   _SyncUiState get _state {
+    if (_isOfflineMode) return _SyncUiState.offline;
     if (_isSyncing) return _SyncUiState.syncing;
     if (!_isConnected) return _SyncUiState.offline;
     return _SyncUiState.online;

@@ -2182,7 +2182,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           arguments: idMesaOffline,
         );
       } else {
-        Navigator.pushNamedAndRemoveUntil(context, '/orders', (route) => false);
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/orders',
+          (route) => false,
+          arguments: offlineOrderId,
+        );
       }
     } catch (e) {
       print('❌ Error creando orden offline: $e');
@@ -2292,10 +2297,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             arguments: idMesa,
           );
         } else {
+          final createdOrderId =
+              operationId != null ? 'ORD-$operationId' : null;
+          if (createdOrderId != null) {
+            _orderService.updateOrderIdInCache(updatedOrder.id, createdOrderId);
+          }
           Navigator.pushNamedAndRemoveUntil(
             context,
             '/orders',
             (route) => false,
+            arguments: createdOrderId,
           );
         }
       } else {

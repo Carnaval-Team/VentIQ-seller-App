@@ -9,58 +9,84 @@ class DraggableSheet extends StatelessWidget {
   final double maxChildSize;
   final DraggableScrollableController? controller;
   final bool snap;
+  final List<double>? snapSizes;
 
   const DraggableSheet({
     super.key,
     required this.child,
-    this.initialChildSize = 0.3,
-    this.minChildSize = 0.1,
-    this.maxChildSize = 0.9,
+    this.initialChildSize = 0.35,
+    this.minChildSize = 0.08,
+    this.maxChildSize = 0.92,
     this.controller,
     this.snap = true,
+    this.snapSizes,
   });
 
   @override
   Widget build(BuildContext context) {
+    final resolvedSnaps = snapSizes ??
+        <double>{
+          minChildSize,
+          initialChildSize,
+          maxChildSize,
+        }.toList()
+          ..sort();
+
     return DraggableScrollableSheet(
       initialChildSize: initialChildSize,
       minChildSize: minChildSize,
       maxChildSize: maxChildSize,
       controller: controller,
       snap: snap,
+      snapSizes: resolvedSnaps,
+      shouldCloseOnMinExtent: false,
       builder: (context, scrollController) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
         return Container(
-          decoration: const BoxDecoration(
-            color: AppTheme.darkSurface,
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(24),
-            ),
+          decoration: BoxDecoration(
+            color: isDark ? AppTheme.darkSurface : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black26,
+                color: Colors.black.withValues(alpha: 0.22),
                 blurRadius: 16,
-                offset: Offset(0, -4),
+                offset: const Offset(0, -4),
               ),
             ],
           ),
           child: Column(
             children: [
-              // Handle bar
-              Padding(
-                padding: const EdgeInsets.only(top: 12, bottom: 8),
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(2),
+              // Drag handle — also toggles expand/collapse on tap
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  final c = controller;
+                  if (c == null || !c.isAttached) return;
+                  final mid = initialChildSize;
+                  final target =
+                      c.size > (mid + minChildSize) / 2 ? minChildSize : mid;
+                  c.animateTo(
+                    target,
+                    duration: const Duration(milliseconds: 280),
+                    curve: Curves.easeOutCubic,
+                  );
+                },
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 10, bottom: 8),
+                  child: Center(
+                    child: Container(
+                      width: 44,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.white24 : Colors.black26,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    ),
                   ),
                 ),
               ),
-
-              // Scrollable child content
               Expanded(
-                child: SingleChildScrollView(
+                child: PrimaryScrollController(
                   controller: scrollController,
                   child: child,
                 ),

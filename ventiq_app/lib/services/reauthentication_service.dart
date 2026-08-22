@@ -244,6 +244,12 @@ class ReauthenticationService {
   /// Retorna true si el usuario está autenticado (ya estaba o se reautenticó exitosamente)
   Future<bool> ensureAuthenticated() async {
     try {
+      final loggedIn = await _userPreferencesService.isLoggedIn();
+      if (!loggedIn) {
+        print('🚫 ensureAuthenticated: no hay sesión local activa');
+        return false;
+      }
+
       final needsReauth = await needsReauthentication();
 
       if (!needsReauth) {

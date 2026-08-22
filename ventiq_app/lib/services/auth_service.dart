@@ -3,6 +3,8 @@ import '../config/supabase_config.dart';
 import 'admin_access_service.dart';
 import 'subscription_guard_service.dart';
 import 'user_preferences_service.dart';
+import 'auto_sync_service.dart';
+import 'settings_integration_service.dart';
 
 class AuthService {
   static final AuthService _instance = AuthService._internal();
@@ -65,6 +67,10 @@ class AuthService {
   // Cerrar sesión
   Future<void> signOut({bool preserveOfflineLicense = false}) async {
     try {
+      // Detener sync antes de limpiar credenciales (evita sync en pantalla login).
+      await AutoSyncService().stopAutoSync();
+      await SettingsIntegrationService().stop();
+
       await client.auth.signOut();
       // Limpiar caché de suscripción y rol admin.
       // En dispositivo full-offline no borrar la licencia firmada:
