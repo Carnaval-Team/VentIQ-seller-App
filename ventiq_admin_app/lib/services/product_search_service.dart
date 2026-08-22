@@ -60,7 +60,9 @@ class ProductSearchService {
 
       print('❌ Error en búsqueda de productos: $e');
 
-      return ProductSearchResult.empty();
+      // No devolver empty(): la UI no podria distinguir "sin resultados" de "fallo".
+
+      return ProductSearchResult.error(e.toString());
 
     }
 
@@ -708,6 +710,14 @@ class ProductSearchResult {
 
   final bool hasPreviousPage;
 
+  /// Cuando la busqueda falla (timeout, red, error del RPC) esto trae el motivo.
+
+  /// Permite a la UI distinguir "no hay resultados" de "no se pudo consultar".
+
+  final String? errorMessage;
+
+  bool get hasError => errorMessage != null;
+
   
 
   ProductSearchResult({
@@ -723,6 +733,8 @@ class ProductSearchResult {
     required this.hasNextPage,
 
     required this.hasPreviousPage,
+
+    this.errorMessage,
 
   });
 
@@ -743,6 +755,30 @@ class ProductSearchResult {
       hasNextPage: false,
 
       hasPreviousPage: false,
+
+    );
+
+  }
+
+
+
+  factory ProductSearchResult.error(String message) {
+
+    return ProductSearchResult(
+
+      products: [],
+
+      totalCount: 0,
+
+      currentPage: 1,
+
+      pageSize: 0,
+
+      hasNextPage: false,
+
+      hasPreviousPage: false,
+
+      errorMessage: message,
 
     );
 
