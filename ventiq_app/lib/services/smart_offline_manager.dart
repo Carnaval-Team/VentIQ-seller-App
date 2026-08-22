@@ -33,11 +33,18 @@ class SmartOfflineManager {
   bool _connectionLostDialogPending = false;
   bool _connectionRestoredDialogPending = false;
   DateTime? _lastNetworkFailureReport;
+  bool? _lastHandledConnectionStatus;
 
   // Configuración
   static const Duration _connectionLostThreshold = Duration(
     seconds: 3,
   ); // Reducido de 10s a 3s para activación más rápida
+
+  /// Espera antes de reaccionar a reconexión (evita flapping Wi‑Fi).
+  static const Duration _connectionRestoredThreshold = Duration(seconds: 2);
+
+  DateTime? _lastReconnectHandledAt;
+  static const Duration _reconnectHandlerDebounce = Duration(seconds: 30);
 
   // Stream para notificar eventos del manager
   final StreamController<SmartOfflineEvent> _eventController =
@@ -58,6 +65,15 @@ class SmartOfflineManager {
     print('🚀 Inicializando SmartOfflineManager...');
 
     try {
+      final loggedIn = await _userPreferencesService.isLoggedIn();
+      if (!loggedIn) {
+        print(
+          '🚫 SmartOfflineManager: sin sesión activa — '
+          'no se inicia monitoreo ni sync',
+        );
+        return;
+      }
+
       // Verificar estado inicial del modo offline
       final isOfflineModeEnabled =
           await _userPreferencesService.isOfflineModeEnabled();
@@ -160,6 +176,11 @@ class SmartOfflineManager {
 
   /// Manejar cambios de estado de conexión
   Future<void> _onConnectionStatusChanged(bool isConnected) async {
+    if (_lastHandledConnectionStatus == isConnected) {
+      return;
+    }
+    _lastHandledConnectionStatus = isConnected;
+
     print(
       '🔄 Cambio de estado de conexión: ${isConnected ? "Conectado" : "Desconectado"}',
     );
@@ -420,16 +441,21 @@ class SmartOfflineManager {
       // Revalidación de licencia: automática y obligatoria al recuperar conexión
       try {
         print('🔐 Revalidando licencia firmada tras volver online...');
+        final probed = await _connectivityService.performImmediateCheck();
+        print('📡 Probe de conexión antes de revalidar: $probed');
         final ok = await SubscriptionGuardService().forceCheck();
         print(ok
             ? '✅ Licencia revalidada correctamente'
-            : '❌ Licencia no válida tras revalidación');
+            : '❌ Licencia no válida tras revalidación '
+                '(isConnected=${_connectivityService.isConnected})');
       } catch (e) {
         print('⚠️ Error revalidando licencia: $e');
       }
 
       if (!_autoSyncService.isRunning) {
-        await _autoSyncService.startAutoSync();
+        await _triggerReconnectSync(reason: 'Usuario volvió a modo online');
+      } else {
+        await _autoSyncService.performReconnectSync();
       }
 
       _eventController.add(
@@ -462,7 +488,112 @@ class SmartOfflineManager {
       SmartOfflineEvent(
         type: SmartOfflineEventType.offlineModeManuallyEnabled,
         timestamp: DateTime.now(),
-        message: 'Usuario decidió mantener modo offline',
+        message:
+            'Usuario eligió continuar offline; no se volverá a preguntar '
+            'hasta que cambie de modo',
+      ),
+    );
+  }
+
+  /// Activa modo offline desde la UI (ícono AppBar / Ajustes).
+  /// Retorna `null` si OK, o un mensaje de error para mostrar al usuario.
+  Future<String?> enableOfflineModeFromUi() async {
+    try {
+      final hasData = await _userPreferencesService.hasOfflineData();
+      if (!hasData) {
+        return 'No hay datos offline disponibles. Sincroniza primero '
+            'estando en línea.';
+      }
+
+      await _autoSyncService.stopAutoSync();
+      await _userPreferencesService.setOfflineMode(true);
+      _wasOfflineModeManuallyEnabled = true;
+      _connectionRestoredDialogPending = false;
+
+      _eventController.add(
+        SmartOfflineEvent(
+          type: SmartOfflineEventType.offlineModeManuallyEnabled,
+          timestamp: DateTime.now(),
+          message: 'Modo offline activado desde el indicador de conexión',
+        ),
+      );
+      return null;
+    } catch (e) {
+      return 'No se pudo activar el modo offline: $e';
+    }
+  }
+
+  /// Desactiva modo offline desde la UI. Aplica las mismas reglas que
+  /// Ajustes (admin en full-offline, red real, limpieza de preparación).
+  ///
+  /// [clearFullOfflinePrep] debe ser true si el usuario confirmó eliminar
+  /// la preparación full-offline del dispositivo.
+  Future<String?> disableOfflineModeFromUi({
+    bool clearFullOfflinePrep = false,
+  }) async {
+    try {
+      final fullOfflineReady =
+          await _userPreferencesService.isDeviceFullOfflineReady();
+      if (fullOfflineReady) {
+        final isAdmin =
+            await _userPreferencesService.isInventoryOnlySession();
+        if (!isAdmin) {
+          return 'Solo el administrador puede desactivar el modo offline '
+              'en este dispositivo.';
+        }
+        if (!clearFullOfflinePrep) {
+          return 'FULL_OFFLINE_CONFIRM_REQUIRED';
+        }
+      }
+
+      final hasConnection =
+          await _connectivityService.performImmediateCheck();
+      if (!hasConnection) {
+        return 'No hay conexión con el servidor. Mantén el modo offline '
+            'hasta recuperar red.';
+      }
+
+      await _userPreferencesService.setOfflineMode(false);
+      if (fullOfflineReady && clearFullOfflinePrep) {
+        await _userPreferencesService.clearDeviceFullOffline();
+      }
+
+      _wasOfflineModeManuallyEnabled = false;
+      _connectionRestoredDialogPending = false;
+
+      await onOfflineModeManuallyDisabled();
+      return null;
+    } catch (e) {
+      return 'No se pudo activar el modo en línea: $e';
+    }
+  }
+
+  /// True si el dispositivo está preparado full-offline (para UI).
+  Future<bool> isFullOfflinePrepared() {
+    return _userPreferencesService.isDeviceFullOfflineReady();
+  }
+
+  /// True si la sesión actual puede desactivar full-offline.
+  Future<bool> canDisableFullOfflineAsAdmin() {
+    return _userPreferencesService.isInventoryOnlySession();
+  }
+
+  /// Sync ligera tras reconexión + timer periódico (sin catálogo completo).
+  Future<void> _triggerReconnectSync({required String reason}) async {
+    if (!await _userPreferencesService.isLoggedIn()) {
+      print('🚫 $reason — sin sesión, omitiendo sync');
+      return;
+    }
+
+    print('📶 $reason — sync ligera de pendientes + turno');
+    await _autoSyncService.performReconnectSync();
+    await _autoSyncService.ensurePeriodicSyncScheduled();
+
+    _eventController.add(
+      SmartOfflineEvent(
+        type: SmartOfflineEventType.autoSyncStarted,
+        timestamp: DateTime.now(),
+        message: 'Sync por reconexión ($reason)',
       ),
     );
   }
@@ -471,13 +602,70 @@ class SmartOfflineManager {
   Future<void> _handleConnectionRestored() async {
     print('📶 Manejando restauración de conexión...');
 
-    // Full offline: no diálogo, no revalidación remota, no auto-sync.
-    // El admin debe desactivar el modo offline explícitamente.
+    if (!await _userPreferencesService.isLoggedIn()) {
+      print('🚫 Conexión restaurada pero sin sesión — omitiendo sync');
+      return;
+    }
+
+    // Debounce handler (resume + stream pueden duplicar el evento).
+    final now = DateTime.now();
+    if (_lastReconnectHandledAt != null &&
+        now.difference(_lastReconnectHandledAt!) <
+            _reconnectHandlerDebounce) {
+      print('⏳ Restauración de conexión debounced — omitiendo sync');
+      return;
+    }
+
+    // Confirmar que la conexión se mantiene (anti-flapping).
+    print(
+      '⏳ Esperando ${_connectionRestoredThreshold.inSeconds}s '
+      'para confirmar reconexión estable...',
+    );
+    await Future.delayed(_connectionRestoredThreshold);
+    if (!_connectivityService.isConnected) {
+      print('📵 Conexión no estable tras espera — omitiendo sync');
+      return;
+    }
+
+    _lastReconnectHandledAt = now;
+
+    // Full offline: no diálogo ni auto-sync de catálogo. Sí se sube la
+    // cola de turnos cerrados pendientes: si no, la apertura puede llegar
+    // al servidor (sync parcial/admin) y el turno queda abierto online.
     if (await _userPreferencesService.shouldStayFullyOffline()) {
-      print(
-        '📦 Full offline activo: se ignora la conexión detectada '
-        '(sin diálogo ni llamadas al servidor)',
-      );
+      final closedPending =
+          await _userPreferencesService.getClosedPendingOfflineTurnos();
+      if (closedPending.isNotEmpty) {
+        print(
+          '📦 Full offline con ${closedPending.length} cierre(s) pendiente(s) — '
+          'subiendo cola de turnos al detectar red',
+        );
+        try {
+          await _autoSyncService.syncOfflineTurnosFromAdmin(
+            includeRelatedUploads: true,
+          );
+        } catch (e) {
+          print('⚠️ No se pudo sync turnos cerrados en full-offline: $e');
+        }
+      }
+
+      final stored =
+          await _userPreferencesService.getSignedOfflineLicense();
+      if (stored == null) {
+        final storeId = await _userPreferencesService.getIdTienda();
+        print(
+          '📦 Full offline sin licencia local — '
+          'aprovechando la red solo para obtener el token firmado',
+        );
+        if (storeId != null) {
+          await OfflineLicenseService().fetchAndStoreSignedLicense(storeId);
+        }
+      } else if (closedPending.isEmpty) {
+        print(
+          '📦 Full offline activo: se ignora la conexión detectada '
+          '(sin diálogo ni llamadas al servidor)',
+        );
+      }
       return;
     }
 
@@ -543,22 +731,9 @@ class SmartOfflineManager {
           print('✅ Usuario ya autenticado correctamente');
         }
 
-        // Iniciar sincronización automática si no está corriendo
-        if (!_autoSyncService.isRunning) {
-          print(
-            '🔄 Iniciando sincronización automática tras restauración de conexión',
-          );
-          await _autoSyncService.startAutoSync();
-
-          _eventController.add(
-            SmartOfflineEvent(
-              type: SmartOfflineEventType.autoSyncStarted,
-              timestamp: DateTime.now(),
-              message:
-                  'Sincronización automática iniciada tras restauración de conexión',
-            ),
-          );
-        }
+        await _triggerReconnectSync(
+          reason: 'conexión restaurada (modo online activo)',
+        );
       } catch (e) {
         print('❌ Error en proceso de restauración de conexión: $e');
 
@@ -570,21 +745,30 @@ class SmartOfflineManager {
             error: e.toString(),
           ),
         );
-
-        // Intentar iniciar sincronización de todos modos
-        if (!_autoSyncService.isRunning) {
-          try {
-            await _autoSyncService.startAutoSync();
-          } catch (syncError) {
-            print(
-              '❌ Error iniciando sincronización tras error de reautenticación: $syncError',
-            );
-          }
-        }
       }
     } else {
+      // Ya en modo offline: solo preguntar si el modo se activó
+      // automáticamente por pérdida de red. Si el usuario eligió
+      // "Continuar offline" (o lo activó desde Ajustes / el ícono),
+      // no molestar de nuevo en cada flap de conectividad.
+      if (_wasOfflineModeManuallyEnabled) {
+        print(
+          '🔌 Modo offline mantenido por el usuario — '
+          'no se vuelve a preguntar al detectar red',
+        );
+        _eventController.add(
+          SmartOfflineEvent(
+            type: SmartOfflineEventType.connectionRestoredWhileOffline,
+            timestamp: DateTime.now(),
+            message:
+                'Conexión disponible; el usuario eligió permanecer offline',
+          ),
+        );
+        return;
+      }
+
       print(
-        '🔌 Modo offline activado - Solicitando confirmación al usuario...',
+        '🔌 Modo offline (auto) — Solicitando confirmación al usuario...',
       );
 
       if (_connectionRestoredDialogPending) {
@@ -678,21 +862,14 @@ class SmartOfflineManager {
 
     _wasOfflineModeManuallyEnabled = false;
 
-    // Si hay conexión, iniciar sincronización automática
+    // Si hay conexión, sync ligera + timer (no catálogo completo de golpe).
     if (_connectivityService.isConnected) {
-      print('📶 Hay conexión - Iniciando sincronización automática');
-      await _autoSyncService.startAutoSync();
-
-      _eventController.add(
-        SmartOfflineEvent(
-          type: SmartOfflineEventType.autoSyncStarted,
-          timestamp: DateTime.now(),
-          message:
-              'Sincronización automática iniciada tras desactivación manual del modo offline',
-        ),
+      print('📶 Hay conexión — sync ligera tras desactivar modo offline');
+      await _triggerReconnectSync(
+        reason: 'modo offline desactivado manualmente',
       );
     } else {
-      print('📵 Sin conexión - No iniciando sincronización automática');
+      print('📵 Sin conexión - No iniciando sincronización');
     }
 
     _eventController.add(

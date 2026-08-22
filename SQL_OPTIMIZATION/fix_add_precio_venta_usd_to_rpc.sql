@@ -124,7 +124,7 @@ BEGIN
 
                     'nombre_comercial', 'Contacto Administración',
 
-                    'descripcion', 'escribir a supportinventtia@gmail.com o via whatsapp al 53765120',
+                    'descripcion', 'escribir a soporteinventtia@gmail.com o via whatsapp al 53765120',
 
                     'um', COALESCE(primer_producto.um, 'Unidad'),
 

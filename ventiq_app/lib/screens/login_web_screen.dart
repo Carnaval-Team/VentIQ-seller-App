@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/auto_sync_service.dart';
+import '../services/settings_integration_service.dart';
 import '../services/seller_service.dart';
 import '../services/promotion_service.dart';
 import '../services/admin_access_service.dart';
@@ -28,7 +30,15 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
   @override
   void initState() {
     super.initState();
+    _pauseSyncForLoginScreen();
     _loadSavedCredentials();
+  }
+
+  Future<void> _pauseSyncForLoginScreen() async {
+    try {
+      await AutoSyncService().stopAutoSync();
+      await SettingsIntegrationService().stop();
+    } catch (_) {}
   }
 
   @override

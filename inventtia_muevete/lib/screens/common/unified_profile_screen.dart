@@ -1,3 +1,4 @@
+import 'package:dropdown_search/dropdown_search.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -14,12 +15,14 @@ import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/document_upload_service.dart';
 import '../../services/driver_service.dart';
+import '../../services/geonames_service.dart';
 import '../../services/mbtiles_service.dart';
 import '../../services/profile_photo_service.dart';
 import '../../services/saved_address_service.dart';
 import '../../services/vehicle_service.dart';
 import '../../services/vehicle_type_service.dart';
 import '../../widgets/plan_suscripcion_widget.dart';
+import '../client/map_picker_screen.dart';
 import '../driver/driver_ratings_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -457,14 +460,35 @@ class _ClientProfile extends StatefulWidget {
 }
 
 class _ClientProfileState extends State<_ClientProfile> {
+  static const _docTypes = [
+    'Carnet de Identidad',
+    'Pasaporte',
+    'Licencia de Conducir',
+  ];
+
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameCtrl;
   late TextEditingController _phoneCtrl;
-  late TextEditingController _ciCtrl;
   late TextEditingController _direccionCtrl;
-  late TextEditingController _provinciaCtrl;
-  late TextEditingController _municipioCtrl;
-  late TextEditingController _paisCtrl;
+
+  List<Map<String, dynamic>> _geoCountries = [];
+  List<Map<String, dynamic>> _geoStates = [];
+  List<Map<String, dynamic>> _geoCities = [];
+  Map<String, dynamic>? _selectedCountry;
+  Map<String, dynamic>? _selectedState;
+  Map<String, dynamic>? _selectedCity;
+  bool _loadingCountries = false;
+  bool _loadingStates = false;
+  bool _loadingCities = false;
+
+  String _selectedDocType = 'Carnet de Identidad';
+  String? _docFrenteUrl;
+  String? _docDorsoUrl;
+  bool _isUploadingDocFrente = false;
+  bool _isUploadingDocDorso = false;
+
+  double? _latitud;
+  double? _longitud;
 
   bool _isEditing = false;
   bool _isSaving = false;
@@ -472,6 +496,7 @@ class _ClientProfileState extends State<_ClientProfile> {
 
   final _photoService = ProfilePhotoService();
   final _addressService = SavedAddressService();
+  final _docService = DocumentUploadService();
 
   @override
   void initState() {
@@ -479,26 +504,234 @@ class _ClientProfileState extends State<_ClientProfile> {
     final p = context.read<AuthProvider>().userProfile;
     _nameCtrl = TextEditingController(text: p?['name'] as String? ?? '');
     _phoneCtrl = TextEditingController(text: p?['phone'] as String? ?? '');
-    _ciCtrl = TextEditingController(text: p?['ci'] as String? ?? '');
     _direccionCtrl =
         TextEditingController(text: p?['direccion'] as String? ?? '');
-    _provinciaCtrl =
-        TextEditingController(text: p?['province'] as String? ?? '');
-    _municipioCtrl =
-        TextEditingController(text: p?['municipality'] as String? ?? '');
-    _paisCtrl = TextEditingController(text: p?['pais'] as String? ?? '');
+    _selectedDocType =
+        p?['tipo_documento'] as String? ?? 'Carnet de Identidad';
+    _docFrenteUrl = p?['doc_frente_url'] as String?;
+    _docDorsoUrl = p?['doc_dorso_url'] as String?;
+    _latitud = double.tryParse(p?['latitud']?.toString() ?? '');
+    _longitud = double.tryParse(p?['longitud']?.toString() ?? '');
+    _loadGeoData();
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
-    _ciCtrl.dispose();
     _direccionCtrl.dispose();
-    _provinciaCtrl.dispose();
-    _municipioCtrl.dispose();
-    _paisCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadGeoData() async {
+    setState(() => _loadingCountries = true);
+    try {
+      final countries = await GeonamesService.getCountries();
+      if (!mounted) return;
+      setState(() {
+        _geoCountries = countries;
+        _loadingCountries = false;
+      });
+      await _matchProfileGeo(pais: context.read<AuthProvider>().userProfile?['pais'] as String?);
+    } catch (e) {
+      debugPrint('[ClientProfile] _loadGeoData error: $e');
+      if (mounted) setState(() => _loadingCountries = false);
+    }
+  }
+
+  Map<String, dynamic>? _findByName(
+      List<Map<String, dynamic>> items, String? name, String key) {
+    if (name == null || name.isEmpty) return null;
+    for (final item in items) {
+      if ((item[key] as String).toLowerCase() == name.toLowerCase()) {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _matchProfileGeo({String? pais}) async {
+    final profile = context.read<AuthProvider>().userProfile;
+    final province = profile?['province'] as String?;
+    final municipality = profile?['municipality'] as String?;
+
+    final country = _findByName(_geoCountries, pais, 'countryName');
+    if (country == null) return;
+
+    setState(() => _selectedCountry = country);
+    await _loadStates(country['countryCode'] as String, preserveName: province);
+
+    if (!mounted || province == null || province.isEmpty) return;
+    final state = _findByName(_geoStates, province, 'name');
+    if (state == null) return;
+
+    setState(() => _selectedState = state);
+    await _loadCities(
+      country['countryCode'] as String,
+      state['adminCode1'] as String,
+      preserveName: municipality,
+    );
+
+    if (!mounted || municipality == null || municipality.isEmpty) return;
+    final city = _findByName(_geoCities, municipality, 'name');
+    if (city != null && mounted) {
+      setState(() => _selectedCity = city);
+    }
+  }
+
+  Future<void> _loadStates(String countryCode, {String? preserveName}) async {
+    setState(() {
+      _loadingStates = true;
+      _geoStates = [];
+      _selectedState = null;
+      _geoCities = [];
+      _selectedCity = null;
+    });
+    try {
+      final states = await GeonamesService.getStates(countryCode);
+      if (!mounted) return;
+      setState(() {
+        _geoStates = states;
+        _loadingStates = false;
+        if (preserveName != null) {
+          _selectedState = _findByName(states, preserveName, 'name');
+        }
+      });
+    } catch (e) {
+      debugPrint('[ClientProfile] _loadStates error: $e');
+      if (mounted) setState(() => _loadingStates = false);
+    }
+  }
+
+  Future<void> _loadCities(String countryCode, String adminCode,
+      {String? preserveName}) async {
+    setState(() {
+      _loadingCities = true;
+      _geoCities = [];
+      _selectedCity = null;
+    });
+    try {
+      final cities = await GeonamesService.getCities(countryCode, adminCode);
+      if (!mounted) return;
+      setState(() {
+        _geoCities = cities;
+        _loadingCities = false;
+        if (preserveName != null) {
+          _selectedCity = _findByName(cities, preserveName, 'name');
+        }
+      });
+    } catch (e) {
+      debugPrint('[ClientProfile] _loadCities error: $e');
+      if (mounted) setState(() => _loadingCities = false);
+    }
+  }
+
+  Future<void> _pickAddressOnMap() async {
+    final picked = await Navigator.push<MapPickerResult>(
+      context,
+      MaterialPageRoute(builder: (_) => const MapPickerScreen()),
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        _direccionCtrl.text = picked.address;
+        _latitud = picked.latLng.latitude;
+        _longitud = picked.latLng.longitude;
+      });
+    }
+  }
+
+  Future<void> _pickDocument({required bool isFront}) async {
+    if (!_isEditing) return;
+    final isDark = context.read<ThemeProvider>().isDark;
+    final uuid = context.read<AuthProvider>().user?.id;
+    if (uuid == null) return;
+
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: isDark ? AppTheme.darkSurface : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                isFront ? 'Foto del frente' : 'Foto del dorso',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white : Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading:
+                    const Icon(Icons.camera_alt, color: AppTheme.primaryColor),
+                title: Text('Camara',
+                    style: TextStyle(
+                        color: isDark ? Colors.white : Colors.black87)),
+                onTap: () => Navigator.pop(ctx, ImageSource.camera),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library,
+                    color: AppTheme.primaryColor),
+                title: Text('Galeria',
+                    style: TextStyle(
+                        color: isDark ? Colors.white : Colors.black87)),
+                onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (source == null || !mounted) return;
+
+    setState(() {
+      if (isFront) {
+        _isUploadingDocFrente = true;
+      } else {
+        _isUploadingDocDorso = true;
+      }
+    });
+
+    try {
+      final url = await _docService.pickCompressAndUpload(
+        uuid: uuid,
+        filename: isFront ? 'doc_frente' : 'doc_dorso',
+        source: source,
+      );
+      if (url != null && mounted) {
+        setState(() {
+          if (isFront) {
+            _docFrenteUrl = url;
+          } else {
+            _docDorsoUrl = url;
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Error al subir imagen: $e'),
+          backgroundColor: AppTheme.error,
+        ));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          if (isFront) {
+            _isUploadingDocFrente = false;
+          } else {
+            _isUploadingDocDorso = false;
+          }
+        });
+      }
+    }
   }
 
   Future<void> _save() async {
@@ -507,11 +740,15 @@ class _ClientProfileState extends State<_ClientProfile> {
     await context.read<AuthProvider>().updateProfile({
       'name': _nameCtrl.text.trim(),
       'phone': _phoneCtrl.text.trim(),
-      'ci': _ciCtrl.text.trim(),
       'direccion': _direccionCtrl.text.trim(),
-      'province': _provinciaCtrl.text.trim(),
-      'municipality': _municipioCtrl.text.trim(),
-      'pais': _paisCtrl.text.trim(),
+      if (_latitud != null) 'latitud': _latitud.toString(),
+      if (_longitud != null) 'longitud': _longitud.toString(),
+      'province': _selectedState?['name'] as String? ?? '',
+      'municipality': _selectedCity?['name'] as String? ?? '',
+      'pais': _selectedCountry?['countryName'] as String? ?? '',
+      'tipo_documento': _selectedDocType,
+      if (_docFrenteUrl != null) 'doc_frente_url': _docFrenteUrl,
+      if (_docDorsoUrl != null) 'doc_dorso_url': _docDorsoUrl,
     });
     if (mounted) {
       setState(() {
@@ -522,16 +759,24 @@ class _ClientProfileState extends State<_ClientProfile> {
     }
   }
 
-  void _cancelEdit() {
+  Future<void> _resetFromProfile() async {
     final p = context.read<AuthProvider>().userProfile;
     _nameCtrl.text = p?['name'] as String? ?? '';
     _phoneCtrl.text = p?['phone'] as String? ?? '';
-    _ciCtrl.text = p?['ci'] as String? ?? '';
     _direccionCtrl.text = p?['direccion'] as String? ?? '';
-    _provinciaCtrl.text = p?['province'] as String? ?? '';
-    _municipioCtrl.text = p?['municipality'] as String? ?? '';
-    _paisCtrl.text = p?['pais'] as String? ?? '';
-    setState(() => _isEditing = false);
+    _selectedDocType =
+        p?['tipo_documento'] as String? ?? 'Carnet de Identidad';
+    _docFrenteUrl = p?['doc_frente_url'] as String?;
+    _docDorsoUrl = p?['doc_dorso_url'] as String?;
+    _latitud = double.tryParse(p?['latitud']?.toString() ?? '');
+    _longitud = double.tryParse(p?['longitud']?.toString() ?? '');
+    await _matchProfileGeo(pais: p?['pais'] as String?);
+  }
+
+  void _cancelEdit() {
+    _resetFromProfile().then((_) {
+      if (mounted) setState(() => _isEditing = false);
+    });
   }
 
   Future<void> _changePhoto(ImageSource source) async {
@@ -565,6 +810,100 @@ class _ClientProfileState extends State<_ClientProfile> {
     }
   }
 
+  Widget _geoDropdown({
+    required bool isDark,
+    required String label,
+    required IconData icon,
+    required bool loading,
+    required String loadingLabel,
+    required List<Map<String, dynamic>> items,
+    required Map<String, dynamic>? selected,
+    required String Function(Map<String, dynamic>) itemLabel,
+    required bool Function(Map<String, dynamic>, Map<String, dynamic>) compare,
+    required bool enabled,
+    required ValueChanged<Map<String, dynamic>?> onChanged,
+    String? Function(Map<String, dynamic>?)? validator,
+    String? emptyHint,
+  }) {
+    final textPrimary = isDark ? Colors.white : const Color(0xFF1A1D27);
+    final cardColor = isDark ? AppTheme.darkCard : Colors.white;
+    final borderColor = isDark ? AppTheme.darkBorder : Colors.grey[300]!;
+
+    if (loading) {
+      return InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: Icon(icon, size: 18),
+          filled: true,
+          fillColor: cardColor,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: borderColor),
+          ),
+        ),
+        child: Row(
+          children: [
+            const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 10),
+            Text(loadingLabel,
+                style: TextStyle(color: isDark ? Colors.white54 : Colors.grey)),
+          ],
+        ),
+      );
+    }
+
+    return DropdownSearch<Map<String, dynamic>>(
+      enabled: enabled,
+      selectedItem: selected,
+      items: items,
+      itemAsString: itemLabel,
+      compareFn: compare,
+      onChanged: onChanged,
+      validator: validator,
+      dropdownBuilder: (ctx, item) => item == null
+          ? Text(emptyHint ?? 'Seleccionar',
+              style: TextStyle(
+                  color: isDark ? Colors.white38 : Colors.grey[500]))
+          : Text(itemLabel(item),
+              style: TextStyle(color: textPrimary, fontSize: 14)),
+      dropdownDecoratorProps: DropDownDecoratorProps(
+        dropdownSearchDecoration: InputDecoration(
+          labelText: label,
+          prefixIcon: Icon(icon, size: 18),
+          filled: true,
+          fillColor: enabled
+              ? cardColor
+              : (isDark
+                  ? Colors.white.withValues(alpha: 0.03)
+                  : Colors.grey[50]),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: borderColor),
+          ),
+          disabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(
+                color: isDark ? Colors.white12 : Colors.grey[200]!),
+          ),
+        ),
+      ),
+      popupProps: PopupProps.menu(
+        showSearchBox: enabled,
+        menuProps: MenuProps(
+          backgroundColor: isDark ? AppTheme.darkCard : Colors.white,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = context.watch<ThemeProvider>().isDark;
@@ -574,6 +913,7 @@ class _ClientProfileState extends State<_ClientProfile> {
         profile?['photo_url'] as String? ?? profile?['image'] as String?;
     final nameDisplay =
         _nameCtrl.text.isNotEmpty ? _nameCtrl.text : 'Usuario';
+    final textPrimary = isDark ? Colors.white : const Color(0xFF1A1D27);
 
     return Scaffold(
       backgroundColor: isDark ? AppTheme.darkBg : AppTheme.lightBg,
@@ -603,7 +943,6 @@ class _ClientProfileState extends State<_ClientProfile> {
                 isDark: isDark,
               ),
               const SizedBox(height: 20),
-              // Email readonly
               Container(
                 padding: const EdgeInsets.symmetric(
                     horizontal: 16, vertical: 14),
@@ -665,40 +1004,146 @@ class _ClientProfileState extends State<_ClientProfile> {
                   keyboardType: TextInputType.phone),
               const SizedBox(height: 12),
               _ProfileField(
-                  controller: _ciCtrl,
-                  label: 'Cédula de identidad',
-                  icon: Icons.badge_outlined,
-                  isDark: isDark,
-                  enabled: _isEditing,
-                  keyboardType: TextInputType.number),
+                controller: _direccionCtrl,
+                label: 'Dirección',
+                icon: Icons.home_outlined,
+                isDark: isDark,
+                enabled: _isEditing,
+                maxLines: 2,
+              ),
+              if (_isEditing) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: _pickAddressOnMap,
+                    icon: const Icon(Icons.map_outlined, size: 18),
+                    label: Text(
+                      'Seleccionar en mapa',
+                      style: GoogleFonts.plusJakartaSans(
+                          fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ],
+              if (_latitud != null && _longitud != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Coordenadas: ${_latitud!.toStringAsFixed(5)}, ${_longitud!.toStringAsFixed(5)}',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 11,
+                    color: AppTheme.primaryColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
-              _ProfileField(
-                  controller: _direccionCtrl,
-                  label: 'Dirección',
-                  icon: Icons.home_outlined,
-                  isDark: isDark,
-                  enabled: _isEditing),
+              _geoDropdown(
+                isDark: isDark,
+                label: 'País',
+                icon: Icons.public_outlined,
+                loading: _loadingCountries,
+                loadingLabel: 'Cargando países...',
+                items: _geoCountries,
+                selected: _selectedCountry,
+                itemLabel: (c) => c['countryName'] as String,
+                compare: (a, b) => a['countryCode'] == b['countryCode'],
+                enabled: _isEditing,
+                onChanged: (v) {
+                  if (v == null) return;
+                  setState(() => _selectedCountry = v);
+                  _loadStates(v['countryCode'] as String);
+                },
+                validator: _isEditing
+                    ? (v) => v == null ? 'El país es requerido' : null
+                    : null,
+                emptyHint: 'Selecciona un país',
+              ),
               const SizedBox(height: 12),
-              _ProfileField(
-                  controller: _paisCtrl,
-                  label: 'País',
-                  icon: Icons.public_outlined,
-                  isDark: isDark,
-                  enabled: _isEditing),
+              _geoDropdown(
+                isDark: isDark,
+                label: 'Provincia / Estado',
+                icon: Icons.location_city_outlined,
+                loading: _loadingStates,
+                loadingLabel: 'Cargando provincias...',
+                items: _geoStates,
+                selected: _selectedState,
+                itemLabel: (s) => s['name'] as String,
+                compare: (a, b) => a['geonameId'] == b['geonameId'],
+                enabled: _isEditing && _selectedCountry != null,
+                onChanged: (v) {
+                  if (v == null || _selectedCountry == null) return;
+                  setState(() => _selectedState = v);
+                  _loadCities(
+                    _selectedCountry!['countryCode'] as String,
+                    v['adminCode1'] as String,
+                  );
+                },
+                validator: _isEditing
+                    ? (v) => v == null ? 'La provincia es requerida' : null
+                    : null,
+                emptyHint: _selectedCountry == null
+                    ? 'Selecciona un país primero'
+                    : 'Selecciona una provincia',
+              ),
               const SizedBox(height: 12),
-              _ProfileField(
-                  controller: _provinciaCtrl,
-                  label: 'Provincia / Estado',
-                  icon: Icons.location_city_outlined,
-                  isDark: isDark,
-                  enabled: _isEditing),
+              _geoDropdown(
+                isDark: isDark,
+                label: 'Ciudad / Municipio',
+                icon: Icons.place_outlined,
+                loading: _loadingCities,
+                loadingLabel: 'Cargando ciudades...',
+                items: _geoCities,
+                selected: _selectedCity,
+                itemLabel: (c) => c['name'] as String,
+                compare: (a, b) => a['geonameId'] == b['geonameId'],
+                enabled: _isEditing && _selectedState != null,
+                onChanged: (v) => setState(() => _selectedCity = v),
+                validator: _isEditing
+                    ? (v) => v == null ? 'La ciudad es requerida' : null
+                    : null,
+                emptyHint: _selectedState == null
+                    ? 'Selecciona una provincia primero'
+                    : 'Selecciona una ciudad',
+              ),
+              const SizedBox(height: 20),
+              _SectionHeader(label: 'Documento de Identidad', isDark: isDark),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: _docTypes.contains(_selectedDocType)
+                    ? _selectedDocType
+                    : _docTypes.first,
+                dropdownColor: isDark ? AppTheme.darkCard : Colors.white,
+                style: TextStyle(color: textPrimary),
+                decoration: const InputDecoration(
+                  labelText: 'Tipo de documento',
+                  prefixIcon: Icon(Icons.badge_outlined, size: 18),
+                ),
+                items: _docTypes
+                    .map((d) => DropdownMenuItem(value: d, child: Text(d)))
+                    .toList(),
+                onChanged: _isEditing
+                    ? (v) {
+                        if (v != null) setState(() => _selectedDocType = v);
+                      }
+                    : null,
+              ),
               const SizedBox(height: 12),
-              _ProfileField(
-                  controller: _municipioCtrl,
-                  label: 'Ciudad / Municipio',
-                  icon: Icons.place_outlined,
-                  isDark: isDark,
-                  enabled: _isEditing),
+              _LicensePhotoRow(
+                label: 'Frente del documento',
+                url: _docFrenteUrl,
+                uploading: _isUploadingDocFrente,
+                isDark: isDark,
+                onTap: _isEditing ? () => _pickDocument(isFront: true) : null,
+              ),
+              const SizedBox(height: 10),
+              _LicensePhotoRow(
+                label: 'Dorso del documento',
+                url: _docDorsoUrl,
+                uploading: _isUploadingDocDorso,
+                isDark: isDark,
+                onTap: _isEditing ? () => _pickDocument(isFront: false) : null,
+              ),
               const SizedBox(height: 24),
               if (!kIsWeb)
                 _offlineMapTile(isDark, () async {
@@ -1003,50 +1448,66 @@ class _DriverProfileState extends State<_DriverProfile> {
                     label: 'Vehículo Registrado', isDark: isDark),
                 const SizedBox(height: 12),
                 if (_vehicleTypes.isNotEmpty)
-                  Container(
-                    decoration: BoxDecoration(
-                      color: isDark ? AppTheme.darkCard : Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                          color: isDark
-                              ? AppTheme.darkBorder
-                              : Colors.grey[300]!),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<int>(
-                        value: _vehicleTypeId,
-                        isExpanded: true,
-                        hint: Text('Tipo de vehículo',
-                            style: TextStyle(
-                                color: isDark
-                                    ? Colors.white38
-                                    : Colors.grey[500],
-                                fontSize: 14)),
-                        dropdownColor:
-                            isDark ? AppTheme.darkCard : Colors.white,
-                        style: TextStyle(
-                            color: isDark ? Colors.white : Colors.black87,
-                            fontSize: 14),
-                        onChanged: _isEditing
-                            ? (v) => setState(() => _vehicleTypeId = v)
-                            : null,
-                        items: _vehicleTypes.map((t) {
-                          return DropdownMenuItem(
-                            value: t.id,
-                            child: Row(children: [
-                              Icon(t.icon,
-                                  size: 18,
-                                  color: _isEditing
-                                      ? AppTheme.primaryColor
-                                      : (isDark
-                                          ? Colors.white38
-                                          : Colors.grey[400]!)),
-                              const SizedBox(width: 10),
-                              Text(t.displayName),
-                            ]),
-                          );
-                        }).toList(),
+                  IgnorePointer(
+                    ignoring: !_isEditing,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: _isEditing
+                            ? (isDark ? AppTheme.darkCard : Colors.white)
+                            : (isDark
+                                ? Colors.white.withValues(alpha: 0.03)
+                                : Colors.grey[50]),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                            color: isDark
+                                ? AppTheme.darkBorder
+                                : Colors.grey[300]!),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<int>(
+                          value: _vehicleTypeId,
+                          isExpanded: true,
+                          iconEnabledColor: _isEditing
+                              ? AppTheme.primaryColor
+                              : (isDark ? Colors.white38 : Colors.grey[400]),
+                          iconDisabledColor:
+                              isDark ? Colors.white24 : Colors.grey[300],
+                          hint: Text('Tipo de vehículo',
+                              style: TextStyle(
+                                  color: isDark
+                                      ? Colors.white38
+                                      : Colors.grey[500],
+                                  fontSize: 14)),
+                          dropdownColor:
+                              isDark ? AppTheme.darkCard : Colors.white,
+                          style: TextStyle(
+                              color: _isEditing
+                                  ? (isDark ? Colors.white : Colors.black87)
+                                  : (isDark
+                                      ? Colors.white38
+                                      : Colors.grey[400]),
+                              fontSize: 14),
+                          onChanged: _isEditing
+                              ? (v) => setState(() => _vehicleTypeId = v)
+                              : null,
+                          items: _vehicleTypes.map((t) {
+                            return DropdownMenuItem(
+                              value: t.id,
+                              child: Row(children: [
+                                Icon(t.icon,
+                                    size: 18,
+                                    color: _isEditing
+                                        ? AppTheme.primaryColor
+                                        : (isDark
+                                            ? Colors.white38
+                                            : Colors.grey[400]!)),
+                                const SizedBox(width: 10),
+                                Text(t.displayName),
+                              ]),
+                            );
+                          }).toList(),
+                        ),
                       ),
                     ),
                   ),
@@ -1982,9 +2443,16 @@ class _CarrierProfileState extends State<_CarrierProfile>
   late TextEditingController _phoneCtrl;
   late TextEditingController _emailCtrl;
   late TextEditingController _categoriaCtrl;
-  late TextEditingController _paisCtrl;
-  late TextEditingController _provinciaCtrl;
-  late TextEditingController _municipioCtrl;
+
+  List<Map<String, dynamic>> _geoCountries = [];
+  List<Map<String, dynamic>> _geoStates = [];
+  List<Map<String, dynamic>> _geoCities = [];
+  Map<String, dynamic>? _selectedCountry;
+  Map<String, dynamic>? _selectedState;
+  Map<String, dynamic>? _selectedCity;
+  bool _loadingCountries = false;
+  bool _loadingStates = false;
+  bool _loadingCities = false;
 
   bool _isEditing = false;
   bool _isSaving = false;
@@ -2004,13 +2472,10 @@ class _CarrierProfileState extends State<_CarrierProfile>
     _emailCtrl = TextEditingController(text: p?['email'] as String? ?? '');
     _categoriaCtrl =
         TextEditingController(text: p?['categoria'] as String? ?? '');
-    _paisCtrl = TextEditingController(text: p?['pais'] as String? ?? '');
-    _provinciaCtrl =
-        TextEditingController(text: p?['province'] as String? ?? '');
-    _municipioCtrl =
-        TextEditingController(text: p?['municipality'] as String? ?? '');
-    WidgetsBinding.instance
-        .addPostFrameCallback((_) => _loadCarrocerias());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadCarrocerias();
+      _loadGeoData();
+    });
   }
 
   @override
@@ -2018,11 +2483,110 @@ class _CarrierProfileState extends State<_CarrierProfile>
     _tabs.dispose();
     for (final c in [
       _nameCtrl, _phoneCtrl, _emailCtrl, _categoriaCtrl,
-      _paisCtrl, _provinciaCtrl, _municipioCtrl,
     ]) {
       c.dispose();
     }
     super.dispose();
+  }
+
+  Future<void> _loadGeoData() async {
+    setState(() => _loadingCountries = true);
+    try {
+      final countries = await GeonamesService.getCountries();
+      if (!mounted) return;
+      setState(() {
+        _geoCountries = countries;
+        _loadingCountries = false;
+      });
+      final p = context.read<AuthProvider>().driverProfile;
+      await _matchProfileGeo(pais: p?['pais'] as String?);
+    } catch (e) {
+      debugPrint('[CarrierProfile] _loadGeoData error: $e');
+      if (mounted) setState(() => _loadingCountries = false);
+    }
+  }
+
+  Map<String, dynamic>? _findByName(
+      List<Map<String, dynamic>> items, String? name, String key) {
+    if (name == null || name.isEmpty) return null;
+    for (final item in items) {
+      if ((item[key] as String).toLowerCase() == name.toLowerCase()) {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _matchProfileGeo({String? pais}) async {
+    final profile = context.read<AuthProvider>().driverProfile;
+    final province = profile?['province'] as String?;
+    final municipality = profile?['municipality'] as String?;
+
+    final country = _findByName(_geoCountries, pais, 'countryName');
+    if (country == null) return;
+
+    setState(() => _selectedCountry = country);
+    await _loadStates(country['countryCode'] as String, preserveName: province);
+
+    if (!mounted || province == null || province.isEmpty) return;
+    final state = _findByName(_geoStates, province, 'name');
+    if (state == null) return;
+
+    setState(() => _selectedState = state);
+    await _loadCities(
+      country['countryCode'] as String,
+      state['adminCode1'] as String,
+      preserveName: municipality,
+    );
+
+    if (!mounted || municipality == null || municipality.isEmpty) return;
+    final city = _findByName(_geoCities, municipality, 'name');
+    if (city != null && mounted) setState(() => _selectedCity = city);
+  }
+
+  Future<void> _loadStates(String countryCode, {String? preserveName}) async {
+    setState(() {
+      _loadingStates = true;
+      _geoStates = [];
+      _selectedState = null;
+      _geoCities = [];
+      _selectedCity = null;
+    });
+    try {
+      final states = await GeonamesService.getStates(countryCode);
+      if (!mounted) return;
+      setState(() {
+        _geoStates = states;
+        _loadingStates = false;
+        if (preserveName != null) {
+          _selectedState = _findByName(states, preserveName, 'name');
+        }
+      });
+    } catch (e) {
+      if (mounted) setState(() => _loadingStates = false);
+    }
+  }
+
+  Future<void> _loadCities(String countryCode, String adminCode,
+      {String? preserveName}) async {
+    setState(() {
+      _loadingCities = true;
+      _geoCities = [];
+      _selectedCity = null;
+    });
+    try {
+      final cities = await GeonamesService.getCities(countryCode, adminCode);
+      if (!mounted) return;
+      setState(() {
+        _geoCities = cities;
+        _loadingCities = false;
+        if (preserveName != null) {
+          _selectedCity = _findByName(cities, preserveName, 'name');
+        }
+      });
+    } catch (e) {
+      if (mounted) setState(() => _loadingCities = false);
+    }
   }
 
   Future<void> _loadCarrocerias() async {
@@ -2047,9 +2611,9 @@ class _CarrierProfileState extends State<_CarrierProfile>
       'telefono': _phoneCtrl.text.trim(),
       'email': _emailCtrl.text.trim(),
       'categoria': _categoriaCtrl.text.trim(),
-      'pais': _paisCtrl.text.trim(),
-      'province': _provinciaCtrl.text.trim(),
-      'municipality': _municipioCtrl.text.trim(),
+      'pais': _selectedCountry?['countryName'] as String? ?? '',
+      'province': _selectedState?['name'] as String? ?? '',
+      'municipality': _selectedCity?['name'] as String? ?? '',
     });
     if (mounted) {
       setState(() {
@@ -2066,9 +2630,7 @@ class _CarrierProfileState extends State<_CarrierProfile>
     _phoneCtrl.text = p?['telefono'] as String? ?? '';
     _emailCtrl.text = p?['email'] as String? ?? '';
     _categoriaCtrl.text = p?['categoria'] as String? ?? '';
-    _paisCtrl.text = p?['pais'] as String? ?? '';
-    _provinciaCtrl.text = p?['province'] as String? ?? '';
-    _municipioCtrl.text = p?['municipality'] as String? ?? '';
+    _matchProfileGeo(pais: p?['pais'] as String?);
     setState(() => _isEditing = false);
   }
 
@@ -2239,30 +2801,157 @@ class _CarrierProfileState extends State<_CarrierProfile>
             const SizedBox(height: 20),
             _SectionHeader(label: 'Ubicación', isDark: isDark),
             const SizedBox(height: 12),
-            _ProfileField(
-                controller: _paisCtrl,
-                label: 'País',
-                icon: Icons.public_outlined,
-                isDark: isDark,
-                enabled: _isEditing),
+            _buildCarrierGeoDropdown(
+              isDark: isDark,
+              label: 'País',
+              icon: Icons.public_outlined,
+              loading: _loadingCountries,
+              loadingLabel: 'Cargando países...',
+              items: _geoCountries,
+              selected: _selectedCountry,
+              itemLabel: (c) => c['countryName'] as String,
+              compare: (a, b) => a['countryCode'] == b['countryCode'],
+              enabled: _isEditing,
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() => _selectedCountry = v);
+                _loadStates(v['countryCode'] as String);
+              },
+              emptyHint: 'Selecciona un país',
+            ),
             const SizedBox(height: 12),
-            _ProfileField(
-                controller: _provinciaCtrl,
-                label: 'Provincia',
-                icon: Icons.location_city_outlined,
-                isDark: isDark,
-                enabled: _isEditing),
+            _buildCarrierGeoDropdown(
+              isDark: isDark,
+              label: 'Provincia / Estado',
+              icon: Icons.location_city_outlined,
+              loading: _loadingStates,
+              loadingLabel: 'Cargando provincias...',
+              items: _geoStates,
+              selected: _selectedState,
+              itemLabel: (s) => s['name'] as String,
+              compare: (a, b) => a['geonameId'] == b['geonameId'],
+              enabled: _isEditing && _selectedCountry != null,
+              onChanged: (v) {
+                if (v == null || _selectedCountry == null) return;
+                setState(() => _selectedState = v);
+                _loadCities(
+                  _selectedCountry!['countryCode'] as String,
+                  v['adminCode1'] as String,
+                );
+              },
+              emptyHint: _selectedCountry == null
+                  ? 'Selecciona un país primero'
+                  : 'Selecciona una provincia',
+            ),
             const SizedBox(height: 12),
-            _ProfileField(
-                controller: _municipioCtrl,
-                label: 'Municipio',
-                icon: Icons.map_outlined,
-                isDark: isDark,
-                enabled: _isEditing),
+            _buildCarrierGeoDropdown(
+              isDark: isDark,
+              label: 'Ciudad / Municipio',
+              icon: Icons.map_outlined,
+              loading: _loadingCities,
+              loadingLabel: 'Cargando ciudades...',
+              items: _geoCities,
+              selected: _selectedCity,
+              itemLabel: (c) => c['name'] as String,
+              compare: (a, b) => a['geonameId'] == b['geonameId'],
+              enabled: _isEditing && _selectedState != null,
+              onChanged: (v) => setState(() => _selectedCity = v),
+              emptyHint: _selectedState == null
+                  ? 'Selecciona una provincia primero'
+                  : 'Selecciona una ciudad',
+            ),
             const SizedBox(height: 32),
             if (!_isEditing) _signOutButton(context),
             const SizedBox(height: 24),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCarrierGeoDropdown({
+    required bool isDark,
+    required String label,
+    required IconData icon,
+    required bool loading,
+    required String loadingLabel,
+    required List<Map<String, dynamic>> items,
+    required Map<String, dynamic>? selected,
+    required String Function(Map<String, dynamic>) itemLabel,
+    required bool Function(Map<String, dynamic>, Map<String, dynamic>) compare,
+    required bool enabled,
+    required ValueChanged<Map<String, dynamic>?> onChanged,
+    String? emptyHint,
+  }) {
+    final textPrimary = isDark ? Colors.white : const Color(0xFF1A1D27);
+    final cardColor = isDark ? AppTheme.darkCard : Colors.white;
+    final borderColor = isDark ? AppTheme.darkBorder : Colors.grey[300]!;
+
+    if (loading) {
+      return InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: Icon(icon, size: 18),
+          filled: true,
+          fillColor: cardColor,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+        child: Row(
+          children: [
+            const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 10),
+            Text(loadingLabel,
+                style: TextStyle(color: isDark ? Colors.white54 : Colors.grey)),
+          ],
+        ),
+      );
+    }
+
+    return DropdownSearch<Map<String, dynamic>>(
+      enabled: enabled,
+      selectedItem: selected,
+      items: items,
+      itemAsString: itemLabel,
+      compareFn: compare,
+      onChanged: onChanged,
+      dropdownBuilder: (ctx, item) => item == null
+          ? Text(emptyHint ?? 'Seleccionar',
+              style: TextStyle(
+                  color: isDark ? Colors.white38 : Colors.grey[500]))
+          : Text(itemLabel(item),
+              style: TextStyle(color: textPrimary, fontSize: 14)),
+      dropdownDecoratorProps: DropDownDecoratorProps(
+        dropdownSearchDecoration: InputDecoration(
+          labelText: label,
+          prefixIcon: Icon(icon, size: 18),
+          filled: true,
+          fillColor: enabled
+              ? cardColor
+              : (isDark
+                  ? Colors.white.withValues(alpha: 0.03)
+                  : Colors.grey[50]),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: borderColor),
+          ),
+          disabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(
+                color: isDark ? Colors.white12 : Colors.grey[200]!),
+          ),
+        ),
+      ),
+      popupProps: PopupProps.menu(
+        showSearchBox: enabled,
+        menuProps: MenuProps(
+          backgroundColor: isDark ? AppTheme.darkCard : Colors.white,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),
     );
@@ -2371,38 +3060,82 @@ class _CarrierProfileState extends State<_CarrierProfile>
       'flatbed', 'dry_van', 'reefer', 'lowboy', 'tanker',
       'step_deck', 'hotshot', 'curtainsider', 'caja',
     ];
-    await showDialog(
+    await showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? AppTheme.darkCard : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) {
           final textPrimary =
               isDark ? Colors.white : const Color(0xFF1A1D27);
           final bg = isDark ? AppTheme.darkCard : Colors.white;
-          return AlertDialog(
-            backgroundColor: bg,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16)),
-            title: Text('Agregar Vehículo',
-                style: GoogleFonts.plusJakartaSans(
-                    fontWeight: FontWeight.w700)),
-            content: SingleChildScrollView(
+          final bottom = MediaQuery.of(ctx).viewInsets.bottom;
+          return Padding(
+            padding: EdgeInsets.fromLTRB(20, 12, 20, 20 + bottom),
+            child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.white24 : Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryColor.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.local_shipping_outlined,
+                            color: AppTheme.primaryColor),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text('Agregar Vehículo',
+                            style: GoogleFonts.plusJakartaSans(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: textPrimary)),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        icon: Icon(Icons.close,
+                            color: isDark ? Colors.white54 : Colors.grey),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
                     value: tipoCarro,
                     dropdownColor: bg,
                     style: TextStyle(color: textPrimary, fontSize: 14),
-                    decoration: const InputDecoration(
-                        labelText: 'Tipo de carrocería',
-                        prefixIcon: Icon(
-                            Icons.local_shipping_outlined)),
+                    decoration: InputDecoration(
+                      labelText: 'Tipo de carrocería',
+                      prefixIcon:
+                          const Icon(Icons.local_shipping_outlined),
+                      filled: true,
+                      fillColor: isDark ? AppTheme.darkSurface : Colors.grey[50],
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
                     items: tiposCarroceria
                         .map((t) => DropdownMenuItem(
                             value: t,
-                            child: Text(t.toUpperCase(),
-                                style:
-                                    TextStyle(color: textPrimary))))
+                            child: Text(t.replaceAll('_', ' ').toUpperCase(),
+                                style: TextStyle(color: textPrimary))))
                         .toList(),
                     onChanged: (v) => setS(() => tipoCarro = v),
                   ),
@@ -2425,57 +3158,76 @@ class _CarrierProfileState extends State<_CarrierProfile>
                     keyboardType: const TextInputType.numberWithOptions(
                         decimal: true),
                   ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(48),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: const Text('Cancelar'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: tipoCarro == null
+                              ? null
+                              : () async {
+                                  Navigator.pop(ctx);
+                                  final driverId = context
+                                      .read<AuthProvider>()
+                                      .driverProfile?['id'] as int?;
+                                  if (driverId == null) return;
+                                  final c = CarroceriaModel(
+                                    driverId: driverId,
+                                    tipoCarroceria: tipoCarro!,
+                                    marca: marcaCtrl.text.trim().isNotEmpty
+                                        ? marcaCtrl.text.trim()
+                                        : null,
+                                    modelo: modeloCtrl.text.trim().isNotEmpty
+                                        ? modeloCtrl.text.trim()
+                                        : null,
+                                    matricula:
+                                        matriculaCtrl.text.trim().isNotEmpty
+                                            ? matriculaCtrl.text.trim()
+                                            : null,
+                                    capacidadTon:
+                                        double.tryParse(capCtrl.text.trim()),
+                                    seguroVigente: false,
+                                    activo: true,
+                                  );
+                                  final messenger =
+                                      ScaffoldMessenger.of(context);
+                                  try {
+                                    await _vehicleService.addCarroceria(c);
+                                    await _loadCarrocerias();
+                                  } catch (e) {
+                                    messenger.showSnackBar(SnackBar(
+                                      content: Text('Error: $e'),
+                                      backgroundColor: AppTheme.error,
+                                    ));
+                                  }
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primaryColor,
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size.fromHeight(48),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: const Text('Guardar'),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancelar')),
-              ElevatedButton(
-                onPressed: tipoCarro == null
-                    ? null
-                    : () async {
-                        Navigator.pop(ctx);
-                        final driverId = context
-                            .read<AuthProvider>()
-                            .driverProfile?['id'] as int?;
-                        if (driverId == null) return;
-                        final c = CarroceriaModel(
-                          driverId: driverId,
-                          tipoCarroceria: tipoCarro!,
-                          marca: marcaCtrl.text.trim().isNotEmpty
-                              ? marcaCtrl.text.trim()
-                              : null,
-                          modelo: modeloCtrl.text.trim().isNotEmpty
-                              ? modeloCtrl.text.trim()
-                              : null,
-                          matricula: matriculaCtrl.text.trim().isNotEmpty
-                              ? matriculaCtrl.text.trim()
-                              : null,
-                          capacidadTon:
-                              double.tryParse(capCtrl.text.trim()),
-                          seguroVigente: false,
-                          activo: true,
-                        );
-                        final messenger =
-                            ScaffoldMessenger.of(context);
-                        try {
-                          await _vehicleService.addCarroceria(c);
-                          await _loadCarrocerias();
-                        } catch (e) {
-                          messenger.showSnackBar(SnackBar(
-                            content: Text('Error: $e'),
-                            backgroundColor: AppTheme.error,
-                          ));
-                        }
-                      },
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primaryColor,
-                    foregroundColor: Colors.white),
-                child: const Text('Guardar'),
-              ),
-            ],
           );
         },
       ),
@@ -2535,13 +3287,20 @@ class _CarrierProfileState extends State<_CarrierProfile>
     final docService = DocumentUploadService();
     final uuid = context.read<AuthProvider>().user?.id ?? 'carrier';
 
-    await showDialog(
+    await showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? AppTheme.darkCard : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) {
           final textPrimary =
               isDark ? Colors.white : const Color(0xFF1A1D27);
           final bg = isDark ? AppTheme.darkCard : Colors.white;
+          final fill = isDark ? AppTheme.darkSurface : Colors.grey[50];
+          final bottom = MediaQuery.of(ctx).viewInsets.bottom;
 
           Future<void> pickPhoto(
               void Function() setUploading, Function(String?) onUrl) async {
@@ -2585,8 +3344,8 @@ class _CarrierProfileState extends State<_CarrierProfile>
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: bg,
-                  borderRadius: BorderRadius.circular(10),
+                  color: fill,
+                  borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                       color: AppTheme.primaryColor.withValues(alpha: 0.3)),
                 ),
@@ -2605,7 +3364,7 @@ class _CarrierProfileState extends State<_CarrierProfile>
                                     child: CircularProgressIndicator(
                                         strokeWidth: 2)))
                             : hasPhoto
-                                ? Image.network(url!,
+                                ? Image.network(url,
                                     fit: BoxFit.cover,
                                     errorBuilder: (_, __, ___) => _placeholder())
                                 : _placeholder(),
@@ -2618,7 +3377,9 @@ class _CarrierProfileState extends State<_CarrierProfile>
                         children: [
                           Text(label,
                               style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 12, fontWeight: FontWeight.w600)),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: textPrimary)),
                           Text(
                             hasPhoto ? 'Cargada' : 'Sin foto',
                             style: TextStyle(
@@ -2643,18 +3404,67 @@ class _CarrierProfileState extends State<_CarrierProfile>
             );
           }
 
-          return AlertDialog(
-            backgroundColor: bg,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16)),
-            title: Text('Editar Vehículo',
-                style: GoogleFonts.plusJakartaSans(
-                    fontWeight: FontWeight.w700)),
-            content: SingleChildScrollView(
+          InputDecoration fieldDeco({
+            required String label,
+            IconData? icon,
+          }) {
+            return InputDecoration(
+              labelText: label,
+              prefixIcon: icon != null ? Icon(icon) : null,
+              filled: true,
+              fillColor: fill,
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            );
+          }
+
+          return Padding(
+            padding: EdgeInsets.fromLTRB(20, 12, 20, 20 + bottom),
+            child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.white24 : Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color:
+                              AppTheme.primaryColor.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.edit_outlined,
+                            color: AppTheme.primaryColor),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text('Editar Vehículo',
+                            style: GoogleFonts.plusJakartaSans(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: textPrimary)),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        icon: Icon(Icons.close,
+                            color: isDark ? Colors.white54 : Colors.grey),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
                   // Vehicle Photo
                   Text('Foto del Vehículo (opcional)',
                       style: TextStyle(
@@ -2679,15 +3489,15 @@ class _CarrierProfileState extends State<_CarrierProfile>
                   // Basic Info
                   _DialogField(
                       ctrl: marcaCtrl, label: 'Marca', isDark: isDark),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   _DialogField(
                       ctrl: modeloCtrl, label: 'Modelo', isDark: isDark),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   _DialogField(
                       ctrl: matriculaCtrl,
                       label: 'Matrícula / Chapa',
                       isDark: isDark),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   _DialogField(
                     ctrl: capCtrl,
                     label: 'Capacidad (ton)',
@@ -2695,7 +3505,7 @@ class _CarrierProfileState extends State<_CarrierProfile>
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   _DialogField(
                     ctrl: longitudCtrl,
                     label: 'Longitud plataforma (m)',
@@ -2703,18 +3513,20 @@ class _CarrierProfileState extends State<_CarrierProfile>
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
                     value: tipoCarro,
                     dropdownColor: bg,
                     style: TextStyle(color: textPrimary, fontSize: 14),
-                    decoration: const InputDecoration(
-                        labelText: 'Tipo de carrocería',
-                        prefixIcon: Icon(Icons.local_shipping_outlined)),
+                    decoration: fieldDeco(
+                      label: 'Tipo de carrocería',
+                      icon: Icons.local_shipping_outlined,
+                    ),
                     items: tiposCarroceria
                         .map((t) => DropdownMenuItem(
                             value: t,
-                            child: Text(t.toUpperCase(),
+                            child: Text(
+                                t.replaceAll('_', ' ').toUpperCase(),
                                 style: TextStyle(color: textPrimary))))
                         .toList(),
                     onChanged: (v) => setS(() => tipoCarro = v!),
@@ -2820,9 +3632,9 @@ class _CarrierProfileState extends State<_CarrierProfile>
                         }
                       },
                       child: InputDecorator(
-                        decoration: const InputDecoration(
-                          labelText: 'Vencimiento del seguro',
-                          prefixIcon: Icon(Icons.calendar_today_outlined),
+                        decoration: fieldDeco(
+                          label: 'Vencimiento del seguro',
+                          icon: Icons.calendar_today_outlined,
                         ),
                         child: Text(
                           seguroVence != null
@@ -2833,60 +3645,83 @@ class _CarrierProfileState extends State<_CarrierProfile>
                       ),
                     ),
                   ],
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(48),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: const Text('Cancelar'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () async {
+                            Navigator.pop(ctx);
+                            final vehData = <String, dynamic>{
+                              'tipo_carroceria': tipoCarro,
+                              if (marcaCtrl.text.trim().isNotEmpty)
+                                'marca': marcaCtrl.text.trim(),
+                              if (modeloCtrl.text.trim().isNotEmpty)
+                                'modelo': modeloCtrl.text.trim(),
+                              if (matriculaCtrl.text.trim().isNotEmpty)
+                                'matricula': matriculaCtrl.text.trim(),
+                              if (capCtrl.text.trim().isNotEmpty)
+                                'capacidad_ton':
+                                    double.tryParse(capCtrl.text.trim()),
+                              if (longitudCtrl.text.trim().isNotEmpty)
+                                'longitud_m':
+                                    double.tryParse(longitudCtrl.text.trim()),
+                              'seguro_vigente': seguroVigente,
+                              if (seguroVence != null)
+                                'seguro_vence': seguroVence!
+                                    .toIso8601String()
+                                    .substring(0, 10),
+                              if (vehiclePhotoUrl != null)
+                                'vehicle_photo_url': vehiclePhotoUrl,
+                              if (licCircFrenteUrl != null)
+                                'lic_circulacion_frente_url':
+                                    licCircFrenteUrl,
+                              if (licCircDorsoUrl != null)
+                                'lic_circulacion_dorso_url': licCircDorsoUrl,
+                              if (licOpFrenteUrl != null)
+                                'lic_operativa_frente_url': licOpFrenteUrl,
+                              if (licOpDorsoUrl != null)
+                                'lic_operativa_dorso_url': licOpDorsoUrl,
+                            };
+                            final messenger = ScaffoldMessenger.of(context);
+                            try {
+                              await _vehicleService.updateCarroceria(
+                                  carroceria.id!, vehData);
+                              await _loadCarrocerias();
+                            } catch (e) {
+                              messenger.showSnackBar(SnackBar(
+                                content: Text('Error: $e'),
+                                backgroundColor: AppTheme.error,
+                              ));
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primaryColor,
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size.fromHeight(48),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: const Text('Guardar'),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancelar')),
-              ElevatedButton(
-                onPressed: () async {
-                  Navigator.pop(ctx);
-                  final vehData = <String, dynamic>{
-                    'tipo_carroceria': tipoCarro,
-                    if (marcaCtrl.text.trim().isNotEmpty)
-                      'marca': marcaCtrl.text.trim(),
-                    if (modeloCtrl.text.trim().isNotEmpty)
-                      'modelo': modeloCtrl.text.trim(),
-                    if (matriculaCtrl.text.trim().isNotEmpty)
-                      'matricula': matriculaCtrl.text.trim(),
-                    if (capCtrl.text.trim().isNotEmpty)
-                      'capacidad_ton': double.tryParse(capCtrl.text.trim()),
-                    if (longitudCtrl.text.trim().isNotEmpty)
-                      'longitud_m': double.tryParse(longitudCtrl.text.trim()),
-                    'seguro_vigente': seguroVigente,
-                    if (seguroVence != null)
-                      'seguro_vence':
-                          seguroVence!.toIso8601String().substring(0, 10),
-                    if (vehiclePhotoUrl != null)
-                      'vehicle_photo_url': vehiclePhotoUrl,
-                    if (licCircFrenteUrl != null)
-                      'lic_circulacion_frente_url': licCircFrenteUrl,
-                    if (licCircDorsoUrl != null)
-                      'lic_circulacion_dorso_url': licCircDorsoUrl,
-                    if (licOpFrenteUrl != null)
-                      'lic_operativa_frente_url': licOpFrenteUrl,
-                    if (licOpDorsoUrl != null)
-                      'lic_operativa_dorso_url': licOpDorsoUrl,
-                  };
-                  final messenger = ScaffoldMessenger.of(context);
-                  try {
-                    await _vehicleService.updateCarroceria(carroceria.id!, vehData);
-                    await _loadCarrocerias();
-                  } catch (e) {
-                    messenger.showSnackBar(SnackBar(
-                      content: Text('Error: $e'),
-                      backgroundColor: AppTheme.error,
-                    ));
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primaryColor,
-                    foregroundColor: Colors.white),
-                child: const Text('Guardar'),
-              ),
-            ],
           );
         },
       ),
@@ -3039,79 +3874,95 @@ class _DispatcherProfileState extends State<_DispatcherProfile>
   }
 
   Widget _buildPerfilTab(bool isDark, Color textPrimary) {
-    final cardColor = isDark ? AppTheme.darkCard : Colors.white;
-    final border = isDark ? AppTheme.darkBorder : Colors.grey[200]!;
-
-    Widget field(String label, TextEditingController ctrl,
-        {TextInputType? keyboard}) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: TextFormField(
-          controller: ctrl,
-          readOnly: !_isEditing,
-          keyboardType: keyboard,
-          style: TextStyle(color: textPrimary),
-          decoration: InputDecoration(
-            labelText: label,
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10)),
-            filled: true,
-            fillColor: cardColor,
-          ),
-        ),
-      );
-    }
-
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       child: Form(
         key: _formKey,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Datos personales',
-                style: GoogleFonts.plusJakartaSans(
-                    fontWeight: FontWeight.w700, color: textPrimary)),
+            _SectionHeader(label: 'Datos personales', isDark: isDark),
             const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                  color: cardColor,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: border)),
-              child: Column(
-                children: [
-                  field('Nombre', _nameCtrl),
-                  field('Teléfono', _phoneCtrl,
-                      keyboard: TextInputType.phone),
-                  field('Email', _emailCtrl,
-                      keyboard: TextInputType.emailAddress),
-                ],
-              ),
+            _ProfileField(
+              controller: _nameCtrl,
+              label: 'Nombre completo',
+              icon: Icons.person_outline,
+              isDark: isDark,
+              enabled: _isEditing,
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? 'Requerido' : null,
+            ),
+            const SizedBox(height: 12),
+            _ProfileField(
+              controller: _phoneCtrl,
+              label: 'Teléfono',
+              icon: Icons.phone_outlined,
+              isDark: isDark,
+              enabled: _isEditing,
+              keyboardType: TextInputType.phone,
+            ),
+            const SizedBox(height: 12),
+            _ProfileField(
+              controller: _emailCtrl,
+              label: 'Correo electrónico',
+              icon: Icons.email_outlined,
+              isDark: isDark,
+              enabled: false,
+              keyboardType: TextInputType.emailAddress,
             ),
             const SizedBox(height: 20),
-            Text('Empresa dispatcher',
-                style: GoogleFonts.plusJakartaSans(
-                    fontWeight: FontWeight.w700, color: textPrimary)),
+            _SectionHeader(label: 'Empresa dispatcher', isDark: isDark),
             const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                  color: cardColor,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: border)),
-              child: Column(
-                children: [
-                  field('Nombre legal', _empresaCtrl),
-                  field('RUT / ID fiscal', _rutCtrl),
-                  field('Dirección', _direccionCtrl),
-                  field('País', _paisCtrl),
-                  field('Provincia', _provinciaCtrl),
-                  field('Municipio', _municipioCtrl),
-                ],
-              ),
+            _ProfileField(
+              controller: _empresaCtrl,
+              label: 'Nombre legal',
+              icon: Icons.business_outlined,
+              isDark: isDark,
+              enabled: _isEditing,
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 12),
+            _ProfileField(
+              controller: _rutCtrl,
+              label: 'RUT / ID fiscal',
+              icon: Icons.badge_outlined,
+              isDark: isDark,
+              enabled: _isEditing,
+            ),
+            const SizedBox(height: 12),
+            _ProfileField(
+              controller: _direccionCtrl,
+              label: 'Dirección',
+              icon: Icons.home_outlined,
+              isDark: isDark,
+              enabled: _isEditing,
+            ),
+            const SizedBox(height: 20),
+            _SectionHeader(label: 'Ubicación', isDark: isDark),
+            const SizedBox(height: 12),
+            _ProfileField(
+              controller: _paisCtrl,
+              label: 'País',
+              icon: Icons.public_outlined,
+              isDark: isDark,
+              enabled: _isEditing,
+            ),
+            const SizedBox(height: 12),
+            _ProfileField(
+              controller: _provinciaCtrl,
+              label: 'Provincia / Estado',
+              icon: Icons.location_city_outlined,
+              isDark: isDark,
+              enabled: _isEditing,
+            ),
+            const SizedBox(height: 12),
+            _ProfileField(
+              controller: _municipioCtrl,
+              label: 'Ciudad / Municipio',
+              icon: Icons.map_outlined,
+              isDark: isDark,
+              enabled: _isEditing,
+            ),
+            const SizedBox(height: 32),
             if (!_isEditing) _signOutButton(context),
             const SizedBox(height: 24),
           ],
@@ -3259,9 +4110,11 @@ class _DialogField extends StatelessWidget {
       decoration: InputDecoration(
         labelText: label,
         isDense: true,
+        filled: true,
+        fillColor: isDark ? AppTheme.darkSurface : Colors.grey[50],
         contentPadding:
-            const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
@@ -3288,79 +4141,107 @@ class _LicensePhotoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cardColor = isDark ? AppTheme.darkCard : Colors.white;
+    final editable = onTap != null;
+    final disabledColor = isDark ? Colors.white38 : Colors.grey[400]!;
+    final cardColor = editable
+        ? (isDark ? AppTheme.darkCard : Colors.white)
+        : (isDark
+            ? Colors.white.withValues(alpha: 0.03)
+            : Colors.grey[50]);
     final borderColor = isDark ? AppTheme.darkBorder : Colors.grey[200]!;
     final hasPhoto = url != null && url!.isNotEmpty;
 
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: cardColor,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-              color: onTap != null
-                  ? AppTheme.primaryColor.withValues(alpha: 0.4)
-                  : borderColor),
-        ),
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            // Thumbnail or placeholder
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: SizedBox(
-                width: 64,
-                height: 44,
-                child: uploading
-                    ? const Center(
-                        child: SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2)))
-                    : hasPhoto
-                        ? Image.network(url!, fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => _placeholder())
-                        : _placeholder(),
+      child: Opacity(
+        opacity: editable ? 1 : 0.75,
+        child: Container(
+          decoration: BoxDecoration(
+            color: cardColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+                color: editable
+                    ? AppTheme.primaryColor.withValues(alpha: 0.4)
+                    : borderColor),
+          ),
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              // Thumbnail or placeholder
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  width: 64,
+                  height: 44,
+                  child: uploading
+                      ? const Center(
+                          child: SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2)))
+                      : hasPhoto
+                          ? ColorFiltered(
+                              colorFilter: editable
+                                  ? const ColorFilter.mode(
+                                      Colors.transparent, BlendMode.dst)
+                                  : const ColorFilter.matrix(<double>[
+                                      0.2126, 0.7152, 0.0722, 0, 0,
+                                      0.2126, 0.7152, 0.0722, 0, 0,
+                                      0.2126, 0.7152, 0.0722, 0, 0,
+                                      0, 0, 0, 1, 0,
+                                    ]),
+                              child: Image.network(url!, fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) =>
+                                      _placeholder(editable)),
+                            )
+                          : _placeholder(editable),
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label,
-                      style: GoogleFonts.plusJakartaSans(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: isDark ? Colors.white : Colors.black87)),
-                  const SizedBox(height: 2),
-                  Text(
-                    hasPhoto ? 'Foto cargada' : 'Sin foto',
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: hasPhoto
-                            ? AppTheme.success
-                            : (isDark ? Colors.white38 : Colors.grey[500])),
-                  ),
-                ],
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label,
+                        style: GoogleFonts.plusJakartaSans(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: editable
+                                ? (isDark ? Colors.white : Colors.black87)
+                                : disabledColor)),
+                    const SizedBox(height: 2),
+                    Text(
+                      hasPhoto
+                          ? (editable ? 'Foto cargada' : 'Solo lectura')
+                          : (editable ? 'Sin foto' : 'Sin foto'),
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: hasPhoto && editable
+                              ? AppTheme.success
+                              : disabledColor),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            if (onTap != null)
-              Icon(
-                hasPhoto ? Icons.edit_outlined : Icons.upload_outlined,
-                size: 18,
-                color: AppTheme.primaryColor,
-              ),
-          ],
+              if (editable)
+                Icon(
+                  hasPhoto ? Icons.edit_outlined : Icons.upload_outlined,
+                  size: 18,
+                  color: AppTheme.primaryColor,
+                )
+              else
+                Icon(Icons.lock_outline, size: 16, color: disabledColor),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _placeholder() => Container(
-        color: AppTheme.primaryColor.withValues(alpha: 0.08),
+  Widget _placeholder([bool editable = true]) => Container(
+        color: AppTheme.primaryColor.withValues(alpha: editable ? 0.08 : 0.04),
         child: Icon(Icons.image_outlined,
-            color: AppTheme.primaryColor.withValues(alpha: 0.5), size: 24),
+            color: AppTheme.primaryColor.withValues(alpha: editable ? 0.5 : 0.25),
+            size: 24),
       );
 }

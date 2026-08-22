@@ -101,6 +101,102 @@ class TurnoService {
     }
   }
 
+  /// Resumen del último turno **cerrado** del TPV/vendedor (para apertura).
+  /// Si el último turno sigue abierto, busca el cerrado más reciente en BD.
+  static Future<Map<String, dynamic>?> getResumenUltimoTurnoCerrado() async {
+    try {
+      final workerProfile = await _userPrefs.getWorkerProfile();
+      final idTpvRaw = workerProfile['idTpv'];
+      final idSeller = await _userPrefs.getIdSeller();
+      final idTpv =
+          idTpvRaw is int
+              ? idTpvRaw
+              : (idTpvRaw is num
+                  ? idTpvRaw.toInt()
+                  : int.tryParse('$idTpvRaw'));
+
+      if (idTpv == null || idSeller == null) {
+        print('⚠️ getResumenUltimoTurnoCerrado: falta TPV o vendedor');
+        return null;
+      }
+
+      // 1) KPI del último turno; si ya está cerrado, usarlo.
+      final kpi = await getResumenTurnoKPI();
+      if (kpi != null) {
+        final estado = kpi['estado_turno'];
+        final isOpen = estado == 1 || estado == '1';
+        if (!isOpen) {
+          print('✅ Resumen último turno cerrado vía KPI id=${kpi['turno_id']}');
+          return kpi;
+        }
+        print(
+          'ℹ️ KPI devolvió turno abierto (id=${kpi['turno_id']}); '
+          'buscando último cerrado en BD',
+        );
+      }
+
+      // 2) Último turno cerrado explícitamente.
+      final closedRow =
+          await _supabase
+              .from('app_dat_caja_turno')
+              .select('id')
+              .eq('id_tpv', idTpv)
+              .eq('id_vendedor', idSeller)
+              .eq('estado', 2)
+              .order('fecha_cierre', ascending: false, nullsFirst: false)
+              .limit(1)
+              .maybeSingle();
+
+      final closedId = closedRow?['id'];
+      final idTurno =
+          closedId is int
+              ? closedId
+              : (closedId is num
+                  ? closedId.toInt()
+                  : int.tryParse('$closedId'));
+      if (idTurno == null) {
+        print('ℹ️ No hay turno cerrado previo para TPV $idTpv');
+        return null;
+      }
+
+      final porId = await _supabase.rpc(
+        'fn_resumen_turno_por_id',
+        params: {'p_turno_id': idTurno},
+      );
+      if (porId != null && porId is List && porId.isNotEmpty) {
+        print('✅ Resumen turno cerrado $idTurno vía fn_resumen_turno_por_id');
+        return Map<String, dynamic>.from(porId.first as Map);
+      }
+
+      // Fallback mínimo desde la fila del turno.
+      final full =
+          await _supabase
+              .from('app_dat_caja_turno')
+              .select(
+                'id, fecha_apertura, fecha_cierre, estado, '
+                'efectivo_inicial, efectivo_real, diferencia',
+              )
+              .eq('id', idTurno)
+              .maybeSingle();
+      if (full == null) return null;
+      return {
+        'turno_id': full['id'],
+        'fecha_apertura': full['fecha_apertura'],
+        'fecha_cierre': full['fecha_cierre'],
+        'estado_turno': full['estado'],
+        'efectivo_inicial': full['efectivo_inicial'],
+        'efectivo_real': full['efectivo_real'],
+        'diferencia_efectivo': full['diferencia'],
+        'ventas_totales': 0,
+        'productos_vendidos': 0,
+        'ticket_promedio': 0,
+      };
+    } catch (e) {
+      print('❌ Error getResumenUltimoTurnoCerrado: $e');
+      return null;
+    }
+  }
+
   static Future<Map<String, dynamic>?> getResumenTurnoPorId(int idTurno) async {
     //prueba
     try {
@@ -200,6 +296,28 @@ class TurnoService {
 
       if (response.isNotEmpty) {
         final turno = response.first as Map<String, dynamic>;
+        final serverId = _parseTurnoId(turno['id']);
+        // Si el cierre ya está en cola local, NO tratarlo como turno
+        // abierto operativo (el servidor puede seguir en estado=1 hasta
+        // que el sync de cierre termine).
+        final localCierre = await _userPrefs.findClosedPendingMatching(
+          serverId: serverId,
+          idTpv: idTpv is int ? idTpv : int.tryParse('$idTpv'),
+          idVendedor: idSeller is int ? idSeller : int.tryParse('$idSeller'),
+        );
+        if (localCierre != null) {
+          print(
+            '🔒 Turno $serverId abierto en servidor pero con cierre local '
+            'pendiente (${localCierre['local_id']}) — no se expone como abierto',
+          );
+          if (serverId != null) {
+            final lid = localCierre['local_id']?.toString();
+            if (lid != null) {
+              await _userPrefs.setOfflineTurnoServerId(lid, serverId);
+            }
+          }
+          return null;
+        }
         print(
           '✅ Found open shift: ${turno['id']} for TPV: $idTpv, Seller: $idSeller',
         );
@@ -207,27 +325,117 @@ class TurnoService {
       }
 
       print('⚠️ No open shift found for TPV: $idTpv, Seller: $idSeller');
-      // Fallback: turno offline open (p.ej. recién abierto y aún no en server)
+
+      // Fallback solo si el turno local aún NO tiene id en servidor.
+      // Si ya tenía server_id pero el servidor no reporta abierto, la cache
+      // quedó obsoleta (p.ej. tras cierre online) y debe limpiarse.
       final turnoOffline = await _userPrefs.getOfflineTurno();
       if (turnoOffline != null) {
-        print('📱 Usando turno offline como fallback: ${turnoOffline['id']}');
-        return turnoOffline;
+        final serverId =
+            turnoOffline['server_id_turno'] ??
+            (turnoOffline['id'] is int ? turnoOffline['id'] : null);
+        if (serverId == null) {
+          print(
+            '📱 Usando turno offline sin server_id: ${turnoOffline['local_id'] ?? turnoOffline['id']}',
+          );
+          return turnoOffline;
+        }
+        print(
+          '🧹 Cache offline obsoleta (server_id=$serverId); '
+          'servidor sin turno abierto — limpiando',
+        );
+        await _userPrefs.clearOfflineTurno();
       }
+
       return null;
     } catch (e) {
       print('❌ Error getting open shift: $e');
-      // Fallback adicional en caso de error: consultar cache offline
+      // Solo en error de red: intentar cache offline real (sin server_id).
       try {
         final turnoOffline = await _userPrefs.getOfflineTurno();
         if (turnoOffline != null) {
-          print(
-            '📱 Turno offline encontrado tras error: ${turnoOffline['id']}',
-          );
-          return turnoOffline;
+          final serverId =
+              turnoOffline['server_id_turno'] ??
+              (turnoOffline['id'] is int ? turnoOffline['id'] : null);
+          if (serverId == null) {
+            print(
+              '📱 Turno offline (sin server_id) tras error de red: '
+              '${turnoOffline['local_id'] ?? turnoOffline['id']}',
+            );
+            return turnoOffline;
+          }
         }
       } catch (_) {}
       return null;
     }
+  }
+
+  static int? _parseTurnoId(dynamic raw) {
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    return int.tryParse(raw?.toString() ?? '');
+  }
+
+  /// UUID `creado_por` del turno abierto en servidor (requerido por
+  /// `fn_cerrar_turno_tpv`, que filtra por ese campo — no por el vendedor).
+  static Future<String?> _resolveCreadoPorForOpenTpv(int idTpv) async {
+    try {
+      final turnoRow =
+          await _supabase
+              .from('app_dat_caja_turno')
+              .select('creado_por')
+              .eq('id_tpv', idTpv)
+              .eq('estado', 1)
+              .order('fecha_apertura', ascending: false, nullsFirst: false)
+              .limit(1)
+              .maybeSingle();
+      final creadoPor = turnoRow?['creado_por']?.toString();
+      if (creadoPor != null && creadoPor.isNotEmpty) return creadoPor;
+    } catch (e) {
+      print('⚠️ No se pudo resolver creado_por del turno TPV $idTpv: $e');
+    }
+    return null;
+  }
+
+  /// Turno para mostrar en UI cuando puede haber cierre reciente en cache.
+  static Future<Map<String, dynamic>?> getTurnoForDisplay() async {
+    // Preferir cierre local pendiente/sincronizado antes que un "abierto"
+    // fantasma del servidor.
+    final closedLocal =
+        await _userPrefs.getLastClosedOrSyncedTurnoForDisplay();
+    if (closedLocal != null) {
+      final status = closedLocal['status']?.toString();
+      if (status == UserPreferencesService.offlineTurnoStatusClosedPending ||
+          status == UserPreferencesService.offlineTurnoStatusSynced ||
+          closedLocal['cerrado_local'] == true ||
+          closedLocal['cerrado_online'] == true) {
+        // Si además hay un open local genuino, ese gana.
+        final openLocal = await _userPrefs.getOfflineTurno();
+        if (openLocal == null) {
+          return closedLocal;
+        }
+      }
+    }
+
+    var turno = await getTurnoAbierto();
+    if (turno == null) {
+      return closedLocal;
+    }
+
+    final resumen = await _userPrefs.getTurnoResumenCache();
+    if (resumen?['cerrado_online'] == true ||
+        resumen?['cerrado_local'] == true) {
+      final closedId = resumen!['id'] ?? resumen['server_id_turno'];
+      final openId = turno['id'] ?? turno['server_id_turno'];
+      if (closedId != null &&
+          openId != null &&
+          closedId.toString() == openId.toString()) {
+        await _userPrefs.clearOfflineTurno();
+        turno = await _userPrefs.getLastClosedOrSyncedTurnoForDisplay();
+      }
+    }
+
+    return turno;
   }
 
   static Future<Map<String, dynamic>> registrarEgresoParcial({
@@ -316,19 +524,33 @@ class TurnoService {
         );
       }
 
+      final idTpvInt =
+          idTpv is int ? idTpv : int.tryParse(idTpv.toString());
+      if (idTpvInt == null) {
+        return const TurnoOperationResult.failure(
+          message: 'TPV inválido',
+          errorKind: TurnoErrorKind.unknown,
+        );
+      }
+
+      // fn_cerrar_turno_tpv filtra por ct.creado_por = p_usuario, no por
+      // el UUID del vendedor ni el usuario de sesión genérico.
+      final creadoPor = await _resolveCreadoPorForOpenTpv(idTpvInt);
+      final usuarioParaCierre = creadoPor ?? userUuid;
+
       print('🔄 Calling fn_cerrar_turno_tpv with:');
-      print('  - ID TPV: $idTpv');
+      print('  - ID TPV: $idTpvInt');
       print('  - Efectivo real: $efectivoReal');
-      print('  - Usuario: $userUuid');
+      print('  - Usuario (creado_por): $usuarioParaCierre');
       print('  - Productos: ${productos.length} items');
       print('  - Observaciones: $observaciones');
 
       final response = await _supabase.rpc(
         'fn_cerrar_turno_tpv',
         params: {
-          'p_id_tpv': idTpv,
+          'p_id_tpv': idTpvInt,
           'p_efectivo_real': efectivoReal,
-          'p_usuario': userUuid,
+          'p_usuario': usuarioParaCierre,
           'p_productos': productos.isNotEmpty ? productos : null,
           'p_observaciones': observaciones,
         },
@@ -337,6 +559,7 @@ class TurnoService {
       print('✅ fn_cerrar_turno_tpv response: $response');
 
       if (response == true) {
+        await _userPrefs.clearOfflineTurno();
         return const TurnoOperationResult.success();
       }
 

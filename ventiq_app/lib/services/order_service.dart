@@ -27,6 +27,15 @@ class OrderService {
   Order? get currentOrder => _currentOrder;
   List<Order> get orders => List.from(_orders);
 
+  /// Mutates the in-memory list. Do not assign into [orders] (it is a copy).
+  bool applyLocalOrderStatus(String orderId, OrderStatus newStatus) {
+    final idx = _orders.indexWhere((o) => o.id == orderId);
+    if (idx == -1) return false;
+    if (_orders[idx].status == newStatus) return false;
+    _orders[idx] = _orders[idx].copyWith(status: newStatus);
+    return true;
+  }
+
   int? get activeMesaId => _activeMesaId;
   String? get activeMesaNumero => _activeMesaNumero;
 
@@ -985,7 +994,10 @@ class OrderService {
   /// desglose de pagos guardado (id_medio_pago sentinel 998).
   Future<bool> isVentaPendienteDePago(Order order) async {
     final operationId = order.operationId;
-    if (operationId != null) {
+    final userPrefs = UserPreferencesService();
+    final useLocal = await userPrefs.shouldUseLocalData();
+
+    if (operationId != null && !useLocal) {
       try {
         final response = await Supabase.instance.client
             .from('app_dat_operacion_venta')
@@ -1661,6 +1673,10 @@ class OrderService {
 
     final userPrefs = UserPreferencesService();
 
+    // En modo offline/full-offline no consultar el servidor aunque haya Wi-Fi:
+    // pisaría cambios locales (completar/cancelar una orden creada online).
+    final useLocalOnly = await userPrefs.shouldUseLocalData();
+
     // 1) Base: cache offline (última foto conocida, incluye ya sincronizadas).
     final offlineData = await userPrefs.getOfflineData();
     if (offlineData != null && offlineData['orders'] != null) {
@@ -1680,47 +1696,50 @@ class OrderService {
     }
     final pendingOrders = List<Order>.from(_orders);
 
-    // 3) Si hay conectividad real, refrescar con datos frescos del servidor.
     List<Order> serverOrders = [];
-    try {
-      final hasConnection = await ConnectivityService().checkConnectivity();
-      if (hasConnection) {
-        final userData = await userPrefs.getUserData();
-        final idTienda = await userPrefs.getIdTienda();
-        final idTpv = await userPrefs.getIdTpv();
-        final fechaApertura = _parseOrderDateTime(
-          turnoAbierto['fecha_apertura'],
-        );
-        final fechaDesdeParam =
-            fechaApertura != null ? _toDateParam(fechaApertura) : null;
-
-        final response = await Supabase.instance.client.rpc(
-          'fn_listar_ordenes',
-          params: {
-            'con_inventario_param': true,
-            'fecha_desde_param': fechaDesdeParam,
-            'fecha_hasta_param': null,
-            'id_estado_param': null,
-            'id_tienda_param': idTienda,
-            'id_tipo_operacion_param': null,
-            'id_tpv_param': idTpv,
-            'id_usuario_param': userData['userId'],
-            'limite_param': null,
-            'pagina_param': null,
-            'solo_pendientes_param': false,
-          },
-        );
-        if (response is List && response.isNotEmpty) {
-          final filtered = _filterRawOrdersToOpenTurno(
-            List<dynamic>.from(response),
-            turnoAbierto,
+    if (!useLocalOnly) {
+      try {
+        final hasConnection = await ConnectivityService().checkConnectivity();
+        if (hasConnection) {
+          final userData = await userPrefs.getUserData();
+          final idTienda = await userPrefs.getIdTienda();
+          final idTpv = await userPrefs.getIdTpv();
+          final fechaApertura = _parseOrderDateTime(
+            turnoAbierto['fecha_apertura'],
           );
-          _transformSupabaseToOrders(filtered);
-          serverOrders = List<Order>.from(_orders);
+          final fechaDesdeParam =
+              fechaApertura != null ? _toDateParam(fechaApertura) : null;
+
+          final response = await Supabase.instance.client.rpc(
+            'fn_listar_ordenes',
+            params: {
+              'con_inventario_param': true,
+              'fecha_desde_param': fechaDesdeParam,
+              'fecha_hasta_param': null,
+              'id_estado_param': null,
+              'id_tienda_param': idTienda,
+              'id_tipo_operacion_param': null,
+              'id_tpv_param': idTpv,
+              'id_usuario_param': userData['userId'],
+              'limite_param': null,
+              'pagina_param': null,
+              'solo_pendientes_param': false,
+            },
+          );
+          if (response is List && response.isNotEmpty) {
+            final filtered = _filterRawOrdersToOpenTurno(
+              List<dynamic>.from(response),
+              turnoAbierto,
+            );
+            _transformSupabaseToOrders(filtered);
+            serverOrders = List<Order>.from(_orders);
+          }
         }
+      } catch (e) {
+        print('⚠️ No se pudo refrescar órdenes online para combinar: $e');
       }
-    } catch (e) {
-      print('⚠️ No se pudo refrescar órdenes online para combinar: $e');
+    } else {
+      print('🔌 Órdenes unificadas: solo cache/pendientes (modo offline)');
     }
 
     // 4) Combinar con prioridad: servidor (más fresco) > cache > pendientes.
@@ -2270,16 +2289,23 @@ class OrderService {
           '📝 Estado actualizado en órdenes pendientes: $pendingLocalId -> ${newStatus.toString()}',
         );
       } else {
-        // 4. Si no es una orden pendiente, crear operación de cambio de estado
+        // 4. Orden creada online: persistir estado en cache + cola de sync
+        final operationId = int.tryParse(orderId.replaceFirst('ORD-', ''));
         await userPrefs.savePendingOperation({
           'type': 'order_status_change',
           'order_id': orderId,
+          'id_operacion': operationId,
           'new_status': _orderStatusToString(newStatus),
           'timestamp': DateTime.now().toIso8601String(),
         });
+        await userPrefs.updateCachedOrderEstado(
+          orderId: orderId,
+          operationId: operationId,
+          estado: _mapOrderStatusToSupabaseNumber(newStatus),
+        );
 
         print(
-          '💾 Operación de cambio de estado guardada: $orderId -> ${newStatus.toString()}',
+          '💾 Cambio de estado offline (orden online): $orderId -> ${newStatus.toString()}',
         );
       }
 

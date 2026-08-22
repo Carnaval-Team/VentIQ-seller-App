@@ -1155,6 +1155,10 @@ class ExcelImportService {
       // Productos elaborados
       'es_elaborado',
       'costo_produccion',
+      // Precios y costos adicionales
+      'precio_costo',
+      // Proveedor
+      'proveedor',
     ];
     
     // Agregar encabezados

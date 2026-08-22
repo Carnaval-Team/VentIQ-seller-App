@@ -105,7 +105,15 @@ class _SelectiveSyncDialogState extends State<SelectiveSyncDialog> {
     setState(() {
       _running = false;
       _result = result;
-      _progressLabel = result.success ? 'Completado' : 'Completado con errores';
+      if (result.success) {
+        _progressLabel = 'Completado';
+      } else if (result.interrupted) {
+        _progressLabel = 'Interrumpida — se reanudará lo pendiente';
+      } else if (result.hasProgress) {
+        _progressLabel = 'Parcial — revisa el detalle';
+      } else {
+        _progressLabel = 'Fallida';
+      }
       if (_progressTotal > 0) {
         _progressCurrent = _progressTotal;
       }
@@ -179,7 +187,9 @@ class _SelectiveSyncDialogState extends State<SelectiveSyncDialog> {
                           : 'Sincronizando...')
                       : (_result?.success == true
                           ? '100% completado'
-                          : 'Finalizado'),
+                          : (_result?.interrupted == true
+                              ? 'Interrumpida'
+                              : 'Finalizado')),
                   style: TextStyle(fontSize: 12, color: Colors.grey[700]),
                 ),
                 if (_result != null) ...[
@@ -188,12 +198,19 @@ class _SelectiveSyncDialogState extends State<SelectiveSyncDialog> {
                     _result!.success
                         ? '✅ ${_result!.syncedItems.length} módulos OK '
                             '(${_result!.duration.inSeconds}s)'
-                        : '⚠️ Errores: ${_result!.errors.join("; ")}',
+                        : _result!.hasProgress
+                        ? '⚠️ Parcial: ${_result!.syncedItems.length} OK'
+                            '${_result!.errors.isNotEmpty ? ', ${_result!.errors.length} error(es)' : ''}'
+                            '${_result!.skippedItems.isNotEmpty ? ', ${_result!.skippedItems.length} pendiente(s)' : ''}'
+                            ' (${_result!.duration.inSeconds}s)'
+                        : '❌ Sin módulos OK. ${_result!.errors.join("; ")}',
                     style: TextStyle(
                       color:
                           _result!.success
                               ? Colors.green.shade800
-                              : Colors.orange.shade900,
+                              : _result!.hasProgress
+                              ? Colors.orange.shade900
+                              : Colors.red.shade800,
                       fontSize: 13,
                     ),
                   ),
@@ -201,10 +218,32 @@ class _SelectiveSyncDialogState extends State<SelectiveSyncDialog> {
                     Padding(
                       padding: const EdgeInsets.only(top: 6),
                       child: Text(
-                        _result!.syncedItems.join(', '),
+                        'OK: ${_result!.syncedItems.join(', ')}',
                         style: const TextStyle(
                           fontSize: 12,
                           color: Colors.black54,
+                        ),
+                      ),
+                    ),
+                  if (_result!.skippedItems.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        'Pendiente: ${_result!.skippedItems.join(', ')}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.orange.shade800,
+                        ),
+                      ),
+                    ),
+                  if (_result!.errors.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        _result!.errors.join('; '),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.red.shade800,
                         ),
                       ),
                     ),
@@ -222,7 +261,15 @@ class _SelectiveSyncDialogState extends State<SelectiveSyncDialog> {
         ElevatedButton.icon(
           onPressed: _running || _selected.isEmpty ? null : _run,
           icon: const Icon(Icons.sync, size: 18),
-          label: Text(_running ? 'Sincronizando...' : 'Sincronizar'),
+          label: Text(
+            _running
+                ? 'Sincronizando...'
+                : (_result != null &&
+                        !_result!.success &&
+                        _result!.skippedItems.isNotEmpty
+                    ? 'Reanudar'
+                    : 'Sincronizar'),
+          ),
         ),
       ],
     );

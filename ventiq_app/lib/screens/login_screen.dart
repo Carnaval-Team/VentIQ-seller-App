@@ -42,8 +42,20 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
+    _pauseSyncForLoginScreen();
     _loadSavedCredentials();
     _checkFullOffline();
+  }
+
+  /// Detiene sync/monitoring mientras el usuario no ha iniciado sesión.
+  Future<void> _pauseSyncForLoginScreen() async {
+    try {
+      await AutoSyncService().stopAutoSync();
+      await SettingsIntegrationService().stop();
+      print('🛑 Sync pausado en pantalla de login (sin sesión activa)');
+    } catch (e) {
+      print('⚠️ No se pudo pausar sync en login: $e');
+    }
   }
 
   Future<void> _checkFullOffline() async {

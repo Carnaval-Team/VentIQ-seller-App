@@ -627,7 +627,26 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
           .from('solicitudes_transporte')
           .update({'estado': 'completada'}).eq('id', solicitudId);
 
+      // Also mark viaje as completed so home banner / active trip clear immediately
+      final authProvider = context.read<AuthProvider>();
+      final rawId = authProvider.driverProfile?['id'];
+      final driverId =
+          rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+      if (driverId != null) {
+        try {
+          await _supabase
+              .schema('muevete')
+              .from('viajes')
+              .update({'completado': true, 'estado': false})
+              .eq('driver_id', driverId)
+              .eq('completado', false);
+        } catch (_) {}
+      }
+
       if (mounted) {
+        setState(() {
+          _acceptedRequests.removeWhere((r) => r.solicitud.id == solicitudId);
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -682,7 +701,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
 
     if (!mounted) return;
 
-    Navigator.of(context).push(
+    await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ActiveRideScreen(
           tripData: {
@@ -703,6 +722,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
         ),
       ),
     );
+    if (mounted) _loadAll();
   }
 
   Future<void> _launchCall(String phone) async {

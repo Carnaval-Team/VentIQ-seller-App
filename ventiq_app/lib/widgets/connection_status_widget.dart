@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../services/smart_offline_manager.dart';
-import '../services/connectivity_service.dart';
-import '../services/auto_sync_service.dart';
 
-/// Widget que muestra el estado de conexión y sincronización
-/// Se puede usar en cualquier pantalla para mostrar información en tiempo real
+/// Widget que muestra el estado de conexión y sincronización.
+/// En modo compacto, al tocarlo permite cambiar entre online/offline.
 class ConnectionStatusWidget extends StatefulWidget {
   final bool showDetails;
   final bool compact;
-  
+
   const ConnectionStatusWidget({
     Key? key,
     this.showDetails = false,
@@ -22,10 +20,11 @@ class ConnectionStatusWidget extends StatefulWidget {
 
 class _ConnectionStatusWidgetState extends State<ConnectionStatusWidget> {
   final SmartOfflineManager _smartOfflineManager = SmartOfflineManager();
-  
+
   StreamSubscription<SmartOfflineEvent>? _smartOfflineSubscription;
   SmartOfflineStatus? _status;
   bool _isLoading = true;
+  bool _isSwitching = false;
   Timer? _refreshTimer;
 
   @override
@@ -33,9 +32,6 @@ class _ConnectionStatusWidgetState extends State<ConnectionStatusWidget> {
     super.initState();
     _loadStatus();
     _setupListeners();
-    // Red de seguridad: si algún cambio de modo offline/online no dispara un
-    // evento de SmartOfflineManager (p.ej. al desactivarlo desde Ajustes),
-    // este refresco periódico evita que el indicador quede desactualizado.
     _refreshTimer = Timer.periodic(
       const Duration(seconds: 10),
       (_) => _loadStatus(),
@@ -72,7 +68,7 @@ class _ConnectionStatusWidgetState extends State<ConnectionStatusWidget> {
     _smartOfflineSubscription = _smartOfflineManager.eventStream.listen(
       (event) {
         print('📡 Evento SmartOffline: ${event.type} - ${event.message}');
-        _loadStatus(); // Recargar estado cuando hay cambios
+        _loadStatus();
       },
       onError: (error) {
         print('❌ Error en stream SmartOffline: $error');
@@ -158,7 +154,7 @@ class _ConnectionStatusWidgetState extends State<ConnectionStatusWidget> {
 
   Widget _buildCompactWidget() {
     final status = _status!;
-    
+
     Color backgroundColor;
     Color borderColor;
     Color iconColor;
@@ -198,42 +194,50 @@ class _ConnectionStatusWidgetState extends State<ConnectionStatusWidget> {
       text = 'Sin conexión';
     }
 
-    return GestureDetector(
-      onTap: widget.showDetails ? _showDetailsDialog : null,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: backgroundColor,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: borderColor),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 12, color: iconColor),
-            const SizedBox(width: 6),
-            Text(
-              text,
-              style: TextStyle(
-                fontSize: 11,
-                color: textColor,
-                fontWeight: FontWeight.w500,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: _isSwitching ? null : _showModeControlSheet,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: borderColor),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_isSwitching)
+                SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: iconColor,
+                  ),
+                )
+              else
+                Icon(icon, size: 12, color: iconColor),
+              const SizedBox(width: 6),
+              Text(
+                text,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: textColor,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
-            ),
-            if (widget.showDetails) ...[
               const SizedBox(width: 4),
-              Icon(Icons.info_outline, size: 10, color: textColor),
+              Icon(Icons.tune, size: 10, color: textColor),
             ],
-          ],
+          ),
         ),
       ),
     );
   }
 
-  /// [decorated] controla si se envuelve en una tarjeta con borde propia.
-  /// Cuando se muestra dentro de un [AlertDialog] esa tarjeta es redundante
-  /// (el diálogo ya actúa como contenedor) y sólo resta espacio útil, así
-  /// que ahí se pasa `false`.
   Widget _buildDetailedWidget({bool decorated = true}) {
     final status = _status!;
 
@@ -334,44 +338,224 @@ class _ConnectionStatusWidgetState extends State<ConnectionStatusWidget> {
     );
   }
 
-  void _showDetailsDialog() {
-    showDialog(
+  Future<void> _showModeControlSheet() async {
+    final status = _status;
+    if (status == null || !mounted) return;
+
+    final fullOffline = await _smartOfflineManager.isFullOfflinePrepared();
+    if (!mounted) return;
+
+    await showModalBottomSheet<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(
-              _status!.isConnected ? Icons.wifi : Icons.wifi_off,
-              color: _status!.isConnected ? Colors.green : Colors.red,
-              size: 20,
-            ),
-            const SizedBox(width: 8),
-            const Text('Estado de Conexión'),
-          ],
-        ),
-        content: SizedBox(
-          width: double.maxFinite,
-          // No se reutiliza el Container con borde/fondo blanco de
-          // `_buildDetailedWidget` (decorated=true): dentro del diálogo esa
-          // tarjeta es redundante, deja espacio sin usar y provocaba
-          // overflow por el padding duplicado. Aquí se pinta el contenido
-          // directamente, con el título del diálogo como cabecera.
-          child: _buildDetailedWidget(decorated: false),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
-          ),
-        ],
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  status.isOfflineModeEnabled
+                      ? 'Modo offline activo'
+                      : 'Modo en línea',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  status.isOfflineModeEnabled
+                      ? 'Las ventas y turnos se guardan en el dispositivo. '
+                          'Al volver a online se sincronizarán con el servidor.'
+                      : 'La app usa el servidor. Si pierdes conexión, puedes '
+                          'pasar a offline para seguir vendiendo.',
+                  style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+                ),
+                const SizedBox(height: 12),
+                _buildDetailedWidget(decorated: false),
+                if (fullOffline) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                    ),
+                    child: const Text(
+                      'Este dispositivo está preparado para full-offline. '
+                      'Solo un administrador puede volver a modo en línea '
+                      '(se eliminará esa preparación).',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                if (status.isOfflineModeEnabled)
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _switchToOnline();
+                    },
+                    icon: const Icon(Icons.cloud_done_outlined),
+                    label: const Text('Cambiar a modo en línea'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF4A90E2),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  )
+                else
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _switchToOffline();
+                    },
+                    icon: const Icon(Icons.cloud_off_outlined),
+                    label: const Text('Cambiar a modo offline'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange[700],
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cerrar'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
+  }
+
+  Future<void> _switchToOffline() async {
+    if (_isSwitching) return;
+    setState(() => _isSwitching = true);
+    try {
+      final error = await _smartOfflineManager.enableOfflineModeFromUi();
+      if (!mounted) return;
+      if (error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error), backgroundColor: Colors.orange),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Modo offline activado'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      await _loadStatus();
+    } finally {
+      if (mounted) setState(() => _isSwitching = false);
+    }
+  }
+
+  Future<void> _switchToOnline() async {
+    if (_isSwitching) return;
+    setState(() => _isSwitching = true);
+    try {
+      var clearFullOffline = false;
+      final fullOffline = await _smartOfflineManager.isFullOfflinePrepared();
+      if (fullOffline) {
+        final canAdmin =
+            await _smartOfflineManager.canDisableFullOfflineAsAdmin();
+        if (!canAdmin) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Solo el administrador puede desactivar el modo offline '
+                  'en este dispositivo.',
+                ),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+          return;
+        }
+        if (!mounted) return;
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder:
+              (ctx) => AlertDialog(
+                title: const Text('Volver a modo en línea'),
+                content: const Text(
+                  'Este dispositivo está preparado para trabajar 100% offline. '
+                  'Al continuar se desactivará el modo offline y se eliminará '
+                  'la preparación full-offline (habrá que volver a prepararla '
+                  'si quieres reactivarla). ¿Deseas continuar?',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('Cancelar'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('Sí, volver a online'),
+                  ),
+                ],
+              ),
+        );
+        if (confirmed != true) return;
+        clearFullOffline = true;
+      }
+
+      final error = await _smartOfflineManager.disableOfflineModeFromUi(
+        clearFullOfflinePrep: clearFullOffline,
+      );
+      if (!mounted) return;
+      if (error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error), backgroundColor: Colors.orange),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              clearFullOffline
+                  ? 'Modo en línea activado. Se sincronizarán los pendientes.'
+                  : 'Modo en línea activado. Sincronizando pendientes…',
+            ),
+            backgroundColor: Colors.blue,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+      await _loadStatus();
+    } finally {
+      if (mounted) setState(() => _isSwitching = false);
+    }
   }
 
   String _formatDateTime(DateTime dateTime) {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
-    
+
     if (difference.inMinutes < 1) {
       return 'Hace unos segundos';
     } else if (difference.inMinutes < 60) {
@@ -384,7 +568,7 @@ class _ConnectionStatusWidgetState extends State<ConnectionStatusWidget> {
   }
 }
 
-/// Widget simple para mostrar solo el ícono de estado
+/// Widget simple para mostrar solo el ícono de estado (también tappable).
 class ConnectionStatusIcon extends StatefulWidget {
   const ConnectionStatusIcon({Key? key}) : super(key: key);
 
@@ -393,68 +577,8 @@ class ConnectionStatusIcon extends StatefulWidget {
 }
 
 class _ConnectionStatusIconState extends State<ConnectionStatusIcon> {
-  final SmartOfflineManager _smartOfflineManager = SmartOfflineManager();
-  StreamSubscription<SmartOfflineEvent>? _subscription;
-  Timer? _refreshTimer;
-  bool _isConnected = true;
-  bool _isOfflineMode = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadStatus();
-    _setupListener();
-    // Red de seguridad: ver comentario en _ConnectionStatusWidgetState.
-    _refreshTimer = Timer.periodic(
-      const Duration(seconds: 10),
-      (_) => _loadStatus(),
-    );
-  }
-
-  @override
-  void dispose() {
-    _subscription?.cancel();
-    _refreshTimer?.cancel();
-    super.dispose();
-  }
-
-  Future<void> _loadStatus() async {
-    try {
-      final status = await _smartOfflineManager.getStatus();
-      if (mounted) {
-        setState(() {
-          _isConnected = status.isConnected;
-          _isOfflineMode = status.isOfflineModeEnabled;
-        });
-      }
-    } catch (e) {
-      print('❌ Error cargando estado: $e');
-    }
-  }
-
-  void _setupListener() {
-    _subscription = _smartOfflineManager.eventStream.listen(
-      (event) => _loadStatus(),
-      onError: (error) => print('❌ Error en listener: $error'),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    IconData icon;
-    Color color;
-
-    if (_isOfflineMode) {
-      icon = Icons.cloud_off;
-      color = Colors.orange;
-    } else if (_isConnected) {
-      icon = Icons.wifi;
-      color = Colors.green;
-    } else {
-      icon = Icons.wifi_off;
-      color = Colors.red;
-    }
-
-    return Icon(icon, color: color, size: 20);
+    return const ConnectionStatusWidget(showDetails: true, compact: true);
   }
 }

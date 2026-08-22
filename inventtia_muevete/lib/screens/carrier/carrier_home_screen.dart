@@ -11,6 +11,7 @@ import '../../providers/theme_provider.dart';
 import '../../widgets/carga_fechas_section.dart';
 import '../../widgets/carga_mercancia_equipo_section.dart';
 import '../../widgets/route_map_widget.dart';
+import '../../widgets/shared_filter_widgets.dart';
 import '../common/unified_profile_screen.dart';
 
 class CarrierHomeScreen extends StatefulWidget {
@@ -139,6 +140,40 @@ class CargasDisponiblesTabState extends State<CargasDisponiblesTab> {
     setState(() => _page = 0);
   }
 
+  bool get _hasActiveFilters =>
+      _ciudadOrigenCtrl.text.trim().isNotEmpty ||
+      _ciudadDestinoCtrl.text.trim().isNotEmpty ||
+      _pesoMaxCtrl.text.trim().isNotEmpty ||
+      _precioMaxCtrl.text.trim().isNotEmpty ||
+      _distMaxCtrl.text.trim().isNotEmpty ||
+      _tipoFiltro != null ||
+      _tipoEquipoFiltro != null ||
+      _tipoMercanciaFiltro != null ||
+      _opcionEquipoExtraFiltro != null ||
+      _soloRefrigeracion ||
+      _soloSeguro ||
+      _soloPrivadas ||
+      _fechaRecogidaDesde != null;
+
+  void _clearFilters() {
+    _ciudadOrigenCtrl.clear();
+    _ciudadDestinoCtrl.clear();
+    _pesoMaxCtrl.clear();
+    _precioMaxCtrl.clear();
+    _distMaxCtrl.clear();
+    setState(() {
+      _tipoFiltro = null;
+      _tipoEquipoFiltro = null;
+      _tipoMercanciaFiltro = null;
+      _opcionEquipoExtraFiltro = null;
+      _soloRefrigeracion = false;
+      _soloSeguro = false;
+      _soloPrivadas = false;
+      _fechaRecogidaDesde = null;
+      _page = 0;
+    });
+  }
+
   bool _applyFilter(CargaModel c) {
     final qO = _ciudadOrigenCtrl.text.trim().toLowerCase();
     if (qO.isNotEmpty &&
@@ -202,42 +237,31 @@ class CargasDisponiblesTabState extends State<CargasDisponiblesTab> {
 
     return Column(
       children: [
-        // ── Toolbar ────────────────────────────────────────────────────────
-        Material(
-          color: cardBg,
-          elevation: 1,
-          child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
+        Row(
+          children: [
+            Expanded(
+              child: FilterToolbar(
+                isDark: isDark,
+                summary:
                     '${all.length} de ${provider.cargasDisponibles.length} cargas',
-                    style: TextStyle(fontSize: 13, color: textSecondary),
-                  ),
-                ),
-                TextButton.icon(
-                  onPressed: () =>
-                      setState(() => _showFiltros = !_showFiltros),
-                  icon: const Icon(Icons.tune_outlined, size: 18),
-                  label: Text(_showFiltros ? 'Ocultar' : 'Filtros'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppTheme.primaryColor,
-                    padding: EdgeInsets.zero,
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.refresh_outlined, size: 20),
-                  onPressed: () =>
-                      context.read<CargaProvider>().loadCargasDisponibles(),
-                  color: textSecondary,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                ),
-              ],
+                expanded: _showFiltros,
+                hasActiveFilters: _hasActiveFilters,
+                onToggle: () =>
+                    setState(() => _showFiltros = !_showFiltros),
+                onClear: _clearFilters,
+              ),
             ),
-          ),
+            Material(
+              color: isDark ? AppTheme.darkCard : Colors.white,
+              child: IconButton(
+                icon: const Icon(Icons.refresh_outlined, size: 20),
+                tooltip: 'Actualizar',
+                onPressed: () =>
+                    context.read<CargaProvider>().loadCargasDisponibles(),
+                color: textSecondary,
+              ),
+            ),
+          ],
         ),
 
         // ── Filtros expandibles ─────────────────────────────────────────────
@@ -293,24 +317,8 @@ class CargasDisponiblesTabState extends State<CargasDisponiblesTab> {
                   }),
                   onSwapOrigenDestino: _swapOrigenDestino,
                   onApply: () => setState(() => _page = 0),
-                  onClear: () {
-                    _ciudadOrigenCtrl.clear();
-                    _ciudadDestinoCtrl.clear();
-                    _pesoMaxCtrl.clear();
-                    _precioMaxCtrl.clear();
-                    _distMaxCtrl.clear();
-                    setState(() {
-                      _tipoFiltro = null;
-                      _tipoEquipoFiltro = null;
-                      _tipoMercanciaFiltro = null;
-                      _opcionEquipoExtraFiltro = null;
-                      _soloRefrigeracion = false;
-                      _soloSeguro = false;
-                      _soloPrivadas = false;
-                      _fechaRecogidaDesde = null;
-                      _page = 0;
-                    });
-                  },
+                  onClear: _clearFilters,
+                  onFieldChanged: () => setState(() => _page = 0),
                 )
               : const SizedBox.shrink(),
         ),
@@ -1044,6 +1052,7 @@ class _FilterPanel extends StatelessWidget {
   final VoidCallback onSwapOrigenDestino;
   final VoidCallback onApply;
   final VoidCallback onClear;
+  final VoidCallback onFieldChanged;
 
   const _FilterPanel({
     required this.isDark,
@@ -1071,6 +1080,7 @@ class _FilterPanel extends StatelessWidget {
     required this.onSwapOrigenDestino,
     required this.onApply,
     required this.onClear,
+    required this.onFieldChanged,
   });
 
   static const _equipoOpciones = [
@@ -1087,240 +1097,224 @@ class _FilterPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textPrimary = isDark ? Colors.white : const Color(0xFF1A1D27);
-    final bg = isDark ? AppTheme.darkCard : Colors.grey[50]!;
-    const fieldDeco = InputDecoration(
-      isDense: true,
-      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-    );
-
-    return Material(
-      color: bg,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Origen / Destino con botón swap ──────────────────────────
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: ciudadOrigenCtrl,
-                    style: TextStyle(color: textPrimary, fontSize: 13),
-                    decoration: fieldDeco.copyWith(hintText: 'Ciudad origen'),
-                  ),
+    return FilterPanelContainer(
+      isDark: isDark,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: SharedFilterField(
+                  controller: ciudadOrigenCtrl,
+                  label: 'Ciudad origen',
+                  isDark: isDark,
+                  onChanged: onFieldChanged,
+                  icon: Icons.trip_origin,
                 ),
-                IconButton(
-                  tooltip: 'Intercambiar origen y destino',
-                  icon: const Icon(Icons.swap_horiz_outlined),
-                  color: AppTheme.primaryColor,
-                  iconSize: 22,
-                  onPressed: onSwapOrigenDestino,
-                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                  padding: EdgeInsets.zero,
+              ),
+              IconButton(
+                tooltip: 'Intercambiar origen y destino',
+                icon: const Icon(Icons.swap_horiz_rounded),
+                color: AppTheme.primaryColor,
+                onPressed: onSwapOrigenDestino,
+              ),
+              Expanded(
+                child: SharedFilterField(
+                  controller: ciudadDestinoCtrl,
+                  label: 'Ciudad destino',
+                  isDark: isDark,
+                  onChanged: onFieldChanged,
+                  icon: Icons.flag_outlined,
                 ),
-                Expanded(
-                  child: TextField(
-                    controller: ciudadDestinoCtrl,
-                    style: TextStyle(color: textPrimary, fontSize: 13),
-                    decoration: fieldDeco.copyWith(hintText: 'Ciudad destino'),
-                  ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SharedFilterDropdown<String>(
+            label: 'Tipo de carga',
+            value: tipoFiltro,
+            isDark: isDark,
+            onChanged: onTipoChanged,
+            icon: Icons.local_shipping_outlined,
+            items: const [
+              DropdownMenuItem(value: 'ftl', child: Text('Camión Completo')),
+              DropdownMenuItem(value: 'ltl', child: Text('Parcial')),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: SharedFilterDropdown<String>(
+                  label: 'Equipo',
+                  value: tipoEquipoFiltro,
+                  isDark: isDark,
+                  onChanged: onEquipoChanged,
+                  items: _equipoOpciones
+                      .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                      .toList(),
                 ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            // ── Tipo Camión Completo / Parcial ────────────────────────────
-            DropdownButtonFormField<String>(
-              value: tipoFiltro,
-              dropdownColor: isDark ? AppTheme.darkCard : Colors.white,
-              style: TextStyle(color: textPrimary, fontSize: 13),
-              decoration: fieldDeco.copyWith(hintText: 'Tipo de carga'),
-              items: const [
-                DropdownMenuItem(value: null, child: Text('Todos')),
-                DropdownMenuItem(value: 'ftl', child: Text('Camión Completo')),
-                DropdownMenuItem(value: 'ltl', child: Text('Parcial')),
-              ],
-              onChanged: onTipoChanged,
-            ),
-            const SizedBox(height: 8),
-            // ── Equipo principal / Mercancía ──────────────────────────────
-            Row(
-              children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    value: tipoEquipoFiltro,
-                    dropdownColor: isDark ? AppTheme.darkCard : Colors.white,
-                    style: TextStyle(color: textPrimary, fontSize: 13),
-                    decoration: fieldDeco.copyWith(hintText: 'Equipo'),
-                    items: [
-                      const DropdownMenuItem(value: null, child: Text('Todos')),
-                      ..._equipoOpciones.map((e) =>
-                          DropdownMenuItem(value: e, child: Text(e))),
-                    ],
-                    onChanged: onEquipoChanged,
-                  ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: SharedFilterDropdown<String>(
+                  label: 'Mercancía',
+                  value: tipoMercanciaFiltro,
+                  isDark: isDark,
+                  onChanged: onMercanciaChanged,
+                  items: _mercanciaOpciones
+                      .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                      .toList(),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    value: tipoMercanciaFiltro,
-                    dropdownColor: isDark ? AppTheme.darkCard : Colors.white,
-                    style: TextStyle(color: textPrimary, fontSize: 13),
-                    decoration: fieldDeco.copyWith(hintText: 'Mercancía'),
-                    items: [
-                      const DropdownMenuItem(value: null, child: Text('Todas')),
-                      ..._mercanciaOpciones.map((e) =>
-                          DropdownMenuItem(value: e, child: Text(e))),
-                    ],
-                    onChanged: onMercanciaChanged,
-                  ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SharedFilterDropdown<String>(
+            label: 'Opción equipo extra',
+            value: opcionEquipoExtraFiltro,
+            isDark: isDark,
+            onChanged: onOpcionEquipoExtraChanged,
+            items: _equipoExtraOpciones
+                .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                .toList(),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: SharedFilterField(
+                  controller: pesoMaxCtrl,
+                  label: 'Peso máx (kg)',
+                  isDark: isDark,
+                  onChanged: onFieldChanged,
+                  icon: Icons.scale_outlined,
                 ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            // ── Opción equipo extra ───────────────────────────────────────
-            DropdownButtonFormField<String>(
-              value: opcionEquipoExtraFiltro,
-              dropdownColor: isDark ? AppTheme.darkCard : Colors.white,
-              style: TextStyle(color: textPrimary, fontSize: 13),
-              decoration: fieldDeco.copyWith(hintText: 'Opción equipo extra'),
-              items: [
-                const DropdownMenuItem(value: null, child: Text('Cualquiera')),
-                ..._equipoExtraOpciones.map((e) =>
-                    DropdownMenuItem(value: e, child: Text(e))),
-              ],
-              onChanged: onOpcionEquipoExtraChanged,
-            ),
-            const SizedBox(height: 8),
-            // ── Numéricos ─────────────────────────────────────────────────
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: pesoMaxCtrl,
-                    keyboardType: TextInputType.number,
-                    style: TextStyle(color: textPrimary, fontSize: 13),
-                    decoration: fieldDeco.copyWith(hintText: 'Peso máx (kg)'),
-                  ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: SharedFilterField(
+                  controller: precioMaxCtrl,
+                  label: 'Precio máx',
+                  isDark: isDark,
+                  onChanged: onFieldChanged,
+                  icon: Icons.attach_money,
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: precioMaxCtrl,
-                    keyboardType: TextInputType.number,
-                    style: TextStyle(color: textPrimary, fontSize: 13),
-                    decoration: fieldDeco.copyWith(hintText: 'Precio máx'),
-                  ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: SharedFilterField(
+                  controller: distMaxCtrl,
+                  label: 'Dist. máx (km)',
+                  isDark: isDark,
+                  onChanged: onFieldChanged,
+                  icon: Icons.straighten,
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: distMaxCtrl,
-                    keyboardType: TextInputType.number,
-                    style: TextStyle(color: textPrimary, fontSize: 13),
-                    decoration: fieldDeco.copyWith(hintText: 'Dist. máx (km)'),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            // ── Fecha recogida desde ──────────────────────────────────────
-            InkWell(
-              onTap: () async {
-                final picked = await showDatePicker(
-                  context: context,
-                  initialDate: fechaRecogidaDesde ?? DateTime.now(),
-                  firstDate: DateTime.now().subtract(const Duration(days: 1)),
-                  lastDate: DateTime.now().add(const Duration(days: 365)),
-                );
-                onFechaRecogidaDesdeChanged(picked);
-              },
-              child: InputDecorator(
-                decoration: fieldDeco.copyWith(
-                  hintText: 'Recogida desde',
-                  prefixIcon: const Icon(Icons.calendar_today_outlined, size: 16),
-                  suffixIcon: fechaRecogidaDesde != null
-                      ? GestureDetector(
-                          onTap: () => onFechaRecogidaDesdeChanged(null),
-                          child: const Icon(Icons.clear, size: 16),
-                        )
-                      : null,
-                ),
-                child: Text(
-                  fechaRecogidaDesde != null
-                      ? '${fechaRecogidaDesde!.day.toString().padLeft(2, '0')}/'
-                          '${fechaRecogidaDesde!.month.toString().padLeft(2, '0')}/'
-                          '${fechaRecogidaDesde!.year}'
-                      : '',
-                  style: TextStyle(color: textPrimary, fontSize: 13),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          InkWell(
+            onTap: () async {
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: fechaRecogidaDesde ?? DateTime.now(),
+                firstDate: DateTime.now().subtract(const Duration(days: 1)),
+                lastDate: DateTime.now().add(const Duration(days: 365)),
+              );
+              onFechaRecogidaDesdeChanged(picked);
+            },
+            borderRadius: BorderRadius.circular(12),
+            child: InputDecorator(
+              decoration: InputDecoration(
+                labelText: 'Recogida desde',
+                isDense: true,
+                filled: true,
+                fillColor: isDark ? AppTheme.darkCard : Colors.white,
+                prefixIcon: const Icon(Icons.calendar_today_outlined, size: 18),
+                suffixIcon: fechaRecogidaDesde != null
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 16),
+                        onPressed: () => onFechaRecogidaDesdeChanged(null),
+                      )
+                    : null,
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+              child: Text(
+                fechaRecogidaDesde != null
+                    ? '${fechaRecogidaDesde!.day.toString().padLeft(2, '0')}/'
+                        '${fechaRecogidaDesde!.month.toString().padLeft(2, '0')}/'
+                        '${fechaRecogidaDesde!.year}'
+                    : 'Seleccionar fecha',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13,
+                  color: isDark ? Colors.white : const Color(0xFF1A1D27),
                 ),
               ),
             ),
-            const SizedBox(height: 4),
-            // ── Checkboxes ────────────────────────────────────────────────
-            Row(
-              children: [
-                Expanded(
-                  child: CheckboxListTile(
-                    value: soloRefrigeracion,
-                    onChanged: (v) => onRefChanged(v ?? false),
-                    title: Text('Refrigeración',
-                        style: TextStyle(color: textPrimary, fontSize: 12)),
-                    activeColor: AppTheme.primaryColor,
-                    controlAffinity: ListTileControlAffinity.leading,
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                  ),
-                ),
-                Expanded(
-                  child: CheckboxListTile(
-                    value: soloSeguro,
-                    onChanged: (v) => onSeguroChanged(v ?? false),
-                    title: Text('Seguro',
-                        style: TextStyle(color: textPrimary, fontSize: 12)),
-                    activeColor: AppTheme.primaryColor,
-                    controlAffinity: ListTileControlAffinity.leading,
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                  ),
-                ),
-                Expanded(
-                  child: CheckboxListTile(
-                    value: soloPrivadas,
-                    onChanged: (v) => onSoloPrivadasChanged(v ?? false),
-                    title: Text('Privadas',
-                        style: TextStyle(color: textPrimary, fontSize: 12)),
-                    activeColor: AppTheme.primaryColor,
-                    controlAffinity: ListTileControlAffinity.leading,
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                  ),
-                ),
-              ],
-            ),
-            // ── Botones ───────────────────────────────────────────────────
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              SharedFilterChip(
+                label: 'Refrigeración',
+                value: soloRefrigeracion ? true : null,
+                onChanged: (v) => onRefChanged(v == true),
+                isDark: isDark,
+              ),
+              SharedFilterChip(
+                label: 'Seguro',
+                value: soloSeguro ? true : null,
+                onChanged: (v) => onSeguroChanged(v == true),
+                isDark: isDark,
+              ),
+              SharedFilterChip(
+                label: 'Privadas',
+                value: soloPrivadas ? true : null,
+                onChanged: (v) => onSoloPrivadasChanged(v == true),
+                isDark: isDark,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
                   onPressed: onClear,
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(44),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
                   child: const Text('Limpiar'),
                 ),
-                const SizedBox(width: 8),
-                ElevatedButton.icon(
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton.icon(
                   onPressed: onApply,
                   icon: const Icon(Icons.search, size: 16),
-                  label: const Text('Buscar'),
+                  label: Text('Buscar',
+                      style: GoogleFonts.plusJakartaSans(
+                          fontWeight: FontWeight.w700)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.primaryColor,
                     foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(44),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
-              ],
-            ),
-          ],
-        ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

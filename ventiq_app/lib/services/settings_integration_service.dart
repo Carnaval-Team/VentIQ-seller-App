@@ -34,6 +34,15 @@ class SettingsIntegrationService {
     print('🚀 Inicializando SettingsIntegrationService...');
 
     try {
+      final hasSession = await _userPreferencesService.hasValidSession();
+      if (!hasSession) {
+        print(
+          '🚫 SettingsIntegrationService: sin sesión válida — '
+          'no se inicializan servicios de sync',
+        );
+        return;
+      }
+
       // Inicializar el gestor inteligente
       await _smartOfflineManager.initialize();
 
@@ -84,6 +93,12 @@ class SettingsIntegrationService {
             break;
           case SmartOfflineEventType.offlineModeAutoDeactivated:
             eventType = SettingsIntegrationEventType.offlineModeAutoDeactivated;
+            break;
+          case SmartOfflineEventType.offlineModeManuallyEnabled:
+            eventType = SettingsIntegrationEventType.offlineModeManuallyEnabled;
+            break;
+          case SmartOfflineEventType.offlineModeManuallyDisabled:
+            eventType = SettingsIntegrationEventType.offlineModeManuallyDisabled;
             break;
           case SmartOfflineEventType.connectionRestoredWhileOffline:
             eventType = SettingsIntegrationEventType.connectionRestored;
@@ -140,28 +155,12 @@ class SettingsIntegrationService {
 
     try {
       if (enabled) {
-        // El usuario activó el modo offline manualmente
         await _smartOfflineManager.onOfflineModeManuallyEnabled();
-
-        _eventController.add(
-          SettingsIntegrationEvent(
-            type: SettingsIntegrationEventType.offlineModeManuallyEnabled,
-            timestamp: DateTime.now(),
-            message: 'Modo offline activado manualmente',
-          ),
-        );
       } else {
-        // El usuario desactivó el modo offline manualmente
         await _smartOfflineManager.onOfflineModeManuallyDisabled();
-
-        _eventController.add(
-          SettingsIntegrationEvent(
-            type: SettingsIntegrationEventType.offlineModeManuallyDisabled,
-            timestamp: DateTime.now(),
-            message: 'Modo offline desactivado manualmente',
-          ),
-        );
       }
+      // El listener de SmartOfflineManager reenvía el evento al eventStream
+      // de integración (offlineModeManuallyEnabled/Disabled).
     } catch (e) {
       print('❌ Error manejando cambio de modo offline: $e');
 

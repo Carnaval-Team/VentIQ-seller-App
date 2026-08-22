@@ -179,8 +179,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   void _startRequestsPolling() {
     _requestsPollingTimer?.cancel();
-    _requestsPollingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted && _isOnline) _loadNearbyRequests();
+    _requestsPollingTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (!mounted) return;
+      if (_isOnline) _loadNearbyRequests();
+      if (_confirmedTripData != null) _refreshActiveTripBanner();
     });
   }
 
@@ -195,6 +197,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       // Sync any pending offline completions
       CompletionSyncService.syncPendingCompletions();
       if (_isOnline) _loadNearbyRequests();
+      _refreshActiveTripBanner();
     }
   }
 
@@ -354,13 +357,83 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     }
   }
 
-  void _goToActiveRide() {
+  Future<void> _goToActiveRide() async {
     if (_confirmedTripData == null) return;
     final data = Map<String, dynamic>.from(_confirmedTripData!);
     setState(() => _confirmedTripData = null);
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => ActiveRideScreen(tripData: data)));
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => ActiveRideScreen(tripData: data)),
+    );
+    if (mounted) await _refreshActiveTripBanner();
+  }
+
+  /// Clears the confirmed-trip banner if the viaje is already completed.
+  Future<void> _refreshActiveTripBanner() async {
+    if (!mounted) return;
+    final driverProfile = context.read<AuthProvider>().driverProfile;
+    final driverId = driverProfile?['id'] as int?;
+    if (driverId == null) {
+      setState(() => _confirmedTripData = null);
+      return;
+    }
+    final activeTrip = await _driverService.getActiveTrip(driverId);
+    if (!mounted) return;
+    if (activeTrip == null) {
+      setState(() => _confirmedTripData = null);
+    }
+  }
+
+  Future<void> _confirmAndSignOut() async {
+    final isDark = context.read<ThemeProvider>().isDark;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface(isDark),
+        title: Text(
+          'Cerrar sesión',
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w700,
+            color: AppTheme.textPrimary(isDark),
+          ),
+        ),
+        content: Text(
+          '¿Seguro que deseas cerrar sesión?',
+          style: GoogleFonts.plusJakartaSans(
+            color: AppTheme.textSecondary(isDark),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              'Cancelar',
+              style: GoogleFonts.plusJakartaSans(
+                color: AppTheme.textTertiary(isDark),
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
+            child: Text(
+              'Cerrar sesión',
+              style: GoogleFonts.plusJakartaSans(
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    if (_isOnline) {
+      try {
+        await _toggleOnlineStatus();
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    await context.read<AuthProvider>().signOut();
   }
 
   Future<void> _toggleOnlineStatus() async {
@@ -815,11 +888,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       dev.log('[CheckActiveRide] Error enriching: $e', name: 'DriverHome');
     }
 
-    if (mounted) {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => ActiveRideScreen(tripData: tripData)),
-      );
-    }
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => ActiveRideScreen(tripData: tripData)),
+    );
+    if (mounted) await _refreshActiveTripBanner();
   }
 
   void _onNavTap(int index) {
@@ -834,7 +907,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             .push(
               MaterialPageRoute(builder: (_) => const IncomingRequestsScreen()),
             )
-            .then((_) {
+            .then((_) async {
+              if (!mounted) return;
+              await _refreshActiveTripBanner();
               if (mounted && _isOnline) _loadNearbyRequests();
             });
         return;
@@ -1233,7 +1308,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                         ],
                       ),
                     ),
-                    // Online toggle
+                    // Online toggle + logout
                     _isTogglingStatus
                         ? const SizedBox(
                             width: 24,
@@ -1257,6 +1332,21 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                 ? AppTheme.error.withValues(alpha: 0.3)
                                 : Colors.grey.withValues(alpha: 0.3),
                           ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      tooltip: 'Cerrar sesión',
+                      onPressed: _confirmAndSignOut,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 36,
+                        minHeight: 36,
+                      ),
+                      icon: Icon(
+                        Icons.logout_rounded,
+                        size: 22,
+                        color: AppTheme.error,
+                      ),
+                    ),
                   ],
                 ),
               ),
