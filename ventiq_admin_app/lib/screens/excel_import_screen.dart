@@ -148,7 +148,7 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
       ),
-      drawer: const AdminDrawer(),
+      endDrawer: const AdminDrawer(),
       body: Theme(
         data: Theme.of(context).copyWith(
           colorScheme: Theme.of(

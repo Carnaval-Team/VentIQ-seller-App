@@ -33,6 +33,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   bool _permiteVenderAunSinDisponibilidad = false;
   bool _noSolicitarCliente = false;
   bool _allowDiscountOnVendedor = false;
+  bool _vendedoresPuedenCrearCxc = false;
   bool _allowPrintPending = false;
   bool _allowSellerMakeOrderModifications = false;
   bool _precioVentaRegidoPorUsd = false;
@@ -453,6 +454,8 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         _noSolicitarCliente = config['no_solicitar_cliente'] ?? false;
         _allowDiscountOnVendedor =
             config['allow_discount_on_vendedor'] ?? false;
+        _vendedoresPuedenCrearCxc =
+            config['vendedores_pueden_crear_cxc'] ?? false;
         _allowPrintPending = config['permitir_imprimir_pendientes'] ?? false;
         _allowSellerMakeOrderModifications =
             config['allow_seller_make_order_modifications'] ?? false;
@@ -605,6 +608,57 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
 
       setState(() {
         _allowDiscountOnVendedor = !value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuración: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateVendedoresPuedenCrearCxcSetting(bool value) async {
+    if (_storeId == null) return;
+
+    try {
+      print(
+        '🔧 Actualizando configuración de vendedores pueden crear CxC: $value',
+      );
+
+      await StoreConfigService.updateVendedoresPuedenCrearCxc(
+        _storeId!,
+        value,
+      );
+
+      setState(() {
+        _vendedoresPuedenCrearCxc = value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              value
+                  ? 'Los vendedores ahora pueden crear cuentas por cobrar'
+                  : 'Solo gerente/supervisor pueden crear cuentas por cobrar',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+
+      print('✅ Configuración de vendedores pueden crear CxC actualizada');
+    } catch (e) {
+      print(
+        '❌ Error al actualizar configuración de vendedores pueden crear CxC: $e',
+      );
+
+      setState(() {
+        _vendedoresPuedenCrearCxc = !value;
       });
 
       if (mounted) {
@@ -1596,6 +1650,20 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                     : '🔒 Los vendedores no pueden aplicar descuentos manuales (solo precios configurados)',
             value: _allowDiscountOnVendedor,
             onChanged: _updateAllowDiscountOnVendedorSetting,
+          ),
+
+          const SizedBox(height: 16),
+
+          _buildConfigCard(
+            icon: Icons.account_balance_wallet_outlined,
+            iconColor: Colors.brown,
+            title: 'Vendedores Pueden Crear Cuentas por Cobrar',
+            subtitle:
+                _vendedoresPuedenCrearCxc
+                    ? '✅ Cualquier vendedor puede registrar ventas a pago pendiente (fiado) desde el TPV'
+                    : '🔒 Solo gerente/supervisor pueden registrar ventas a pago pendiente',
+            value: _vendedoresPuedenCrearCxc,
+            onChanged: _updateVendedoresPuedenCrearCxcSetting,
           ),
 
           const SizedBox(height: 16),

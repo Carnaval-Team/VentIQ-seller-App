@@ -40,6 +40,7 @@ class StoreConfigService {
                   'tickets_a_imprimir': ['cliente', 'almacen'],
                   'copias_por_ticket': {'cliente': 1, 'almacen': 1},
                   'autocompletar_cantidad_real_conteo': false,
+                  'vendedores_pueden_crear_cxc': false,
                 })
                 .select()
                 .single();
@@ -79,6 +80,7 @@ class StoreConfigService {
     List<String>? ticketsAImprimir,
     Map<String, int>? copiasPorTicket,
     bool? autocompletarCantidadRealConteo,
+    bool? vendedoresPuedenCrearCxc,
     bool? modoRestaurante,
     bool? cocinaActiva,
   }) async {
@@ -226,6 +228,12 @@ class StoreConfigService {
         );
       }
 
+      if (vendedoresPuedenCrearCxc != null) {
+        updateData['vendedores_pueden_crear_cxc'] = vendedoresPuedenCrearCxc;
+        print(
+          '  - vendedores_pueden_crear_cxc: $vendedoresPuedenCrearCxc',
+        );
+      }
       if (modoRestaurante != null) {
         updateData['modo_restaurante'] = modoRestaurante;
         print('  - modo_restaurante: $modoRestaurante');
@@ -628,6 +636,27 @@ class StoreConfigService {
     Map<String, int> value,
   ) async {
     await updateStoreConfig(storeId, copiasPorTicket: value);
+  }
+
+  /// Obtiene si los vendedores pueden crear ventas a pago pendiente (cuentas
+  /// por cobrar) libremente. Si es false, solo gerente/supervisor pueden
+  /// hacerlo desde el TPV.
+  static Future<bool> getVendedoresPuedenCrearCxc(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config['vendedores_pueden_crear_cxc'] ?? false;
+    } catch (e) {
+      print('❌ Error al obtener vendedores_pueden_crear_cxc: $e');
+      return false;
+    }
+  }
+
+  /// Actualiza vendedores_pueden_crear_cxc
+  static Future<void> updateVendedoresPuedenCrearCxc(
+    int storeId,
+    bool value,
+  ) async {
+    await updateStoreConfig(storeId, vendedoresPuedenCrearCxc: value);
   }
 
   /// Obtiene el valor de autocompletar_cantidad_real_conteo

@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import '../models/order.dart';
 import '../models/mesa.dart';
+import '../models/payment_method.dart';
 import '../models/bank_sms_payment.dart';
 import '../services/order_service.dart';
 import '../services/user_preferences_service.dart';
@@ -59,6 +60,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   String? _fotoOperacionNombre;
   String? _fotoOperacionMime;
   Mesa? _mesaSeleccionada; // Mesa elegida en modo restaurante
+  // Cliente existente elegido desde el buscador de Cuentas por Cobrar (si es
+  // null, se crea/encuentra un cliente por nombre como en el flujo normal).
+  int? _selectedExistingClientId;
   List<Mesa> _mesasDisponibles = []; // Cache de mesas activas para el selector
   Map<int, List<Map<String, dynamic>>> _productPromotions =
       {}; // productId -> promotions
@@ -261,7 +265,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           }
           // Y disparamos la carga de mesas disponibles para el selector.
           _cargarMesasDisponibles();
-        } else if (_noSolicitarCliente) {
+        } else if (_noSolicitarCliente && !_tienePagoPendiente) {
           _buyerNameController.text = 'Cliente';
         }
 
@@ -639,8 +643,72 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Widget _buildPaymentBreakdownSection() {
-    final breakdown = paymentBreakdown;
+    // El monto en "Pago Pendiente" no es un pago real: se excluye del
+    // desglose normal y se informa aparte como cuenta por cobrar, para no
+    // confundirlo con dinero efectivamente cobrado.
+    final pagoPendienteLabel = PaymentMethod.pagoPendiente().displayName;
+    final montoPendiente = paymentBreakdown[pagoPendienteLabel] ?? 0.0;
+    final breakdown = Map<String, double>.from(paymentBreakdown)
+      ..remove(pagoPendienteLabel);
 
+    if (breakdown.isEmpty && montoPendiente > 0) {
+      // Toda la orden queda como cuenta por cobrar: solo mostramos el aviso.
+      return _buildPagoPendienteNotice(montoPendiente, onlyNotice: true);
+    }
+
+    return Column(
+      children: [
+        _buildPaymentBreakdownDetails(breakdown),
+        if (montoPendiente > 0) ...[
+          const SizedBox(height: 12),
+          _buildPagoPendienteNotice(montoPendiente),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildPagoPendienteNotice(double monto, {bool onlyNotice = false}) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFF59E0B)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.account_balance_wallet, color: Color(0xFFB45309)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  onlyNotice
+                      ? 'Esta orden quedará registrada como Cuenta por Cobrar'
+                      : 'Parte de esta orden quedará como Cuenta por Cobrar',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFB45309),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Monto pendiente: \$${monto.toStringAsFixed(2)}. No se cobra ahora; '
+                  'queda como saldo a favor de la tienda contra el cliente.',
+                  style: TextStyle(fontSize: 12, color: Colors.brown[800]),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPaymentBreakdownDetails(Map<String, double> breakdown) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -958,9 +1026,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
+  /// `true` si algún producto de la orden se paga con "Pago Pendiente"
+  /// (cuenta por cobrar).
+  bool get _tienePagoPendiente => widget.order.items.any(
+        (item) => item.paymentMethod?.esPagoPendiente ?? false,
+      );
+
   Widget _buildBuyerInfoSection() {
-    // Si no se solicita cliente, ocultar esta sección
-    if (_noSolicitarCliente) {
+    final tienePagoPendiente = _tienePagoPendiente;
+
+    // Si no se solicita cliente, ocultar esta sección — salvo que la venta
+    // tenga "Pago Pendiente": ahí el cliente es obligatorio sí o sí.
+    if (_noSolicitarCliente && !tienePagoPendiente) {
       return const SizedBox.shrink();
     }
 
@@ -969,7 +1046,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!),
+        border: Border.all(
+          color: tienePagoPendiente
+              ? const Color(0xFFF59E0B)
+              : Colors.grey[300]!,
+          width: tienePagoPendiente ? 1.5 : 1,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -982,11 +1064,94 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               color: Color(0xFF1F2937),
             ),
           ),
+          if (tienePagoPendiente) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFBEB),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFF59E0B)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.account_balance_wallet,
+                    color: Color(0xFFB45309),
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Esta venta queda como cuenta por cobrar. Selecciona un '
+                      'cliente existente o crea uno nuevo.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.brown[800],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (_selectedExistingClientId != null)
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.green[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.green[300]!),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.check_circle, color: Colors.green[700], size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Cliente existente: ${_buyerNameController.text}',
+                        style: TextStyle(fontSize: 13, color: Colors.green[900]),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _selectedExistingClientId = null;
+                          _buyerNameController.clear();
+                          _buyerPhoneController.clear();
+                        });
+                      },
+                      child: const Text('Cambiar'),
+                    ),
+                  ],
+                ),
+              )
+            else
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _showClientPickerDialog,
+                  icon: const Icon(Icons.search),
+                  label: const Text('Buscar cliente con cuenta por cobrar'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFB45309),
+                    side: const BorderSide(color: Color(0xFFF59E0B)),
+                  ),
+                ),
+              ),
+            const SizedBox(height: 12),
+          ],
           const SizedBox(height: 12),
           TextFormField(
             controller: _buyerNameController,
+            enabled: _selectedExistingClientId == null,
             decoration: InputDecoration(
-              labelText: 'Nombre completo *',
+              labelText: _selectedExistingClientId != null
+                  ? 'Nombre completo (cliente seleccionado)'
+                  : tienePagoPendiente
+                      ? 'O escribe el nombre para crear un cliente nuevo *'
+                      : 'Nombre completo *',
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
@@ -1005,6 +1170,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           const SizedBox(height: 12),
           TextFormField(
             controller: _buyerPhoneController,
+            enabled: _selectedExistingClientId == null,
             keyboardType: TextInputType.phone,
             decoration: InputDecoration(
               labelText: 'Teléfono (opcional)',
@@ -1024,6 +1190,42 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         ],
       ),
     );
+  }
+
+  /// Abre un buscador de clientes existentes (pensado para elegir a quién
+  /// se le va a fiar la venta). Al seleccionar uno, rellena nombre/teléfono
+  /// y guarda su ID para usarlo directamente al crear la venta (sin pasar
+  /// por la creación/búsqueda por nombre).
+  Future<void> _showClientPickerDialog() async {
+    final selected = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => _ClientPickerSheet(
+        initialQuery: _buyerNameController.text.trim(),
+      ),
+    );
+    if (selected == null || !mounted) return;
+
+    if (selected['createNew'] == true) {
+      setState(() {
+        _selectedExistingClientId = null;
+      });
+      return;
+    }
+
+    final bloqueado = selected['bloqueado_cxc'] == true;
+    if (bloqueado) {
+      _showErrorMessage(
+        'Este cliente está bloqueado para nuevas cuentas por cobrar.',
+      );
+      return;
+    }
+
+    setState(() {
+      _selectedExistingClientId = selected['id'] as int?;
+      _buyerNameController.text = selected['nombre_completo']?.toString() ?? '';
+      _buyerPhoneController.text = selected['telefono']?.toString() ?? '';
+    });
   }
 
   Widget _buildExtraContactsSection() {
@@ -1497,6 +1699,101 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return clientCode;
   }
 
+  /// Valida que una venta con ítems a "Pago Pendiente" (cuenta por cobrar)
+  /// pueda crearse: requiere nombre de cliente y que ese cliente (si ya
+  /// existe) no esté bloqueado para nuevas cuentas por cobrar.
+  ///
+  /// Retorna un mensaje de error si no se puede continuar, o `null` si todo
+  /// está en orden.
+  Future<String?> _validarPagoPendiente() async {
+    if (_modoRestaurante) {
+      return 'No se puede dejar pago pendiente en cuentas de mesa';
+    }
+
+    final buyerName = _buyerNameController.text.trim();
+    if (buyerName.isEmpty) {
+      return 'Debes ingresar el nombre del cliente para una venta a pago pendiente';
+    }
+
+    final isOffline = widget.order.isOfflineOrder ||
+        await _userPreferencesService.shouldStayFullyOffline() ||
+        await _userPreferencesService.isOfflineModeEnabled();
+    if (isOffline) {
+      // Sin conexión no podemos verificar si el cliente está bloqueado para
+      // nuevas cuentas por cobrar; se prioriza la seguridad de la cartera y
+      // se pide crear la venta cuando haya conexión.
+      return 'La venta a pago pendiente requiere conexión (no disponible en modo offline)';
+    }
+
+    try {
+      Map<String, dynamic>? existing;
+      if (_selectedExistingClientId != null) {
+        existing = await Supabase.instance.client
+            .from('app_dat_cliente_cxc')
+            .select('bloqueado_cxc')
+            .eq('id', _selectedExistingClientId!)
+            .maybeSingle();
+      } else {
+        final idTienda = await _userPreferencesService.getIdTienda();
+        final clientCode = _generateClientCode(buyerName);
+        if (idTienda != null) {
+          existing = await Supabase.instance.client
+              .from('app_dat_cliente_cxc')
+              .select('bloqueado_cxc')
+              .eq('id_tienda', idTienda)
+              .eq('codigo_cliente', clientCode)
+              .maybeSingle();
+        }
+      }
+      if (existing != null && existing['bloqueado_cxc'] == true) {
+        return 'Este cliente no puede generar más cuentas por cobrar. Consulta con administración.';
+      }
+    } catch (e) {
+      print('⚠️ No se pudo verificar bloqueo de CxC del cliente: $e');
+      // Best-effort: si la verificación falla, dejamos continuar la venta
+      // (el gerente puede bloquear al cliente después con la deuda visible).
+    }
+    return null;
+  }
+
+  /// Encuentra o crea el cliente de Cuentas por Cobrar en la tabla
+  /// INDEPENDIENTE `app_dat_cliente_cxc` (no en `app_dat_clientes`, que
+  /// acumula un registro por cada nombre distinto tipeado en ventas
+  /// normales). Retorna el ID del cliente CxC, o `null` si falla.
+  Future<int?> _resolveClienteCxc(String buyerName, String buyerPhone) async {
+    // Si el vendedor eligió un cliente existente en el buscador de CxC,
+    // usamos ese ID directamente.
+    if (_selectedExistingClientId != null) {
+      return _selectedExistingClientId;
+    }
+    try {
+      final idTienda = await _userPreferencesService.getIdTienda();
+      if (idTienda == null) {
+        print('⚠️ No se pudo resolver id_tienda para cliente CxC');
+        return null;
+      }
+      final clientCode = _generateClientCode(buyerName);
+      final response = await Supabase.instance.client.rpc(
+        'fn_insertar_cliente_cxc',
+        params: {
+          'p_id_tienda': idTienda,
+          'p_codigo_cliente': clientCode,
+          'p_nombre_completo': buyerName,
+          'p_telefono': buyerPhone.isNotEmpty ? buyerPhone : null,
+        },
+      );
+      print('✅ Respuesta fn_insertar_cliente_cxc: $response');
+      if (response != null && response['status'] == 'success') {
+        final id = response['id_cliente_cxc'];
+        return id is int ? id : (id as num?)?.toInt();
+      }
+      return null;
+    } catch (e) {
+      print('❌ Error registrando cliente CxC: $e');
+      return null;
+    }
+  }
+
   // Registrar cliente en Supabase y retornar el ID del cliente
   Future<int?> _registerClientInSupabase(
     String buyerName,
@@ -1575,6 +1872,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'Todos los productos deben tener un método de pago asignado',
       );
       return;
+    }
+
+    final tienePagoPendiente = widget.order.items.any(
+      (item) => item.paymentMethod?.esPagoPendiente ?? false,
+    );
+    if (tienePagoPendiente) {
+      final validacion = await _validarPagoPendiente();
+      if (validacion != null) {
+        _showErrorMessage(validacion);
+        return;
+      }
     }
 
     setState(() {
@@ -1890,11 +2198,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     String? fotoOperacionUrl,
   ) async {
     try {
-      // 1. Primero registrar el cliente en Supabase si tenemos datos
+      // 1. Registrar el cliente en Supabase si tenemos datos.
       // En modo restaurante NO registramos cliente — la cuenta se asocia a una mesa.
+      // Las ventas a "Pago Pendiente" usan un registro de cliente INDEPENDIENTE
+      // (app_dat_cliente_cxc) en vez del genérico app_dat_clientes, que crece
+      // sin control con un registro por cada nombre distinto tipeado en ventas
+      // normales.
       int? idCliente;
+      int? idClienteCxc;
 
-      if (!_modoRestaurante && buyerName.isNotEmpty) {
+      if (_tienePagoPendiente) {
+        idClienteCxc = await _resolveClienteCxc(buyerName, buyerPhone);
+        print('📝 ID Cliente CxC (independiente): $idClienteCxc');
+      } else if (!_modoRestaurante && buyerName.isNotEmpty) {
         idCliente = await _registerClientInSupabase(buyerName, buyerPhone);
         print('📝 ID Cliente capturado: $idCliente');
       } else if (_modoRestaurante) {
@@ -1915,6 +2231,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'finalTotal': finalTotal,
         'originalTotal': subtotal,
         'idCliente': idCliente, // Agregar ID del cliente al orderData
+        'idClienteCxc': idClienteCxc, // Cliente de Cuentas por Cobrar (independiente)
         'idMesa': _mesaSeleccionada?.id, // ID de mesa en modo restaurante
         'paymentBreakdown': breakdown, // Add payment breakdown
         'fotoOperacionUrl': fotoOperacionUrl,
@@ -2323,6 +2640,182 @@ class _MesaPickerSheetState extends State<_MesaPickerSheet> {
           ),
         );
       },
+    );
+  }
+}
+
+/// Buscador de clientes existentes para asociar una venta a "Pago Pendiente"
+/// (cuenta por cobrar). Devuelve el mapa del cliente elegido, o
+/// `{'createNew': true}` si el cajero prefiere crear uno nuevo escribiendo
+/// el nombre directamente en el formulario.
+class _ClientPickerSheet extends StatefulWidget {
+  final String initialQuery;
+  const _ClientPickerSheet({this.initialQuery = ''});
+
+  @override
+  State<_ClientPickerSheet> createState() => _ClientPickerSheetState();
+}
+
+class _ClientPickerSheetState extends State<_ClientPickerSheet> {
+  final _searchController = TextEditingController();
+  Timer? _debounce;
+  bool _isLoading = false;
+  List<Map<String, dynamic>> _results = [];
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController.text = widget.initialQuery;
+    _search(widget.initialQuery);
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onQueryChanged(String query) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), () => _search(query));
+  }
+
+  Future<void> _search(String query) async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      final idTienda = await UserPreferencesService().getIdTienda();
+      if (idTienda == null) {
+        setState(() {
+          _error = 'No se pudo identificar la tienda';
+          _isLoading = false;
+        });
+        return;
+      }
+      // Los clientes de Cuentas por Cobrar viven en una tabla INDEPENDIENTE
+      // de app_dat_clientes (que crece sin control con cada venta normal).
+      var builder = Supabase.instance.client
+          .from('app_dat_cliente_cxc')
+          .select('id, nombre_completo, telefono, codigo_cliente, bloqueado_cxc')
+          .eq('id_tienda', idTienda);
+      if (query.trim().isNotEmpty) {
+        builder = builder.or(
+          'nombre_completo.ilike.%${query.trim()}%,telefono.ilike.%${query.trim()}%',
+        );
+      }
+      final response = await builder
+          .order('nombre_completo', ascending: true)
+          .limit(20);
+      if (!mounted) return;
+      setState(() {
+        _results = List<Map<String, dynamic>>.from(response);
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Error buscando clientes: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+      ),
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height * 0.7,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Buscar cliente',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _searchController,
+              autofocus: true,
+              onChanged: _onQueryChanged,
+              decoration: InputDecoration(
+                hintText: 'Nombre o teléfono',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () =>
+                    Navigator.pop(context, {'createNew': true}),
+                icon: const Icon(Icons.person_add_alt_1),
+                label: const Text('Crear nuevo cliente con este nombre'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _error != null
+                      ? Center(child: Text(_error!))
+                      : _results.isEmpty
+                          ? const Center(
+                              child: Text('Sin resultados. Crea un cliente nuevo.'),
+                            )
+                          : ListView.builder(
+                              itemCount: _results.length,
+                              itemBuilder: (context, index) {
+                                final cliente = _results[index];
+                                final bloqueado =
+                                    cliente['bloqueado_cxc'] == true;
+                                return ListTile(
+                                  leading: CircleAvatar(
+                                    backgroundColor: bloqueado
+                                        ? Colors.red[50]
+                                        : const Color(0xFF4A90E2)
+                                            .withOpacity(0.1),
+                                    child: Icon(
+                                      Icons.person,
+                                      color: bloqueado
+                                          ? Colors.red
+                                          : const Color(0xFF4A90E2),
+                                    ),
+                                  ),
+                                  title: Text(
+                                    cliente['nombre_completo']?.toString() ??
+                                        'Sin nombre',
+                                  ),
+                                  subtitle: Text(
+                                    bloqueado
+                                        ? 'Bloqueado para cuentas por cobrar'
+                                        : (cliente['telefono']?.toString() ??
+                                            'Sin teléfono'),
+                                    style: TextStyle(
+                                      color:
+                                          bloqueado ? Colors.red : null,
+                                    ),
+                                  ),
+                                  onTap: () => Navigator.pop(context, cliente),
+                                );
+                              },
+                            ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

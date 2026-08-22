@@ -9,6 +9,7 @@ import '../services/category_service.dart';
 import '../services/product_service.dart';
 import '../services/payment_method_service.dart';
 import '../services/turno_service.dart';
+import '../services/currency_service.dart';
 import '../utils/uuid_generator.dart';
 import '../services/settings_integration_service.dart';
 import '../services/auto_sync_service.dart';
@@ -3166,13 +3167,31 @@ class _SettingsScreenState extends State<SettingsScreen>
                             'Apertura: $fechaApertura\nEstado: $estado',
                           ),
                           isThreeLine: true,
-                          trailing: IconButton(
-                            icon: const Icon(Icons.sync,
-                                color: Color(0xFF4A90E2)),
-                            onPressed: () async {
-                              await _syncSingleTurno(localId);
-                              setDialogState(() => refreshKey++);
-                            },
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (status == 'open')
+                                IconButton(
+                                  tooltip: 'Cerrar turno',
+                                  icon: const Icon(
+                                    Icons.point_of_sale,
+                                    color: Colors.orange,
+                                  ),
+                                  onPressed: () async {
+                                    await _cerrarTurnoPendiente(localId);
+                                    setDialogState(() => refreshKey++);
+                                  },
+                                ),
+                              IconButton(
+                                tooltip: 'Sincronizar',
+                                icon: const Icon(Icons.sync,
+                                    color: Color(0xFF4A90E2)),
+                                onPressed: () async {
+                                  await _syncSingleTurno(localId);
+                                  setDialogState(() => refreshKey++);
+                                },
+                              ),
+                            ],
                           ),
                           onTap:
                               () => _showTurnoDetailDialog(
@@ -3211,12 +3230,24 @@ class _SettingsScreenState extends State<SettingsScreen>
       builder:
           (context) => AlertDialog(
             title: Text('Cierre de caja - $localId'),
-            content: FutureBuilder<Map<String, dynamic>>(
-              future: _userPreferencesService.getOfflineTurnoCuadre(turno),
+            content: FutureBuilder<List<dynamic>>(
+              future: Future.wait([
+                _userPreferencesService.getOfflineTurnoCuadre(turno),
+                CurrencyService.getUsdRate(),
+              ]),
               builder: (context, snapshot) {
                 final apertura = turno['apertura'] ?? {};
                 final cierre = turno['cierre'] ?? {};
-                final cuadre = snapshot.data ?? {};
+                final cuadre =
+                    (snapshot.data != null
+                            ? snapshot.data![0] as Map<String, dynamic>?
+                            : null) ??
+                        {};
+                final usdRate =
+                    (snapshot.data != null
+                            ? snapshot.data![1] as double?
+                            : null) ??
+                        0.0;
 
                 final fechaApertura =
                     apertura['fecha_apertura']?.toString() ??
@@ -3246,6 +3277,23 @@ class _SettingsScreenState extends State<SettingsScreen>
                     (cuadre['efectivo_esperado'] as num? ??
                             efectivoInicial + totalEfectivo)
                         .toDouble();
+                final egresosEfectivo =
+                    (cuadre['egresos_efectivo'] as num? ?? 0).toDouble();
+                final egresosDigitales =
+                    (cuadre['egresos_digitales'] as num? ?? 0).toDouble();
+                final egresosTotales =
+                    (cuadre['egresos_totales'] as num? ??
+                            egresosEfectivo + egresosDigitales)
+                        .toDouble();
+                final productosVendidos =
+                    (cuadre['productos_vendidos'] as num? ?? 0).toInt();
+                final operacionesTotales =
+                    (cuadre['operaciones_totales'] as num? ?? 0).toInt();
+                final ticketPromedio =
+                    (cuadre['ticket_promedio'] as num? ?? 0).toDouble();
+                final diferencia = (cuadre['diferencia'] as num? ?? 0).toDouble();
+                final totalVentasUsd =
+                    usdRate > 0 ? totalVentas / usdRate : null;
 
                 return SingleChildScrollView(
                   child: Column(
@@ -3263,10 +3311,33 @@ class _SettingsScreenState extends State<SettingsScreen>
                         'Resumen:',
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
-                      Text('Total ventas: \$${totalVentas.toStringAsFixed(2)}'),
+                      Text(
+                        'Total ventas: \$${totalVentas.toStringAsFixed(2)} CUP'
+                        '${totalVentasUsd != null ? ' (≈ \$${totalVentasUsd.toStringAsFixed(2)} USD)' : ''}',
+                      ),
+                      Text('Productos vendidos: $productosVendidos'),
+                      Text('Operaciones: $operacionesTotales'),
+                      Text('Ticket promedio: \$${ticketPromedio.toStringAsFixed(2)}'),
+                      const SizedBox(height: 8),
                       Text('Efectivo: \$${totalEfectivo.toStringAsFixed(2)}'),
                       Text('Transferencias: \$${totalTransferencias.toStringAsFixed(2)}'),
                       Text('Efectivo esperado: \$${efectivoEsperado.toStringAsFixed(2)}'),
+                      if (diferencia.abs() > 0.01)
+                        Text(
+                          'Diferencia: ${diferencia >= 0 ? '+' : ''}\$${diferencia.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            color: diferencia >= 0 ? Colors.green[700] : Colors.red,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Egresos:',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      Text('Egresos efectivo: \$${egresosEfectivo.toStringAsFixed(2)}'),
+                      Text('Egresos digitales: \$${egresosDigitales.toStringAsFixed(2)}'),
+                      Text('Egresos totales: \$${egresosTotales.toStringAsFixed(2)}'),
                     ],
                   ),
                 );
@@ -3292,6 +3363,39 @@ class _SettingsScreenState extends State<SettingsScreen>
             ],
           ),
     );
+  }
+
+  /// Abre el flujo completo de cierre de caja (conteo de efectivo,
+  /// inventario, egresos, etc.) para un turno abierto que está en la cola
+  /// pendiente de sincronizar.
+  ///
+  /// `CierreScreen` siempre opera sobre "el" turno abierto ambiente (el que
+  /// devuelve `getOfflineTurno()`/la sesión activa del vendedor), así que
+  /// primero verificamos que el turno tocado en la lista sea justamente ese;
+  /// si es un turno abierto "huérfano" de otra sesión/TPV, avisamos en vez
+  /// de arriesgarnos a cerrar el turno equivocado.
+  Future<void> _cerrarTurnoPendiente(String localId) async {
+    final activeTurno = await _userPreferencesService.getOfflineTurno();
+    final activeLocalId = activeTurno?['local_id']?.toString();
+
+    if (activeLocalId != localId) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Este turno no es el activo en este dispositivo/sesión. '
+            'Solo se puede completar el cierre del turno actualmente abierto.',
+          ),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    Navigator.pop(context); // Cierra el diálogo de turnos pendientes
+    await Navigator.pushNamed(context, '/cierre');
   }
 
   /// Sincroniza un único turno (apertura + órdenes + cierre).

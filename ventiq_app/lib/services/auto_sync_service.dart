@@ -7,6 +7,7 @@ import 'user_preferences_service.dart';
 import 'category_service.dart';
 import 'product_service.dart';
 import 'payment_method_service.dart';
+import '../models/payment_method.dart' as pm;
 import 'turno_service.dart';
 import 'reauthentication_service.dart';
 import 'store_config_service.dart';
@@ -1929,13 +1930,19 @@ class AutoSyncService {
 
     if (latest['status'] !=
         UserPreferencesService.offlineTurnoStatusClosedPending) {
-      // Solo apertura (sin cierre) — considerado OK para ese caso.
+      // Solo apertura (sin cierre) — considerado OK para ese caso: ya se
+      // sincronizaron apertura/ventas/egresos arriba y no hay cierre
+      // pendiente que aplicar todavía (el turno sigue "open", que es el
+      // estado normal de un turno activo). Antes este `return` estaba
+      // invertido y devolvía `false` justo para status == 'open', haciendo
+      // que la sincronización individual de un turno abierto (sin cierre
+      // aún) siempre se reportara como fallida aunque todo se hubiera
+      // sincronizado correctamente.
       print(
         '  ℹ️ Turno $localId status=${latest['status']} tras apertura; '
         'sin cierre pendiente',
       );
-      return latest['status'] !=
-          UserPreferencesService.offlineTurnoStatusOpen;
+      return true;
     }
 
     final ok = await _syncCierreForQueueEntry(latest);
@@ -2901,11 +2908,32 @@ class AutoSyncService {
         // propósito), así que reintentarlos no duplica.
 
         // Registrar desgloses de pago si existen (idempotente).
+        // El desglose de "Pago Pendiente" (CxC, id sentinel 998) se excluye:
+        // no genera fila en app_dat_pago_venta y deja la venta con
+        // es_pagada = false (cuenta por cobrar).
         final paymentBreakdown = orderData['desglose_pagos'] as List<dynamic>?;
-        if (paymentBreakdown != null && paymentBreakdown.isNotEmpty) {
+        final montoPendienteCxc = (paymentBreakdown ?? [])
+            .cast<Map<String, dynamic>>()
+            .where((p) => p['id_medio_pago'] == pm.PaymentMethod.pagoPendienteId)
+            .fold<double>(0.0, (sum, p) => sum + ((p['monto'] as num?)?.toDouble() ?? 0.0));
+        if (montoPendienteCxc > 0) {
+          try {
+            await Supabase.instance.client
+                .from('app_dat_operacion_venta')
+                .update({'es_pagada': false})
+                .eq('id_operacion', operationId);
+          } catch (e) {
+            print('    ⚠️ No se pudo marcar es_pagada=false en $operationId: $e');
+          }
+        }
+        final pagosSinCxc = (paymentBreakdown ?? [])
+            .cast<Map<String, dynamic>>()
+            .where((p) => p['id_medio_pago'] != pm.PaymentMethod.pagoPendienteId)
+            .toList();
+        if (pagosSinCxc.isNotEmpty) {
           await _registerPaymentBreakdownFromOfflineData(
             operationId,
-            paymentBreakdown,
+            pagosSinCxc,
             orderData,
             userId,
           );
