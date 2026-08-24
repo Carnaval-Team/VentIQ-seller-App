@@ -12,6 +12,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/order.dart';
 import '../services/currency_service.dart';
+import '../services/store_config_service.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/price_utils.dart';
 
@@ -384,6 +385,7 @@ class WiFiPrinterService {
       bytes += generator.emptyLines(1);
 
       final usdRate = await _getUsdRateForPrint();
+      final showPaymentMethod = await _shouldShowPaymentMethodOnTicket();
 
       for (int i = 0; i < orders.length; i++) {
         bytes += _addCustomerReceipt(
@@ -392,6 +394,7 @@ class WiFiPrinterService {
           storeInfo,
           includeHeader: false,
           usdRate: usdRate,
+          showPaymentMethod: showPaymentMethod,
         );
         if (i < orders.length - 1) {
           bytes += _addDottedLineSeparator(generator);
@@ -505,6 +508,7 @@ class WiFiPrinterService {
   }) async {
     try {
       final usdRate = await _getUsdRateForPrint();
+      final showPaymentMethod = await _shouldShowPaymentMethodOnTicket();
       List<int> bytes = [];
 
       bytes += _addCustomerReceipt(
@@ -513,6 +517,7 @@ class WiFiPrinterService {
         storeInfo,
         usdRate: usdRate,
         title: title,
+        showPaymentMethod: showPaymentMethod,
       );
       bytes += generator.emptyLines(1);
       bytes += generator.cut();
@@ -633,6 +638,16 @@ class WiFiPrinterService {
     _storePrintInfoFuture ??= _loadStorePrintInfo();
     _storePrintInfoCache = await _storePrintInfoFuture!;
     return _storePrintInfoCache!;
+  }
+
+  Future<bool> _shouldShowPaymentMethodOnTicket() async {
+    try {
+      final storeId = await UserPreferencesService().getIdTienda();
+      if (storeId == null) return true;
+      return StoreConfigService.getMostrarMetodoPagoTicket(storeId);
+    } catch (_) {
+      return true;
+    }
   }
 
   Future<double?> _getUsdRateForPrint() async {
@@ -779,6 +794,7 @@ class WiFiPrinterService {
     bool includeHeader = true,
     double? usdRate,
     String title = 'FACTURA',
+    bool showPaymentMethod = true,
   }) {
     List<int> bytes = [];
 
@@ -900,7 +916,9 @@ class WiFiPrinterService {
     }
 
     // Forma de pago
-    bytes += _addPaymentMethodSummary(generator, order);
+    if (showPaymentMethod) {
+      bytes += _addPaymentMethodSummary(generator, order);
+    }
 
     // Pie de página compacto
     bytes += generator.text(

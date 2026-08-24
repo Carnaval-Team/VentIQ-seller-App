@@ -34,6 +34,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   bool _noSolicitarCliente = false;
   bool _allowDiscountOnVendedor = false;
   bool _vendedoresPuedenCrearCxc = false;
+  bool _mostrarMetodoPagoTicket = true;
   bool _allowPrintPending = false;
   bool _allowSellerMakeOrderModifications = false;
   bool _precioVentaRegidoPorUsd = false;
@@ -456,6 +457,8 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             config['allow_discount_on_vendedor'] ?? false;
         _vendedoresPuedenCrearCxc =
             config['vendedores_pueden_crear_cxc'] ?? false;
+        _mostrarMetodoPagoTicket =
+            config['mostrar_metodo_pago_ticket'] ?? true;
         _allowPrintPending = config['permitir_imprimir_pendientes'] ?? false;
         _allowSellerMakeOrderModifications =
             config['allow_seller_make_order_modifications'] ?? false;
@@ -661,6 +664,41 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         _vendedoresPuedenCrearCxc = !value;
       });
 
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuración: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateMostrarMetodoPagoTicketSetting(bool value) async {
+    if (_storeId == null) return;
+
+    try {
+      await StoreConfigService.updateMostrarMetodoPagoTicket(_storeId!, value);
+      setState(() {
+        _mostrarMetodoPagoTicket = value;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              value
+                  ? 'El ticket mostrará el método de pago de la orden'
+                  : 'El ticket no incluirá el método de pago',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _mostrarMetodoPagoTicket = !value;
+      });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -2705,6 +2743,18 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                     : '🔒 El vendedor debe elegir la impresora en cada impresión',
             value: _guardarImpresoraPorDefecto,
             onChanged: _updateGuardarImpresoraPorDefectoSetting,
+          ),
+          const SizedBox(height: 12),
+          _buildConfigCard(
+            icon: Icons.payments_outlined,
+            iconColor: Colors.teal,
+            title: 'Mostrar método de pago en el ticket',
+            subtitle:
+                _mostrarMetodoPagoTicket
+                    ? '✅ El ticket de cliente incluye forma/desglose de pago'
+                    : '🔒 El ticket no imprime el método de pago de la orden',
+            value: _mostrarMetodoPagoTicket,
+            onChanged: _updateMostrarMetodoPagoTicketSetting,
           ),
           const SizedBox(height: 12),
           _buildSavedPrinterTile(),

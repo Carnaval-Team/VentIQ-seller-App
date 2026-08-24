@@ -41,6 +41,7 @@ class StoreConfigService {
                   'copias_por_ticket': {'cliente': 1, 'almacen': 1},
                   'autocompletar_cantidad_real_conteo': false,
                   'vendedores_pueden_crear_cxc': false,
+                  'mostrar_metodo_pago_ticket': true,
                 })
                 .select()
                 .single();
@@ -81,6 +82,7 @@ class StoreConfigService {
     Map<String, int>? copiasPorTicket,
     bool? autocompletarCantidadRealConteo,
     bool? vendedoresPuedenCrearCxc,
+    bool? mostrarMetodoPagoTicket,
     bool? modoRestaurante,
     bool? cocinaActiva,
   }) async {
@@ -233,6 +235,10 @@ class StoreConfigService {
         print(
           '  - vendedores_pueden_crear_cxc: $vendedoresPuedenCrearCxc',
         );
+      }
+      if (mostrarMetodoPagoTicket != null) {
+        updateData['mostrar_metodo_pago_ticket'] = mostrarMetodoPagoTicket;
+        print('  - mostrar_metodo_pago_ticket: $mostrarMetodoPagoTicket');
       }
       if (modoRestaurante != null) {
         updateData['modo_restaurante'] = modoRestaurante;
@@ -657,6 +663,24 @@ class StoreConfigService {
     bool value,
   ) async {
     await updateStoreConfig(storeId, vendedoresPuedenCrearCxc: value);
+  }
+
+  /// Si el ticket debe incluir el método / desglose de pago de la orden.
+  static Future<bool> getMostrarMetodoPagoTicket(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config['mostrar_metodo_pago_ticket'] ?? true;
+    } catch (e) {
+      print('❌ Error al obtener mostrar_metodo_pago_ticket: $e');
+      return true;
+    }
+  }
+
+  static Future<void> updateMostrarMetodoPagoTicket(
+    int storeId,
+    bool value,
+  ) async {
+    await updateStoreConfig(storeId, mostrarMetodoPagoTicket: value);
   }
 
   /// Obtiene el valor de autocompletar_cantidad_real_conteo

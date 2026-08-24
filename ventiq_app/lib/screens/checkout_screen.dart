@@ -2215,6 +2215,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       if (_tienePagoPendiente) {
         idClienteCxc = await _resolveClienteCxc(buyerName, buyerPhone);
         print('📝 ID Cliente CxC (independiente): $idClienteCxc');
+        if (idClienteCxc == null) {
+          throw Exception(
+            'No se pudo registrar el cliente de cuentas por cobrar. '
+            'Revisa el nombre o selecciónalo del listado.',
+          );
+        }
       } else if (!_modoRestaurante && buyerName.isNotEmpty) {
         idCliente = await _registerClientInSupabase(buyerName, buyerPhone);
         print('📝 ID Cliente capturado: $idCliente');
@@ -2707,23 +2713,75 @@ class _ClientPickerSheetState extends State<_ClientPickerSheet> {
         });
         return;
       }
-      // Los clientes de Cuentas por Cobrar viven en una tabla INDEPENDIENTE
-      // de app_dat_clientes (que crece sin control con cada venta normal).
+
+      final q = query.trim().toLowerCase();
+
+      // 1) Clientes que YA tienen deuda (prioridad en el listado).
+      final deudoresById = <int, Map<String, dynamic>>{};
+      try {
+        final rpc = await Supabase.instance.client.rpc(
+          'fn_cxc_listar_clientes',
+          params: {'p_id_tienda': idTienda},
+        );
+        if (rpc is List) {
+          for (final raw in rpc) {
+            if (raw is! Map) continue;
+            final row = Map<String, dynamic>.from(raw);
+            final id = (row['id_cliente'] as num?)?.toInt();
+            if (id == null) continue;
+            final nombre = row['nombre_completo']?.toString() ?? '';
+            final telefono = row['telefono']?.toString() ?? '';
+            if (q.isNotEmpty &&
+                !nombre.toLowerCase().contains(q) &&
+                !telefono.toLowerCase().contains(q)) {
+              continue;
+            }
+            deudoresById[id] = {
+              'id': id,
+              'nombre_completo': row['nombre_completo'],
+              'telefono': row['telefono'],
+              'codigo_cliente': row['codigo_cliente'],
+              'bloqueado_cxc': row['bloqueado_cxc'] == true,
+              'saldo_pendiente': row['saldo_pendiente'],
+              'tiene_deuda': true,
+            };
+          }
+        }
+      } catch (e) {
+        print('⚠️ No se pudieron cargar deudores CxC: $e');
+      }
+
+      // 2) Resto de clientes CxC de la tienda (con o sin deuda).
       var builder = Supabase.instance.client
           .from('app_dat_cliente_cxc')
           .select('id, nombre_completo, telefono, codigo_cliente, bloqueado_cxc')
           .eq('id_tienda', idTienda);
-      if (query.trim().isNotEmpty) {
+      if (q.isNotEmpty) {
         builder = builder.or(
           'nombre_completo.ilike.%${query.trim()}%,telefono.ilike.%${query.trim()}%',
         );
       }
       final response = await builder
           .order('nombre_completo', ascending: true)
-          .limit(20);
+          .limit(50);
+
+      final merged = <Map<String, dynamic>>[
+        ...deudoresById.values,
+      ];
+      for (final raw in response) {
+        final row = Map<String, dynamic>.from(raw as Map);
+        final id = (row['id'] as num?)?.toInt();
+        if (id == null) continue;
+        if (deudoresById.containsKey(id)) continue;
+        merged.add({
+          ...row,
+          'tiene_deuda': false,
+        });
+      }
+
       if (!mounted) return;
       setState(() {
-        _results = List<Map<String, dynamic>>.from(response);
+        _results = merged;
         _isLoading = false;
       });
     } catch (e) {
@@ -2792,16 +2850,45 @@ class _ClientPickerSheetState extends State<_ClientPickerSheet> {
                                 final cliente = _results[index];
                                 final bloqueado =
                                     cliente['bloqueado_cxc'] == true;
+                                final tieneDeuda =
+                                    cliente['tiene_deuda'] == true;
+                                final saldo =
+                                    (cliente['saldo_pendiente'] as num?)
+                                        ?.toDouble();
+                                final telefono =
+                                    cliente['telefono']?.toString();
+                                String subtitle;
+                                if (bloqueado) {
+                                  subtitle =
+                                      'Bloqueado para cuentas por cobrar';
+                                } else if (tieneDeuda &&
+                                    saldo != null &&
+                                    saldo > 0) {
+                                  subtitle =
+                                      'Deuda: \$${saldo.toStringAsFixed(2)}'
+                                      '${telefono != null && telefono.isNotEmpty ? ' · $telefono' : ''}';
+                                } else {
+                                  subtitle =
+                                      telefono != null && telefono.isNotEmpty
+                                          ? telefono
+                                          : 'Sin teléfono';
+                                }
                                 return ListTile(
                                   leading: CircleAvatar(
                                     backgroundColor: bloqueado
                                         ? Colors.red[50]
+                                        : tieneDeuda
+                                        ? Colors.orange.withOpacity(0.15)
                                         : const Color(0xFF4A90E2)
                                             .withOpacity(0.1),
                                     child: Icon(
-                                      Icons.person,
+                                      tieneDeuda
+                                          ? Icons.account_balance_wallet
+                                          : Icons.person,
                                       color: bloqueado
                                           ? Colors.red
+                                          : tieneDeuda
+                                          ? Colors.orange[800]
                                           : const Color(0xFF4A90E2),
                                     ),
                                   ),
@@ -2810,13 +2897,13 @@ class _ClientPickerSheetState extends State<_ClientPickerSheet> {
                                         'Sin nombre',
                                   ),
                                   subtitle: Text(
-                                    bloqueado
-                                        ? 'Bloqueado para cuentas por cobrar'
-                                        : (cliente['telefono']?.toString() ??
-                                            'Sin teléfono'),
+                                    subtitle,
                                     style: TextStyle(
-                                      color:
-                                          bloqueado ? Colors.red : null,
+                                      color: bloqueado
+                                          ? Colors.red
+                                          : tieneDeuda
+                                          ? Colors.orange[900]
+                                          : null,
                                     ),
                                   ),
                                   onTap: () => Navigator.pop(context, cliente),

@@ -30,7 +30,7 @@ class CxcService {
           .toList();
     } catch (e) {
       print('❌ Error listando clientes con CxC: $e');
-      return [];
+      rethrow;
     }
   }
 

@@ -1286,6 +1286,12 @@ class OrderService {
             // INDEPENDIENTE de app_dat_clientes (donde no se registró este
             // cliente, precisamente para no seguir engordando esa tabla).
             final idClienteCxc = orderData['idClienteCxc'];
+            if (idClienteCxc == null) {
+              print(
+                '⚠️ Venta $operationId tiene pago pendiente pero sin '
+                'idClienteCxc — no se puede asociar a cartera CxC',
+              );
+            }
             await Supabase.instance.client
                 .from('app_dat_operacion_venta')
                 .update({

@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/order.dart';
 import '../services/currency_service.dart';
+import '../services/store_config_service.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/price_utils.dart';
 
@@ -46,6 +47,16 @@ class WebPrinterServiceImpl {
       return null;
     }
     return usdRate;
+  }
+
+  Future<bool> _shouldShowPaymentMethodOnTicket() async {
+    try {
+      final storeId = await _userPreferencesService.getIdTienda();
+      if (storeId == null) return true;
+      return StoreConfigService.getMostrarMetodoPagoTicket(storeId);
+    } catch (_) {
+      return true;
+    }
   }
 
   Future<_StorePrintInfo> _loadStorePrintInfo() async {
@@ -382,6 +393,7 @@ class WebPrinterServiceImpl {
   }) async {
     final storeInfo = await _getStorePrintInfo();
     final usdRate = await _getUsdRateForPrint();
+    final showPaymentMethod = await _shouldShowPaymentMethodOnTicket();
     final storeName = storeInfo.name;
     final headerLogoHtml =
         storeInfo.logoDataUrl != null
@@ -570,7 +582,7 @@ class WebPrinterServiceImpl {
         ${order.buyerName != null && order.buyerName!.isNotEmpty ? '<div class="info-line">CLIENTE: ${order.buyerName}</div>' : ''}
         ${order.buyerPhone != null && order.buyerPhone!.isNotEmpty ? '<div class="info-line">TELEFONO: ${order.buyerPhone}</div>' : ''}
         <div class="info-line">FECHA: $dateStr $timeStr</div>
-        <div class="info-line">PAGO: ${order.paymentMethod ?? 'Completado'}</div>
+        ${showPaymentMethod ? '<div class="info-line">PAGO: ${order.paymentMethod ?? 'Completado'}</div>' : ''}
     </div>
 
     <div class="products-header">PRODUCTOS:</div>
@@ -620,6 +632,7 @@ class WebPrinterServiceImpl {
   Future<String> _generateCustomerTicketsBatchHtml(List<Order> orders) async {
     final storeInfo = await _getStorePrintInfo();
     final usdRate = await _getUsdRateForPrint();
+    final showPaymentMethod = await _shouldShowPaymentMethodOnTicket();
     final storeName = storeInfo.name;
     final headerLogoHtml =
         storeInfo.logoDataUrl != null
@@ -682,7 +695,7 @@ class WebPrinterServiceImpl {
         ${order.buyerName != null && order.buyerName!.isNotEmpty ? '<div class="info-line">CLIENTE: ${order.buyerName}</div>' : ''}
         ${order.buyerPhone != null && order.buyerPhone!.isNotEmpty ? '<div class="info-line">TELEFONO: ${order.buyerPhone}</div>' : ''}
         <div class="info-line">FECHA: $dateStr $timeStr</div>
-        <div class="info-line">PAGO: ${order.paymentMethod ?? 'Completado'}</div>
+        ${showPaymentMethod ? '<div class="info-line">PAGO: ${order.paymentMethod ?? 'Completado'}</div>' : ''}
       </div>
 
       <div class="products-header">PRODUCTOS:</div>

@@ -11,6 +11,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/order.dart';
 import '../services/currency_service.dart';
+import '../services/store_config_service.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/price_utils.dart';
 
@@ -203,6 +204,7 @@ class BluetoothPrinterService {
       final generator = Generator(PaperSize.mm58, profile);
       final storeInfo = await _getStorePrintInfo();
       final usdRate = await _getUsdRateForPrint();
+      final showPaymentMethod = await _shouldShowPaymentMethodOnTicket();
 
       // Cabecera del lote
       List<int> header = [];
@@ -244,6 +246,7 @@ class BluetoothPrinterService {
             storeInfo,
             includeHeader: false,
             usdRate: usdRate,
+            showPaymentMethod: showPaymentMethod,
           );
           if (globalIndex < orders.length - 1) {
             chunk += _addDottedLineSeparator(generator);
@@ -716,6 +719,7 @@ class BluetoothPrinterService {
   }) async {
     try {
       final usdRate = await _getUsdRateForPrint();
+      final showPaymentMethod = await _shouldShowPaymentMethodOnTicket();
       List<int> bytes = [];
 
       bytes += _addCustomerReceipt(
@@ -724,6 +728,7 @@ class BluetoothPrinterService {
         storeInfo,
         usdRate: usdRate,
         title: title,
+        showPaymentMethod: showPaymentMethod,
       );
       bytes += generator.emptyLines(1);
       bytes += generator.cut();
@@ -886,6 +891,16 @@ class BluetoothPrinterService {
     return _storePrintInfoCache!;
   }
 
+  Future<bool> _shouldShowPaymentMethodOnTicket() async {
+    try {
+      final storeId = await UserPreferencesService().getIdTienda();
+      if (storeId == null) return true;
+      return StoreConfigService.getMostrarMetodoPagoTicket(storeId);
+    } catch (_) {
+      return true;
+    }
+  }
+
   Future<double?> _getUsdRateForPrint() async {
     final showUsd = await _userPreferencesService.isPrintUsdEnabled();
     if (!showUsd) {
@@ -1022,6 +1037,7 @@ class BluetoothPrinterService {
     bool includeHeader = true,
     double? usdRate,
     String title = 'FACTURA',
+    bool showPaymentMethod = true,
   }) {
     List<int> bytes = [];
 
@@ -1142,8 +1158,10 @@ class BluetoothPrinterService {
       );
     }
 
-    // Forma de pago
-    bytes += _addPaymentMethodSummary(generator, order);
+    // Forma de pago (según config global de tienda)
+    if (showPaymentMethod) {
+      bytes += _addPaymentMethodSummary(generator, order);
+    }
 
     // Footer compacto
     bytes += generator.text(

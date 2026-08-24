@@ -320,6 +320,20 @@ class StoreConfigService {
     }
   }
 
+  /// Si el ticket debe imprimir el método / desglose de pago.
+  /// Default `true` (comportamiento histórico) si la columna aún no existe.
+  static Future<bool> getMostrarMetodoPagoTicket(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      final value = config?['mostrar_metodo_pago_ticket'];
+      if (value == null) return true;
+      return value == true;
+    } catch (e) {
+      print('❌ Error al obtener mostrar_metodo_pago_ticket: $e');
+      return true;
+    }
+  }
+
   /// Obtiene el valor de permitir_imprimir_pendientes
   static Future<bool> getAllowPrintPending(int storeId) async {
     try {

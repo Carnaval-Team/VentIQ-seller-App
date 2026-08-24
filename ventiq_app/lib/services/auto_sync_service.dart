@@ -3536,10 +3536,27 @@ class AutoSyncService {
             .fold<double>(0.0, (sum, p) => sum + ((p['monto'] as num?)?.toDouble() ?? 0.0));
         if (montoPendienteCxc > 0) {
           try {
+            final idClienteCxcRaw =
+                orderData['id_cliente_cxc'] ?? orderData['idClienteCxc'];
+            final idClienteCxc =
+                idClienteCxcRaw is int
+                    ? idClienteCxcRaw
+                    : (idClienteCxcRaw is num
+                        ? idClienteCxcRaw.toInt()
+                        : int.tryParse('$idClienteCxcRaw'));
             await Supabase.instance.client
                 .from('app_dat_operacion_venta')
-                .update({'es_pagada': false})
+                .update({
+                  'es_pagada': false,
+                  if (idClienteCxc != null) 'id_cliente_cxc': idClienteCxc,
+                })
                 .eq('id_operacion', operationId);
+            if (idClienteCxc == null) {
+              print(
+                '    ⚠️ CxC sync sin id_cliente_cxc en orden local '
+                '(op=$operationId) — no aparecerá en cartera hasta asociarlo',
+              );
+            }
           } catch (e) {
             print('    ⚠️ No se pudo marcar es_pagada=false en $operationId: $e');
           }
