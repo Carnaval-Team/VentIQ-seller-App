@@ -4,7 +4,7 @@ Checklist de implementación. Marca `[x]` lo hecho y deja `[ ]` lo pendiente.
 
 > **Estado: fases 0–5 implementadas y probadas contra producción vía MCP.**
 > Leyenda: `[x]` hecho y verificado · `[~]` hecho parcialmente (ver nota) · `[ ]` pendiente.
-> SQL en `funcionalidad_cocina/01`–`22` (22 archivos, todos aplicados).
+> SQL en `funcionalidad_cocina/01`–`23` (23 archivos, todos aplicados).
 > Guía de pruebas: `docs/TUTORIAL_PRUEBAS_COCINA.md`.
 
 **Modelo objetivo:** la tienda tiene N almacenes de venta (TPV) y N cocinas. Cada cocina es un almacén propio (materias primas + tandas). Un TPV se relaciona con una o más cocinas. El producto elaborado indica a qué cocina va y si es `por_tanda` o `al_pedido`. El jefe de cocina se asigna a una cocina (como el almacenero a un almacén).
@@ -63,7 +63,7 @@ Checklist de implementación. Marca `[x]` lo hecho y deja `[ ]` lo pendiente.
 - [x] Tabla `app_dat_tpv_cocina` (N:M TPV ↔ cocina).
 - [x] `app_dat_producto.modo_elaboracion` (`por_tanda` | `al_pedido`).
 - [x] `app_dat_producto.id_cocina`.
-- [ ] (Opcional) `app_dat_categoria_tienda.id_cocina` por defecto. — No implementado; se asigna cocina plato por plato.
+- [x] (Opcional) `app_dat_categoria_tienda.id_cocina` por defecto. → columna creada en el `07` (7.5) y **lógica completada en el `23`**: `fn_asignar_cocina_categoria`, `fn_cocina_por_defecto_producto`, `fn_aplicar_cocina_categoria_a_platos`.
 - [x] Config: flag `cocina_activa` en `app_dat_configuracion_tienda`, acoplado con `modo_restaurante`.
 
 ### 1.2 RPCs / backend — `08`, `09`, `10`, `11`
@@ -80,7 +80,7 @@ Checklist de implementación. Marca `[x]` lo hecho y deja `[ ]` lo pendiente.
 - [x] Alta / edición de cocinas. → `cocinas_management_screen.dart` + `cocina_form_dialog.dart`.
 - [x] Ligar TPV ↔ cocina. → `cocina_tpv_dialog.dart`.
 - [x] En producto: `id_cocina` + `modo_elaboracion`. → `cocinas_platos_widget.dart`.
-- [ ] (Opcional) cocina por defecto en categoría.
+- [x] (Opcional) cocina por defecto en categoría. → **3.ª pestaña "Categorías"** en `cocinas_management_screen` (`cocinas_categorias_widget.dart`), con aplicación en bloque y reporte de los platos respetados.
 
 ### 1.4 Vendedor
 
@@ -142,12 +142,13 @@ Checklist de implementación. Marca `[x]` lo hecho y deja `[ ]` lo pendiente.
 
 - [x] Tabla `app_dat_jefe_cocina` (`uuid`, `id_trabajador`, `id_cocina`, `es_jefe`), `UNIQUE(uuid, id_cocina)` — un chef puede cubrir dos estaciones.
 - [x] (Opcional) tabla `app_dat_cocinero` → resuelto con la columna `es_jefe` en vez de una segunda tabla, para no duplicar la lógica de permisos por una diferencia de grado.
-- [ ] Rol en `seg_roll` / `UserRole`: `jefe_cocina`. — **No hace falta:** `seg_roll` es un catálogo descriptivo por tienda (ya tiene "Chef Ejecutivo", "Ayudante Cocina", "Pastelero" en la tienda 1); los permisos salen de en qué tabla de rol está el uuid, que es lo que consulta `check_user_has_access_to_tienda`.
-- [x] `check_user_has_access_to_tienda` ampliada con un 6.º UNION para jefe de cocina. Los 5 roles anteriores verificados uno por uno.
+- [x] Rol en `seg_roll` / `UserRole`: `jefe_cocina`. — **No hace falta en `seg_roll`** (es un catálogo descriptivo por tienda), pero sí se añadió a las **RPC de gestión de roles** para que la UI lo trate como cualquier otro: `fn_agregar_rol_trabajador`, `fn_eliminar_rol_trabajador`, `fn_actualizar_datos_rol_trabajador` aceptan `jefe_cocina` y `cocinero` con `p_id_cocina`.
+- [x] `check_user_has_access_to_tienda` ampliada con un 6.º UNION para jefe de cocina. **Verificado multi-tienda**: un jefe de la tienda 11 entra a la 11 y es rechazado en la 1; al revés igual; una cocina con `deleted_at` deja de dar acceso.
 - [x] Guard reutilizable `fn_usuario_puede_operar_cocina(id, requiere_jefe)`.
 - [x] Alcance por usuario: `fn_cocinas_del_usuario()` — el KDS no pregunta por cocina, pregunta "lo mío".
+- [x] Alcance de almacenes: `fn_almacenes_del_usuario()` — qué almacenes ve cada rol y si puede operarlos.
 - [x] RPC de asignación: `fn_asignar_jefe_cocina` (idempotente), `fn_desasignar_jefe_cocina`, `fn_listar_personal_cocina`.
-- [ ] **`edit_worker_multi_role`: UI de admin para asignar jefe de cocina.** — Backend listo, pantalla **pendiente**. Hoy se asigna llamando la RPC a mano (ver tutorial §3).
+- [x] **`edit_worker_multi_role`: UI de admin para asignar jefe de cocina.** → checkboxes "Jefe de Cocina" y "Cocinero" (excluyentes) + selector de cocina en `edit_worker_multi_role_screen.dart`.
 
 ### 3.2 KDS / comandas — `20_rpcs_kds.sql`
 
@@ -155,8 +156,8 @@ Checklist de implementación. Marca `[x]` lo hecho y deja `[ ]` lo pendiente.
 - [x] Matriz de transiciones: cualquier **avance** vale; **retroceso** de un solo paso; 4 y 5 terminales.
 - [x] Estado de la cabecera **derivado** de los items (mínimo de los vivos) vía `_fn_recalcular_estado_comanda`.
 - [x] Pantalla KDS filtrada por las cocinas del usuario. → `kds_screen.dart` + `comanda_card.dart`.
-- [x] Ticket / impresión tipo `cocina`: **backend** `fn_ticket_comanda` (`22.4`) devuelve texto a 40 columnas + `app_dat_cocina.impresora`.
-- [ ] **UI de impresión del ticket.** — Pendiente enganchar con `WiFiPrintersScreen` / `web_print_dialog`.
+- [x] Ticket / impresión tipo `cocina`: **backend** `fn_ticket_comanda` (`22.4`) devuelve texto a N columnas + `app_dat_cocina.impresora`.
+- [x] **UI de impresión del ticket.** → `comanda_ticket_service.dart` (resuelve la impresora por IP o por nombre entre las guardadas), botón de impresora en `comanda_card.dart` y `ticket_comanda_dialog.dart` para mostrarlo en pantalla cuando no hay térmica. `wifi_printer_service.imprimirBytesCrudos()` es el nuevo punto de entrada de transporte.
 - [x] Al marcar estado: se actualiza `estado_servicio` del item de cuenta (espejo). *No hay "confirmar descuento MP": el modelo descuenta al pedir, no reserva.*
 
 ### 3.3 Alcance por rol
@@ -164,15 +165,15 @@ Checklist de implementación. Marca `[x]` lo hecho y deja `[ ]` lo pendiente.
 | Rol | Comandas | Inventario | Caja/TPV | Estado |
 |-----|----------|------------|----------|--------|
 | Vendedor | Dispara al pedir | Solo disponibilidad | Sí | Existente |
-| Jefe de cocina | KDS de su cocina | Producir/cerrar/anular tandas de ESA cocina | No | [x] |
-| Cocinero (`es_jefe = false`) | KDS | Solo lectura | No | [x] |
+| Jefe de cocina | KDS de su cocina | Tandas + recepción/conteo/transfer **solo de su almacén** | No | [x] |
+| Cocinero (`es_jefe = false`) | KDS | Solo lectura (no aparece en pantallas de movimiento) | No | [x] |
 | Almacenero | No | Almacén no cocina | No | Existente |
 | Gerente / supervisor | Todas las de su tienda | Todos | Config TPV↔cocina | [x] |
 
-- [ ] Recepción / conteo / transferencia acotadas al almacén de la cocina para el jefe. — **Pendiente**: hoy el jefe de cocina tiene acceso a la tienda (vía el guard) pero no hay UI que le restrinja esas pantallas a su almacén.
+- [x] Recepción / conteo / transferencia acotadas al almacén de la cocina para el jefe. → `fn_almacenes_del_usuario` + `AlmacenScopeService` filtrando `WarehouseService.listWarehouses` / `listWarehousesOK`. Gerente y supervisor **no se ven afectados**; si el alcance no se puede resolver, no se filtra (es acotado de UI, no seguridad).
 
 **Dependencias:** Fase 2.
-**Entrega:** jefe de cocina opera KDS de su estación. ✅ (inventario: solo tandas)
+**Entrega:** jefe de cocina opera KDS e inventario de su estación. ✅
 
 > **Bug de seguridad propio, encontrado al probar el caso negativo:** `SELECT true, bool_or(...)` en el guard es una agregación sin `GROUP BY` → devuelve una fila **siempre**, así que `v_existe` era `true` incondicionalmente y cualquiera podía operar cualquier cocina. Corregido a `count(*) > 0`.
 
@@ -228,6 +229,8 @@ Checklist de implementación. Marca `[x]` lo hecho y deja `[ ]` lo pendiente.
 - [x] `fn_listar_comandas_cocina` · `fn_cambiar_estado_comanda_item` · `fn_cambiar_estado_comanda` · `_fn_recalcular_estado_comanda`
 - [x] `fn_ingredientes_con_parada_tanda` · `fn_producir_tanda` · `fn_cerrar_tanda` · `fn_anular_tanda` · `fn_listar_tandas_cocina` · `fn_platos_por_tanda_cocina`
 - [x] `fn_pedir_item_cuenta_offline` · `fn_cambiar_estado_comanda_item_offline` · `fn_comandas_abiertas_turno` · `fn_ticket_comanda`
+- [x] `fn_asignar_cocina_categoria` · `fn_cocina_por_defecto_producto` · `fn_aplicar_cocina_categoria_a_platos` · `fn_asignar_plato_cocina`
+- [x] `fn_almacenes_del_usuario` · `fn_envolver_texto`
 
 ### Cambiar
 
@@ -237,8 +240,11 @@ Checklist de implementación. Marca `[x]` lo hecho y deja `[ ]` lo pendiente.
 - [x] Descuento BOM en `fn_registrar_venta*` (Fase 0 + parada `por_tanda`)
 - [x] `fn_obtener_cuenta_mesa` → expone estado de cocina (`18`)
 - [x] `check_user_has_access_to_tienda` → 6.º UNION
+- [x] `fn_agregar_rol_trabajador` / `fn_eliminar_rol_trabajador` / `fn_actualizar_datos_rol_trabajador` → aceptan `jefe_cocina` y `cocinero` (`23`)
 - [x] `permissions_service.dart` (admin) · `admin_drawer.dart`
-- [ ] `edit_worker_multi_role_screen.dart` / `worker_service` — pendiente (asignar jefe de cocina desde UI)
+- [x] `edit_worker_multi_role_screen.dart` / `worker_service.dart` → asignar jefe de cocina desde UI
+- [x] `warehouse_service.dart` → acotado por rol vía `AlmacenScopeService`
+- [x] `wifi_printer_service.dart` → `imprimirBytesCrudos()` para el ticket de cocina
 - [x] `mesa_cuenta_service.dart` / `cuenta_mesa_screen.dart`
 - [x] `order_service.dart` (bifurcación por `cocina_activa`) · `store_config_service.dart` · `product_details_screen.dart` · `cierre_screen.dart` · `app_drawer.dart` · `main.dart`
 - [x] Offline wrappers: `fn_pedir_item_cuenta_offline`, `fn_cambiar_estado_comanda_item_offline`
@@ -252,7 +258,8 @@ Checklist de implementación. Marca `[x]` lo hecho y deja `[ ]` lo pendiente.
 - [x] Gestión de cocinas → `cocinas_management_screen.dart`
 - [x] TPV ↔ cocina → `cocina_tpv_dialog.dart`
 - [x] Producto: cocina + modo elaboración → `cocinas_platos_widget.dart`
-- [ ] Asignar jefe de cocina — **pendiente** (backend listo)
+- [x] **Cocina por defecto por categoría** → `cocinas_categorias_widget.dart` (3.ª pestaña)
+- [x] **Asignar jefe de cocina** → `edit_worker_multi_role_screen.dart`
 - [x] Recetas (ya existía; validado con cocina)
 - [x] Config global: `cocina_activa` + `modo_restaurante` acoplados → `global_config_tab_view.dart`
 
@@ -260,7 +267,8 @@ Checklist de implementación. Marca `[x]` lo hecho y deja `[ ]` lo pendiente.
 
 - [x] KDS → `/kds`
 - [x] Producir tanda → `/produccion`
-- [ ] Recepción / conteo / transfer solo de su almacén cocina — pendiente
+- [x] Reimprimir ticket de comanda → botón en la tarjeta del KDS
+- [x] Recepción / conteo / transfer solo de su almacén cocina → vía `AlmacenScopeService` (admin)
 - [x] Sin dashboard de ventas (no ve las pantallas de caja)
 
 ### Vendedor (`ventiq_app`)
@@ -291,19 +299,19 @@ Checklist de implementación. Marca `[x]` lo hecho y deja `[ ]` lo pendiente.
 | Fase | Estado | Notas |
 |------|--------|-------|
 | 0 Prerrequisito | [x] | + 2 bugs latentes corregidos (`15`, `16`) |
-| 1 Cocinas | [x] | Falta solo cocina por defecto en categoría (opcional) |
+| 1 Cocinas | [x] | Incluye cocina por defecto por categoría (`23`) |
 | 2 Pedir ≠ cobrar | [x] | Se activa con `cocina_activa` |
-| 3 Roles + KDS | [~] | Falta UI de asignar jefe de cocina y UI de impresión |
+| 3 Roles + KDS | [x] | UI de asignación, impresión y acotado de almacén cerrados en el `23` |
 | 4 Tandas | [x] | Parada de BOM completa |
 | 5 Offline / fino | [x] | Cola persistente + cierre de turno |
 
+**Las 6 fases del plan están cerradas.**
+
 ### Pendientes reales (no bloquean el uso)
 
-1. **UI de admin para asignar jefe de cocina** (`edit_worker_multi_role_screen`). Backend listo: `fn_asignar_jefe_cocina`.
-2. **UI de impresión del ticket de cocina.** Backend listo: `fn_ticket_comanda` devuelve texto a 40 columnas + nombre de impresora.
-3. **Recepción / conteo / transferencia acotadas** al almacén de la cocina para el jefe.
-4. Cocina por defecto por categoría (opcional).
-5. `flutter pub get` / `build` no ejecutados: verificación hecha solo con `dart analyze`.
+1. `flutter pub get` / `build` no ejecutados: verificación hecha solo con `dart analyze` (0 errores en el admin, 1 preexistente y ajeno en el vendedor).
+2. Ninguna UI probada en dispositivo. Para hacerlo, seguir `docs/TUTORIAL_PRUEBAS_COCINA.md`.
+3. Enganche fino de la cola offline con cada pantalla del vendedor: el servicio y las RPC están probados, pero cada pantalla decide cuándo encolar.
 
 ---
 
@@ -322,6 +330,10 @@ Ninguno lo detecta `pglast` ni `dart analyze`: son SQL sintácticamente válido 
 | 7 | `21` | `created_at` para detectar salidas; `now()` es constante en la transacción | El fix del #6 no funcionaba |
 | 8 | `cocina_offline_queue.dart` | `ops.indexOf(op)` con operaciones idénticas | Reencolaba las operaciones equivocadas |
 | 9 | `product_details_screen.dart` | `addItemToCurrentOrder` sin `await` | "✅ Agregado" aunque el pedido fallara por stock |
+| 10 | `22` / `fn_ticket_comanda` | `substr()` para meter el texto en el ancho del papel | **El ticket truncaba las notas del comensal**: "sin sal ... alérgico al gluten" se imprimía como "SIN SAL Y BIEN TOSTADA POR" y el cocinero no sabía que faltaba texto |
+| 11 | `fn_*_rol_trabajador` (preexistente) | `CASE` sin `ELSE` → `CASE_NOT_FOUND` | El rol `recursos_humanos` que la UI ya ofrecía **no se podía desactivar**; salía como "Error: case not found" |
+| 12 | `23` | Añadir parámetros con `DEFAULT` crea **sobrecarga**, no reemplaza | Las 3 RPC quedaron duplicadas y la llamada de la app se volvió ambigua (`function ... is not unique`) → habría roto la pantalla de trabajadores en producción. Resuelto con `DROP` de las firmas viejas |
+| 13 | `edit_worker_multi_role_screen.dart` | El bucle genérico de roles llamaba a `addWorkerRole` sin `p_id_cocina` | El backend abortaba el guardado **completo** del trabajador con "El rol de cocina requiere una cocina asignada" |
 
 ---
 

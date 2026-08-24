@@ -24,6 +24,7 @@ class ComandaCard extends StatelessWidget {
     required this.onAvanzarItem,
     required this.onCancelarItem,
     required this.onCambiarComanda,
+    this.onImprimir,
     this.itemsEnVuelo = const {},
   });
 
@@ -33,6 +34,9 @@ class ComandaCard extends StatelessWidget {
 
   /// (comanda, nuevoEstado) para las acciones de ticket completo.
   final void Function(Comanda, int) onCambiarComanda;
+
+  /// Reimprimir el ticket. Opcional: si es null no se muestra el boton.
+  final ValueChanged<Comanda>? onImprimir;
 
   final Set<int> itemsEnVuelo;
 
@@ -102,6 +106,22 @@ class ComandaCard extends StatelessWidget {
                 ),
               ),
               const Spacer(),
+              // Reimprimir. Va en la cabecera y no en el pie porque en cocina
+              // se pulsa cuando el ticket se perdio o se mancho, y hay que
+              // encontrarlo sin leer la tarjeta entera.
+              if (onImprimir != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: InkWell(
+                    onTap: () => onImprimir!(comanda),
+                    borderRadius: BorderRadius.circular(6),
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(Icons.print_outlined,
+                          size: 18, color: Colors.white70),
+                    ),
+                  ),
+                ),
               _reloj(),
             ],
           ),

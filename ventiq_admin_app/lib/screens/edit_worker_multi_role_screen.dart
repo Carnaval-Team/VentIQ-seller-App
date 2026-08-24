@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../models/worker_models.dart';
+import '../models/cocina.dart';
 import '../services/worker_service.dart';
+import '../services/cocina_service.dart';
 
 class EditWorkerMultiRoleScreen extends StatefulWidget {
   final WorkerData worker;
@@ -50,6 +52,12 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
   int? _vendedorTpvId;
   String? _vendedorNumeroConfirmacion;
   int? _almaceneroAlmacenId;
+  // Cocina (jefe de cocina / cocinero)
+  int? _cocinaId;
+  bool _esJefeCocina = true;
+  List<Cocina> _cocinas = const [];
+  bool _cargandoCocinas = false;
+  int? _cocinaAsignadaAlCargar;
 
   bool _isLoading = false;
 
@@ -100,6 +108,44 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
     print('  - _vendedorTpvId inicializado: $_vendedorTpvId');
     print('  - _almaceneroAlmacenId inicializado: $_almaceneroAlmacenId');
     print('  - 📋 manejaAperturaControl: $_manejaAperturaControl');
+
+    _cargarCocinas();
+
+  }
+
+  /// Carga las cocinas de la tienda y, si el trabajador ya esta asignado a
+  /// alguna, la preselecciona con su grado (jefe o cocinero).
+  ///
+  /// El rol de cocina NO viene en `worker.rolesActivos` (ese getter se arma con
+  /// los 6 roles historicos), asi que se deduce de la tabla: si tiene fila en
+  /// app_dat_jefe_cocina, el checkbox aparece marcado.
+  Future<void> _cargarCocinas() async {
+    setState(() => _cargandoCocinas = true);
+    try {
+      final cocinas = await CocinaService.listarCocinas();
+
+      List<Map<String, dynamic>> asignadas = const [];
+      final uuid = widget.worker.usuarioUuid;
+      if (uuid != null && uuid.isNotEmpty) {
+        asignadas = await CocinaService.cocinasDeTrabajador(uuid);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _cocinas = cocinas;
+        if (asignadas.isNotEmpty) {
+          final a = asignadas.first;
+          _cocinaId = (a['id_cocina'] as num?)?.toInt();
+          _cocinaAsignadaAlCargar = _cocinaId;
+          _esJefeCocina = a['es_jefe'] == true;
+          _activeRoles.add(_esJefeCocina ? 'jefe_cocina' : 'cocinero');
+        }
+      });
+    } catch (e) {
+      print('⚠️ No se pudieron cargar las cocinas: $e');
+    } finally {
+      if (mounted) setState(() => _cargandoCocinas = false);
+    }
   }
 
   @override
@@ -360,6 +406,26 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
             Colors.green,
           ),
           if (_activeRoles.contains('almacenero')) _buildAlmaceneroConfig(),
+          // Cocina. Dos roles distintos sobre la misma tabla: el jefe puede
+          // producir tandas y mover inventario de su cocina; el cocinero solo
+          // usa el KDS. Se ofrecen por separado para que quede explicito.
+          if (_cocinas.isNotEmpty || _cargandoCocinas) ...[
+            _buildRoleCheckbox(
+              'jefe_cocina',
+              'Jefe de Cocina',
+              Icons.soup_kitchen,
+              Colors.deepOrange,
+            ),
+            _buildRoleCheckbox(
+              'cocinero',
+              'Cocinero',
+              Icons.outdoor_grill,
+              Colors.brown,
+            ),
+            if (_activeRoles.contains('jefe_cocina') ||
+                _activeRoles.contains('cocinero'))
+              _buildCocinaConfig(),
+          ],
           _buildRoleCheckbox(
             'recursos_humanos',
             'Recursos Humanos',
@@ -391,6 +457,15 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
                   setState(() {
                     if (value == true) {
                       _activeRoles.add(roleKey);
+                      // Jefe y cocinero son grados del MISMO registro
+                      // (app_dat_jefe_cocina.es_jefe): no pueden coexistir.
+                      if (roleKey == 'jefe_cocina') {
+                        _activeRoles.remove('cocinero');
+                        _esJefeCocina = true;
+                      } else if (roleKey == 'cocinero') {
+                        _activeRoles.remove('jefe_cocina');
+                        _esJefeCocina = false;
+                      }
                     } else {
                       _activeRoles.remove(roleKey);
                       // Limpiar datos específicos al desactivar
@@ -399,6 +474,9 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
                         _vendedorNumeroConfirmacion = null;
                       } else if (roleKey == 'almacenero') {
                         _almaceneroAlmacenId = null;
+                      } else if (roleKey == 'jefe_cocina' ||
+                          roleKey == 'cocinero') {
+                        _cocinaId = null;
                       }
                     }
                   });
@@ -519,6 +597,72 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
             onChanged: (value) {
               setState(() => _almaceneroAlmacenId = value);
             },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Selector de cocina para los roles de cocina.
+  ///
+  /// El ámbito del rol es la COCINA, no el almacén: aunque cada cocina tenga su
+  /// almacén detrás, el jefe se asigna a la estación y el backend deriva el
+  /// almacén. Así un chef que cubre dos estaciones no necesita dos almaceneros.
+  Widget _buildCocinaConfig() {
+    final esJefe = _activeRoles.contains('jefe_cocina');
+    final color = esJefe ? Colors.deepOrange : Colors.brown;
+
+    return Container(
+      margin: const EdgeInsets.only(left: 16, bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            esJefe ? 'Configuración de Jefe de Cocina' : 'Configuración de Cocinero',
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+          ),
+          const SizedBox(height: 12),
+          if (_cargandoCocinas)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: LinearProgressIndicator(minHeight: 2),
+            )
+          else
+            DropdownButtonFormField<int>(
+              value: _cocinaId,
+              decoration: const InputDecoration(
+                labelText: 'Cocina Asignada',
+                prefixIcon: Icon(Icons.soup_kitchen),
+                border: OutlineInputBorder(),
+              ),
+              items: _cocinas.map((cocina) {
+                return DropdownMenuItem(
+                  value: cocina.id,
+                  child: Text(
+                    cocina.activa
+                        ? cocina.denominacion
+                        : '${cocina.denominacion} (inactiva)',
+                  ),
+                );
+              }).toList(),
+              onChanged: (value) {
+                setState(() => _cocinaId = value);
+              },
+            ),
+          const SizedBox(height: 10),
+          Text(
+            esJefe
+                ? 'Verá el KDS de esta cocina y podrá producir, cerrar y anular '
+                    'tandas, además de operar el inventario de su almacén.'
+                : 'Verá el KDS de esta cocina y podrá marcar platos. No podrá '
+                    'producir tandas ni mover inventario.',
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
           ),
         ],
       ),
@@ -670,6 +814,16 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
       return;
     }
 
+    // Validar datos específicos de cocina. El backend tambien lo exige
+    // ("El rol de cocina requiere una cocina asignada"), pero validarlo aqui
+    // evita el viaje y da un mensaje en el contexto del formulario.
+    final tieneRolCocina = _activeRoles.contains('jefe_cocina') ||
+        _activeRoles.contains('cocinero');
+    if (tieneRolCocina && _cocinaId == null) {
+      _showError('Debes seleccionar una cocina para el rol de cocina');
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
@@ -698,6 +852,11 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
       // Agregar roles nuevos
       for (final role in rolesNuevos) {
         if (role == 'usuario') continue; // Skip usuario, es automático
+        // Los roles de cocina se gestionan en 2.b: necesitan p_id_cocina, que
+        // este bucle generico no pasa. Sin este skip, addWorkerRole llegaria al
+        // backend sin cocina y devolveria "El rol de cocina requiere una cocina
+        // asignada", abortando el guardado completo del trabajador.
+        if (role == 'jefe_cocina' || role == 'cocinero') continue;
 
         await WorkerService.addWorkerRole(
           trabajadorId: widget.worker.trabajadorId,
@@ -721,6 +880,37 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
         await WorkerService.removeWorkerRole(
           trabajadorId: widget.worker.trabajadorId,
           tipoRol: role,
+        );
+      }
+
+      // 2.b Roles de cocina.
+      //
+      // Van aparte del bucle de arriba a proposito: `rolesActivos` se
+      // construye con los 6 roles historicos (usuario, gerente, supervisor,
+      // vendedor, almacenero, recursos_humanos) y nunca contiene cocina, asi
+      // que la diferencia de conjuntos no los ve. Se resuelve contra el estado
+      // real de la tabla, que es lo que se cargo en _cargarCocinas().
+      final uuidCocina = _uuidController.text.isEmpty
+          ? widget.userUuid
+          : _uuidController.text;
+
+      if (tieneRolCocina && _cocinaId != null) {
+        // Idempotente en el backend: si ya estaba, actualiza el grado.
+        await WorkerService.addWorkerRole(
+          trabajadorId: widget.worker.trabajadorId,
+          storeId: widget.storeId,
+          tipoRol: _activeRoles.contains('jefe_cocina')
+              ? 'jefe_cocina'
+              : 'cocinero',
+          usuarioUuid: uuidCocina,
+          idCocina: _cocinaId,
+          esJefeCocina: _activeRoles.contains('jefe_cocina'),
+        );
+      } else if (_cocinaAsignadaAlCargar != null) {
+        // Tenia rol de cocina y se desmarco: quitarlo.
+        await WorkerService.removeWorkerRole(
+          trabajadorId: widget.worker.trabajadorId,
+          tipoRol: 'jefe_cocina',
         );
       }
 

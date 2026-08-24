@@ -612,6 +612,8 @@ class WorkerService {
     int? tpvId,
     int? almacenId,
     String? numeroConfirmacion,
+    int? idCocina,
+    bool esJefeCocina = true,
   }) async {
     try {
       print('➡️ Agregando rol $tipoRol al trabajador $trabajadorId');
@@ -626,6 +628,8 @@ class WorkerService {
           'p_tpv_id': tpvId,
           'p_almacen_id': almacenId,
           'p_numero_confirmacion': numeroConfirmacion,
+          'p_id_cocina': idCocina,
+          'p_es_jefe_cocina': esJefeCocina,
         },
       );
 
@@ -646,13 +650,18 @@ class WorkerService {
   static Future<bool> removeWorkerRole({
     required int trabajadorId,
     required String tipoRol,
+    int? idCocina,
   }) async {
     try {
       print('❌ Eliminando rol $tipoRol del trabajador $trabajadorId');
 
       final response = await _supabase.rpc(
         'fn_eliminar_rol_trabajador',
-        params: {'p_trabajador_id': trabajadorId, 'p_tipo_rol': tipoRol},
+        params: {
+          'p_trabajador_id': trabajadorId,
+          'p_tipo_rol': tipoRol,
+          'p_id_cocina': idCocina,
+        },
       );
 
       print('📋 Respuesta de eliminar rol: $response');
@@ -675,6 +684,8 @@ class WorkerService {
     int? tpvId,
     int? almacenId,
     String? numeroConfirmacion,
+    int? idCocina,
+    bool? esJefeCocina,
   }) async {
     try {
       print(
@@ -689,6 +700,8 @@ class WorkerService {
           'p_tpv_id': tpvId,
           'p_almacen_id': almacenId,
           'p_numero_confirmacion': numeroConfirmacion,
+          'p_id_cocina': idCocina,
+          'p_es_jefe_cocina': esJefeCocina,
         },
       );
 

@@ -575,6 +575,23 @@ class WiFiPrinterService {
     }
   }
 
+  /// Enviar bytes ESC/POS ya generados a la impresora conectada.
+  ///
+  /// Envoltorio publico de `_sendToPrinterWithRetry`, para contenido que se
+  /// arma fuera de esta clase (por ejemplo el ticket de cocina, que lo formatea
+  /// el backend en `fn_ticket_comanda`). No genera nada: solo transporta.
+  Future<bool> imprimirBytesCrudos(List<int> bytes, String jobName) async {
+    if (!_isConnected || _socket == null) {
+      debugPrint('❌ Impresora WiFi no conectada ($jobName)');
+      return false;
+    }
+    if (bytes.isEmpty) {
+      debugPrint('⚠️ Nada que imprimir ($jobName)');
+      return false;
+    }
+    return _sendToPrinterWithRetry(bytes, jobName);
+  }
+
   /// Enviar bytes a la impresora con reintentos
   Future<bool> _sendToPrinterWithRetry(List<int> bytes, String jobName) async {
     bool result = false;

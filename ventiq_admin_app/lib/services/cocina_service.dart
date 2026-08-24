@@ -363,6 +363,124 @@ class CocinaService {
   }
 
   // ══════════════════════════════════════════════════════════════════════
+  // Personal de cocina (jefe / cocinero)
+  // ══════════════════════════════════════════════════════════════════════
+
+  /// Personal asignado a una cocina, con su grado (jefe o cocinero).
+  static Future<List<Map<String, dynamic>>> listarPersonalCocina(
+    int idCocina,
+  ) async {
+    final response = await _supabase.rpc(
+      'fn_listar_personal_cocina',
+      params: {'p_id_cocina': idCocina},
+    );
+
+    final mapa = _unwrap(response, 'listar el personal de la cocina');
+
+    final lista = mapa['personal'];
+    if (lista is! List) return const [];
+
+    return lista
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  /// Cocinas donde está asignado un trabajador (por su uuid de usuario).
+  ///
+  /// Se consulta directo a la tabla porque `fn_cocinas_del_usuario` resuelve el
+  /// alcance del usuario AUTENTICADO, y aquí el admin pregunta por OTRO.
+  static Future<List<Map<String, dynamic>>> cocinasDeTrabajador(
+    String uuidUsuario,
+  ) async {
+    final response = await _supabase
+        .from('app_dat_jefe_cocina')
+        .select('id, id_cocina, es_jefe, app_dat_cocina(denominacion, id_tienda)')
+        .eq('uuid', uuidUsuario);
+
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // Cocina por defecto de una categoría
+  // ══════════════════════════════════════════════════════════════════════
+
+  /// Define (o quita con [idCocina] null) la cocina por defecto de una categoría.
+  ///
+  /// Es una SUGERENCIA: los platos que ya tienen cocina propia no se tocan, ni
+  /// aquí ni en el bulk.
+  static Future<Map<String, dynamic>> asignarCocinaACategoria({
+    required int idCategoria,
+    int? idCocina,
+  }) async {
+    final storeId = await _requireStoreId();
+
+    final response = await _supabase.rpc(
+      'fn_asignar_cocina_categoria',
+      params: {
+        'p_id_tienda': storeId,
+        'p_id_categoria': idCategoria,
+        'p_id_cocina': idCocina,
+      },
+    );
+
+    return _unwrap(response, 'asignar la cocina a la categoría');
+  }
+
+  /// Manda a la cocina de la categoría todos sus platos que NO tengan cocina.
+  ///
+  /// Devuelve cuántos tocó y cuántos respetó por tener asignación propia.
+  static Future<Map<String, dynamic>> aplicarCocinaCategoriaAPlatos({
+    required int idCategoria,
+    ModoElaboracion? modoElaboracion,
+    bool soloElaborados = true,
+  }) async {
+    final storeId = await _requireStoreId();
+
+    final response = await _supabase.rpc(
+      'fn_aplicar_cocina_categoria_a_platos',
+      params: {
+        'p_id_tienda': storeId,
+        'p_id_categoria': idCategoria,
+        'p_modo_elaboracion': modoElaboracion?.valor,
+        'p_solo_elaborados': soloElaborados,
+      },
+    );
+
+    return _unwrap(response, 'aplicar la cocina de la categoría');
+  }
+
+  /// Categorías de la tienda con su cocina por defecto (si tienen).
+  static Future<List<Map<String, dynamic>>> listarCategoriasConCocina() async {
+    final storeId = await _requireStoreId();
+
+    final response = await _supabase
+        .from('app_dat_categoria_tienda')
+        .select('id, id_categoria, id_cocina, app_dat_categoria(denominacion)')
+        .eq('id_tienda', storeId);
+
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  /// Qué cocina le correspondería a un producto por sus categorías.
+  ///
+  /// `ambiguo: true` significa que el producto está en varias categorías con
+  /// cocinas distintas y la UI debería decirlo en vez de elegir en silencio.
+  static Future<Map<String, dynamic>?> cocinaPorDefectoDeProducto(
+    int idProducto,
+  ) async {
+    final response = await _supabase.rpc(
+      'fn_cocina_por_defecto_producto',
+      params: {'p_id_producto': idProducto},
+    );
+
+    if (response is! Map) return null;
+    final mapa = Map<String, dynamic>.from(response);
+    if (mapa['status'] != 'success') return null;
+    return mapa;
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
   // Configuración de tienda
   // ══════════════════════════════════════════════════════════════════════
 

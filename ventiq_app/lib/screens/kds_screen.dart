@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 
 import '../models/comanda.dart';
 import '../services/comanda_service.dart';
+import '../services/comanda_ticket_service.dart';
 import '../widgets/comanda_card.dart';
+import '../widgets/ticket_comanda_dialog.dart';
 
 /// Pantalla KDS (Kitchen Display System) para el jefe de cocina y cocineros.
 ///
@@ -49,6 +51,12 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
   /// Ids de items con una acción en vuelo, para no dispararla dos veces con un
   /// doble toque accidental.
   final Set<int> _enVuelo = {};
+
+  /// Comandas con una impresión en curso. Mismo motivo, pero por comanda: la
+  /// térmica tarda y un segundo toque sacaría dos tickets iguales.
+  final Set<int> _imprimiendo = {};
+
+  final ComandaTicketService _ticketService = ComandaTicketService();
 
   @override
   void initState() {
@@ -164,6 +172,42 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
       _aviso(e.mensaje, error: true);
     } catch (e) {
       _aviso('Error: $e', error: true);
+    }
+  }
+
+  /// Reimprime el ticket de la comanda en la impresora de su cocina.
+  ///
+  /// Si la cocina no tiene impresora, o la impresora no responde, se muestra el
+  /// ticket en pantalla en vez de dar un error a secas: el cocinero necesita
+  /// leer la comanda igual, y una cocina sin térmica es un caso normal.
+  Future<void> _imprimirTicket(Comanda comanda) async {
+    if (_imprimiendo.contains(comanda.id)) return;
+    setState(() => _imprimiendo.add(comanda.id));
+
+    try {
+      final res = await _ticketService.imprimir(comanda.id);
+      if (!mounted) return;
+
+      if (res.ok) {
+        _aviso(res.mensaje);
+        return;
+      }
+
+      if (res.puedeMostrarse) {
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => TicketComandaDialog(
+            resultado: res,
+            onReintentar: () => _imprimirTicket(comanda),
+          ),
+        );
+      } else {
+        _aviso(res.mensaje, error: true);
+      }
+    } catch (e) {
+      if (mounted) _aviso('Error al imprimir: $e', error: true);
+    } finally {
+      if (mounted) setState(() => _imprimiendo.remove(comanda.id));
     }
   }
 
@@ -442,6 +486,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
               onAvanzarItem: _avanzarItem,
               onCancelarItem: _cancelarItem,
               onCambiarComanda: _cambiarComanda,
+              onImprimir: _imprimirTicket,
             );
           },
         );
