@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
+import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import '../config/app_colors.dart';
 import '../models/warehouse.dart';
 import '../models/inventory.dart';
@@ -12,6 +13,7 @@ import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
 import '../services/tpv_service.dart';
 import '../services/printer_manager.dart';
+import '../services/printer_preferences_service.dart';
 import '../services/wifi_printer_service.dart';
 import '../widgets/conversion_info_widget.dart';
 import '../widgets/product_selector_widget.dart';
@@ -43,6 +45,11 @@ class _InventoryExtractionBySaleScreenState
   // (se capturan antes de limpiar los controladores).
   String _lastClientNameForPrint = '';
   String _lastObservationsForPrint = '';
+
+  // Captura en tiempo real del campo cliente/observaciones para evitar
+  // que se pierda el valor si el controlador no está sincronizado.
+  String _clienteInput = '';
+  String _observacionesInput = '';
 
   List<Map<String, dynamic>> _selectedProducts = [];
   WarehouseZone? _selectedSourceLocation;
@@ -85,6 +92,8 @@ class _InventoryExtractionBySaleScreenState
   void initState() {
     super.initState();
     _loadPersistedValues();
+    _clienteController.addListener(_onClienteChanged);
+    _observacionesController.addListener(_onObservacionesChanged);
     _loadShowDescriptionConfig();
     _loadMotivoVentaOptions();
     _loadMedioPagoOptions();
@@ -119,11 +128,21 @@ class _InventoryExtractionBySaleScreenState
   void _loadPersistedValues() {
     _clienteController.text = _lastCliente;
     _observacionesController.text = _lastObservaciones;
+    _clienteInput = _lastCliente;
+    _observacionesInput = _lastObservaciones;
+  }
+
+  void _onClienteChanged() {
+    _clienteInput = _clienteController.text;
+  }
+
+  void _onObservacionesChanged() {
+    _observacionesInput = _observacionesController.text;
   }
 
   void _savePersistedValues() {
-    _lastCliente = _clienteController.text;
-    _lastObservaciones = _observacionesController.text;
+    _lastCliente = _clienteInput;
+    _lastObservaciones = _observacionesInput;
   }
 
   Future<void> _loadShowDescriptionConfig() async {
@@ -277,6 +296,8 @@ class _InventoryExtractionBySaleScreenState
 
   @override
   void dispose() {
+    _clienteController.removeListener(_onClienteChanged);
+    _observacionesController.removeListener(_onObservacionesChanged);
     _clienteController.dispose();
     _observacionesController.dispose();
     super.dispose();
@@ -610,6 +631,18 @@ class _InventoryExtractionBySaleScreenState
     }
 
     setState(() => _isLoading = true);
+
+    // Forzar cierre del teclado y confirmar el texto editado.
+    FocusManager.instance.primaryFocus?.unfocus();
+
+    // Capturar cliente/observaciones antes de que cualquier setState/clear
+    // pueda perder el valor del controlador.
+    final clienteNombre = _clienteInput.trim();
+    final observacionesText = _observacionesInput.trim();
+
+    _lastClientNameForPrint = clienteNombre;
+    _lastObservationsForPrint = observacionesText;
+
     _savePersistedValues();
 
     try {
@@ -644,12 +677,12 @@ class _InventoryExtractionBySaleScreenState
 
       // Preparar observaciones con información del cliente y total
       String observaciones = '';
-      if (_clienteController.text.isNotEmpty) {
-        observaciones += 'Cliente: ${_clienteController.text}. ';
+      if (clienteNombre.isNotEmpty) {
+        observaciones += 'Cliente: $clienteNombre. ';
       }
       observaciones += 'Total: \$${_calculateTotal().toStringAsFixed(2)}. ';
-      if (_observacionesController.text.isNotEmpty) {
-        observaciones += _observacionesController.text;
+      if (observacionesText.isNotEmpty) {
+        observaciones += observacionesText;
       }
 
       final tipoVenta = _selectedMotivoVenta!['denominacion'] ?? 'Venta';
@@ -807,8 +840,8 @@ class _InventoryExtractionBySaleScreenState
 
         if (mounted) {
           // Capturar cliente/observaciones para el ticket antes de limpiar
-          _lastClientNameForPrint = _clienteController.text;
-          _lastObservationsForPrint = _observacionesController.text;
+          _lastClientNameForPrint = clienteNombre;
+          _lastObservationsForPrint = observacionesText;
 
           // Limpiar campos de cliente y observaciones
           _clienteController.clear();
@@ -1963,26 +1996,36 @@ class _InventoryExtractionBySaleScreenState
         return;
       }
 
-      // 1) Moneda del ticket
-      final currency = await _showPrintCurrencyDialog();
-      if (currency == null || !mounted) return;
-
-      double? rate;
-      if (currency == 'CUP') {
-        rate = await _showPrintExchangeRateDialog();
-        if (rate == null || !mounted) return;
-      }
-
-      await _ensureUsdPricesForPrint();
-      if (!mounted) return;
-
+      // 1) Siempre imprimir en CUP usando el precio unitario de la venta.
+      //    Se omite la selección de moneda temporalmente mientras se corrige la lógica.
       setState(() {
-        _printCurrencyCode = currency;
-        _printExchangeRate = rate;
+        _printCurrencyCode = 'CUP';
+        _printExchangeRate = null;
       });
 
-      // 2) Tipo de impresora
-      final printerType = await showDialog<String>(
+      // 2) Si hay una impresora guardada por defecto, usarla directamente.
+      String? printerType;
+      final prefs = PrinterPreferencesService();
+      final savedWifi = await prefs.getDefaultWiFiPrinter();
+      final savedBt = await prefs.getDefaultBluetoothPrinter();
+
+      if (savedWifi != null && savedBt == null) {
+        print('✅ Impresora WiFi por defecto encontrada, imprimiendo directamente...');
+        await _printExtractionTicketWiFi(preselected: savedWifi);
+        return;
+      }
+      if (savedBt != null && savedWifi == null) {
+        print('✅ Impresora Bluetooth por defecto encontrada, imprimiendo directamente...');
+        final savedDevice = BluetoothInfo(
+          name: savedBt['name']?.toString() ?? 'Impresora BT',
+          macAdress: savedBt['mac']?.toString() ?? '',
+        );
+        await _printExtractionTicketBluetooth(preselected: savedDevice);
+        return;
+      }
+
+      // 3) Si hay ambas o ninguna, dejar que el usuario elija el tipo.
+      printerType = await showDialog<String>(
         context: context,
         builder:
             (context) => AlertDialog(
@@ -2045,7 +2088,9 @@ class _InventoryExtractionBySaleScreenState
   }
 
   /// 🖨️ Imprimir ticket usando WiFi
-  Future<void> _printExtractionTicketWiFi() async {
+  Future<void> _printExtractionTicketWiFi({
+    Map<String, dynamic>? preselected,
+  }) async {
     try {
       print('📶 Imprimiendo por WiFi...');
 
@@ -2053,14 +2098,17 @@ class _InventoryExtractionBySaleScreenState
 
       final wifiService = WiFiPrinterService();
 
-      // Mostrar diálogo de selección de impresora WiFi
-      final selectedPrinter = await wifiService.showPrinterSelectionDialog(
-        context,
-        allowSaveDefault: _guardarImpresoraPorDefecto,
-      );
+      Map<String, dynamic>? selectedPrinter = preselected;
       if (selectedPrinter == null) {
-        print('❌ No se seleccionó impresora WiFi');
-        return;
+        // Mostrar diálogo de selección de impresora WiFi
+        selectedPrinter = await wifiService.showPrinterSelectionDialog(
+          context,
+          allowSaveDefault: _guardarImpresoraPorDefecto,
+        );
+        if (selectedPrinter == null) {
+          print('❌ No se seleccionó impresora WiFi');
+          return;
+        }
       }
 
       if (!mounted) return;
@@ -2208,27 +2256,43 @@ class _InventoryExtractionBySaleScreenState
   }
 
   /// 🖨️ Imprimir ticket usando Bluetooth
-  Future<void> _printExtractionTicketBluetooth() async {
+  Future<void> _printExtractionTicketBluetooth({
+    BluetoothInfo? preselected,
+  }) async {
     try {
       print('📱 Imprimiendo por Bluetooth...');
 
       if (!mounted) return;
 
       final printerManager = PrinterManager();
-
-      // Mostrar diálogo de confirmación
-      bool shouldPrint = await printerManager.showPrintConfirmationDialog(
-        context,
-      );
-      if (!shouldPrint || !mounted) return;
-
-      // Seleccionar dispositivo Bluetooth
       final bluetoothService = printerManager.bluetoothService;
-      var selectedDevice = await bluetoothService.showDeviceSelectionDialog(
-        context,
-        allowSaveDefault: _guardarImpresoraPorDefecto,
-      );
-      if (selectedDevice == null || !mounted) return;
+
+      BluetoothInfo? selectedDevice = preselected;
+
+      if (selectedDevice == null) {
+        // Mostrar diálogo de confirmación solo si no hay impresora preseleccionada
+        bool shouldPrint = await printerManager.showPrintConfirmationDialog(
+          context,
+        );
+        if (!shouldPrint || !mounted) return;
+
+        // Seleccionar dispositivo Bluetooth
+        selectedDevice = await bluetoothService.showDeviceSelectionDialog(
+          context,
+          allowSaveDefault: _guardarImpresoraPorDefecto,
+        );
+        if (selectedDevice == null || !mounted) return;
+      } else {
+        // Inicializar Bluetooth si se usa la impresora guardada
+        final ok = await bluetoothService.initializeBluetooth(context);
+        if (!ok) {
+          _showErrorDialog(
+            'Bluetooth',
+            'No se pudo inicializar Bluetooth.',
+          );
+          return;
+        }
+      }
 
       // ✅ Verificar si el widget sigue montado
       if (!mounted) {

@@ -1204,6 +1204,10 @@ class ExcelImportService {
       // Productos elaborados
       'false',
       '0',
+      // Precios y costos adicionales
+      '12.50',
+      // Proveedor
+      'Proveedor Ejemplo',
     ];
     
     for (int i = 0; i < exampleData.length; i++) {
