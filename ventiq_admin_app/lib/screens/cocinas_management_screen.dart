@@ -7,6 +7,7 @@ import '../widgets/admin_drawer.dart';
 import '../widgets/cocinas/cocina_form_dialog.dart';
 import '../widgets/cocinas/cocinas_list_widget.dart';
 import '../widgets/cocinas/cocinas_platos_widget.dart';
+import '../widgets/cocinas/cocinas_categorias_widget.dart';
 
 /// Pantalla de gestión de cocinas (Fase 1 del plan restaurante/cocina).
 ///
@@ -38,7 +39,7 @@ class _CocinasManagementScreenState extends State<CocinasManagementScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(_onTabChange);
     _cargarConfig();
   }
@@ -127,6 +128,7 @@ class _CocinasManagementScreenState extends State<CocinasManagementScreen>
           tabs: const [
             Tab(icon: Icon(Icons.soup_kitchen), text: 'Cocinas'),
             Tab(icon: Icon(Icons.restaurant_menu), text: 'Platos'),
+            Tab(icon: Icon(Icons.category), text: 'Categorias'),
           ],
         ),
       ),
@@ -146,6 +148,11 @@ class _CocinasManagementScreenState extends State<CocinasManagementScreen>
                 ),
                 CocinasPlatosWidget(
                   key: ValueKey('platos_$_refreshKey'),
+                  searchQuery: _searchQuery,
+                  onRefresh: _refrescar,
+                ),
+                CocinasCategoriasWidget(
+                  key: ValueKey('categorias_$_refreshKey'),
                   searchQuery: _searchQuery,
                   onRefresh: _refrescar,
                 ),
@@ -238,13 +245,19 @@ class _CocinasManagementScreenState extends State<CocinasManagementScreen>
   }
 
   Widget _buildBuscador(bool esTabCocinas) {
+    // El hint depende de la pestaña activa: buscar "croqueta" en Cocinas no
+    // encuentra nada y el usuario no sabría por qué.
+    final hint = switch (_tabController.index) {
+      0 => 'Buscar cocina, almacén o TPV...',
+      1 => 'Buscar plato por nombre o SKU...',
+      _ => 'Buscar categoría...',
+    };
+
     return Container(
       padding: const EdgeInsets.all(16),
       child: TextField(
         decoration: InputDecoration(
-          hintText: esTabCocinas
-              ? 'Buscar cocina, almacén o TPV...'
-              : 'Buscar plato por nombre o SKU...',
+          hintText: hint,
           prefixIcon: const Icon(Icons.search),
           filled: true,
           fillColor: AppColors.surface,

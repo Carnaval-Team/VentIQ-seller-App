@@ -8,6 +8,7 @@ Nada queda sin verificar: cada paso dice qué hacer, qué debe pasar y cómo com
 > - **`cocina_activa` está en `false`.** Hasta que lo enciendas, el sistema se comporta como antes: el inventario se mueve al cobrar. Eso es a propósito (§2).
 > - **No hay cocinas creadas todavía** en la tienda 11. Las creas en §2.
 > - Las apps no se han compilado en esta sesión: solo `dart analyze`. El §0 cubre el arranque.
+> - **Todo el plan está implementado**, incluida la UI de asignar jefe de cocina (§3), la impresión del ticket (§6.11), el acotado de almacén (§10.11) y la cocina por defecto por categoría (§3b).
 
 ---
 
@@ -48,7 +49,8 @@ El **221 "pan con croqueta"** es la estrella del tutorial: es un elaborado que c
 | 0 | Arranque de las apps | ambas | 10 min |
 | 1 | Fase 0 — descuento de receta por almacén | admin | 10 min |
 | 2 | Fase 1 — crear cocinas y ligarlas | admin | 15 min |
-| 3 | Fase 3a — asignar jefe de cocina (por SQL) | SQL | 5 min |
+| 3 | Fase 3a — asignar jefe de cocina (desde el admin) | admin | 10 min |
+| 3b | Cocina por defecto por categoría | admin | 10 min |
 | 4 | Fase 1b — catálogo dual en el vendedor | vendedor | 10 min |
 | 5 | Fase 2 — pedir ≠ cobrar (el corazón) | vendedor | 25 min |
 | 6 | Fase 3b — KDS | vendedor | 20 min |
@@ -59,7 +61,7 @@ El **221 "pan con croqueta"** es la estrella del tutorial: es un elaborado que c
 | 11 | No-regresión (que nada viejo se rompió) | ambas | 20 min |
 | 12 | Checklist final | — | — |
 
-**Total ≈ 3 horas** si se hace todo seguido. Cada sección es independiente salvo que se diga lo contrario.
+**Total ≈ 3 h 30 min** si se hace todo seguido. Cada sección es independiente salvo que se diga lo contrario.
 
 ---
 
@@ -320,57 +322,79 @@ SELECT p.id, p.denominacion,
 
 ---
 
-## § 3 · Fase 3a — Asignar jefe de cocina (por SQL)
+## § 3 · Fase 3a — Asignar jefe de cocina (desde el admin)
 
-> ⚠️ **Pendiente conocido:** la UI de admin para asignar jefe de cocina **no está hecha**. El backend sí. Hasta que exista la pantalla, se asigna por SQL. Es el único paso del tutorial que obliga a salir de las apps.
+> ✅ Antes esto se hacía por SQL. **Ya hay pantalla**: se asigna como cualquier otro rol.
 
-### 3.1 Averiguar el uuid del trabajador
+### 3.1 Abrir el trabajador
+
+App **admin** → **Trabajadores** → toca un trabajador → **Editar**.
+
+> El trabajador **necesita UUID de usuario** (cuenta creada). Sin UUID los checkboxes de rol aparecen deshabilitados: es el comportamiento que ya tenía la pantalla para todos los roles.
+
+### 3.2 Marcar "Jefe de Cocina"
+
+En la lista de roles, debajo de Almacenero, ahora hay dos entradas nuevas:
+
+| Rol | Color | Qué puede hacer |
+|-----|-------|-----------------|
+| **Jefe de Cocina** | naranja | KDS + producir/cerrar/anular tandas + inventario de su almacén |
+| **Cocinero** | marrón | Solo KDS: ver y marcar platos |
+
+1. Marca **Jefe de Cocina**.
+2. Se despliega un panel naranja con el selector **Cocina Asignada**.
+3. Elige **Cocina caliente**.
+4. Guarda.
+
+**Esperado:** "Trabajador actualizado exitosamente".
+
+### 3.3 Son excluyentes
+
+Vuelve a abrir el mismo trabajador y marca **Cocinero**.
+
+**Esperado:** al marcar Cocinero se **desmarca** Jefe de Cocina automáticamente, y viceversa.
+
+> No es un capricho de UI: son el mismo registro en `app_dat_jefe_cocina` con `es_jefe` distinto. Permitir las dos marcas a la vez daría a entender que existen dos filas.
+
+### 3.4 Sin cocina no guarda
+
+Marca **Jefe de Cocina** y **no elijas cocina**. Intenta guardar.
+
+**Esperado:** "Debes seleccionar una cocina para el rol de cocina". No se envía nada.
+
+### 3.5 Verificar en la base de datos
 
 ```sql
-SELECT t.id AS id_trabajador, t.nombres, t.apellidos, t.uuid, t.user_mail
-  FROM app_dat_trabajadores t
- WHERE t.id_tienda = 11 AND t.deleted_at IS NULL
- ORDER BY t.nombres;
+SELECT jc.uuid, jc.id_trabajador, jc.es_jefe,
+       c.denominacion AS cocina,
+       TRIM(COALESCE(t.nombres,'') || ' ' || COALESCE(t.apellidos,'')) AS trabajador
+  FROM app_dat_jefe_cocina jc
+  JOIN app_dat_cocina c ON c.id = jc.id_cocina
+  LEFT JOIN app_dat_trabajadores t ON t.id = jc.id_trabajador
+ WHERE c.id_tienda = 11;
 ```
 
-📝 Anota el `uuid` y el `id_trabajador` de quien vaya a hacer de jefe de cocina.
+**Esperado:** una fila con `es_jefe = true` (o `false` si lo dejaste como cocinero).
 
-> Puedes usar tu propio usuario. Si eres gerente o supervisor de la tienda, **ya ves todas las cocinas** sin necesidad de asignarte (así lo resuelve `fn_cocinas_del_usuario`). Pero conviene asignar a alguien que **no** sea gerente para probar el aislamiento de §10 de verdad.
+### 3.6 Al reabrir, el rol aparece marcado
 
-### 3.2 Asignar como JEFE
+Cierra la pantalla y vuelve a abrir el mismo trabajador.
 
-```sql
--- Sustituye <UUID_JEFE>, <ID_TRABAJADOR> y <ID_COCINA_CALIENTE>
-SELECT public.fn_asignar_jefe_cocina(
-    '<UUID_JEFE>'::uuid,
-    <ID_COCINA_CALIENTE>,
-    <ID_TRABAJADOR>,
-    true          -- true = jefe (puede producir tandas)
-);
-```
+**Esperado:** el checkbox correcto ya está marcado y la cocina preseleccionada.
 
-**Esperado:** `{"status":"success", "ya_existia":false, "message":"Asignado como jefe de Cocina caliente"}`
+> Detalle técnico: el rol de cocina **no** viene en `worker.rolesActivos` (ese getter se armó con los 6 roles históricos). La pantalla lo deduce consultando `app_dat_jefe_cocina` al abrir. Si algún día se añade al getter, esto seguirá funcionando.
 
-### 3.3 Probar que es idempotente
+### 3.7 Asignar un COCINERO (para las pruebas de permisos de §10)
 
-Ejecuta **la misma consulta otra vez**.
+Repite con **otro** trabajador, marcando **Cocinero** en la misma Cocina caliente.
 
-**Esperado:** `"ya_existia": true`. No falla, actualiza. Así una reasignación no revienta.
+### 3.8 Quitar el rol
 
-### 3.4 Asignar un COCINERO (para probar permisos)
+Abre uno de ellos, **desmarca** el rol de cocina y guarda.
 
-Con **otro** trabajador:
+**Esperado:** la fila desaparece de `app_dat_jefe_cocina`. Repite la consulta de §3.5 para confirmarlo. Luego vuelve a asignarlo, que se necesita en §6 y §7.
 
-```sql
-SELECT public.fn_asignar_jefe_cocina(
-    '<UUID_COCINERO>'::uuid,
-    <ID_COCINA_CALIENTE>,
-    <ID_TRABAJADOR_2>,
-    false         -- false = cocinero: KDS sí, producir tandas no
-);
-```
-
-### 3.5 Ver el personal de la cocina
+### 3.9 Ver el personal de la cocina
 
 ```sql
 SELECT public.fn_listar_personal_cocina(<ID_COCINA_CALIENTE>);
@@ -378,10 +402,140 @@ SELECT public.fn_listar_personal_cocina(<ID_COCINA_CALIENTE>);
 
 **Esperado:** los dos, con `rol` "Jefe de cocina" y "Cocinero". El jefe primero.
 
-- [ ] 3.2 Jefe asignado
-- [ ] 3.3 Reasignar devuelve `ya_existia: true`
-- [ ] 3.4 Cocinero asignado con `es_jefe = false`
-- [ ] 3.5 `fn_listar_personal_cocina` devuelve 2
+### 3.10 ⭐ No-regresión: los otros roles siguen funcionando
+
+Este paso importa porque las 3 RPC de gestión de roles se modificaron.
+
+1. En el mismo trabajador, marca y desmarca **Recursos Humanos**. Guarda.
+
+**Esperado:** guarda sin error.
+
+> Esto **antes fallaba**: los `CASE` de las RPC no tenían `ELSE`, así que `recursos_humanos` daba "Error al eliminar rol: case not found" y el rol no se podía desactivar. Era un bug preexistente, ajeno a cocina, corregido en el `23`.
+
+2. Cambia el TPV de un **Dependiente** y el almacén de un **Almacenero**. Guarda.
+
+**Esperado:** ambos funcionan igual que siempre.
+
+> Y esto podría haberse roto: al añadir parámetros con `DEFAULT` se crearon **sobrecargas** en vez de reemplazar las funciones, y la llamada de la app quedó ambigua (`function ... is not unique`). Se detectó al probar y se resolvió eliminando las firmas viejas. Si ves ese error, el `23` no se aplicó completo.
+
+- [ ] 3.2 Rol asignado desde la UI con su cocina
+- [ ] 3.3 Jefe y Cocinero se excluyen
+- [ ] 3.4 Sin cocina no deja guardar
+- [ ] 3.5 Fila correcta en `app_dat_jefe_cocina`
+- [ ] 3.6 Al reabrir aparece marcado
+- [ ] 3.7 Cocinero asignado
+- [ ] 3.8 Desmarcar elimina la asignación
+- [ ] 3.10 ⭐ Recursos Humanos, Dependiente y Almacenero siguen funcionando
+
+---
+
+## § 3b · Cocina por defecto por categoría
+
+Asignar la cocina plato por plato es tedioso con una carta de 60 platos. Aquí se dice "todo lo de Comidas va a Cocina caliente" una vez.
+
+### 3b.1 La pestaña Categorías
+
+App **admin** → **Cocinas** → 3.ª pestaña **"Categorías"**.
+
+**Qué debe pasar:** una tarjeta por categoría de la tienda, cada una con un desplegable **"Cocina por defecto"** y, arriba, un aviso azul explicando que es una sugerencia.
+
+### 3b.2 Asignar la cocina por defecto
+
+En la categoría **Alimentos**, elige **Cocina caliente** en el desplegable.
+
+**Esperado:** snackbar *"Los platos nuevos de «Alimentos» irán a Cocina caliente salvo que se indique otra"*.
+
+**Verificar:**
+```sql
+SELECT cat.denominacion AS categoria, ck.denominacion AS cocina
+  FROM app_dat_categoria_tienda ct
+  JOIN app_dat_categoria cat ON cat.id = ct.id_categoria
+  JOIN app_dat_cocina ck ON ck.id = ct.id_cocina
+ WHERE ct.id_tienda = 11;
+```
+
+### 3b.3 ⭐ El bulk RESPETA las asignaciones manuales
+
+Este es el comportamiento clave.
+
+1. Ve a la pestaña **Platos** y pon **croqueta** en la **Pizzería** a mano.
+2. Vuelve a **Categorías** → **Alimentos** → botón **"Aplicar a los platos de Alimentos"**.
+3. En el diálogo elige **"No cambiarlo"** en modo de elaboración → **Aplicar**.
+
+**Esperado:** un diálogo *"Platos asignados"* que dice cuántos se movieron **y lista los que NO**:
+
+```
+3 plato(s) enviados a Cocina caliente.
+
+Estos ya tenían cocina propia y se dejaron como estaban:
+• croqueta → PRUEBA Cat Pizzeria
+```
+
+> Verificado por SQL: `asignados=4 respetados=0` en una categoría virgen, y `asignados=0 respetados=4` en la segunda pasada. El bulk es idempotente y nunca pisa una decisión del gerente.
+
+### 3b.4 Fijar el modo de elaboración de golpe
+
+Vuelve a **Aplicar**, esta vez eligiendo **Por tanda**.
+
+**Esperado:** todos los platos de esa categoría (los que no tenían cocina) quedan en `por_tanda`.
+
+```sql
+SELECT p.denominacion, p.modo_elaboracion, c.denominacion AS cocina
+  FROM app_dat_producto p
+  JOIN app_dat_cocina c ON c.id = p.id_cocina
+ WHERE p.id_tienda = 11
+ ORDER BY p.denominacion;
+```
+
+> Verificado: `croqueta=por_tanda, pan con croqueta=por_tanda, pan con perro=por_tanda, pan de la casa=por_tanda`.
+
+### 3b.5 Quitar el defecto no desconfigura la carta
+
+En el desplegable elige **"Sin cocina por defecto"**.
+
+**Esperado:** el mensaje dice que la categoría ya no tiene defecto, y el botón de aplicar desaparece. **Los platos siguen en su cocina**: quitar la sugerencia no debe desmontar lo ya configurado.
+
+```sql
+SELECT count(*) AS platos_con_cocina
+  FROM app_dat_producto WHERE id_tienda = 11 AND id_cocina IS NOT NULL;
+```
+El número no cambia.
+
+### 3b.6 Aplicar sin defecto se rechaza
+
+Con la categoría sin cocina asignada, no hay botón de aplicar en la UI. Por SQL:
+
+```sql
+SELECT public.fn_aplicar_cocina_categoria_a_platos(11, 1);
+```
+**Esperado:** `CATEGORIA_SIN_COCINA` con el mensaje "Asígnasela primero".
+
+### 3b.7 Qué cocina le tocaría a un plato
+
+```sql
+-- Sustituye por un id de plato de una categoría con defecto
+SELECT public.fn_cocina_por_defecto_producto(219);
+```
+
+**Esperado:** `id_cocina`, `cocina`, y `ambiguo: false`.
+
+Si un plato está en **dos** categorías con cocinas distintas, `ambiguo` sale `true` y `candidatas` trae las dos. Se propone la de menor id de forma determinista, pero la UI debería avisar en vez de elegir en silencio.
+
+### 3b.8 Cocina de otra tienda se rechaza
+
+```sql
+SELECT public.fn_asignar_cocina_categoria(11, 1, 999999);
+```
+**Esperado:** `COCINA_INVALIDA`. Un defecto que apunte a la cocina de otra tienda mandaría platos a una cocina que el TPV nunca puede alcanzar.
+
+- [ ] 3b.1 Pestaña Categorías visible
+- [ ] 3b.2 Cocina por defecto asignada
+- [ ] 3b.3 ⭐ El bulk respeta y REPORTA las asignaciones manuales
+- [ ] 3b.4 Modo de elaboración fijado en bloque
+- [ ] 3b.5 Quitar el defecto no cambia los platos
+- [ ] 3b.6 `CATEGORIA_SIN_COCINA`
+- [ ] 3b.7 `fn_cocina_por_defecto_producto` responde
+- [ ] 3b.8 `COCINA_INVALIDA` con cocina de otra tienda
 
 ---
 
@@ -693,34 +847,114 @@ Deja el KDS abierto. Con el vendedor, pide un plato nuevo.
 
 **Esperado:** en **≤ 15 segundos** aparece la comanda nueva sin tocar nada. El subtítulo del AppBar muestra la hora de la última carga.
 
-### 6.11 El ticket de cocina (backend)
+### 6.11 Imprimir el ticket de cocina
 
-> ⚠️ **La UI de impresión está pendiente.** El backend está listo y se puede verificar:
+Cada tarjeta del KDS tiene un **icono de impresora** en la cabecera, junto al reloj.
+
+> Está en la cabecera y no en el pie a propósito: en cocina se pulsa cuando el ticket se perdió o se manchó, y hay que encontrarlo sin leer la tarjeta entera.
+
+#### Caso A · La cocina tiene impresora configurada
+
+En §2.4 pusiste `COCINA-01` en la Cocina caliente. Para que la impresión real funcione, ese valor tiene que resolver a una impresora:
+
+- **Por IP:** pon `192.168.1.50` o `192.168.1.50:9100` en el campo Impresora de la cocina.
+- **Por nombre:** deja `COCINA-01` y guarda una impresora con ese nombre en **Impresoras WiFi** de la app vendedor.
+
+Pulsa el icono de impresora.
+
+**Esperado:** sale el ticket por la térmica y un snackbar verde *"Comanda #1 impresa en COCINA-01"*.
+
+**Formato en papel:** número de comanda en **doble alto y negrita** (es lo que el cocinero canta y tiene que leerse de lejos), notas del comensal en negrita, corte de papel al final.
+
+#### Caso B · La cocina NO tiene impresora
+
+Quita el valor del campo Impresora de la cocina (déjalo vacío) y pulsa el icono.
+
+**Esperado:** se abre un **diálogo con el ticket en pantalla**, en monoespaciada, con la cabecera gris azulada y el texto *"Cocina caliente no tiene impresora configurada"*. Abajo, un aviso azul explicando dónde configurarla.
+
+> Esto **no es un fallo**: en una cocina pequeña el KDS *es* la pantalla y no hay térmica. Por eso el diálogo no se pinta en rojo.
+
+El diálogo tiene un botón de **copiar** (para pegarlo en WhatsApp, por ejemplo).
+
+#### Caso C · La impresora no responde
+
+Pon una IP que no exista, como `192.168.1.99`.
+
+**Esperado:** diálogo en rojo *"No se pudo conectar a 192.168.1.99:9100"*, **con el ticket dentro** y un botón **Reintentar**.
+
+El cocinero puede leer la comanda igual mientras alguien arregla la red. Eso es deliberado: un error de impresión no debe dejar a la cocina sin saber qué cocinar.
+
+#### Caso D · Doble toque no saca dos tickets
+
+Pulsa el icono dos veces rápido.
+
+**Esperado:** sale **un solo** ticket. La pantalla marca la comanda como "imprimiendo" y descarta el segundo toque.
+
+#### 6.11.b ⭐ El ticket NO trunca las notas largas
+
+Este paso importa: era un bug real.
+
+1. Con el vendedor, pide un plato con una nota **larga**:
+
+   `sin sal y bien tostada por favor que es para un nino alergico al gluten`
+
+2. Imprime el ticket (o míralo en pantalla con el Caso B).
+
+**Esperado:** la nota aparece **completa**, partida en varias líneas:
+
+```
+           COMANDA #1
+PRUEBA WRAP
+--------------------------------
+Mesa: Mesa 1  (Terraza)
+Hora: 12:08
+--------------------------------
+3 x croqueta
+   >> SIN SAL Y BIEN TOSTADA POR
+   >> FAVOR QUE ES PARA UN NINO
+   >> ALERGICO AL GLUTEN
+--------------------------------
+```
+
+> ❌ **Antes se imprimía así:** `>> SIN SAL Y BIEN TOSTADA POR` y ahí se cortaba. Se perdía "alérgico al gluten" y el cocinero no tenía forma de saber que faltaba texto. Era `substr()` en vez de ajuste por palabras; corregido en el `23` con `fn_envolver_texto`.
+
+**Verificar por SQL que nada excede el ancho del papel:**
 
 ```sql
--- Sustituye <ID_COMANDA>
-SELECT (public.fn_ticket_comanda(<ID_COMANDA>))->>'impresora' AS impresora,
-       (public.fn_ticket_comanda(<ID_COMANDA>))->>'texto'    AS ticket;
+-- Sustituye <ID_COMANDA>. 32 = térmica de 58 mm; usa 48 para las de 80 mm.
+SELECT CASE WHEN bool_and(length(l) <= 32) THEN 'OK todas caben (max=' || max(length(l)) || ')'
+            ELSE 'FALLO: hay líneas de ' || max(length(l)) || ' chars' END AS resultado
+  FROM regexp_split_to_table(
+         (public.fn_ticket_comanda(<ID_COMANDA>, 32))->>'texto', E'\n') l
+ WHERE l <> '';
 ```
 
-**Esperado**, algo así:
+**Esperado:** `OK todas caben`.
 
+Y que el texto completo sigue ahí:
+
+```sql
+SELECT position('ALERGICO' in ((public.fn_ticket_comanda(<ID_COMANDA>, 32))->>'texto')) > 0
+       AS conserva_el_final;
 ```
-               COMANDA #1
-COCINA CALIENTE
-----------------------------------------
-Mesa: Mesa 1  (Terraza)
-Atiende: <tu nombre>
-Hora: 14:03
-----------------------------------------
-2 x croqueta
-   >> SIN SAL, BIEN TOSTADA
-----------------------------------------
+**Esperado:** `true`.
+
+#### 6.11.c Un plato cancelado no sale en el papel
+
+Cancela un plato de una comanda de 2 platos (long-press → confirmar) y vuelve a imprimir.
+
+**Esperado:** el plato cancelado **no aparece** en el ticket. No tiene sentido mandar a cocinar algo anulado.
+
+```sql
+SELECT (public.fn_ticket_comanda(<ID_COMANDA>, 32))->>'total_items' AS items_en_el_ticket;
 ```
 
-Y `impresora` = `COCINA-01` (lo que pusiste en §2.4). Para la Pizzería saldría `null` → la app debería mostrar el ticket en pantalla.
-
-> El ticket **no lleva precios**: al cocinero no le importan y ocupan espacio que necesitan las notas.
+- [ ] 6.11 A · Imprime en la térmica con snackbar verde
+- [ ] 6.11 B · Sin impresora → diálogo con el ticket en pantalla (no rojo)
+- [ ] 6.11 C · IP inexistente → error + ticket + Reintentar
+- [ ] 6.11 D · Doble toque saca un solo ticket
+- [ ] 6.11.b ⭐ Nota larga completa, nada excede el ancho
+- [ ] 6.11.c Plato cancelado ausente del ticket
 
 - [ ] 6.1 Entrada "Cocina" visible
 - [ ] 6.3 Tarjetas FIFO con espera y notas
@@ -731,7 +965,6 @@ Y `impresora` = `COCINA-01` (lo que pusiste en §2.4). Para la Pizzería saldrí
 - [ ] 6.8 Entregado sale de la vista viva y está en el historial
 - [ ] 6.9 El mesero ve el cambio de estado
 - [ ] 6.10 Refresco ≤ 15 s
-- [ ] 6.11 `fn_ticket_comanda` devuelve texto + impresora
 
 ---
 
@@ -1318,6 +1551,96 @@ ROLLBACK;
 ```
 **Esperado:** `0`.
 
+### 10.11 ⭐ Recepción, conteo y transferencia acotadas al almacén de la cocina
+
+Un jefe de cocina tiene acceso a la tienda (lo da el guard), pero operativamente solo le corresponde **el almacén de su cocina**. Sin este acotado, la recepción le ofrece todos los almacenes y puede mover mercancía del almacén principal por error.
+
+#### 10.11.a Qué ve cada rol
+
+```sql
+-- Ejecutar una vez por cada usuario, cambiando el 'sub'
+BEGIN;
+SELECT set_config('request.jwt.claims',
+  json_build_object('sub','<UUID_JEFE_CALIENTE>','role','authenticated')::text, true);
+SELECT id_almacen, denominacion, cocina, origen, puede_operar
+  FROM public.fn_almacenes_del_usuario();
+ROLLBACK;
+```
+
+**Esperado por rol:**
+
+| Usuario | Almacenes | `origen` | `puede_operar` |
+|---------|-----------|----------|----------------|
+| Gerente / supervisor | **todos** los de la tienda | `gerente` / `supervisor` | `true` |
+| Almacenero | solo el suyo | `almacenero` | `true` |
+| **Jefe de cocina** | **solo el de su cocina** | `jefe_cocina` | **`true`** |
+| **Cocinero** | solo el de su cocina | `cocinero` | **`false`** |
+| Sin roles | ninguno | — | — |
+
+> Medido: gerente en la tienda 11 → 6 almacenes (2 de ellos cocinas); jefe → `PRUEBA Alm Cocina [jefe_cocina operar=true]`; cocinero → el mismo pero `operar=false`; usuario sin roles → 0.
+
+#### 10.11.b El jefe de cocina en la app de admin
+
+Login en el **admin** con el jefe de cocina → **Inventario → Recepción**.
+
+**Esperado:** el desplegable de almacén ofrece **solo el almacén de su cocina**. Los demás almacenes de la tienda no aparecen.
+
+Repite en **Transferencia** y **Ajuste de inventario**.
+
+#### 10.11.c El cocinero no puede mover inventario
+
+Login con el **cocinero** → **Inventario → Recepción**.
+
+**Esperado:** el desplegable sale **vacío**. Ve el almacén en consultas pero no en pantallas de movimiento, porque `puede_operar = false`.
+
+> Las pantallas de movimiento usan `listWarehousesOK`, que pide solo los operables. Las de consulta usan `listWarehouses`, que devuelve todo lo visible.
+
+#### 10.11.d El gerente no se ve afectado
+
+Login con el **gerente** → **Recepción**.
+
+**Esperado:** ve **todos** los almacenes de la tienda, exactamente como antes. El acotado solo aplica cuando el alcance del usuario viene *exclusivamente* de cocina o almacén.
+
+#### 10.11.e La cocina borrada deja de dar acceso
+
+```sql
+BEGIN;
+-- Borrado suave de la cocina
+UPDATE app_dat_cocina SET deleted_at = now() WHERE id = <ID_COCINA_CALIENTE>;
+
+SELECT set_config('request.jwt.claims',
+  json_build_object('sub','<UUID_JEFE_CALIENTE>','role','authenticated')::text, true);
+
+SELECT count(*) AS almacenes FROM public.fn_almacenes_del_usuario();
+SELECT count(*) AS cocinas   FROM public.fn_cocinas_del_usuario();
+ROLLBACK;
+```
+
+**Esperado:** `0` en las dos. Y `check_user_has_access_to_tienda(11)` lanza acceso denegado para ese usuario.
+
+> El `ROLLBACK` deshace el borrado: no dejes la cocina eliminada.
+
+#### 10.11.f Configuración de tienda NO se acota
+
+Login como **gerente** → **Configuración** → donde se eligen almacenes.
+
+**Esperado:** aparecen **todos**. Es una pantalla que configura la tienda entera; filtrar dejaría almacenes fuera de la configuración sin que nadie lo note.
+
+> Esta pantalla llama a `listWarehouses(aplicarAlcanceRol: false)` explícitamente.
+
+#### 10.11.g Sin red, no se bloquea el trabajo
+
+El acotado es **de UI, no de seguridad**: la seguridad real la aplican las RPC. Si `fn_almacenes_del_usuario` falla (sin red), el filtro **no se aplica** y el almacenero sigue trabajando con normalidad.
+
+No hay forma cómoda de forzarlo desde la app; queda documentado en `AlmacenScopeService`.
+
+- [ ] 10.11.a Cada rol ve lo que le toca en `fn_almacenes_del_usuario`
+- [ ] 10.11.b Jefe de cocina: solo su almacén en Recepción/Transfer/Ajuste
+- [ ] 10.11.c Cocinero: desplegable vacío en pantallas de movimiento
+- [ ] 10.11.d Gerente ve todos (sin regresión)
+- [ ] 10.11.e Cocina borrada → 0 almacenes y acceso denegado
+- [ ] 10.11.f Configuración de tienda sin acotar
+
 - [ ] 10.2 KDS solo muestra la cocina propia
 - [ ] 10.3 Forzar id de cocina ajena → rechazado
 - [ ] 10.4 Producir en cocina ajena → rechazado
@@ -1463,7 +1786,39 @@ SELECT ip.id, ip.id_producto, ip.cantidad_inicial, ip.cantidad_final, ip.created
  ORDER BY ip.id DESC LIMIT 10;
 ```
 
-### 11.9 El analyzer no introdujo errores
+### 11.9 ⭐ La pantalla de trabajadores sigue funcionando
+
+Las 3 RPC de gestión de roles (`fn_agregar_rol_trabajador`, `fn_eliminar_rol_trabajador`, `fn_actualizar_datos_rol_trabajador`) se modificaron para conocer los roles de cocina. Las usan **todas** las tiendas para cualquier rol, así que esto es crítico.
+
+App **admin** → **Trabajadores** → editar uno:
+
+1. Cambia el **TPV** de un Dependiente y guarda.
+2. Cambia el **almacén** de un Almacenero y guarda.
+3. Marca y desmarca **Recursos Humanos** y guarda.
+4. Marca y desmarca **Gerente** y guarda.
+
+**Esperado:** los cuatro funcionan sin error.
+
+**Verificar que no quedaron funciones duplicadas:**
+
+```sql
+SELECT p.oid::regprocedure AS firma
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+ WHERE n.nspname = 'public'
+   AND p.proname IN ('fn_agregar_rol_trabajador',
+                     'fn_eliminar_rol_trabajador',
+                     'fn_actualizar_datos_rol_trabajador')
+ ORDER BY p.proname;
+```
+
+**Esperado: exactamente 3 filas.** Si salen 6, hay sobrecargas duplicadas y las llamadas de la app fallarán con `function ... is not unique`. El `23` incluye los `DROP` que lo evitan.
+
+> Dos bugs vivieron aquí. El primero era **preexistente**: los `CASE` no tenían `ELSE`, así que `recursos_humanos` daba "Error al eliminar rol: case not found" y el rol no se podía desactivar. El segundo lo introduje al añadir parámetros con `DEFAULT`, que crea **sobrecargas** en vez de reemplazar: la llamada de 7 argumentos de la app quedó ambigua. Ambos corregidos y medidos.
+
+- [ ] 11.9.a Dependiente, Almacenero, RRHH y Gerente se guardan bien
+- [ ] 11.9.b Exactamente 3 firmas, no 6
+
+### 11.10 El analyzer no introdujo errores
 
 ```bash
 cd C:/Users/cesar/Documents/VentIQ-seller-App/ventiq_app
@@ -1478,14 +1833,14 @@ Lo mismo en el admin:
 cd ../ventiq_admin_app && dart analyze lib/ 2>&1 | grep -cE "^\s*error"
 ```
 
-### 11.10 El SQL sigue siendo válido
+### 11.11 El SQL sigue siendo válido
 
 ```bash
 cd C:/Users/cesar/Documents/VentIQ-seller-App
 "$LOCALAPPDATA/Temp/vqsql/Scripts/python.exe" funcionalidad_cocina/_validar_sql.py
 ```
 
-**Esperado:** `22/22 archivos validos`.
+**Esperado:** `23/23 archivos validos`.
 
 - [ ] 11.1 ⭐ Venta normal con cocina apagada = comportamiento de siempre
 - [ ] 11.2 Los 5 roles anteriores conservan acceso
@@ -1495,8 +1850,9 @@ cd C:/Users/cesar/Documents/VentIQ-seller-App
 - [ ] 11.6 Recepción / conteo / transferencias OK
 - [ ] 11.7 Turno normal sin diálogos nuevos
 - [ ] 11.8 Devolución por edición sin error 23502
-- [ ] 11.9 `dart analyze` = 1 error preexistente
-- [ ] 11.10 `22/22 archivos validos`
+- [ ] 11.9 ⭐ Pantalla de trabajadores intacta (3 firmas, no 6)
+- [ ] 11.10 `dart analyze` = 1 error preexistente
+- [ ] 11.11 `23/23 archivos validos`
 
 ---
 
@@ -1508,14 +1864,15 @@ cd C:/Users/cesar/Documents/VentIQ-seller-App
 |------|--------------|---|
 | 0 | Descuento de receta en el almacén correcto | 1 |
 | 1 | Cocinas, TPV↔cocina, catálogo dual, chips | 2, 4 |
+| 1 (opc.) | Cocina por defecto por categoría, bulk que respeta lo manual | 3b |
 | 2 | Pedir mueve stock y crea comanda; cobrar no re-descuenta | 5 |
-| 3 | Jefe/cocinero, KDS, transiciones, ticket | 3, 6 |
+| 3 | Jefe/cocinero desde la UI, KDS, transiciones, impresión | 3, 6 |
 | 4 | Tandas, merma, anular, parada de BOM | 7 |
 | 5 | Idempotencia offline, cola persistente, cierre de turno | 8, 9 |
-| — | Permisos y aislamiento | 10 |
+| — | Permisos, aislamiento y acotado de almacén | 10 |
 | — | No-regresión | 11 |
 
-### Las 8 pruebas que no se pueden saltar
+### Las 10 pruebas que no se pueden saltar
 
 Si tienes poco tiempo, haz al menos estas:
 
@@ -1527,16 +1884,18 @@ Si tienes poco tiempo, haz al menos estas:
 6. **§7.11** — Anular una tanda ya servida se rechaza. *(Si falla: descuadre de inventario.)*
 7. **§11.1** — Venta normal con cocina apagada. *(Si falla: se rompió el 99 % de las tiendas.)*
 8. **§11.3** — Usuario ajeno rechazado. *(Si falla: fuga de datos entre tiendas.)*
+9. **§3.10** — Recursos Humanos, Dependiente y Almacenero siguen guardándose. *(Si falla: se rompió la pantalla de trabajadores, que usan todas las tiendas.)*
+10. **§6.11.b** — El ticket no trunca las notas largas. *(Si falla: se pierde "alérgico al gluten" sin que nadie lo note.)*
 
 ### Pendientes conocidos (no son bugs)
 
-| # | Qué falta | Alternativa hoy |
-|---|-----------|-----------------|
-| 1 | UI de admin para asignar jefe de cocina | SQL: `fn_asignar_jefe_cocina` (§3) |
-| 2 | UI de impresión del ticket | Backend listo: `fn_ticket_comanda` (§6.11) |
-| 3 | Recepción/conteo/transfer acotadas al almacén de la cocina | El jefe ve las pantallas de la tienda |
-| 4 | Cocina por defecto por categoría (opcional) | Se asigna plato por plato |
-| 5 | Enganche fino de la cola offline con cada pantalla | El servicio y las RPC están probados (§8.3) |
+| # | Qué falta | Estado |
+|---|-----------|--------|
+| 1 | `flutter pub get` / `build` | No ejecutados: verificación solo con `dart analyze` (0 errores en admin, 1 preexistente y ajeno en vendedor) |
+| 2 | Ninguna UI probada en dispositivo | Es justo lo que cubre este tutorial |
+| 3 | Enganche fino de la cola offline con cada pantalla | El servicio y las RPC están probados (§8.3); cada pantalla decide cuándo encolar |
+
+**Todo lo demás del plan está implementado.** Las 6 fases están cerradas, incluyendo lo que antes figuraba como pendiente: UI de asignar jefe de cocina (§3), impresión del ticket (§6.11), acotado de almacén (§10.11) y cocina por defecto por categoría (§3b).
 
 ### Cómo reportar un fallo
 
@@ -1582,7 +1941,7 @@ Para dejar el sistema como estaba:
 
 ## Resumen de archivos
 
-**SQL** (`funcionalidad_cocina/`, 22 archivos, todos aplicados):
+**SQL** (`funcionalidad_cocina/`, 23 archivos, todos aplicados):
 
 | Archivo | Qué trae |
 |---------|----------|
@@ -1593,14 +1952,15 @@ Para dejar el sistema como estaba:
 | `19`, `20` | Fase 3 · rol jefe de cocina, KDS |
 | `21` | Fase 4 · tandas y parada de BOM |
 | `22` | Fase 5 · offline, cierre de turno, ticket |
+| `23` | Pendientes del plan · categoría→cocina, rol en UI, alcance de almacenes, wrap del ticket |
 | `02`, `04`, `12` | Solo lectura (exports para inspección) |
 
 **Dart nuevo** (`ventiq_app/lib/`):
 
-`models/comanda.dart` · `models/tanda.dart` · `models/pedido_resultado.dart` · `services/comanda_service.dart` · `services/cocina_offline_queue.dart` · `screens/kds_screen.dart` · `screens/produccion_screen.dart` · `widgets/comanda_card.dart` · `widgets/tanda_widgets.dart` · `widgets/estado_servicio_chip.dart` · `widgets/cocina_chip.dart`
+`models/comanda.dart` · `models/tanda.dart` · `models/pedido_resultado.dart` · `services/comanda_service.dart` · `services/cocina_offline_queue.dart` · `screens/kds_screen.dart` · `screens/produccion_screen.dart` · `widgets/comanda_card.dart` · `widgets/tanda_widgets.dart` · `widgets/estado_servicio_chip.dart` · `widgets/cocina_chip.dart` · `services/comanda_ticket_service.dart` · `widgets/ticket_comanda_dialog.dart`
 
 **Dart nuevo** (`ventiq_admin_app/lib/`):
 
-`models/cocina.dart` · `services/cocina_service.dart` · `screens/cocinas_management_screen.dart` · `widgets/cocinas/` (4 archivos)
+`models/cocina.dart` · `services/cocina_service.dart` · `services/almacen_scope_service.dart` · `screens/cocinas_management_screen.dart` · `widgets/cocinas/` (5 archivos, incl. `cocinas_categorias_widget.dart`)
 
 **Referencia:** `docs/PLAN_RESTAURANTE_COCINA.md` — checklist por fase, decisiones de diseño y la tabla de los 9 bugs encontrados.

@@ -1134,8 +1134,12 @@ class _WarehouseZoneSelectorState extends State<_WarehouseZoneSelector> {
 
   Future<void> _loadWarehouses() async {
     try {
+      // Configuración de tienda: aquí NO se acota por rol. Es una pantalla de
+      // gerente que configura la tienda entera, y filtrar dejaría almacenes
+      // fuera de la configuración sin que nadie lo note.
       final warehouses = await widget.warehouseService.listWarehouses(
         storeId: widget.storeId.toString(),
+        aplicarAlcanceRol: false,
       );
       if (mounted) {
         setState(() {

@@ -2,6 +2,7 @@ import '../models/warehouse.dart';
 import '../models/store.dart';
 import 'user_preferences_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'almacen_scope_service.dart';
 
 class WarehouseService {
   final _supabase = Supabase.instance.client;
@@ -168,9 +169,17 @@ class WarehouseService {
   }
 
   /// Método de compatibilidad para mantener la interfaz existente
+  ///
+  /// Aplica el ACOTADO POR ROL: un jefe de cocina solo recibe el almacén de su
+  /// cocina, un almacenero el suyo. Gerente y supervisor reciben todos, igual
+  /// que siempre. Ver `AlmacenScopeService` para el criterio.
+  ///
+  /// Es acotado de UI, no seguridad: las RPC siguen validando por su cuenta. Si
+  /// el alcance no se puede resolver, no se filtra nada.
   Future<List<Warehouse>> listWarehouses({
     String? storeId,
     String? search,
+    bool aplicarAlcanceRol = true,
   }) async {
     try {
       String? resolvedStoreId = storeId;
@@ -189,16 +198,30 @@ class WarehouseService {
         pagina: 1,
         porPagina: 100, // Obtener muchos para compatibilidad
       );
-      return response.almacenes;
+
+      if (!aplicarAlcanceRol) return response.almacenes;
+
+      return AlmacenScopeService.filtrar<Warehouse>(
+        response.almacenes,
+        (w) => int.tryParse(w.id),
+      );
     } catch (e) {
       print('❌ Error en listWarehouses: $e');
       rethrow;
     }
   }
 
+  /// Almacenes para las pantallas de MOVIMIENTO (recepción, transferencia,
+  /// ajuste).
+  ///
+  /// Aplica el acotado por rol pidiendo solo los **operables**: un cocinero
+  /// (`es_jefe = false`) ve el almacén de su cocina en consultas, pero aquí no
+  /// recibe ninguno porque no puede mover inventario. Gerente, supervisor y
+  /// almacenero no se ven afectados.
   Future<List<Warehouse>> listWarehousesOK({
     String? storeId,
     String? search,
+    bool aplicarAlcanceRol = true,
   }) async {
     try {
       String? resolvedStoreId = storeId;
@@ -217,9 +240,16 @@ class WarehouseService {
         pagina: 1,
         porPagina: 100, // Obtener muchos para compatibilidad
       );
-      return response.almacenes;
+
+      if (!aplicarAlcanceRol) return response.almacenes;
+
+      return AlmacenScopeService.filtrar<Warehouse>(
+        response.almacenes,
+        (w) => int.tryParse(w.id),
+        soloOperables: true,
+      );
     } catch (e) {
-      print('❌ Error en listWarehouses: $e');
+      print('❌ Error en listWarehousesOK: $e');
       rethrow;
     }
   }
