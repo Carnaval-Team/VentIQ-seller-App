@@ -1,9 +1,51 @@
 {
-  "current_version": "2.8.1",
-  "build": 281,
+  "current_version": "2.8.2",
+  "build": 282,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.8.2",
+      "date": "2026-08-25",
+      "title": "🍳 Cocina, cuentas por cobrar y venta por acuerdo más confiable",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Gestión de cocinas y platos",
+          "description": "Nueva pantalla para configurar cocinas, platos y asignar TPVs. Permite organizar la preparación de productos elaborados y el enrutamiento de ventas a la cocina correspondiente."
+        },
+        {
+          "type": "feature",
+          "title": "Cuentas por cobrar",
+          "description": "Nuevo módulo de cuentas por cobrar para dar seguimiento a clientes independientes, ver saldos pendientes y consultar el detalle de cada cliente."
+        },
+        {
+          "type": "improvement",
+          "title": "Ticket de venta por acuerdo con el cliente correcto",
+          "description": "El nombre del cliente y las observaciones se capturan de forma más confiable al confirmar la venta, evitando que el ticket muestre 'N/A'."
+        },
+        {
+          "type": "improvement",
+          "title": "Impresión directa con la impresora guardada",
+          "description": "Si guardaste una impresora Bluetooth o WiFi por defecto, la venta por acuerdo imprime directamente sin volver a pedir tipo de impresora ni dispositivo."
+        },
+        {
+          "type": "improvement",
+          "title": "Importación de productos más completa",
+          "description": "La plantilla de Excel ahora incluye las columnas de precio de costo y proveedor, y la pantalla de importación permite descargarla con un botón."
+        },
+        {
+          "type": "fix",
+          "title": "Moneda de impresión en venta por acuerdo",
+          "description": "La impresión de tickets de venta por acuerdo ya usa siempre CUP y el precio unitario del producto, omitiendo los diálogos de moneda que podían generar confusión."
+        },
+        {
+          "type": "improvement",
+          "title": "Selector de productos y permisos",
+          "description": "Mejoras en el selector de productos, configuración global y permisos para ajustar accesos y flujos de inventario."
+        }
+      ]
+    },
     {
       "version": "2.8.1",
       "date": "2026-08-20",
