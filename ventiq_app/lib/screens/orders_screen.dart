@@ -5467,8 +5467,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
       case 0: // Home → /mesas si modo restaurante, /categories si no
         NavigationHelper.goHome(context, removeStack: false);
         break;
-      case 1: // Preorden
-        Navigator.pushNamed(context, '/preorder');
+      case 1: // Carrito: preorden, o la cuenta de mesa abierta en restaurante
+        NavigationHelper.goCarrito(context);
         break;
       case 2: // Órdenes (current)
         break;

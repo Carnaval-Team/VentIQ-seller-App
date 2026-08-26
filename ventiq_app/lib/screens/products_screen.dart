@@ -664,9 +664,8 @@ class _ProductsScreenState extends State<ProductsScreen> {
       case 0: // Home → /mesas si modo restaurante (sin cuenta activa), /categories si no
         NavigationHelper.goHome(context);
         break;
-      case 1: // Preorden
-        Navigator.popUntil(context, (route) => route.isFirst);
-        Navigator.pushNamed(context, '/preorder');
+      case 1: // Carrito: preorden, o la cuenta de mesa abierta en restaurante
+        NavigationHelper.goCarrito(context);
         break;
       case 2: // Órdenes
         Navigator.popUntil(context, (route) => route.isFirst);
@@ -784,24 +783,44 @@ class _SubcategorySectionState extends State<_SubcategorySection> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                widget.title,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF2C3E50),
+              Expanded(
+                child: Text(
+                  widget.title,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF2C3E50),
+                  ),
                 ),
               ),
-              TextButton(
-                onPressed: () {
-                  // TODO: Navegar a ver todos los productos de esta subcategoría
-                },
-                child: const Text(
-                  '',
+              // Contador de productos de la subcategoría.
+              //
+              // Aquí había un TextButton con texto vacío y un onPressed sin
+              // implementar: un "Ver todos" a medias que dejaba un área
+              // pulsable invisible que no hacía nada. Se sustituye por el
+              // conteo, que sí informa, en vez de prometer una navegación
+              // que no existe.
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: widget.categoryColor.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: widget.categoryColor.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: Text(
+                  widget.products.length == 1
+                      ? '1 producto'
+                      : '${widget.products.length} productos',
                   style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF4A90E2),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: widget.categoryColor,
                   ),
                 ),
               ),

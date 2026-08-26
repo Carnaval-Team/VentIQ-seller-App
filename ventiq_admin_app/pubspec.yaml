@@ -4,7 +4,7 @@ publish_to: 'none'
 
 # Debe ir en paralelo con assets/changelog.json (current_version + build): la
 # app muestra la versión leyendo ese JSON, no el pubspec.
-version: 2.8.2+282
+version: 2.8.3+283
 
 environment:
   # Elevado de ^3.7.0 a ^3.10.0: requisito de home_widget 0.9.3
