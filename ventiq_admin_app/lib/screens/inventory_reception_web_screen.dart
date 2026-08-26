@@ -450,57 +450,20 @@ class _InventoryReceptionWebScreenState
           padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
           child: Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1200),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final isWide = constraints.maxWidth > 980;
-                  if (isWide) {
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          flex: 5,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              _buildReceptionInfoCard(),
-                              const SizedBox(height: 20),
-                              _buildLocationCard(),
-                              const SizedBox(height: 20),
-                              _buildTotalsCard(),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 20),
-                        Expanded(
-                          flex: 7,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              _buildProductSelectionCard(),
-                              const SizedBox(height: 20),
-                              _buildSelectedProductsCard(),
-                            ],
-                          ),
-                        ),
-                      ],
-                    );
-                  }
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildReceptionInfoCard(),
-                      const SizedBox(height: 20),
-                      _buildLocationCard(),
-                      const SizedBox(height: 20),
-                      _buildProductSelectionCard(),
-                      const SizedBox(height: 20),
-                      _buildSelectedProductsCard(),
-                      const SizedBox(height: 20),
-                      _buildTotalsCard(),
-                    ],
-                  );
-                },
+              constraints: const BoxConstraints(maxWidth: 960),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildReceptionInfoCard(),
+                  const SizedBox(height: 20),
+                  _buildLocationCard(),
+                  const SizedBox(height: 20),
+                  _buildProductSelectionCard(),
+                  const SizedBox(height: 20),
+                  _buildSelectedProductsCard(),
+                  const SizedBox(height: 20),
+                  _buildTotalsCard(),
+                ],
               ),
             ),
           ),

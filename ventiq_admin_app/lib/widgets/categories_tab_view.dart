@@ -11,8 +11,9 @@ import '../services/subcategory_service.dart';
 
 class CategoriesTabView extends StatefulWidget {
   final bool canEdit;
+  final bool isWeb;
 
-  const CategoriesTabView({super.key, this.canEdit = true});
+  const CategoriesTabView({super.key, this.canEdit = true, this.isWeb = false});
 
   @override
   State<CategoriesTabView> createState() => _CategoriesTabViewState();
@@ -148,13 +149,19 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
                         ? _buildEmptyState()
                         : GridView.builder(
                           padding: const EdgeInsets.all(16),
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
-                                crossAxisSpacing: 12,
-                                mainAxisSpacing: 12,
-                                childAspectRatio: 0.85,
-                              ),
+                          gridDelegate: widget.isWeb
+                              ? const SliverGridDelegateWithMaxCrossAxisExtent(
+                                  maxCrossAxisExtent: 240,
+                                  crossAxisSpacing: 16,
+                                  mainAxisSpacing: 16,
+                                  childAspectRatio: 0.9,
+                                )
+                              : const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 2,
+                                  crossAxisSpacing: 12,
+                                  mainAxisSpacing: 12,
+                                  childAspectRatio: 0.85,
+                                ),
                           itemCount: _filteredCategories.length,
                           itemBuilder: (context, index) {
                             final category = _filteredCategories[index];
@@ -188,6 +195,7 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
   }
 
   Widget _buildSearchAndFilters() {
+    if (widget.isWeb) return _buildWebSearchAndFilters();
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: const BoxDecoration(
@@ -262,6 +270,148 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Filtros para vista web: los tres controles en una sola fila, sin la línea
+  /// divisoria de color, integrados con el fondo general.
+  Widget _buildWebSearchAndFilters() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      color: AppColors.background,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(flex: 5, child: _buildWebSearchField()),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 3,
+            child: _buildWebFilterDropdown(
+              label: 'Nivel',
+              icon: Icons.account_tree_outlined,
+              value: _selectedLevel,
+              options: const ['Todos', 'Principal', 'Subcategoría'],
+              onChanged: (value) => setState(() => _selectedLevel = value!),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 3,
+            child: _buildWebFilterDropdown(
+              label: 'Ordenar por',
+              icon: Icons.sort_rounded,
+              value: _sortBy,
+              options: const ['Nombre', 'Productos', 'Fecha'],
+              onChanged: (value) => setState(() => _sortBy = value!),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWebSearchField() {
+    final hasQuery = _searchQuery.isNotEmpty;
+    return Container(
+      height: 46,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: hasQuery ? AppColors.primary : AppColors.border,
+          width: hasQuery ? 1.5 : 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(width: 14),
+          Icon(
+            Icons.search_rounded,
+            size: 20,
+            color: hasQuery ? AppColors.primary : AppColors.textSecondary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppColors.textPrimary,
+              ),
+              decoration: const InputDecoration(
+                hintText: 'Buscar categorías...',
+                hintStyle: TextStyle(color: AppColors.textLight, fontSize: 14),
+                isDense: true,
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(vertical: 12),
+              ),
+              onChanged: (value) => setState(() => _searchQuery = value),
+            ),
+          ),
+          if (hasQuery)
+            IconButton(
+              icon: const Icon(Icons.clear, size: 18),
+              color: AppColors.textSecondary,
+              splashRadius: 18,
+              onPressed: () {
+                _searchController.clear();
+                setState(() => _searchQuery = '');
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWebFilterDropdown({
+    required String label,
+    required IconData icon,
+    required String value,
+    required List<String> options,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return Container(
+      height: 46,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: AppColors.textSecondary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: value,
+                isExpanded: true,
+                isDense: true,
+                icon: const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: AppColors.textSecondary,
+                ),
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: AppColors.textPrimary,
+                ),
+                hint: Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: AppColors.textLight,
+                  ),
+                ),
+                items: options
+                    .map((o) => DropdownMenuItem(value: o, child: Text(o)))
+                    .toList(),
+                onChanged: onChanged,
+              ),
+            ),
           ),
         ],
       ),

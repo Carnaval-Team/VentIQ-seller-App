@@ -9,7 +9,9 @@ import 'inventory_warehouse_web_screen.dart';
 import 'warehouse_web_screen.dart';
 import 'inventory_stock_web_screen.dart';
 import 'inventory_transfer_screen.dart';
+import 'inventory_transfer_web_screen.dart';
 import 'inventory_extraction_screen.dart';
+import 'inventory_extraction_web_screen.dart';
 import 'inventory_adjustment_screen.dart';
 import 'inventory_adjustment_web_screen.dart';
 import 'elaborated_products_extraction_screen.dart';
@@ -18,6 +20,7 @@ import 'inventory_dashboard.dart';
 import 'inventory_dashboard_web.dart';
 import '../utils/platform_utils.dart';
 import 'consignacion_screen.dart';
+import 'consignacion_web_screen.dart';
 import 'inventory_ipv_report_screen.dart';
 import '../widgets/notification_widget.dart';
 import '../widgets/inventory_export_dialog_web.dart';
@@ -393,7 +396,9 @@ class _InventoryWebScreenState extends State<InventoryWebScreen>
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => const InventoryTransferScreen(),
+        builder: (context) => PlatformUtils.isWeb
+            ? const InventoryTransferWebScreen()
+            : const InventoryTransferScreen(),
       ),
     );
   }
@@ -402,7 +407,9 @@ class _InventoryWebScreenState extends State<InventoryWebScreen>
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => const InventoryExtractionScreen(),
+        builder: (context) => PlatformUtils.isWeb
+            ? const InventoryExtractionWebScreen()
+            : const InventoryExtractionScreen(),
       ),
     );
   }
@@ -428,7 +435,11 @@ class _InventoryWebScreenState extends State<InventoryWebScreen>
   void _navigateToConsignacion() {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => const ConsignacionScreen()),
+      MaterialPageRoute(
+        builder: (context) => PlatformUtils.isWeb
+            ? const ConsignacionWebScreen()
+            : const ConsignacionScreen(),
+      ),
     );
   }
 

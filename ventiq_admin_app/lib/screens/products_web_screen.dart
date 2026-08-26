@@ -11,7 +11,7 @@ import '../services/permissions_service.dart';
 import '../services/image_picker_service.dart';
 import '../services/subscription_service.dart';
 import '../services/user_preferences_service.dart';
-import 'add_product_screen.dart';
+import 'add_product_web_screen.dart';
 import 'product_detail_screen.dart';
 import 'excel_import_screen.dart';
 import '../models/ai_product_models.dart';
@@ -1120,7 +1120,7 @@ class _ProductsWebScreenState extends State<ProductsWebScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => AddProductScreen(
+        builder: (context) => AddProductWebScreen(
           onProductSaved: () {
             _loadProducts();
             ScaffoldMessenger.of(context).showSnackBar(
@@ -1155,7 +1155,7 @@ class _ProductsWebScreenState extends State<ProductsWebScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => AddProductScreen(
+        builder: (context) => AddProductWebScreen(
           product: product,
           onProductSaved: () {
             _loadProducts();

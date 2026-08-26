@@ -46,6 +46,7 @@ import 'screens/customers_screen.dart';
 import 'screens/workers_screen.dart';
 import 'screens/workers_web_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/settings_web_screen.dart';
 import 'screens/warehouse_screen.dart';
 import 'screens/warehouse_web_screen.dart';
 import 'screens/add_warehouse_screen.dart';
@@ -241,7 +242,7 @@ class MyApp extends StatelessWidget {
         '/add-supplier': (context) => const AddEditSupplierScreen(),
         '/edit-supplier': (context) => const AddEditSupplierScreen(),
         '/workers': (context) => const PlatformAwareWorkersScreen(),
-        '/settings': (context) => const SettingsScreen(),
+        '/settings': (context) => const PlatformAwareSettingsScreen(),
         '/warehouse': (context) => const PlatformAwareWarehouseScreen(),
         '/add-warehouse':
             (context) => const PlatformAwareAddWarehouseScreen(),
@@ -309,6 +310,20 @@ class PlatformAwareProductsScreen extends StatelessWidget {
       return const ProductsWebScreen();
     } else {
       return const ProductsScreen();
+    }
+  }
+}
+
+/// Widget que detecta la plataforma y redirige a configuración apropiada
+class PlatformAwareSettingsScreen extends StatelessWidget {
+  const PlatformAwareSettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    if (_shouldUseWebLayout(context)) {
+      return const SettingsWebScreen();
+    } else {
+      return const SettingsScreen();
     }
   }
 }

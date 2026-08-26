@@ -147,8 +147,23 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
         title: const Text('Importar Productos desde Excel'),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
+        iconTheme: const IconThemeData(color: Colors.white),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.of(context).maybePop(),
+          tooltip: 'Atrás',
+        ),
+        actions: [
+          Builder(
+            builder: (context) => IconButton(
+              icon: const Icon(Icons.menu, color: Colors.white),
+              onPressed: () => Scaffold.of(context).openEndDrawer(),
+              tooltip: 'Menú',
+            ),
+          ),
+        ],
       ),
-      drawer: const AdminDrawer(),
+      endDrawer: const AdminDrawer(),
       body: Theme(
         data: Theme.of(context).copyWith(
           colorScheme: Theme.of(

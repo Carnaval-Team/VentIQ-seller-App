@@ -3,6 +3,7 @@ import '../config/app_colors.dart';
 import '../services/consignacion_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/subscription_service.dart';
+import '../widgets/admin_drawer.dart';
 
 class CrearContratoConsignacionScreen extends StatefulWidget {
   const CrearContratoConsignacionScreen({Key? key}) : super(key: key);
@@ -120,20 +121,48 @@ class _CrearContratoConsignacionScreenState extends State<CrearContratoConsignac
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
-        title: const Text('Crear Contrato de Consignación'),
+        title: const Text(
+          'Crear Contrato de Consignación',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+            fontSize: 20,
+          ),
+        ),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.of(context).maybePop(),
+          tooltip: 'Atrás',
+        ),
+        actions: [
+          Builder(
+            builder: (context) => IconButton(
+              icon: const Icon(Icons.menu, color: Colors.white),
+              onPressed: () => Scaffold.of(context).openEndDrawer(),
+              tooltip: 'Menú',
+            ),
+          ),
+        ],
       ),
+      endDrawer: const AdminDrawer(),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 960),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
                     // Validación de plan
                     if (!_tienePlanAvanzado)
                       Card(
@@ -193,15 +222,15 @@ class _CrearContratoConsignacionScreenState extends State<CrearContratoConsignac
                     const SizedBox(height: 24),
 
                     // Tienda consignataria
-                    const Text(
-                      'Tienda Destino',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
+                    _buildWebCard(
+                      title: 'Tienda Destino',
+                      subtitle:
+                          'Selecciona la tienda que recibirá los productos',
+                      icon: Icons.store_outlined,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Container(
                       decoration: BoxDecoration(
                         border: Border.all(color: Colors.grey[400]!),
                         borderRadius: BorderRadius.circular(4),
@@ -279,18 +308,17 @@ class _CrearContratoConsignacionScreenState extends State<CrearContratoConsignac
                           ],
                         ),
                       ),
-                    const SizedBox(height: 24),
-
-                    // Porcentaje de comisión
-                    const Text(
-                      'Comisión',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    TextFormField(
+                    const SizedBox(height: 20),
+
+                    // Porcentaje de comisión
+                    _buildWebCard(
+                      title: 'Comisión',
+                      subtitle: 'Porcentaje que retiene la tienda destino',
+                      icon: Icons.percent_outlined,
+                      child: TextFormField(
                       decoration: const InputDecoration(
                         labelText: 'Porcentaje de comisión *',
                         border: OutlineInputBorder(),
@@ -315,18 +343,18 @@ class _CrearContratoConsignacionScreenState extends State<CrearContratoConsignac
                         return null;
                       },
                     ),
-                    const SizedBox(height: 24),
+                    ),
+                    const SizedBox(height: 20),
 
                     // Fechas
-                    const Text(
-                      'Período del Contrato',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
+                    _buildWebCard(
+                      title: 'Período del Contrato',
+                      subtitle: 'Define la vigencia del contrato',
+                      icon: Icons.date_range_outlined,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
                       children: [
                         Expanded(
                           child: InkWell(
@@ -417,18 +445,17 @@ class _CrearContratoConsignacionScreenState extends State<CrearContratoConsignac
                         return null;
                       },
                     ),
-                    const SizedBox(height: 24),
-
-                    // Condiciones
-                    const Text(
-                      'Condiciones',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    TextFormField(
+                    const SizedBox(height: 20),
+
+                    // Condiciones
+                    _buildWebCard(
+                      title: 'Condiciones',
+                      subtitle: 'Términos adicionales del acuerdo (opcional)',
+                      icon: Icons.description_outlined,
+                      child: TextFormField(
                       decoration: const InputDecoration(
                         labelText: 'Condiciones del contrato (opcional)',
                         border: OutlineInputBorder(),
@@ -440,7 +467,8 @@ class _CrearContratoConsignacionScreenState extends State<CrearContratoConsignac
                         _condiciones = value.isEmpty ? null : value;
                       },
                     ),
-                    const SizedBox(height: 32),
+                    ),
+                    const SizedBox(height: 24),
 
                     // Botón crear
                     SizedBox(
@@ -471,10 +499,93 @@ class _CrearContratoConsignacionScreenState extends State<CrearContratoConsignac
                         ),
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ),
+                      ],
+                    ),
+                    ),
+                    ),
+                    ),
+                    ),
     );
   }
+  Widget _buildWebCard({
+    required String title,
+    required IconData icon,
+    required Widget child,
+    String? subtitle,
+    Color? iconColor,
+    Widget? trailing,
+  }) {
+    final Color accentColor = iconColor ?? AppColors.primary;
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 16, 16),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: accentColor.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, color: accentColor, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                          height: 1.2,
+                        ),
+                      ),
+                      if (subtitle != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w400,
+                            color: AppColors.textSecondary,
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (trailing != null) trailing,
+              ],
+            ),
+          ),
+          Container(height: 1, color: Colors.grey.shade100),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+            child: child,
+          ),
+        ],
+      ),
+    );
+  }
+
 }

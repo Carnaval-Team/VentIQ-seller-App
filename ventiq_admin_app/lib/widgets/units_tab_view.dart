@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../config/app_colors.dart';
 import '../services/restaurant_service.dart';
 import '../models/restaurant_models.dart';
 
 class UnitsTabView extends StatefulWidget {
-  const UnitsTabView({Key? key}) : super(key: key);
+  final bool isWeb;
+
+  const UnitsTabView({Key? key, this.isWeb = false}) : super(key: key);
 
   @override
   State<UnitsTabView> createState() => _UnitsTabViewState();
@@ -137,40 +140,42 @@ class _UnitsTabViewState extends State<UnitsTabView>
     return Column(
       children: [
         // Filtros
-        Container(
-          padding: const EdgeInsets.all(16),
-          color: Colors.grey[50],
-          child: Column(
-            children: [
-              TextField(
-                decoration: const InputDecoration(
-                  labelText: 'Buscar unidad',
-                  prefixIcon: Icon(Icons.search),
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        widget.isWeb
+            ? _buildWebFilters()
+            : Container(
+                padding: const EdgeInsets.all(16),
+                color: Colors.grey[50],
+                child: Column(
+                  children: [
+                    TextField(
+                      decoration: const InputDecoration(
+                        labelText: 'Buscar unidad',
+                        prefixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      onChanged: (value) => setState(() => _filtroTexto = value),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<int?>(
+                      decoration: const InputDecoration(
+                        labelText: 'Tipo de unidad',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      value: _filtroTipoUnidad,
+                      items: [
+                        const DropdownMenuItem(value: null, child: Text('Todos')),
+                        const DropdownMenuItem(value: 1, child: Text('Peso')),
+                        const DropdownMenuItem(value: 2, child: Text('Volumen')),
+                        const DropdownMenuItem(value: 3, child: Text('Longitud')),
+                        const DropdownMenuItem(value: 4, child: Text('Unidad')),
+                      ],
+                      onChanged: (value) => setState(() => _filtroTipoUnidad = value),
+                    ),
+                  ],
                 ),
-                onChanged: (value) => setState(() => _filtroTexto = value),
               ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<int?>(
-                decoration: const InputDecoration(
-                  labelText: 'Tipo de unidad',
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                ),
-                value: _filtroTipoUnidad,
-                items: [
-                  const DropdownMenuItem(value: null, child: Text('Todos')),
-                  const DropdownMenuItem(value: 1, child: Text('Peso')),
-                  const DropdownMenuItem(value: 2, child: Text('Volumen')),
-                  const DropdownMenuItem(value: 3, child: Text('Longitud')),
-                  const DropdownMenuItem(value: 4, child: Text('Unidad')),
-                ],
-                onChanged: (value) => setState(() => _filtroTipoUnidad = value),
-              ),
-            ],
-          ),
-        ),
         // Lista de unidades
         Expanded(
           child: _isLoading
@@ -199,6 +204,116 @@ class _UnitsTabViewState extends State<UnitsTabView>
                     ),
         ),
       ],
+    );
+  }
+
+  /// Filtros para vista web: búsqueda y tipo en una sola fila, con la misma
+  /// estética que el resto de vistas web (sin banda de color divisoria).
+  Widget _buildWebFilters() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      color: AppColors.background,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(flex: 5, child: _buildWebSearchField()),
+          const SizedBox(width: 12),
+          Expanded(flex: 4, child: _buildWebTipoDropdown()),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWebSearchField() {
+    final hasQuery = _filtroTexto.isNotEmpty;
+    return Container(
+      height: 46,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: hasQuery ? AppColors.primary : AppColors.border,
+          width: hasQuery ? 1.5 : 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(width: 14),
+          Icon(
+            Icons.search_rounded,
+            size: 20,
+            color: hasQuery ? AppColors.primary : AppColors.textSecondary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppColors.textPrimary,
+              ),
+              decoration: const InputDecoration(
+                hintText: 'Buscar unidad...',
+                hintStyle: TextStyle(color: AppColors.textLight, fontSize: 14),
+                isDense: true,
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(vertical: 12),
+              ),
+              onChanged: (value) => setState(() => _filtroTexto = value),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWebTipoDropdown() {
+    const items = <int?, String>{
+      null: 'Todos',
+      1: 'Peso',
+      2: 'Volumen',
+      3: 'Longitud',
+      4: 'Unidad',
+    };
+    return Container(
+      height: 46,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.straighten,
+              size: 18, color: AppColors.textSecondary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<int?>(
+                value: _filtroTipoUnidad,
+                isExpanded: true,
+                isDense: true,
+                icon: const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: AppColors.textSecondary,
+                ),
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: AppColors.textPrimary,
+                ),
+                items: items.entries
+                    .map((e) => DropdownMenuItem<int?>(
+                          value: e.key,
+                          child: Text(e.value),
+                        ))
+                    .toList(),
+                onChanged: (value) =>
+                    setState(() => _filtroTipoUnidad = value),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

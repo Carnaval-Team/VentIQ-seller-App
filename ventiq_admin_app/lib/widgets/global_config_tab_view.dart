@@ -10,7 +10,9 @@ import '../screens/subscription_detail_screen.dart';
 import '../utils/navigation_guard.dart';
 
 class GlobalConfigTabView extends StatefulWidget {
-  const GlobalConfigTabView({super.key});
+  final bool isWeb;
+
+  const GlobalConfigTabView({super.key, this.isWeb = false});
 
   @override
   State<GlobalConfigTabView> createState() => _GlobalConfigTabViewState();
@@ -1342,12 +1344,17 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Detalles de la Tienda Activa
-          _buildStoreDetailsCard(),
-          const SizedBox(height: 24),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: widget.isWeb ? 820 : double.infinity,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Detalles de la Tienda Activa
+              _buildStoreDetailsCard(),
+              const SizedBox(height: 24),
 
           // Sección de Suscripción
           if (_activeSubscription != null) ...[
@@ -1620,6 +1627,8 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             ),
           ),
         ],
+      ),
+    ),
       ),
     );
   }

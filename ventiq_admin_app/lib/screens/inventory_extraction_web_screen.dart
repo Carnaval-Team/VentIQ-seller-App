@@ -35,7 +35,7 @@ class _InventoryExtractionWebScreenState
   bool _isLoading = false;
   bool _isLoadingMotivos = true;
 
-  static const Color _accent = AppColors.warning;
+  static const Color _accent = AppColors.primary;
 
   @override
   void initState() {
@@ -467,8 +467,6 @@ class _InventoryExtractionWebScreenState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _buildHeaderBanner(),
-                  const SizedBox(height: 20),
                   _buildDetailsCard(),
                   const SizedBox(height: 20),
                   _buildLocationCard(),
@@ -481,59 +479,6 @@ class _InventoryExtractionWebScreenState
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildHeaderBanner() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: _accent.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _accent.withOpacity(0.25)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: _accent.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.outbox_rounded,
-              color: _accent,
-              size: 26,
-            ),
-          ),
-          const SizedBox(width: 16),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Registro de Extracción',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: _accent,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'Documenta la salida de productos del inventario indicando motivo, '
-                  'autorización y zona de origen.',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: AppColors.textSecondary,
-                    height: 1.4,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -1096,7 +1041,7 @@ class _ProductQuantityWebDialogState
   List<Map<String, dynamic>> _availablePresentations = [];
   bool _isLoadingPresentations = false;
 
-  static const Color _accent = AppColors.warning;
+  static const Color _accent = AppColors.primary;
 
   @override
   void initState() {
