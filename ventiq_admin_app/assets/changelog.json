@@ -1,9 +1,56 @@
 {
-  "current_version": "2.8.2",
-  "build": 282,
+  "current_version": "2.8.3",
+  "build": 283,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.8.3",
+      "date": "2026-08-26",
+      "title": "💵 Corrige el pago de un día pasado y precios de Carnaval que ya no se te cambian solos",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Toca un trabajador y mira día por día lo que le pagaste",
+          "description": "En el Reporte de Salarios ahora puedes tocar la fila de cualquier trabajador y se abre una hoja deslizable con todos sus días del período: la fecha, el horario, lo que cobró de salario y lo que cobró de PPR en cada uno. Arrastra la hoja hacia arriba para ver más días de una vez."
+        },
+        {
+          "type": "feature",
+          "title": "Corrige el salario de un día pasado sin tocar nada más",
+          "description": "Si un día quedó mal registrado, lo arreglas ahí mismo: cambias el total que cobró ese día y listo. El cambio afecta solo a ese día, la tarifa del trabajador se queda como estaba y el reporte se actualiza al instante con los nuevos totales."
+        },
+        {
+          "type": "feature",
+          "title": "Quítale el PPR a un día concreto con un toque",
+          "description": "Cuando un día no correspondía pago por resultado, tienes un botón directo para quitárselo. Te dice cuánto se le va a descontar antes de confirmar y te aclara que su salario base no cambia. También puedes cambiarle el monto del PPR si cobró más o menos de lo habitual."
+        },
+        {
+          "type": "improvement",
+          "title": "Ajusta también los días o las horas que se le pagaron",
+          "description": "Si trabajó medio día o unas horas de más, corriges la cantidad y el importe se recalcula solo. La hoja te muestra el total del día actualizado mientras escribes, así ves el resultado antes de guardar."
+        },
+        {
+          "type": "improvement",
+          "title": "Cada corrección queda registrada",
+          "description": "Puedes escribir el motivo del ajuste y todo queda guardado en la auditoría de salarios: qué cambió, de cuánto a cuánto y quién lo hizo. Los días que aún están abiertos, sin hora de salida, aparecen marcados y no se pueden editar hasta que se cierren en Firmar salida."
+        },
+        {
+          "type": "fix",
+          "title": "Tus precios de Carnaval ya no vuelven solos al valor de antes",
+          "description": "Si ponías tus productos con un margen determinado para Carnaval, al día siguiente o al editar cualquier otro producto se te volvían a un margen distinto. Ya no: ahora el sistema respeta el porcentaje que configuraste para tu tienda, tanto en efectivo como en transferencia, sin importar cuántas veces cambies precios en Inventtia."
+        },
+        {
+          "type": "improvement",
+          "title": "Un margen mínimo que protege tus ganancias",
+          "description": "El porcentaje global de Carnaval ahora funciona como piso: si tu tienda tiene configurado un margen por debajo de ese mínimo, se ajusta automáticamente al mínimo. Y si tienes un margen más alto, se respeta tal como lo pusiste. Así nunca vendes por debajo de lo que corresponde."
+        },
+        {
+          "type": "improvement",
+          "title": "El mismo precio, no importa por dónde lo cambies",
+          "description": "Antes un producto podía terminar con un precio distinto según si lo editaste a mano, con el cambio global o si se recalculó solo. Ahora todos los caminos usan el mismo cálculo y el mismo redondeo, así que el precio que ves es el que va a quedar."
+        }
+      ]
+    },
     {
       "version": "2.8.2",
       "date": "2026-08-25",
