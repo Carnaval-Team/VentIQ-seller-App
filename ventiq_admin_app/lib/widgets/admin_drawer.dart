@@ -6,6 +6,7 @@ import '../config/app_colors.dart';
 import '../widgets_home/screens/widget_tutorial_sheet.dart';
 import '../services/user_preferences_service.dart';
 import '../services/permissions_service.dart';
+import '../services/cocina_service.dart';
 import '../services/auth_service.dart';
 import '../services/subscription_service.dart';
 import '../utils/navigation_guard.dart';
@@ -126,6 +127,21 @@ class _AdminDrawerState extends State<AdminDrawer> {
       return await SubscriptionService().hasProPlan(storeId);
     } catch (e) {
       print('❌ Error verificando función de consignación: $e');
+      return false;
+    }
+  }
+
+  /// Verificar si la tienda opera en modo restaurante.
+  ///
+  /// El modulo de cocinas solo aparece si hay mesas: las comandas salen de las
+  /// cuentas de mesa. Se lee la configuracion de la tienda en lugar de suponer.
+  Future<bool> _tiendaEnModoRestaurante() async {
+    try {
+      final config = await CocinaService.leerConfigCocina();
+      return config.modoRestaurante;
+    } catch (e) {
+      // Si falla la consulta se oculta la entrada: es preferible no mostrarla
+      // que enviar al usuario a una pantalla que no puede usar.
       return false;
     }
   }
@@ -349,6 +365,47 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   },
                 ),
 
+                // Cocinas - solo si la tienda opera en modo restaurante.
+                // Sin mesas no hay comandas, así que la entrada se oculta en
+                // lugar de mostrar un módulo que no aplica.
+                FutureBuilder<bool>(
+                  future: _tiendaEnModoRestaurante(),
+                  builder: (context, restauranteSnap) {
+                    if (restauranteSnap.data != true) {
+                      return const SizedBox.shrink();
+                    }
+
+                    return FutureBuilder<UserRole>(
+                      future: PermissionsService().getUserRole(),
+                      builder: (context, snapshot) {
+                        final userRole = snapshot.data ?? UserRole.none;
+                        final isAlmacenero = userRole == UserRole.almacenero;
+
+                        if (isAlmacenero) return const SizedBox.shrink();
+
+                        return Column(
+                          children: [
+                            _buildDrawerItem(
+                              context,
+                              icon: Icons.soup_kitchen,
+                              title: 'Cocinas',
+                              subtitle: 'Estaciones y platos',
+                              onTap: () {
+                                Navigator.pop(context);
+                                NavigationGuard.navigateWithPermission(
+                                  context,
+                                  '/cocinas-management',
+                                );
+                              },
+                            ),
+                            const Divider(height: 1),
+                          ],
+                        );
+                      },
+                    );
+                  },
+                ),
+
                 // Marketing (solo Gerente)
                 FutureBuilder<bool>(
                   future: NavigationGuard.canNavigate(
@@ -489,6 +546,38 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   },
                 ),
                 const Divider(height: 1),
+
+                // Cuentas por Cobrar (solo gerente/supervisor)
+                FutureBuilder<bool>(
+                  future: NavigationGuard.canNavigate(
+                    '/cuentas-por-cobrar',
+                    context,
+                    showDialog: false,
+                  ),
+                  builder: (context, snapshot) {
+                    if (snapshot.data == true) {
+                      return Column(
+                        children: [
+                          _buildDrawerItem(
+                            context,
+                            icon: Icons.account_balance_wallet,
+                            title: 'Cuentas por Cobrar',
+                            subtitle: 'Ventas a pago pendiente y cobros',
+                            onTap: () {
+                              Navigator.pop(context);
+                              NavigationGuard.navigateWithPermission(
+                                context,
+                                '/cuentas-por-cobrar',
+                              );
+                            },
+                          ),
+                          const Divider(height: 1),
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
 
                 // Notificación a Clientes — Difusión WhatsApp.
                 // Visible para todos los clientes; el acceso real se valida

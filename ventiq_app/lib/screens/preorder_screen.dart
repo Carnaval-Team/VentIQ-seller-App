@@ -232,6 +232,22 @@ class _PreorderScreenState extends State<PreorderScreen> {
       // Agregar al inicio de la lista para que aparezca primero
       final methodsWithSpecial = [pagoRegularEfectivo, ...paymentMethods];
 
+      // "Pago Pendiente" (cuenta por cobrar): solo si la tienda lo permite
+      // para vendedores, o si quien vende es gerente/supervisor.
+      try {
+        final idTienda = await _userPreferencesService.getIdTienda();
+        final isAdminSession =
+            await _userPreferencesService.isInventoryOnlySession();
+        final vendedoresPuedenCrearCxc = (idTienda != null && !isOfflineModeEnabled)
+            ? await StoreConfigService.getVendedoresPuedenCrearCxc(idTienda)
+            : false;
+        if (isAdminSession || vendedoresPuedenCrearCxc) {
+          methodsWithSpecial.add(pm.PaymentMethod.pagoPendiente());
+        }
+      } catch (e) {
+        print('⚠️ No se pudo verificar permiso de pago pendiente: $e');
+      }
+
       setState(() {
         _paymentMethods = methodsWithSpecial;
         _loadingPaymentMethods = false;
@@ -651,7 +667,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
                               ),
                               const SizedBox(width: 8),
                               const Text(
-                                'Verificando inventario...',
+                                'Procesando...',
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600,
@@ -1092,9 +1108,17 @@ class _PreorderScreenState extends State<PreorderScreen> {
       return;
     }
 
+    // Las ventas con "Pago Pendiente" (cuenta por cobrar) siempre deben pasar
+    // por el checkout: necesitan sí o sí un cliente asociado (buscado o
+    // creado ahí), sin importar que la tienda tenga activado
+    // "no_solicitar_cliente" para las ventas normales.
+    final tienePagoPendiente = currentOrder.items.any(
+      (item) => item.paymentMethod?.esPagoPendiente ?? false,
+    );
+
     if (useOfflinePath) {
       // MODO OFFLINE / FULL OFFLINE: sin servidor
-      if (noSolicitarCliente && !solicitarImagenOperacion) {
+      if (noSolicitarCliente && !solicitarImagenOperacion && !tienePagoPendiente) {
         print(
           '🔌 Modo offline + no_solicitar_cliente - Creando orden localmente',
         );
@@ -1115,7 +1139,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
           setState(() {});
         });
       }
-    } else if (noSolicitarCliente && !solicitarImagenOperacion) {
+    } else if (noSolicitarCliente && !solicitarImagenOperacion && !tienePagoPendiente) {
       // MODO DIRECTO: No se requieren datos del cliente, crear orden inmediatamente
       print('⚡ No se solicita cliente - Creando orden directamente');
       await _processElaboratedProducts(currentOrder);
@@ -1905,31 +1929,69 @@ class _PreorderScreenState extends State<PreorderScreen> {
         '🔍 Productos elaborados encontrados: ${productosElaborados.length}',
       );
 
-      // Show loading dialog
+      // Diálogo de carga.
+      //
+      // Antes decía "Elaborando productos... / Descomponiendo ingredientes y
+      // verificando stock": jerga interna del modelo de datos que al vendedor no
+      // le dice nada y encima es engañosa (aquí no se elabora nada, se comprueba
+      // stock). Se sustituye por un "Procesando venta" neutro y más limpio.
       showDialog(
         context: context,
         barrierDismissible: false,
         builder: (BuildContext context) {
-          return AlertDialog(
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    Colors.orange[600]!,
-                  ),
+          return Dialog(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 28,
+                  vertical: 24,
                 ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Elaborando productos...',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.15),
+                      blurRadius: 24,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'Descomponiendo ingredientes y verificando stock',
-                  style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 34,
+                      height: 34,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 3,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          const Color(0xFF4A90E2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    const Text(
+                      'Procesando venta',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF2C3E50),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Un momento...',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           );
         },

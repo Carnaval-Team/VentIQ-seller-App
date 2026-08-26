@@ -30,6 +30,8 @@ import 'screens/default_order_items_screen.dart';
 import 'screens/mesas_screen.dart';
 import 'screens/mesa_detail_screen.dart';
 import 'screens/cuenta_mesa_screen.dart';
+import 'screens/kds_screen.dart';
+import 'screens/produccion_screen.dart';
 import 'screens/admin/admin_home_screen.dart';
 import 'screens/admin/admin_stock_screen.dart';
 import 'screens/admin/admin_reception_screen.dart';
@@ -196,6 +198,7 @@ class MyApp extends StatelessWidget {
       title: 'Inventtia Caja',
       debugShowCheckedModeBanner: false,
       navigatorKey: globalNavigatorKey,
+      navigatorObservers: [routeObserver],
       scaffoldMessengerKey: globalScaffoldMessengerKey,
       theme: ThemeData(
         useMaterial3: true,
@@ -261,6 +264,8 @@ class MyApp extends StatelessWidget {
         '/default-order-items': (context) =>
             const DefaultOrderItemsScreen(),
         '/mesas': (context) => const MesasScreen(),
+        '/kds': (context) => const KdsScreen(),
+        '/produccion': (context) => const ProduccionScreen(),
         '/mesa-detail': (context) {
           final args = ModalRoute.of(context)?.settings.arguments;
           if (args is int) {

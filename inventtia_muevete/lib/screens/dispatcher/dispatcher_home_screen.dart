@@ -570,6 +570,20 @@ class _DispatcherHomeScreenState extends State<DispatcherHomeScreen>
                     child: FilledButton(
                       onPressed: () async {
                         if (!formKey.currentState!.validate()) return;
+                        if (licCondFrenteUrl == null ||
+                            licCondFrenteUrl!.isEmpty ||
+                            licCondDorsoUrl == null ||
+                            licCondDorsoUrl!.isEmpty) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Sube el frente y dorso de la licencia de conducción',
+                              ),
+                              backgroundColor: AppTheme.error,
+                            ),
+                          );
+                          return;
+                        }
                         Navigator.pop(ctx, true);
                       },
                       style: FilledButton.styleFrom(
@@ -1174,6 +1188,20 @@ class _DispatcherHomeScreenState extends State<DispatcherHomeScreen>
                     child: FilledButton(
                       onPressed: () async {
                         if (!formKey.currentState!.validate()) return;
+                        if (licCondFrenteUrl == null ||
+                            licCondFrenteUrl!.isEmpty ||
+                            licCondDorsoUrl == null ||
+                            licCondDorsoUrl!.isEmpty) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Sube el frente y dorso de la licencia de conducción',
+                              ),
+                              backgroundColor: AppTheme.error,
+                            ),
+                          );
+                          return;
+                        }
                         Navigator.pop(ctx, true);
                       },
                       style: FilledButton.styleFrom(
@@ -1327,8 +1355,10 @@ class _FlotaTab extends StatelessWidget {
       ),
       builder: (ctx) => DraggableScrollableSheet(
         initialChildSize: 0.7,
-        minChildSize: 0.5,
+        minChildSize: 0.22,
         maxChildSize: 0.95,
+        snap: true,
+        snapSizes: const [0.22, 0.5, 0.7, 0.95],
         expand: false,
         builder: (_, scrollCtrl) => SingleChildScrollView(
           controller: scrollCtrl,

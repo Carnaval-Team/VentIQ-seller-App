@@ -57,6 +57,7 @@ class _HomeMapScreenState extends State<HomeMapScreen>
   bool _hasActiveTrip = false;
   Map<String, dynamic>? _activeSolicitud; // solicitud row
   Map<String, dynamic>? _activeSolicitudDriver; // driver info if accepted
+  bool _activeTripStarted = false;
   LatLng? _activeTripDestination;
   LatLng? _activeTripDriverPos;
   List<LatLng> _activeTripRoute = [];
@@ -175,15 +176,21 @@ class _HomeMapScreenState extends State<HomeMapScreen>
           }
         });
 
-        // If aceptada, load driver info
+        // If aceptada, load driver info and viaje status
         if (solicitud['estado'] == 'aceptada') {
           await _loadAcceptedTripDriver(solicitud['id'] as int);
+          await _loadActiveViajeStatus(userId);
+        } else {
+          setState(() => _activeTripStarted = false);
         }
 
         // Start real-time tracking for active trip
         _startActiveTripTracking();
       } else {
-        setState(() => _hasActiveTrip = false);
+        setState(() {
+          _hasActiveTrip = false;
+          _activeTripStarted = false;
+        });
       }
     } catch (e, st) {
       debugPrint('[HomeMap] _checkActiveTrip error: $e\n$st');
@@ -221,6 +228,46 @@ class _HomeMapScreenState extends State<HomeMapScreen>
     } catch (e, st) {
       debugPrint('[HomeMap] _loadAcceptedTripDriver error: $e\n$st');
     }
+  }
+
+  Future<void> _loadActiveViajeStatus(String userId) async {
+    final driverId = _activeSolicitudDriver?['driver_id'] as int?;
+    if (driverId == null) {
+      if (mounted) setState(() => _activeTripStarted = false);
+      return;
+    }
+    try {
+      final viaje = await Supabase.instance.client
+          .schema('muevete')
+          .from('viajes')
+          .select('id, estado')
+          .eq('driver_id', driverId)
+          .eq('user', userId)
+          .eq('completado', false)
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      if (mounted) {
+        setState(() => _activeTripStarted = viaje?['estado'] == true);
+      }
+    } catch (e, st) {
+      debugPrint('[HomeMap] _loadActiveViajeStatus error: $e\n$st');
+    }
+  }
+
+  String _activeTripStatusLabel(int eta) {
+    final estado = _activeSolicitud?['estado'] as String? ?? 'pendiente';
+    if (estado == 'pendiente') return 'Buscando conductor';
+    if (_activeTripStarted) return 'En curso';
+    if (eta > 0) return 'Llega en $eta min';
+    return 'Conductor en camino';
+  }
+
+  Color _activeTripStatusColor() {
+    final estado = _activeSolicitud?['estado'] as String? ?? 'pendiente';
+    if (estado == 'pendiente') return AppTheme.warning;
+    return AppTheme.success;
   }
 
   void _startActiveTripTracking() {
@@ -1400,6 +1447,8 @@ class _HomeMapScreenState extends State<HomeMapScreen>
     ].where((s) => s.isNotEmpty).join(' ');
     final chapa = veh?['chapa'] as String? ?? '';
     final eta = _activeSolicitudDriver?['tiempo_estimado'] as int? ?? 0;
+    final statusLabel = _activeTripStatusLabel(eta);
+    final statusColor = _activeTripStatusColor();
 
     return Positioned(
       bottom: 0,
@@ -1444,9 +1493,7 @@ class _HomeMapScreenState extends State<HomeMapScreen>
                     padding: const EdgeInsets.symmetric(
                         horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
-                      color: estado == 'aceptada'
-                          ? AppTheme.success.withValues(alpha: 0.15)
-                          : AppTheme.warning.withValues(alpha: 0.15),
+                      color: statusColor.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
@@ -1457,29 +1504,23 @@ class _HomeMapScreenState extends State<HomeMapScreen>
                           height: 8,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: estado == 'aceptada'
-                                ? AppTheme.success
-                                : AppTheme.warning,
+                            color: statusColor,
                           ),
                         ),
                         const SizedBox(width: 6),
                         Text(
-                          estado == 'aceptada'
-                              ? 'Conductor en camino'
-                              : 'Buscando conductor',
+                          statusLabel,
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
-                            color: estado == 'aceptada'
-                                ? AppTheme.success
-                                : AppTheme.warning,
+                            color: statusColor,
                           ),
                         ),
                       ],
                     ),
                   ),
                   const Spacer(),
-                  if (eta > 0)
+                  if (estado == 'aceptada' && !_activeTripStarted && eta > 0)
                     Text(
                       '$eta min',
                       style: GoogleFonts.plusJakartaSans(
@@ -1655,10 +1696,10 @@ class _HomeMapScreenState extends State<HomeMapScreen>
       bool isDark, TransportProvider transportProvider) {
     return DraggableScrollableSheet(
       initialChildSize: 0.35,
-      minChildSize: 0.06,
+      minChildSize: 0.08,
       maxChildSize: 0.55,
       snap: true,
-      snapSizes: const [0.06, 0.35, 0.55],
+      snapSizes: const [0.08, 0.35, 0.55],
       builder: (context, scrollController) {
         return Container(
           decoration: BoxDecoration(

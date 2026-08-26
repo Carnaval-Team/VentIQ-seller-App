@@ -159,6 +159,54 @@ WhatsApp: +53 63464544
 
 ---
 
+## Vistas sugeridas para Facebook
+
+Recomendación: imágenes de **1200 x 630 px** para feed y **1080 x 1080 px** para carrusel. Siempre incluir el logo de Inventtia en una esquina, el CTA `inventtia.com · WhatsApp +53 63464544` y evitar el nombre VentIQ.
+
+### 1. Caja + Gestión — "Tu caja no cuadra… otra vez"
+- **Formato:** 1200x630 px, layout split screen.
+- **Izquierda:** mockup de tablet o teléfono con la app en el mostrador, ticket saliendo.
+- **Derecha:** mini dashboard con tarjetas "Ventas", "Inventario", "Costos".
+- **Texto principal:** "Tu caja no cuadra… otra vez."
+- **Subtítulo:** "Con Inventtia Caja cobras y con Inventtia Gestión ves todo en tiempo real."
+- **Paleta:** azul de marca, blanco, gris suave, acento verde en los indicadores.
+
+### 2. Caja offline — "Vende aunque se caiga el internet"
+- **Formato:** 1200x630 px, fondo de local con señal débil.
+- **Elementos:** icono de WiFi rojo o tachado, flecha de sincronización, check verde.
+- **Texto principal:** "Vende aunque se caiga el internet."
+- **Subtítulo:** "Inventtia Caja guarda las ventas offline y las sincroniza luego."
+- **Paleta:** fondo gris oscuro, texto blanco, acento verde en el check.
+
+### 3. GoReservas — "Deja de apuntar citas en un cuaderno"
+- **Formato:** 1200x630 px, contraste "antes vs después".
+- **Izquierda:** cuaderno borroso con citas a mano, mano tachando.
+- **Derecha:** smartphone con la pantalla de GoReservas (cupos del día, confirmar/consumir).
+- **Texto principal:** "Deja de apuntar citas en un cuaderno."
+- **Subtítulo:** "Inventtia GoReservas organiza cupos y citas desde el móvil."
+- **Paleta:** blanco, acento azul, detalles en verde para estados confirmados.
+
+### 4. Muévete — "Necesitas un viaje. Ellos están cerca."
+- **Formato:** 1200x630 px, fondo de mapa estilizado.
+- **Elementos:** pin de origen, pin de destino, ruta punteada, icono de auto, foto de conductor en círculo.
+- **Texto principal:** "Necesitas un viaje. Ellos están cerca."
+- **Subtítulo:** "Pide en Inventtia Muévete. Conductores cercanos te ofrecen el trayecto."
+- **Paleta:** azul oscuro para mapa, verde para la ruta, blanco para texto.
+
+### Carrusel para posts semanales
+Para los posts más cortos del calendario, usar **carrusel 1080x1080 px** de 2-3 diapositivas:
+1. Slide de dolor o pregunta (texto grande, sin imagen).
+2. Screenshot de la app mostrando la solución.
+3. Slide con CTA, QR a inventtia.com o botón de WhatsApp.
+
+### Especificaciones técnicas comunes
+- **Formato:** PNG/JPG, ideal < 1 MB.
+- **Tipografía:** sans-serif bold para titular, regular para subtítulo.
+- **Safe zone:** dejar 100 px libres en bordes para evitar recortes en móvil.
+- **Colores de referencia:** azul `#4A90E2`, verde `#10B981`, gris oscuro `#333333`, blanco `#FFFFFF`.
+
+---
+
 ## Relacionado
 
 - Posts centrados en problema + captura de UI: [`publicaciones-problema-ui.md`](./publicaciones-problema-ui.md)

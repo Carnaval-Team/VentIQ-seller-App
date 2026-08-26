@@ -12,6 +12,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/order.dart';
 import '../services/currency_service.dart';
+import '../services/store_config_service.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/price_utils.dart';
 
@@ -384,6 +385,7 @@ class WiFiPrinterService {
       bytes += generator.emptyLines(1);
 
       final usdRate = await _getUsdRateForPrint();
+      final showPaymentMethod = await _shouldShowPaymentMethodOnTicket();
 
       for (int i = 0; i < orders.length; i++) {
         bytes += _addCustomerReceipt(
@@ -392,6 +394,7 @@ class WiFiPrinterService {
           storeInfo,
           includeHeader: false,
           usdRate: usdRate,
+          showPaymentMethod: showPaymentMethod,
         );
         if (i < orders.length - 1) {
           bytes += _addDottedLineSeparator(generator);
@@ -505,6 +508,7 @@ class WiFiPrinterService {
   }) async {
     try {
       final usdRate = await _getUsdRateForPrint();
+      final showPaymentMethod = await _shouldShowPaymentMethodOnTicket();
       List<int> bytes = [];
 
       bytes += _addCustomerReceipt(
@@ -513,6 +517,7 @@ class WiFiPrinterService {
         storeInfo,
         usdRate: usdRate,
         title: title,
+        showPaymentMethod: showPaymentMethod,
       );
       bytes += generator.emptyLines(1);
       bytes += generator.cut();
@@ -575,6 +580,23 @@ class WiFiPrinterService {
     }
   }
 
+  /// Enviar bytes ESC/POS ya generados a la impresora conectada.
+  ///
+  /// Envoltorio publico de `_sendToPrinterWithRetry`, para contenido que se
+  /// arma fuera de esta clase (por ejemplo el ticket de cocina, que lo formatea
+  /// el backend en `fn_ticket_comanda`). No genera nada: solo transporta.
+  Future<bool> imprimirBytesCrudos(List<int> bytes, String jobName) async {
+    if (!_isConnected || _socket == null) {
+      debugPrint('❌ Impresora WiFi no conectada ($jobName)');
+      return false;
+    }
+    if (bytes.isEmpty) {
+      debugPrint('⚠️ Nada que imprimir ($jobName)');
+      return false;
+    }
+    return _sendToPrinterWithRetry(bytes, jobName);
+  }
+
   /// Enviar bytes a la impresora con reintentos
   Future<bool> _sendToPrinterWithRetry(List<int> bytes, String jobName) async {
     bool result = false;
@@ -616,6 +638,16 @@ class WiFiPrinterService {
     _storePrintInfoFuture ??= _loadStorePrintInfo();
     _storePrintInfoCache = await _storePrintInfoFuture!;
     return _storePrintInfoCache!;
+  }
+
+  Future<bool> _shouldShowPaymentMethodOnTicket() async {
+    try {
+      final storeId = await UserPreferencesService().getIdTienda();
+      if (storeId == null) return true;
+      return StoreConfigService.getMostrarMetodoPagoTicket(storeId);
+    } catch (_) {
+      return true;
+    }
   }
 
   Future<double?> _getUsdRateForPrint() async {
@@ -762,6 +794,7 @@ class WiFiPrinterService {
     bool includeHeader = true,
     double? usdRate,
     String title = 'FACTURA',
+    bool showPaymentMethod = true,
   }) {
     List<int> bytes = [];
 
@@ -882,6 +915,11 @@ class WiFiPrinterService {
       );
     }
 
+    // Forma de pago
+    if (showPaymentMethod) {
+      bytes += _addPaymentMethodSummary(generator, order);
+    }
+
     // Pie de página compacto
     bytes += generator.text(
       'Gracias por su compra',
@@ -897,6 +935,50 @@ class WiFiPrinterService {
 
     bytes += generator.emptyLines(1);
 
+    return bytes;
+  }
+
+  /// Imprime el desglose de forma de pago usada en la orden (uno o varios
+  /// métodos, agrupados por producto). Incluye "Pago Pendiente" (cuenta por
+  /// cobrar) cuando corresponde, para que el ticket siempre refleje cómo
+  /// quedó cobrada la venta.
+  List<int> _addPaymentMethodSummary(Generator generator, Order order) {
+    final Map<String, double> totalsByMethod = {};
+    for (final item in order.items) {
+      final method = item.paymentMethod;
+      if (method == null) continue;
+      final itemTotal = item.cantidad * item.precioUnitario;
+      totalsByMethod[method.displayName] =
+          (totalsByMethod[method.displayName] ?? 0.0) + itemTotal;
+    }
+
+    if (totalsByMethod.isEmpty) return [];
+
+    List<int> bytes = [];
+    bytes += generator.text(
+      '----------------------------',
+      styles: PosStyles(align: PosAlign.center),
+    );
+    bytes += generator.text(
+      'FORMA DE PAGO',
+      styles: PosStyles(align: PosAlign.left, bold: true),
+    );
+    for (final entry in totalsByMethod.entries) {
+      var label = entry.key;
+      if (label.length > 20) label = '${label.substring(0, 20)}...';
+      bytes += generator.row([
+        PosColumn(
+          text: label,
+          width: 8,
+          styles: PosStyles(align: PosAlign.left),
+        ),
+        PosColumn(
+          text: '\$${entry.value.toStringAsFixed(0)}',
+          width: 4,
+          styles: PosStyles(align: PosAlign.right),
+        ),
+      ]);
+    }
     return bytes;
   }
 

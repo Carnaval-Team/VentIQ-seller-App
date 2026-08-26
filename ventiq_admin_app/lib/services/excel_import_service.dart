@@ -1155,6 +1155,10 @@ class ExcelImportService {
       // Productos elaborados
       'es_elaborado',
       'costo_produccion',
+      // Precios y costos adicionales
+      'precio_costo',
+      // Proveedor
+      'proveedor',
     ];
     
     // Agregar encabezados
@@ -1200,6 +1204,10 @@ class ExcelImportService {
       // Productos elaborados
       'false',
       '0',
+      // Precios y costos adicionales
+      '12.50',
+      // Proveedor
+      'Proveedor Ejemplo',
     ];
     
     for (int i = 0; i < exampleData.length; i++) {

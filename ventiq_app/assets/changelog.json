@@ -1,9 +1,46 @@
 {
-  "current_version": "2.4.2",
-  "build": 844,
+  "current_version": "2.4.3",
+  "build": 845,
 
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.4.3",
+      "date": "2026-08-25",
+      "title": "🍳 Flujo de cocina, KDS y sincronización más estable",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "KDS y comandas de cocina",
+          "description": "Nueva pantalla de KDS para visualizar las comandas pendientes y una de producción para administrar tandas. El flujo de cocina descuenta recetas y controla el estado de cada pedido."
+        },
+        {
+          "type": "feature",
+          "title": "Cuenta mesa y pedidos de restaurante",
+          "description": "Mejoras en la cuenta mesa para restaurantes, con manejo de pedidos, comandas y estados de servicio."
+        },
+        {
+          "type": "improvement",
+          "title": "Sincronización y conexión sin conexión",
+          "description": "Mejoras en la cola offline de cocina, el manejo de licencias, reconexión automática y sincronización selectiva para trabajar con mayor estabilidad."
+        },
+        {
+          "type": "improvement",
+          "title": "Impresión más confiable",
+          "description": "Ajustes en los servicios de impresión Bluetooth y WiFi para evitar cortes y mejorar la conexión con impresoras guardadas."
+        },
+        {
+          "type": "improvement",
+          "title": "Productos y checkout",
+          "description": "Optimizaciones en la búsqueda de productos, detalles, categorías y el proceso de checkout para ventas más rápidas."
+        },
+        {
+          "type": "improvement",
+          "title": "Configuración y login",
+          "description": "Ajustes en la pantalla de configuración, integración de ajustes y el flujo de inicio de sesión para mayor consistencia."
+        }
+      ]
+    },
     {
       "version": "2.4.2",
       "date": "2026-08-20",

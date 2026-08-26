@@ -7,6 +7,7 @@ import '../services/auto_sync_service.dart';
 import '../services/connectivity_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
+import '../services/comanda_service.dart';
 import '../utils/global_navigator.dart';
 
 class AppDrawer extends StatefulWidget {
@@ -178,6 +179,7 @@ class _AppDrawerState extends State<AppDrawer> {
   bool _isLoading = true;
   String _appVersion = 'Cargando...';
   bool _modoRestaurante = false;
+  bool _tieneCocinas = false;
   bool _isSuperAdmin = false;
   bool _canManageInventory = false;
   bool _inventoryOnly = false;
@@ -231,6 +233,16 @@ class _AppDrawerState extends State<AppDrawer> {
       final value = config?['modo_restaurante'] ?? false;
       if (mounted && value != _modoRestaurante) {
         setState(() => _modoRestaurante = value);
+      }
+
+      // La entrada de Cocina depende de que el usuario tenga cocinas
+      // asignadas, no del modo restaurante: un cocinero no maneja mesas.
+      // El backend decide el alcance (fn_cocinas_del_usuario).
+      if (value == true) {
+        final cocinas = await ComandaService().listarMisCocinas();
+        if (mounted && cocinas.isNotEmpty != _tieneCocinas) {
+          setState(() => _tieneCocinas = cocinas.isNotEmpty);
+        }
       }
     } catch (e) {
       print('❌ Error cargando modo_restaurante en drawer: $e');
@@ -477,6 +489,34 @@ class _AppDrawerState extends State<AppDrawer> {
                     const Divider(height: 1),
                   ],
 
+                  // Cocina (KDS). Solo si el usuario tiene cocinas asignadas:
+                  // un vendedor sin cocina no debe verla, y un cocinero la ve
+                  // aunque no maneje mesas.
+                  if (_tieneCocinas) ...[
+                    _buildDrawerItem(
+                      context,
+                      icon: Icons.soup_kitchen_outlined,
+                      title: 'Cocina',
+                      subtitle: 'Comandas pendientes de preparar',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.pushNamed(context, '/kds');
+                      },
+                    ),
+                    const Divider(height: 1),
+                    _buildDrawerItem(
+                      context,
+                      icon: Icons.outdoor_grill_outlined,
+                      title: 'Produccion',
+                      subtitle: 'Tandas y porciones preparadas',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.pushNamed(context, '/produccion');
+                      },
+                    ),
+                    const Divider(height: 1),
+                  ],
+
                   _buildDrawerItem(
                     context,
                     icon: Icons.shopping_cart,
@@ -568,6 +608,17 @@ class _AppDrawerState extends State<AppDrawer> {
                     ),
                     const Divider(height: 1),
                   ],
+                  _buildDrawerItem(
+                    context,
+                    icon: Icons.settings,
+                    title: 'Configuración',
+                    subtitle: 'Sync, offline y preferencias',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(context, '/settings');
+                    },
+                  ),
+                  const Divider(height: 1),
                 ],
 
                 // Entrada oculta: solo visible para superadmins. Diagnóstico de

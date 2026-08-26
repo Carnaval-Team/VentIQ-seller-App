@@ -160,7 +160,7 @@ class _ConsignacionScreenState extends State<ConsignacionScreen>
           ],
         ),
       ),
-      drawer: const AdminDrawer(),
+      endDrawer: const AdminDrawer(),
       body:
           _isLoading
               ? const Center(child: CircularProgressIndicator())

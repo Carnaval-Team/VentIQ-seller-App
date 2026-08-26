@@ -111,6 +111,7 @@ CREATE TABLE public.app_dat_almacen (
   ubicacion character varying,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   deleted_at timestamp without time zone,
+  es_cocina boolean NOT NULL DEFAULT false,
   CONSTRAINT app_dat_almacen_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_almacen_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id)
 );
@@ -153,10 +154,13 @@ CREATE TABLE public.app_dat_producto (
   mostrar_en_catalogo boolean DEFAULT false,
   id_proveedor integer,
   es_paquete boolean,
+  modo_elaboracion text NOT NULL DEFAULT 'al_pedido'::text CHECK (modo_elaboracion = ANY (ARRAY['al_pedido'::text, 'por_tanda'::text])),
+  id_cocina bigint,
   CONSTRAINT app_dat_producto_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_producto_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
   CONSTRAINT app_dat_producto_id_categoria_fkey FOREIGN KEY (id_categoria) REFERENCES public.app_dat_categoria(id),
-  CONSTRAINT app_dat_producto_id_proveedor_fkey FOREIGN KEY (id_proveedor) REFERENCES public.app_dat_proveedor(id)
+  CONSTRAINT app_dat_producto_id_proveedor_fkey FOREIGN KEY (id_proveedor) REFERENCES public.app_dat_proveedor(id),
+  CONSTRAINT app_dat_producto_id_cocina_fkey FOREIGN KEY (id_cocina) REFERENCES public.app_dat_cocina(id)
 );
 CREATE TABLE public.app_dat_producto_etiquetas (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -409,13 +413,15 @@ CREATE TABLE public.app_dat_operacion_venta (
   id_mesa bigint,
   foto_operacion_url text,
   pago_sms_json jsonb,
+  id_cliente_cxc bigint,
   CONSTRAINT app_dat_operacion_venta_pkey PRIMARY KEY (id_operacion),
   CONSTRAINT app_operacion_extraccion_id_operacion_fkey FOREIGN KEY (id_operacion) REFERENCES public.app_dat_operaciones(id),
   CONSTRAINT app_operacion_extraccion_id_tpv_fkey FOREIGN KEY (id_tpv) REFERENCES public.app_dat_tpv(id),
   CONSTRAINT app_dat_operacion_venta_id_promocion_fkey FOREIGN KEY (id_promocion) REFERENCES public.app_mkt_promociones(id),
   CONSTRAINT app_dat_operacion_venta_id_cliente_fkey FOREIGN KEY (id_cliente) REFERENCES public.app_dat_clientes(id),
   CONSTRAINT app_dat_operacion_venta_id_turno_apertura_fkey FOREIGN KEY (id_turno_apertura) REFERENCES public.app_dat_caja_turno(id),
-  CONSTRAINT app_dat_operacion_venta_id_mesa_fkey FOREIGN KEY (id_mesa) REFERENCES public.app_dat_mesas(id)
+  CONSTRAINT app_dat_operacion_venta_id_mesa_fkey FOREIGN KEY (id_mesa) REFERENCES public.app_dat_mesas(id),
+  CONSTRAINT app_dat_operacion_venta_id_cliente_cxc_fkey FOREIGN KEY (id_cliente_cxc) REFERENCES public.app_dat_cliente_cxc(id)
 );
 CREATE TABLE public.app_nom_motivo_extraccion (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -607,9 +613,11 @@ CREATE TABLE public.app_dat_categoria_tienda (
   id_categoria bigint,
   id_tienda bigint,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
+  id_cocina bigint,
   CONSTRAINT app_dat_categoria_tienda_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_categoria_tienda_id_categoria_fkey FOREIGN KEY (id_categoria) REFERENCES public.app_dat_categoria(id),
-  CONSTRAINT app_dat_categoria_tienda_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id)
+  CONSTRAINT app_dat_categoria_tienda_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
+  CONSTRAINT app_dat_categoria_tienda_id_cocina_fkey FOREIGN KEY (id_cocina) REFERENCES public.app_dat_cocina(id)
 );
 CREATE TABLE public.app_dat_clientes (
   id bigint NOT NULL DEFAULT nextval('app_dat_clientes_id_seq'::regclass),
@@ -636,6 +644,7 @@ CREATE TABLE public.app_dat_clientes (
   fecha_optin timestamp with time zone,
   fecha_optout timestamp with time zone,
   preferencias_comunicacion jsonb,
+  bloqueado_cxc boolean NOT NULL DEFAULT false,
   CONSTRAINT app_dat_clientes_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.app_dat_contactos_clientes (
@@ -1096,10 +1105,12 @@ CREATE TABLE public.app_dat_pago_venta (
   tipo_pago bigint,
   importe_sin_descuento numeric,
   created_at timestamp with time zone DEFAULT now(),
+  id_liquidacion bigint,
   CONSTRAINT app_dat_pago_venta_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_pago_venta_id_operacion_venta_fkey FOREIGN KEY (id_operacion_venta) REFERENCES public.app_dat_operacion_venta(id_operacion),
   CONSTRAINT app_dat_pago_venta_id_medio_pago_fkey FOREIGN KEY (id_medio_pago) REFERENCES public.app_nom_medio_pago(id),
-  CONSTRAINT app_dat_pago_venta_creado_por_fkey FOREIGN KEY (creado_por) REFERENCES auth.users(id)
+  CONSTRAINT app_dat_pago_venta_creado_por_fkey FOREIGN KEY (creado_por) REFERENCES auth.users(id),
+  CONSTRAINT app_dat_pago_venta_id_liquidacion_fkey FOREIGN KEY (id_liquidacion) REFERENCES public.app_dat_liquidacion_cxc(id)
 );
 CREATE TABLE public.app_dat_caja_turno (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -1370,6 +1381,8 @@ CREATE TABLE public.app_dat_configuracion_tienda (
   tickets_a_imprimir jsonb NOT NULL DEFAULT '["cliente", "almacen"]'::jsonb,
   copias_por_ticket jsonb NOT NULL DEFAULT '{"almacen": 1, "cliente": 1}'::jsonb,
   autocompletar_cantidad_real_conteo boolean NOT NULL DEFAULT false,
+  vendedores_pueden_crear_cxc boolean NOT NULL DEFAULT false,
+  cocina_activa boolean NOT NULL DEFAULT false,
   CONSTRAINT app_dat_configuracion_tienda_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_configuracion_tienda_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id)
 );

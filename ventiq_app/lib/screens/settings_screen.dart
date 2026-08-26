@@ -9,6 +9,7 @@ import '../services/category_service.dart';
 import '../services/product_service.dart';
 import '../services/payment_method_service.dart';
 import '../services/turno_service.dart';
+import '../services/currency_service.dart';
 import '../utils/uuid_generator.dart';
 import '../services/settings_integration_service.dart';
 import '../services/auto_sync_service.dart';
@@ -25,6 +26,7 @@ import '../widgets/sync_status_chip.dart';
 import '../widgets/selective_sync_dialog.dart';
 import '../services/connectivity_service.dart';
 import '../services/smart_offline_manager.dart';
+import '../services/offline_license_service.dart';
 import 'dart:async';
 
 class SettingsScreen extends StatefulWidget {
@@ -43,6 +45,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       SettingsIntegrationService();
   final SubscriptionGuardService _subscriptionGuard =
       SubscriptionGuardService();
+  final ConnectivityService _connectivity = ConnectivityService();
 
   bool _isPrintEnabled = true; // Valor por defecto
   bool _isPrintUsdEnabled = false; // Valor por defecto
@@ -54,9 +57,9 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _isOfflineModeEnabled = false; // Valor por defecto
   bool _isTogglingOfflineMode =
       false; // Cambio de modo offline en curso (deshabilita el switch)
-  bool _hasOfflineTurno = false; // Turno abierto offline
-  Map<String, dynamic>? _offlineTurnoInfo; // Información del turno offline
-  int _pendingOfflineTurnosCount = 0; // Cola multi-turno pendiente de sync
+  Map<String, dynamic>? _currentTurno; // Turno abierto (online u offline)
+  Map<String, dynamic>? _dataSyncSummary; // Resumen de datos pendientes
+  bool _isLoadingDataSection = false;
   bool _isModoRestauranteEnabled = false; // Modo restaurante (mesas y comensales)
   bool _isLoadingModoRestaurante = false;
 
@@ -68,12 +71,14 @@ class _SettingsScreenState extends State<SettingsScreen>
   StreamSubscription<SettingsIntegrationEvent>? _integrationSubscription;
   bool _isSmartServicesInitialized = false;
   String? _lastSmartEvent;
+  SettingsIntegrationStatus? _smartIntegrationStatus;
 
   // Variable para la versión dinámica
   String _appVersion = 'Cargando...';
 
   // Variables para suscripción
   Subscription? _currentSubscription;
+  OfflineLicenseStatus? _licenseStatus;
   bool _isLoadingSubscription = false;
 
   @override
@@ -81,18 +86,51 @@ class _SettingsScreenState extends State<SettingsScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _loadSettings();
+    _refreshDataSection();
     _loadAppVersion();
     _loadSubscriptionData();
     _initializeSmartServices();
   }
 
-  /// Cargar datos de suscripción
+  int get _pendingOfflineTurnosCount =>
+      _dataSyncSummary?['pending_turnos_count'] as int? ?? 0;
+
+  int get _pendingOrdersCount =>
+      _dataSyncSummary?['pending_orders_count'] as int? ?? 0;
+
+  bool get _hasPendingOfflineData =>
+      _pendingOfflineTurnosCount > 0 ||
+      _pendingOrdersCount > 0 ||
+      (_dataSyncSummary?['pending_operations_count'] as int? ?? 0) > 0;
+
+  /// Cargar datos de suscripción y licencia para la sección de configuración.
   Future<void> _loadSubscriptionData() async {
+    if (!mounted) return;
     setState(() => _isLoadingSubscription = true);
 
     try {
+      final online = _connectivity.isConnected;
+
+      // Verificar licencia/acceso (sin bloquear la carga de datos para UI).
+      if (online) {
+        await _subscriptionGuard.forceCheck();
+      } else {
+        await _subscriptionGuard.hasActiveSubscription(forceRefresh: false);
+      }
+
+      _licenseStatus = _subscriptionGuard.lastOfflineStatus;
       _currentSubscription = await _subscriptionGuard.getCurrentSubscription(
-        forceRefresh: false,
+        forceRefresh: online,
+      );
+
+      // Sin suscripción en caché/servidor: intentar plan guardado en prefs.
+      _currentSubscription ??= await _subscriptionFromStoredPlanName();
+
+      print(
+        '📋 Settings suscripción: '
+        '${_currentSubscription?.planDenominacion ?? "sin plan"} — '
+        'activa=${_currentSubscription?.isActive ?? false}, '
+        'licencia=${_licenseStatus?.isValid ?? "n/a"}',
       );
     } catch (e) {
       print('❌ Error cargando datos de suscripción: $e');
@@ -101,6 +139,30 @@ class _SettingsScreenState extends State<SettingsScreen>
         setState(() => _isLoadingSubscription = false);
       }
     }
+  }
+
+  /// Fallback mínimo cuando solo hay nombre de plan en prefs (sin objeto completo).
+  Future<Subscription?> _subscriptionFromStoredPlanName() async {
+    final storeId = await _userPreferencesService.getIdTienda();
+    if (storeId == null) return null;
+
+    final stored = await _userPreferencesService.getSubscriptionData();
+    if (stored == null) return null;
+
+    final lastCheck = stored['last_check'] as DateTime? ?? DateTime.now();
+    return Subscription(
+      id: stored['subscription_id'] as int,
+      idTienda: storeId,
+      idPlan: stored['plan_id'] as int,
+      fechaInicio: stored['start_date'] as DateTime,
+      fechaFin: stored['end_date'] as DateTime?,
+      estado: stored['state'] as int,
+      creadoPor: 'local_cache',
+      renovacionAutomatica: false,
+      createdAt: lastCheck,
+      updatedAt: lastCheck,
+      planDenominacion: stored['plan_name'] as String?,
+    );
   }
 
   @override
@@ -122,6 +184,9 @@ class _SettingsScreenState extends State<SettingsScreen>
 
       // Recargar configuraciones
       _loadSettings();
+      unawaited(_refreshDataSection());
+      unawaited(_refreshSmartStatus());
+      unawaited(_loadSubscriptionData());
     } else if (state == AppLifecycleState.paused) {
       print('⏸️ App suspendida desde Settings');
     }
@@ -180,7 +245,9 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   /// Navegar a detalles de suscripción
   void _navigateToSubscriptionDetail() {
-    Navigator.pushNamed(context, '/subscription-detail');
+    Navigator.pushNamed(context, '/subscription-detail').then((_) {
+      if (mounted) unawaited(_loadSubscriptionData());
+    });
   }
 
   /// Cargar versión de la app desde changelog.json
@@ -220,12 +287,6 @@ class _SettingsScreenState extends State<SettingsScreen>
         await _userPreferencesService.isLimitDataUsageEnabled();
     final offlineModeEnabled =
         await _userPreferencesService.isOfflineModeEnabled();
-    final hasOfflineTurno =
-        await _userPreferencesService.hasOfflineTurnoAbierto();
-    final offlineTurnoInfo =
-        await _userPreferencesService.getOfflineTurnoInfo();
-    final pendingTurnosCount =
-        await _userPreferencesService.getPendingOfflineTurnosCount();
 
     // Modo restaurante - leer del cache (lo más rápido) sin bloquear el resto
     bool modoRestaurante = false;
@@ -257,13 +318,45 @@ class _SettingsScreenState extends State<SettingsScreen>
         _isLimitDataUsageEnabled = limitDataEnabled;
         // _isFluidModeEnabled permanece false - deshabilitado
         _isOfflineModeEnabled = offlineModeEnabled;
-        _hasOfflineTurno = hasOfflineTurno;
-        _offlineTurnoInfo = offlineTurnoInfo;
-        _pendingOfflineTurnosCount = pendingTurnosCount;
         _isModoRestauranteEnabled = modoRestaurante;
         _hasSavedPrinter = hasSavedPrinter;
         _savedPrinterDescription = savedPrinterDescription;
       });
+    }
+  }
+
+  /// Turno actual + cola offline (fuente unificada con el resto de la app).
+  Future<void> _refreshDataSection() async {
+    if (!mounted) return;
+    setState(() => _isLoadingDataSection = true);
+    try {
+      final turno = await TurnoService.getTurnoForDisplay();
+      print(
+        '[TURNO_SYNC] Settings._refreshDataSection display='
+        'id=${turno?['id']} local=${turno?['local_id']} '
+        'status=${turno?['status']} cerrado_online=${turno?['cerrado_online']} '
+        'server_id=${turno?['server_id_turno']} '
+        'fa=${turno?['fecha_apertura']} fc=${turno?['fecha_cierre']}',
+      );
+      final summary =
+          await _userPreferencesService.getOfflineSyncSummary();
+      print(
+        '[TURNO_SYNC] Settings summary pending_turnos='
+        '${summary['pending_turnos_count']} '
+        'closed_pending=${summary['closed_turnos_pending_count']} '
+        'has_open=${summary['has_open_turno']}',
+      );
+      if (!mounted) return;
+      setState(() {
+        _currentTurno = turno;
+        _dataSyncSummary = summary;
+        _isLoadingDataSection = false;
+      });
+    } catch (e) {
+      print('❌ Error refrescando sección Datos: $e');
+      if (mounted) {
+        setState(() => _isLoadingDataSection = false);
+      }
     }
   }
 
@@ -366,6 +459,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       setState(() {
         _isSmartServicesInitialized = true;
       });
+      await _refreshSmartStatus();
 
       print('✅ Servicios inteligentes inicializados en Settings');
     } catch (e) {
@@ -384,6 +478,18 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
   }
 
+  Future<void> _refreshSmartStatus() async {
+    try {
+      final status = await _integrationService.getStatus();
+      if (!mounted) return;
+      setState(() {
+        _smartIntegrationStatus = status;
+      });
+    } catch (e) {
+      print('❌ Error refrescando estado de sincronización: $e');
+    }
+  }
+
   /// Manejar eventos de servicios inteligentes
   void _onSmartServiceEvent(SettingsIntegrationEvent event) {
     // Verificar si el widget y la suscripción siguen activos
@@ -394,12 +500,14 @@ class _SettingsScreenState extends State<SettingsScreen>
 
     print('📡 Evento de integración: ${event.type} - ${event.message}');
 
-    // Verificar si el widget está montado antes de llamar setState
     if (mounted) {
       setState(() {
         _lastSmartEvent = event.message;
       });
     }
+
+    // Siempre refrescar el tile de estado general (switch manual, auto, sync).
+    unawaited(_refreshSmartStatus());
 
     // Mostrar notificaciones importantes al usuario
     if (mounted) {
@@ -417,6 +525,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           // Recargar configuraciones para reflejar el cambio
           if (mounted) {
             _loadSettings();
+            unawaited(_refreshDataSection());
           }
           break;
 
@@ -433,6 +542,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           // Recargar configuraciones para reflejar el cambio
           if (mounted) {
             _loadSettings();
+            unawaited(_refreshDataSection());
           }
           break;
 
@@ -440,12 +550,13 @@ class _SettingsScreenState extends State<SettingsScreen>
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
-                '📶 Conexión restaurada - Datos sincronizándose automáticamente',
+                '📶 Conexión restaurada — sincronizando pendientes',
               ),
               backgroundColor: Colors.green,
               duration: Duration(seconds: 3),
             ),
           );
+          unawaited(_refreshDataSection());
           break;
 
         case SettingsIntegrationEventType.autoSyncStarted:
@@ -456,6 +567,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               duration: Duration(seconds: 2),
             ),
           );
+          unawaited(_refreshDataSection());
           break;
 
         case SettingsIntegrationEventType.reauthenticationStarted:
@@ -498,6 +610,16 @@ class _SettingsScreenState extends State<SettingsScreen>
               duration: const Duration(seconds: 4),
             ),
           );
+          break;
+
+        case SettingsIntegrationEventType.offlineModeManuallyEnabled:
+        case SettingsIntegrationEventType.offlineModeManuallyDisabled:
+        case SettingsIntegrationEventType.autoSyncEvent:
+        case SettingsIntegrationEventType.syncForced:
+          if (mounted) {
+            _loadSettings();
+            unawaited(_refreshDataSection());
+          }
           break;
 
         default:
@@ -703,6 +825,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           _isOfflineModeEnabled = true;
         });
       }
+      await _refreshSmartStatus();
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -728,7 +851,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
   }
 
-  Future<void> _deactivateOfflineMode() async {
+  Future<bool> _deactivateOfflineMode() async {
     try {
       final fullOfflineReady =
           await _userPreferencesService.isDeviceFullOfflineReady();
@@ -749,9 +872,28 @@ class _SettingsScreenState extends State<SettingsScreen>
               ),
             );
           }
-          return;
+          return false;
         }
+      }
 
+      // Verificar que realmente se puede volver online ANTES de mover el
+      // switch o apagar el flag. Si no hay servidor, el modo debe seguir ON.
+      final onlineError = await _ensureCanLeaveOfflineMode();
+      if (onlineError != null) {
+        if (mounted) {
+          setState(() => _isOfflineModeEnabled = true);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(onlineError),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+        return false;
+      }
+
+      if (fullOfflineReady) {
         // El dispositivo quedó preparado para full-offline: si solo se
         // apaga `offline_mode` sin quitar esa preparación, el splash
         // screen la vuelve a forzar a ON en el próximo inicio (ver
@@ -759,7 +901,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         // a modo online. Se confirma porque esta acción también elimina
         // la preparación full-offline (habrá que volver a prepararla si
         // se quiere reactivar).
-        if (!mounted) return;
+        if (!mounted) return false;
         final confirmed = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
@@ -783,7 +925,10 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
         );
         if (confirmed != true) {
-          return;
+          if (mounted) {
+            setState(() => _isOfflineModeEnabled = true);
+          }
+          return false;
         }
       }
 
@@ -810,32 +955,109 @@ class _SettingsScreenState extends State<SettingsScreen>
           _isOfflineModeEnabled = false;
         });
       }
+      await _refreshSmartStatus();
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            fullOfflineReady
-                ? '🌐 Modo offline desactivado por el admin — preparación full-offline eliminada, sync con el servidor habilitado'
-                : '🌐 Modo offline desactivado - Sincronización automática iniciada',
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              fullOfflineReady
+                  ? '🌐 Modo offline desactivado por el admin — preparación full-offline eliminada, sync con el servidor habilitado'
+                  : '🌐 Modo offline desactivado - Sincronización automática iniciada',
+            ),
+            backgroundColor: Colors.blue,
+            duration: const Duration(seconds: 3),
           ),
-          backgroundColor: Colors.blue,
-          duration: const Duration(seconds: 3),
-        ),
-      );
+        );
+      }
+      return true;
     } catch (e) {
       print('❌ Error desactivando modo offline: $e');
+      await _userPreferencesService.setOfflineMode(true);
       if (mounted) {
         setState(() {
           _isOfflineModeEnabled = true;
         });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error desactivando modo offline: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('❌ Error desactivando modo offline: $e'),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 4),
-        ),
+      return false;
+    }
+  }
+
+  /// Comprueba red real + sesión usable antes de salir de offline.
+  /// Devuelve un mensaje de error, o null si se puede desactivar.
+  Future<String?> _ensureCanLeaveOfflineMode() async {
+    print('🔐 Verificando si se puede salir del modo offline...');
+    final connectivity = ConnectivityService();
+    final hasInternet = await connectivity.performImmediateCheck();
+    if (!hasInternet) {
+      return 'No hay conexión a internet. No se puede salir del modo offline.';
+    }
+
+    final session = Supabase.instance.client.auth.currentSession;
+    final sessionOk =
+        session != null &&
+        !session.isExpired &&
+        session.accessToken.isNotEmpty &&
+        session.accessToken != 'offline_mode';
+
+    if (sessionOk) return null;
+
+    try {
+      final saved = await _userPreferencesService.getSavedCredentials();
+      var email = saved['email'] ?? await _userPreferencesService.getUserEmail();
+      var password = saved['password'];
+
+      if ((password == null || password.isEmpty) &&
+          email != null &&
+          email.isNotEmpty) {
+        final offlineUsers = await _userPreferencesService.getOfflineUsers();
+        for (final user in offlineUsers) {
+          if (user['email']?.toString().toLowerCase() == email.toLowerCase()) {
+            password = user['password']?.toString();
+            break;
+          }
+        }
+      }
+
+      if (email == null ||
+          password == null ||
+          email.isEmpty ||
+          password.isEmpty) {
+        final admin =
+            await _userPreferencesService.getDeviceFullOfflineAdminCredentials();
+        email = admin['email'] ?? email;
+        password = admin['password'] ?? password;
+      }
+
+      if (email == null ||
+          password == null ||
+          email.isEmpty ||
+          password.isEmpty) {
+        return 'Hay internet, pero no hay credenciales para iniciar sesión '
+            'online. El modo offline se mantiene activo.';
+      }
+
+      print('🔑 Reautenticando para salir de offline ($email)...');
+      final response = await Supabase.instance.client.auth.signInWithPassword(
+        email: email,
+        password: password,
       );
+      if (response.session == null) {
+        return 'No se pudo iniciar sesión en el servidor. '
+            'El modo offline se mantiene activo.';
+      }
+      return null;
+    } catch (e) {
+      print('❌ Reautenticación al salir de offline falló: $e');
+      return 'No se pudo conectar con el servidor. '
+          'El modo offline se mantiene activo.';
     }
   }
 
@@ -865,7 +1087,10 @@ class _SettingsScreenState extends State<SettingsScreen>
       if (value) {
         await _activateOfflineMode();
       } else {
-        await _deactivateOfflineMode();
+        final deactivated = await _deactivateOfflineMode();
+        if (!deactivated && mounted) {
+          setState(() => _isOfflineModeEnabled = true);
+        }
       }
     } finally {
       if (mounted) {
@@ -891,22 +1116,56 @@ class _SettingsScreenState extends State<SettingsScreen>
   Widget _buildSubscriptionTile() {
     if (_isLoadingSubscription) {
       return ListTile(
-        leading: const CircularProgressIndicator(),
-        title: const Text('Cargando suscripción...'),
-        subtitle: const Text('Verificando estado'),
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF4A90E2).withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+        title: const Text('Suscripción'),
+        subtitle: const Text('Verificando estado...'),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       );
     }
 
     final subscription = _currentSubscription;
-    final isActive = subscription?.isActive ?? false;
+    final license = _licenseStatus;
+    final licenseValid = license?.isValid == true;
+    final subscriptionActive = subscription?.isActive == true;
+    final isActive = subscriptionActive || licenseValid;
+
+    String subtitle;
+    if (subscription != null) {
+      subtitle =
+          '${subscription.planDenominacion ?? 'Plan desconocido'} · '
+          '${subscription.estadoText}';
+      if (subscription.fechaFin != null) {
+        subtitle +=
+            ' · Vence ${_formatSubscriptionDate(subscription.fechaFin!)}';
+      }
+      if (license != null && !license.isValid) {
+        subtitle += '\n${license.message}';
+      } else if (licenseValid && !subscriptionActive) {
+        subtitle += '\nLicencia offline válida';
+      }
+    } else if (license != null) {
+      subtitle = license.isValid
+          ? 'Licencia offline válida'
+          : license.message;
+    } else {
+      subtitle = 'No se encontró información de suscripción';
+    }
 
     return _buildSettingsTile(
       icon: isActive ? Icons.verified : Icons.warning,
       title: isActive ? 'Suscripción Activa' : 'Suscripción Inactiva',
-      subtitle:
-          subscription != null
-              ? '${subscription.planDenominacion ?? 'Plan desconocido'} - ${subscription.estadoText}'
-              : 'No se encontró información de suscripción',
+      subtitle: subtitle,
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -929,12 +1188,37 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ),
               ),
             ),
+          if (license?.daysUntilForcedReconnect != null &&
+              license!.daysUntilForcedReconnect! <= 3)
+            Container(
+              margin: const EdgeInsets.only(left: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.deepPurple.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.deepPurple.withOpacity(0.3)),
+              ),
+              child: Text(
+                'Revalidar ${license.daysUntilForcedReconnect}d',
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.deepPurple,
+                ),
+              ),
+            ),
           const SizedBox(width: 8),
           const Icon(Icons.chevron_right, color: Colors.grey),
         ],
       ),
       onTap: () => _navigateToSubscriptionDetail(),
     );
+  }
+
+  String _formatSubscriptionDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}/'
+        '${date.month.toString().padLeft(2, '0')}/'
+        '${date.year}';
   }
 
   @override
@@ -1052,8 +1336,8 @@ class _SettingsScreenState extends State<SettingsScreen>
             padding: const EdgeInsets.all(16),
             children: [
               // Sección de cuenta
-              _buildSectionHeader('Cuenta'),
-              _buildSettingsCard([
+              // _buildSectionHeader('Cuenta'),
+              /* _buildSettingsCard([
                 _buildSettingsTile(
                   icon: Icons.person_outline,
                   title: 'Perfil de Usuario',
@@ -1067,7 +1351,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   subtitle: 'Actualizar credenciales de acceso',
                   onTap: () => _showComingSoon('Cambiar Contraseña'),
                 ),
-              ]),
+              ]), */
 
               const SizedBox(height: 16),
 
@@ -1162,51 +1446,15 @@ class _SettingsScreenState extends State<SettingsScreen>
 
               const SizedBox(height: 16),
 
-              // Sección de turnos offline (abierto y/o cola pendiente)
-              if (_hasOfflineTurno || _pendingOfflineTurnosCount > 0) ...[
-                _buildSectionHeader('Turnos Offline'),
-                _buildSettingsCard([
-                  if (_hasOfflineTurno) _buildOfflineTurnoTile(),
-                  if (_hasOfflineTurno && _pendingOfflineTurnosCount > 1)
-                    _buildDivider(),
-                  if (_pendingOfflineTurnosCount > 0)
-                    ListTile(
-                      leading: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(
-                          Icons.calendar_month,
-                          color: Colors.blue,
-                          size: 20,
-                        ),
-                      ),
-                      title: Text(
-                        '$_pendingOfflineTurnosCount turno(s) por sincronizar',
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w500,
-                          color: Color(0xFF1F2937),
-                        ),
-                      ),
-                      subtitle: Text(
-                        'Se subirán en orden al sincronizar (varios días OK)',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 4,
-                      ),
-                    ),
-                ]),
-                const SizedBox(height: 16),
-              ],
-
-              // Sección de datos
+              // Sección de datos (turno actual + sincronización)
               _buildSectionHeader('Datos'),
               _buildSettingsCard([
+                _buildCurrentTurnoTile(),
+                if (_hasPendingOfflineData) ...[
+                  _buildDivider(),
+                  _buildPendingDataSummaryTile(),
+                ],
+                _buildDivider(),
                 _buildSettingsTile(
                   icon: Icons.sync_outlined,
                   title: 'Sincronización Manual',
@@ -1747,36 +1995,93 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  Widget _buildOfflineTurnoTile() {
-    final turnoInfo = _offlineTurnoInfo;
-    if (turnoInfo == null) return const SizedBox.shrink();
-
-    final fechaApertura = turnoInfo['fecha_apertura'] as String?;
-    final efectivoInicial = (turnoInfo['efectivo_inicial'] as num?)?.toDouble();
-
-    String fechaFormateada = 'Fecha no disponible';
-    if (fechaApertura != null) {
-      try {
-        final fecha = DateTime.parse(fechaApertura);
-        fechaFormateada =
-            '${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}/${fecha.year} ${fecha.hour.toString().padLeft(2, '0')}:${fecha.minute.toString().padLeft(2, '0')}';
-      } catch (e) {
-        fechaFormateada = 'Fecha inválida';
-      }
+  Widget _buildCurrentTurnoTile() {
+    if (_isLoadingDataSection && _currentTurno == null) {
+      return ListTile(
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.grey.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+        title: const Text(
+          'Turno actual',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w500,
+            color: Color(0xFF1F2937),
+          ),
+        ),
+        subtitle: Text(
+          'Consultando turno...',
+          style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      );
     }
+
+    final turno = _currentTurno;
+    if (turno == null) {
+      return ListTile(
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.grey.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(Icons.access_time, color: Colors.grey[600], size: 20),
+        ),
+        title: const Text(
+          'Turno actual',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w500,
+            color: Color(0xFF1F2937),
+          ),
+        ),
+        subtitle: Text(
+          'No hay turno abierto',
+          style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      );
+    }
+
+    final fechaApertura = turno['fecha_apertura']?.toString();
+    final fechaCierre = turno['fecha_cierre']?.toString();
+    final syncedAt = turno['synced_at']?.toString();
+    final efectivoInicial = _readTurnoEfectivoInicial(turno);
+    final turnoId = _formatTurnoId(turno);
+    final source = _turnoSourceLabel(turno);
+    final sourceColor = _turnoSourceColor(source);
+    final usuario = turno['usuario']?.toString();
+    final status = turno['status']?.toString();
+    final titlePrefix =
+        turno['cerrado_online'] == true ||
+                status == UserPreferencesService.offlineTurnoStatusSynced
+            ? 'Turno sincronizado'
+            : status == UserPreferencesService.offlineTurnoStatusClosedPending
+            ? 'Turno cerrado'
+            : 'Turno actual';
 
     return ListTile(
       leading: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: Colors.orange.withOpacity(0.1),
+          color: sourceColor.withOpacity(0.1),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: const Icon(Icons.access_time, color: Colors.orange, size: 20),
+        child: Icon(Icons.access_time, color: sourceColor, size: 20),
       ),
-      title: const Text(
-        'Turno Abierto Offline',
-        style: TextStyle(
+      title: Text(
+        '$titlePrefix · $turnoId',
+        style: const TextStyle(
           fontSize: 15,
           fontWeight: FontWeight.w500,
           color: Color(0xFF1F2937),
@@ -1785,13 +2090,29 @@ class _SettingsScreenState extends State<SettingsScreen>
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Apertura: $fechaFormateada',
-            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-          ),
+          if (fechaApertura != null)
+            Text(
+              'Apertura: ${_formatTurnoDate(fechaApertura)}',
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+          if (fechaCierre != null)
+            Text(
+              'Cierre: ${_formatTurnoDate(fechaCierre)}',
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+          if (syncedAt != null)
+            Text(
+              'Sincronizado: ${_formatTurnoDate(syncedAt)}',
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
           if (efectivoInicial != null)
             Text(
               'Efectivo inicial: \$${efectivoInicial.toStringAsFixed(2)}',
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+          if (usuario != null && usuario.isNotEmpty)
+            Text(
+              'Usuario: $usuario',
               style: TextStyle(fontSize: 12, color: Colors.grey[600]),
             ),
         ],
@@ -1799,21 +2120,148 @@ class _SettingsScreenState extends State<SettingsScreen>
       trailing: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: Colors.orange.withOpacity(0.1),
+          color: sourceColor.withOpacity(0.1),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.orange.withOpacity(0.3)),
+          border: Border.all(color: sourceColor.withOpacity(0.3)),
         ),
-        child: const Text(
-          'OFFLINE',
+        child: Text(
+          source,
           style: TextStyle(
             fontSize: 10,
             fontWeight: FontWeight.bold,
-            color: Colors.orange,
+            color: sourceColor,
           ),
         ),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     );
+  }
+
+  Widget _buildPendingDataSummaryTile() {
+    final pendingOps =
+        _dataSyncSummary?['pending_operations_count'] as int? ?? 0;
+    final closedPending =
+        _dataSyncSummary?['closed_turnos_pending_count'] as int? ?? 0;
+
+    final parts = <String>[];
+    if (_pendingOrdersCount > 0) {
+      parts.add(
+        '$_pendingOrdersCount venta${_pendingOrdersCount == 1 ? '' : 's'}',
+      );
+    }
+    if (_pendingOfflineTurnosCount > 0) {
+      parts.add(
+        '$_pendingOfflineTurnosCount turno${_pendingOfflineTurnosCount == 1 ? '' : 's'}',
+      );
+    }
+    if (pendingOps > 0) {
+      parts.add('$pendingOps operación${pendingOps == 1 ? '' : 'es'}');
+    }
+
+    final subtitle = parts.isEmpty
+        ? 'Datos pendientes de sincronizar'
+        : '${parts.join(' · ')} por sincronizar';
+
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.blue.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(Icons.cloud_upload_outlined, color: Colors.blue, size: 20),
+      ),
+      title: const Text(
+        'Pendientes de sincronizar',
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+          color: Color(0xFF1F2937),
+        ),
+      ),
+      subtitle: Text(
+        closedPending > 0
+            ? '$subtitle ($closedPending turno${closedPending == 1 ? '' : 's'} cerrado${closedPending == 1 ? '' : 's'})'
+            : subtitle,
+        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+      ),
+      trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+      onTap: _pendingOfflineTurnosCount > 0
+          ? _showPendingTurnosDialog
+          : () => _showSyncDialog(),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    );
+  }
+
+  double? _readTurnoEfectivoInicial(Map<String, dynamic> turno) {
+    final direct = turno['efectivo_inicial'];
+    if (direct is num) return direct.toDouble();
+    final apertura = turno['apertura'];
+    if (apertura is Map) {
+      final nested = apertura['efectivo_inicial'];
+      if (nested is num) return nested.toDouble();
+    }
+    return double.tryParse(direct?.toString() ?? '');
+  }
+
+  String _formatTurnoId(Map<String, dynamic> turno) {
+    final serverId = turno['server_id_turno'] ?? turno['id'];
+    if (serverId is int) return '#$serverId';
+    if (serverId != null && int.tryParse(serverId.toString()) != null) {
+      return '#${serverId.toString()}';
+    }
+    final localId = turno['local_id']?.toString();
+    if (localId != null && localId.length >= 8) {
+      return localId.substring(0, 8);
+    }
+    return localId ?? 'local';
+  }
+
+  String _turnoSourceLabel(Map<String, dynamic> turno) {
+    if (turno['cerrado_online'] == true) return 'SINCRONIZADO';
+
+    final status = turno['status']?.toString();
+    if (status == UserPreferencesService.offlineTurnoStatusSynced) {
+      return 'SINCRONIZADO';
+    }
+    if (status == UserPreferencesService.offlineTurnoStatusClosedPending) {
+      return 'CIERRE PEND.';
+    }
+
+    final localId = turno['local_id']?.toString();
+    final serverId = turno['server_id_turno'] ??
+        (turno['id'] is int ? turno['id'] : null);
+    if (localId != null && serverId == null) return 'OFFLINE';
+    if (localId != null) return 'SYNC';
+    return 'ONLINE';
+  }
+
+  Color _turnoSourceColor(String source) {
+    switch (source) {
+      case 'SINCRONIZADO':
+        return Colors.green;
+      case 'CIERRE PEND.':
+        return Colors.orange;
+      case 'OFFLINE':
+        return Colors.orange;
+      case 'SYNC':
+        return Colors.blue;
+      default:
+        return Colors.green;
+    }
+  }
+
+  String _formatTurnoDate(String raw) {
+    try {
+      final fecha = DateTime.parse(raw);
+      return '${fecha.day.toString().padLeft(2, '0')}/'
+          '${fecha.month.toString().padLeft(2, '0')}/'
+          '${fecha.year} '
+          '${fecha.hour.toString().padLeft(2, '0')}:'
+          '${fecha.minute.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return raw;
+    }
   }
 
   Widget _buildLogoutButton() {
@@ -2473,6 +2921,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   Future<void> _startManualSync() async {
     final synced = await _forceSyncNow(blockWhenRunning: false);
     if (synced && mounted) {
+      await _refreshDataSection();
       await _loadSettings();
     }
   }
@@ -2747,8 +3196,8 @@ class _SettingsScreenState extends State<SettingsScreen>
       case 0: // Home → /mesas si modo restaurante, /categories si no
         NavigationHelper.goHome(context);
         break;
-      case 1: // Preorden
-        Navigator.pushNamed(context, '/preorder');
+      case 1: // Carrito: preorden, o la cuenta de mesa abierta en restaurante
+        NavigationHelper.goCarrito(context);
         break;
       case 2: // Órdenes
         Navigator.pushNamed(context, '/orders');
@@ -2760,105 +3209,100 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   /// Widget para mostrar el estado de sincronización inteligente
   Widget _buildSmartSyncStatusTile() {
-    return FutureBuilder<SettingsIntegrationStatus>(
-      future: _integrationService.getStatus(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return ListTile(
-            leading: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.grey.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
-            title: const Text(
-              'Estado de Sincronización',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w500,
-                color: Color(0xFF1F2937),
-              ),
-            ),
-            subtitle: const Text(
-              'Cargando estado...',
-              style: TextStyle(fontSize: 13, color: Colors.grey),
-            ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 4,
-            ),
-          );
-        }
+    final status = _smartIntegrationStatus;
+    if (status == null) {
+      return ListTile(
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.grey.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+        title: const Text(
+          'Estado de Sincronización',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w500,
+            color: Color(0xFF1F2937),
+          ),
+        ),
+        subtitle: const Text(
+          'Cargando estado...',
+          style: TextStyle(fontSize: 13, color: Colors.grey),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 4,
+        ),
+      );
+    }
 
-        final status = snapshot.data!;
-        final smartStatus = status.smartOfflineStatus;
+    final smartStatus = status.smartOfflineStatus;
 
-        IconData icon;
-        Color iconColor;
-        String title;
-        String subtitle;
+    IconData icon;
+    Color iconColor;
+    String title;
+    String subtitle;
 
-        if (status.isOfflineModeEnabled) {
-          icon = Icons.cloud_off;
-          iconColor = Colors.orange;
-          title = 'Modo Offline Activo';
-          subtitle = 'Trabajando sin conexión';
-        } else if (smartStatus.isConnected && smartStatus.isAutoSyncRunning) {
-          icon = Icons.sync;
-          iconColor = Colors.green;
-          title = 'Sincronización Automática';
-          final syncCount = smartStatus.syncStats['syncCount'] ?? 0;
-          subtitle = 'Ejecutándose - $syncCount sincronizaciones';
-        } else if (smartStatus.isConnected) {
-          icon = Icons.wifi;
-          iconColor = Colors.blue;
-          title = 'Conectado';
-          subtitle = 'Listo para sincronizar';
-        } else {
-          icon = Icons.wifi_off;
-          iconColor = Colors.red;
-          title = 'Sin Conexión';
-          subtitle = 'Verificando conectividad...';
-        }
+    if (status.isOfflineModeEnabled) {
+      icon = Icons.cloud_off;
+      iconColor = Colors.orange;
+      title = 'Modo Offline Activo';
+      subtitle = 'Trabajando sin conexión';
+    } else if (smartStatus.isConnected && smartStatus.isAutoSyncRunning) {
+      icon = Icons.sync;
+      iconColor = Colors.green;
+      title = 'Sincronización Automática';
+      final syncCount = smartStatus.syncStats['syncCount'] ?? 0;
+      subtitle = 'Ejecutándose - $syncCount sincronizaciones';
+    } else if (smartStatus.isConnected) {
+      icon = Icons.wifi;
+      iconColor = Colors.blue;
+      title = 'Conectado';
+      subtitle = 'Listo para sincronizar';
+    } else {
+      icon = Icons.wifi_off;
+      iconColor = Colors.red;
+      title = 'Sin Conexión';
+      subtitle = 'Verificando conectividad...';
+    }
 
-        return ListTile(
-          leading: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, color: iconColor, size: 20),
-          ),
-          title: Text(
-            title,
-            style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-              color: Color(0xFF1F2937),
-            ),
-          ),
-          subtitle: Text(
-            subtitle,
-            style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-          ),
-          trailing: IconButton(
-            icon: const Icon(Icons.info_outline, color: Colors.grey),
-            onPressed: () => _showSmartSyncDetails(status),
-            tooltip: 'Ver detalles',
-          ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 4,
-          ),
-        );
-      },
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: iconColor.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(icon, color: iconColor, size: 20),
+      ),
+      title: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+          color: Color(0xFF1F2937),
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+      ),
+      trailing: IconButton(
+        icon: const Icon(Icons.info_outline, color: Colors.grey),
+        onPressed: () => _showSmartSyncDetails(status),
+        tooltip: 'Ver detalles',
+      ),
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: 4,
+      ),
     );
   }
 
@@ -3065,8 +3509,10 @@ class _SettingsScreenState extends State<SettingsScreen>
         final result = await AutoSyncService().syncModules(
           SyncModule.values.toSet(),
         );
-        if (!result.success) {
-          throw Exception(result.errors.join('; '));
+        if (!mounted) return false;
+        await _showSyncResultFeedback(result);
+        if (!result.success && !result.hasProgress) {
+          return false;
         }
       } finally {
         if (wasOffline) {
@@ -3074,14 +3520,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         }
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✅ Sincronización completada'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 2),
-        ),
-      );
-
+      unawaited(_refreshDataSection());
       return true;
     } catch (e) {
       print('❌ Error forzando sincronización: $e');
@@ -3095,6 +3534,141 @@ class _SettingsScreenState extends State<SettingsScreen>
       );
       return false;
     }
+  }
+
+  /// Muestra resumen (completo / parcial / fallido) al terminar una sync manual.
+  Future<void> _showSyncResultFeedback(SyncResult result) async {
+    if (!mounted) return;
+
+    Color bg;
+    String title;
+    if (result.success) {
+      bg = Colors.green;
+      title = '✅ Sincronización completada';
+    } else if (result.hasProgress) {
+      bg = Colors.orange.shade800;
+      title =
+          result.interrupted
+              ? '⚠️ Sincronización interrumpida'
+              : '⚠️ Sincronización parcial';
+    } else {
+      bg = Colors.red;
+      title = '❌ Sincronización fallida';
+    }
+
+    final okCount = result.syncedItems.length;
+    final errCount = result.errors.length;
+    final skipCount = result.skippedItems.length;
+    final short =
+        '$title · OK $okCount'
+        '${errCount > 0 ? ' · Errores $errCount' : ''}'
+        '${skipCount > 0 ? ' · Pendientes $skipCount' : ''}'
+        ' (${result.duration.inSeconds}s)';
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(short),
+        backgroundColor: bg,
+        duration: const Duration(seconds: 5),
+        action: SnackBarAction(
+          label: 'Detalle',
+          textColor: Colors.white,
+          onPressed: () => _showSyncResultDialog(result),
+        ),
+      ),
+    );
+
+    // Si hubo interrupción o errores, abrir detalle automáticamente.
+    if (!result.success) {
+      await _showSyncResultDialog(result);
+    }
+  }
+
+  Future<void> _showSyncResultDialog(SyncResult result) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text(
+            result.success
+                ? 'Sincronización completada'
+                : result.interrupted
+                ? 'Sincronización interrumpida'
+                : result.hasProgress
+                ? 'Sincronización parcial'
+                : 'Sincronización fallida',
+          ),
+          content: SizedBox(
+            width: 420,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (result.abortReason != null) ...[
+                    Text(
+                      'Motivo: ${result.abortReason}',
+                      style: TextStyle(
+                        color: Colors.orange.shade900,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  Text(
+                    'Duración: ${result.duration.inSeconds}s',
+                    style: const TextStyle(fontSize: 13, color: Colors.black54),
+                  ),
+                  const SizedBox(height: 12),
+                  if (result.syncedItems.isNotEmpty) ...[
+                    const Text(
+                      'Completado',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(result.syncedItems.map((e) => '• $e').join('\n')),
+                    const SizedBox(height: 12),
+                  ],
+                  if (result.errors.isNotEmpty) ...[
+                    const Text(
+                      'Errores',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      result.errors.map((e) => '• $e').join('\n'),
+                      style: TextStyle(color: Colors.red.shade800),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (result.skippedItems.isNotEmpty) ...[
+                    const Text(
+                      'Quedó pendiente (se reanudará)',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      result.skippedItems.map((e) => '• $e').join('\n'),
+                      style: TextStyle(color: Colors.orange.shade900),
+                    ),
+                  ],
+                  if (result.syncedItems.isEmpty &&
+                      result.errors.isEmpty &&
+                      result.skippedItems.isEmpty)
+                    const Text('No hubo cambios en esta pasada.'),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   /// Formatear fecha y hora de manera amigable
@@ -3166,13 +3740,31 @@ class _SettingsScreenState extends State<SettingsScreen>
                             'Apertura: $fechaApertura\nEstado: $estado',
                           ),
                           isThreeLine: true,
-                          trailing: IconButton(
-                            icon: const Icon(Icons.sync,
-                                color: Color(0xFF4A90E2)),
-                            onPressed: () async {
-                              await _syncSingleTurno(localId);
-                              setDialogState(() => refreshKey++);
-                            },
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (status == 'open')
+                                IconButton(
+                                  tooltip: 'Cerrar turno',
+                                  icon: const Icon(
+                                    Icons.point_of_sale,
+                                    color: Colors.orange,
+                                  ),
+                                  onPressed: () async {
+                                    await _cerrarTurnoPendiente(localId);
+                                    setDialogState(() => refreshKey++);
+                                  },
+                                ),
+                              IconButton(
+                                tooltip: 'Sincronizar',
+                                icon: const Icon(Icons.sync,
+                                    color: Color(0xFF4A90E2)),
+                                onPressed: () async {
+                                  await _syncSingleTurno(localId);
+                                  setDialogState(() => refreshKey++);
+                                },
+                              ),
+                            ],
                           ),
                           onTap:
                               () => _showTurnoDetailDialog(
@@ -3211,12 +3803,24 @@ class _SettingsScreenState extends State<SettingsScreen>
       builder:
           (context) => AlertDialog(
             title: Text('Cierre de caja - $localId'),
-            content: FutureBuilder<Map<String, dynamic>>(
-              future: _userPreferencesService.getOfflineTurnoCuadre(turno),
+            content: FutureBuilder<List<dynamic>>(
+              future: Future.wait([
+                _userPreferencesService.getOfflineTurnoCuadre(turno),
+                CurrencyService.getUsdRate(),
+              ]),
               builder: (context, snapshot) {
                 final apertura = turno['apertura'] ?? {};
                 final cierre = turno['cierre'] ?? {};
-                final cuadre = snapshot.data ?? {};
+                final cuadre =
+                    (snapshot.data != null
+                            ? snapshot.data![0] as Map<String, dynamic>?
+                            : null) ??
+                        {};
+                final usdRate =
+                    (snapshot.data != null
+                            ? snapshot.data![1] as double?
+                            : null) ??
+                        0.0;
 
                 final fechaApertura =
                     apertura['fecha_apertura']?.toString() ??
@@ -3246,6 +3850,23 @@ class _SettingsScreenState extends State<SettingsScreen>
                     (cuadre['efectivo_esperado'] as num? ??
                             efectivoInicial + totalEfectivo)
                         .toDouble();
+                final egresosEfectivo =
+                    (cuadre['egresos_efectivo'] as num? ?? 0).toDouble();
+                final egresosDigitales =
+                    (cuadre['egresos_digitales'] as num? ?? 0).toDouble();
+                final egresosTotales =
+                    (cuadre['egresos_totales'] as num? ??
+                            egresosEfectivo + egresosDigitales)
+                        .toDouble();
+                final productosVendidos =
+                    (cuadre['productos_vendidos'] as num? ?? 0).toInt();
+                final operacionesTotales =
+                    (cuadre['operaciones_totales'] as num? ?? 0).toInt();
+                final ticketPromedio =
+                    (cuadre['ticket_promedio'] as num? ?? 0).toDouble();
+                final diferencia = (cuadre['diferencia'] as num? ?? 0).toDouble();
+                final totalVentasUsd =
+                    usdRate > 0 ? totalVentas / usdRate : null;
 
                 return SingleChildScrollView(
                   child: Column(
@@ -3263,10 +3884,33 @@ class _SettingsScreenState extends State<SettingsScreen>
                         'Resumen:',
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
-                      Text('Total ventas: \$${totalVentas.toStringAsFixed(2)}'),
+                      Text(
+                        'Total ventas: \$${totalVentas.toStringAsFixed(2)} CUP'
+                        '${totalVentasUsd != null ? ' (≈ \$${totalVentasUsd.toStringAsFixed(2)} USD)' : ''}',
+                      ),
+                      Text('Productos vendidos: $productosVendidos'),
+                      Text('Operaciones: $operacionesTotales'),
+                      Text('Ticket promedio: \$${ticketPromedio.toStringAsFixed(2)}'),
+                      const SizedBox(height: 8),
                       Text('Efectivo: \$${totalEfectivo.toStringAsFixed(2)}'),
                       Text('Transferencias: \$${totalTransferencias.toStringAsFixed(2)}'),
                       Text('Efectivo esperado: \$${efectivoEsperado.toStringAsFixed(2)}'),
+                      if (diferencia.abs() > 0.01)
+                        Text(
+                          'Diferencia: ${diferencia >= 0 ? '+' : ''}\$${diferencia.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            color: diferencia >= 0 ? Colors.green[700] : Colors.red,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Egresos:',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      Text('Egresos efectivo: \$${egresosEfectivo.toStringAsFixed(2)}'),
+                      Text('Egresos digitales: \$${egresosDigitales.toStringAsFixed(2)}'),
+                      Text('Egresos totales: \$${egresosTotales.toStringAsFixed(2)}'),
                     ],
                   ),
                 );
@@ -3294,11 +3938,56 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+  /// Abre el flujo completo de cierre de caja (conteo de efectivo,
+  /// inventario, egresos, etc.) para un turno abierto que está en la cola
+  /// pendiente de sincronizar.
+  ///
+  /// `CierreScreen` siempre opera sobre "el" turno abierto ambiente (el que
+  /// devuelve `getOfflineTurno()`/la sesión activa del vendedor), así que
+  /// primero verificamos que el turno tocado en la lista sea justamente ese;
+  /// si es un turno abierto "huérfano" de otra sesión/TPV, avisamos en vez
+  /// de arriesgarnos a cerrar el turno equivocado.
+  Future<void> _cerrarTurnoPendiente(String localId) async {
+    final activeTurno = await _userPreferencesService.getOfflineTurno();
+    final activeLocalId = activeTurno?['local_id']?.toString();
+
+    if (activeLocalId != localId) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Este turno no es el activo en este dispositivo/sesión. '
+            'Solo se puede completar el cierre del turno actualmente abierto.',
+          ),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    Navigator.pop(context); // Cierra el diálogo de turnos pendientes
+    await Navigator.pushNamed(context, '/cierre');
+    if (mounted) await _refreshDataSection();
+  }
+
   /// Sincroniza un único turno (apertura + órdenes + cierre).
   Future<void> _syncSingleTurno(String localId) async {
+    print('[TURNO_SYNC] Settings._syncSingleTurno START localId=$localId');
+    await _userPreferencesService.dumpOfflineTurnosQueue(
+      'Settings ANTES sync single',
+    );
     final sync = AutoSyncService();
     final result =
         await sync.syncOfflineTurnoAfterLocalCierre(localId: localId);
+    print(
+      '[TURNO_SYNC] Settings._syncSingleTurno END '
+      'success=${result['success']} msg=${result['message']}',
+    );
+    await _userPreferencesService.dumpOfflineTurnosQueue(
+      'Settings DESPUÉS sync single',
+    );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -3311,7 +4000,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             result['success'] == true ? Colors.green : Colors.red,
       ),
     );
-    setState(() {});
+    await _refreshDataSection();
   }
 }
 
@@ -3711,14 +4400,25 @@ class _SyncDialogState extends State<_SyncDialog> {
     try {
       print('🔄 Sincronizando resumen de turno anterior...');
 
-      // Obtener resumen del turno anterior usando TurnoService
-      final resumenTurno = await TurnoService.getResumenTurnoKPI();
+      // Solo el último turno cerrado (KPI abierto pisa el cache y rompe apertura).
+      final resumenTurno = await TurnoService.getResumenUltimoTurnoCerrado();
 
       if (resumenTurno != null) {
-        // Guardar en cache para uso offline
-        await widget.userPreferencesService.saveTurnoResumenCache(resumenTurno);
+        final normalized = widget.userPreferencesService
+            .normalizePreviousShiftSummary(resumenTurno);
+        await widget.userPreferencesService.saveTurnoResumenCache({
+          ...normalized,
+          'cerrado_online': true,
+          'status': UserPreferencesService.offlineTurnoStatusSynced,
+        });
+        await widget.userPreferencesService.saveResumenCierreCache({
+          ...normalized,
+          'total_ventas': normalized['ventas_totales'],
+          'efectivo_real':
+              normalized['efectivo_real'] ?? normalized['efectivo_final'],
+        });
         print('✅ Resumen de turno sincronizado y guardado en cache');
-        print('📊 Datos sincronizados: ${resumenTurno.keys.toList()}');
+        print('📊 Datos sincronizados: ${normalized.keys.toList()}');
       } else {
         print('ℹ️ No hay resumen de turno anterior disponible');
       }

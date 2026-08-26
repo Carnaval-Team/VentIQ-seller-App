@@ -37,6 +37,14 @@ class _ProductSelectorWidgetState extends State<ProductSelectorWidget> {
   Timer? _debounceTimer;
   String _lastSearchQuery = '';
 
+  /// Contador de peticiones: solo la ultima respuesta pinta la lista.
+  /// Sin esto, una busqueda lenta ("gasolina") puede llegar DESPUES de otra
+  /// mas nueva y sobrescribirla con datos viejos/vacios.
+  int _searchRequestId = 0;
+
+  /// Mensaje de error de la ultima busqueda (timeout / red / RPC).
+  String? _searchError;
+
   @override
   void initState() {
     super.initState();
@@ -48,6 +56,7 @@ class _ProductSelectorWidgetState extends State<ProductSelectorWidget> {
   
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -56,6 +65,7 @@ class _ProductSelectorWidgetState extends State<ProductSelectorWidget> {
   Future<void> _loadShowDescriptionConfig() async {
     try {
       final showDescription = await _userPreferencesService.getShowDescriptionInSelectors();
+      if (!mounted) return;
       setState(() {
         _showDescriptionInSelectors = showDescription;
       });
@@ -67,31 +77,48 @@ class _ProductSelectorWidgetState extends State<ProductSelectorWidget> {
   }
   
   Future<void> _loadInitialProducts() async {
-    setState(() => _isLoading = true);
+    final requestId = ++_searchRequestId;
+    setState(() {
+      _isLoading = true;
+      _searchError = null;
+    });
     final result = await ProductSearchService.searchProducts(
       searchType: widget.searchType,
       requireInventory: widget.requireInventory,
       locationId: widget.locationId,
       supplierId: widget.supplierId,
     );
+    if (!mounted || requestId != _searchRequestId) return;
     setState(() {
       _searchResult = result;
+      _searchError = result.errorMessage;
       _isLoading = false;
     });
   }
   
   Future<void> _searchProducts() async {
-    setState(() => _isLoading = true);
+    final query = _searchController.text.trim();
+    final requestId = ++_searchRequestId;
+    setState(() {
+      _isLoading = true;
+      _searchError = null;
+    });
     final result = await ProductSearchService.searchProducts(
-      searchQuery: _searchController.text.isEmpty ? null : _searchController.text,
+      searchQuery: query.isEmpty ? null : query,
       searchType: widget.searchType,
       page: 1, // Siempre empezar desde la página 1 en nueva búsqueda
       requireInventory: widget.requireInventory,
       locationId: widget.locationId,
       supplierId: widget.supplierId,
     );
+    // Respuesta obsoleta: llego despues de que el usuario siguiera escribiendo.
+    if (!mounted || requestId != _searchRequestId) {
+      print('⏭️ ProductSelector - Respuesta descartada (obsoleta) para "$query"');
+      return;
+    }
     setState(() {
       _searchResult = result;
+      _searchError = result.errorMessage;
       _isLoading = false;
     });
   }
@@ -119,7 +146,50 @@ class _ProductSelectorWidgetState extends State<ProductSelectorWidget> {
         Expanded(
           child: _isLoading
               ? const Center(child: CircularProgressIndicator())
-              : _searchResult.products.isEmpty
+              : _searchError != null
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.cloud_off,
+                              size: 56,
+                              color: Colors.orange[400],
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'No se pudo completar la búsqueda',
+                              style: TextStyle(
+                                color: Colors.orange[800],
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _searchError!,
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 12,
+                              ),
+                              textAlign: TextAlign.center,
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 12),
+                            OutlinedButton.icon(
+                              onPressed: _searchProducts,
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Reintentar'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : _searchResult.products.isEmpty
                   ? Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -264,7 +334,9 @@ class _ProductSelectorWidgetState extends State<ProductSelectorWidget> {
 
   void _debounceSearch() {
     _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+    // 500ms era muy corto: el RPC de inventario tarda 300ms-4s, asi que cada
+    // pulsacion lanzaba una consulta nueva y se pisaban entre ellas.
+    _debounceTimer = Timer(const Duration(milliseconds: 700), () {
       _searchProducts();
     });
   }
@@ -276,19 +348,30 @@ class _ProductSelectorWidgetState extends State<ProductSelectorWidget> {
   }
 
   Future<void> _loadMoreProducts() async {
-    if (_isLoadingMore || !_searchResult.hasNextPage) return;
-    
+    if (_isLoading || _isLoadingMore || !_searchResult.hasNextPage) return;
+
+    final requestId = _searchRequestId;
     setState(() => _isLoadingMore = true);
     
     try {
       final result = await ProductSearchService.searchProducts(
-        searchQuery: _searchController.text.isEmpty ? null : _searchController.text,
+        searchQuery: _searchController.text.trim().isEmpty
+            ? null
+            : _searchController.text.trim(),
         searchType: widget.searchType,
         page: _searchResult.currentPage + 1,
         requireInventory: widget.requireInventory,
         locationId: widget.locationId,
         supplierId: widget.supplierId,
       );
+
+      // Si mientras paginabamos empezo otra busqueda, descartar esta pagina.
+      if (!mounted || requestId != _searchRequestId) return;
+
+      if (result.hasError) {
+        setState(() => _isLoadingMore = false);
+        return;
+      }
       
       setState(() {
         _searchResult = ProductSearchResult(
@@ -302,12 +385,11 @@ class _ProductSelectorWidgetState extends State<ProductSelectorWidget> {
         _isLoadingMore = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isLoadingMore = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al cargar más productos: $e')),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al cargar más productos: $e')),
+      );
     }
   }
 }

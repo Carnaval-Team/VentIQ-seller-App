@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import '../models/product.dart';
+import '../widgets/cocina_chip.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/currency_service.dart';
@@ -664,9 +665,8 @@ class _ProductsScreenState extends State<ProductsScreen> {
       case 0: // Home → /mesas si modo restaurante (sin cuenta activa), /categories si no
         NavigationHelper.goHome(context);
         break;
-      case 1: // Preorden
-        Navigator.popUntil(context, (route) => route.isFirst);
-        Navigator.pushNamed(context, '/preorder');
+      case 1: // Carrito: preorden, o la cuenta de mesa abierta en restaurante
+        NavigationHelper.goCarrito(context);
         break;
       case 2: // Órdenes
         Navigator.popUntil(context, (route) => route.isFirst);
@@ -798,24 +798,44 @@ class _SubcategorySectionState extends State<_SubcategorySection> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                widget.title,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF2C3E50),
+              Expanded(
+                child: Text(
+                  widget.title,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF2C3E50),
+                  ),
                 ),
               ),
-              TextButton(
-                onPressed: () {
-                  // TODO: Navegar a ver todos los productos de esta subcategoría
-                },
-                child: const Text(
-                  '',
+              // Contador de productos de la subcategoría.
+              //
+              // Aquí había un TextButton con texto vacío y un onPressed sin
+              // implementar: un "Ver todos" a medias que dejaba un área
+              // pulsable invisible que no hacía nada. Se sustituye por el
+              // conteo, que sí informa, en vez de prometer una navegación
+              // que no existe.
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: widget.categoryColor.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: widget.categoryColor.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: Text(
+                  widget.products.length == 1
+                      ? '1 producto'
+                      : '${widget.products.length} productos',
                   style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF4A90E2),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: widget.categoryColor,
                   ),
                 ),
               ),
@@ -1294,10 +1314,14 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                           ),
                         ),
                         const SizedBox(width: 6),
-                        // Estado de stock, elaborado o servicio
+                        // Estado de stock, elaborado o servicio.
+                        // Si el plato va a cocina, manda la disponibilidad de
+                        // esa estacion: "3 porciones" / "Hasta 5" / "Agotado".
                         Flexible(
                           child: Text(
-                            widget.product.esElaborado
+                            widget.product.vaACocina
+                                ? widget.product.etiquetaDisponibilidad
+                                : widget.product.esElaborado
                                 ? '(elaborado)'
                                 : widget.product.esServicio
                                 ? '(servicio)'
@@ -1307,7 +1331,14 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                             style: TextStyle(
                               fontSize: 13,
                               color:
-                                  widget.product.esElaborado
+                                  widget.product.vaACocina
+                                      ? (widget.product.cantidadReal > 0 ||
+                                              widget.product.ilimitado
+                                          ? (widget.product.esPorTanda
+                                              ? Colors.amber[800]
+                                              : Colors.indigo[500])
+                                          : Colors.red[600])
+                                      : widget.product.esElaborado
                                       ? Colors.orange[600]
                                       : widget.product.esServicio
                                       ? Colors.blue[600]
@@ -1319,6 +1350,18 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        // Estacion de cocina: el vendedor necesita saber a
+                        // donde va el plato antes de prometerlo al cliente.
+                        if (widget.product.vaACocina &&
+                            widget.product.cocina != null) ...[
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: CocinaChip(
+                              product: widget.product,
+                              compacto: true,
+                            ),
+                          ),
+                        ],
                         if (widget.product.reservadoCarnaval > 0) ...[
                           const SizedBox(width: 6),
                           Container(
@@ -1572,7 +1615,9 @@ class _ProductCardState extends State<_ProductCard>
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
-                                  widget.product.esElaborado
+                                  widget.product.vaACocina
+                                      ? widget.product.etiquetaDisponibilidad
+                                      : widget.product.esElaborado
                                       ? '(elaborado)'
                                       : widget.product.esServicio
                                       ? '(servicio)'
@@ -1584,6 +1629,17 @@ class _ProductCardState extends State<_ProductCard>
                                   ),
                                 ),
                               ),
+                              // Estacion de cocina en la vista de cuadricula.
+                              if (widget.product.vaACocina &&
+                                  widget.product.cocina != null) ...[
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: CocinaChip(
+                                    product: widget.product,
+                                    compacto: true,
+                                  ),
+                                ),
+                              ],
                               if (widget.product.reservadoCarnaval > 0) ...[
                                 const SizedBox(width: 6),
                                 Container(

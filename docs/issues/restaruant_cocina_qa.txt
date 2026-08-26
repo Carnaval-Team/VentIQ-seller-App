@@ -1,0 +1,71 @@
+nueva tienda:
+Restaurant perla negra id tienda: 223
+
+prodcutos: 
+Respuesta RPC recibida: {productos: [{id: 10798, um: kg, sku:
+ELA-PO-74947, imagen: null, categoria: {id: 1111, sku_codigo: ELA73998,
+denominacion: elaboracion}, es_fragil: false, etiquetas: [], inventario: [],
+descripcion: Harina para elaboracion, es_servicio: false, es_vendible: true,
+multimedias: [], tiene_stock: false, denominacion: Harina, es_elaborado:
+false, es_peligroso: false, id_proveedor: null, precio_venta: 1800,
+codigo_barras: , subcategorias: [{id: 2113, sku_codigo: POL74429,
+denominacion: Polvos}], es_refrigerado: false, presentaciones: [{id: 10941,
+es_base: true, cantidad: 1, sku_codigo: KIL, presentacion: Kilogramo}],
+nombre_comercial: Harina, precio_venta_usd: 2.71, stock_disponible: 0,
+variantes_disponibles: []}, {id: 10799, um: kg, sku: ELA-06022, imagen:
+null, categoria: {id: 1111, sku_codigo: ELA73998, denominacion:
+elaboracion}, es_fragil: false, etiquetas: [], inventario: [], descripcion:
+Sal Yodada por kilo, es_servicio: false, es_vendible: true, multimedias: [],
+tiene_stock: false, denominacion: Sal Yodada, es_elaborado: false,
+es_peligroso: false, id_proveedor: null, precio_venta: 658.35,
+codigo_barras: , subcategorias: [{id: 2114, sku_codigo: CON05619,
+denominacion: Condimentos}], es_refrigerado: false, presentaciones: [{id:
+10942, es_base: true, cantidad: 1, sku_codigo: KIL, presentacion:
+Kilogramo}], nombre_comercial: Sal Yodada, precio_venta_usd: 0.99,
+stock_disponible: 0, variantes_disponibles: []}], tienda_id: 223,
+categoria_id: null, total_productos: 2, solo_disponibles: false}
+
+Vender un elaborado desde el TPV: 
+- [*] 1.3 Harina −40 y sal −10 **en el almacén 12** en los elaborados (revisar cuando se saca fraccioanrio por ejemplo 0.3 gramos mantiene entero por ejemplo tenia 20 kg de cerdo y semantuvo en 20 pq saque 0.3)
+
+cocinas creadas: 
+
+[
+    {
+        "tpvs": [],
+        "orden": 1,
+        "activa": true,
+        "cocina": "Cocina caliente",
+        "almacen": "Cocina caliente",
+        "id_cocina": 39,
+        "impresora": "Cocina-01",
+        "created_at": "2026-08-24T15:29:00.738004-04:00",
+        "id_almacen": 333,
+        "updated_at": "2026-08-24T15:29:00.738004-04:00",
+        "descripcion": "Cocina caliente",
+        "denominacion": "Cocina caliente",
+        "cantidad_layouts": 1,
+        "cantidad_productos": 0,
+        "productos_por_tanda": 0
+    },
+    {
+        "tpvs": [],
+        "orden": 2,
+        "activa": true,
+        "cocina": "Pizzería",
+        "almacen": "Pizzería",
+        "id_cocina": 40,
+        "impresora": null,
+        "created_at": "2026-08-24T15:41:13.628914-04:00",
+        "id_almacen": 334,
+        "updated_at": "2026-08-24T15:41:13.628914-04:00",
+        "descripcion": "Pizzería",
+        "denominacion": "Pizzería",
+        "cantidad_layouts": 1,
+        "cantidad_productos": 0,
+        "productos_por_tanda": 0
+    }
+]
+
+
+**Qué debe pasar:** además de los productos del almacén 12 (harina, sal, pan solo...), aparecen **croqueta** y **pan con croqueta**, que son platos de la Cocina caliente. (esto no lo veo explicame por que)

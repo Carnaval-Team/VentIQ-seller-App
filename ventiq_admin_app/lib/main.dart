@@ -29,6 +29,7 @@ import 'screens/sales_screen.dart';
 import 'screens/tpv_prices_screen.dart';
 import 'screens/tpv_management_screen.dart';
 import 'screens/tpv_management_web_screen.dart';
+import 'screens/cocinas_management_screen.dart';
 import 'screens/promotions_screen.dart';
 import 'screens/marketing_dashboard_screen.dart';
 import 'screens/analytics_screen.dart';
@@ -64,6 +65,7 @@ import 'screens/subscription_detail_screen.dart';
 import 'screens/store_selection_screen.dart';
 import 'screens/wifi_printers_screen.dart';
 import 'screens/consignacion_screen.dart';
+import 'screens/cuentas_por_cobrar_screen.dart';
 import 'screens/wapi_notifications_screen.dart';
 import 'screens/interacciones_clientes_screen.dart';
 import 'screens/precios_productos_screen.dart';
@@ -222,7 +224,8 @@ class MyApp extends StatelessWidget {
         '/inventory': (context) => const PlatformAwareInventoryScreen(),
         '/sales': (context) => const SalesScreen(),
         '/tpv-prices': (context) => const TpvPricesScreen(),
-        '/tpv-management': (context) => const PlatformAwareTpvManagementScreen(),
+        '/tpv-management': (context) => const TpvManagementScreen(),
+        '/cocinas-management': (context) => const CocinasManagementScreen(),
         '/financial': (context) => const FinancialScreen(),
         '/financial-setup': (context) => const FinancialSetupScreen(),
         '/financial-dashboard': (context) => const FinancialDashboardScreen(),
@@ -260,6 +263,7 @@ class MyApp extends StatelessWidget {
             (context) => const InventoryExtractionBySaleScreen(),
         '/subscription-detail': (context) => const SubscriptionDetailScreen(),
         '/consignacion': (context) => const ConsignacionScreen(),
+        '/cuentas-por-cobrar': (context) => const CuentasPorCobrarScreen(),
         '/wapi-notifications': (context) => const WapiNotificationsScreen(),
         '/wifi-printers': (context) => const WiFiPrintersScreen(),
         '/interacciones-clientes': (context) => const InteraccionesClientesScreen(),

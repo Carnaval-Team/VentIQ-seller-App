@@ -669,8 +669,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
       // Identificar órdenes que han sido modificadas offline
       for (final order in _orderService.orders) {
-        // Capturar órdenes pendientes de sincronización
-        if (order.status == OrderStatus.pendienteDeSincronizacion) {
+        // Conservar estados finales / locales al recargar (el getter orders
+        // es una copia; el servicio los reescribe desde cache/servidor).
+        if (order.status == OrderStatus.pendienteDeSincronizacion ||
+            order.status == OrderStatus.completada ||
+            order.status == OrderStatus.pagoConfirmado ||
+            order.status == OrderStatus.cancelada ||
+            order.status == OrderStatus.devuelta) {
           localStateChanges[order.id] = order.status;
         }
 
@@ -719,46 +724,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
           '🔄 Aplicando ${localStateChanges.length} cambios de estado offline...',
         );
         for (final entry in localStateChanges.entries) {
-          final orderId = entry.key;
-          final newStatus = entry.value;
-
-          final orderIndex = _orderService.orders.indexWhere(
-            (order) => order.id == orderId,
-          );
-          if (orderIndex != -1) {
-            final currentOrder = _orderService.orders[orderIndex];
-
-            // Solo actualizar si el estado actual es diferente al cambio offline
-            if (currentOrder.status != newStatus) {
-              final updatedOrder = currentOrder.copyWith(status: newStatus);
-              _orderService.orders[orderIndex] = updatedOrder;
-              print(
-                '🔄 Estado aplicado: $orderId -> ${currentOrder.status} → ${newStatus.toString()}',
-              );
-            } else {
-              print(
-                'ℹ️ Estado ya correcto: $orderId -> ${newStatus.toString()}',
-              );
-            }
-          } else {
-            print('⚠️ Orden no encontrada para restaurar estado: $orderId');
-          }
-        }
-
-        // Verificar si hay operaciones pendientes que necesitan ser aplicadas
-        final hasChanges = await _applyPendingStatusChanges();
-
-        // Actualizar UI después de aplicar todos los cambios
-        if (hasChanges) {
-          print(
-            '🔄 Forzando actualización de UI después de cambios de estado...',
-          );
-          setState(() {
-            _filteredOrders = List.from(_orderService.orders);
-            _filterOrders(); // Re-aplicar filtros si los hay
-          });
+          _orderService.applyLocalOrderStatus(entry.key, entry.value);
         }
       }
+      await _applyPendingStatusChanges();
 
       // Actualizar la UI después de cargar las órdenes
       if (mounted) {
@@ -1581,6 +1550,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   void _showOrderDetails(Order order) {
     int paymentBreakdownRefreshKey = 0;
     Order currentOrder = order;
+    Future<bool>? isCuentaPorCobrarFuture;
 
     Navigator.push(
       context,
@@ -1589,6 +1559,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
             (context) => StatefulBuilder(
               builder: (context, setDetailState) {
                 order = currentOrder;
+                isCuentaPorCobrarFuture ??=
+                    _orderService.isVentaPendienteDePago(order);
 
                 void refreshPaymentBreakdown() {
                   setDetailState(() {
@@ -1596,13 +1568,21 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   });
                 }
 
+                final hasLocalPagoPendiente = order.items.any(
+                  (item) => item.paymentMethod?.esPagoPendiente ?? false,
+                );
+
                 void refreshOrderData() {
                   final updated =
                       _orderService.orders
                           .where((o) => o.id == currentOrder.id)
                           .toList();
                   setDetailState(() {
-                    if (updated.isNotEmpty) currentOrder = updated.first;
+                    if (updated.isNotEmpty) {
+                      currentOrder = updated.first;
+                      isCuentaPorCobrarFuture =
+                          _orderService.isVentaPendienteDePago(currentOrder);
+                    }
                   });
                 }
 
@@ -1710,6 +1690,62 @@ class _OrdersScreenState extends State<OrdersScreen> {
                             ],
                           ],
                         ),
+                      ),
+
+                      // ── Cuenta por Cobrar ─────────────────────────────────
+                      FutureBuilder<bool>(
+                        future: isCuentaPorCobrarFuture,
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return const SizedBox.shrink();
+                          }
+                          if (snapshot.hasData && snapshot.data == true) {
+                            final montoPendiente = order.items
+                                .where(
+                                  (item) =>
+                                      item.paymentMethod?.esPagoPendiente ??
+                                      false,
+                                )
+                                .fold<double>(
+                                  0.0,
+                                  (sum, item) => sum + item.subtotal,
+                                );
+                            return Column(
+                              children: [
+                                _buildDetailSection(
+                                  title: 'Cuenta por Cobrar',
+                                  icon: Icons.account_balance_wallet_outlined,
+                                  child: Column(
+                                    children: [
+                                      _buildDetailRowNew(
+                                        'Estado',
+                                        'Pago pendiente',
+                                        valueStyle: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.orange[800],
+                                        ),
+                                      ),
+                                      if (montoPendiente > 0)
+                                        _buildDetailRowNew(
+                                          'Monto pendiente',
+                                          '\$${montoPendiente.toStringAsFixed(2)}',
+                                          valueStyle: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.red[700],
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                              ],
+                            );
+                          }
+                          return const SizedBox.shrink();
+                        },
                       ),
 
                       // ── Estado Carnaval ───────────────────────────────────
@@ -1850,20 +1886,44 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       ),
 
                       // ── Desglose de pagos ─────────────────────────────────
-                      if (order.operationId != null ||
-                          _getLocalPaymentBreakdown(order).isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        _buildDetailSection(
-                          title: 'Desglose de Pagos',
-                          icon: Icons.payments_outlined,
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                          child: _buildPaymentBreakdown(
-                            order,
-                            refreshKey: paymentBreakdownRefreshKey,
-                            onPaymentUpdated: refreshPaymentBreakdown,
-                          ),
-                        ),
-                      ],
+                      // En cuenta por cobrar no aporta; el cobro aún no se desglosa.
+                      FutureBuilder<bool>(
+                        future: isCuentaPorCobrarFuture,
+                        builder: (context, snapshot) {
+                          final isCuentaPorCobrar =
+                              snapshot.data == true ||
+                              (snapshot.connectionState ==
+                                      ConnectionState.waiting &&
+                                  hasLocalPagoPendiente);
+                          if (isCuentaPorCobrar) {
+                            return const SizedBox.shrink();
+                          }
+                          if (order.operationId == null &&
+                              _getLocalPaymentBreakdown(order).isEmpty) {
+                            return const SizedBox.shrink();
+                          }
+                          return Column(
+                            children: [
+                              const SizedBox(height: 12),
+                              _buildDetailSection(
+                                title: 'Desglose de Pagos',
+                                icon: Icons.payments_outlined,
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  8,
+                                  16,
+                                  16,
+                                ),
+                                child: _buildPaymentBreakdown(
+                                  order,
+                                  refreshKey: paymentBreakdownRefreshKey,
+                                  onPaymentUpdated: refreshPaymentBreakdown,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
 
                       // ── Productos ─────────────────────────────────────────
                       const SizedBox(height: 12),
@@ -2951,17 +3011,31 @@ class _OrdersScreenState extends State<OrdersScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          // Botones de pago - Contar Billetes y Confirmar Pago
-          FutureBuilder<bool>(
-            future: _hasEffectivoPayment(order),
+          // Botones de pago - Contar Billetes y Confirmar Pago/Orden
+          FutureBuilder<List<bool>>(
+            future: Future.wait([
+              _hasEffectivoPayment(order),
+              _orderService.isVentaPendienteDePago(order),
+            ]),
             builder: (context, snapshot) {
-              final hasEfectivo = snapshot.data ?? false;
+              final hasEfectivo = snapshot.data?[0] ?? false;
+              // Órdenes con saldo a "Pago Pendiente" (cuenta por cobrar) no
+              // reciben dinero al confirmarlas, así que el botón dice
+              // "Confirmar Orden" en vez de "Confirmar Pago".
+              final esPagoPendiente = snapshot.data?[1] ?? false;
+              final confirmLabel =
+                  esPagoPendiente ? 'Confirmar Orden' : 'Confirmar Pago';
+              final confirmMessage = esPagoPendiente
+                  ? '¿Confirmas esta orden? Queda registrada como cuenta por cobrar pendiente de cobro.'
+                  : '¿Confirmas que el pago de esta orden ha sido recibido?';
+              final confirmIcon =
+                  esPagoPendiente ? Icons.check_circle_outline : Icons.payment;
 
               if (hasEfectivo) {
                 // Si tiene efectivo, mostrar ambos botones
                 return Column(
                   children: [
-                    // Fila con Contar Billetes y Confirmar Pago
+                    // Fila con Contar Billetes y Confirmar Pago/Orden
                     Row(
                       children: [
                         // Botón Contar Billetes
@@ -2983,20 +3057,20 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        // Botón Confirmar Pago
+                        // Botón Confirmar Pago / Confirmar Orden
                         Expanded(
                           child: ElevatedButton.icon(
                             onPressed:
                                 () => _showConfirmationDialog(
                                   order,
                                   OrderStatus.completada,
-                                  'Confirmar Pago',
-                                  '¿Confirmas que el pago de esta orden ha sido recibido?',
+                                  confirmLabel,
+                                  confirmMessage,
                                   const Color(0xFF10B981),
                                   detailContext: detailContext,
                                 ),
-                            icon: const Icon(Icons.payment),
-                            label: const Text('Confirmar Pago'),
+                            icon: Icon(confirmIcon),
+                            label: Text(confirmLabel),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF10B981),
                               foregroundColor: Colors.white,
@@ -3009,7 +3083,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   ],
                 );
               } else {
-                // Si no tiene efectivo, solo mostrar Confirmar Pago
+                // Si no tiene efectivo, solo mostrar Confirmar Pago / Orden
                 return SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
@@ -3017,13 +3091,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         () => _showConfirmationDialog(
                           order,
                           OrderStatus.completada,
-                          'Confirmar Pago',
-                          '¿Confirmas que el pago de esta orden ha sido recibido?',
+                          confirmLabel,
+                          confirmMessage,
                           const Color(0xFF10B981),
                           detailContext: detailContext,
                         ),
-                    icon: const Icon(Icons.payment),
-                    label: const Text('Confirmar Pago'),
+                    icon: Icon(confirmIcon),
+                    label: Text(confirmLabel),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF10B981),
                       foregroundColor: Colors.white,
@@ -3145,8 +3219,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
       Navigator.pop(context);
 
       if (result['success'] == true) {
-        // Recargar órdenes desde Supabase para reflejar el nuevo created_at
-        // cuando la tienda tiene cambiar_fecha_creacion_operacion_al_cierre activo.
+        // Recargar órdenes. En offline no ir al servidor: el estado ya está
+        // en memoria y en cache local.
         try {
           await _loadOrdersFromSupabase();
         } catch (e) {
@@ -5401,8 +5475,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
       case 0: // Home → /mesas si modo restaurante, /categories si no
         NavigationHelper.goHome(context, removeStack: false);
         break;
-      case 1: // Preorden
-        Navigator.pushNamed(context, '/preorder');
+      case 1: // Carrito: preorden, o la cuenta de mesa abierta en restaurante
+        NavigationHelper.goCarrito(context);
         break;
       case 2: // Órdenes (current)
         break;
@@ -5652,29 +5726,16 @@ class _OrdersScreenState extends State<OrdersScreen> {
           final newStatus = _stringToOrderStatus(newStatusString);
 
           if (newStatus != null) {
-            final orderIndex = _orderService.orders.indexWhere(
-              (order) => order.id == orderId,
+            final applied = _orderService.applyLocalOrderStatus(
+              orderId,
+              newStatus,
             );
-            if (orderIndex != -1) {
-              final currentOrder = _orderService.orders[orderIndex];
-
-              // Aplicar el cambio de estado pendiente
-              if (currentOrder.status != newStatus) {
-                final updatedOrder = currentOrder.copyWith(status: newStatus);
-                _orderService.orders[orderIndex] = updatedOrder;
-                hasChanges = true;
-                print(
-                  '🔄 Operación pendiente aplicada: $orderId -> ${currentOrder.status} → ${newStatus.toString()}',
-                );
-                print(
-                  '🎯 Estado final confirmado: ${_orderService.orders[orderIndex].status}',
-                );
-              } else {
-                print(
-                  'ℹ️ Estado ya aplicado: $orderId -> ${newStatus.toString()}',
-                );
-              }
-            } else {
+            if (applied) {
+              hasChanges = true;
+              print(
+                '🔄 Operación pendiente aplicada: $orderId -> $newStatusString',
+              );
+            } else if (_orderService.getOrderById(orderId) == null) {
               print(
                 '⚠️ Orden no encontrada para operación pendiente: $orderId',
               );

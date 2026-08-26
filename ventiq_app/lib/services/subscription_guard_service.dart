@@ -54,7 +54,7 @@ class SubscriptionGuardService {
             currentStoreId,
           );
 
-      // Sin red: solo licencia local (full offline no inventa conectividad).
+      // Sin red: solo licencia local. Nunca RPC (DNS/socket).
       if (!hasNetwork) {
         if (!offlineCompleto) {
           print('❌ Sin conexión y modo offline completo deshabilitado');
@@ -73,6 +73,7 @@ class SubscriptionGuardService {
         _lastOfflineStatus = status;
         if (status.isValid) {
           print('✅ Licencia offline firmada válida');
+          await _ensureCachedSubscriptionFromPrefs(currentStoreId);
           return true;
         }
         print('❌ Licencia offline inválida: ${status.message}');
@@ -101,6 +102,7 @@ class SubscriptionGuardService {
         _lastOfflineStatus = status;
         if (status.isValid) {
           print('✅ Licencia offline válida (full offline + red)');
+          await _ensureCachedSubscriptionFromPrefs(currentStoreId);
           return true;
         }
         // Si no se pudo obtener licencia, seguir al flujo online clásico
@@ -126,6 +128,7 @@ class SubscriptionGuardService {
             _lastOfflineStatus = status;
             if (status.isValid) {
               print('✅ Licencia firmada válida desde caché');
+              await _ensureCachedSubscriptionFromPrefs(currentStoreId);
               return true;
             }
           }
@@ -141,11 +144,13 @@ class SubscriptionGuardService {
                 print(
                   '✅ Suscripción en caché + licencia firmada asegurada',
                 );
+                await _ensureCachedSubscriptionFromPrefs(currentStoreId);
                 return true;
               }
               // Seguir al refresh de servidor para reintentar licencia
             } else {
               print('✅ Suscripción válida desde preferencias (caché)');
+              await _ensureCachedSubscriptionFromPrefs(currentStoreId);
               return true;
             }
           }
@@ -243,12 +248,102 @@ class SubscriptionGuardService {
     return fetched && status.isValid;
   }
 
-  /// Obtiene la suscripción actual (puede ser inactiva)
+  /// Obtiene la suscripción actual para mostrar en UI (activa o inactiva).
+  /// No depende del early-return de [hasActiveSubscription].
   Future<Subscription?> getCurrentSubscription({
     bool forceRefresh = false,
   }) async {
-    await hasActiveSubscription(forceRefresh: forceRefresh);
+    final storeId = await _userPreferencesService.getIdTienda();
+    if (storeId == null) return null;
+
+    await _loadSubscriptionForDisplay(
+      storeId: storeId,
+      forceRefresh: forceRefresh,
+    );
     return _cachedSubscription;
+  }
+
+  /// Carga suscripción en [_cachedSubscription] para UI: memoria → prefs → servidor.
+  Future<void> _loadSubscriptionForDisplay({
+    required int storeId,
+    bool forceRefresh = false,
+  }) async {
+    if (!forceRefresh &&
+        _cachedSubscription != null &&
+        _cachedStoreId == storeId) {
+      return;
+    }
+
+    final online = _connectivityService.isConnected;
+    if (online && forceRefresh) {
+      final fromServer =
+          await _subscriptionService.getCurrentSubscription(storeId);
+      if (fromServer != null) {
+        _cachedSubscription = fromServer;
+        _cachedStoreId = storeId;
+        _lastCheck = DateTime.now();
+        print(
+          '📋 Suscripción cargada del servidor para UI: '
+          '${fromServer.planDenominacion} (${fromServer.estadoText})',
+        );
+        return;
+      }
+    }
+
+    if (_cachedSubscription == null || _cachedStoreId != storeId) {
+      await _ensureCachedSubscriptionFromPrefs(storeId);
+    }
+
+    if (_cachedSubscription == null && online) {
+      final fromServer =
+          await _subscriptionService.getCurrentSubscription(storeId);
+      if (fromServer != null) {
+        _cachedSubscription = fromServer;
+        _cachedStoreId = storeId;
+        _lastCheck = DateTime.now();
+        print(
+          '📋 Suscripción cargada del servidor (fallback UI): '
+          '${fromServer.planDenominacion}',
+        );
+      }
+    }
+  }
+
+  Future<void> _ensureCachedSubscriptionFromPrefs(int storeId) async {
+    if (_cachedSubscription != null && _cachedStoreId == storeId) return;
+
+    final fromPrefs = await _subscriptionFromStoredPrefs(storeId);
+    if (fromPrefs != null) {
+      _cachedSubscription = fromPrefs;
+      _cachedStoreId = storeId;
+      print(
+        '📋 Suscripción cargada desde prefs: ${fromPrefs.planDenominacion}',
+      );
+    }
+  }
+
+  Future<Subscription?> _subscriptionFromStoredPrefs(int storeId) async {
+    final data = await _userPreferencesService.getSubscriptionData();
+    if (data == null) return null;
+
+    final lastCheck = data['last_check'] as DateTime? ?? DateTime.now();
+    return Subscription(
+      id: data['subscription_id'] as int,
+      idTienda: storeId,
+      idPlan: data['plan_id'] as int,
+      fechaInicio: data['start_date'] as DateTime,
+      fechaFin: data['end_date'] as DateTime?,
+      estado: data['state'] as int,
+      creadoPor: 'local_cache',
+      renovacionAutomatica: false,
+      createdAt: lastCheck,
+      updatedAt: lastCheck,
+      planDenominacion: data['plan_name'] as String?,
+      planFuncionesHabilitadas:
+          data['features'] is Map<String, dynamic>
+              ? data['features'] as Map<String, dynamic>
+              : null,
+    );
   }
 
   /// Verifica si una ruta está permitida sin suscripción activa
@@ -334,13 +429,20 @@ class SubscriptionGuardService {
   }
 
   /// Fuerza una verificación de suscripción / revalidación de licencia.
-  /// Con red, siempre intenta descargar la licencia firmada primero.
+  /// Con red descarga y guarda la licencia firmada; sin red solo valida local.
   Future<bool> forceCheck() async {
     final storeId = await _userPreferencesService.getIdTienda();
-    if (storeId != null && _connectivityService.isConnected) {
+    var online = _connectivityService.isConnected;
+    print(
+      '🔐 forceCheck: storeId=$storeId isConnected=$online',
+    );
+    if (storeId != null && online) {
       await _offlineLicenseService.fetchAndStoreSignedLicense(storeId);
+      online = _connectivityService.isConnected;
+    } else if (storeId != null) {
+      print('📵 forceCheck: sin conexión — validando licencia local');
     }
-    return await hasActiveSubscription(forceRefresh: true);
+    return await hasActiveSubscription(forceRefresh: online);
   }
 
   /// Días restantes hasta forzar reconexión (null si no aplica).

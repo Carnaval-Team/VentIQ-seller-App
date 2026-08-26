@@ -5,6 +5,7 @@ import 'auth_service.dart';
 import 'seller_service.dart';
 import 'promotion_service.dart';
 import 'admin_access_service.dart';
+import 'comanda_service.dart';
 
 /// Servicio para reautenticar automáticamente al usuario cuando se restaura la conexión
 /// Replica el proceso de autenticación completo del login_screen.dart
@@ -112,6 +113,13 @@ class ReauthenticationService {
         await _userPreferencesService.ensureOfflineStoreScope(idTienda);
 
         await _userPreferencesService.setCajaEntryRole(entryRole);
+
+        // Refrescar el rol de cocina en la reautenticación: si el admin acaba
+        // de asignar o quitar la cocina, el home debe cambiar sin obligar a
+        // cerrar sesión. Un fallo aquí no interrumpe la reautenticación.
+        await _userPreferencesService.setCocinaRole(
+          await ComandaService().rolDeCocina(),
+        );
 
         try {
           await AdminAccessService().refreshAndCache();
@@ -244,6 +252,12 @@ class ReauthenticationService {
   /// Retorna true si el usuario está autenticado (ya estaba o se reautenticó exitosamente)
   Future<bool> ensureAuthenticated() async {
     try {
+      final loggedIn = await _userPreferencesService.isLoggedIn();
+      if (!loggedIn) {
+        print('🚫 ensureAuthenticated: no hay sesión local activa');
+        return false;
+      }
+
       final needsReauth = await needsReauthentication();
 
       if (!needsReauth) {

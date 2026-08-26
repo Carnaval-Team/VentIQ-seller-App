@@ -8,6 +8,26 @@ class PaymentMethod {
   final bool esEfectivo;
   final bool esActivo;
 
+  /// ID sentinel (no existe en app_nom_medio_pago) para el pseudo-método
+  /// "Pago Pendiente" (cuenta por cobrar). Igual que el 999 de "Pago Regular
+  /// (Efectivo)", se maneja completamente en el cliente: no genera fila en
+  /// app_dat_pago_venta y hace que la venta quede con es_pagada = false.
+  static const int pagoPendienteId = 998;
+
+  /// Pseudo-método de pago "Pago Pendiente" para dejar el monto como cuenta
+  /// por cobrar asociada al cliente de la venta.
+  static PaymentMethod pagoPendiente() => PaymentMethod(
+        id: pagoPendienteId,
+        denominacion: 'Pago Pendiente (Cuenta por Cobrar)',
+        descripcion:
+            'El monto queda pendiente de cobro, asociado al cliente de la venta',
+        esDigital: false,
+        esEfectivo: false,
+        esActivo: true,
+      );
+
+  bool get esPagoPendiente => id == pagoPendienteId;
+
   PaymentMethod({
     required this.id,
     required this.denominacion,
@@ -49,6 +69,7 @@ class PaymentMethod {
       (esDigital || denominacion.toLowerCase().contains('transfer'));
 
   IconData get typeIcon {
+    if (esPagoPendiente) return Icons.schedule_send;
     if (esEfectivo) return Icons.payments;
     if (esDigital) return Icons.credit_card;
     return Icons.account_balance_wallet;

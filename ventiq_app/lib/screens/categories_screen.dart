@@ -24,6 +24,7 @@ import '../services/store_config_service.dart';
 import '../services/mesa_cuenta_service.dart';
 import '../models/product.dart';
 import 'dart:async';
+import '../utils/navigation_helper.dart';
 
 class CategoriesScreen extends StatefulWidget {
   const CategoriesScreen({super.key});
@@ -143,15 +144,16 @@ class _CategoriesScreenState extends State<CategoriesScreen>
       // Manejar eventos específicos
       switch (event.type) {
         case SmartOfflineEventType.offlineModeAutoDeactivated:
-          // Modo offline desactivado automáticamente
-          print('✅ Modo offline desactivado automáticamente - Actualizando UI');
+        case SmartOfflineEventType.offlineModeManuallyDisabled:
+          print('✅ Modo offline desactivado - Actualizando UI principal');
           _loadOfflineModeSettings();
           _loadCategories(forceRefresh: true);
           break;
 
         case SmartOfflineEventType.offlineModeAutoActivated:
-          // Modo offline activado automáticamente
-          print('🔌 Modo offline activado automáticamente - Actualizando UI');
+        case SmartOfflineEventType.offlineModeManuallyEnabled:
+        case SmartOfflineEventType.offlineModeActive:
+          print('🔌 Modo offline activado - Actualizando UI principal');
           _loadOfflineModeSettings();
           _loadCategories(forceRefresh: true);
           break;
@@ -161,7 +163,6 @@ class _CategoriesScreenState extends State<CategoriesScreen>
           break;
 
         default:
-          // Otros eventos no requieren acción en el UI
           break;
       }
     });
@@ -1108,9 +1109,9 @@ class _CategoriesScreenState extends State<CategoriesScreen>
           setState(() {});
         }
         break;
-      case 1: // Preorden
-        Navigator.pushNamed(context, '/preorder').then((_) {
-          setState(() {});
+      case 1: // Carrito: preorden, o la cuenta de mesa abierta en restaurante
+        NavigationHelper.goCarrito(context).then((_) {
+          if (mounted) setState(() {});
         });
         break;
       case 2: // Órdenes
@@ -1120,7 +1121,11 @@ class _CategoriesScreenState extends State<CategoriesScreen>
         break;
       case 3: // Configuración
         Navigator.pushNamed(context, '/settings').then((_) {
-          setState(() {});
+          if (!mounted) return;
+          _loadOfflineModeSettings();
+          _loadDataUsageSettings();
+          _loadShowSkuSetting();
+          _loadFluidModeSettings();
         });
         break;
     }

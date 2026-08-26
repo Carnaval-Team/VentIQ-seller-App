@@ -35,12 +35,42 @@ class MesaCuenta {
     required this.createdAt,
     required this.updatedAt,
     this.items = const [],
+    this.itemsEnCocina = 0,
+    this.itemsListos = 0,
   });
 
   bool get abierta => estado == 1;
   int get cantidadItems => items.length;
   double get totalCalculado =>
       items.fold(0.0, (s, i) => s + i.cantidad * i.precioUnitario);
+
+  // ── Fase 2 · estado agregado de cocina ─────────────────────────────────
+  /// Líneas con comanda pendiente o en preparación. Lo calcula la RPC para
+  /// no tener que recorrer las comandas por separado.
+  final int itemsEnCocina;
+
+  /// Líneas listas en cocina pero aún no entregadas al comensal.
+  final int itemsListos;
+
+  /// Hay comandas sin servir: al cerrar la nota conviene avisar.
+  bool get tieneComandasPendientes => itemsEnCocina > 0;
+
+  /// Hay platos esperando que el mesero los recoja del pase.
+  bool get tienePlatosListos => itemsListos > 0;
+
+  /// Resumen para el encabezado de la cuenta. `null` si no hay nada en cocina.
+  String? get resumenCocina {
+    final partes = <String>[];
+    if (itemsListos > 0) {
+      partes.add(itemsListos == 1 ? '1 listo' : '$itemsListos listos');
+    }
+    if (itemsEnCocina > 0) {
+      partes.add(itemsEnCocina == 1
+          ? '1 en cocina'
+          : '$itemsEnCocina en cocina');
+    }
+    return partes.isEmpty ? null : partes.join(' · ');
+  }
 
   factory MesaCuenta.fromJson(Map<String, dynamic> json) {
     final itemsRaw = json['items'];
@@ -71,6 +101,12 @@ class MesaCuenta {
       updatedAt:
           DateTime.tryParse(json['updated_at'] as String? ?? '') ?? DateTime.now(),
       items: items,
+      itemsEnCocina: json['items_en_cocina'] is num
+          ? (json['items_en_cocina'] as num).toInt()
+          : 0,
+      itemsListos: json['items_listos'] is num
+          ? (json['items_listos'] as num).toInt()
+          : 0,
     );
   }
 }
@@ -101,6 +137,27 @@ class MesaCuentaItem {
   final String? skuUbicacion;
   final DateTime createdAt;
 
+  // ── Fase 2 · cocina y servicio ─────────────────────────────────────────
+  /// De dónde salió el stock al pedir: `tpv`, `tanda`, `al_pedido` o
+  /// `servicio`. `null` en líneas creadas antes de la Fase 2 (legado).
+  final String? origenStock;
+  final int? idCocina;
+  final String? cocinaNombre;
+
+  /// Foto del estado en el momento de pedir. Para el estado VIVO usar
+  /// [estadoServicioEfectivo], que prefiere el de la comanda.
+  final int? estadoServicio;
+
+  /// `true` si el inventario ya salió al pedir; el cobro no lo repite.
+  final bool stockMovido;
+
+  final int? idComandaItem;
+  final int? comandaNumero;
+
+  /// Estado actual de la comanda en cocina. Es el dato vivo: la cocina lo
+  /// actualiza, mientras [estadoServicio] se queda como estaba al pedir.
+  final int? comandaEstado;
+
   const MesaCuentaItem({
     required this.id,
     required this.idProducto,
@@ -126,6 +183,14 @@ class MesaCuentaItem {
     this.skuProducto,
     this.skuUbicacion,
     required this.createdAt,
+    this.origenStock,
+    this.idCocina,
+    this.cocinaNombre,
+    this.estadoServicio,
+    this.stockMovido = false,
+    this.idComandaItem,
+    this.comandaNumero,
+    this.comandaEstado,
   });
 
   String get displayName {
@@ -133,6 +198,52 @@ class MesaCuentaItem {
       return '${productoNombre ?? 'Producto'} — $varianteNombre';
     }
     return productoNombre ?? 'Producto $idProducto';
+  }
+
+  // ── Clasificación de la línea ──────────────────────────────────────────
+
+  /// La línea se preparó (o se está preparando) en una cocina.
+  bool get vaACocina => idCocina != null && origenStock != 'tpv';
+
+  /// Porción ya hecha servida desde la cocina: no espera preparación.
+  bool get esDeTanda => origenStock == 'tanda';
+
+  /// Se cocina al momento: tiene comanda y pasa por los estados del KDS.
+  bool get esAlPedido => origenStock == 'al_pedido';
+
+  /// Estado vivo del servicio. La comanda es la fuente de verdad porque la
+  /// cocina la va actualizando; `estado_servicio` de la línea es la foto del
+  /// momento en que se pidió y se queda atrás.
+  int? get estadoServicioEfectivo => comandaEstado ?? estadoServicio;
+
+  bool get pendienteEnCocina => estadoServicioEfectivo == 1;
+  bool get enPreparacion => estadoServicioEfectivo == 2;
+  bool get listoParaServir => estadoServicioEfectivo == 3;
+  bool get entregado => estadoServicioEfectivo == 4;
+  bool get cancelado => estadoServicioEfectivo == 5;
+
+  /// Sigue en manos de la cocina: bloquea o avisa al cerrar la nota.
+  bool get sinServir =>
+      estadoServicioEfectivo != null && estadoServicioEfectivo! <= 3;
+
+  /// Texto corto para la línea de la nota, en lenguaje de oficio.
+  /// Devuelve `null` cuando no hay nada que decir (producto de barra).
+  String? get etiquetaServicio {
+    if (esDeTanda) return 'Servido';
+    switch (estadoServicioEfectivo) {
+      case 1:
+        return 'En cocina';
+      case 2:
+        return 'Preparando';
+      case 3:
+        return 'Listo';
+      case 4:
+        return 'Entregado';
+      case 5:
+        return 'Cancelado';
+      default:
+        return null;
+    }
   }
 
   factory MesaCuentaItem.fromJson(Map<String, dynamic> json) {
@@ -177,6 +288,82 @@ class MesaCuentaItem {
       skuUbicacion: json['sku_ubicacion'] as String?,
       createdAt:
           DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.now(),
+      // Fase 2. Todos tolerantes a ausencia: si el 18 no está aplicado,
+      // llegan null y la UI se comporta como antes.
+      origenStock: json['origen_stock'] as String?,
+      idCocina:
+          json['id_cocina'] is num ? (json['id_cocina'] as num).toInt() : null,
+      cocinaNombre: json['cocina_nombre'] as String?,
+      estadoServicio: json['estado_servicio'] is num
+          ? (json['estado_servicio'] as num).toInt()
+          : null,
+      stockMovido: json['stock_movido'] as bool? ?? false,
+      idComandaItem: json['id_comanda_item'] is num
+          ? (json['id_comanda_item'] as num).toInt()
+          : null,
+      comandaNumero: json['comanda_numero'] is num
+          ? (json['comanda_numero'] as num).toInt()
+          : null,
+      comandaEstado: json['comanda_estado'] is num
+          ? (json['comanda_estado'] as num).toInt()
+          : null,
+    );
+  }
+}
+
+/// Resumen de la última cuenta abierta de un TPV.
+///
+/// Lo devuelve `fn_ultima_cuenta_abierta_tpv` y alimenta el atajo del botón de
+/// carrito en modo restaurante: en vez de abrir una preorden local (que en ese
+/// modo está siempre vacía) lleva a la cuenta que el mesero acaba de tocar.
+///
+/// Es un resumen, no la cuenta completa: para los items se navega a
+/// `CuentaMesaScreen`, que los carga con `fn_obtener_cuenta_mesa`.
+class UltimaCuentaAbierta {
+  final int idCuenta;
+  final int idMesa;
+  final String? mesaNumero;
+  final String? mesaZona;
+  final int? numeroComensales;
+  final int cantidadItems;
+  final double total;
+  final DateTime? createdAt;
+  final int minutosAbierta;
+
+  const UltimaCuentaAbierta({
+    required this.idCuenta,
+    required this.idMesa,
+    this.mesaNumero,
+    this.mesaZona,
+    this.numeroComensales,
+    this.cantidadItems = 0,
+    this.total = 0,
+    this.createdAt,
+    this.minutosAbierta = 0,
+  });
+
+  /// Etiqueta corta para el botón: "Mesa 3" o "Mesa 3 · Terraza".
+  String get etiquetaMesa {
+    final numero = mesaNumero ?? 'Mesa $idMesa';
+    if (mesaZona == null || mesaZona!.isEmpty) return numero;
+    return '$numero · $mesaZona';
+  }
+
+  bool get vacia => cantidadItems == 0;
+
+  factory UltimaCuentaAbierta.fromJson(Map<String, dynamic> json) {
+    return UltimaCuentaAbierta(
+      idCuenta: (json['id_cuenta'] as num).toInt(),
+      idMesa: (json['id_mesa'] as num?)?.toInt() ?? 0,
+      mesaNumero: json['mesa_numero'] as String?,
+      mesaZona: json['mesa_zona'] as String?,
+      numeroComensales: (json['numero_comensales'] as num?)?.toInt(),
+      cantidadItems: (json['cantidad_items'] as num?)?.toInt() ?? 0,
+      total: (json['total'] as num?)?.toDouble() ?? 0,
+      createdAt: json['created_at'] == null
+          ? null
+          : DateTime.tryParse(json['created_at'] as String? ?? ''),
+      minutosAbierta: (json['minutos_abierta'] as num?)?.toInt() ?? 0,
     );
   }
 }

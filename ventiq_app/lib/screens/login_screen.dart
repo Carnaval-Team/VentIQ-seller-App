@@ -13,6 +13,8 @@ import '../services/admin_access_service.dart';
 import '../services/smart_offline_manager.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import '../services/comanda_service.dart';
+import '../utils/navigation_helper.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -42,8 +44,20 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
+    _pauseSyncForLoginScreen();
     _loadSavedCredentials();
     _checkFullOffline();
+  }
+
+  /// Detiene sync/monitoring mientras el usuario no ha iniciado sesión.
+  Future<void> _pauseSyncForLoginScreen() async {
+    try {
+      await AutoSyncService().stopAutoSync();
+      await SettingsIntegrationService().stop();
+      print('🛑 Sync pausado en pantalla de login (sin sesión activa)');
+    } catch (e) {
+      print('⚠️ No se pudo pausar sync en login: $e');
+    }
   }
 
   Future<void> _checkFullOffline() async {
@@ -254,6 +268,18 @@ class _LoginScreenState extends State<LoginScreen> {
 
             await _userPreferencesService.setCajaEntryRole(entryRole);
 
+            // Rol de cocina: decide el home de la sesión (KDS para el personal
+            // de cocina). Se cachea aquí para no consultar
+            // `fn_cocinas_del_usuario` en cada navegación a Home.
+            //
+            // Se salta para gerente/supervisor: aunque tengan cocinas, su home
+            // es la administración de la tienda. Y si la consulta falla no se
+            // interrumpe el login: se queda sin rol de cocina y el usuario
+            // entra al home de siempre.
+            final rolCocina = await ComandaService().rolDeCocina();
+            await _userPreferencesService.setCocinaRole(rolCocina);
+            print('  - Rol de cocina: ${rolCocina.isEmpty ? "(ninguno)" : rolCocina}');
+
             // Cachear rol admin (gerente/supervisor) para menú offline.
             try {
               final adminRole = await AdminAccessService().refreshAndCache();
@@ -377,13 +403,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 // Verificar si la suscripción está próxima a vencer
                 await _checkAndShowSubscriptionWarning(idTienda);
 
-                // Gerente/supervisor → solo gestión; vendedor → catálogo
-                final inventoryOnly = entryRole == 'gerente' ||
-                    entryRole == 'supervisor' ||
-                    sellerProfile['inventoryOnly'] == true;
-                Navigator.of(context).pushReplacementNamed(
-                  inventoryOnly ? '/admin-home' : '/categories',
-                );
+                // Destino según rol: gerente/supervisor → gestión, personal de
+                // cocina → KDS, resto → catálogo o mesas. Lo resuelve
+                // NavigationHelper para no duplicar el criterio aquí.
+                final destino = await NavigationHelper.homeRoute();
+                if (!mounted) return;
+                Navigator.of(context).pushReplacementNamed(destino);
               } else {
                 // Sin suscripción activa - ir a detalles de suscripción
                 Navigator.of(
@@ -544,11 +569,12 @@ class _LoginScreenState extends State<LoginScreen> {
             await _subscriptionGuard.hasActiveSubscription();
 
         if (hasActiveSubscription) {
-          final inventoryOnly =
-              await _userPreferencesService.isInventoryOnlySession();
-          Navigator.of(context).pushReplacementNamed(
-            inventoryOnly ? '/admin-home' : '/categories',
-          );
+          // Mismo criterio que el login online, pero SIN consultar el rol de
+          // cocina: aquí no hay red. Se usa el que quedó cacheado del último
+          // login online, que es justo para lo que se cacheó.
+          final destino = await NavigationHelper.homeRoute();
+          if (!mounted) return true;
+          Navigator.of(context).pushReplacementNamed(destino);
         } else {
           // Sin licencia válida - bloquear app en detalles de suscripción
           Navigator.of(context).pushReplacementNamed('/subscription-detail');

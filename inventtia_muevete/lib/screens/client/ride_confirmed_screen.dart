@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -537,56 +538,9 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
     final basePrecio = tp.acceptedOffer?.precio ?? tp.offerPrice;
     final totalPrecio = basePrecio + cobroEspera;
 
-    // ── Offline path: show QR + enqueue ──
-    final online = await OfflineQueueService.hasInternetConnection();
-    if (!online) {
-      if (viajeId == null || driverId == null || userId == null) return;
-      if (!mounted) return;
-      final confirmed = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => QrCompletionDialog(
-          solicitudId: requestId,
-          viajeId: viajeId,
-          driverId: driverId,
-          userId: userId,
-          precio: totalPrecio,
-          precioBase: basePrecio,
-          metodoPago: metodoPago,
-        ),
-      );
-      if (confirmed == true && mounted) {
-        await CompletionSyncService.enqueueCompletion(
-          solicitudId: requestId,
-          viajeId: viajeId,
-          driverId: driverId,
-          userId: userId,
-          precio: totalPrecio,
-          precioBase: basePrecio,
-          metodoPago: metodoPago,
-          role: 'client',
-        );
-        tp.resetTrip();
-        Navigator.of(context).pushNamedAndRemoveUntil(
-          '/client/home',
-          (route) => false,
-        );
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Viaje pendiente de sincronización',
-                style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
-            backgroundColor: AppTheme.warning,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      }
-      return;
-    }
-
-    // ── Online path (existing flow) ──
+    // Try online completion first; fall back to QR only on real network failures.
     setState(() => _isCompleting = true);
     try {
-      // Process wallet payment (client if wallet, driver commission always)
       await tp.completeRideWithPayment(extraWaitingCharge: cobroEspera);
 
       await Supabase.instance.client
@@ -595,7 +549,6 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
           .update({'estado': 'completada'})
           .eq('id', requestId);
 
-      // Also mark viaje as completed so the driver's UI updates
       if (viajeId != null) {
         await Supabase.instance.client
             .schema('muevete')
@@ -609,7 +562,6 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
             .eq('id', viajeId);
       }
 
-      // Show rating dialog before navigating away
       if (mounted && viajeId != null && driverId != null && userId != null) {
         final result = await showDialog<Map<String, dynamic>?>(
           context: context,
@@ -637,13 +589,93 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
         );
       }
     } catch (e) {
-      if (mounted) {
+      debugPrint('[RideConfirmed] Online completion failed: $e');
+      if (!mounted) return;
+
+      final canTryOffline = _isNetworkError(e) ||
+          !await OfflineQueueService.hasInternetConnection();
+      if (canTryOffline &&
+          viajeId != null &&
+          driverId != null &&
+          userId != null) {
+        await _completeRideOffline(
+          requestId: requestId,
+          viajeId: viajeId,
+          driverId: driverId,
+          userId: userId,
+          totalPrecio: totalPrecio,
+          basePrecio: basePrecio,
+          metodoPago: metodoPago,
+        );
+      } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.error),
         );
       }
     } finally {
       if (mounted) setState(() => _isCompleting = false);
+    }
+  }
+
+  bool _isNetworkError(Object e) {
+    final msg = e.toString().toLowerCase();
+    return e is SocketException ||
+        e is TimeoutException ||
+        msg.contains('socket') ||
+        msg.contains('network') ||
+        msg.contains('connection') ||
+        msg.contains('timeout') ||
+        msg.contains('failed host lookup') ||
+        msg.contains('clientexception');
+  }
+
+  Future<void> _completeRideOffline({
+    required int requestId,
+    required int viajeId,
+    required int driverId,
+    required String userId,
+    required double totalPrecio,
+    required double basePrecio,
+    required String metodoPago,
+  }) async {
+    final tp = context.read<TransportProvider>();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => QrCompletionDialog(
+        solicitudId: requestId,
+        viajeId: viajeId,
+        driverId: driverId,
+        userId: userId,
+        precio: totalPrecio,
+        precioBase: basePrecio,
+        metodoPago: metodoPago,
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await CompletionSyncService.enqueueCompletion(
+        solicitudId: requestId,
+        viajeId: viajeId,
+        driverId: driverId,
+        userId: userId,
+        precio: totalPrecio,
+        precioBase: basePrecio,
+        metodoPago: metodoPago,
+        role: 'client',
+      );
+      tp.resetTrip();
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/client/home',
+        (route) => false,
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Viaje pendiente de sincronización',
+              style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
+          backgroundColor: AppTheme.warning,
+          duration: const Duration(seconds: 4),
+        ),
+      );
     }
   }
 

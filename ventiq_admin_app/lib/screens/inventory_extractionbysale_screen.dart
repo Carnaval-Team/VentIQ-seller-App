@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
+import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import '../config/app_colors.dart';
 import '../models/warehouse.dart';
 import '../models/inventory.dart';
@@ -12,6 +13,7 @@ import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
 import '../services/tpv_service.dart';
 import '../services/printer_manager.dart';
+import '../services/printer_preferences_service.dart';
 import '../services/wifi_printer_service.dart';
 import '../widgets/conversion_info_widget.dart';
 import '../widgets/product_selector_widget.dart';
@@ -19,6 +21,7 @@ import '../widgets/location_selector_widget.dart';
 import '../services/product_search_service.dart';
 import '../utils/presentation_converter.dart';
 import '../services/export_service.dart';
+import '../services/currency_service.dart';
 import '../utils/ticket_text_utils.dart';
 
 class InventoryExtractionBySaleScreen extends StatefulWidget {
@@ -43,12 +46,21 @@ class _InventoryExtractionBySaleScreenState
   String _lastClientNameForPrint = '';
   String _lastObservationsForPrint = '';
 
+  // Captura en tiempo real del campo cliente/observaciones para evitar
+  // que se pierda el valor si el controlador no está sincronizado.
+  String _clienteInput = '';
+  String _observacionesInput = '';
+
   List<Map<String, dynamic>> _selectedProducts = [];
   WarehouseZone? _selectedSourceLocation;
   bool _isLoading = false;
   bool _showDescriptionInSelectors = false;
   bool _isGeneratingOffer = false;
   String _offerCurrencyCode = 'CUP';
+
+  /// Moneda y tasa usadas solo para imprimir el ticket (no afectan el registro).
+  String _printCurrencyCode = 'CUP';
+  double? _printExchangeRate;
 
   // Configuración de impresión de la tienda
   bool _guardarImpresoraPorDefecto = false;
@@ -80,6 +92,8 @@ class _InventoryExtractionBySaleScreenState
   void initState() {
     super.initState();
     _loadPersistedValues();
+    _clienteController.addListener(_onClienteChanged);
+    _observacionesController.addListener(_onObservacionesChanged);
     _loadShowDescriptionConfig();
     _loadMotivoVentaOptions();
     _loadMedioPagoOptions();
@@ -114,11 +128,21 @@ class _InventoryExtractionBySaleScreenState
   void _loadPersistedValues() {
     _clienteController.text = _lastCliente;
     _observacionesController.text = _lastObservaciones;
+    _clienteInput = _lastCliente;
+    _observacionesInput = _lastObservaciones;
+  }
+
+  void _onClienteChanged() {
+    _clienteInput = _clienteController.text;
+  }
+
+  void _onObservacionesChanged() {
+    _observacionesInput = _observacionesController.text;
   }
 
   void _savePersistedValues() {
-    _lastCliente = _clienteController.text;
-    _lastObservaciones = _observacionesController.text;
+    _lastCliente = _clienteInput;
+    _lastObservaciones = _observacionesInput;
   }
 
   Future<void> _loadShowDescriptionConfig() async {
@@ -272,6 +296,8 @@ class _InventoryExtractionBySaleScreenState
 
   @override
   void dispose() {
+    _clienteController.removeListener(_onClienteChanged);
+    _observacionesController.removeListener(_onObservacionesChanged);
     _clienteController.dispose();
     _observacionesController.dispose();
     super.dispose();
@@ -605,6 +631,18 @@ class _InventoryExtractionBySaleScreenState
     }
 
     setState(() => _isLoading = true);
+
+    // Forzar cierre del teclado y confirmar el texto editado.
+    FocusManager.instance.primaryFocus?.unfocus();
+
+    // Capturar cliente/observaciones antes de que cualquier setState/clear
+    // pueda perder el valor del controlador.
+    final clienteNombre = _clienteInput.trim();
+    final observacionesText = _observacionesInput.trim();
+
+    _lastClientNameForPrint = clienteNombre;
+    _lastObservationsForPrint = observacionesText;
+
     _savePersistedValues();
 
     try {
@@ -639,12 +677,12 @@ class _InventoryExtractionBySaleScreenState
 
       // Preparar observaciones con información del cliente y total
       String observaciones = '';
-      if (_clienteController.text.isNotEmpty) {
-        observaciones += 'Cliente: ${_clienteController.text}. ';
+      if (clienteNombre.isNotEmpty) {
+        observaciones += 'Cliente: $clienteNombre. ';
       }
       observaciones += 'Total: \$${_calculateTotal().toStringAsFixed(2)}. ';
-      if (_observacionesController.text.isNotEmpty) {
-        observaciones += _observacionesController.text;
+      if (observacionesText.isNotEmpty) {
+        observaciones += observacionesText;
       }
 
       final tipoVenta = _selectedMotivoVenta!['denominacion'] ?? 'Venta';
@@ -802,8 +840,8 @@ class _InventoryExtractionBySaleScreenState
 
         if (mounted) {
           // Capturar cliente/observaciones para el ticket antes de limpiar
-          _lastClientNameForPrint = _clienteController.text;
-          _lastObservationsForPrint = _observacionesController.text;
+          _lastClientNameForPrint = clienteNombre;
+          _lastObservationsForPrint = observacionesText;
 
           // Limpiar campos de cliente y observaciones
           _clienteController.clear();
@@ -1752,6 +1790,198 @@ class _InventoryExtractionBySaleScreenState
     );
   }
 
+  /// Diálogo: moneda del ticket (USD = precio USD del producto; CUP = pide tasa).
+  Future<String?> _showPrintCurrencyDialog() {
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        String selected = _printCurrencyCode == 'USD' ? 'USD' : 'CUP';
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              title: const Text('Moneda del ticket'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Elige en qué moneda se imprimirán los precios.',
+                  ),
+                  const SizedBox(height: 8),
+                  RadioListTile<String>(
+                    value: 'USD',
+                    groupValue: selected,
+                    onChanged: (v) {
+                      if (v == null) return;
+                      setStateDialog(() => selected = v);
+                    },
+                    title: const Text('USD'),
+                    subtitle: const Text(
+                      'Usa el precio en USD del producto',
+                    ),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  RadioListTile<String>(
+                    value: 'CUP',
+                    groupValue: selected,
+                    onChanged: (v) {
+                      if (v == null) return;
+                      setStateDialog(() => selected = v);
+                    },
+                    title: const Text('CUP'),
+                    subtitle: const Text(
+                      'Pide la tasa USD→CUP para convertir al imprimir',
+                    ),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(dialogContext, selected),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4A90E2),
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Continuar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// Diálogo: tasa de cambio para imprimir en CUP (precio_usd × tasa).
+  Future<double?> _showPrintExchangeRateDialog() async {
+    double suggested = 1;
+    try {
+      suggested = await CurrencyService.getEffectiveUsdToCupRate();
+      if (suggested <= 0) suggested = 1;
+    } catch (_) {}
+
+    final controller = TextEditingController(
+      text: suggested.toStringAsFixed(2),
+    );
+
+    final result = await showDialog<double>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Tasa USD → CUP'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Ingresa la tasa que se usará para imprimir los precios en CUP '
+                '(precio USD del producto × tasa).',
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'Tasa',
+                  suffixText: 'CUP / USD',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final parsed = double.tryParse(
+                  controller.text.trim().replaceAll(',', '.'),
+                );
+                if (parsed == null || parsed <= 0) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    const SnackBar(
+                      content: Text('Ingresa una tasa válida mayor que 0'),
+                    ),
+                  );
+                  return;
+                }
+                Navigator.pop(dialogContext, parsed);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4A90E2),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Usar tasa'),
+            ),
+          ],
+        );
+      },
+    );
+
+    controller.dispose();
+    return result;
+  }
+
+  /// Precio unitario para el ticket según moneda/tasa de impresión.
+  double _unitPriceForPrint(Map<String, dynamic> product) {
+    final usd = (product['precio_venta_usd'] as num?)?.toDouble();
+    final cupFallback = (product['precio_unitario'] as num?)?.toDouble() ?? 0.0;
+
+    if (_printCurrencyCode == 'USD') {
+      return usd ?? cupFallback;
+    }
+
+    // CUP: precio USD × tasa; si no hay USD, usa el precio unitario CUP de la venta.
+    final rate = _printExchangeRate;
+    if (usd != null && rate != null && rate > 0) {
+      return usd * rate;
+    }
+    return cupFallback;
+  }
+
+  /// Asegura que cada producto tenga precio_venta_usd si existe en BD.
+  Future<void> _ensureUsdPricesForPrint() async {
+    for (var i = 0; i < _selectedProducts.length; i++) {
+      final p = _selectedProducts[i];
+      if (p['precio_venta_usd'] != null) continue;
+      final idRaw = p['id_producto'] ?? p['id'];
+      final id =
+          idRaw is int
+              ? idRaw
+              : int.tryParse(idRaw?.toString() ?? '');
+      if (id == null) continue;
+      try {
+        final rows = await Supabase.instance.client
+            .from('app_dat_precio_venta')
+            .select('precio_venta_usd')
+            .eq('id_producto', id)
+            .order('fecha_desde', ascending: false)
+            .limit(1);
+        if (rows.isNotEmpty) {
+          final usd = (rows.first['precio_venta_usd'] as num?)?.toDouble();
+          if (usd != null) {
+            _selectedProducts[i] = {...p, 'precio_venta_usd': usd};
+          }
+        }
+      } catch (e) {
+        print('⚠️ No se pudo obtener precio USD del producto $id: $e');
+      }
+    }
+  }
+
   /// 🖨️ Método para imprimir ticket de extracción - Seleccionar tipo de impresora
   Future<void> _printExtractionTicket() async {
     try {
@@ -1766,8 +1996,36 @@ class _InventoryExtractionBySaleScreenState
         return;
       }
 
-      // Mostrar diálogo de selección de tipo de impresora
-      final printerType = await showDialog<String>(
+      // 1) Siempre imprimir en CUP usando el precio unitario de la venta.
+      //    Se omite la selección de moneda temporalmente mientras se corrige la lógica.
+      setState(() {
+        _printCurrencyCode = 'CUP';
+        _printExchangeRate = null;
+      });
+
+      // 2) Si hay una impresora guardada por defecto, usarla directamente.
+      String? printerType;
+      final prefs = PrinterPreferencesService();
+      final savedWifi = await prefs.getDefaultWiFiPrinter();
+      final savedBt = await prefs.getDefaultBluetoothPrinter();
+
+      if (savedWifi != null && savedBt == null) {
+        print('✅ Impresora WiFi por defecto encontrada, imprimiendo directamente...');
+        await _printExtractionTicketWiFi(preselected: savedWifi);
+        return;
+      }
+      if (savedBt != null && savedWifi == null) {
+        print('✅ Impresora Bluetooth por defecto encontrada, imprimiendo directamente...');
+        final savedDevice = BluetoothInfo(
+          name: savedBt['name']?.toString() ?? 'Impresora BT',
+          macAdress: savedBt['mac']?.toString() ?? '',
+        );
+        await _printExtractionTicketBluetooth(preselected: savedDevice);
+        return;
+      }
+
+      // 3) Si hay ambas o ninguna, dejar que el usuario elija el tipo.
+      printerType = await showDialog<String>(
         context: context,
         builder:
             (context) => AlertDialog(
@@ -1830,7 +2088,9 @@ class _InventoryExtractionBySaleScreenState
   }
 
   /// 🖨️ Imprimir ticket usando WiFi
-  Future<void> _printExtractionTicketWiFi() async {
+  Future<void> _printExtractionTicketWiFi({
+    Map<String, dynamic>? preselected,
+  }) async {
     try {
       print('📶 Imprimiendo por WiFi...');
 
@@ -1838,14 +2098,17 @@ class _InventoryExtractionBySaleScreenState
 
       final wifiService = WiFiPrinterService();
 
-      // Mostrar diálogo de selección de impresora WiFi
-      final selectedPrinter = await wifiService.showPrinterSelectionDialog(
-        context,
-        allowSaveDefault: _guardarImpresoraPorDefecto,
-      );
+      Map<String, dynamic>? selectedPrinter = preselected;
       if (selectedPrinter == null) {
-        print('❌ No se seleccionó impresora WiFi');
-        return;
+        // Mostrar diálogo de selección de impresora WiFi
+        selectedPrinter = await wifiService.showPrinterSelectionDialog(
+          context,
+          allowSaveDefault: _guardarImpresoraPorDefecto,
+        );
+        if (selectedPrinter == null) {
+          print('❌ No se seleccionó impresora WiFi');
+          return;
+        }
       }
 
       if (!mounted) return;
@@ -1993,27 +2256,43 @@ class _InventoryExtractionBySaleScreenState
   }
 
   /// 🖨️ Imprimir ticket usando Bluetooth
-  Future<void> _printExtractionTicketBluetooth() async {
+  Future<void> _printExtractionTicketBluetooth({
+    BluetoothInfo? preselected,
+  }) async {
     try {
       print('📱 Imprimiendo por Bluetooth...');
 
       if (!mounted) return;
 
       final printerManager = PrinterManager();
-
-      // Mostrar diálogo de confirmación
-      bool shouldPrint = await printerManager.showPrintConfirmationDialog(
-        context,
-      );
-      if (!shouldPrint || !mounted) return;
-
-      // Seleccionar dispositivo Bluetooth
       final bluetoothService = printerManager.bluetoothService;
-      var selectedDevice = await bluetoothService.showDeviceSelectionDialog(
-        context,
-        allowSaveDefault: _guardarImpresoraPorDefecto,
-      );
-      if (selectedDevice == null || !mounted) return;
+
+      BluetoothInfo? selectedDevice = preselected;
+
+      if (selectedDevice == null) {
+        // Mostrar diálogo de confirmación solo si no hay impresora preseleccionada
+        bool shouldPrint = await printerManager.showPrintConfirmationDialog(
+          context,
+        );
+        if (!shouldPrint || !mounted) return;
+
+        // Seleccionar dispositivo Bluetooth
+        selectedDevice = await bluetoothService.showDeviceSelectionDialog(
+          context,
+          allowSaveDefault: _guardarImpresoraPorDefecto,
+        );
+        if (selectedDevice == null || !mounted) return;
+      } else {
+        // Inicializar Bluetooth si se usa la impresora guardada
+        final ok = await bluetoothService.initializeBluetooth(context);
+        if (!ok) {
+          _showErrorDialog(
+            'Bluetooth',
+            'No se pudo inicializar Bluetooth.',
+          );
+          return;
+        }
+      }
 
       // ✅ Verificar si el widget sigue montado
       if (!mounted) {
@@ -2279,6 +2558,18 @@ class _InventoryExtractionBySaleScreenState
       styles: PosStyles(align: PosAlign.left),
     );
     bytes += line(
+      'Moneda: $_printCurrencyCode',
+      styles: PosStyles(align: PosAlign.left),
+    );
+    if (_printCurrencyCode == 'CUP' &&
+        _printExchangeRate != null &&
+        _printExchangeRate! > 0) {
+      bytes += line(
+        'Tasa: 1 USD = ${_printExchangeRate!.toStringAsFixed(2)} CUP',
+        styles: PosStyles(align: PosAlign.left),
+      );
+    }
+    bytes += line(
       '----------------------------',
       styles: PosStyles(align: PosAlign.center),
     );
@@ -2287,7 +2578,7 @@ class _InventoryExtractionBySaleScreenState
     double total = 0;
     for (var product in _selectedProducts) {
       final cantidad = (product['cantidad'] as num?)?.toDouble() ?? 0;
-      final precio = (product['precio_unitario'] as num?)?.toDouble() ?? 0;
+      final precio = _unitPriceForPrint(product);
       final subtotal = cantidad * precio;
       total += subtotal;
 
@@ -2305,7 +2596,7 @@ class _InventoryExtractionBySaleScreenState
         bytes += line(wrapped, styles: PosStyles(align: PosAlign.left));
       }
       bytes += line(
-        '  \$${precio.toStringAsFixed(2)} = \$${subtotal.toStringAsFixed(2)}',
+        '  $_printCurrencyCode ${precio.toStringAsFixed(2)} = $_printCurrencyCode ${subtotal.toStringAsFixed(2)}',
         styles: PosStyles(align: PosAlign.right),
       );
     }
@@ -2316,7 +2607,7 @@ class _InventoryExtractionBySaleScreenState
       styles: PosStyles(align: PosAlign.center),
     );
     bytes += line(
-      'TOTAL: \$${_calculateTotal().toStringAsFixed(2)}',
+      'TOTAL: $_printCurrencyCode ${total.toStringAsFixed(2)}',
       styles: PosStyles(align: PosAlign.right, bold: true),
     );
 
@@ -2591,7 +2882,7 @@ class _ProductQuantityWithPriceDialogState
     }
   }
 
-  void _submitProduct() {
+  void _submitProduct() async {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedVariant == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2603,6 +2894,34 @@ class _ProductQuantityWithPriceDialogState
     final quantity = double.parse(_quantityController.text);
     final price = double.parse(_priceController.text);
 
+    double? precioVentaUsd =
+        (widget.product['precio_venta_usd'] as num?)?.toDouble() ??
+        (widget.product['precio_venta_usd_calc'] as num?)?.toDouble();
+
+    if (precioVentaUsd == null) {
+      final productId = widget.product['id'] ?? widget.product['id_producto'];
+      final id =
+          productId is int
+              ? productId
+              : int.tryParse(productId?.toString() ?? '');
+      if (id != null) {
+        try {
+          final rows = await Supabase.instance.client
+              .from('app_dat_precio_venta')
+              .select('precio_venta_usd')
+              .eq('id_producto', id)
+              .order('fecha_desde', ascending: false)
+              .limit(1);
+          if (rows.isNotEmpty) {
+            precioVentaUsd =
+                (rows.first['precio_venta_usd'] as num?)?.toDouble();
+          }
+        } catch (e) {
+          print('⚠️ No se pudo cargar precio USD al agregar producto: $e');
+        }
+      }
+    }
+
     final productData = {
       'id_producto': widget.product['id'],
       'id_variante': _selectedVariant!['id_variante'],
@@ -2611,6 +2930,7 @@ class _ProductQuantityWithPriceDialogState
       'id_presentacion': _selectedVariant!['id_presentacion'] ?? 1,
       'cantidad': quantity,
       'precio_unitario': price,
+      if (precioVentaUsd != null) 'precio_venta_usd': precioVentaUsd,
       'sku_producto': widget.product['sku_producto'] ?? '',
       'denominacion_corta': widget.product['denominacion_corta'] ?? '',
       'sku_ubicacion': widget.sourceLocation?.name ?? '',
@@ -2623,6 +2943,7 @@ class _ProductQuantityWithPriceDialogState
       'meta': widget.product,
     };
 
+    if (!mounted) return;
     widget.onProductAdded(productData);
     Navigator.pop(context);
   }

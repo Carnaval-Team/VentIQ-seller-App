@@ -97,8 +97,9 @@ BEGIN
                         'tpv_nombre', tp.denominacion,
                         'codigo_promocion', ov.codigo_promocion,
                         'id_cliente', ov.id_cliente,
-                        'cliente_nombre', cli.nombre_completo,
-                        'cliente_telefono', cli.telefono,
+                        'id_cliente_cxc', ov.id_cliente_cxc,
+                        'cliente_nombre', COALESCE(cli_cxc.nombre_completo, cli.nombre_completo),
+                        'cliente_telefono', COALESCE(cli_cxc.telefono, cli.telefono),
                         'id_mesa', ov.id_mesa,
                         'mesa_numero', mesa.numero,
                         'mesa_zona', mesa.zona,
@@ -107,6 +108,7 @@ BEGIN
                     FROM app_dat_operacion_venta ov
                     JOIN app_dat_tpv tp ON ov.id_tpv = tp.id
                     LEFT JOIN app_dat_clientes cli ON ov.id_cliente = cli.id
+                    LEFT JOIN app_dat_cliente_cxc cli_cxc ON ov.id_cliente_cxc = cli_cxc.id
                     LEFT JOIN app_dat_mesas mesa ON ov.id_mesa = mesa.id
                     WHERE ov.id_operacion = o.id
                     LIMIT 1)

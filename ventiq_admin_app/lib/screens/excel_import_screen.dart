@@ -1,5 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:ventiq_admin_app/services/product_service.dart';
 import '../config/app_colors.dart';
 import '../services/excel_import_service.dart';
@@ -134,6 +136,33 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
     }
   }
 
+  /// Genera la plantilla Excel con todas las columnas soportadas para productos
+  /// y la comparte para que el cliente la complete.
+  Future<void> _downloadTemplate() async {
+    try {
+      final bytes = await ExcelImportService.generateTemplate();
+      final directory = await getApplicationDocumentsDirectory();
+      final filePath = '${directory.path}/plantilla_productos_ventiq.xlsx';
+      final file = File(filePath);
+      await file.writeAsBytes(bytes);
+
+      await Share.shareXFiles(
+        [XFile(filePath, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')],
+        subject: 'Plantilla de productos VentIQ',
+        text: 'Aquí tienes la plantilla con todas las columnas para importar productos.',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al generar la plantilla: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   bool _isAnalyzing = false;
   bool _isImporting = false;
   ImportResult? _importResult;
@@ -213,17 +242,15 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
                 ),
               ),
               const SizedBox(width: 16),
-              /*
               ElevatedButton.icon(
                 onPressed: _downloadTemplate,
                 icon: const Icon(Icons.download),
-                label: const Text('Descargar Template'),
+                label: const Text('Descargar Plantilla'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.secondary,
                   foregroundColor: Colors.white,
                 ),
               ),
-              */
             ],
           ),
           if (_selectedFile != null) ...[

@@ -2389,10 +2389,121 @@ class _CierreScreenState extends State<CierreScreen> {
     );
   }
 
+  /// Comprueba si las cocinas de este TPV tienen comandas sin servir y, si las
+  /// hay, pide confirmacion. Devuelve true si se puede seguir con el cierre.
+  ///
+  /// Si la consulta falla (sin red, cocina no configurada) NO se interrumpe el
+  /// cierre: cuadrar la caja no puede depender de que responda esta RPC.
+  Future<bool> _confirmarComandasPendientes() async {
+    try {
+      final idTpv = await _userPrefs.getIdTpv();
+      if (idTpv == null) return true;
+
+      final res = await Supabase.instance.client.rpc(
+        'fn_comandas_abiertas_turno',
+        params: {'p_id_tpv': idTpv},
+      );
+
+      final mapa = res is Map
+          ? Map<String, dynamic>.from(res)
+          : (res is List && res.isNotEmpty && res.first is Map
+              ? Map<String, dynamic>.from(res.first as Map)
+              : null);
+
+      if (mapa == null || mapa['status'] != 'success') return true;
+
+      final total = (mapa['total'] as num?)?.toInt() ?? 0;
+      if (total == 0) return true;
+
+      final sinCobrar = (mapa['con_cuenta_abierta'] as num?)?.toInt() ?? 0;
+      final comandas = mapa['comandas'];
+      final detalle = <String>[];
+      if (comandas is List) {
+        for (final c in comandas.take(6)) {
+          if (c is! Map) continue;
+          final mesa = c['mesa'] ?? 'Mostrador';
+          final estado = c['estado_texto'] ?? '';
+          final min = c['espera_minutos'] ?? 0;
+          detalle.add('#${c['numero']} · $mesa · $estado · $min min');
+        }
+        if (comandas.length > 6) {
+          detalle.add('... y ${comandas.length - 6} mas');
+        }
+      }
+
+      if (!mounted) return true;
+
+      final seguir = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.soup_kitchen_outlined,
+                  color: sinCobrar > 0 ? Colors.red.shade700 : Colors.orange.shade800),
+              const SizedBox(width: 8),
+              const Expanded(child: Text('Hay comandas sin servir')),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                mapa['message']?.toString() ?? '$total comanda(s) pendientes',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              if (sinCobrar > 0) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Ojo: hay mesas sin cobrar. Al cerrar el turno esa venta '
+                  'queda sin registrar.',
+                  style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+                ),
+              ],
+              if (detalle.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                for (final d in detalle)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 3),
+                    child: Text(d, style: const TextStyle(fontSize: 12)),
+                  ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Revisar cocina'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor:
+                    sinCobrar > 0 ? Colors.red.shade700 : null,
+              ),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Cerrar igual'),
+            ),
+          ],
+        ),
+      );
+
+      return seguir == true;
+    } catch (e) {
+      print('⚠️ No se pudo consultar comandas pendientes: $e');
+      return true;
+    }
+  }
+
   void _crearCierre() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
+
+    // Fase 5: comandas de cocina sin servir. Cerrar un turno con platos en
+    // cocina significa comida cocinada que nadie cobro, o comensales que
+    // siguen esperando. Se AVISA y no se bloquea: si la cocina se fue sin
+    // marcar los tickets, bloquear dejaria al vendedor sin cuadrar la caja.
+    if (!await _confirmarComandasPendientes()) return;
 
     final montoFinal = double.parse(_montoFinalController.text.trim());
     final montoEsperado = _montoInicialCaja + _totalEfectivo - _egresosEfectivo;
@@ -2606,10 +2717,28 @@ class _CierreScreenState extends State<CierreScreen> {
 
       // Si la apertura fue offline (cola local), el cierre debe ir por la cola
       // y, si hay red, abrir+cerrar en servidor en este momento.
+      //
+      // OJO: cualquier turno abierto se cachea localmente en la cola offline
+      // "por resiliencia" (ver `saveOfflineTurno`) aunque se haya operado
+      // 100% online, marcado con `apertura.origen_apertura == 'online'`. Si
+      // forzamos SIEMPRE el camino de la cola offline solo porque existe esa
+      // copia cacheada, un cierre que en realidad es online termina pasando
+      // por la cola (con sus reintentos automáticos) y puede quedar
+      // "pendiente de sync" indefinidamente si algo en ese camino falla,
+      // aunque hubiera red disponible en todo momento. Por eso, si hay red
+      // ahora mismo y la copia local es solo ese cache de resiliencia (no un
+      // turno genuinamente creado offline), preferimos el cierre directo.
       final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
       final offlineOpen = await _userPrefs.getOfflineTurno();
+      final aperturaOffline = offlineOpen?['apertura'];
+      final isCachedOnlineTurno =
+          aperturaOffline is Map && aperturaOffline['origen_apertura'] == 'online';
+      final hasNetworkNow =
+          !isOfflineModeEnabled &&
+          await ConnectivityService().performImmediateCheck();
       final useOfflineTurnoPath =
-          isOfflineModeEnabled || offlineOpen != null;
+          isOfflineModeEnabled ||
+          (offlineOpen != null && !(isCachedOnlineTurno && hasNetworkNow));
 
       if (useOfflineTurnoPath) {
         print(
@@ -2624,6 +2753,16 @@ class _CierreScreenState extends State<CierreScreen> {
         );
       } else {
         print('🌐 Modo online - Creando cierre en Supabase...');
+        final turnoBeforeClose = await TurnoService.getTurnoAbierto();
+        final serverTurnoIdRaw =
+            turnoBeforeClose?['id'] ?? turnoBeforeClose?['server_id_turno'];
+        final serverTurnoId =
+            serverTurnoIdRaw is int
+                ? serverTurnoIdRaw
+                : (serverTurnoIdRaw is num
+                    ? serverTurnoIdRaw.toInt()
+                    : int.tryParse('$serverTurnoIdRaw'));
+
         // Call TurnoService to close the shift
         final result = await TurnoService.cerrarTurnoDetailed(
           efectivoReal: montoFinal,
@@ -2632,11 +2771,16 @@ class _CierreScreenState extends State<CierreScreen> {
               observacionesFinales.isEmpty ? null : observacionesFinales,
         );
         if (result.success) {
-          await _userPrefs.clearOfflineTurno();
-          await _userPrefs.clearResumenCierreCache();
-          await _userPrefs.clearTurnoResumenCache();
+          await _snapshotTurnoResumenToCache(
+            efectivoFinal: montoFinal,
+            diferencia: diferencia,
+            serverTurnoId: serverTurnoId,
+          );
+          await _userPrefs.finalizeTurnoAfterOnlineClose(
+            serverTurnoId: serverTurnoId,
+          );
           print(
-            '🧹 Cache de turno/resúmenes offline limpiado tras cierre online',
+            '🧹 Turno online cerrado — resúmenes conservados en cache',
           );
 
           await _clearInventoryCounts();
@@ -2796,7 +2940,7 @@ class _CierreScreenState extends State<CierreScreen> {
               ElevatedButton(
                 onPressed: () {
                   Navigator.pop(context);
-                  Navigator.pop(context);
+                  Navigator.pop(context, true);
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF4A90E2),
@@ -2814,6 +2958,43 @@ class _CierreScreenState extends State<CierreScreen> {
     );
   }
 
+  /// Persiste el cuadre del turno en cache antes de finalizar el cierre online.
+  Future<void> _snapshotTurnoResumenToCache({
+    required double efectivoFinal,
+    required double diferencia,
+    int? serverTurnoId,
+  }) async {
+    final snapshot = <String, dynamic>{
+      'efectivo_inicial': _montoInicialCaja,
+      'ventas_totales': _ventasTotales,
+      'total_efectivo': _totalEfectivo,
+      'total_transferencias': _totalTransferencias,
+      'productos_vendidos': _productosVendidos,
+      'operaciones_totales': _operacionesTotales,
+      'ticket_promedio': _ticketPromedio,
+      'egresos_efectivo': _egresosEfectivo,
+      'egresos_digitales': _egresosTransferencias,
+      'egresos_totales': _totalEgresos,
+      'efectivo_esperado': _efectivoEsperado - _egresosEfectivo,
+      'efectivo_final': efectivoFinal,
+      'efectivo_real': efectivoFinal,
+      'estado_turno': 2,
+      'diferencia': diferencia,
+      'fecha_apertura': _fechaAperturaTurno?.toIso8601String(),
+      'fecha_cierre': DateTime.now().toIso8601String(),
+      'cerrado_online': true,
+      'status': UserPreferencesService.offlineTurnoStatusSynced,
+      if (serverTurnoId != null) 'id': serverTurnoId,
+      if (serverTurnoId != null) 'server_id_turno': serverTurnoId,
+    };
+    await _userPrefs.saveTurnoResumenCache(snapshot);
+    await _userPrefs.saveResumenCierreCache({
+      ...snapshot,
+      'total_ventas': _ventasTotales,
+      'efectivo_real': efectivoFinal,
+    });
+  }
+
   /// Crear cierre offline
   Future<void> _createOfflineCierre({
     required double efectivoFinal,
@@ -2824,13 +3005,19 @@ class _CierreScreenState extends State<CierreScreen> {
     try {
       final userData = await _userPrefs.getUserData();
       final openTurno = await _userPrefs.getOfflineTurno();
+      if (openTurno == null) {
+        throw StateError(
+          'No hay turno abierto en la cola offline para guardar el cierre. '
+          'Reabre el turno o sincroniza antes de cerrar.',
+        );
+      }
       // Usar el mismo id_tpv con el que se abrió ESTE turno, no el TPV
       // seleccionado actualmente en preferencias (puede haber cambiado entre
       // la apertura y el cierre). Si no está disponible, caer al de prefs.
       final aperturaTpvRaw =
-          openTurno?['id_tpv'] ??
-          (openTurno?['apertura'] is Map
-              ? (openTurno!['apertura'] as Map)['id_tpv']
+          openTurno['id_tpv'] ??
+          (openTurno['apertura'] is Map
+              ? (openTurno['apertura'] as Map)['id_tpv']
               : null);
       final idTpv =
           (aperturaTpvRaw is int
@@ -2849,8 +3036,13 @@ class _CierreScreenState extends State<CierreScreen> {
       final cierreId = '${DateTime.now().millisecondsSinceEpoch}';
       final clientUuid = UuidGenerator.v4();
       final localTurnoId =
-          openTurno?['local_id']?.toString() ??
-          openTurno?['local_turno_id']?.toString();
+          openTurno['local_id']?.toString() ??
+          openTurno['local_turno_id']?.toString();
+      if (localTurnoId == null || localTurnoId.isEmpty) {
+        throw StateError(
+          'El turno offline no tiene local_id; no se puede guardar el cierre.',
+        );
+      }
 
       // Hora corregida contra el servidor (ver ServerTimeService), para que
       // fecha_cierre no quede desfasada si el reloj del dispositivo está mal.
@@ -2887,40 +3079,57 @@ class _CierreScreenState extends State<CierreScreen> {
         'egresos_totales': _totalEgresos,
         'efectivo_esperado': _efectivoEsperado - _egresosEfectivo,
         'efectivo_final': efectivoFinal,
+        'efectivo_real': efectivoFinal,
+        'estado_turno': 2,
         'diferencia': diferencia,
-        'fecha_apertura': openTurno?['fecha_apertura'],
+        'fecha_apertura': openTurno['fecha_apertura'],
         'fecha_cierre': cierreData['fecha_cierre'],
         'observaciones': observaciones.isEmpty ? null : observaciones,
         'reconstruido': false,
       };
 
       // Cola multi-turno: marca closed_pending_sync (no borra el historial).
+      print(
+        '[TURNO_SYNC] _createOfflineCierre → markOfflineTurnoClosed '
+        'localTurnoId=$localTurnoId '
+        'openTurno.id=${openTurno['id']} '
+        'openTurno.server_id=${openTurno['server_id_turno']} '
+        'openTurno.status=${openTurno['status']} '
+        'efectivoFinal=$efectivoFinal diferencia=$diferencia '
+        'productos=${productos.length}',
+      );
       await _userPrefs.markOfflineTurnoClosed(
         localId: localTurnoId,
         cierrePayload: cierreData,
         resumen: resumenSnapshot,
       );
+      await _userPrefs.dumpOfflineTurnosQueue(
+        'post markClosed en _createOfflineCierre',
+      );
 
       await _clearInventoryCounts();
       PrinterManager().clearSavedPrinter();
 
-      // En modo online (o con red): abrir+cerrar en servidor ahora.
-      // Si el modo offline está activo O el dispositivo quedó preparado
-      // para trabajar 100% full-offline, NUNCA se debe intentar contactar
-      // al servidor aquí: el cierre queda guardado localmente y la cola de
-      // auto_sync se encarga de subirlo cuando corresponda.
+      // En modo online (o con red y sin full-offline activo): abrir+cerrar
+      // en servidor ahora. Si el dispositivo está en full-offline (modo
+      // offline ON + preparado), el cierre queda solo local y la cola lo
+      // sube al sincronizar (admin / desactivar offline).
+      //
+      // Importante: `shouldUseLocalData()` también es true solo por estar
+      // "preparado" full-offline aunque el modo offline esté OFF; no debe
+      // bloquear el sync del cierre cuando hay red real.
       var syncedToServer = false;
       String? syncMessage;
-      final useLocalData = await _userPrefs.shouldUseLocalData();
-      final isOnlineMode = !useLocalData;
-      final hasNetwork =
-          !useLocalData &&
-          await ConnectivityService().performImmediateCheck();
+      final stayFullyOffline = await _userPrefs.shouldStayFullyOffline();
+      final isOfflineMode = await _userPrefs.isOfflineModeEnabled();
+      final hasNetwork = await ConnectivityService().performImmediateCheck();
+      final isOnlineMode = !isOfflineMode && !stayFullyOffline;
 
-      if (hasNetwork) {
+      if (hasNetwork && !stayFullyOffline) {
         print(
-          '🌐 Intentando registrar cierre en servidor '
-          '(modo ${isOnlineMode ? 'online' : 'offline+red'})...',
+          '[TURNO_SYNC] _createOfflineCierre tiene red → '
+          'syncOfflineTurnoAfterLocalCierre(localId=$localTurnoId) '
+          'modo=${isOnlineMode ? 'online' : 'offline_mode_off+red'}',
         );
         final syncResult =
             await AutoSyncService().syncOfflineTurnoAfterLocalCierre(
@@ -2929,18 +3138,26 @@ class _CierreScreenState extends State<CierreScreen> {
         syncedToServer = syncResult['success'] == true;
         syncMessage = syncResult['message']?.toString();
         print(
-          syncedToServer
-              ? '✅ Cierre sincronizado al servidor'
-              : '⚠️ Sync post-cierre no completó: $syncMessage',
+          '[TURNO_SYNC] sync post-cierre result: '
+          'success=$syncedToServer msg=$syncMessage',
+        );
+        await _userPrefs.dumpOfflineTurnosQueue(
+          'post syncOfflineTurnoAfterLocalCierre',
         );
       } else {
-        print('📵 Sin red tras cierre local; queda pending sync');
-        syncMessage = 'Sin conexión a internet';
+        print(
+          '[TURNO_SYNC] _createOfflineCierre SIN sync inmediato → '
+          'queda pending sync hasNetwork=$hasNetwork '
+          'stayFullyOffline=$stayFullyOffline isOfflineMode=$isOfflineMode',
+        );
+        syncMessage =
+            stayFullyOffline
+                ? 'Modo full-offline: el cierre se sincronizará al subir turnos'
+                : 'Sin conexión a internet';
       }
 
       if (syncedToServer) {
-        await _userPrefs.clearResumenCierreCache();
-        await _userPrefs.clearTurnoResumenCache();
+        await _userPrefs.purgeFinalizedSyncedOrdersForTurno(localTurnoId);
       }
 
       if (mounted) {
@@ -3079,7 +3296,7 @@ class _CierreScreenState extends State<CierreScreen> {
               ElevatedButton(
                 onPressed: () {
                   Navigator.pop(context);
-                  Navigator.pop(context);
+                  Navigator.pop(context, true);
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.orange[700],

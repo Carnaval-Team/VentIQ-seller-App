@@ -3006,8 +3006,16 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     return inventoryData;
   }
 
-  void _addToCart() async {
-    final orderService = OrderService();
+  /// Recoge de OrderService el resultado del ultimo item pedido y, si fue a
+  /// cocina, guarda el nombre de la estacion para el aviso. Devuelve sin hacer
+  /// nada cuando la linea no paso por la ruta de Fase 2.
+  void _acumularDestinoCocina(OrderService s, Set<String> destinos) {
+    final r = s.ultimoPedido;
+    if (r == null || !r.fueACocina) return;
+    destinos.add(r.cocinaNombre ?? 'cocina');
+  }
+
+  void _addToCart() async {    final orderService = OrderService();
 
     // Verificar configuración de tienda antes de agregar productos
     try {
@@ -3031,6 +3039,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
 
     double totalItemsAdded = 0.0;
     List<String> addedItems = [];
+    // Fase 2: a que cocinas se mandaron los platos, para decirlo en el aviso.
+    final Set<String> destinosCocina = {};
 
     try {
       final conversionFactor = _getPresentationConversionFactor(currentProduct);
@@ -3043,7 +3053,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
           final finalPrice = discountPrice ?? basePrice;
           final cantidadEnUnidadesBase = selectedQuantity * conversionFactor;
 
-          orderService.addItemToCurrentOrder(
+          // await: con cocina activa esto PIDE el plato (mueve inventario y
+          // dispara comanda) y puede fallar por falta de stock. Sin await la
+          // excepcion se perderia y el mensaje diria "agregado" de todos modos.
+          await orderService.addItemToCurrentOrder(
             producto: currentProduct,
             cantidad: cantidadEnUnidadesBase,
             ubicacionAlmacen: _getLocationName(currentProduct, null),
@@ -3052,6 +3065,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
             precioBase: basePrice,
             promotionData: _getActivePromotion(),
           );
+          _acumularDestinoCocina(orderService, destinosCocina);
           totalItemsAdded += cantidadEnUnidadesBase;
           addedItems.add(
             '${currentProduct.denominacion} (x${PriceUtils.formatQuantity(cantidadEnUnidadesBase)})',
@@ -3071,7 +3085,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
             final finalPrice = discountPrice ?? basePrice;
             final cantidadEnUnidadesBase = entry.value * conversionFactor;
 
-            orderService.addItemToCurrentOrder(
+            await orderService.addItemToCurrentOrder(
               producto: currentProduct,
               variante: entry.key,
               cantidad: cantidadEnUnidadesBase,
@@ -3081,6 +3095,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
               precioBase: basePrice,
               promotionData: _getActivePromotion(),
             );
+            _acumularDestinoCocina(orderService, destinosCocina);
             totalItemsAdded += cantidadEnUnidadesBase;
             addedItems.add(
               '${entry.key.nombre} (x${PriceUtils.formatQuantity(cantidadEnUnidadesBase)})',
@@ -3117,13 +3132,25 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                   style: const TextStyle(fontSize: 14),
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  'Total en orden: ${orderService.currentOrderItemCount} productos',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w300,
+                // Fase 2: si el plato se mando a cocina hay que DECIRLO. El
+                // mesero necesita saber que ya esta comandado y no volver a
+                // pedirlo, y con que estacion contar el tiempo.
+                if (destinosCocina.isNotEmpty)
+                  Text(
+                    '🍳 Enviado a ${destinosCocina.join(", ")}',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  )
+                else
+                  Text(
+                    'Total en orden: ${orderService.currentOrderItemCount} productos',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w300,
+                    ),
                   ),
-                ),
               ],
             ),
             backgroundColor: widget.categoryColor,
@@ -3174,9 +3201,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       case 0: // Home → /mesas si modo restaurante (sin cuenta activa), /categories si no
         NavigationHelper.goHome(context);
         break;
-      case 1: // Preorden
-        Navigator.popUntil(context, (route) => route.isFirst);
-        Navigator.pushNamed(context, '/preorder');
+      case 1: // Carrito: preorden, o la cuenta de mesa abierta en restaurante
+        NavigationHelper.goCarrito(context);
         break;
       case 2: // Órdenes
         Navigator.popUntil(context, (route) => route.isFirst);

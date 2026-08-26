@@ -2,10 +2,12 @@ import '../models/order.dart';
 import '../models/product.dart';
 import '../models/payment_method.dart';
 import '../models/mesa_cuenta.dart';
+import '../models/pedido_resultado.dart';
 import '../utils/promotion_rules.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
 import 'mesa_cuenta_service.dart';
+import 'store_config_service.dart';
 import 'turno_service.dart'; // Import TurnoService
 import 'connectivity_service.dart';
 
@@ -26,6 +28,15 @@ class OrderService {
   // Getter para la orden actual
   Order? get currentOrder => _currentOrder;
   List<Order> get orders => List.from(_orders);
+
+  /// Mutates the in-memory list. Do not assign into [orders] (it is a copy).
+  bool applyLocalOrderStatus(String orderId, OrderStatus newStatus) {
+    final idx = _orders.indexWhere((o) => o.id == orderId);
+    if (idx == -1) return false;
+    if (_orders[idx].status == newStatus) return false;
+    _orders[idx] = _orders[idx].copyWith(status: newStatus);
+    return true;
+  }
 
   int? get activeMesaId => _activeMesaId;
   String? get activeMesaNumero => _activeMesaNumero;
@@ -63,6 +74,13 @@ class OrderService {
     return _currentOrder!;
   }
 
+  /// Resultado del ultimo item pedido por la ruta de Fase 2. Lo consulta la UI
+  /// justo despues de addItemToCurrentOrder para saber si el plato se envio a
+  /// cocina y con que numero de comanda, sin tener que recargar la cuenta.
+  /// Es null cuando la linea no paso por fn_pedir_item_cuenta.
+  PedidoResultado? _ultimoPedido;
+  PedidoResultado? get ultimoPedido => _ultimoPedido;
+
   // Agregar item a la orden actual
   //
   // En modo restaurante, si hay una cuenta de mesa activa
@@ -89,35 +107,69 @@ class OrderService {
     final idCuentaActiva = cuentaService.activeCuentaId;
     if (idCuentaActiva != null) {
       final inv = inventoryData ?? const {};
+      final idOpcionVariante = inv['id_opcion_variante'] is num
+          ? (inv['id_opcion_variante'] as num).toInt()
+          : null;
+      final idPresentacion = inv['id_presentacion'] is num
+          ? (inv['id_presentacion'] as num).toInt()
+          : null;
+      final idUbicacion = inv['id_ubicacion'] is num
+          ? (inv['id_ubicacion'] as num).toInt()
+          : null;
+
       try {
-        await cuentaService.agregarItem(
-          idCuenta: idCuentaActiva,
-          idProducto: producto.id,
-          cantidad: cantidad,
-          precioUnitario: precio,
-          idVariante: variante?.id,
-          idOpcionVariante:
-              inv['id_opcion_variante'] is num
-                  ? (inv['id_opcion_variante'] as num).toInt()
-                  : null,
-          idPresentacion:
-              inv['id_presentacion'] is num
-                  ? (inv['id_presentacion'] as num).toInt()
-                  : null,
-          idUbicacion:
-              inv['id_ubicacion'] is num
-                  ? (inv['id_ubicacion'] as num).toInt()
-                  : null,
-          precioBase: precioOriginal,
-          promotionData: promotionData,
-          inventoryData: inventoryData,
-          skuProducto: producto.sku,
-          skuUbicacion: inv['sku_ubicacion'] as String?,
-        );
-        print(
-          '🍽️ Item "${producto.denominacion}" agregado a cuenta $idCuentaActiva',
-        );
+        // ══════════════════════════════════════════════════════════════════
+        // FASE 2 · pedir != cobrar
+        //
+        // Con cocina_activa la linea se PIDE: se descuenta el inventario del
+        // almacen correcto (barra o cocina) y, si el plato va a cocina, se
+        // dispara la comanda. Sin cocina, se agrega igual que siempre y el
+        // inventario se mueve al cobrar.
+        //
+        // La bifurcacion vive aqui, en un solo punto: todas las pantallas
+        // (categorias, detalle, escaner, busqueda) pasan por este metodo.
+        // ══════════════════════════════════════════════════════════════════
+        if (StoreConfigService.cocinaActivaSync) {
+          final res = await cuentaService.pedirItem(
+            idCuenta: idCuentaActiva,
+            idProducto: producto.id,
+            cantidad: cantidad,
+            precioUnitario: precio,
+            idVariante: variante?.id,
+            idOpcionVariante: idOpcionVariante,
+            idPresentacion: idPresentacion,
+            idUbicacion: idUbicacion,
+            precioBase: precioOriginal,
+            promotionData: promotionData,
+            inventoryData: inventoryData,
+            skuProducto: producto.sku,
+            skuUbicacion: inv['sku_ubicacion'] as String?,
+          );
+          _ultimoPedido = res;
+          print('🍽️ ${res.mensaje} (cuenta $idCuentaActiva)');
+        } else {
+          _ultimoPedido = null;
+          await cuentaService.agregarItem(
+            idCuenta: idCuentaActiva,
+            idProducto: producto.id,
+            cantidad: cantidad,
+            precioUnitario: precio,
+            idVariante: variante?.id,
+            idOpcionVariante: idOpcionVariante,
+            idPresentacion: idPresentacion,
+            idUbicacion: idUbicacion,
+            precioBase: precioOriginal,
+            promotionData: promotionData,
+            inventoryData: inventoryData,
+            skuProducto: producto.sku,
+            skuUbicacion: inv['sku_ubicacion'] as String?,
+          );
+          print(
+            '🍽️ Item "${producto.denominacion}" agregado a cuenta $idCuentaActiva',
+          );
+        }
       } catch (e) {
+        _ultimoPedido = null;
         print('❌ Error agregando item a cuenta de mesa: $e');
         rethrow;
       }
@@ -386,17 +438,18 @@ class OrderService {
         };
       }
 
-      // Buscar id_cliente de la operación
+      // Buscar id_cliente / id_cliente_cxc de la operación
       final operation =
           await Supabase.instance.client
               .from('app_dat_operacion_venta')
-              .select('id_cliente')
+              .select('id_cliente, id_cliente_cxc')
               .eq('id_operacion', operationId)
               .maybeSingle();
 
+      final idClienteCxc = operation?['id_cliente_cxc'] as int?;
       final idCliente = operation?['id_cliente'] as int?;
 
-      if (idCliente == null) {
+      if (idClienteCxc == null && idCliente == null) {
         return {
           'success': false,
           'error':
@@ -404,15 +457,14 @@ class OrderService {
         };
       }
 
-      // Persistencia directa en app_dat_clientes
+      // Preparar datos a actualizar
       final updateData = <String, dynamic>{};
       if (buyerName != null && buyerName.isNotEmpty) {
         updateData['nombre_completo'] = buyerName;
       }
       if (buyerPhone != null) {
         // Permitir limpiar teléfono enviando string vacío → null
-        updateData['telefono'] =
-            buyerPhone.isEmpty ? null : buyerPhone;
+        updateData['telefono'] = buyerPhone.isEmpty ? null : buyerPhone;
       }
       if (updateData.isEmpty) {
         return {
@@ -421,10 +473,19 @@ class OrderService {
         };
       }
 
-      await Supabase.instance.client
-          .from('app_dat_clientes')
-          .update(updateData)
-          .eq('id', idCliente);
+      // Las ventas a "Pago Pendiente" usan la tabla independiente
+      // app_dat_cliente_cxc (no app_dat_clientes).
+      if (idClienteCxc != null) {
+        await Supabase.instance.client
+            .from('app_dat_cliente_cxc')
+            .update(updateData)
+            .eq('id', idClienteCxc);
+      } else if (idCliente != null) {
+        await Supabase.instance.client
+            .from('app_dat_clientes')
+            .update(updateData)
+            .eq('id', idCliente);
+      }
 
       // Actualizar cache local
       final idx = _orders.indexWhere((o) => o.id == order.id);
@@ -970,6 +1031,44 @@ class OrderService {
     }
   }
 
+  /// `true` si la orden quedó (total o parcialmente) como cuenta por cobrar
+  /// ("Pago Pendiente"). Para órdenes ya sincronizadas consulta
+  /// `es_pagada` en el servidor; para órdenes locales/offline lo deduce del
+  /// desglose de pagos guardado (id_medio_pago sentinel 998).
+  Future<bool> isVentaPendienteDePago(Order order) async {
+    final operationId = order.operationId;
+    final userPrefs = UserPreferencesService();
+    final useLocal = await userPrefs.shouldUseLocalData();
+
+    if (operationId != null && !useLocal) {
+      try {
+        final response = await Supabase.instance.client
+            .from('app_dat_operacion_venta')
+            .select('es_pagada')
+            .eq('id_operacion', operationId)
+            .maybeSingle();
+        if (response != null) {
+          return response['es_pagada'] == false;
+        }
+      } catch (e) {
+        print('⚠️ Error verificando es_pagada de la operación $operationId: $e');
+      }
+    }
+
+    // Fallback local: revisar el desglose de pagos guardado en la orden o
+    // el método de pago de sus ítems.
+    final rawPayments = order.pagos;
+    if (rawPayments != null) {
+      final tienePendienteEnPagos = rawPayments.whereType<Map>().any(
+        (p) => p['id_medio_pago'] == PaymentMethod.pagoPendienteId,
+      );
+      if (tienePendienteEnPagos) return true;
+    }
+    return order.items.any(
+      (item) => item.paymentMethod?.esPagoPendiente ?? false,
+    );
+  }
+
   // Registrar venta en Supabase usando fn_registrar_venta
   Future<Map<String, dynamic>> _registerSaleInSupabase(
     Order order,
@@ -1173,6 +1272,41 @@ class OrderService {
               .eq('id_operacion', operationId);
         }
 
+        // Cuentas por cobrar: si algún ítem quedó como "Pago Pendiente", la
+        // venta NO se marca como pagada (fn_registrar_venta la crea con
+        // es_pagada = true por defecto). El monto pendiente simplemente no
+        // genera fila en app_dat_pago_venta (ver _registerPaymentsInSupabase),
+        // quedando como saldo a favor de la tienda contra ese cliente.
+        final montoPendienteCxc = order.items
+            .where((item) => item.paymentMethod?.esPagoPendiente ?? false)
+            .fold<double>(0.0, (sum, item) => sum + item.subtotal);
+        if (montoPendienteCxc > 0) {
+          try {
+            // id_cliente_cxc apunta a app_dat_cliente_cxc, una tabla
+            // INDEPENDIENTE de app_dat_clientes (donde no se registró este
+            // cliente, precisamente para no seguir engordando esa tabla).
+            final idClienteCxc = orderData['idClienteCxc'];
+            if (idClienteCxc == null) {
+              print(
+                '⚠️ Venta $operationId tiene pago pendiente pero sin '
+                'idClienteCxc — no se puede asociar a cartera CxC',
+              );
+            }
+            await Supabase.instance.client
+                .from('app_dat_operacion_venta')
+                .update({
+                  'es_pagada': false,
+                  if (idClienteCxc != null) 'id_cliente_cxc': idClienteCxc,
+                })
+                .eq('id_operacion', operationId);
+            print(
+              '💳 Venta $operationId marcada como pago pendiente (CxC): \$${montoPendienteCxc.toStringAsFixed(2)} - Cliente CxC: $idClienteCxc',
+            );
+          } catch (e) {
+            print('⚠️ No se pudo marcar es_pagada=false en $operationId: $e');
+          }
+        }
+
         final paymentResult = await _registerPaymentsInSupabase(
           order,
           operationId,
@@ -1226,6 +1360,16 @@ class OrderService {
 
       for (final item in order.items) {
         if (item.paymentMethod != null) {
+          // "Pago Pendiente" (cuenta por cobrar): no genera fila en
+          // app_dat_pago_venta. El monto queda como saldo pendiente (ver
+          // es_pagada = false en _registerSaleInSupabase).
+          if (item.paymentMethod!.esPagoPendiente) {
+            print(
+              'Item: ${item.nombre} -> Pago Pendiente (CxC), no se registra como pago',
+            );
+            continue;
+          }
+
           // Convertir método especial "Pago Regular (Efectivo)" (ID 999) a efectivo (ID 1)
           int actualMethodId = item.paymentMethod!.id;
           int tipoPago = 1; // Por defecto tipo 1 (efectivo)
@@ -1265,7 +1409,16 @@ class OrderService {
       print('Payments by method: $paymentsByMethod');
       print('Payment types by method: $paymentTypeByMethod');
 
+      final hayItemsPagoPendiente = order.items.any(
+        (item) => item.paymentMethod?.esPagoPendiente ?? false,
+      );
+
       if (paymentsByMethod.isEmpty) {
+        if (hayItemsPagoPendiente) {
+          // Toda la venta quedó como pago pendiente (CxC): no hay pagos que
+          // registrar, es un resultado válido (no un error).
+          return {'success': true, 'data': true, 'paymentsRegistered': 0};
+        }
         return {
           'success': false,
           'error':
@@ -1569,6 +1722,10 @@ class OrderService {
 
     final userPrefs = UserPreferencesService();
 
+    // En modo offline/full-offline no consultar el servidor aunque haya Wi-Fi:
+    // pisaría cambios locales (completar/cancelar una orden creada online).
+    final useLocalOnly = await userPrefs.shouldUseLocalData();
+
     // 1) Base: cache offline (última foto conocida, incluye ya sincronizadas).
     final offlineData = await userPrefs.getOfflineData();
     if (offlineData != null && offlineData['orders'] != null) {
@@ -1588,47 +1745,50 @@ class OrderService {
     }
     final pendingOrders = List<Order>.from(_orders);
 
-    // 3) Si hay conectividad real, refrescar con datos frescos del servidor.
     List<Order> serverOrders = [];
-    try {
-      final hasConnection = await ConnectivityService().checkConnectivity();
-      if (hasConnection) {
-        final userData = await userPrefs.getUserData();
-        final idTienda = await userPrefs.getIdTienda();
-        final idTpv = await userPrefs.getIdTpv();
-        final fechaApertura = _parseOrderDateTime(
-          turnoAbierto['fecha_apertura'],
-        );
-        final fechaDesdeParam =
-            fechaApertura != null ? _toDateParam(fechaApertura) : null;
-
-        final response = await Supabase.instance.client.rpc(
-          'fn_listar_ordenes',
-          params: {
-            'con_inventario_param': true,
-            'fecha_desde_param': fechaDesdeParam,
-            'fecha_hasta_param': null,
-            'id_estado_param': null,
-            'id_tienda_param': idTienda,
-            'id_tipo_operacion_param': null,
-            'id_tpv_param': idTpv,
-            'id_usuario_param': userData['userId'],
-            'limite_param': null,
-            'pagina_param': null,
-            'solo_pendientes_param': false,
-          },
-        );
-        if (response is List && response.isNotEmpty) {
-          final filtered = _filterRawOrdersToOpenTurno(
-            List<dynamic>.from(response),
-            turnoAbierto,
+    if (!useLocalOnly) {
+      try {
+        final hasConnection = await ConnectivityService().checkConnectivity();
+        if (hasConnection) {
+          final userData = await userPrefs.getUserData();
+          final idTienda = await userPrefs.getIdTienda();
+          final idTpv = await userPrefs.getIdTpv();
+          final fechaApertura = _parseOrderDateTime(
+            turnoAbierto['fecha_apertura'],
           );
-          _transformSupabaseToOrders(filtered);
-          serverOrders = List<Order>.from(_orders);
+          final fechaDesdeParam =
+              fechaApertura != null ? _toDateParam(fechaApertura) : null;
+
+          final response = await Supabase.instance.client.rpc(
+            'fn_listar_ordenes',
+            params: {
+              'con_inventario_param': true,
+              'fecha_desde_param': fechaDesdeParam,
+              'fecha_hasta_param': null,
+              'id_estado_param': null,
+              'id_tienda_param': idTienda,
+              'id_tipo_operacion_param': null,
+              'id_tpv_param': idTpv,
+              'id_usuario_param': userData['userId'],
+              'limite_param': null,
+              'pagina_param': null,
+              'solo_pendientes_param': false,
+            },
+          );
+          if (response is List && response.isNotEmpty) {
+            final filtered = _filterRawOrdersToOpenTurno(
+              List<dynamic>.from(response),
+              turnoAbierto,
+            );
+            _transformSupabaseToOrders(filtered);
+            serverOrders = List<Order>.from(_orders);
+          }
         }
+      } catch (e) {
+        print('⚠️ No se pudo refrescar órdenes online para combinar: $e');
       }
-    } catch (e) {
-      print('⚠️ No se pudo refrescar órdenes online para combinar: $e');
+    } else {
+      print('🔌 Órdenes unificadas: solo cache/pendientes (modo offline)');
     }
 
     // 4) Combinar con prioridad: servidor (más fresco) > cache > pendientes.
@@ -2178,16 +2338,23 @@ class OrderService {
           '📝 Estado actualizado en órdenes pendientes: $pendingLocalId -> ${newStatus.toString()}',
         );
       } else {
-        // 4. Si no es una orden pendiente, crear operación de cambio de estado
+        // 4. Orden creada online: persistir estado en cache + cola de sync
+        final operationId = int.tryParse(orderId.replaceFirst('ORD-', ''));
         await userPrefs.savePendingOperation({
           'type': 'order_status_change',
           'order_id': orderId,
+          'id_operacion': operationId,
           'new_status': _orderStatusToString(newStatus),
           'timestamp': DateTime.now().toIso8601String(),
         });
+        await userPrefs.updateCachedOrderEstado(
+          orderId: orderId,
+          operationId: operationId,
+          estado: _mapOrderStatusToSupabaseNumber(newStatus),
+        );
 
         print(
-          '💾 Operación de cambio de estado guardada: $orderId -> ${newStatus.toString()}',
+          '💾 Cambio de estado offline (orden online): $orderId -> ${newStatus.toString()}',
         );
       }
 

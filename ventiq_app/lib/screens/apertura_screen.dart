@@ -7,9 +7,12 @@ import '../services/auto_sync_service.dart';
 import '../services/turno_service.dart';
 import '../services/server_time_service.dart';
 import '../services/inventory_service.dart';
+import '../services/connectivity_service.dart';
 import '../utils/uuid_generator.dart';
+import '../utils/connection_error_handler.dart';
 import '../models/inventory_product.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../utils/global_navigator.dart';
 import '../widgets/connection_status_widget.dart';
 import '../services/notification_service.dart';
 import '../models/notification_model.dart';
@@ -21,7 +24,8 @@ class AperturaScreen extends StatefulWidget {
   State<AperturaScreen> createState() => _AperturaScreenState();
 }
 
-class _AperturaScreenState extends State<AperturaScreen> {
+class _AperturaScreenState extends State<AperturaScreen>
+    with RouteAware, WidgetsBindingObserver {
   final _formKey = GlobalKey<FormState>();
   final _montoInicialController = TextEditingController();
   final _observacionesController = TextEditingController();
@@ -71,9 +75,45 @@ class _AperturaScreenState extends State<AperturaScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _checkExistingShift();
     _loadStoreConfig();
     _loadWorkerConfig(); // Load worker inventory control settings
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      routeObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void dispose() {
+    routeObserver.unsubscribe(this);
+    WidgetsBinding.instance.removeObserver(this);
+    _inventorySaveTimer?.cancel();
+    for (final c in _inventoryControllers.values) {
+      c.dispose();
+    }
+    _montoInicialController.dispose();
+    _observacionesController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didPopNext() {
+    // Volviendo de otra pantalla (p.ej. Cierre) — revalidar turno abierto.
+    unawaited(_checkExistingShift(forceRefresh: true));
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_checkExistingShift(forceRefresh: true));
+    }
   }
 
   /// Preguntar y recibir órdenes Carnaval creadas antes del turno
@@ -264,11 +304,11 @@ class _AperturaScreenState extends State<AperturaScreen> {
         _checkingInventoryStatus = true;
       });
 
-      // Si estamos offline, no podemos verificar en servidor; marcar como requerido por seguridad
-      final isOffline = await _userPrefs.isOfflineModeEnabled();
-      if (isOffline) {
+      // Si estamos offline / sin datos de servidor, no verificar en red.
+      final useLocal = await _userPrefs.shouldUseLocalData();
+      if (useLocal) {
         print(
-          '🔌 Modo offline - Omitiendo verificación de inventario en servidor',
+          '🔌 Modo local - Omitiendo verificación de inventario en servidor',
         );
         setState(() {
           _inventoryAlreadyDone = false;
@@ -354,52 +394,94 @@ class _AperturaScreenState extends State<AperturaScreen> {
           _inventoryAlreadyDone = false;
         });
       }
+      // No mostrar snackbar de conexión: el conteo sigue disponible offline.
     }
   }
 
-  Future<void> _checkExistingShift() async {
+  Future<void> _checkExistingShift({bool forceRefresh = false}) async {
     try {
-      final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
-      final offlineOpen = await _userPrefs.getOfflineTurno();
-
-      // Online con turno offline pendiente: intentar sync, pero si sigue
-      // abierto se muestran sus detalles (no se permite otra apertura).
-      if (!isOfflineModeEnabled && offlineOpen != null) {
-        await _triggerPendingAperturaSync();
+      if (mounted) {
+        setState(() {
+          _checkingExistingShift = true;
+          if (forceRefresh) {
+            _existingOpenTurno = null;
+            _existingTurnoIsOffline = false;
+          }
+        });
       }
 
-      final turnoAbierto = await TurnoService.getTurnoAbierto();
-      final offlineOpenAfterSync = await _userPrefs.getOfflineTurno();
+      // Preferir datos locales en offline / full-offline / sin red.
+      // No disparar sync ni llamadas al servidor al abrir la vista: eso
+      // muestra diálogos de "error de conexión" al vendedor aunque el
+      // flujo offline esté pensado precisamente para operar sin red.
+      final useLocal = await _userPrefs.shouldUseLocalData();
+      final offlineOpen = await _userPrefs.getOfflineTurno();
+
+      if (!useLocal && offlineOpen != null) {
+        // Solo intentar sync si hay red real; si no, seguir con datos locales.
+        final hasNetwork =
+            await ConnectivityService().performImmediateCheck();
+        if (hasNetwork) {
+          await _triggerPendingAperturaSync();
+        } else {
+          print(
+            '🔌 Apertura: sin red — omitiendo sync de turno pendiente '
+            '(se usará cola local)',
+          );
+        }
+      }
 
       Map<String, dynamic>? existing;
       var isOffline = false;
 
-      if (isOfflineModeEnabled) {
-        existing = offlineOpenAfterSync ?? turnoAbierto;
+      if (useLocal) {
+        final offlineOpenAfter = await _userPrefs.getOfflineTurno();
+        existing = offlineOpenAfter ?? await TurnoService.getTurnoAbierto();
         isOffline =
             existing != null &&
-            (_isOfflineTurno(existing) || offlineOpenAfterSync != null);
-      } else if (turnoAbierto != null && !_isOfflineTurno(turnoAbierto)) {
-        existing = turnoAbierto;
-        isOffline = false;
-      } else if (offlineOpenAfterSync != null) {
-        existing = offlineOpenAfterSync;
-        isOffline = true;
-      } else if (turnoAbierto != null) {
-        existing = turnoAbierto;
-        isOffline = _isOfflineTurno(turnoAbierto);
+            (_isOfflineTurno(existing) || offlineOpenAfter != null);
+      } else {
+        final turnoAbierto = await TurnoService.getTurnoAbierto();
+        final offlineOpenAfterSync = await _userPrefs.getOfflineTurno();
+
+        if (turnoAbierto != null && !_isOfflineTurno(turnoAbierto)) {
+          existing = turnoAbierto;
+          isOffline = false;
+        } else if (offlineOpenAfterSync != null) {
+          existing = offlineOpenAfterSync;
+          isOffline = true;
+        } else if (turnoAbierto != null) {
+          existing = turnoAbierto;
+          isOffline = _isOfflineTurno(turnoAbierto);
+        }
+      }
+
+      // Resumen reciente de cierre online: no mostrar como turno abierto.
+      if (existing != null) {
+        final resumen = await _userPrefs.getTurnoResumenCache();
+        if (resumen?['cerrado_online'] == true ||
+            resumen?['cerrado_local'] == true) {
+          final closedId = resumen!['id'] ?? resumen['server_id_turno'];
+          final openId = existing['id'] ?? existing['server_id_turno'];
+          if (closedId != null &&
+              openId != null &&
+              closedId.toString() == openId.toString()) {
+            await _userPrefs.clearOfflineTurno();
+            existing = null;
+          }
+        }
       }
 
       await _loadUserData();
 
       if (existing != null) {
         print(
-          'ℹ️ Turno abierto detectado (${isOffline ? 'OFFLINE' : 'ONLINE'}): ${existing['id']}',
+          'ℹ️ Turno abierto detectado (${isOffline || useLocal ? 'OFFLINE/LOCAL' : 'ONLINE'}): ${existing['id']}',
         );
         if (mounted) {
           setState(() {
             _existingOpenTurno = existing;
-            _existingTurnoIsOffline = isOffline;
+            _existingTurnoIsOffline = isOffline || useLocal;
             _checkingExistingShift = false;
           });
         }
@@ -407,13 +489,22 @@ class _AperturaScreenState extends State<AperturaScreen> {
       }
 
       if (mounted) {
-        setState(() => _checkingExistingShift = false);
+        setState(() {
+          _existingOpenTurno = null;
+          _existingTurnoIsOffline = false;
+          _checkingExistingShift = false;
+        });
       }
       _loadPreviousShiftSummary();
     } catch (e) {
       print('Error checking existing shift: $e');
+      // Sin snackbar de conexión: en offline/local se continúa con cache.
       if (mounted) {
-        setState(() => _checkingExistingShift = false);
+        setState(() {
+          _existingOpenTurno = null;
+          _existingTurnoIsOffline = false;
+          _checkingExistingShift = false;
+        });
       }
       _loadUserData();
       _loadPreviousShiftSummary();
@@ -422,7 +513,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
 
   Future<void> _triggerPendingAperturaSync() async {
     try {
-      await AutoSyncService().performImmediateSync();
+      await AutoSyncService().performReconnectSync();
     } catch (e) {
       print('⚠️ No se pudo iniciar la sincronización del turno: $e');
     }
@@ -477,71 +568,87 @@ class _AperturaScreenState extends State<AperturaScreen> {
 
   Future<void> _loadPreviousShiftSummary() async {
     try {
-      setState(() {
-        _isLoadingPreviousShift = true;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoadingPreviousShift = true;
+        });
+      }
 
-      // Verificar si el modo offline está activado
-      final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
+      final useLocal = await _userPrefs.shouldUseLocalData();
       Map<String, dynamic>? resumenTurno;
 
-      if (isOfflineModeEnabled) {
-        print('🔌 Modo offline activado - Cargando resumen desde cache...');
-        resumenTurno = await _userPrefs.getTurnoResumenCache();
-
-        if (resumenTurno != null) {
-          print('📱 Resumen de turno cargado desde cache offline');
-        } else {
-          print('⚠️ No hay resumen de turno en cache offline');
-        }
+      if (useLocal) {
+        print('🔌 Modo local - Resumen turno anterior desde cache/cola...');
+        resumenTurno = await _userPrefs.getPreviousShiftSummaryFromLocal();
       } else {
-        print('🌐 Modo online - Obteniendo resumen desde servidor...');
-        resumenTurno = await TurnoService.getResumenTurnoKPI();
-
-        if (resumenTurno != null) {
-          // Guardar en cache para futuro uso offline
-          await _userPrefs.saveTurnoResumenCache(resumenTurno);
-          print('💾 Resumen guardado en cache para uso offline');
+        print('🌐 Modo online - Resumen del último turno cerrado...');
+        try {
+          final online = await TurnoService.getResumenUltimoTurnoCerrado();
+          if (online != null) {
+            resumenTurno = _userPrefs.normalizePreviousShiftSummary(online);
+            // Solo cachear turnos cerrados (no pisar un buen cierre local
+            // con un KPI de turno abierto).
+            await _userPrefs.saveTurnoResumenCache({
+              ...resumenTurno,
+              'cerrado_online': true,
+              'status': UserPreferencesService.offlineTurnoStatusSynced,
+            });
+          }
+        } catch (e) {
+          print('⚠️ Resumen online falló ($e) — fallback local');
         }
+        resumenTurno ??=
+            await _userPrefs.getPreviousShiftSummaryFromLocal();
       }
 
       if (resumenTurno != null) {
-        print('🔍 Debug - Resumen Turno Data: $resumenTurno');
-        setState(() {
-          _previousShiftSales =
-              (resumenTurno!['ventas_totales'] ?? 0.0).toDouble();
-          _previousShiftCash =
-              (resumenTurno['efectivo_inicial'] ?? 0.0).toDouble();
-          _previousShiftProducts =
-              (resumenTurno['productos_vendidos'] ?? 0).toInt();
-          _previousShiftTicketAvg =
-              (resumenTurno['ticket_promedio'] ?? 0.0).toDouble();
-          _isLoadingPreviousShift = false;
-        });
+        print('🔍 Debug - Resumen Turno Anterior: $resumenTurno');
+        final sales =
+            (resumenTurno['ventas_totales'] as num?)?.toDouble() ?? 0.0;
+        final cashSuggested =
+            (resumenTurno['efectivo_sugerido_apertura'] as num?)
+                ?.toDouble() ??
+            (resumenTurno['efectivo_real'] as num?)?.toDouble() ??
+            (resumenTurno['efectivo_final'] as num?)?.toDouble() ??
+            (resumenTurno['efectivo_inicial'] as num?)?.toDouble() ??
+            0.0;
+        final products =
+            (resumenTurno['productos_vendidos'] as num?)?.toInt() ?? 0;
+        final ticket =
+            (resumenTurno['ticket_promedio'] as num?)?.toDouble() ?? 0.0;
+
+        if (mounted) {
+          setState(() {
+            _previousShiftSales = sales;
+            // Referencia para nueva apertura = efectivo al cierre anterior.
+            _previousShiftCash = cashSuggested;
+            _previousShiftProducts = products;
+            _previousShiftTicketAvg = ticket;
+            _isLoadingPreviousShift = false;
+          });
+
+          // Prefill monto inicial si el campo está vacío.
+          if (_montoInicialController.text.trim().isEmpty &&
+              cashSuggested > 0) {
+            _montoInicialController.text = cashSuggested.toStringAsFixed(2);
+          }
+        }
       } else {
-        print('ℹ️ No hay datos de resumen de turno disponibles');
+        print('ℹ️ No hay datos del turno anterior');
+        if (mounted) {
+          setState(() {
+            _isLoadingPreviousShift = false;
+          });
+        }
+      }
+    } catch (e) {
+      print('❌ Error loading previous shift summary: $e');
+      if (mounted) {
         setState(() {
           _isLoadingPreviousShift = false;
         });
       }
-    } catch (e) {
-      print('❌ Error loading previous shift summary: $e');
-      setState(() {
-        _isLoadingPreviousShift = false;
-      });
     }
-  }
-
-  @override
-  void dispose() {
-    _inventorySaveTimer?.cancel();
-    _montoInicialController.dispose();
-    _observacionesController.dispose();
-    // Dispose inventory controllers
-    for (var controller in _inventoryControllers.values) {
-      controller.dispose();
-    }
-    super.dispose();
   }
 
   /// Cargar configuración de tienda para verificar si maneja inventario
@@ -719,11 +826,19 @@ class _AperturaScreenState extends State<AperturaScreen> {
       }
     } catch (e) {
       print('❌ Error cargando productos de inventario: $e');
-      setState(() {
-        _isLoadingInventory = false;
-      });
+      // En error de red / sin conexión: caer a cache offline sin alarmar al
+      // vendedor (el modo offline existe precisamente para esto).
+      if (ConnectionErrorHandler.isConnectionError(e) ||
+          await _userPrefs.shouldUseLocalData()) {
+        print('🔌 Fallback inventario offline tras error de red');
+        await _loadInventoryProductsOffline();
+        return;
+      }
 
       if (mounted) {
+        setState(() {
+          _isLoadingInventory = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error cargando inventario: $e'),
@@ -1872,6 +1987,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
 
         if (mounted) {
           if (result['success'] == true) {
+            await _userPrefs.clearPreviousTurnoCaches();
             // Guardar turno abierto en cache offline para uso en modo sin conexión
             try {
               final turnoAbierto = await TurnoService.getTurnoAbierto();
@@ -1970,7 +2086,9 @@ class _AperturaScreenState extends State<AperturaScreen> {
                 ),
               ),
             )
-          else if (_previousShiftSales > 0 || _previousShiftCash > 0)
+          else if (_previousShiftSales > 0 ||
+              _previousShiftCash > 0 ||
+              _previousShiftProducts > 0)
             Column(
               children: [
                 _buildInfoRow(
@@ -1978,7 +2096,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
                   '\$${_previousShiftSales.toStringAsFixed(2)}',
                 ),
                 _buildInfoRow(
-                  'Efectivo Inicial:',
+                  'Efectivo al cierre:',
                   '\$${_previousShiftCash.toStringAsFixed(2)}',
                 ),
                 _buildInfoRow(
@@ -2534,6 +2652,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
       };
 
       // Cola multi-turno: crea entrada status=open (no sobrescribe cerrados).
+      await _userPrefs.clearPreviousTurnoCaches();
       await _userPrefs.createOpenOfflineTurno(aperturaPayload: aperturaData);
       await _clearInventoryCounts();
 

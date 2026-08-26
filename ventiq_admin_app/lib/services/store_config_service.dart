@@ -40,6 +40,8 @@ class StoreConfigService {
                   'tickets_a_imprimir': ['cliente', 'almacen'],
                   'copias_por_ticket': {'cliente': 1, 'almacen': 1},
                   'autocompletar_cantidad_real_conteo': false,
+                  'vendedores_pueden_crear_cxc': false,
+                  'mostrar_metodo_pago_ticket': true,
                 })
                 .select()
                 .single();
@@ -79,6 +81,10 @@ class StoreConfigService {
     List<String>? ticketsAImprimir,
     Map<String, int>? copiasPorTicket,
     bool? autocompletarCantidadRealConteo,
+    bool? vendedoresPuedenCrearCxc,
+    bool? mostrarMetodoPagoTicket,
+    bool? modoRestaurante,
+    bool? cocinaActiva,
   }) async {
     try {
       print('🔧 Actualizando configuración para tienda ID: $storeId');
@@ -222,6 +228,26 @@ class StoreConfigService {
         print(
           '  - autocompletar_cantidad_real_conteo: $autocompletarCantidadRealConteo',
         );
+      }
+
+      if (vendedoresPuedenCrearCxc != null) {
+        updateData['vendedores_pueden_crear_cxc'] = vendedoresPuedenCrearCxc;
+        print(
+          '  - vendedores_pueden_crear_cxc: $vendedoresPuedenCrearCxc',
+        );
+      }
+      if (mostrarMetodoPagoTicket != null) {
+        updateData['mostrar_metodo_pago_ticket'] = mostrarMetodoPagoTicket;
+        print('  - mostrar_metodo_pago_ticket: $mostrarMetodoPagoTicket');
+      }
+      if (modoRestaurante != null) {
+        updateData['modo_restaurante'] = modoRestaurante;
+        print('  - modo_restaurante: $modoRestaurante');
+      }
+
+      if (cocinaActiva != null) {
+        updateData['cocina_activa'] = cocinaActiva;
+        print('  - cocina_activa: $cocinaActiva');
       }
 
       if (updateData.isEmpty) {
@@ -618,6 +644,45 @@ class StoreConfigService {
     await updateStoreConfig(storeId, copiasPorTicket: value);
   }
 
+  /// Obtiene si los vendedores pueden crear ventas a pago pendiente (cuentas
+  /// por cobrar) libremente. Si es false, solo gerente/supervisor pueden
+  /// hacerlo desde el TPV.
+  static Future<bool> getVendedoresPuedenCrearCxc(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config['vendedores_pueden_crear_cxc'] ?? false;
+    } catch (e) {
+      print('❌ Error al obtener vendedores_pueden_crear_cxc: $e');
+      return false;
+    }
+  }
+
+  /// Actualiza vendedores_pueden_crear_cxc
+  static Future<void> updateVendedoresPuedenCrearCxc(
+    int storeId,
+    bool value,
+  ) async {
+    await updateStoreConfig(storeId, vendedoresPuedenCrearCxc: value);
+  }
+
+  /// Si el ticket debe incluir el método / desglose de pago de la orden.
+  static Future<bool> getMostrarMetodoPagoTicket(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config['mostrar_metodo_pago_ticket'] ?? true;
+    } catch (e) {
+      print('❌ Error al obtener mostrar_metodo_pago_ticket: $e');
+      return true;
+    }
+  }
+
+  static Future<void> updateMostrarMetodoPagoTicket(
+    int storeId,
+    bool value,
+  ) async {
+    await updateStoreConfig(storeId, mostrarMetodoPagoTicket: value);
+  }
+
   /// Obtiene el valor de autocompletar_cantidad_real_conteo
   static Future<bool> getAutocompletarCantidadRealConteo(int storeId) async {
     try {
@@ -637,6 +702,53 @@ class StoreConfigService {
     await updateStoreConfig(
       storeId,
       autocompletarCantidadRealConteo: value,
+    );
+  }
+
+  // ==================== RESTAURANTE / COCINA ====================
+
+  static Future<bool> getModoRestaurante(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config['modo_restaurante'] ?? false;
+    } catch (e) {
+      print('❌ Error al obtener modo_restaurante: $e');
+      return false;
+    }
+  }
+
+  /// Actualiza modo_restaurante.
+  ///
+  /// Al DESACTIVAR se apaga también `cocina_activa`: el módulo de cocina vive
+  /// de las cuentas de mesa, así que dejarlo encendido sin mesas produciría
+  /// comandas que nadie puede abrir.
+  static Future<void> updateModoRestaurante(int storeId, bool value) async {
+    await updateStoreConfig(
+      storeId,
+      modoRestaurante: value,
+      cocinaActiva: value ? null : false,
+    );
+  }
+
+  static Future<bool> getCocinaActiva(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config['cocina_activa'] ?? false;
+    } catch (e) {
+      print('❌ Error al obtener cocina_activa: $e');
+      return false;
+    }
+  }
+
+  /// Actualiza cocina_activa.
+  ///
+  /// Al ACTIVAR se enciende también `modo_restaurante` si faltaba: sin mesas no
+  /// hay de dónde salgan las comandas.
+  static Future<void> updateCocinaActiva(int storeId, bool value) async {
+    await updateStoreConfig(
+      storeId,
+      cocinaActiva: value,
+      modoRestaurante: value ? true : null,
     );
   }
 }

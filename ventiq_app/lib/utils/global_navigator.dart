@@ -5,3 +5,7 @@ final GlobalKey<NavigatorState> globalNavigatorKey =
 
 final GlobalKey<ScaffoldMessengerState> globalScaffoldMessengerKey =
     GlobalKey<ScaffoldMessengerState>();
+
+/// Observador global para refrescar pantallas al volver de otra ruta.
+final RouteObserver<ModalRoute<void>> routeObserver =
+    RouteObserver<ModalRoute<void>>();

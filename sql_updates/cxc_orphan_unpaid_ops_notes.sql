@@ -1,0 +1,14 @@
+-- Diagnóstico / arreglo de ventas CxC sin cliente asociado.
+-- El listado fn_cxc_listar_clientes SOLO incluye ventas con:
+--   es_pagada = false AND id_cliente_cxc IS NOT NULL AND saldo > 0
+--
+-- Revisar huérfanas (no aparecen en cartera):
+-- SELECT ov.id_operacion, ov.importe_total, ov.es_pagada, ov.id_cliente_cxc, o.id_tienda, o.created_at
+-- FROM app_dat_operacion_venta ov
+-- JOIN app_dat_operaciones o ON o.id = ov.id_operacion
+-- WHERE ov.es_pagada = false AND ov.id_cliente_cxc IS NULL;
+
+-- Tras asociar manualmente un cliente CxC existente:
+-- UPDATE app_dat_operacion_venta
+-- SET id_cliente_cxc = <id_cliente_cxc>
+-- WHERE id_operacion = <id_operacion> AND es_pagada = false;

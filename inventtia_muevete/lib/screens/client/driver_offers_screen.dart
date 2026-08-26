@@ -264,8 +264,10 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
           // DraggableScrollableSheet with offers
           DraggableScrollableSheet(
             initialChildSize: 0.65,
-            minChildSize: 0.3,
-            maxChildSize: 0.85,
+            minChildSize: 0.18,
+            maxChildSize: 0.92,
+            snap: true,
+            snapSizes: const [0.18, 0.45, 0.65, 0.92],
             builder: (context, scrollController) {
               return Container(
                 decoration: BoxDecoration(

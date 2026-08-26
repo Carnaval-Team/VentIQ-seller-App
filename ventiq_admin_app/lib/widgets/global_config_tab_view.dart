@@ -35,12 +35,16 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   bool _permiteVenderAunSinDisponibilidad = false;
   bool _noSolicitarCliente = false;
   bool _allowDiscountOnVendedor = false;
+  bool _vendedoresPuedenCrearCxc = false;
+  bool _mostrarMetodoPagoTicket = true;
   bool _allowPrintPending = false;
   bool _allowSellerMakeOrderModifications = false;
   bool _precioVentaRegidoPorUsd = false;
   bool _cambiarFechaCreacionOperacionAlCierre = false;
   bool _solicitarImagenOperacion = false;
   bool _permitirModoOfflineCompleto = false;
+  bool _modoRestaurante = false;
+  bool _cocinaActiva = false;
   int _diasMaxSinValidarLicencia = 7;
   String _metodoRedondeoPrecioVenta = 'NO_REDONDEAR';
   bool _hasMasterPassword = false;
@@ -453,6 +457,10 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         _noSolicitarCliente = config['no_solicitar_cliente'] ?? false;
         _allowDiscountOnVendedor =
             config['allow_discount_on_vendedor'] ?? false;
+        _vendedoresPuedenCrearCxc =
+            config['vendedores_pueden_crear_cxc'] ?? false;
+        _mostrarMetodoPagoTicket =
+            config['mostrar_metodo_pago_ticket'] ?? true;
         _allowPrintPending = config['permitir_imprimir_pendientes'] ?? false;
         _allowSellerMakeOrderModifications =
             config['allow_seller_make_order_modifications'] ?? false;
@@ -464,6 +472,8 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             config['solicitar_imagen_operacion'] ?? false;
         _permitirModoOfflineCompleto =
             config['permitir_modo_offline_completo'] ?? false;
+        _modoRestaurante = config['modo_restaurante'] ?? false;
+        _cocinaActiva = config['cocina_activa'] ?? false;
         _diasMaxSinValidarLicencia =
             config['dias_max_sin_validar_licencia'] ?? 7;
         _metodoRedondeoPrecioVenta =
@@ -605,6 +615,92 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         _allowDiscountOnVendedor = !value;
       });
 
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuración: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateVendedoresPuedenCrearCxcSetting(bool value) async {
+    if (_storeId == null) return;
+
+    try {
+      print(
+        '🔧 Actualizando configuración de vendedores pueden crear CxC: $value',
+      );
+
+      await StoreConfigService.updateVendedoresPuedenCrearCxc(
+        _storeId!,
+        value,
+      );
+
+      setState(() {
+        _vendedoresPuedenCrearCxc = value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              value
+                  ? 'Los vendedores ahora pueden crear cuentas por cobrar'
+                  : 'Solo gerente/supervisor pueden crear cuentas por cobrar',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+
+      print('✅ Configuración de vendedores pueden crear CxC actualizada');
+    } catch (e) {
+      print(
+        '❌ Error al actualizar configuración de vendedores pueden crear CxC: $e',
+      );
+
+      setState(() {
+        _vendedoresPuedenCrearCxc = !value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuración: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateMostrarMetodoPagoTicketSetting(bool value) async {
+    if (_storeId == null) return;
+
+    try {
+      await StoreConfigService.updateMostrarMetodoPagoTicket(_storeId!, value);
+      setState(() {
+        _mostrarMetodoPagoTicket = value;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              value
+                  ? 'El ticket mostrará el método de pago de la orden'
+                  : 'El ticket no incluirá el método de pago',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _mostrarMetodoPagoTicket = !value;
+      });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -902,6 +998,98 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
           ),
         );
       }
+    }
+  }
+
+  /// Activa o desactiva el modo restaurante (mesas y cuentas abiertas).
+  ///
+  /// Al desactivarlo se apaga también la cocina: las comandas salen de las
+  /// cuentas de mesa, así que sin mesas el módulo quedaría produciendo pedidos
+  /// que nadie puede abrir.
+  Future<void> _updateModoRestauranteSetting(bool value) async {
+    if (_storeId == null) return;
+
+    final apagabaCocina = !value && _cocinaActiva;
+
+    setState(() {
+      _modoRestaurante = value;
+      if (apagabaCocina) _cocinaActiva = false;
+    });
+
+    try {
+      await StoreConfigService.updateModoRestaurante(_storeId!, value);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            value
+                ? 'Modo restaurante activado: los vendedores gestionan mesas y cuentas abiertas'
+                : apagabaCocina
+                ? 'Modo restaurante desactivado. También se desactivó la cocina (depende de las mesas).'
+                : 'Modo restaurante desactivado: venta directa sin mesas',
+          ),
+          backgroundColor: AppColors.success,
+          duration: Duration(seconds: apagabaCocina ? 5 : 3),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _modoRestaurante = !value;
+        if (apagabaCocina) _cocinaActiva = true;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al actualizar modo restaurante: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  /// Activa o desactiva el módulo de cocina (estaciones y comandas).
+  ///
+  /// Al activarlo se enciende el modo restaurante si faltaba.
+  Future<void> _updateCocinaActivaSetting(bool value) async {
+    if (_storeId == null) return;
+
+    final activabaRestaurante = value && !_modoRestaurante;
+
+    setState(() {
+      _cocinaActiva = value;
+      if (activabaRestaurante) _modoRestaurante = true;
+    });
+
+    try {
+      await StoreConfigService.updateCocinaActiva(_storeId!, value);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            !value
+                ? 'Módulo de cocina desactivado'
+                : activabaRestaurante
+                ? 'Cocina activada. También se activó el modo restaurante (las comandas salen de las cuentas de mesa).'
+                : 'Módulo de cocina activado: los platos se enrutan a sus estaciones',
+          ),
+          backgroundColor: AppColors.success,
+          duration: Duration(seconds: activabaRestaurante ? 5 : 3),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _cocinaActiva = !value;
+        if (activabaRestaurante) _modoRestaurante = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al actualizar módulo de cocina: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -1507,6 +1695,52 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                     : '🔒 Los vendedores no pueden aplicar descuentos manuales (solo precios configurados)',
             value: _allowDiscountOnVendedor,
             onChanged: _updateAllowDiscountOnVendedorSetting,
+          ),
+
+          const SizedBox(height: 16),
+
+          _buildConfigCard(
+            icon: Icons.account_balance_wallet_outlined,
+            iconColor: Colors.brown,
+            title: 'Vendedores Pueden Crear Cuentas por Cobrar',
+            subtitle:
+                _vendedoresPuedenCrearCxc
+                    ? '✅ Cualquier vendedor puede registrar ventas a pago pendiente (fiado) desde el TPV'
+                    : '🔒 Solo gerente/supervisor pueden registrar ventas a pago pendiente',
+            value: _vendedoresPuedenCrearCxc,
+            onChanged: _updateVendedoresPuedenCrearCxcSetting,
+          ),
+
+          const SizedBox(height: 16),
+
+          // ── Restaurante y cocina ──────────────────────────────────────────
+          // Van juntas porque están acopladas: la cocina depende de las mesas.
+          _buildConfigCard(
+            icon: Icons.table_restaurant,
+            iconColor: Colors.brown,
+            title: 'Modo Restaurante',
+            subtitle:
+                _modoRestaurante
+                    ? '🍽️ Los vendedores gestionan mesas y cuentas abiertas'
+                    : '🧾 Venta directa sin mesas',
+            value: _modoRestaurante,
+            onChanged: _updateModoRestauranteSetting,
+          ),
+
+          const SizedBox(height: 16),
+
+          _buildConfigCard(
+            icon: Icons.soup_kitchen,
+            iconColor: Colors.deepOrange,
+            title: 'Módulo de Cocina',
+            subtitle:
+                _cocinaActiva
+                    ? '👨‍🍳 Los platos se enrutan a sus estaciones de cocina'
+                    : _modoRestaurante
+                    ? 'Los platos no se enrutan a ninguna cocina'
+                    : 'Al activarlo se habilitará también el modo restaurante',
+            value: _cocinaActiva,
+            onChanged: _updateCocinaActivaSetting,
           ),
 
           const SizedBox(height: 16),
@@ -2518,6 +2752,18 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                     : '🔒 El vendedor debe elegir la impresora en cada impresión',
             value: _guardarImpresoraPorDefecto,
             onChanged: _updateGuardarImpresoraPorDefectoSetting,
+          ),
+          const SizedBox(height: 12),
+          _buildConfigCard(
+            icon: Icons.payments_outlined,
+            iconColor: Colors.teal,
+            title: 'Mostrar método de pago en el ticket',
+            subtitle:
+                _mostrarMetodoPagoTicket
+                    ? '✅ El ticket de cliente incluye forma/desglose de pago'
+                    : '🔒 El ticket no imprime el método de pago de la orden',
+            value: _mostrarMetodoPagoTicket,
+            onChanged: _updateMostrarMetodoPagoTicketSetting,
           ),
           const SizedBox(height: 12),
           _buildSavedPrinterTile(),

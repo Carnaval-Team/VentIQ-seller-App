@@ -64,6 +64,10 @@ class UserPreferencesService {
   static const String _adminRoleKeyPrefix = 'caja_admin_role_';
   // Rol de entrada a Caja: vendedor | gerente | supervisor
   static const String _cajaEntryRoleKey = 'caja_entry_role';
+  // Rol de cocina cacheado: 'jefe_cocina' | 'cocinero' | '' (ninguno).
+  // Se cachea porque decide el home de la sesión y consultarlo en cada
+  // navegación costaría una RPC por toque del botón Home.
+  static const String _cocinaRoleKey = 'caja_cocina_role';
 
   // Offline mode keys
   static const String _offlineModeKey = 'offline_mode_enabled';
@@ -83,6 +87,8 @@ class UserPreferencesService {
       'turno_resumen_cache'; // Cache del resumen de turno anterior
   static const String _resumenCierreKey =
       'resumen_cierre_cache'; // Cache del resumen de cierre diario
+  /// Checkpoint de sync modular interrumpida (para reanudar por partes).
+  static const String _syncModulesCheckpointKey = 'sync_modules_checkpoint';
   static const String _egresosOfflineKey =
       'egresos_offline'; // Egresos creados offline
   static const String _egresosCacheKey =
@@ -404,6 +410,37 @@ class UserPreferencesService {
     return role == 'gerente' || role == 'supervisor';
   }
 
+  // ---------- Rol de cocina (jefe de cocina / cocinero) ----------
+
+  /// Guarda el rol de cocina de la sesión. Cadena vacía = no tiene ninguno.
+  ///
+  /// Se cachea en el login porque decide el home de la sesión: sin cache habría
+  /// que llamar a `fn_cocinas_del_usuario` en cada navegación a Home.
+  Future<void> setCocinaRole(String role) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_cocinaRoleKey, role);
+  }
+
+  Future<String?> getCocinaRole() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_cocinaRoleKey);
+  }
+
+  /// Sesión de personal de cocina (jefe o cocinero).
+  ///
+  /// Un gerente que además tenga cocinas NO cuenta: su trabajo es la gestión de
+  /// la tienda y su home sigue siendo el de administración. Solo se marca a
+  /// quien accede *por* su rol de cocina.
+  Future<bool> isCocinaSession() async {
+    final role = await getCocinaRole();
+    return role == 'jefe_cocina' || role == 'cocinero';
+  }
+
+  /// Solo el jefe puede producir tandas y mover el inventario de su cocina.
+  Future<bool> isJefeCocinaSession() async {
+    return await getCocinaRole() == 'jefe_cocina';
+  }
+
   // ---------- Dispositivo full offline (admin prepara + switch local) ----------
 
   Future<bool> isDeviceFullOfflineReady() async {
@@ -474,6 +511,7 @@ class UserPreferencesService {
     await prefs.remove(_idRollKey);
     await prefs.remove(_allowCustomSalePriceKey);
     await prefs.remove(_cajaEntryRoleKey);
+    await prefs.remove(_cocinaRoleKey);
     await prefs.remove(_appIdAlmacenKey);
     await prefs.setBool(_isLoggedInKey, false);
     await clearPromotionData();
@@ -552,6 +590,7 @@ class UserPreferencesService {
     await prefs.remove(_idRollKey);
     await prefs.remove(_allowCustomSalePriceKey);
     await prefs.remove(_cajaEntryRoleKey);
+    await prefs.remove(_cocinaRoleKey);
     await prefs.setBool(_isLoggedInKey, false);
 
     // Limpiar promociones al cerrar sesión
@@ -1822,6 +1861,43 @@ class UserPreferencesService {
     print('💾 Operación pendiente guardada: ${operation['type']}');
   }
 
+  /// Actualiza el `estado` de una orden ya cacheada (creada online) para que
+  /// el listado offline no la vuelva a mostrar como pendiente.
+  Future<void> updateCachedOrderEstado({
+    required String orderId,
+    int? operationId,
+    required int estado,
+  }) async {
+    try {
+      final data = await getOfflineData();
+      final raw = data?['orders'];
+      if (raw is! List) return;
+
+      final opId = operationId ?? int.tryParse(orderId.replaceFirst('ORD-', ''));
+      var changed = false;
+      final updated = raw.map((item) {
+        if (item is! Map) return item;
+        final map = Map<String, dynamic>.from(item);
+        final rowOp = map['id_operacion'];
+        final rowOpInt =
+            rowOp is int ? rowOp : (rowOp is num ? rowOp.toInt() : int.tryParse('$rowOp'));
+        final rowId = map['id']?.toString();
+        if (rowId == orderId || (opId != null && rowOpInt == opId)) {
+          map['estado'] = estado;
+          changed = true;
+        }
+        return map;
+      }).toList();
+
+      if (changed) {
+        await mergeOfflineData({'orders': updated});
+        print('💾 Cache de órdenes: $orderId -> estado $estado');
+      }
+    } catch (e) {
+      print('⚠️ No se pudo actualizar estado en cache de órdenes: $e');
+    }
+  }
+
   /// Sobrescribir la lista completa de operaciones pendientes.
   /// Útil para persistir el resultado tras sincronizar (p. ej. quitar las ya
   /// sincronizadas conservando las que fallaron).
@@ -2015,6 +2091,63 @@ class UserPreferencesService {
       });
   }
 
+  /// Dump legible de la cola de turnos offline para diagnóstico.
+  /// Prefijo fijo `[TURNO_SYNC]` para filtrar en logcat / flutter run.
+  Future<void> dumpOfflineTurnosQueue(String reason) async {
+    try {
+      final all = await getOfflineTurnos();
+      final open = await getOpenOfflineTurno();
+      final legacy = await getOfflineTurno();
+      final resumen = await getTurnoResumenCache();
+      print('════════════ [TURNO_SYNC] DUMP ($reason) ════════════');
+      print(
+        '[TURNO_SYNC] cola.size=${all.length} '
+        'open=${open?['local_id']} '
+        'legacy_open=${legacy?['local_id'] ?? legacy?['id']} '
+        'resumen.status=${resumen?['status']} '
+        'resumen.cerrado_online=${resumen?['cerrado_online']} '
+        'resumen.id=${resumen?['id'] ?? resumen?['server_id_turno']}',
+      );
+      if (all.isEmpty) {
+        print('[TURNO_SYNC] (cola vacía)');
+      }
+      for (var i = 0; i < all.length; i++) {
+        print('[TURNO_SYNC]   ${describeOfflineTurnoEntry(all[i], index: i)}');
+      }
+      print('════════════ [TURNO_SYNC] FIN DUMP ════════════');
+    } catch (e, st) {
+      print('[TURNO_SYNC] ❌ dumpOfflineTurnosQueue falló: $e');
+      print(st);
+    }
+  }
+
+  /// Resumen de una entrada de cola para logs.
+  static String describeOfflineTurnoEntry(
+    Map<String, dynamic> t, {
+    int? index,
+  }) {
+    final cierre = t['cierre'];
+    final apertura = t['apertura'];
+    final hasCierre = cierre is Map && cierre.isNotEmpty;
+    final hasApertura = apertura is Map && apertura.isNotEmpty;
+    final productos =
+        hasCierre ? (cierre['productos'] as List?)?.length ?? 0 : 0;
+    final prefix = index != null ? '#$index ' : '';
+    return '${prefix}local=${t['local_id']} '
+        'status=${t['status']} '
+        'server_id=${t['server_id_turno']} '
+        'tpv=${t['id_tpv']} '
+        'vendedor=${t['id_vendedor']} '
+        'usuario=${t['usuario']} '
+        'apertura=${hasApertura ? 'yes' : 'no'} '
+        'cierre=${hasCierre ? 'yes(prod=$productos)' : 'no'} '
+        'uuid_ap=${t['client_uuid_apertura']} '
+        'uuid_ci=${t['client_uuid_cierre']} '
+        'fa=${t['fecha_apertura']} '
+        'fc=${t['fecha_cierre']} '
+        'synced_at=${t['synced_at']}';
+  }
+
   Future<Map<String, dynamic>?> getOpenOfflineTurno() async {
     final all = await getOfflineTurnos();
     for (final t in all) {
@@ -2098,6 +2231,15 @@ class UserPreferencesService {
     required Map<String, dynamic> cierrePayload,
     Map<String, dynamic>? resumen,
   }) async {
+    print(
+      '[TURNO_SYNC] markOfflineTurnoClosed START '
+      'localId=$localId '
+      'cierre.keys=${cierrePayload.keys.toList()} '
+      'efectivo_final=${cierrePayload['efectivo_final']} '
+      'productos=${(cierrePayload['productos'] as List?)?.length ?? 0}',
+    );
+    await dumpOfflineTurnosQueue('ANTES markOfflineTurnoClosed');
+
     await _withOfflineTurnosLock(() async {
       final all = await getOfflineTurnos();
       String? id = localId;
@@ -2110,6 +2252,7 @@ class UserPreferencesService {
         }
       }
       if (id == null) {
+        print('[TURNO_SYNC] ❌ markOfflineTurnoClosed: no hay turno open');
         throw StateError('No hay turno open para cerrar offline');
       }
 
@@ -2120,7 +2263,17 @@ class UserPreferencesService {
         ..['local_turno_id'] = id;
 
       final idx = all.indexWhere((t) => t['local_id']?.toString() == id);
-      if (idx < 0) throw StateError('Turno $id no encontrado en cola');
+      if (idx < 0) {
+        print(
+          '[TURNO_SYNC] ❌ markOfflineTurnoClosed: $id no está en cola',
+        );
+        throw StateError('Turno $id no encontrado en cola');
+      }
+
+      print(
+        '[TURNO_SYNC] markOfflineTurnoClosed BEFORE '
+        '${describeOfflineTurnoEntry(all[idx])}',
+      );
 
       all[idx] = {
         ...all[idx],
@@ -2132,8 +2285,142 @@ class UserPreferencesService {
         if (resumen != null) 'resumen': resumen,
       };
       await _persistOfflineTurnos(all);
-      print('🔒 Turno offline cerrado (pending sync): $id');
+      await _mirrorTurnoResumenToGlobalCache(all[idx]);
+      print(
+        '[TURNO_SYNC] ✅ markOfflineTurnoClosed AFTER '
+        '${describeOfflineTurnoEntry(all[idx])}',
+      );
     });
+    await dumpOfflineTurnosQueue('DESPUÉS markOfflineTurnoClosed');
+  }
+
+  /// Persiste el cuadre del turno en los caches globales de resumen/cierre.
+  Future<void> _mirrorTurnoResumenToGlobalCache(
+    Map<String, dynamic> entry,
+  ) async {
+    try {
+      final cuadre = await getOfflineTurnoCuadre(entry);
+      final isClosedPending =
+          entry['status'] == offlineTurnoStatusClosedPending;
+      final isSynced = entry['status'] == offlineTurnoStatusSynced;
+      final payload = <String, dynamic>{
+        ...cuadre,
+        'local_id': entry['local_id'],
+        'status': entry['status'],
+        // Evita que un pull del servidor reabra el turno en UI/cache
+        // mientras el cierre local aún no se sincronizó.
+        'cerrado_local': isClosedPending || isSynced,
+        'cerrado_online': isSynced || entry['cerrado_online'] == true,
+        if (entry['synced_at'] != null) 'synced_at': entry['synced_at'],
+        if (entry['fecha_cierre'] != null) 'fecha_cierre': entry['fecha_cierre'],
+        if (entry['fecha_apertura'] != null)
+          'fecha_apertura': entry['fecha_apertura'],
+        if (entry['server_id_turno'] != null)
+          'server_id_turno': entry['server_id_turno'],
+        if (entry['server_id_turno'] != null) 'id': entry['server_id_turno'],
+      };
+      await saveTurnoResumenCache(payload);
+      await saveResumenCierreCache({
+        ...payload,
+        'total_ventas': cuadre['ventas_totales'],
+      });
+    } catch (e) {
+      print('⚠️ No se pudo mirror resumen a cache global: $e');
+    }
+  }
+
+  /// True si hay un cierre local pendiente (o recién cerrado) que corresponde
+  /// al turno del servidor [serverId] o al mismo TPV/vendedor.
+  Future<Map<String, dynamic>?> findClosedPendingMatching({
+    int? serverId,
+    int? idTpv,
+    int? idVendedor,
+  }) async {
+    final all = await getOfflineTurnos();
+    Map<String, dynamic>? tpvFallback;
+    for (final t in all) {
+      if (t['status'] != offlineTurnoStatusClosedPending) continue;
+      final sid = t['server_id_turno'];
+      final sidInt =
+          sid is int
+              ? sid
+              : (sid is num ? sid.toInt() : int.tryParse('$sid'));
+      if (serverId != null && sidInt != null && sidInt == serverId) {
+        return t;
+      }
+      // Mismo server id aún no pegado en entry pero sí en apertura.
+      if (serverId != null && t['apertura'] is Map) {
+        final apId = (t['apertura'] as Map)['id'] ??
+            (t['apertura'] as Map)['server_id_turno'];
+        final apInt =
+            apId is int
+                ? apId
+                : (apId is num ? apId.toInt() : int.tryParse('$apId'));
+        if (apInt != null && apInt == serverId) return t;
+      }
+
+      final tTpv = t['id_tpv'] ??
+          (t['apertura'] is Map ? (t['apertura'] as Map)['id_tpv'] : null);
+      final tVend = t['id_vendedor'] ??
+          (t['apertura'] is Map ? (t['apertura'] as Map)['id_vendedor'] : null);
+      final tpvInt =
+          tTpv is int
+              ? tTpv
+              : (tTpv is num ? tTpv.toInt() : int.tryParse('$tTpv'));
+      final vendInt =
+          tVend is int
+              ? tVend
+              : (tVend is num ? tVend.toInt() : int.tryParse('$tVend'));
+      if (idTpv != null &&
+          tpvInt == idTpv &&
+          (idVendedor == null || vendInt == null || vendInt == idVendedor)) {
+        // Preferir match exacto por server_id; si el cierre offline aún no
+        // tiene server_id (apertura recién subida), usar este fallback.
+        if (sidInt == null || (serverId != null && sidInt == serverId)) {
+          tpvFallback ??= t;
+        }
+      }
+    }
+    return tpvFallback;
+  }
+
+  /// Turno cerrado o sincronizado más reciente (para UI cuando no hay open).
+  Future<Map<String, dynamic>?> getLastClosedOrSyncedTurnoForDisplay() async {
+    final all = await getOfflineTurnos();
+    final candidates =
+        all
+            .where(
+              (t) =>
+                  t['status'] == offlineTurnoStatusClosedPending ||
+                  t['status'] == offlineTurnoStatusSynced,
+            )
+            .toList();
+    if (candidates.isNotEmpty) {
+      candidates.sort((a, b) {
+        final fa =
+            a['fecha_cierre']?.toString() ??
+            a['synced_at']?.toString() ??
+            a['fecha_apertura']?.toString() ??
+            '';
+        final fb =
+            b['fecha_cierre']?.toString() ??
+            b['synced_at']?.toString() ??
+            b['fecha_apertura']?.toString() ??
+            '';
+        return fb.compareTo(fa);
+      });
+      return _openTurnoView(candidates.first);
+    }
+
+    final cache = await getTurnoResumenCache();
+    if (cache != null && cache.isNotEmpty) {
+      if (cache['cerrado_online'] == true ||
+          cache['status'] == offlineTurnoStatusSynced ||
+          cache['status'] == offlineTurnoStatusClosedPending) {
+        return cache;
+      }
+    }
+    return null;
   }
 
   /// Turnos cerrados pendientes de sync (cuadres locales).
@@ -2271,6 +2558,8 @@ class UserPreferencesService {
       'egresos_totales': egresosEfectivo + egresosDigital,
       'efectivo_esperado': efectivoEsperado,
       'efectivo_final': efectivoFinal,
+      'efectivo_real': efectivoFinal,
+      'estado_turno': 2,
       'diferencia':
           diferenciaCierre != 0
               ? diferenciaCierre
@@ -2300,24 +2589,64 @@ class UserPreferencesService {
     });
   }
 
-  /// Marca un turno como sincronizado y lo retira de la cola.
+  /// Marca un turno como sincronizado (conserva en cola con status `synced`).
   /// Devuelve `true` solo si ya no queda como pendiente tras persistir.
-  Future<bool> markOfflineTurnoSynced(String localId) async {
-    if (localId.isEmpty) return false;
+  Future<bool> markOfflineTurnoSynced(
+    String localId, {
+    int? serverIdTurno,
+  }) async {
+    if (localId.isEmpty) {
+      print('[TURNO_SYNC] ❌ markOfflineTurnoSynced: localId vacío');
+      return false;
+    }
 
-    return _withOfflineTurnosLock(() async {
+    print(
+      '[TURNO_SYNC] markOfflineTurnoSynced START '
+      'localId=$localId serverIdTurno=$serverIdTurno',
+    );
+
+    final result = await _withOfflineTurnosLock(() async {
       final all = await getOfflineTurnos();
       final idx = all.indexWhere((t) => t['local_id']?.toString() == localId);
       if (idx < 0) {
-        // Ya no está en cola → tratado como sincronizado.
-        print('ℹ️ markOfflineTurnoSynced: $localId ya no está en cola');
+        print(
+          '[TURNO_SYNC] ℹ️ markOfflineTurnoSynced: $localId ya no está en cola '
+          '(tratado como synced)',
+        );
         return true;
       }
 
-      all.removeAt(idx);
-      await _persistOfflineTurnos(all);
+      print(
+        '[TURNO_SYNC] markOfflineTurnoSynced BEFORE '
+        '${describeOfflineTurnoEntry(all[idx])}',
+      );
 
-      // Verificar lectura real (evita reportar OK si SharedPreferences falló).
+      if (all[idx]['status'] == offlineTurnoStatusSynced) {
+        print(
+          '[TURNO_SYNC] ℹ️ markOfflineTurnoSynced: $localId ya estaba synced',
+        );
+        return true;
+      }
+
+      final now = DateTime.now().toIso8601String();
+      final sid = serverIdTurno ?? all[idx]['server_id_turno'];
+      final updated = <String, dynamic>{
+        ...all[idx],
+        'status': offlineTurnoStatusSynced,
+        'synced_at': now,
+        if (sid != null) 'server_id_turno': sid,
+      };
+      if (sid != null && updated['apertura'] is Map) {
+        updated['apertura'] = {
+          ...Map<String, dynamic>.from(updated['apertura'] as Map),
+          'server_id_turno': sid,
+          'id': sid,
+        };
+      }
+      all[idx] = updated;
+      await _persistOfflineTurnos(all);
+      await _mirrorTurnoResumenToGlobalCache(updated);
+
       final still = await getOfflineTurnoByLocalId(localId);
       final pending =
           still != null &&
@@ -2325,13 +2654,39 @@ class UserPreferencesService {
               still['status'] == offlineTurnoStatusClosedPending);
       if (pending) {
         print(
-          '❌ markOfflineTurnoSynced: $localId sigue pendiente tras persistir',
+          '[TURNO_SYNC] ❌ markOfflineTurnoSynced: $localId SIGUE pendiente '
+          'tras persistir status=${still['status']}',
         );
         return false;
       }
 
-      print('✅ Turno offline sincronizado y retirado de cola: $localId');
+      print(
+        '[TURNO_SYNC] ✅ markOfflineTurnoSynced OK '
+        '${describeOfflineTurnoEntry(updated)}',
+      );
       return true;
+    });
+
+    await dumpOfflineTurnosQueue(
+      result
+          ? 'DESPUÉS markOfflineTurnoSynced OK'
+          : 'FALLO markOfflineTurnoSynced',
+    );
+    return result;
+  }
+
+  /// Retira turnos ya sincronizados de la cola (p.ej. al abrir turno nuevo).
+  Future<void> purgeSyncedOfflineTurnosFromQueue() async {
+    await _withOfflineTurnosLock(() async {
+      final all = await getOfflineTurnos();
+      final remaining =
+          all.where((t) => t['status'] != offlineTurnoStatusSynced).toList();
+      if (remaining.length != all.length) {
+        await _persistOfflineTurnos(remaining);
+        print(
+          '🧹 Purged ${all.length - remaining.length} turno(s) synced de la cola',
+        );
+      }
     });
   }
 
@@ -2369,6 +2724,74 @@ class UserPreferencesService {
   /// de la cola offline, para que no se confunda con una apertura hecha
   /// realmente offline (ver `_isOfflineTurno` en apertura_screen.dart).
   Future<void> saveOfflineTurno(Map<String, dynamic> turnoData) async {
+    final estado = turnoData['estado'];
+    if (estado != null && estado != 1) {
+      print(
+        'ℹ️ saveOfflineTurno: turno no abierto (estado=$estado); no se cachea',
+      );
+      return;
+    }
+
+    final incomingIdRaw = turnoData['id'] ?? turnoData['server_id_turno'];
+    final incomingId =
+        incomingIdRaw is int
+            ? incomingIdRaw
+            : (incomingIdRaw is num
+                ? incomingIdRaw.toInt()
+                : int.tryParse('$incomingIdRaw'));
+    final incomingTpvRaw = turnoData['id_tpv'];
+    final incomingTpv =
+        incomingTpvRaw is int
+            ? incomingTpvRaw
+            : (incomingTpvRaw is num
+                ? incomingTpvRaw.toInt()
+                : int.tryParse('$incomingTpvRaw'));
+    final incomingVendRaw = turnoData['id_vendedor'];
+    final incomingVend =
+        incomingVendRaw is int
+            ? incomingVendRaw
+            : (incomingVendRaw is num
+                ? incomingVendRaw.toInt()
+                : int.tryParse('$incomingVendRaw'));
+
+    final resumen = await getTurnoResumenCache();
+    if (resumen?['cerrado_online'] == true ||
+        resumen?['cerrado_local'] == true ||
+        resumen?['status'] == offlineTurnoStatusClosedPending ||
+        resumen?['status'] == offlineTurnoStatusSynced) {
+      final closedId = resumen!['id'] ?? resumen['server_id_turno'];
+      if (closedId != null &&
+          incomingId != null &&
+          closedId.toString() == incomingId.toString()) {
+        print(
+          'ℹ️ saveOfflineTurno: turno $closedId ya cerrado local/online; '
+          'no se re-cachea como abierto',
+        );
+        return;
+      }
+    }
+
+    // Si el cierre ya está en cola (closed_pending_sync), NUNCA recrear un
+    // open desde el pull del servidor: eso deja el turno "abierto" en UI
+    // aunque el cierre local exista y el sync de cierre aún no haya corrido.
+    final closedPending = await findClosedPendingMatching(
+      serverId: incomingId,
+      idTpv: incomingTpv,
+      idVendedor: incomingVend,
+    );
+    if (closedPending != null) {
+      final localId = closedPending['local_id']?.toString();
+      print(
+        'ℹ️ saveOfflineTurno: existe cierre local pendiente '
+        '($localId) para server_id=$incomingId / tpv=$incomingTpv — '
+        'solo se actualiza server_id, no se reabre',
+      );
+      if (localId != null && incomingId != null) {
+        await setOfflineTurnoServerId(localId, incomingId);
+      }
+      return;
+    }
+
     // La fila cruda de `app_dat_caja_turno` (turnoData) no tiene columna
     // `usuario` (UUID), sólo `id_vendedor` (int). Sin este fallback, un
     // turno abierto online y cacheado aquí para resiliencia offline puede
@@ -2453,6 +2876,149 @@ class UserPreferencesService {
     await prefs.remove(_offlineTurnosKey);
     await prefs.remove(_offlineTurnoKey);
     print('🗑️ Cola de turnos offline eliminada');
+  }
+
+  /// Tras cierre online exitoso: quita el turno abierto de la cola y purga
+  /// órdenes ya sincronizadas en estado final. **Conserva** resúmenes y demás
+  /// cache del turno hasta la próxima apertura.
+  Future<void> finalizeTurnoAfterOnlineClose({int? serverTurnoId}) async {
+    await clearOfflineTurno();
+    await purgeFinalizedSyncedOrders();
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_offlineTurnoKey);
+
+    final now = DateTime.now().toIso8601String();
+    final resumen = await getTurnoResumenCache();
+    if (resumen != null) {
+      final updated = {
+        ...resumen,
+        'status': offlineTurnoStatusSynced,
+        'cerrado_online': true,
+        'synced_at': now,
+        'fecha_cierre': resumen['fecha_cierre'] ?? now,
+        if (serverTurnoId != null) 'id': serverTurnoId,
+        if (serverTurnoId != null) 'server_id_turno': serverTurnoId,
+      };
+      await saveTurnoResumenCache(updated);
+      await saveResumenCierreCache({
+        ...updated,
+        'total_ventas': updated['ventas_totales'],
+        'efectivo_real': updated['efectivo_final'],
+      });
+    }
+
+    print(
+      '✅ Cierre online: cola open limpiada; '
+      'resúmenes marcados como cerrados/synced',
+    );
+  }
+
+  /// Resumen del **último turno cerrado** desde caches / cola offline
+  /// (para la pantalla de apertura cuando no hay red o modo local).
+  Future<Map<String, dynamic>?> getPreviousShiftSummaryFromLocal() async {
+    var raw = await getTurnoResumenCache();
+    if (raw != null && _summaryHasMeaningfulData(raw)) {
+      // Si el cache fue pisado con un KPI de turno aún abierto, no sirve
+      // como "turno anterior".
+      final estado = raw['estado_turno'];
+      final isOpenKpi = estado == 1 || estado == '1';
+      if (!isOpenKpi) {
+        return normalizePreviousShiftSummary(raw);
+      }
+    }
+
+    raw = await getResumenCierreCache();
+    if (raw != null && _summaryHasMeaningfulData(raw)) {
+      return normalizePreviousShiftSummary(raw);
+    }
+
+    final lastClosed = await getLastClosedOrSyncedTurnoForDisplay();
+    if (lastClosed != null) {
+      try {
+        final localId = lastClosed['local_id']?.toString();
+        Map<String, dynamic> entry = lastClosed;
+        if (localId != null) {
+          entry = await getOfflineTurnoByLocalId(localId) ?? lastClosed;
+        }
+        final cuadre = await getOfflineTurnoCuadre(entry);
+        if (_summaryHasMeaningfulData(cuadre) ||
+            _summaryHasMeaningfulData(entry)) {
+          return normalizePreviousShiftSummary({...entry, ...cuadre});
+        }
+      } catch (e) {
+        print('⚠️ No se pudo reconstruir cuadre del último cerrado: $e');
+      }
+    }
+
+    // Último recurso: cache de turno aunque sea KPI abierto (mejor que nada).
+    raw = await getTurnoResumenCache();
+    if (raw != null && _summaryHasMeaningfulData(raw)) {
+      return normalizePreviousShiftSummary(raw);
+    }
+    return null;
+  }
+
+  /// Normaliza claves del resumen para la UI de apertura.
+  Map<String, dynamic> normalizePreviousShiftSummary(
+    Map<String, dynamic> raw,
+  ) {
+    final ventas = _asDouble(
+      raw['ventas_totales'] ?? raw['total_ventas'],
+    );
+    final efectivoInicial = _asDouble(raw['efectivo_inicial']);
+    final efectivoReal = _asDouble(
+      raw['efectivo_real'] ??
+          raw['efectivo_final'] ??
+          raw['efectivo_esperado'],
+    );
+    final productos = _asInt(raw['productos_vendidos']);
+    final ticket = _asDouble(raw['ticket_promedio']);
+
+    return {
+      ...raw,
+      'ventas_totales': ventas,
+      'total_ventas': ventas,
+      'efectivo_inicial': efectivoInicial,
+      'efectivo_real': efectivoReal,
+      'efectivo_final': _asDouble(raw['efectivo_final'] ?? efectivoReal),
+      // Efectivo sugerido para la nueva apertura = lo contado al cierre.
+      'efectivo_sugerido_apertura':
+          efectivoReal > 0 ? efectivoReal : efectivoInicial,
+      'productos_vendidos': productos,
+      'ticket_promedio': ticket,
+    };
+  }
+
+  bool _summaryHasMeaningfulData(Map<String, dynamic> raw) {
+    final ventas = _asDouble(raw['ventas_totales'] ?? raw['total_ventas']);
+    final ei = _asDouble(raw['efectivo_inicial']);
+    final er = _asDouble(
+      raw['efectivo_real'] ?? raw['efectivo_final'] ?? raw['efectivo_esperado'],
+    );
+    final productos = _asInt(raw['productos_vendidos']);
+    return ventas > 0 || ei > 0 || er > 0 || productos > 0;
+  }
+
+  static double _asDouble(dynamic raw) {
+    if (raw == null) return 0.0;
+    if (raw is double) return raw;
+    if (raw is num) return raw.toDouble();
+    return double.tryParse(raw.toString().replaceAll(',', '.')) ?? 0.0;
+  }
+
+  static int _asInt(dynamic raw) {
+    if (raw == null) return 0;
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    return int.tryParse(raw.toString()) ?? 0;
+  }
+
+  /// Limpia resúmenes del turno anterior (llamar al abrir un turno nuevo).
+  Future<void> clearPreviousTurnoCaches() async {
+    await purgeSyncedOfflineTurnosFromQueue();
+    await clearTurnoResumenCache();
+    await clearResumenCierreCache();
   }
 
   /// Actualizar estado de orden pendiente
@@ -2553,6 +3119,15 @@ class UserPreferencesService {
         pendingTurnos
             .where((t) => t['status'] == offlineTurnoStatusClosedPending)
             .length;
+    final allTurnos = await getOfflineTurnos();
+    final syncedTurnos =
+        allTurnos.where((t) => t['status'] == offlineTurnoStatusSynced).toList();
+    syncedTurnos.sort((a, b) {
+      final fa = a['synced_at']?.toString() ?? '';
+      final fb = b['synced_at']?.toString() ?? '';
+      return fb.compareTo(fa);
+    });
+    final lastSynced = syncedTurnos.isNotEmpty ? syncedTurnos.first : null;
 
     return {
       'pending_orders_count': pendingOrders.length,
@@ -2560,6 +3135,16 @@ class UserPreferencesService {
       'has_open_turno': turno != null,
       'pending_turnos_count': pendingTurnos.length,
       'closed_turnos_pending_count': closedPending,
+      'synced_turnos_count': syncedTurnos.length,
+      'last_synced_turno':
+          lastSynced != null
+              ? {
+                'local_id': lastSynced['local_id'],
+                'server_id_turno': lastSynced['server_id_turno'],
+                'synced_at': lastSynced['synced_at'],
+                'fecha_cierre': lastSynced['fecha_cierre'],
+              }
+              : null,
       'turno_info':
           turno != null
               ? {
@@ -2838,6 +3423,63 @@ class UserPreferencesService {
       print('🗑️ Cache de resumen de cierre eliminado');
     } catch (e) {
       print('❌ Error limpiando cache de resumen de cierre: $e');
+    }
+  }
+
+  // ========== CHECKPOINT SYNC MODULAR ==========
+
+  /// Guarda el avance de una sync interrumpida para reanudar módulos OK.
+  Future<void> saveSyncModulesCheckpoint({
+    required List<String> completedModules,
+    required List<String> pendingModules,
+    required List<String> errors,
+    String? abortReason,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _syncModulesCheckpointKey,
+        jsonEncode({
+          'completed': completedModules,
+          'pending': pendingModules,
+          'errors': errors,
+          if (abortReason != null) 'abort_reason': abortReason,
+          'updated_at': DateTime.now().toIso8601String(),
+        }),
+      );
+    } catch (e) {
+      print('⚠️ No se pudo guardar checkpoint de sync: $e');
+    }
+  }
+
+  /// Checkpoint válido si tiene menos de [maxAge] (por defecto 6 h).
+  Future<Map<String, dynamic>?> getSyncModulesCheckpoint({
+    Duration maxAge = const Duration(hours: 6),
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_syncModulesCheckpointKey);
+      if (raw == null || raw.isEmpty) return null;
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      final updatedAt = DateTime.tryParse('${data['updated_at'] ?? ''}');
+      if (updatedAt == null ||
+          DateTime.now().difference(updatedAt) > maxAge) {
+        await clearSyncModulesCheckpoint();
+        return null;
+      }
+      return data;
+    } catch (e) {
+      print('⚠️ Error leyendo checkpoint de sync: $e');
+      return null;
+    }
+  }
+
+  Future<void> clearSyncModulesCheckpoint() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_syncModulesCheckpointKey);
+    } catch (e) {
+      print('⚠️ Error limpiando checkpoint de sync: $e');
     }
   }
 
