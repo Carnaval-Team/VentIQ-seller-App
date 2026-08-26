@@ -64,6 +64,36 @@ class MesaCuentaService {
     _activeMesaZona = null;
   }
 
+  /// Última cuenta abierta del TPV, para el atajo del botón de carrito.
+  ///
+  /// En modo restaurante la preorden local no se usa (el carrito vive en BD por
+  /// mesa), así que el botón lleva aquí en lugar de a una preorden vacía.
+  ///
+  /// Devuelve `null` si no hay ninguna abierta o si falla la consulta: el
+  /// llamador cae al comportamiento de siempre en vez de quedarse bloqueado.
+  Future<UltimaCuentaAbierta?> ultimaCuentaAbierta() async {
+    try {
+      final idTpv = await _userPrefs.getIdTpv();
+      if (idTpv == null) return null;
+
+      final response = await _supabase.rpc(
+        'fn_ultima_cuenta_abierta_tpv',
+        params: {'p_id_tpv': idTpv},
+      );
+
+      if (response is! Map) return null;
+      final mapa = Map<String, dynamic>.from(response);
+
+      if (mapa['status'] != 'success') return null;
+      if (mapa['id_cuenta'] == null) return null;
+
+      return UltimaCuentaAbierta.fromJson(mapa);
+    } catch (e) {
+      print('⚠️ No se pudo leer la última cuenta abierta: $e');
+      return null;
+    }
+  }
+
   // ----------------------------------------------------------------------
   // RPCs
   // ----------------------------------------------------------------------

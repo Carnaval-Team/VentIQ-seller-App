@@ -64,6 +64,10 @@ class UserPreferencesService {
   static const String _adminRoleKeyPrefix = 'caja_admin_role_';
   // Rol de entrada a Caja: vendedor | gerente | supervisor
   static const String _cajaEntryRoleKey = 'caja_entry_role';
+  // Rol de cocina cacheado: 'jefe_cocina' | 'cocinero' | '' (ninguno).
+  // Se cachea porque decide el home de la sesión y consultarlo en cada
+  // navegación costaría una RPC por toque del botón Home.
+  static const String _cocinaRoleKey = 'caja_cocina_role';
 
   // Offline mode keys
   static const String _offlineModeKey = 'offline_mode_enabled';
@@ -406,6 +410,37 @@ class UserPreferencesService {
     return role == 'gerente' || role == 'supervisor';
   }
 
+  // ---------- Rol de cocina (jefe de cocina / cocinero) ----------
+
+  /// Guarda el rol de cocina de la sesión. Cadena vacía = no tiene ninguno.
+  ///
+  /// Se cachea en el login porque decide el home de la sesión: sin cache habría
+  /// que llamar a `fn_cocinas_del_usuario` en cada navegación a Home.
+  Future<void> setCocinaRole(String role) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_cocinaRoleKey, role);
+  }
+
+  Future<String?> getCocinaRole() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_cocinaRoleKey);
+  }
+
+  /// Sesión de personal de cocina (jefe o cocinero).
+  ///
+  /// Un gerente que además tenga cocinas NO cuenta: su trabajo es la gestión de
+  /// la tienda y su home sigue siendo el de administración. Solo se marca a
+  /// quien accede *por* su rol de cocina.
+  Future<bool> isCocinaSession() async {
+    final role = await getCocinaRole();
+    return role == 'jefe_cocina' || role == 'cocinero';
+  }
+
+  /// Solo el jefe puede producir tandas y mover el inventario de su cocina.
+  Future<bool> isJefeCocinaSession() async {
+    return await getCocinaRole() == 'jefe_cocina';
+  }
+
   // ---------- Dispositivo full offline (admin prepara + switch local) ----------
 
   Future<bool> isDeviceFullOfflineReady() async {
@@ -476,6 +511,7 @@ class UserPreferencesService {
     await prefs.remove(_idRollKey);
     await prefs.remove(_allowCustomSalePriceKey);
     await prefs.remove(_cajaEntryRoleKey);
+    await prefs.remove(_cocinaRoleKey);
     await prefs.remove(_appIdAlmacenKey);
     await prefs.setBool(_isLoggedInKey, false);
     await clearPromotionData();
@@ -554,6 +590,7 @@ class UserPreferencesService {
     await prefs.remove(_idRollKey);
     await prefs.remove(_allowCustomSalePriceKey);
     await prefs.remove(_cajaEntryRoleKey);
+    await prefs.remove(_cocinaRoleKey);
     await prefs.setBool(_isLoggedInKey, false);
 
     // Limpiar promociones al cerrar sesión

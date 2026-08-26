@@ -120,9 +120,9 @@ flutter run -d windows
 
 **Si falla la compilación**, el sospechoso conocido es `utils/package_image_picker_web.dart` (error preexistente de `dart:js_util`, ajeno a cocina). Solo afecta a la build **web**; en Windows/Android no debería dar problema.
 
-- [ ] 0.1 Admin arranca
-- [ ] 0.2 Vendedor arranca
-- [ ] 0.3 Login OK en las dos con tu usuario de la tienda 11
+- [X] 0.1 Admin arranca
+- [X] 0.2 Vendedor arranca
+- [X] 0.3 Login OK en las dos con tu usuario de la tienda 11
 
 ---
 
@@ -164,10 +164,10 @@ SELECT p.id, p.denominacion,
 
 **Esperado:** la harina bajó **40** y la sal **10** — exactamente la receta de una croqueta, y en el **almacén 12**, no en otro.
 
-- [ ] 1.1 Hay harina y sal en el almacén 12
-- [ ] 1.2 Venta de croqueta completada
-- [ ] 1.3 Harina −40 y sal −10 **en el almacén 12**
-- [ ] 1.4 El stock de **otros** almacenes (15) no cambió
+- [X] 1.1 Hay harina y sal en el almacén 12
+- [X] 1.2 Venta de croqueta completada
+- [*] 1.3 Harina −40 y sal −10 **en el almacén 12**
+- [X] 1.4 El stock de **otros** almacenes (15) no cambió
 
 ---
 
@@ -202,9 +202,9 @@ Sigue en la misma pantalla:
 2. **Esperado:** la cocina se apaga también.
 3. Vuelve a encender los dos y déjalos en `true`.
 
-- [ ] 2.1 `cocina_activa = true`
-- [ ] 2.2 Apagar restaurante apaga cocina
-- [ ] 2.3 Los dos quedan encendidos al final
+- [X] 2.1 `cocina_activa = true`
+- [X] 2.2 Apagar restaurante apaga cocina
+- [X] 2.3 Los dos quedan encendidos al final
 
 ### 2.3 Aparece la entrada "Cocinas" en el menú
 
@@ -269,9 +269,9 @@ SELECT tc.id_tpv, c.denominacion AS cocina
 ```
 Debe salir **una sola fila**: TPV 18 → Cocina caliente.
 
-- [ ] 2.4 Cocina caliente creada, con almacén propio y `es_cocina = true`
-- [ ] 2.5 Pizzería creada
-- [ ] 2.6 TPV 18 ligado **solo** a Cocina caliente
+- [X] 2.4 Cocina caliente creada, con almacén propio y `es_cocina = true`
+- [X] 2.5 Pizzería creada
+- [X] 2.6 TPV 18 ligado **solo** a Cocina caliente
 
 ### 2.7 Asignar platos a las cocinas
 
@@ -315,8 +315,8 @@ SELECT p.id, p.denominacion,
   FROM app_dat_producto p WHERE p.id IN (216, 217, 218);
 ```
 
-- [ ] 2.7 Los 3 platos asignados a su cocina y modo
-- [ ] 2.8 MP cargada en el almacén de la Cocina caliente
+- [X] 2.7 Los 3 platos asignados a su cocina y modo
+- [X] 2.8 MP cargada en el almacén de la Cocina caliente
 
 > 💡 **Punto de control.** Si llegaste aquí, la configuración está lista. Anota en un papel: `<ID_COCINA_CALIENTE>`, `<ALM_CALIENTE>`, `<ID_PIZZERIA>`, `<ALM_PIZZERIA>`.
 
@@ -418,14 +418,14 @@ Este paso importa porque las 3 RPC de gestión de roles se modificaron.
 
 > Y esto podría haberse roto: al añadir parámetros con `DEFAULT` se crearon **sobrecargas** en vez de reemplazar las funciones, y la llamada de la app quedó ambigua (`function ... is not unique`). Se detectó al probar y se resolvió eliminando las firmas viejas. Si ves ese error, el `23` no se aplicó completo.
 
-- [ ] 3.2 Rol asignado desde la UI con su cocina
-- [ ] 3.3 Jefe y Cocinero se excluyen
-- [ ] 3.4 Sin cocina no deja guardar
-- [ ] 3.5 Fila correcta en `app_dat_jefe_cocina`
-- [ ] 3.6 Al reabrir aparece marcado
-- [ ] 3.7 Cocinero asignado
-- [ ] 3.8 Desmarcar elimina la asignación
-- [ ] 3.10 ⭐ Recursos Humanos, Dependiente y Almacenero siguen funcionando
+- [X] 3.2 Rol asignado desde la UI con su cocina
+- [X] 3.3 Jefe y Cocinero se excluyen
+- [X] 3.4 Sin cocina no deja guardar
+- [X] 3.5 Fila correcta en `app_dat_jefe_cocina`
+- [X] 3.6 Al reabrir aparece marcado
+- [X] 3.7 Cocinero asignado
+- [X] 3.8 Desmarcar elimina la asignación
+- [X] 3.10 ⭐ Recursos Humanos, Dependiente y Almacenero siguen funcionando
 
 ---
 
@@ -528,14 +528,14 @@ SELECT public.fn_asignar_cocina_categoria(11, 1, 999999);
 ```
 **Esperado:** `COCINA_INVALIDA`. Un defecto que apunte a la cocina de otra tienda mandaría platos a una cocina que el TPV nunca puede alcanzar.
 
-- [ ] 3b.1 Pestaña Categorías visible
-- [ ] 3b.2 Cocina por defecto asignada
-- [ ] 3b.3 ⭐ El bulk respeta y REPORTA las asignaciones manuales
-- [ ] 3b.4 Modo de elaboración fijado en bloque
-- [ ] 3b.5 Quitar el defecto no cambia los platos
-- [ ] 3b.6 `CATEGORIA_SIN_COCINA`
-- [ ] 3b.7 `fn_cocina_por_defecto_producto` responde
-- [ ] 3b.8 `COCINA_INVALIDA` con cocina de otra tienda
+- [X] 3b.1 Pestaña Categorías visible
+- [X] 3b.2 Cocina por defecto asignada
+- [X] 3b.3 ⭐ El bulk respeta y REPORTA las asignaciones manuales
+- [X] 3b.4 Modo de elaboración fijado en bloque
+- [X] 3b.5 Quitar el defecto no cambia los platos
+- [X] 3b.6 `CATEGORIA_SIN_COCINA`
+- [X] 3b.7 `fn_cocina_por_defecto_producto` responde
+- [X] 3b.8 `COCINA_INVALIDA` con cocina de otra tienda
 
 ---
 
@@ -581,11 +581,11 @@ Toca **croqueta** para ver el detalle.
 
 **Esperado:** la disponibilidad no es el stock de croquetas (que es 0), sino **cuántas se pueden hacer con la MP de la cocina**. Con 2000 de harina (×40) y 500 de sal (×10) → el límite lo pone la sal: **50**.
 
-- [ ] 4.1 Croqueta y pan con croqueta visibles
-- [ ] 4.2 Chips índigo con "Cocina caliente"
-- [ ] 4.3 Productos de barra sin chip
-- [ ] 4.4 "pan de la casa" (Pizzería) **no aparece**
-- [ ] 4.5 Disponibilidad ≈ 50 croquetas
+- [X] 4.1 Croqueta y pan con croqueta visibles
+- [X] 4.2 Chips índigo con "Cocina caliente"
+- [X] 4.3 Productos de barra sin chip
+- [X] 4.4 "pan de la casa" (Pizzería) **no aparece**
+- [X] 4.5 Disponibilidad ≈ 50 croquetas
 
 ---
 
@@ -744,16 +744,16 @@ SELECT public.fn_stock_producto_almacen(216, <ALM_CALIENTE>) AS harina;
 
 > Devolver stock de algo ya cocinado es el error clásico que descuadra el inventario de un restaurante. Por eso se distingue.
 
-- [ ] 5.2 Snackbar "🍳 Enviado a Cocina caliente"
-- [ ] 5.3 Harina −80, sal −20 **al pedir**
-- [ ] 5.4 Comanda creada con número y nota
-- [ ] 5.5 Banner + chip + nota visibles en la cuenta
-- [ ] 5.6 Plato de Pizzería rechazado, sin crear línea
-- [ ] 5.7 Producto de barra descuenta del almacén 12
-- [ ] 5.8 ⭐ **Cobrar no vuelve a descontar**
-- [ ] 5.9 `stock_movido = true` en la línea de cocina
-- [ ] 5.10 Cancelar no servido devuelve stock
-- [ ] 5.11 Cancelar servido exige motivo y NO devuelve
+- [X] 5.2 Snackbar "🍳 Enviado a Cocina caliente"
+- [X] 5.3 Harina −80, sal −20 **al pedir**
+- [X] 5.4 Comanda creada con número y nota
+- [X] 5.5 Banner + chip + nota visibles en la cuenta
+- [X] 5.6 Plato de Pizzería rechazado, sin crear línea
+- [X] 5.7 Producto de barra descuenta del almacén 12
+- [X] 5.8 ⭐ **Cobrar no vuelve a descontar**
+- [X] 5.9 `stock_movido = true` en la línea de cocina
+- [X] 5.10 Cancelar no servido devuelve stock
+- [X] 5.11 Cancelar servido exige motivo y NO devuelve
 
 ---
 
@@ -949,22 +949,22 @@ Cancela un plato de una comanda de 2 platos (long-press → confirmar) y vuelve 
 SELECT (public.fn_ticket_comanda(<ID_COMANDA>, 32))->>'total_items' AS items_en_el_ticket;
 ```
 
-- [ ] 6.11 A · Imprime en la térmica con snackbar verde
-- [ ] 6.11 B · Sin impresora → diálogo con el ticket en pantalla (no rojo)
-- [ ] 6.11 C · IP inexistente → error + ticket + Reintentar
-- [ ] 6.11 D · Doble toque saca un solo ticket
-- [ ] 6.11.b ⭐ Nota larga completa, nada excede el ancho
-- [ ] 6.11.c Plato cancelado ausente del ticket
+- [X] 6.11 A · Imprime en la térmica con snackbar verde
+- [X] 6.11 B · Sin impresora → diálogo con el ticket en pantalla (no rojo)
+- [X] 6.11 C · IP inexistente → error + ticket + Reintentar
+- [X] 6.11 D · Doble toque saca un solo ticket
+- [X] 6.11.b ⭐ Nota larga completa, nada excede el ancho
+- [X] 6.11.c Plato cancelado ausente del ticket
 
-- [ ] 6.1 Entrada "Cocina" visible
-- [ ] 6.3 Tarjetas FIFO con espera y notas
-- [ ] 6.4 Un toque avanza el plato
-- [ ] 6.5 Retroceso de 1 paso OK, de 2 rechazado
-- [ ] 6.6 "Marchando todo" pone la cabecera en verde
-- [ ] 6.7 Cabecera = mínimo de los items
-- [ ] 6.8 Entregado sale de la vista viva y está en el historial
-- [ ] 6.9 El mesero ve el cambio de estado
-- [ ] 6.10 Refresco ≤ 15 s
+- [X] 6.1 Entrada "Cocina" visible
+- [X] 6.3 Tarjetas FIFO con espera y notas
+- [X] 6.4 Un toque avanza el plato
+- [X] 6.5 Retroceso de 1 paso OK, de 2 rechazado
+- [X] 6.6 "Marchando todo" pone la cabecera en verde
+- [X] 6.7 Cabecera = mínimo de los items
+- [X] 6.8 Entregado sale de la vista viva y está en el historial
+- [X] 6.9 El mesero ve el cambio de estado
+- [X] 6.10 Refresco ≤ 15 s
 
 ---
 
@@ -1118,14 +1118,14 @@ UNION ALL SELECT 'harina', public.fn_stock_producto_almacen(216, <ALM_CALIENTE>)
 ```
 **Esperado:** croquetas **−2**, harina **−80** (solo la del pan).
 
-- [ ] 7.1 Croqueta en `por_tanda`
-- [ ] 7.2 Pantalla Producción con "Limita: X"
-- [ ] 7.3 Producir 10: harina −400, sal −100, croquetas +10
-- [ ] 7.4 Estado "Disponible" y chip ámbar
-- [ ] 7.5 Diálogo de faltantes con detalle por ingrediente
-- [ ] 7.6 Vender de tanda: −porciones, sin comanda, sin tocar MP
-- [ ] 7.7 Agotado con 0 porciones aunque quede MP
-- [ ] 7.8 ⭐ **Parada de BOM: croqueta=2 [TANDA], no harina=160**
+- [X] 7.1 Croqueta en `por_tanda`
+- [X] 7.2 Pantalla Producción con "Limita: X"
+- [X] 7.3 Producir 10: harina −400, sal −100, croquetas +10
+- [X] 7.4 Estado "Disponible" y chip ámbar
+- [X] 7.5 Diálogo de faltantes con detalle por ingrediente
+- [X] 7.6 Vender de tanda: −porciones, sin comanda, sin tocar MP
+- [X] 7.7 Agotado con 0 porciones aunque quede MP
+- [X] 7.8 ⭐ **Parada de BOM: croqueta=2 [TANDA], no harina=160**
 
 ### 7.9 Cerrar una tanda con merma
 

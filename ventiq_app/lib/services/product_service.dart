@@ -71,11 +71,12 @@ class ProductService {
         idTpv: idTpv,
       );
 
-      final List<dynamic> todos = [...response, ...productosCocina];
+      final List<dynamic> todos = _unirCatalogos(response, productosCocina);
 
       debugPrint(
         '📦 Respuesta de productos: ${response.length} de barra + '
-        '${productosCocina.length} de cocina = ${todos.length}',
+        '${productosCocina.length} de cocina = ${todos.length} '
+        '(${response.length + productosCocina.length - todos.length} deduplicados)',
       );
 
       // Check if response is empty
@@ -231,7 +232,7 @@ class ProductService {
       );
 
       final results =
-          [...(response as List), ...productosCocina]
+          _unirCatalogos(response as List, productosCocina)
               .map(
                 (item) =>
                     _convertSupabaseToProduct(item as Map<String, dynamic>),
@@ -247,11 +248,40 @@ class ProductService {
     }
   }
 
+  /// Une el catálogo de barra con el de cocina, sin duplicados.
+  ///
+  /// Las dos RPC pueden devolver el MISMO producto: la de barra lista todo lo
+  /// que tiene ficha de inventario en el almacén del TPV (aunque su stock sea
+  /// 0), y la de cocina lista los platos cuyo stock de barra es 0. Un plato que
+  /// pasó por la barra y se agotó cumple las dos condiciones.
+  ///
+  /// Gana la versión de COCINA: si el plato se puede cocinar, lo que importa es
+  /// su disponibilidad por receta, no el cero de la barra. Al revés el vendedor
+  /// vería el plato como agotado teniendo materia prima de sobra.
+  List<dynamic> _unirCatalogos(
+    List<dynamic> barra,
+    List<dynamic> cocina,
+  ) {
+    final idsCocina = <int>{};
+    for (final item in cocina) {
+      final id = (item as Map)['id_producto'];
+      if (id is int) idsCocina.add(id);
+    }
+
+    final resultado = <dynamic>[];
+    for (final item in barra) {
+      final id = (item as Map)['id_producto'];
+      if (id is int && idsCocina.contains(id)) continue;
+      resultado.add(item);
+    }
+    resultado.addAll(cocina);
+    return resultado;
+  }
+
   /// Platos que este TPV puede vender por vía de cocina.
   ///
   /// Llama a `fn_productos_cocina_tpv`, que devuelve las mismas columnas que el
-  /// catálogo de barra para poder concatenar sin transformar nada. Ya excluye
-  /// los productos con stock en el almacén del TPV, así que no hay duplicados.
+  /// catálogo de barra para poder concatenar sin transformar nada.
   ///
   /// Ante cualquier error devuelve lista vacía en lugar de propagar: si la
   /// tienda no usa cocinas o el `09` todavía no está aplicado, el catálogo de

@@ -310,3 +310,60 @@ class MesaCuentaItem {
     );
   }
 }
+
+/// Resumen de la última cuenta abierta de un TPV.
+///
+/// Lo devuelve `fn_ultima_cuenta_abierta_tpv` y alimenta el atajo del botón de
+/// carrito en modo restaurante: en vez de abrir una preorden local (que en ese
+/// modo está siempre vacía) lleva a la cuenta que el mesero acaba de tocar.
+///
+/// Es un resumen, no la cuenta completa: para los items se navega a
+/// `CuentaMesaScreen`, que los carga con `fn_obtener_cuenta_mesa`.
+class UltimaCuentaAbierta {
+  final int idCuenta;
+  final int idMesa;
+  final String? mesaNumero;
+  final String? mesaZona;
+  final int? numeroComensales;
+  final int cantidadItems;
+  final double total;
+  final DateTime? createdAt;
+  final int minutosAbierta;
+
+  const UltimaCuentaAbierta({
+    required this.idCuenta,
+    required this.idMesa,
+    this.mesaNumero,
+    this.mesaZona,
+    this.numeroComensales,
+    this.cantidadItems = 0,
+    this.total = 0,
+    this.createdAt,
+    this.minutosAbierta = 0,
+  });
+
+  /// Etiqueta corta para el botón: "Mesa 3" o "Mesa 3 · Terraza".
+  String get etiquetaMesa {
+    final numero = mesaNumero ?? 'Mesa $idMesa';
+    if (mesaZona == null || mesaZona!.isEmpty) return numero;
+    return '$numero · $mesaZona';
+  }
+
+  bool get vacia => cantidadItems == 0;
+
+  factory UltimaCuentaAbierta.fromJson(Map<String, dynamic> json) {
+    return UltimaCuentaAbierta(
+      idCuenta: (json['id_cuenta'] as num).toInt(),
+      idMesa: (json['id_mesa'] as num?)?.toInt() ?? 0,
+      mesaNumero: json['mesa_numero'] as String?,
+      mesaZona: json['mesa_zona'] as String?,
+      numeroComensales: (json['numero_comensales'] as num?)?.toInt(),
+      cantidadItems: (json['cantidad_items'] as num?)?.toInt() ?? 0,
+      total: (json['total'] as num?)?.toDouble() ?? 0,
+      createdAt: json['created_at'] == null
+          ? null
+          : DateTime.tryParse(json['created_at'] as String? ?? ''),
+      minutosAbierta: (json['minutos_abierta'] as num?)?.toInt() ?? 0,
+    );
+  }
+}

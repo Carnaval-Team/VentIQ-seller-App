@@ -29,6 +29,32 @@ class ComandaService {
         .toList();
   }
 
+  /// Rol de cocina del usuario para decidir el home de la sesión.
+  ///
+  /// Devuelve `'jefe_cocina'`, `'cocinero'` o `''` (ninguno).
+  ///
+  /// Se filtra por `via`, no por tener cocinas: un gerente ve TODAS las cocinas
+  /// de su tienda con `via = 'gerente'` / `'supervisor'` (medido: 2 cocinas), y
+  /// mandarlo al KDS al entrar sería un error — su trabajo es la gestión de la
+  /// tienda. Solo cuenta quien accede *por* su rol de cocina.
+  ///
+  /// Nunca lanza: si la consulta falla se devuelve `''` y la sesión se comporta
+  /// como siempre. Un fallo de red no debe impedir entrar a la app.
+  Future<String> rolDeCocina() async {
+    try {
+      final cocinas = await listarMisCocinas();
+
+      final propias = cocinas
+          .where((c) => c.via == 'jefe_cocina' || c.via == 'cocinero')
+          .toList();
+
+      if (propias.isEmpty) return '';
+      return propias.any((c) => c.esJefe) ? 'jefe_cocina' : 'cocinero';
+    } catch (e) {
+      return '';
+    }
+  }
+
   /// Comandas de la cocina indicada, o de todas las del usuario si es `null`.
   ///
   /// Por defecto solo lo vivo (pendiente / preparando / listo). Para el

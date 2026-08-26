@@ -8,6 +8,7 @@ import 'smart_offline_manager.dart';
 import 'store_config_service.dart';
 import 'subscription_guard_service.dart';
 import 'user_preferences_service.dart';
+import '../utils/navigation_helper.dart';
 
 /// Prepara el dispositivo para operar full offline:
 /// sync de catálogo/licencia + registro local de vendedores con password.
@@ -517,8 +518,10 @@ class LocalOfflineSessionService {
 
     AdminAccessService().clearMemoryCache();
 
-    final inventoryOnly =
-        entryRole == 'gerente' || entryRole == 'supervisor';
-    return inventoryOnly ? '/admin-home' : '/categories';
+    // Home del switch local: mismo criterio que el login (gerente → gestión,
+    // personal de cocina → KDS, resto → catálogo/mesas). Sin red no se puede
+    // consultar el rol de cocina, así que se usa el cacheado del último login
+    // online, que es exactamente para lo que se cachea.
+    return NavigationHelper.homeRoute();
   }
 }

@@ -6,6 +6,8 @@ import '../services/settings_integration_service.dart';
 import '../services/seller_service.dart';
 import '../services/promotion_service.dart';
 import '../services/admin_access_service.dart';
+import '../services/comanda_service.dart';
+import '../utils/navigation_helper.dart';
 
 class LoginWebScreen extends StatefulWidget {
   const LoginWebScreen({super.key});
@@ -138,6 +140,12 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
 
             await _userPreferencesService.setCajaEntryRole(entryRole);
 
+            // Rol de cocina para decidir el home (ver NavigationHelper).
+            // Un fallo aquí no interrumpe el login.
+            await _userPreferencesService.setCocinaRole(
+              await ComandaService().rolDeCocina(),
+            );
+
             try {
               final adminRole = await AdminAccessService().refreshAndCache();
               print('  - Admin Lite role: $adminRole');
@@ -197,14 +205,12 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
               );
             }
 
-            // Login exitoso: gerente/supervisor → gestión; vendedor → catálogo
+            // Login exitoso: gerente/supervisor → gestión, personal de cocina
+            // → KDS, resto → catálogo o mesas. Mismo criterio que la app móvil.
             if (mounted) {
-              final inventoryOnly = entryRole == 'gerente' ||
-                  entryRole == 'supervisor' ||
-                  sellerProfile['inventoryOnly'] == true;
-              Navigator.of(context).pushReplacementNamed(
-                inventoryOnly ? '/admin-home' : '/categories',
-              );
+              final destino = await NavigationHelper.homeRoute();
+              if (!mounted) return;
+              Navigator.of(context).pushReplacementNamed(destino);
             }
           } catch (e) {
             // Error: usuario no es vendedor válido

@@ -26,6 +26,7 @@ import '../services/mesa_cuenta_service.dart';
 import '../models/product.dart';
 import 'product_details_screen.dart';
 import 'dart:async';
+import '../utils/navigation_helper.dart';
 
 class CategoriesScreen extends StatefulWidget {
   const CategoriesScreen({super.key});
@@ -1114,9 +1115,9 @@ class _CategoriesScreenState extends State<CategoriesScreen>
           setState(() {});
         }
         break;
-      case 1: // Preorden
-        Navigator.pushNamed(context, '/preorder').then((_) {
-          setState(() {});
+      case 1: // Carrito: preorden, o la cuenta de mesa abierta en restaurante
+        NavigationHelper.goCarrito(context).then((_) {
+          if (mounted) setState(() {});
         });
         break;
       case 2: // Órdenes

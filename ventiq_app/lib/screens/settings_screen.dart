@@ -3196,8 +3196,8 @@ class _SettingsScreenState extends State<SettingsScreen>
       case 0: // Home → /mesas si modo restaurante, /categories si no
         NavigationHelper.goHome(context);
         break;
-      case 1: // Preorden
-        Navigator.pushNamed(context, '/preorder');
+      case 1: // Carrito: preorden, o la cuenta de mesa abierta en restaurante
+        NavigationHelper.goCarrito(context);
         break;
       case 2: // Órdenes
         Navigator.pushNamed(context, '/orders');
