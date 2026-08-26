@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
@@ -38,6 +39,8 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen>
     with WidgetsBindingObserver {
+  static const String _downloadAppUrl = 'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/vendedor%20cuba.apk';
+
   final OrderService _orderService = OrderService();
   final UserPreferencesService _userPreferencesService =
       UserPreferencesService();
@@ -2926,109 +2929,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
   }
 
-  /// Mostrar QR a pantalla completa para facilitar el escaneo
-  void _showFullScreenQR() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder:
-            (context) => Scaffold(
-              backgroundColor: Colors.black,
-              appBar: AppBar(
-                backgroundColor: Colors.transparent,
-                elevation: 0,
-                leading: IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white, size: 28),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-                title: const Text(
-                  'Código QR - Inventtia Caja',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                centerTitle: true,
-              ),
-              body: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // QR a pantalla completa
-                    Container(
-                      margin: const EdgeInsets.all(24),
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.white.withOpacity(0.1),
-                            blurRadius: 20,
-                            spreadRadius: 5,
-                          ),
-                        ],
-                      ),
-                      child: Image.asset(
-                        'assets/Lk1KNR.png',
-                        width: MediaQuery.of(context).size.width * 0.8,
-                        height: MediaQuery.of(context).size.width * 0.8,
-                        fit: BoxFit.contain,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    // Información
-                    Text(
-                      'Escanea este código para descargar Inventtia Caja',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.9),
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Inventtia Caja $_appVersion',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.7),
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 32),
-                    // Botón para cerrar
-                    ElevatedButton.icon(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close, size: 20),
-                      label: const Text(
-                        'Cerrar',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF4A90E2),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 32,
-                          vertical: 12,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(25),
-                        ),
-                        elevation: 5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-      ),
-    );
-  }
-
-  /// Mostrar diálogo con QR para descargar la aplicación
+  /// Mostrar diálogo para descargar la aplicación
   void _showDownloadDialog() {
     showDialog(
       context: context,
@@ -3068,68 +2969,8 @@ class _SettingsScreenState extends State<SettingsScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
-                'Escanea el código QR para descargar Inventtia Caja en tu dispositivo:',
+                'Enlace directo para descargar Inventtia Caja:',
                 style: TextStyle(fontSize: 14, color: Color(0xFF6B7280)),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 20),
-              // Imagen del QR (clickeable para pantalla completa)
-              GestureDetector(
-                onTap: () => _showFullScreenQR(),
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey[300]!, width: 1),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Stack(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.asset(
-                          'assets/Lk1KNR.png',
-                          width: 200,
-                          height: 200,
-                          fit: BoxFit.contain,
-                        ),
-                      ),
-                      // Indicador de que es clickeable
-                      Positioned(
-                        top: 8,
-                        right: 8,
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.6),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(
-                            Icons.fullscreen,
-                            color: Colors.white,
-                            size: 16,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Toca la imagen para ver a pantalla completa',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFF9CA3AF),
-                  fontStyle: FontStyle.italic,
-                ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
@@ -3141,9 +2982,47 @@ class _SettingsScreenState extends State<SettingsScreen>
                   fontWeight: FontWeight.w500,
                 ),
               ),
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.asset(
+                  'assets/Lk1KNR.png',
+                  width: 180,
+                  height: 180,
+                  fit: BoxFit.contain,
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'O comparte el enlace directo:',
+                style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              SelectableText(
+                _downloadAppUrl,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF4A90E2),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ],
           ),
           actions: [
+            TextButton.icon(
+              onPressed: () => Share.share(_downloadAppUrl),
+              icon: const Icon(Icons.share, size: 20),
+              label: const Text('Compartir link'),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF4A90E2),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+              ),
+            ),
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
               style: TextButton.styleFrom(

@@ -307,6 +307,37 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
     int? idTurno,
   ) async {
     setState(() => _isActing = true);
+
+    // Validar carné para reservas del mismo día
+    final ahora = DateTime.now();
+    final esHoy = fecha.year == ahora.year &&
+        fecha.month == ahora.month &&
+        fecha.day == ahora.day;
+    if (esHoy) {
+      String ci;
+      if (datos.paraTercero) {
+        ci = datos.tCi?.trim() ?? '';
+      } else {
+        final perfil = context.read<AuthProvider>().perfil;
+        ci = (perfil?.ci ?? '').trim();
+      }
+      if (ci.length != 11 || int.tryParse(ci) == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Para reservar hoy el carné de identidad debe tener 11 dígitos.',
+              ),
+              backgroundColor: AppTheme.error,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        setState(() => _isActing = false);
+        return;
+      }
+    }
+
     try {
       await AgendaService.reservarDirecto(
         uuidUsuario: uuid,

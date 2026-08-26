@@ -759,7 +759,7 @@ class CarnavalService {
       final double basePrice =
           ((priceData?['precio_venta_cup'] as num?) ?? 0).toDouble();
 
-      // 2.1 Obtener configuración de porcentajes para Carnaval (con fallback)
+      // 2.1 Obtener configuración de porcentajes para Carnaval
       final priceConfig = await _getCarnavalPriceConfig(
         productData['id_tienda'],
       );
@@ -853,40 +853,33 @@ class CarnavalService {
   }
 
   /// Obtiene configuración de porcentajes de precio para Carnaval.
-  /// Si no existe registro, retorna defaults (5.3% y 11.1%).
   static Future<Map<String, double>> _getCarnavalPriceConfig(
     int storeId,
   ) async {
-    const defaults = {
-      'precio_venta_carnaval': 5.3,
-      'precio_venta_carnaval_transferencia': 11.1,
-    };
+    final config =
+        await _supabase
+            .from('app_dat_precio_general_tienda')
+            .select(
+              'precio_venta_carnaval, precio_venta_carnaval_transferencia',
+            )
+            .eq('id_tienda', storeId)
+            .maybeSingle();
 
-    try {
-      final config =
-          await _supabase
-              .from('app_dat_precio_general_tienda')
-              .select(
-                'precio_venta_carnaval, precio_venta_carnaval_transferencia',
-              )
-              .eq('id_tienda', storeId)
-              .maybeSingle();
+    final precioCarnaval =
+        (config?['precio_venta_carnaval'] as num?)?.toDouble();
+    final precioTransferencia =
+        (config?['precio_venta_carnaval_transferencia'] as num?)?.toDouble();
 
-      if (config == null) return defaults;
-
-      return {
-        'precio_venta_carnaval':
-            (config['precio_venta_carnaval'] as num?)?.toDouble() ??
-            defaults['precio_venta_carnaval']!,
-        'precio_venta_carnaval_transferencia':
-            (config['precio_venta_carnaval_transferencia'] as num?)
-                ?.toDouble() ??
-            defaults['precio_venta_carnaval_transferencia']!,
-      };
-    } catch (e) {
-      print('❌ Error obteniendo config de precio carnaval: $e');
-      return defaults;
+    if (precioCarnaval == null || precioTransferencia == null) {
+      throw Exception(
+        'La tienda no tiene configurados los porcentajes de Carnaval',
+      );
     }
+
+    return {
+      'precio_venta_carnaval': precioCarnaval,
+      'precio_venta_carnaval_transferencia': precioTransferencia,
+    };
   }
 
   /// Obtiene los productos sincronizados agrupados por categoría

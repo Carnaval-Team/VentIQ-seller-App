@@ -22,10 +22,23 @@ class InventoryOperationsScreen extends StatefulWidget {
 
 class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   final _searchController = TextEditingController();
+  final _montoController = TextEditingController();
 
   List<Map<String, dynamic>> _operations = [];
+
+  /// Operaciones filtradas por monto si el usuario introdujo un valor.
+  List<Map<String, dynamic>> get _operacionesFiltradas {
+    if (_montoFiltro == null) return _operations;
+    final target = (_montoFiltro! * 100).round();
+    return _operations.where((op) {
+      final total = _calculateTotalPrice(op);
+      return (total * 100).round() == target;
+    }).toList();
+  }
+
   bool _isLoading = true;
   String _searchQuery = '';
+  double? _montoFiltro;
   DateTime? _fechaDesde;
   DateTime? _fechaHasta;
   int? _tipoOperacionId;
@@ -69,6 +82,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     _loadTiposOperacion();
     _initPermissionsAndOperations();
     _searchController.addListener(_onSearchChanged);
+    _montoController.addListener(_onMontoChanged);
     _scrollController.addListener(_onScroll);
   }
 
@@ -98,6 +112,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _montoController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -107,6 +122,13 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       _searchQuery = _searchController.text;
     });
     _debounceSearch();
+  }
+
+  void _onMontoChanged() {
+    final text = _montoController.text.trim();
+    setState(() {
+      _montoFiltro = text.isEmpty ? null : double.tryParse(text);
+    });
   }
 
   void _onScroll() {
@@ -695,7 +717,9 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       _fechaDesde = null;
       _fechaHasta = null;
       _tipoOperacionId = null;
+      _montoFiltro = null;
     });
+    _montoController.clear();
     _currentPage = 1;
     _loadOperations();
   }
@@ -936,6 +960,27 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
           ),
           const SizedBox(width: 12),
 
+          // Monto filter
+          SizedBox(
+            width: 110,
+            child: TextField(
+              controller: _montoController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                hintText: 'Monto',
+                prefixIcon: const Icon(Icons.attach_money),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+
           // Compact date filter icon
           Container(
             decoration: BoxDecoration(
@@ -1002,7 +1047,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
           // Clear filter button
           if (_fechaDesde != null ||
               _fechaHasta != null ||
-              _tipoOperacionId != null) ...[
+              _tipoOperacionId != null ||
+              _montoFiltro != null) ...[
             const SizedBox(width: 8),
             Container(
               decoration: BoxDecoration(
@@ -1033,7 +1079,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         child:
             _isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : _operations.isEmpty
+                : _operacionesFiltradas.isEmpty
                 ? ListView(
                   // Necesario para que el RefreshIndicator funcione con contenido vacío
                   physics: const AlwaysScrollableScrollPhysics(),
@@ -1068,17 +1114,18 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   /// Construye el contenido de la lista de operaciones
   /// Usa infinite scroll en ambas plataformas (móvil y web)
   Widget _buildOperationsListContent() {
+    final operations = _operacionesFiltradas;
     return ListView.builder(
       controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
-      itemCount: _operations.length + (_isLoadingMore ? 1 : 0),
+      itemCount: operations.length + (_isLoadingMore ? 1 : 0),
       itemBuilder: (context, index) {
-        if (index == _operations.length) {
+        if (index == operations.length) {
           // Mostrar indicador de carga al final
           return _buildLoadingMoreIndicator();
         }
-        final operation = _operations[index];
+        final operation = operations[index];
         return _buildOperationCard(operation);
       },
     );

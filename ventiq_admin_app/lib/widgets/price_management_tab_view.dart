@@ -23,10 +23,88 @@ class _PriceManagementTabViewState extends State<PriceManagementTabView> {
   List<ProductPriceItem> _products = [];
   final Set<int> _selected = {};
 
+  final TextEditingController _nameFilterController = TextEditingController();
+  String _nameFilter = '';
+  bool _onlyActiveCarnaval = true;
+  bool _onlyBelowConfiguredPercentage = false;
+  bool _isFiltering = false;
+  int _filterGeneration = 0;
+
   @override
   void initState() {
     super.initState();
+    _nameFilterController.addListener(_onNameFilterChanged);
     _loadData();
+  }
+
+  void _onNameFilterChanged() {
+    _applyFilterChange(() {
+      _nameFilter = _nameFilterController.text;
+    });
+  }
+
+  Future<void> _applyFilterChange(VoidCallback change) async {
+    final generation = ++_filterGeneration;
+    setState(() {
+      change();
+      _isFiltering = true;
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    if (!mounted || generation != _filterGeneration) return;
+    setState(() => _isFiltering = false);
+  }
+
+  List<ProductPriceItem> get _filteredProducts {
+    final query = _nameFilter.trim().toLowerCase();
+    return _products.where((product) {
+      if (product.vendedorAppId == null) return false;
+      if (_onlyActiveCarnaval && product.carnavalActive != true) return false;
+      if (query.isNotEmpty && !product.name.toLowerCase().contains(query)) {
+        return false;
+      }
+      if (_onlyBelowConfiguredPercentage &&
+          !_hasPercentageBelowConfigured(product)) {
+        return false;
+      }
+      return true;
+    }).toList();
+  }
+
+  bool _hasPercentageBelowConfigured(ProductPriceItem product) {
+    final basePrice = product.lastPrice;
+    if (basePrice == null || basePrice <= 0) return false;
+
+    final configuredCash = _priceConfig?.precioVentaCarnaval;
+    final configuredTransfer = _priceConfig?.precioVentaCarnavalTransferencia;
+    final actualCash = _calculatePercentage(
+      basePrice,
+      product.carnavalDiscountPrice,
+    );
+    final actualTransfer = _calculatePercentage(
+      basePrice,
+      product.carnavalPrice,
+    );
+
+    return (configuredCash != null &&
+            actualCash != null &&
+            _roundPercentage(actualCash) < _roundPercentage(configuredCash)) ||
+        (configuredTransfer != null &&
+            actualTransfer != null &&
+            _roundPercentage(actualTransfer) <
+                _roundPercentage(configuredTransfer));
+  }
+
+  double? _calculatePercentage(double basePrice, double? carnavalPrice) {
+    if (carnavalPrice == null || basePrice <= 0) return null;
+    return ((carnavalPrice / basePrice) - 1) * 100;
+  }
+
+  double _roundPercentage(double value) => (value * 100).round() / 100;
+
+  @override
+  void dispose() {
+    _nameFilterController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -45,6 +123,10 @@ class _PriceManagementTabViewState extends State<PriceManagementTabView> {
       );
       final products = await PriceManagementService.getProductsWithLastPrice(
         _storeId!,
+      );
+
+      products.sort(
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
       );
 
       setState(() {
@@ -72,13 +154,15 @@ class _PriceManagementTabViewState extends State<PriceManagementTabView> {
     if (_storeId == null || _priceConfig == null) return;
 
     final regularController = TextEditingController(
-      text: _priceConfig!.precioRegular.toStringAsFixed(1),
+      text: _priceConfig!.precioRegular?.toStringAsFixed(1) ?? '',
     );
     final carnavalController = TextEditingController(
-      text: _priceConfig!.precioVentaCarnaval.toStringAsFixed(1),
+      text: _priceConfig!.precioVentaCarnaval?.toStringAsFixed(1) ?? '',
     );
     final transferenciaController = TextEditingController(
-      text: _priceConfig!.precioVentaCarnavalTransferencia.toStringAsFixed(1),
+      text:
+          _priceConfig!.precioVentaCarnavalTransferencia?.toStringAsFixed(1) ??
+          '',
     );
 
     await showDialog(
@@ -120,24 +204,32 @@ class _PriceManagementTabViewState extends State<PriceManagementTabView> {
               child: const Text('Cancelar'),
             ),
             ElevatedButton(
-              onPressed:
-                  _isSaving
-                      ? null
-                      : () async {
-                        final regular =
-                            double.tryParse(regularController.text) ?? 0.0;
-                        final carnaval =
-                            double.tryParse(carnavalController.text) ?? 0.0;
-                        final transferencia =
-                            double.tryParse(transferenciaController.text) ??
-                            0.0;
-                        Navigator.of(context).pop();
-                        await _applyGlobalChange(
-                          regular: regular,
-                          carnaval: carnaval,
-                          transferencia: transferencia,
+              onPressed: _isSaving
+                  ? null
+                  : () async {
+                      final regular = double.tryParse(regularController.text);
+                      final carnaval = double.tryParse(carnavalController.text);
+                      final transferencia = double.tryParse(
+                        transferenciaController.text,
+                      );
+                      if (regular == null ||
+                          carnaval == null ||
+                          transferencia == null) {
+                        ScaffoldMessenger.of(this.context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Debe indicar los tres porcentajes'),
+                            backgroundColor: Colors.red,
+                          ),
                         );
-                      },
+                        return;
+                      }
+                      Navigator.of(context).pop();
+                      await _applyGlobalChange(
+                        regular: regular,
+                        carnaval: carnaval,
+                        transferencia: transferencia,
+                      );
+                    },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
               ),
@@ -259,10 +351,9 @@ class _PriceManagementTabViewState extends State<PriceManagementTabView> {
                       decimal: true,
                     ),
                     decoration: InputDecoration(
-                      labelText:
-                          changeType == 'percent'
-                              ? 'Porcentaje a aumentar'
-                              : 'Cantidad fija a aumentar',
+                      labelText: changeType == 'percent'
+                          ? 'Porcentaje a aumentar'
+                          : 'Cantidad fija a aumentar',
                       suffixText: changeType == 'percent' ? '%' : 'CUP',
                       border: const OutlineInputBorder(),
                     ),
@@ -281,18 +372,17 @@ class _PriceManagementTabViewState extends State<PriceManagementTabView> {
                   child: const Text('Cancelar'),
                 ),
                 ElevatedButton(
-                  onPressed:
-                      _isSaving
-                          ? null
-                          : () async {
-                            final value =
-                                double.tryParse(valueController.text) ?? 0.0;
-                            Navigator.of(context).pop();
-                            await _applySelectedChange(
-                              changeType: changeType,
-                              changeValue: value,
-                            );
-                          },
+                  onPressed: _isSaving
+                      ? null
+                      : () async {
+                          final value =
+                              double.tryParse(valueController.text) ?? 0.0;
+                          Navigator.of(context).pop();
+                          await _applySelectedChange(
+                            changeType: changeType,
+                            changeValue: value,
+                          );
+                        },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                   ),
@@ -312,6 +402,21 @@ class _PriceManagementTabViewState extends State<PriceManagementTabView> {
   }) async {
     if (_storeId == null || _priceConfig == null) return;
 
+    final precioCarnaval = _priceConfig!.precioVentaCarnaval;
+    final precioCarnavalTransferencia =
+        _priceConfig!.precioVentaCarnavalTransferencia;
+    if (precioCarnaval == null || precioCarnavalTransferencia == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Configure los porcentajes de Carnaval antes de cambiar precios',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _isSaving = true;
     });
@@ -321,9 +426,8 @@ class _PriceManagementTabViewState extends State<PriceManagementTabView> {
       productIds: _selected.toList(),
       changeType: changeType,
       changeValue: changeValue,
-      precioCarnaval: _priceConfig!.precioVentaCarnaval,
-      precioCarnavalTransferencia:
-          _priceConfig!.precioVentaCarnavalTransferencia,
+      precioCarnaval: precioCarnaval,
+      precioCarnavalTransferencia: precioCarnavalTransferencia,
     );
 
     setState(() {
@@ -367,6 +471,11 @@ class _PriceManagementTabViewState extends State<PriceManagementTabView> {
   String _formatPrice(double? value) {
     if (value == null) return 'Sin precio';
     return '\$${value.toStringAsFixed(2)}';
+  }
+
+  String _formatPercentage(double? value) {
+    if (value == null) return 'Sin configurar';
+    return '${value.toStringAsFixed(2)}%';
   }
 
   String _formatDate(DateTime? dt) {
@@ -470,17 +579,17 @@ class _PriceManagementTabViewState extends State<PriceManagementTabView> {
               children: [
                 _buildChip(
                   label:
-                      'Precio regular: ${_priceConfig?.precioRegular.toStringAsFixed(2) ?? '0'}%',
+                      'Precio regular: ${_formatPercentage(_priceConfig?.precioRegular)}',
                   color: Colors.blue,
                 ),
                 _buildChip(
                   label:
-                      'Carnaval: ${_priceConfig?.precioVentaCarnaval.toStringAsFixed(2) ?? '5.3'}%',
+                      'Carnaval: ${_formatPercentage(_priceConfig?.precioVentaCarnaval)}',
                   color: Colors.deepPurple,
                 ),
                 _buildChip(
                   label:
-                      'Carnaval transferencia: ${_priceConfig?.precioVentaCarnavalTransferencia.toStringAsFixed(2) ?? '11.1'}%',
+                      'Carnaval transferencia: ${_formatPercentage(_priceConfig?.precioVentaCarnavalTransferencia)}',
                   color: Colors.teal,
                 ),
               ],
@@ -501,6 +610,137 @@ class _PriceManagementTabViewState extends State<PriceManagementTabView> {
     );
   }
 
+  Widget _buildNameFilter() {
+    return TextField(
+      controller: _nameFilterController,
+      decoration: InputDecoration(
+        labelText: 'Filtrar por nombre',
+        hintText: 'Escribe el nombre del producto',
+        prefixIcon: const Icon(Icons.search),
+        suffixIcon: _nameFilter.isNotEmpty
+            ? IconButton(
+                icon: const Icon(Icons.clear),
+                onPressed: () => _nameFilterController.clear(),
+              )
+            : null,
+        border: const OutlineInputBorder(),
+      ),
+    );
+  }
+
+  Widget _buildCarnavalFilters([VoidCallback? refresh]) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        ChoiceChip(
+          label: const Text('Activos en Carnaval'),
+          selected: _onlyActiveCarnaval,
+          onSelected: (_) {
+            _applyFilterChange(() => _onlyActiveCarnaval = true);
+            refresh?.call();
+          },
+        ),
+        ChoiceChip(
+          label: const Text('Todos sincronizados'),
+          selected: !_onlyActiveCarnaval,
+          onSelected: (_) {
+            _applyFilterChange(() => _onlyActiveCarnaval = false);
+            refresh?.call();
+          },
+        ),
+        FilterChip(
+          avatar: const Icon(Icons.trending_down, size: 18),
+          label: const Text('Por debajo del porcentaje configurado'),
+          selected: _onlyBelowConfiguredPercentage,
+          onSelected: (selected) {
+            _applyFilterChange(() => _onlyBelowConfiguredPercentage = selected);
+            refresh?.call();
+          },
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showFiltersDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Filtrar productos'),
+              content: SizedBox(
+                width: 460,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildNameFilter(),
+                    const SizedBox(height: 16),
+                    _buildCarnavalFilters(() => setDialogState(() {})),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    _nameFilterController.clear();
+                    _applyFilterChange(() {
+                      _onlyActiveCarnaval = true;
+                      _onlyBelowConfiguredPercentage = false;
+                    });
+                    setDialogState(() {});
+                  },
+                  child: const Text('Restablecer'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cerrar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildProductsTableHeader() {
+    final activeFilters =
+        (_nameFilter.isNotEmpty ? 1 : 0) +
+        (!_onlyActiveCarnaval ? 1 : 0) +
+        (_onlyBelowConfiguredPercentage ? 1 : 0);
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Icon(Icons.inventory_2, color: AppColors.primary),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Productos sincronizados con Carnaval',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: _isFiltering ? null : _showFiltersDialog,
+                icon: const Icon(Icons.filter_list),
+                label: Text(
+                  activeFilters == 0 ? 'Filtros' : 'Filtros ($activeFilters)',
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (_isFiltering) const LinearProgressIndicator(minHeight: 2),
+      ],
+    );
+  }
+
   Widget _buildActionsRow() {
     return Row(
       children: [
@@ -518,8 +758,9 @@ class _PriceManagementTabViewState extends State<PriceManagementTabView> {
         const SizedBox(width: 12),
         Expanded(
           child: OutlinedButton.icon(
-            onPressed:
-                _isSaving || _selected.isEmpty ? null : _showSelectedDialog,
+            onPressed: _isSaving || _selected.isEmpty
+                ? null
+                : _showSelectedDialog,
             icon: const Icon(Icons.check_box),
             label: const Text('Cambiar seleccionados'),
             style: OutlinedButton.styleFrom(
@@ -534,82 +775,130 @@ class _PriceManagementTabViewState extends State<PriceManagementTabView> {
   }
 
   Widget _buildProductsList() {
+    final filtered = _filteredProducts;
+
     if (_products.isEmpty) {
       return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            children: const [
-              Icon(Icons.inventory_2_outlined, size: 42, color: Colors.grey),
-              SizedBox(height: 12),
-              Text(
-                'No hay productos registrados',
-                style: TextStyle(color: Colors.grey),
+        child: Column(
+          children: [
+            _buildProductsTableHeader(),
+            const Divider(height: 1),
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.inventory_2_outlined,
+                    size: 42,
+                    color: Colors.grey,
+                  ),
+                  SizedBox(height: 12),
+                  Text(
+                    'No hay productos registrados',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (filtered.isEmpty) {
+      return Card(
+        child: Column(
+          children: [
+            _buildProductsTableHeader(),
+            const Divider(height: 1),
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Column(
+                children: [
+                  Icon(Icons.search_off, size: 42, color: Colors.grey),
+                  SizedBox(height: 12),
+                  Text(
+                    'Ningún producto coincide con el filtro',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       );
     }
 
     return Card(
       elevation: 1,
-      child: ListView.separated(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        itemCount: _products.length,
-        separatorBuilder: (_, __) => const Divider(height: 1),
-        itemBuilder: (context, index) {
-          final item = _products[index];
-          final selected = _selected.contains(item.id);
-          return ListTile(
-            onTap: () => _toggleSelection(item.id),
-            leading: Checkbox(
-              value: selected,
-              onChanged: (_) => _toggleSelection(item.id),
-            ),
-            title: Text(
-              item.name,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('SKU: ${item.sku.isNotEmpty ? item.sku : 'N/A'}'),
-                const SizedBox(height: 4),
-                Text(
-                  'Último precio: ${_formatPrice(item.lastPrice)} · ${_formatDate(item.lastPriceDate)}',
-                  style: const TextStyle(fontSize: 12),
+      child: Column(
+        children: [
+          _buildProductsTableHeader(),
+          const Divider(height: 1),
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: filtered.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final item = filtered[index];
+              final selected = _selected.contains(item.id);
+              return ListTile(
+                onTap: () => _toggleSelection(item.id),
+                leading: Checkbox(
+                  value: selected,
+                  onChanged: (_) => _toggleSelection(item.id),
                 ),
-                if (item.vendedorAppId != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.sync_alt,
-                          size: 14,
-                          color: Colors.orange.shade700,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Sincroniza con Carnaval (id: ${item.vendedorAppId})',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.orange.shade700,
-                          ),
-                        ),
-                      ],
+                title: Text(
+                  item.name,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('SKU: ${item.sku.isNotEmpty ? item.sku : 'N/A'}'),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Último precio: ${_formatPrice(item.lastPrice)} · ${_formatDate(item.lastPriceDate)}',
+                      style: const TextStyle(fontSize: 12),
                     ),
-                  ),
-              ],
-            ),
-            trailing: Icon(
-              selected ? Icons.check_circle : Icons.radio_button_unchecked,
-              color: selected ? AppColors.primary : Colors.grey,
-            ),
-          );
-        },
+                    if (item.vendedorAppId != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.sync_alt,
+                              size: 14,
+                              color: Colors.orange.shade700,
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                'Carnaval ${item.carnavalActive == true ? 'activo' : 'inactivo'} '
+                                '(efectivo: ${_formatPercentage(_calculatePercentage(item.lastPrice ?? 0, item.carnavalDiscountPrice))}, '
+                                'transferencia: ${_formatPercentage(_calculatePercentage(item.lastPrice ?? 0, item.carnavalPrice))})',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: item.carnavalActive == true
+                                      ? Colors.green.shade700
+                                      : Colors.grey.shade700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+                trailing: Icon(
+                  selected ? Icons.check_circle : Icons.radio_button_unchecked,
+                  color: selected ? AppColors.primary : Colors.grey,
+                ),
+              );
+            },
+          ),
+        ],
       ),
     );
   }

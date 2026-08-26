@@ -94,6 +94,7 @@ flutter:
   assets:
     - assets/images/inventia.png
     - assets/images/ic.png
+    - assets/Lk1KNR.png
     - assets/changelog.json
     - assets/ai_assistant_knowledge.json
 

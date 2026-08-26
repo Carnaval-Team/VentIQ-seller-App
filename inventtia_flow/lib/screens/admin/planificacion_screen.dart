@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../../config/app_theme.dart';
@@ -1861,6 +1862,28 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate() || _selectedLocalServicio == null) return;
 
+    // Validar carné para reservas del mismo día
+    final ahora = DateTime.now();
+    final esHoy = widget.dia.year == ahora.year &&
+        widget.dia.month == ahora.month &&
+        widget.dia.day == ahora.day;
+    if (esHoy) {
+      final ci = _ciCtrl.text.trim();
+      if (ci.length != 11 || int.tryParse(ci) == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Para reservar hoy el CI debe tener 11 dígitos.',
+              ),
+              backgroundColor: AppTheme.error,
+            ),
+          );
+        }
+        return;
+      }
+    }
+
     if (_sinCupoDia) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -2111,11 +2134,28 @@ class _AdminReservationSheetState extends State<_AdminReservationSheet> {
                 // CI
                 TextFormField(
                   controller: _ciCtrl,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(11),
+                  ],
                   decoration: const InputDecoration(
                     labelText: 'CI',
                     border: OutlineInputBorder(),
+                    counterText: '',
                   ),
-                  validator: (value) => value?.isEmpty == true ? 'Ingresa el CI' : null,
+                  validator: (value) {
+                    final t = (value ?? '').trim();
+                    if (t.isEmpty) return 'Ingresa el CI';
+                    final ahora = DateTime.now();
+                    final esHoy = widget.dia.year == ahora.year &&
+                        widget.dia.month == ahora.month &&
+                        widget.dia.day == ahora.day;
+                    if (esHoy && (t.length != 11 || int.tryParse(t) == null)) {
+                      return 'El CI debe tener 11 dígitos';
+                    }
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 16),
 
