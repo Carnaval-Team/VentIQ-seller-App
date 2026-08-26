@@ -4,6 +4,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
 import '../../models/hr/hr_salary_report.dart';
+import '../../models/hr/hr_salary_day.dart';
 import '../../models/hr/hr_audit_log.dart';
 import '../../models/hr/hr_salary_type.dart';
 
@@ -37,6 +38,87 @@ class HRSalaryReportService {
       return [];
     } catch (e) {
       print('❌ Error obteniendo reporte de salarios: $e');
+      rethrow;
+    }
+  }
+
+  /// Obtener el detalle día a día del salario de UN trabajador.
+  ///
+  /// Devuelve una fila por jornada del rango, con la tarifa y el PPR que se
+  /// guardaron en ESA jornada (no los configurados hoy al trabajador), para
+  /// que RR.HH. pueda auditar y corregir un día pasado.
+  static Future<HRWorkerSalaryDetail?> getWorkerSalaryDetail({
+    required int storeId,
+    required int workerId,
+    required DateTime fechaDesde,
+    required DateTime fechaHasta,
+  }) async {
+    try {
+      print('📅 Detalle de salario: trabajador $workerId, tienda $storeId');
+      final response = await _supabase.rpc(
+        'fn_hr_worker_salary_detail',
+        params: {
+          'p_id_tienda': storeId,
+          'p_id_trabajador': workerId,
+          'p_fecha_desde': fechaDesde.toIso8601String().split('T')[0],
+          'p_fecha_hasta': fechaHasta.toIso8601String().split('T')[0],
+        },
+      );
+
+      if (response['success'] == true) {
+        final trabajador = response['trabajador'] as Map<String, dynamic>;
+        final data = response['data'] as List<dynamic>;
+        print('📋 ${data.length} jornadas en el rango');
+        return HRWorkerSalaryDetail.fromJson(trabajador, data);
+      }
+      throw Exception(response['message'] ?? 'Error al cargar el detalle');
+    } catch (e) {
+      print('❌ Error obteniendo detalle de salario: $e');
+      rethrow;
+    }
+  }
+
+  /// Corregir el pago de UNA jornada ya cerrada.
+  ///
+  /// Todos los campos de cambio son opcionales: lo que va en `null` no se
+  /// toca. [salarioTotal] es el salario BASE del día (sin PPR); la base de
+  /// datos deriva la tarifa de la jornada a partir de él, porque
+  /// `salario_total` es una columna generada. [cantidad] es lo pagado en la
+  /// unidad de la modalidad de la jornada: días si es por día, horas si es
+  /// por hora. Poner [aplicaPPR] en false quita el PPR de ese día.
+  static Future<Map<String, dynamic>> updateAttendancePay({
+    required int asistenciaId,
+    required int storeId,
+    required String modificadoPor,
+    double? salarioTotal,
+    double? cantidad,
+    bool? aplicaPPR,
+    double? ppr,
+    String? motivo,
+  }) async {
+    try {
+      print('✏️ Corrigiendo pago de jornada $asistenciaId');
+      final response = await _supabase.rpc(
+        'fn_hr_update_attendance_pay',
+        params: {
+          'p_asistencia_id': asistenciaId,
+          'p_id_tienda': storeId,
+          'p_modificado_por': modificadoPor,
+          'p_salario_total': salarioTotal,
+          'p_cantidad': cantidad,
+          'p_aplica_ppr': aplicaPPR,
+          'p_ppr': ppr,
+          'p_motivo': motivo,
+        },
+      );
+
+      if (response['success'] == true) {
+        print('✅ ${response['message']}');
+        return response as Map<String, dynamic>;
+      }
+      throw Exception(response['message'] ?? 'Error al corregir el pago');
+    } catch (e) {
+      print('❌ Error corrigiendo pago de jornada: $e');
       rethrow;
     }
   }

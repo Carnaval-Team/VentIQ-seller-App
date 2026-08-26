@@ -7,6 +7,7 @@ import '../../services/store_service.dart';
 import '../../services/user_preferences_service.dart';
 import '../../widgets/hr/hr_drawer.dart';
 import '../../widgets/hr/hr_modalidad_badge.dart';
+import '../../widgets/hr/hr_worker_salary_days_sheet.dart';
 
 class HRSalaryReportScreen extends StatefulWidget {
   const HRSalaryReportScreen({super.key});
@@ -18,6 +19,7 @@ class HRSalaryReportScreen extends StatefulWidget {
 class _HRSalaryReportScreenState extends State<HRSalaryReportScreen> {
   bool _isLoading = true;
   int? _storeId;
+  String? _userUuid;
   String _storeName = 'Tienda';
 
   List<HRSalaryReportEntry> _entries = [];
@@ -49,6 +51,7 @@ class _HRSalaryReportScreenState extends State<HRSalaryReportScreen> {
 
       setState(() {
         _storeId = storeData['storeId'] as int?;
+        _userUuid = storeData['userUuid'] as String?;
         _storeName = storeInfo?['denominacion'] as String? ?? 'Tienda';
       });
       await _loadReport();
@@ -105,6 +108,21 @@ class _HRSalaryReportScreenState extends State<HRSalaryReportScreen> {
       });
       await _loadReport();
     }
+  }
+
+  /// Abre el detalle día a día del trabajador para poder corregir el pago de
+  /// una fecha pasada (salario del día o PPR).
+  void _openWorkerDays(HRSalaryReportEntry entry) {
+    if (_storeId == null || _userUuid == null) return;
+    HRWorkerSalaryDaysSheet.show(
+      context,
+      entry: entry,
+      storeId: _storeId!,
+      userUuid: _userUuid!,
+      fechaDesde: _fechaDesde,
+      fechaHasta: _fechaHasta,
+      onChanged: _loadReport,
+    );
   }
 
   void _exportPDF() {
@@ -247,6 +265,29 @@ class _HRSalaryReportScreenState extends State<HRSalaryReportScreen> {
                               ),
                             ),
                             const Divider(height: 1),
+                            // Pista de descubrimiento: sin ella la fila
+                            // tocable pasa desapercibida.
+                            Container(
+                              width: double.infinity,
+                              color: Colors.white,
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                              child: const Row(
+                                children: [
+                                  Icon(Icons.touch_app,
+                                      size: 13, color: AppColors.textLight),
+                                  SizedBox(width: 5),
+                                  Expanded(
+                                    child: Text(
+                                      'Toca un trabajador para ver y corregir sus días',
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        color: AppColors.textLight,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                             // Table
                             Expanded(
                               child: SingleChildScrollView(
@@ -259,6 +300,10 @@ class _HRSalaryReportScreenState extends State<HRSalaryReportScreen> {
                                     ),
                                     child: DataTable(
                                       columnSpacing: 12,
+                                      // Las filas son tocables para abrir el
+                                      // detalle del trabajador, pero no son
+                                      // seleccionables: sin casillas.
+                                      showCheckboxColumn: false,
                                       headingTextStyle: const TextStyle(
                                         fontWeight: FontWeight.w600,
                                         fontSize: 11,
@@ -286,6 +331,9 @@ class _HRSalaryReportScreenState extends State<HRSalaryReportScreen> {
                                           final e = _entries[i];
                                           final avgPerDay = e.diasTrabajados > 0 ? e.totalGeneral / e.diasTrabajados : 0.0;
                                           return DataRow(
+                                            // Tocar la fila abre el detalle
+                                            // día a día para corregir pagos.
+                                            onSelectChanged: (_) => _openWorkerDays(e),
                                             color: i == 0
                                                 ? WidgetStateProperty.all(AppColors.success.withOpacity(0.05))
                                                 : null,
@@ -297,9 +345,21 @@ class _HRSalaryReportScreenState extends State<HRSalaryReportScreen> {
                                                   color: i == 0 ? AppColors.success : null,
                                                 ),
                                               )),
-                                              DataCell(Text(
-                                                e.nombreCompleto,
-                                                style: const TextStyle(fontWeight: FontWeight.w500),
+                                              DataCell(Row(
+                                                children: [
+                                                  Flexible(
+                                                    child: Text(
+                                                      e.nombreCompleto,
+                                                      style: const TextStyle(fontWeight: FontWeight.w500),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  const Icon(
+                                                    Icons.chevron_right,
+                                                    size: 14,
+                                                    color: AppColors.textLight,
+                                                  ),
+                                                ],
                                               )),
                                               DataCell(Text(
                                                 e.rolNombre ?? '-',
