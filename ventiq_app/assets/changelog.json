@@ -1,9 +1,45 @@
 {
-  "current_version": "2.4.3",
-  "build": 845,
-
+  "current_version": "2.4.4",
+  "build": 846,
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.4.4",
+      "date": "2026-08-26",
+      "title": "🍽️ Cocina más ágil: platos siempre visibles y vuelta rápida a la mesa",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Los platos de cocina ya no desaparecen del catálogo",
+          "description": "Corregimos un problema por el que un plato dejaba de aparecer en el catálogo después de venderse una vez desde la barra, quedando imposible de vender. Ahora los platos que se preparan en la cocina están siempre disponibles mientras haya ingredientes."
+        },
+        {
+          "type": "feature",
+          "title": "El carrito te lleva directo a la mesa que estabas atendiendo",
+          "description": "En modo restaurante, el botón del carrito abre la última cuenta que tocaste para seguir añadiendo platos, sin pasar por el listado de mesas. Si no tienes ninguna cuenta abierta, te lleva a elegir mesa."
+        },
+        {
+          "type": "feature",
+          "title": "Imprime la comanda desde la pantalla de cocina",
+          "description": "Cada comanda del KDS tiene un botón de impresora. Si la cocina no tiene impresora configurada, el ticket se muestra en pantalla para leerlo o copiarlo, con el número de comanda bien grande y las notas del cliente destacadas."
+        },
+        {
+          "type": "fix",
+          "title": "Las notas del cliente salen completas en el ticket",
+          "description": "Antes una nota larga se cortaba a mitad en el papel y el cocinero no tenía forma de saber que faltaba texto. Ahora se reparte en varias líneas y siempre se imprime completa, sea cual sea el ancho de la impresora."
+        },
+        {
+          "type": "improvement",
+          "title": "Si trabajas en cocina, la app abre en tu pantalla de cocina",
+          "description": "El personal de cocina entra directo al KDS al iniciar sesión, en lugar de al catálogo de venta. Un toque menos en cada arranque del turno."
+        },
+        {
+          "type": "improvement",
+          "title": "Mensajes más claros al cobrar",
+          "description": "Sustituimos los avisos técnicos durante el cobro por un indicador de carga sencillo, y limpiamos un elemento sin función que aparecía junto al nombre de las categorías."
+        }
+      ]
+    },
     {
       "version": "2.4.3",
       "date": "2026-08-25",
@@ -167,7 +203,7 @@
       ]
     },
     {
-      "version": "2.3.6", 
+      "version": "2.3.6",
       "date": "2026-07-21",
       "title": "📶 Corrección de errores.",
       "changes": [
