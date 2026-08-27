@@ -39,6 +39,11 @@ AS $$
 DECLARE
     v_offset INTEGER := (p_pagina - 1) * p_limite;
 BEGIN
+    IF p_fecha_desde IS NULL AND p_fecha_hasta IS NULL THEN
+        p_fecha_desde := date_trunc('month', CURRENT_DATE)::DATE;
+        p_fecha_hasta := (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month - 1 day')::DATE;
+    END IF;
+
     RETURN QUERY
     WITH
     -- Hijos de transferencia + ventas: no listar sueltos.

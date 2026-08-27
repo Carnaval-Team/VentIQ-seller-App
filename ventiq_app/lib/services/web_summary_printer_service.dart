@@ -16,6 +16,7 @@ class WebSummaryPrinterService {
     required double totalProductos,
     required double totalEgresado,
     required double totalEfectivoReal,
+    required Map<String, double> totalesPorMedioPago,
   }) async {
     return await _impl.printDetailedSummary(
       productosVendidos: productosVendidos,
@@ -23,6 +24,7 @@ class WebSummaryPrinterService {
       totalProductos: totalProductos,
       totalEgresado: totalEgresado,
       totalEfectivoReal: totalEfectivoReal,
+      totalesPorMedioPago: totalesPorMedioPago,
     );
   }
 }

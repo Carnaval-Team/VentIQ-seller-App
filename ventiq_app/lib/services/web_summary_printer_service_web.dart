@@ -16,6 +16,7 @@ class WebSummaryPrinterServiceImpl {
     required double totalProductos,
     required double totalEgresado,
     required double totalEfectivoReal,
+    required Map<String, double> totalesPorMedioPago,
   }) async {
     try {
       // Generar el HTML del resumen detallado
@@ -25,6 +26,7 @@ class WebSummaryPrinterServiceImpl {
         totalProductos: totalProductos,
         totalEgresado: totalEgresado,
         totalEfectivoReal: totalEfectivoReal,
+        totalesPorMedioPago: totalesPorMedioPago,
       );
 
       // Crear un blob con el HTML
@@ -58,6 +60,7 @@ class WebSummaryPrinterServiceImpl {
     required double totalProductos,
     required double totalEgresado,
     required double totalEfectivoReal,
+    required Map<String, double> totalesPorMedioPago,
   }) async {
     // Obtener información del vendedor
     final workerProfile = await _userPreferencesService.getWorkerProfile();
@@ -85,6 +88,16 @@ class WebSummaryPrinterServiceImpl {
         ifAbsent: () => item.cantidad,
       );
     }
+
+    final paymentEntries =
+        totalesPorMedioPago.entries.toList()
+          ..sort((a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()));
+    final paymentRows = paymentEntries
+        .map(
+          (entry) =>
+              '<div class="info-line">${entry.key}: \$${entry.value.toStringAsFixed(0)}</div>',
+        )
+        .join('');
 
     final nombres = productosAgrupados.keys.toList()..sort();
     final productRows = nombres
@@ -207,6 +220,7 @@ class WebSummaryPrinterServiceImpl {
         <div class="separator">--------------------------------</div>
         <div class="info-line">Total Productos: ${PriceUtils.formatQuantity(totalProductos)}</div>
         <div class="info-line">Total Ventas: \$${totalVentas.toStringAsFixed(0)}</div>
+        $paymentRows
         <div class="info-line">Total Egresado: \$${totalEgresado.toStringAsFixed(0)}</div>
         <div class="info-line">Efectivo Real: \$${totalEfectivoReal.toStringAsFixed(0)}</div>
     </div>

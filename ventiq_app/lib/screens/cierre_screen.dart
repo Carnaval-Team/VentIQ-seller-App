@@ -42,6 +42,7 @@ class _CierreScreenState extends State<CierreScreen> {
   // Inventory data
   List<InventoryProduct> _inventoryProducts = [];
   Map<int, TextEditingController> _inventoryControllers = {};
+
   /// Stock real por producto (RPC batch / offline). Key = id_producto.
   Map<int, _StockRealProducto> _stockRealByProduct = {};
   bool _inventorySet = false;
@@ -174,7 +175,10 @@ class _CierreScreenState extends State<CierreScreen> {
   /// Cargar productos de inventario desde cache offline (sin categorías)
   Future<void> _loadInventoryProductsOffline() async {
     try {
-      final products = await InventoryService.buildFromOfflineCache();
+      final products =
+          (await InventoryService.buildFromOfflineCache())
+              .where((product) => product.cantidadFinal > 0)
+              .toList();
       for (var product in products) {
         if (!_inventoryControllers.containsKey(product.id)) {
           _inventoryControllers[product.id] = TextEditingController();
@@ -307,7 +311,13 @@ class _CierreScreenState extends State<CierreScreen> {
 
   /// Calcula totales de cierre a partir de las órdenes locales. Soporta pagos
   /// mixtos y usa las mismas claves que devuelve listar_ordenes.
-  ({double ventas, double efectivo, double transferencia, int productos, int operaciones})
+  ({
+    double ventas,
+    double efectivo,
+    double transferencia,
+    int productos,
+    int operaciones,
+  })
   _calculateClosureTotalsFromOrders(List<Order> orders) {
     double ventas = 0.0;
     double efectivo = 0.0;
@@ -410,9 +420,10 @@ class _CierreScreenState extends State<CierreScreen> {
         return;
       }
 
-      _fechaAperturaTurno = DateTime.tryParse(
-        turnoAbierto['fecha_apertura']?.toString() ?? '',
-      )?.toLocal();
+      _fechaAperturaTurno =
+          DateTime.tryParse(
+            turnoAbierto['fecha_apertura']?.toString() ?? '',
+          )?.toLocal();
 
       // Cargar TODAS las órdenes de ESTE turno combinando cache offline +
       // pendientes de sincronización + (si hay conexión real) datos frescos
@@ -441,7 +452,9 @@ class _CierreScreenState extends State<CierreScreen> {
     }
   }
 
-  Future<void> _loadDailySummaryOnline(Map<String, dynamic> turnoAbierto) async {
+  Future<void> _loadDailySummaryOnline(
+    Map<String, dynamic> turnoAbierto,
+  ) async {
     try {
       // Preferir resumen por id de turno (no el diario, que mezcla turnos).
       final idRaw = turnoAbierto['id'] ?? turnoAbierto['server_id_turno'];
@@ -471,9 +484,7 @@ class _CierreScreenState extends State<CierreScreen> {
           );
           if (resumenCierreResponse is List &&
               resumenCierreResponse.isNotEmpty) {
-            data = Map<String, dynamic>.from(
-              resumenCierreResponse[0] as Map,
-            );
+            data = Map<String, dynamic>.from(resumenCierreResponse[0] as Map);
           } else if (resumenCierreResponse is Map) {
             data = Map<String, dynamic>.from(resumenCierreResponse);
           }
@@ -493,29 +504,22 @@ class _CierreScreenState extends State<CierreScreen> {
         _productosVendidos = (data['productos_vendidos'] ?? 0).toInt();
         _ticketPromedio = (data['ticket_promedio'] ?? 0.0).toDouble();
         _operacionesTotales = (data['operaciones_totales'] ?? 0).toInt();
-        _operacionesPorHora =
-            (data['operaciones_por_hora'] ?? 0.0).toDouble();
+        _operacionesPorHora = (data['operaciones_por_hora'] ?? 0.0).toDouble();
         _totalEfectivo =
-            (data['total_efectivo'] ?? data['efectivo_real'] ?? 0.0)
-                .toDouble();
+            (data['total_efectivo'] ?? data['efectivo_real'] ?? 0.0).toDouble();
         _totalTransferencias =
-            (data['total_transferencias'] ??
-                    (_ventasTotales - _totalEfectivo))
+            (data['total_transferencias'] ?? (_ventasTotales - _totalEfectivo))
                 .toDouble();
-        _porcentajeEfectivo =
-            (data['porcentaje_efectivo'] ?? 70.0).toDouble();
+        _porcentajeEfectivo = (data['porcentaje_efectivo'] ?? 70.0).toDouble();
         _porcentajeOtros = (data['porcentaje_otros'] ?? 30.0).toDouble();
         _efectivoEsperado =
-            (data['efectivo_esperado'] ??
-                    _montoInicialCaja + _totalEfectivo)
+            (data['efectivo_esperado'] ?? _montoInicialCaja + _totalEfectivo)
                 .toDouble();
         _conciliacionEstado =
             data['conciliacion_estado']?.toString() ?? 'Pendiente';
         _efectivoRealAjustado =
-            (data['efectivo_real_ajustado'] ?? _efectivoEsperado)
-                .toDouble();
-        _diferenciaAjustada =
-            (data['diferencia_ajustada'] ?? 0.0).toDouble();
+            (data['efectivo_real_ajustado'] ?? _efectivoEsperado).toDouble();
+        _diferenciaAjustada = (data['diferencia_ajustada'] ?? 0.0).toDouble();
         _isLoadingData = false;
       });
     } catch (e) {
@@ -738,7 +742,7 @@ class _CierreScreenState extends State<CierreScreen> {
         params: {
           'p_id_tienda': idTienda,
           'p_limite': 9999,
-          'p_mostrar_sin_stock': false, // Excluir productos con stock 0
+          'p_mostrar_sin_stock': false,
           'p_pagina': 1,
           'p_id_almacen': idAlmacen,
         },
@@ -751,32 +755,32 @@ class _CierreScreenState extends State<CierreScreen> {
 
         for (var item in response) {
           // print(item);
-          if (!item['es_elaborado'] && !item['es_servicio']) {
-            try {
-              final product = InventoryProduct.fromSupabaseRpc(item);
+          try {
+            final product = InventoryProduct.fromSupabaseRpc(item);
 
-              // Solo agregar el primer producto de cada ID (ignorar duplicados por presentación/ubicación)
-              if (!productsByIdMap.containsKey(product.id)) {
-                productsByIdMap[product.id] = product;
-                print(
-                  '📦 Producto agregado: ${product.nombreProducto} (ID: ${product.id})',
-                );
-              } else {
-                print(
-                  '⏭️ Omitiendo duplicado: ${product.nombreProducto} (ID: ${product.id})',
-                );
-              }
-            } catch (e) {
-              print('❌ Error procesando producto: $e');
+            // Solo agregar el primer producto de cada ID (ignorar duplicados por presentación/ubicación)
+            if (!productsByIdMap.containsKey(product.id)) {
+              productsByIdMap[product.id] = product;
+              print(
+                '📦 Producto agregado: ${product.nombreProducto} (ID: ${product.id})',
+              );
+            } else {
+              print(
+                '⏭️ Omitiendo duplicado: ${product.nombreProducto} (ID: ${product.id})',
+              );
             }
+          } catch (e) {
+            print('❌ Error procesando producto: $e');
           }
         }
 
         // Crear lista consolidada (solo con stock) y controllers
         final products =
-            productsByIdMap.values
-                .where((p) => p.cantidadFinal > 0)
-                .toList();
+            productsByIdMap.values.toList()..sort(
+              (a, b) => a.nombreProducto.toLowerCase().compareTo(
+                b.nombreProducto.toLowerCase(),
+              ),
+            );
         for (var product in products) {
           // Crear controller para cada producto único
           if (!_inventoryControllers.containsKey(product.id)) {
@@ -974,9 +978,7 @@ class _CierreScreenState extends State<CierreScreen> {
       final idTpv = await _userPrefs.getIdTpv();
       await _userPrefs.saveInventoryCountCierre(
         idTpv,
-        _pendingInventoryCounts.map(
-          (k, v) => MapEntry(k.toString(), v),
-        ),
+        _pendingInventoryCounts.map((k, v) => MapEntry(k.toString(), v)),
       );
     });
   }
@@ -1000,344 +1002,352 @@ class _CierreScreenState extends State<CierreScreen> {
             final keyboardOpen =
                 MediaQuery.viewInsetsOf(modalContext).bottom > 0;
             return Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.only(
-              topLeft: Radius.circular(20),
-              topRight: Radius.circular(20),
-            ),
-          ),
-          child: Column(
-            children: [
-              // Header
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.orange[700],
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(20),
-                    topRight: Radius.circular(20),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.inventory_2, color: Colors.white),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: Text(
-                        'Control de Inventario',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(20),
+                  topRight: Radius.circular(20),
                 ),
               ),
-
-              // Info text — ocultar con teclado para ganar espacio
-              if (!keyboardOpen)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  color: Colors.blue[50],
-                  child: Row(
-                    children: [
-                      Icon(Icons.info_outline, color: Colors.blue[700]),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          _mostrarDebeHaberEnConteo
-                              ? 'Compara el "debe haber" e ingresa la cantidad real contada'
-                              : 'Ingresa la cantidad real contada de cada producto',
-                          style: const TextStyle(fontSize: 14),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-              // Acciones masivas — ocultar con teclado
-              if (!keyboardOpen &&
-                  !_isLoadingInventory &&
-                  _inventoryProducts.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  color: Colors.grey[50],
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    alignment: WrapAlignment.center,
-                    children: [
-                      if (_mostrarDebeHaberEnConteo &&
-                          _autocompletarCantidadRealConteo)
-                        TextButton.icon(
-                          onPressed: () {
-                            for (final p in _inventoryProducts) {
-                              final debe =
-                                  _stockRealByProduct[p.id]?.debeHaber ??
-                                      p.cantidadFinalReal;
-                              _inventoryControllers[p.id]?.text =
-                                  _formatInventoryQty(debe);
-                              _pendingInventoryCounts[p.id] = debe;
-                            }
-                            _scheduleSaveInventoryCounts();
-                            modalSetState(() {});
-                          },
-                          icon: const Icon(Icons.auto_fix_high, size: 18),
-                          label: const Text("Rellenar con 'debe haber'"),
-                        ),
-                      TextButton.icon(
-                        onPressed: () {
-                          for (final p in _inventoryProducts) {
-                            _inventoryControllers[p.id]?.text = '0';
-                            _pendingInventoryCounts[p.id] = 0.0;
-                          }
-                          _scheduleSaveInventoryCounts();
-                          modalSetState(() {});
-                        },
-                        icon: const Icon(Icons.exposure_zero, size: 18),
-                        label: const Text('Todo en 0'),
-                      ),
-                    ],
-                  ),
-                ),
-
-              // Lista de productos
-              Expanded(
-                child:
-                    _isLoadingInventory
-                        ? const Center(child: CircularProgressIndicator())
-                        : _inventoryProducts.isEmpty
-                        ? const Center(
-                          child: Text('No hay productos de inventario'),
-                        )
-                        : ListView.builder(
-                          controller: scrollController,
-                          keyboardDismissBehavior:
-                              ScrollViewKeyboardDismissBehavior.onDrag,
-                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                          itemCount: _inventoryProducts.length,
-                          itemBuilder: (context, index) {
-                            final product = _inventoryProducts[index];
-                            final controller =
-                                _inventoryControllers[product.id]!;
-                            final debeHaber =
-                                _stockRealByProduct[product.id]?.debeHaber ??
-                                    product.cantidadFinalReal;
-                            final isMissing =
-                                _missingInventoryProductIds.contains(
-                                  product.id,
-                                );
-
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 12),
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: isMissing ? Colors.red[50] : Colors.grey[50],
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: isMissing ? Colors.red[400]! : Colors.grey[200]!,
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  if (isMissing) ...[
-                                    Icon(
-                                      Icons.warning_amber_rounded,
-                                      color: Colors.red[700],
-                                      size: 20,
-                                    ),
-                                    const SizedBox(width: 8),
-                                  ],
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          product.nombreProducto,
-                                          style: const TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w500,
-                                            color: Color(0xFF1F2937),
-                                          ),
-                                        ),
-                                        if (_mostrarDebeHaberEnConteo) ...[
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            'Debe haber: ${_formatInventoryQty(debeHaber)}',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w600,
-                                              color: Colors.blue[700],
-                                            ),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  SizedBox(
-                                    width: 100,
-                                    child: TextFormField(
-                                      controller: controller,
-                                      keyboardType:
-                                          const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                      ),
-                                      textInputAction: TextInputAction.next,
-                                      scrollPadding: const EdgeInsets.only(
-                                        bottom: 120,
-                                      ),
-                                      inputFormatters: [
-                                        FilteringTextInputFormatter.allow(
-                                          RegExp(r'^\d+\.?\d{0,2}'),
-                                        ),
-                                      ],
-                                      decoration: InputDecoration(
-                                        labelText: 'Real',
-                                        hintText: '0',
-                                        border: OutlineInputBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                        ),
-                                        contentPadding:
-                                            const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 8,
-                                        ),
-                                        isDense: true,
-                                      ),
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                      ),
-                                      onChanged: (value) {
-                                        _onInventoryCountChanged(
-                                          product.id,
-                                          value,
-                                        );
-                                        if (_missingInventoryProductIds
-                                            .contains(product.id)) {
-                                          _missingInventoryProductIds
-                                              .remove(product.id);
-                                          modalSetState(() {});
-                                        }
-                                      },
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-              ),
-
-              // Botones — se mantienen visibles; el Padding exterior ya los
-              // sube por encima del teclado.
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.grey.withOpacity(0.2),
-                      spreadRadius: 1,
-                      blurRadius: 5,
-                      offset: const Offset(0, -2),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.pop(context),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          side: BorderSide(color: Colors.grey[400]!),
-                        ),
-                        child: const Text('Cancelar'),
+              child: Column(
+                children: [
+                  // Header
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.orange[700],
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(20),
+                        topRight: Radius.circular(20),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      flex: 2,
-                      child: ElevatedButton(
-                        onPressed: () {
-                          final missing =
-                              _inventoryProducts
-                                  .where(
-                                    (p) =>
-                                        (_inventoryControllers[p.id]?.text
-                                                .trim()
-                                                .isEmpty ??
-                                            true),
-                                  )
-                                  .map((p) => p.id)
-                                  .toSet();
-                          if (missing.isNotEmpty) {
-                            modalSetState(() {
-                              _missingInventoryProductIds
-                                ..clear()
-                                ..addAll(missing);
-                            });
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Faltan ${missing.length} productos por contar',
-                                ),
-                                backgroundColor: Colors.orange,
-                              ),
-                            );
-                            return;
-                          }
-
-                          _inventorySaveTimer?.cancel();
-                          _scheduleSaveInventoryCounts();
-
-                          setState(() {
-                            _missingInventoryProductIds.clear();
-                            _inventorySet = true;
-                          });
-                          Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Inventario controlado correctamente',
-                              ),
-                              backgroundColor: Colors.green,
+                    child: Row(
+                      children: [
+                        const Icon(Icons.inventory_2, color: Colors.white),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Text(
+                            'Control de Inventario',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
                             ),
-                          );
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF4A90E2),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        child: const Text(
-                          'Guardar',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
                           ),
                         ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Info text — ocultar con teclado para ganar espacio
+                  if (!keyboardOpen)
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      color: Colors.blue[50],
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline, color: Colors.blue[700]),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              _mostrarDebeHaberEnConteo
+                                  ? 'Compara el "debe haber" e ingresa la cantidad real contada'
+                                  : 'Ingresa la cantidad real contada de cada producto',
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
+
+                  // Acciones masivas — ocultar con teclado
+                  if (!keyboardOpen &&
+                      !_isLoadingInventory &&
+                      _inventoryProducts.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      color: Colors.grey[50],
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        alignment: WrapAlignment.center,
+                        children: [
+                          if (_mostrarDebeHaberEnConteo &&
+                              _autocompletarCantidadRealConteo)
+                            TextButton.icon(
+                              onPressed: () {
+                                for (final p in _inventoryProducts) {
+                                  final debe =
+                                      _stockRealByProduct[p.id]?.debeHaber ??
+                                      p.cantidadFinalReal;
+                                  _inventoryControllers[p.id]
+                                      ?.text = _formatInventoryQty(debe);
+                                  _pendingInventoryCounts[p.id] = debe;
+                                }
+                                _scheduleSaveInventoryCounts();
+                                modalSetState(() {});
+                              },
+                              icon: const Icon(Icons.auto_fix_high, size: 18),
+                              label: const Text("Rellenar con 'debe haber'"),
+                            ),
+                          TextButton.icon(
+                            onPressed: () {
+                              for (final p in _inventoryProducts) {
+                                _inventoryControllers[p.id]?.text = '0';
+                                _pendingInventoryCounts[p.id] = 0.0;
+                              }
+                              _scheduleSaveInventoryCounts();
+                              modalSetState(() {});
+                            },
+                            icon: const Icon(Icons.exposure_zero, size: 18),
+                            label: const Text('Todo en 0'),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  // Lista de productos
+                  Expanded(
+                    child:
+                        _isLoadingInventory
+                            ? const Center(child: CircularProgressIndicator())
+                            : _inventoryProducts.isEmpty
+                            ? const Center(
+                              child: Text('No hay productos de inventario'),
+                            )
+                            : ListView.builder(
+                              controller: scrollController,
+                              keyboardDismissBehavior:
+                                  ScrollViewKeyboardDismissBehavior.onDrag,
+                              padding: const EdgeInsets.fromLTRB(
+                                16,
+                                16,
+                                16,
+                                24,
+                              ),
+                              itemCount: _inventoryProducts.length,
+                              itemBuilder: (context, index) {
+                                final product = _inventoryProducts[index];
+                                final controller =
+                                    _inventoryControllers[product.id]!;
+                                final debeHaber =
+                                    _stockRealByProduct[product.id]
+                                        ?.debeHaber ??
+                                    product.cantidadFinalReal;
+                                final isMissing = _missingInventoryProductIds
+                                    .contains(product.id);
+
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 12),
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        isMissing
+                                            ? Colors.red[50]
+                                            : Colors.grey[50],
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color:
+                                          isMissing
+                                              ? Colors.red[400]!
+                                              : Colors.grey[200]!,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      if (isMissing) ...[
+                                        Icon(
+                                          Icons.warning_amber_rounded,
+                                          color: Colors.red[700],
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 8),
+                                      ],
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              product.nombreProducto,
+                                              style: const TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w500,
+                                                color: Color(0xFF1F2937),
+                                              ),
+                                            ),
+                                            if (_mostrarDebeHaberEnConteo) ...[
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                'Debe haber: ${_formatInventoryQty(debeHaber)}',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Colors.blue[700],
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      SizedBox(
+                                        width: 100,
+                                        child: TextFormField(
+                                          controller: controller,
+                                          keyboardType:
+                                              const TextInputType.numberWithOptions(
+                                                decimal: true,
+                                              ),
+                                          textInputAction: TextInputAction.next,
+                                          scrollPadding: const EdgeInsets.only(
+                                            bottom: 120,
+                                          ),
+                                          inputFormatters: [
+                                            FilteringTextInputFormatter.allow(
+                                              RegExp(r'^\d+\.?\d{0,2}'),
+                                            ),
+                                          ],
+                                          decoration: InputDecoration(
+                                            labelText: 'Real',
+                                            hintText: '0',
+                                            border: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            contentPadding:
+                                                const EdgeInsets.symmetric(
+                                                  horizontal: 12,
+                                                  vertical: 8,
+                                                ),
+                                            isDense: true,
+                                          ),
+                                          style: const TextStyle(fontSize: 14),
+                                          onChanged: (value) {
+                                            _onInventoryCountChanged(
+                                              product.id,
+                                              value,
+                                            );
+                                            if (_missingInventoryProductIds
+                                                .contains(product.id)) {
+                                              _missingInventoryProductIds
+                                                  .remove(product.id);
+                                              modalSetState(() {});
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                  ),
+
+                  // Botones — se mantienen visibles; el Padding exterior ya los
+                  // sube por encima del teclado.
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.grey.withOpacity(0.2),
+                          spreadRadius: 1,
+                          blurRadius: 5,
+                          offset: const Offset(0, -2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.pop(context),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              side: BorderSide(color: Colors.grey[400]!),
+                            ),
+                            child: const Text('Cancelar'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: ElevatedButton(
+                            onPressed: () {
+                              final missing =
+                                  _inventoryProducts
+                                      .where(
+                                        (p) =>
+                                            (_inventoryControllers[p.id]?.text
+                                                    .trim()
+                                                    .isEmpty ??
+                                                true),
+                                      )
+                                      .map((p) => p.id)
+                                      .toSet();
+                              if (missing.isNotEmpty) {
+                                modalSetState(() {
+                                  _missingInventoryProductIds
+                                    ..clear()
+                                    ..addAll(missing);
+                                });
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'Faltan ${missing.length} productos por contar',
+                                    ),
+                                    backgroundColor: Colors.orange,
+                                  ),
+                                );
+                                return;
+                              }
+
+                              _inventorySaveTimer?.cancel();
+                              _scheduleSaveInventoryCounts();
+
+                              setState(() {
+                                _missingInventoryProductIds.clear();
+                                _inventorySet = true;
+                              });
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Inventario controlado correctamente',
+                                  ),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF4A90E2),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            child: const Text(
+                              'Guardar',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
-        );
+            );
           },
         );
       },
@@ -1863,8 +1873,10 @@ class _CierreScreenState extends State<CierreScreen> {
                       width: double.infinity,
                       child: OutlinedButton.icon(
                         onPressed: _showCashCountDialog,
-                        icon: const Icon(Icons.calculate_outlined,
-                            color: Color(0xFF4A90E2)),
+                        icon: const Icon(
+                          Icons.calculate_outlined,
+                          color: Color(0xFF4A90E2),
+                        ),
                         label: const Text(
                           'Contar billetes',
                           style: TextStyle(color: Color(0xFF4A90E2)),
@@ -2025,20 +2037,21 @@ class _CierreScreenState extends State<CierreScreen> {
                   child: ElevatedButton.icon(
                     onPressed:
                         _isLoadingInventory ? null : _showInventoryCountModal,
-                    icon: _isLoadingInventory
-                        ? const SizedBox(
-                            height: 18,
-                            width: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                Colors.white,
+                    icon:
+                        _isLoadingInventory
+                            ? const SizedBox(
+                              height: 18,
+                              width: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
                               ),
+                            )
+                            : Icon(
+                              _inventorySet ? Icons.edit : Icons.inventory_2,
                             ),
-                          )
-                        : Icon(
-                            _inventorySet ? Icons.edit : Icons.inventory_2,
-                          ),
                     label: Text(
                       _isLoadingInventory
                           ? 'Cargando inventario...'
@@ -2056,13 +2069,12 @@ class _CierreScreenState extends State<CierreScreen> {
                                   ? Colors.orange
                                   : Colors.blue),
                       foregroundColor: Colors.white,
-                      disabledBackgroundColor:
-                          (_inventorySet
-                                  ? Colors.green
-                                  : (_isLastOpenShift
-                                      ? Colors.orange
-                                      : Colors.blue))
-                              .withOpacity(0.7),
+                      disabledBackgroundColor: (_inventorySet
+                              ? Colors.green
+                              : (_isLastOpenShift
+                                  ? Colors.orange
+                                  : Colors.blue))
+                          .withOpacity(0.7),
                       disabledForegroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
@@ -2144,9 +2156,7 @@ class _CierreScreenState extends State<CierreScreen> {
   Future<void> _showCashCountDialog() async {
     final total = await showDialog<double>(
       context: context,
-      builder: (context) => CashCountDialog(
-        userPreferencesService: _userPrefs,
-      ),
+      builder: (context) => CashCountDialog(userPreferencesService: _userPrefs),
     );
     if (total != null && mounted) {
       setState(() {
@@ -2404,11 +2414,12 @@ class _CierreScreenState extends State<CierreScreen> {
         params: {'p_id_tpv': idTpv},
       );
 
-      final mapa = res is Map
-          ? Map<String, dynamic>.from(res)
-          : (res is List && res.isNotEmpty && res.first is Map
-              ? Map<String, dynamic>.from(res.first as Map)
-              : null);
+      final mapa =
+          res is Map
+              ? Map<String, dynamic>.from(res)
+              : (res is List && res.isNotEmpty && res.first is Map
+                  ? Map<String, dynamic>.from(res.first as Map)
+                  : null);
 
       if (mapa == null || mapa['status'] != 'success') return true;
 
@@ -2435,56 +2446,65 @@ class _CierreScreenState extends State<CierreScreen> {
 
       final seguir = await showDialog<bool>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: Row(
-            children: [
-              Icon(Icons.soup_kitchen_outlined,
-                  color: sinCobrar > 0 ? Colors.red.shade700 : Colors.orange.shade800),
-              const SizedBox(width: 8),
-              const Expanded(child: Text('Hay comandas sin servir')),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                mapa['message']?.toString() ?? '$total comanda(s) pendientes',
-                style: const TextStyle(fontWeight: FontWeight.w600),
+        builder:
+            (ctx) => AlertDialog(
+              title: Row(
+                children: [
+                  Icon(
+                    Icons.soup_kitchen_outlined,
+                    color:
+                        sinCobrar > 0
+                            ? Colors.red.shade700
+                            : Colors.orange.shade800,
+                  ),
+                  const SizedBox(width: 8),
+                  const Expanded(child: Text('Hay comandas sin servir')),
+                ],
               ),
-              if (sinCobrar > 0) ...[
-                const SizedBox(height: 6),
-                Text(
-                  'Ojo: hay mesas sin cobrar. Al cerrar el turno esa venta '
-                  'queda sin registrar.',
-                  style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    mapa['message']?.toString() ??
+                        '$total comanda(s) pendientes',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  if (sinCobrar > 0) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'Ojo: hay mesas sin cobrar. Al cerrar el turno esa venta '
+                      'queda sin registrar.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.red.shade700,
+                      ),
+                    ),
+                  ],
+                  if (detalle.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    for (final d in detalle)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 3),
+                        child: Text(d, style: const TextStyle(fontSize: 12)),
+                      ),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Revisar cocina'),
+                ),
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: sinCobrar > 0 ? Colors.red.shade700 : null,
+                  ),
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Cerrar igual'),
                 ),
               ],
-              if (detalle.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                for (final d in detalle)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 3),
-                    child: Text(d, style: const TextStyle(fontSize: 12)),
-                  ),
-              ],
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Revisar cocina'),
             ),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor:
-                    sinCobrar > 0 ? Colors.red.shade700 : null,
-              ),
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Cerrar igual'),
-            ),
-          ],
-        ),
       );
 
       return seguir == true;
@@ -2649,7 +2669,7 @@ class _CierreScreenState extends State<CierreScreen> {
               // Calcular diferencia vs "debe haber" (stock real del RPC batch)
               final cantidadSistema =
                   _stockRealByProduct[product.id]?.debeHaber ??
-                      product.cantidadFinalReal;
+                  product.cantidadFinalReal;
               final diferencia = cantidadContada - cantidadSistema;
 
               if (diferencia > 0) {
@@ -2732,7 +2752,8 @@ class _CierreScreenState extends State<CierreScreen> {
       final offlineOpen = await _userPrefs.getOfflineTurno();
       final aperturaOffline = offlineOpen?['apertura'];
       final isCachedOnlineTurno =
-          aperturaOffline is Map && aperturaOffline['origen_apertura'] == 'online';
+          aperturaOffline is Map &&
+          aperturaOffline['origen_apertura'] == 'online';
       final hasNetworkNow =
           !isOfflineModeEnabled &&
           await ConnectivityService().performImmediateCheck();
@@ -2779,9 +2800,7 @@ class _CierreScreenState extends State<CierreScreen> {
           await _userPrefs.finalizeTurnoAfterOnlineClose(
             serverTurnoId: serverTurnoId,
           );
-          print(
-            '🧹 Turno online cerrado — resúmenes conservados en cache',
-          );
+          print('🧹 Turno online cerrado — resúmenes conservados en cache');
 
           await _clearInventoryCounts();
           PrinterManager().clearSavedPrinter();
@@ -2799,9 +2818,7 @@ class _CierreScreenState extends State<CierreScreen> {
         } else {
           // Error de negocio: NO crear cierre offline. Mostrar mensaje real.
           print('⚠️ Cierre rechazado por el servidor: ${result.message}');
-          _showErrorMessage(
-            result.message ?? 'No se pudo cerrar el turno',
-          );
+          _showErrorMessage(result.message ?? 'No se pudo cerrar el turno');
         }
       }
     } catch (e) {
@@ -2829,9 +2846,7 @@ class _CierreScreenState extends State<CierreScreen> {
       final idTurno =
           idRaw is int
               ? idRaw
-              : (idRaw is num
-                  ? idRaw.toInt()
-                  : int.tryParse('$idRaw'));
+              : (idRaw is num ? idRaw.toInt() : int.tryParse('$idRaw'));
       if (idTurno == null) {
         print(
           '⚠️ Turno offline sin id de servidor; omitiendo cierre de trabajadores',
@@ -3131,10 +3146,8 @@ class _CierreScreenState extends State<CierreScreen> {
           'syncOfflineTurnoAfterLocalCierre(localId=$localTurnoId) '
           'modo=${isOnlineMode ? 'online' : 'offline_mode_off+red'}',
         );
-        final syncResult =
-            await AutoSyncService().syncOfflineTurnoAfterLocalCierre(
-              localId: localTurnoId,
-            );
+        final syncResult = await AutoSyncService()
+            .syncOfflineTurnoAfterLocalCierre(localId: localTurnoId);
         syncedToServer = syncResult['success'] == true;
         syncMessage = syncResult['message']?.toString();
         print(
@@ -3164,9 +3177,7 @@ class _CierreScreenState extends State<CierreScreen> {
         if (syncedToServer) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text(
-                'Cierre registrado en el servidor.',
-              ),
+              content: Text('Cierre registrado en el servidor.'),
               backgroundColor: Colors.green,
               duration: Duration(seconds: 3),
             ),

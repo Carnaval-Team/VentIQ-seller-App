@@ -361,7 +361,7 @@ BEGIN
         0
       ) AS cantidad_anterior,
       CASE
-        WHEN app.id IS NULL THEN pe.precio_unitario
+        WHEN app.id IS NULL OR COALESCE(app.precio_promedio, 0) <= 0 THEN pe.precio_unitario
         WHEN (COALESCE((SELECT cantidad 
                         FROM app_dat_inventario_productos 
                         WHERE id_presentacion = pe.id_presentacion 
@@ -443,7 +443,7 @@ BEGIN
         0
       ) AS cantidad_anterior,
       CASE
-        WHEN app.id IS NULL THEN pe.precio_unitario
+        WHEN app.id IS NULL OR COALESCE(app.precio_promedio, 0) <= 0 THEN pe.precio_unitario
         WHEN (COALESCE((SELECT cantidad 
                         FROM app_dat_inventario_productos 
                         WHERE id_presentacion = pe.id_presentacion 

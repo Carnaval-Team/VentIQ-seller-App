@@ -11,12 +11,11 @@ class CarnavalService {
     try {
       print('🔍 Obteniendo información de tienda ID: $storeId');
 
-      final response =
-          await _supabase
-              .from('app_dat_tienda')
-              .select('*')
-              .eq('id', storeId)
-              .maybeSingle();
+      final response = await _supabase
+          .from('app_dat_tienda')
+          .select('*')
+          .eq('id', storeId)
+          .maybeSingle();
 
       if (response != null) {
         print('✅ Información de tienda obtenida');
@@ -84,13 +83,12 @@ class CarnavalService {
         '🔍 Obteniendo información del proveedor en Carnaval ID: $carnavalStoreId',
       );
 
-      final response =
-          await _supabase
-              .schema('carnavalapp')
-              .from('proveedores')
-              .select('*')
-              .eq('id', carnavalStoreId)
-              .maybeSingle();
+      final response = await _supabase
+          .schema('carnavalapp')
+          .from('proveedores')
+          .select('*')
+          .eq('id', carnavalStoreId)
+          .maybeSingle();
 
       if (response != null) {
         print('✅ Información del proveedor obtenida');
@@ -163,13 +161,12 @@ class CarnavalService {
       );
 
       // 1. Buscar en app_dat_supervisor por uuid y id_tienda para obtener id_trabajador
-      final supervisorData =
-          await _supabase
-              .from('app_dat_gerente')
-              .select('id_trabajador')
-              .eq('uuid', currentUserUuid)
-              .eq('id_tienda', storeId)
-              .maybeSingle();
+      final supervisorData = await _supabase
+          .from('app_dat_gerente')
+          .select('id_trabajador')
+          .eq('uuid', currentUserUuid)
+          .eq('id_tienda', storeId)
+          .maybeSingle();
 
       if (supervisorData == null || supervisorData['id_trabajador'] == null) {
         print('⚠️ No se encontró supervisor para este usuario en esta tienda');
@@ -180,12 +177,11 @@ class CarnavalService {
       print('✅ ID Trabajador encontrado: $idTrabajador');
 
       // 2. Buscar datos del trabajador en app_dat_trabajadores
-      final trabajadorData =
-          await _supabase
-              .from('app_dat_trabajadores')
-              .select('id, nombres, apellidos, uuid')
-              .eq('id', idTrabajador)
-              .maybeSingle();
+      final trabajadorData = await _supabase
+          .from('app_dat_trabajadores')
+          .select('id, nombres, apellidos, uuid')
+          .eq('id', idTrabajador)
+          .maybeSingle();
 
       if (trabajadorData == null) {
         print('⚠️ No se encontró el trabajador con ID: $idTrabajador');
@@ -209,13 +205,12 @@ class CarnavalService {
       }
 
       // 4. Verificar si ya existe el usuario en carnavalapp.Usuarios
-      final existingUser =
-          await _supabase
-              .schema('carnavalapp')
-              .from('Usuarios')
-              .select('id')
-              .eq('uuid', trabajadorUuid)
-              .maybeSingle();
+      final existingUser = await _supabase
+          .schema('carnavalapp')
+          .from('Usuarios')
+          .select('id')
+          .eq('uuid', trabajadorUuid)
+          .maybeSingle();
 
       if (existingUser != null) {
         final userId = existingUser['id'] as int;
@@ -237,13 +232,12 @@ class CarnavalService {
         // tienda se asignará después cuando se cree el proveedor
       };
 
-      final newUser =
-          await _supabase
-              .schema('carnavalapp')
-              .from('Usuarios')
-              .insert(newUserData)
-              .select('id')
-              .single();
+      final newUser = await _supabase
+          .schema('carnavalapp')
+          .from('Usuarios')
+          .insert(newUserData)
+          .select('id')
+          .single();
 
       final newUserId = newUser['id'] as int;
       print('✅ Usuario creado en carnavalapp.Usuarios con ID: $newUserId');
@@ -302,10 +296,9 @@ class CarnavalService {
         'logo': storeInfo['imagen_url'],
         'direccion': storeInfo['direccion'],
         'ubicacion': storeInfo['ubicacion'],
-        'contacto':
-            storeInfo['phone'] != null
-                ? num.tryParse(storeInfo['phone'].toString())
-                : null,
+        'contacto': storeInfo['phone'] != null
+            ? num.tryParse(storeInfo['phone'].toString())
+            : null,
         'status': true,
         'es_alimento': false,
         'banner': storeInfo['imagen_url'],
@@ -317,13 +310,12 @@ class CarnavalService {
         // 'chat_id': storeInfo['chat_id'],
       };
 
-      final response =
-          await _supabase
-              .schema('carnavalapp')
-              .from('proveedores')
-              .insert(providerData)
-              .select()
-              .single();
+      final response = await _supabase
+          .schema('carnavalapp')
+          .from('proveedores')
+          .insert(providerData)
+          .select()
+          .single();
 
       final carnavalProviderId = response['id'];
       print('✅ Proveedor creado en Carnaval con ID: $carnavalProviderId');
@@ -396,11 +388,13 @@ class CarnavalService {
         final relationList = List<Map<String, dynamic>>.from(relations);
 
         if (relationList.isNotEmpty) {
-          final carnavalProductIds =
-              relationList.map((r) => r['id_producto_carnaval']).toList();
+          final carnavalProductIds = relationList
+              .map((r) => r['id_producto_carnaval'])
+              .toList();
           final relationIds = relationList.map((r) => r['id']).toList();
-          final localProductIds =
-              relationList.map((r) => r['id_producto']).toList();
+          final localProductIds = relationList
+              .map((r) => r['id_producto'])
+              .toList();
 
           // 3. Eliminar productos de carnavalapp.Productos
           await _supabase
@@ -409,7 +403,9 @@ class CarnavalService {
               .delete()
               .inFilter('id', carnavalProductIds);
 
-          print('✅ Eliminados ${carnavalProductIds.length} productos de Carnaval');
+          print(
+            '✅ Eliminados ${carnavalProductIds.length} productos de Carnaval',
+          );
 
           // 4. Eliminar relaciones
           await _supabase
@@ -570,10 +566,9 @@ class CarnavalService {
           .eq('id_tienda', storeId)
           .neq('imagen', ''); // No debe estar vacía
 
-      final localProducts =
-          List<Map<String, dynamic>>.from(
-            localProductsResponse,
-          ).where((p) => p['imagen'] != null).toList(); // Filtrar nulos en Dart
+      final localProducts = List<Map<String, dynamic>>.from(
+        localProductsResponse,
+      ).where((p) => p['imagen'] != null).toList(); // Filtrar nulos en Dart
 
       // 2. Obtener IDs de productos ya sincronizados via relation_products_carnaval
       final localProductIds = localProducts.map((p) => p['id']).toList();
@@ -582,14 +577,14 @@ class CarnavalService {
           .select('id_producto')
           .inFilter('id_producto', localProductIds);
 
-      final syncedProductIds =
-          List<Map<String, dynamic>>.from(relationResponse)
-              .map((r) => r['id_producto'])
-              .toSet();
+      final syncedProductIds = List<Map<String, dynamic>>.from(
+        relationResponse,
+      ).map((r) => r['id_producto']).toSet();
 
       // 3. Filtrar productos que ya tienen relación
-      final unsyncedProducts =
-          localProducts.where((p) => !syncedProductIds.contains(p['id'])).toList();
+      final unsyncedProducts = localProducts
+          .where((p) => !syncedProductIds.contains(p['id']))
+          .toList();
 
       return unsyncedProducts;
     } catch (e) {
@@ -738,26 +733,24 @@ class CarnavalService {
       );
 
       // 1. Obtener datos del producto local
-      final productData =
-          await _supabase
-              .from('app_dat_producto')
-              .select('denominacion, descripcion, imagen, id_tienda')
-              .eq('id', localProductId)
-              .single();
+      final productData = await _supabase
+          .from('app_dat_producto')
+          .select('denominacion, descripcion, imagen, id_tienda')
+          .eq('id', localProductId)
+          .single();
 
       // 2. Obtener precio actual (el más reciente activo)
-      final priceData =
-          await _supabase
-              .from('app_dat_precio_venta')
-              .select('precio_venta_cup')
-              .eq('id_producto', localProductId)
-              .lte('fecha_desde', DateTime.now().toIso8601String())
-              .order('fecha_desde', ascending: false)
-              .limit(1)
-              .maybeSingle();
+      final priceData = await _supabase
+          .from('app_dat_precio_venta')
+          .select('precio_venta_cup')
+          .eq('id_producto', localProductId)
+          .lte('fecha_desde', DateTime.now().toIso8601String())
+          .order('fecha_desde', ascending: false)
+          .limit(1)
+          .maybeSingle();
 
-      final double basePrice =
-          ((priceData?['precio_venta_cup'] as num?) ?? 0).toDouble();
+      final double basePrice = ((priceData?['precio_venta_cup'] as num?) ?? 0)
+          .toDouble();
 
       // 2.1 Obtener configuración de porcentajes para Carnaval
       final priceConfig = await _getCarnavalPriceConfig(
@@ -782,39 +775,37 @@ class CarnavalService {
               .roundToDouble();
 
       // 3. Obtener stock actual de la ubicación específica
-      final stockData =
-          await _supabase
-              .from('app_dat_inventario_productos')
-              .select('cantidad_final')
-              .eq('id_producto', localProductId)
-              .eq('id_ubicacion', idUbicacion)
-              .order('id', ascending: false).order('created_at', ascending: false)
-              .limit(1)
-              .maybeSingle();
+      final stockData = await _supabase
+          .from('app_dat_inventario_productos')
+          .select('cantidad_final')
+          .eq('id_producto', localProductId)
+          .eq('id_ubicacion', idUbicacion)
+          .order('id', ascending: false)
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
 
       final stock = stockData?['cantidad_final'] ?? 0;
 
       // 4. Insertar en Carnaval App y obtener el ID del producto insertado
-      final carnavalProductResponse =
-          await _supabase
-              .schema('carnavalapp')
-              .from('Productos')
-              .insert({
-                'name': productData['denominacion'],
-                'description': productData['descripcion'] ?? '',
-                'price': precioOficial,
-                'precio_descuento': precioDescuento,
-                'stock':
-                    stock
-                        .toInt(), // Convertir a int para evitar error de bigint
-                'category_id': carnavalCategoryId,
-                'image': productData['imagen'],
-                'proveedor': carnavalStoreId,
-                'status': true,
-                'created_at': DateTime.now().toIso8601String(),
-              })
-              .select('id')
-              .single();
+      final carnavalProductResponse = await _supabase
+          .schema('carnavalapp')
+          .from('Productos')
+          .insert({
+            'name': productData['denominacion'],
+            'description': productData['descripcion'] ?? '',
+            'price': precioOficial,
+            'precio_descuento': precioDescuento,
+            'stock': stock
+                .toInt(), // Convertir a int para evitar error de bigint
+            'category_id': carnavalCategoryId,
+            'image': productData['imagen'],
+            'proveedor': carnavalStoreId,
+            'status': true,
+            'created_at': DateTime.now().toIso8601String(),
+          })
+          .select('id')
+          .single();
 
       final carnavalProductId = carnavalProductResponse['id'];
       print('✅ Producto insertado en Carnaval con ID: $carnavalProductId');
@@ -856,17 +847,14 @@ class CarnavalService {
   static Future<Map<String, double>> _getCarnavalPriceConfig(
     int storeId,
   ) async {
-    final config =
-        await _supabase
-            .from('app_dat_precio_general_tienda')
-            .select(
-              'precio_venta_carnaval, precio_venta_carnaval_transferencia',
-            )
-            .eq('id_tienda', storeId)
-            .maybeSingle();
+    final config = await _supabase
+        .from('app_dat_precio_general_tienda')
+        .select('precio_venta_carnaval, precio_venta_carnaval_transferencia')
+        .eq('id_tienda', storeId)
+        .maybeSingle();
 
-    final precioCarnaval =
-        (config?['precio_venta_carnaval'] as num?)?.toDouble();
+    final precioCarnaval = (config?['precio_venta_carnaval'] as num?)
+        ?.toDouble();
     final precioTransferencia =
         (config?['precio_venta_carnaval_transferencia'] as num?)?.toDouble();
 
@@ -1146,15 +1134,15 @@ class CarnavalService {
       }
 
       // 1. Obtener nuevo stock de la ubicación
-      final stockData =
-          await _supabase
-              .from('app_dat_inventario_productos')
-              .select('cantidad_final')
-              .eq('id_producto', localProductId)
-              .eq('id_ubicacion', newLocationId)
-              .order('id', ascending: false).order('created_at', ascending: false)
-              .limit(1)
-              .maybeSingle();
+      final stockData = await _supabase
+          .from('app_dat_inventario_productos')
+          .select('cantidad_final')
+          .eq('id_producto', localProductId)
+          .eq('id_ubicacion', newLocationId)
+          .order('id', ascending: false)
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
 
       final newStock = stockData?['cantidad_final'] ?? 0;
       print('📦 Nuevo stock calculado: $newStock');
@@ -1169,12 +1157,11 @@ class CarnavalService {
       print('✅ Stock actualizado en Carnaval');
 
       // 3. Verificar si existe relación en relation_products_carnaval
-      final existingRelation =
-          await _supabase
-              .from('relation_products_carnaval')
-              .select('id')
-              .eq('id_producto_carnaval', carnavalProductId)
-              .maybeSingle();
+      final existingRelation = await _supabase
+          .from('relation_products_carnaval')
+          .select('id')
+          .eq('id_producto_carnaval', carnavalProductId)
+          .maybeSingle();
 
       if (existingRelation != null) {
         // 3a. Si existe, hacer UPDATE
@@ -1258,10 +1245,54 @@ class CarnavalService {
     int? orderIdFilter,
     DateTime? dateFrom,
     DateTime? dateTo,
+    bool filterByStatusDate = false,
   }) async {
     try {
       final from = page * pageSize;
       final to = from + pageSize - 1;
+
+      Set<int>? orderIdsByStatusDate;
+      if (filterByStatusDate && statusFilter != null) {
+        var historyQuery = _supabase
+            .schema('carnavalapp')
+            .from('order_status_history')
+            .select('order_id');
+        if (statusFilter == 'Nuevo') {
+          historyQuery = historyQuery.inFilter('status', [
+            'Nuevo',
+            'En Revision',
+            'Pendiente de Pago',
+          ]);
+        } else {
+          historyQuery = historyQuery.eq('status', statusFilter);
+        }
+        if (dateFrom != null) {
+          historyQuery = historyQuery.gte(
+            'created_at',
+            DateTime(
+              dateFrom.year,
+              dateFrom.month,
+              dateFrom.day,
+            ).toIso8601String(),
+          );
+        }
+        if (dateTo != null) {
+          historyQuery = historyQuery.lt(
+            'created_at',
+            DateTime(
+              dateTo.year,
+              dateTo.month,
+              dateTo.day + 1,
+            ).toIso8601String(),
+          );
+        }
+        final historyResponse = await historyQuery;
+        orderIdsByStatusDate = historyResponse
+            .map<int?>((row) => (row['order_id'] as num?)?.toInt())
+            .whereType<int>()
+            .toSet();
+        if (orderIdsByStatusDate.isEmpty) return [];
+      }
 
       var query = _supabase
           .schema('carnavalapp')
@@ -1272,9 +1303,17 @@ class CarnavalService {
         query = query.contains('proveedores', ['$carnavalStoreId']);
       }
 
-      if (statusFilter != null) {
+      if (orderIdsByStatusDate != null) {
+        query = query.inFilter('id', orderIdsByStatusDate.toList());
+      }
+
+      if (statusFilter != null && !filterByStatusDate) {
         if (statusFilter == 'Nuevo') {
-          query = query.inFilter('status', ['Nuevo', 'En Revision', 'Pendiente de Pago']);
+          query = query.inFilter('status', [
+            'Nuevo',
+            'En Revision',
+            'Pendiente de Pago',
+          ]);
         } else {
           query = query.eq('status', statusFilter);
         }
@@ -1284,11 +1323,14 @@ class CarnavalService {
         query = query.eq('id', orderIdFilter);
       }
 
-      if (dateFrom != null) {
-        query = query.gte('created_at', dateFrom.toIso8601String().split('T')[0]);
+      if (!filterByStatusDate && dateFrom != null) {
+        query = query.gte(
+          'created_at',
+          dateFrom.toIso8601String().split('T')[0],
+        );
       }
 
-      if (dateTo != null) {
+      if (!filterByStatusDate && dateTo != null) {
         final end = DateTime(dateTo.year, dateTo.month, dateTo.day, 23, 59, 59);
         query = query.lte('created_at', end.toIso8601String());
       }
@@ -1374,7 +1416,9 @@ class CarnavalService {
       var query = _supabase
           .schema('carnavalapp')
           .from('OrderDetails')
-          .select('*, Productos(id, name, image, price, proveedor, proveedores(id, name))')
+          .select(
+            '*, Productos(id, name, image, price, proveedor, proveedores(id, name))',
+          )
           .eq('order_id', orderId);
 
       if (proveedorFilter != null) {
@@ -1407,11 +1451,7 @@ class CarnavalService {
           .from('Orders')
           .update({'status': newStatus})
           .eq('id', orderId);
-      await _logOrderStatusChange(
-        orderId,
-        newStatus,
-        changedBy: changedBy,
-      );
+      await _logOrderStatusChange(orderId, newStatus, changedBy: changedBy);
       return true;
     } catch (e) {
       print('❌ Error al actualizar status de orden: $e');
@@ -1470,16 +1510,9 @@ class CarnavalService {
       await _supabase
           .schema('carnavalapp')
           .from('Orders')
-          .update({
-            'status': 'Asignado',
-            'repartidor': repartidorId,
-          })
+          .update({'status': 'Asignado', 'repartidor': repartidorId})
           .eq('id', orderId);
-      await _logOrderStatusChange(
-        orderId,
-        'Asignado',
-        changedBy: changedBy,
-      );
+      await _logOrderStatusChange(orderId, 'Asignado', changedBy: changedBy);
       return true;
     } catch (e) {
       print('❌ Error al asignar repartidor: $e');
@@ -1505,11 +1538,7 @@ class CarnavalService {
           .update(updates)
           .eq('id', orderId);
       if (resetToAsignado) {
-        await _logOrderStatusChange(
-          orderId,
-          'Asignado',
-          changedBy: changedBy,
-        );
+        await _logOrderStatusChange(orderId, 'Asignado', changedBy: changedBy);
       }
       return true;
     } catch (e) {
@@ -1524,12 +1553,15 @@ class CarnavalService {
     String? changedBy,
   }) async {
     try {
-      await _supabase.schema('carnavalapp').from('order_status_history').insert({
-        'order_id': orderId,
-        'status': status,
-        if (changedBy != null && changedBy.trim().isNotEmpty)
-          'changed_by': changedBy.trim(),
-      });
+      await _supabase
+          .schema('carnavalapp')
+          .from('order_status_history')
+          .insert({
+            'order_id': orderId,
+            'status': status,
+            if (changedBy != null && changedBy.trim().isNotEmpty)
+              'changed_by': changedBy.trim(),
+          });
     } catch (e) {
       // Tabla puede no existir aún si no se aplicó la migración; no bloquear.
       print('⚠️ No se pudo registrar historial de status: $e');
@@ -1761,10 +1793,7 @@ class CarnavalService {
         final authResponse = await _supabase.auth.signUp(
           email: correo,
           password: password,
-          data: {
-            'nombre': nombre,
-            'rol': 'repartidor',
-          },
+          data: {'nombre': nombre, 'rol': 'repartidor'},
         );
         if (authResponse.user == null) {
           return {'error': 'No se pudo registrar el usuario en Supabase Auth.'};
@@ -1783,16 +1812,18 @@ class CarnavalService {
             if (loginResponse.user == null) {
               return {
                 'error':
-                    'El email ya existe pero la contraseña proporcionada es incorrecta.'
+                    'El email ya existe pero la contraseña proporcionada es incorrecta.',
               };
             }
             userUuid = loginResponse.user!.id;
             userAlreadyExisted = true;
-            print('✅ Repartidor: usuario existente reutilizado UUID: $userUuid');
+            print(
+              '✅ Repartidor: usuario existente reutilizado UUID: $userUuid',
+            );
           } catch (loginError) {
             return {
               'error':
-                  'El email ya está registrado y no se pudo autenticar (verifica la contraseña).'
+                  'El email ya está registrado y no se pudo autenticar (verifica la contraseña).',
             };
           }
         } else {
@@ -1889,20 +1920,26 @@ class CarnavalService {
       final operacionIds = (opsResponse as List)
           .map((o) => o['id'] as int)
           .toList();
-      print('🔍 paqueteria: ops encontradas tienda=$idTienda '
-          'rango=${from.toIso8601String()}..${to.toIso8601String()} '
-          '=> ${operacionIds.length}');
+      print(
+        '🔍 paqueteria: ops encontradas tienda=$idTienda '
+        'rango=${from.toIso8601String()}..${to.toIso8601String()} '
+        '=> ${operacionIds.length}',
+      );
       if (operacionIds.isEmpty) return [];
 
       // 2. Obtener órdenes carnaval asociadas a esas operaciones via paqueteria_ordenes.
       // Nota: si esta tabla tiene RLS restrictiva la respuesta vendrá vacía.
       final paqResponse = await _supabase
           .from('paqueteria_ordenes')
-          .select('id_orden_carnaval, id_operacion, numero_paquete, descripcion')
+          .select(
+            'id_orden_carnaval, id_operacion, numero_paquete, descripcion',
+          )
           .inFilter('id_operacion', operacionIds);
 
-      print('🔍 paqueteria: filas paqueteria_ordenes => '
-          '${(paqResponse as List).length}');
+      print(
+        '🔍 paqueteria: filas paqueteria_ordenes => '
+        '${(paqResponse as List).length}',
+      );
 
       final ordenIdToOpId = <int, int>{};
       for (final row in paqResponse) {
@@ -1916,8 +1953,10 @@ class CarnavalService {
       // orden Carnaval ya guarda su `paqueteria` JSONB y su `observaciones`
       // VentIQ apunta a la operación, podemos resolver vía observaciones.
       if (ordenIdToOpId.isEmpty) {
-        print('⚠️ paqueteria_ordenes vacío. Intentando fallback por '
-            'observaciones de operaciones.');
+        print(
+          '⚠️ paqueteria_ordenes vacío. Intentando fallback por '
+          'observaciones de operaciones.',
+        );
         final opsObs = await _supabase
             .from('app_dat_operaciones')
             .select('id, observaciones')
@@ -1950,8 +1989,11 @@ class CarnavalService {
 
       if (statusFilter != null) {
         if (statusFilter == 'Nuevo') {
-          query = query.inFilter(
-              'status', ['Nuevo', 'En Revision', 'Pendiente de Pago']);
+          query = query.inFilter('status', [
+            'Nuevo',
+            'En Revision',
+            'Pendiente de Pago',
+          ]);
         } else {
           query = query.eq('status', statusFilter);
         }
@@ -1980,8 +2022,10 @@ class CarnavalService {
         final isPaq = paq is Map && paq.isNotEmpty;
         if (isPaq) filtered.add(o);
       }
-      print('✅ paqueteria: órdenes finales = ${filtered.length} '
-          '(de ${orders.length} en rango)');
+      print(
+        '✅ paqueteria: órdenes finales = ${filtered.length} '
+        '(de ${orders.length} en rango)',
+      );
       return filtered;
     } catch (e) {
       print('❌ Error al obtener órdenes de paquetería por tienda: $e');
@@ -2115,7 +2159,8 @@ class CarnavalService {
   /// Solo devuelve nombres de ubicación (nunca `id`), para no pisar
   /// campos de `Orders` al enriquecer la lista.
   static Future<Map<String, dynamic>?> getOrderDireccion(
-      String direccionText) async {
+    String direccionText,
+  ) async {
     try {
       final dirResponse = await _supabase
           .schema('carnavalapp')
@@ -2127,9 +2172,7 @@ class CarnavalService {
 
       if (dirResponse == null) return null;
 
-      final result = <String, dynamic>{
-        'address': dirResponse['address'],
-      };
+      final result = <String, dynamic>{'address': dirResponse['address']};
       final provinciaId = dirResponse['provincia'];
       final municipioId = dirResponse['municipio'];
 
@@ -2220,7 +2263,14 @@ class CarnavalService {
 
       DateTime? fechaHasta;
       if (dateTo != null) {
-        fechaHasta = DateTime(dateTo.year, dateTo.month, dateTo.day, 23, 59, 59);
+        fechaHasta = DateTime(
+          dateTo.year,
+          dateTo.month,
+          dateTo.day,
+          23,
+          59,
+          59,
+        );
       }
 
       // 1) RPC Carnaval: líneas agregadas por orden + producto
@@ -2249,12 +2299,11 @@ class CarnavalService {
         };
       }
 
-      final orderIds =
-          carnavalLines
-              .map((r) => (r['order_id'] as num?)?.toInt())
-              .whereType<int>()
-              .toSet()
-              .toList();
+      final orderIds = carnavalLines
+          .map((r) => (r['order_id'] as num?)?.toInt())
+          .whereType<int>()
+          .toSet()
+          .toList();
 
       final orderStatus = <int, String?>{};
       // order_id -> product_id -> {qty, name}
@@ -2296,10 +2345,7 @@ class CarnavalService {
       for (final chunk in _chunkList(orderIds, 50)) {
         final inventtiaRaw = await _supabase.rpc(
           'fn_audit_inventtia_carnaval_lines',
-          params: {
-            'p_order_ids': chunk,
-            'p_id_tienda': inventtiaStoreId,
-          },
+          params: {'p_order_ids': chunk, 'p_id_tienda': inventtiaStoreId},
         );
 
         for (final row in List<Map<String, dynamic>>.from(
@@ -2376,10 +2422,7 @@ class CarnavalService {
           continue;
         }
 
-        final allKeys = {
-          ...carnavalProducts.keys,
-          ...inventtiaProducts.keys,
-        };
+        final allKeys = {...carnavalProducts.keys, ...inventtiaProducts.keys};
 
         for (final key in allKeys) {
           final c = carnavalProducts[key];

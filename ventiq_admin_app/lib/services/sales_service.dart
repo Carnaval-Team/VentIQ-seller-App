@@ -315,8 +315,11 @@ class SalesService {
   static Future<List<ProductSalesReport>> getProductSalesReport({
     DateTime? fechaDesde,
     DateTime? fechaHasta,
+
     /// 'creacion' | 'completado'
     String filtroFecha = 'creacion',
+    bool useCurrentPrices = false,
+
     /// Tienda a consultar. Si es null se usa la tienda activa de las
     /// preferencias. Lo usan los Home Screen Widgets, donde cada instancia
     /// puede apuntar a una tienda distinta de la activa en la app.
@@ -335,9 +338,11 @@ class SalesService {
 
       final String? desde = fechaDesde?.toIso8601String().split('T')[0];
       final String? hasta = fechaHasta?.toIso8601String().split('T')[0];
-      final filtro =
-          filtroFecha == 'completado' ? 'completado' : 'creacion';
-      print('   RPC : fn_reporte_ventas_con_proveedor4');
+      final filtro = filtroFecha == 'completado' ? 'completado' : 'creacion';
+      final rpcName = useCurrentPrices
+          ? 'fn_reporte_ventas_con_proveedor_precios_actuales'
+          : 'fn_reporte_ventas_con_proveedor4';
+      print('   RPC : $rpcName');
       print('   Tienda : $idTienda');
       print('   Desde  : ${desde ?? "(sin filtro)"}');
       print('   Hasta  : ${hasta ?? "(sin filtro)"}');
@@ -350,10 +355,7 @@ class SalesService {
       if (desde != null) params['p_fecha_desde'] = desde;
       if (hasta != null) params['p_fecha_hasta'] = hasta;
 
-      final response = await _supabase.rpc(
-        'fn_reporte_ventas_con_proveedor4',
-        params: params,
-      );
+      final response = await _supabase.rpc(rpcName, params: params);
 
       sw.stop();
       print('   ⏱ Respuesta en ${sw.elapsedMilliseconds} ms');
@@ -364,7 +366,9 @@ class SalesService {
       }
 
       if (response is! List) {
-        print('❌ [getProductSalesReport] Tipo inesperado: ${response.runtimeType}');
+        print(
+          '❌ [getProductSalesReport] Tipo inesperado: ${response.runtimeType}',
+        );
         print('   Datos: $response');
         return [];
       }
@@ -377,12 +381,14 @@ class SalesService {
         try {
           final r = ProductSalesReport.fromJson(item);
           reports.add(r);
-          print('   🔹 ${r.nombreProducto}'
-              ' | precio_cup=${r.precioVentaCup}'
-              ' | cant=${r.totalVendido}'
-              ' | local=${r.precioVentaCup.truncate() * r.totalVendido.truncate()}'
-              ' | ingresos_sql=${r.ingresosTotales}'
-              ' | costo_cup=${r.precioCostoCup}');
+          print(
+            '   🔹 ${r.nombreProducto}'
+            ' | precio_cup=${r.precioVentaCup}'
+            ' | cant=${r.totalVendido}'
+            ' | local=${r.precioVentaCup.truncate() * r.totalVendido.truncate()}'
+            ' | ingresos_sql=${r.ingresosTotales}'
+            ' | costo_cup=${r.precioCostoCup}',
+          );
         } catch (e) {
           parseErrors++;
           print('⚠️ [getProductSalesReport] Error parseando fila: $e');
@@ -391,20 +397,55 @@ class SalesService {
       }
 
       if (parseErrors > 0) {
-        print('⚠️ [getProductSalesReport] $parseErrors filas no pudieron parsearse');
+        print(
+          '⚠️ [getProductSalesReport] $parseErrors filas no pudieron parsearse',
+        );
       }
       print('✅ [getProductSalesReport] ${reports.length} productos cargados');
       print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       return reports;
     } catch (e, stack) {
       sw.stop();
-      print('❌ [getProductSalesReport] Error después de ${sw.elapsedMilliseconds} ms');
+      print(
+        '❌ [getProductSalesReport] Error después de ${sw.elapsedMilliseconds} ms',
+      );
       print('   Excepción : $e');
       print('   Tipo      : ${e.runtimeType}');
       print('   Stack     :\n$stack');
       print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       return [];
     }
+  }
+
+  static Future<List<Map<String, dynamic>>> getProductChronologicalReport({
+    required int productId,
+    DateTime? fechaDesde,
+    DateTime? fechaHasta,
+    String filtroFecha = 'creacion',
+  }) async {
+    final idTienda = await UserPreferencesService().getIdTienda();
+    if (idTienda == null) {
+      throw Exception('No se pudo obtener la tienda actual');
+    }
+
+    final params = <String, dynamic>{
+      'p_id_tienda': idTienda,
+      'p_id_producto': productId,
+      'p_filtro_fecha': filtroFecha == 'completado' ? 'completado' : 'creacion',
+    };
+    if (fechaDesde != null) {
+      params['p_fecha_desde'] = fechaDesde.toIso8601String().split('T')[0];
+    }
+    if (fechaHasta != null) {
+      params['p_fecha_hasta'] = fechaHasta.toIso8601String().split('T')[0];
+    }
+
+    final response = await _supabase.rpc(
+      'fn_reporte_cronologico_producto',
+      params: params,
+    );
+    if (response == null) return [];
+    return List<Map<String, dynamic>>.from(response as List);
   }
 
   // Get date ranges for filters
@@ -530,10 +571,13 @@ class SalesService {
         print('- Item type: ${item.runtimeType}');
         print('- Keys: ${item.keys.toList()}');
 
-        final ingresoTotal = (item['ingresos_totales'] as num?)?.toDouble() ?? 0.0;
+        final ingresoTotal =
+            (item['ingresos_totales'] as num?)?.toDouble() ?? 0.0;
         final totalVendido = (item['total_vendido'] as num?)?.toDouble() ?? 0.0;
 
-        print('- ingresos_totales: $ingresoTotal (raw: ${item['ingresos_totales']})');
+        print(
+          '- ingresos_totales: $ingresoTotal (raw: ${item['ingresos_totales']})',
+        );
         print('- total_vendido: $totalVendido (raw: ${item['total_vendido']})');
 
         totalSales += ingresoTotal;
@@ -564,6 +608,7 @@ class SalesService {
   static Future<List<ProductAnalysis>> getProductAnalysis({
     DateTime? fechaDesde,
     DateTime? fechaHasta,
+
     /// Tienda a consultar; null = tienda activa. Necesario para los Home
     /// Screen Widgets, que pueden apuntar a otra tienda.
     int? storeId,
@@ -692,6 +737,7 @@ class SalesService {
     DateTime? fechaHasta,
     String? uuidUsuario,
     bool hastaCierreTurno = false,
+
     /// Tienda a consultar; null = tienda activa. Necesario para los Home
     /// Screen Widgets, que pueden apuntar a otra tienda.
     int? storeId,
@@ -798,10 +844,7 @@ class SalesService {
         'solo_pendientes_param': false,
       };
 
-      final response = await _supabase.rpc(
-        'listar_ordenes',
-        params: rpcParams,
-      );
+      final response = await _supabase.rpc('listar_ordenes', params: rpcParams);
 
       print('Response received: ${response?.length ?? 0} orders');
 
@@ -815,7 +858,7 @@ class SalesService {
       for (final item in response) {
         try {
           final order = VendorOrder.fromJson(item);
-          
+
           // Filter only orders that contain "Venta" in tipo_operacion
           final tipoOperacion = item['tipo_operacion']?.toString() ?? '';
           if (tipoOperacion.toLowerCase().contains('venta')) {
@@ -824,7 +867,9 @@ class SalesService {
               'Added order: #${order.idOperacion} - Total: \$${order.totalOperacion} - Items: ${order.cantidadItems} - Tipo: $tipoOperacion',
             );
           } else {
-            print('Filtered out order #${order.idOperacion} - Tipo: $tipoOperacion (not a Venta)');
+            print(
+              'Filtered out order #${order.idOperacion} - Tipo: $tipoOperacion (not a Venta)',
+            );
           }
         } catch (e) {
           print('Error parsing order: $e');
@@ -856,7 +901,9 @@ class SalesService {
         totalEgresos += delivery.montoEntrega;
       }
 
-      print('Total egresos for user $uuidUsuario: \$${totalEgresos.toStringAsFixed(2)}');
+      print(
+        'Total egresos for user $uuidUsuario: \$${totalEgresos.toStringAsFixed(2)}',
+      );
       return totalEgresos;
     } catch (e) {
       print('Error calculating total egresos for vendor: $e');
@@ -899,6 +946,7 @@ class SalesService {
       return [];
     }
   }
+
   static Future<List<ProductSalesWithSupplier>> getProductSalesWithSupplier({
     DateTime? fechaDesde,
     DateTime? fechaHasta,
@@ -958,7 +1006,9 @@ class SalesService {
           .where((product) => product.idProveedor == idProveedor)
           .toList();
 
-      print('DEBUG - Supplier Product Report: ${supplierProducts.length} productos para proveedor $idProveedor');
+      print(
+        'DEBUG - Supplier Product Report: ${supplierProducts.length} productos para proveedor $idProveedor',
+      );
 
       return supplierProducts;
     } catch (e) {

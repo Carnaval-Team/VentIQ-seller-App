@@ -21,6 +21,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/smart_offline_manager.dart';
 import '../services/connectivity_service.dart';
 import '../services/product_service.dart';
+import '../services/offline_database_service.dart';
 import '../services/store_config_service.dart';
 import '../services/mesa_cuenta_service.dart';
 import '../models/product.dart';
@@ -204,9 +205,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
     try {
       // Full offline: no forzar chequeos que disparen diálogo / servidor.
       if (await _preferencesService.shouldStayFullyOffline()) {
-        print(
-          '📦 Full offline: omitiendo chequeo de conexión al reanudar',
-        );
+        print('📦 Full offline: omitiendo chequeo de conexión al reanudar');
         return;
       }
 
@@ -278,8 +277,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
       });
 
       // Offline o dispositivo full-offline: siempre datos locales (sin sync/red).
-      final useLocalData =
-          await _preferencesService.shouldUseLocalData();
+      final useLocalData = await _preferencesService.shouldUseLocalData();
 
       List<Category> categories = [];
 
@@ -482,17 +480,48 @@ class _CategoriesScreenState extends State<CategoriesScreen>
       return;
     }
 
-    // Si está en modo offline, evitamos buscar
-    if (_isOfflineModeEnabled) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              '🔌 Modo offline activo: la búsqueda global requiere conexión',
-            ),
-            duration: Duration(seconds: 2),
-          ),
-        );
+    final useLocalData = await _preferencesService.shouldUseLocalData();
+    if (useLocalData) {
+      if (mounted) setState(() => _isSearchingProducts = true);
+      try {
+        final rows = await OfflineDatabaseService().searchProducts(trimmed);
+        final results =
+            rows
+                .map(
+                  (p) => Product(
+                    id: (p['id'] as num?)?.toInt() ?? 0,
+                    denominacion: p['denominacion'] as String? ?? 'Sin nombre',
+                    descripcion: p['descripcion'] as String?,
+                    sku: p['sku'] as String?,
+                    foto: p['foto'] as String?,
+                    precio: (p['precio'] as num?)?.toDouble() ?? 0.0,
+                    cantidad: p['cantidad'] as num? ?? 0,
+                    categoria: p['categoria'] as String? ?? '',
+                    esRefrigerado: p['es_refrigerado'] as bool? ?? false,
+                    esFragil: p['es_fragil'] as bool? ?? false,
+                    esPeligroso: p['es_peligroso'] as bool? ?? false,
+                    esVendible: p['es_vendible'] as bool? ?? true,
+                    esComprable: p['es_comprable'] as bool? ?? true,
+                    esInventariable: p['es_inventariable'] as bool? ?? true,
+                    esPorLotes: p['es_por_lotes'] as bool? ?? false,
+                    esElaborado: p['es_elaborado'] as bool? ?? false,
+                    esServicio: p['es_servicio'] as bool? ?? false,
+                    variantes: p['variantes'] as List<dynamic>? ?? [],
+                  ),
+                )
+                .where((product) => product.id > 0)
+                .toList();
+        if (!mounted) return;
+        setState(() {
+          _searchResults = results;
+          _isSearchingProducts = false;
+        });
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _isSearchingProducts = false;
+          _searchResults = [];
+        });
       }
       return;
     }
