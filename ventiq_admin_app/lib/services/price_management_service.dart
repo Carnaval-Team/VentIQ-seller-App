@@ -8,6 +8,9 @@ class ProductPriceItem {
   final double? lastPriceUsd;
   final DateTime? lastPriceDate;
   final int? vendedorAppId;
+  final bool? carnavalActive;
+  final double? carnavalPrice;
+  final double? carnavalDiscountPrice;
   final List<Map<String, dynamic>> presentaciones;
 
   ProductPriceItem({
@@ -18,6 +21,9 @@ class ProductPriceItem {
     this.lastPriceUsd,
     required this.lastPriceDate,
     required this.vendedorAppId,
+    this.carnavalActive,
+    this.carnavalPrice,
+    this.carnavalDiscountPrice,
     this.presentaciones = const [],
   });
 
@@ -36,15 +42,35 @@ class ProductPriceItem {
               ? DateTime.tryParse(json['created_at'].toString())
               : null,
       vendedorAppId: json['id_vendedor_app'],
+      carnavalActive: json['carnaval_status'] as bool?,
+      carnavalPrice: (json['carnaval_price'] as num?)?.toDouble(),
+      carnavalDiscountPrice:
+          (json['carnaval_discount_price'] as num?)?.toDouble(),
       presentaciones: presList,
+    );
+  }
+
+  ProductPriceItem withCarnavalData(Map<String, dynamic> data) {
+    return ProductPriceItem(
+      id: id,
+      name: name,
+      sku: sku,
+      lastPrice: lastPrice,
+      lastPriceUsd: lastPriceUsd,
+      lastPriceDate: lastPriceDate,
+      vendedorAppId: vendedorAppId,
+      carnavalActive: data['status'] as bool?,
+      carnavalPrice: (data['price'] as num?)?.toDouble(),
+      carnavalDiscountPrice: (data['precio_descuento'] as num?)?.toDouble(),
+      presentaciones: presentaciones,
     );
   }
 }
 
 class GeneralPriceConfig {
-  final double precioRegular;
-  final double precioVentaCarnaval;
-  final double precioVentaCarnavalTransferencia;
+  final double? precioRegular;
+  final double? precioVentaCarnaval;
+  final double? precioVentaCarnavalTransferencia;
 
   const GeneralPriceConfig({
     required this.precioRegular,
@@ -68,7 +94,9 @@ class PriceManagementService {
       );
 
       if (response is List) {
-        return response.map((e) => ProductPriceItem.fromJson(e)).toList();
+        final products =
+            response.map((e) => ProductPriceItem.fromJson(e)).toList();
+        return _loadCarnavalData(products);
       }
     } catch (e) {
       print('❌ RPC rpc_get_products_last_price2 no disponible: $e');
@@ -118,7 +146,7 @@ class PriceManagementService {
             );
       }
 
-      return data.map<ProductPriceItem>((item) {
+      final products = data.map<ProductPriceItem>((item) {
         final pid = item['id'] as int;
         final last = latestPrice[pid];
 
@@ -135,57 +163,62 @@ class PriceManagementService {
           presentaciones: pressByProduct[pid] ?? [],
         );
       }).toList();
+      return _loadCarnavalData(products);
     } catch (e) {
       print('❌ Error fallback obteniendo productos con precio: $e');
       return [];
     }
   }
 
-  /// Obtiene o crea la configuración global de precios para la tienda.
+  static Future<List<ProductPriceItem>> _loadCarnavalData(
+    List<ProductPriceItem> products,
+  ) async {
+    final carnavalIds =
+        products
+            .map((product) => product.vendedorAppId)
+            .whereType<int>()
+            .toList();
+    if (carnavalIds.isEmpty) return products;
+
+    final response = await _supabase
+        .schema('carnavalapp')
+        .from('Productos')
+        .select('id, status, price, precio_descuento')
+        .inFilter('id', carnavalIds);
+    final carnavalById = {
+      for (final row in response)
+        row['id'] as int: Map<String, dynamic>.from(row),
+    };
+
+    return products
+        .map(
+          (product) =>
+              carnavalById[product.vendedorAppId] == null
+                  ? product
+                  : product.withCarnavalData(
+                    carnavalById[product.vendedorAppId]!,
+                  ),
+        )
+        .toList();
+  }
+
+  /// Obtiene la configuración global de precios para la tienda.
   static Future<GeneralPriceConfig> getOrCreatePriceConfig(int storeId) async {
-    const defaults = GeneralPriceConfig(
-      precioRegular: 0.0,
-      precioVentaCarnaval: 5.3,
-      precioVentaCarnavalTransferencia: 11.1,
+    final response =
+        await _supabase
+            .from('app_dat_precio_general_tienda')
+            .select()
+            .eq('id_tienda', storeId)
+            .maybeSingle();
+
+    return GeneralPriceConfig(
+      precioRegular: (response?['precio_regular'] as num?)?.toDouble(),
+      precioVentaCarnaval:
+          (response?['precio_venta_carnaval'] as num?)?.toDouble(),
+      precioVentaCarnavalTransferencia:
+          (response?['precio_venta_carnaval_transferencia'] as num?)
+              ?.toDouble(),
     );
-
-    try {
-      final response =
-          await _supabase
-              .from('app_dat_precio_general_tienda')
-              .select()
-              .eq('id_tienda', storeId)
-              .maybeSingle();
-
-      if (response != null) {
-        return GeneralPriceConfig(
-          precioRegular:
-              (response['precio_regular'] ?? defaults.precioRegular).toDouble(),
-          precioVentaCarnaval:
-              (response['precio_venta_carnaval'] ??
-                      defaults.precioVentaCarnaval)
-                  .toDouble(),
-          precioVentaCarnavalTransferencia:
-              (response['precio_venta_carnaval_transferencia'] ??
-                      defaults.precioVentaCarnavalTransferencia)
-                  .toDouble(),
-        );
-      }
-
-      // Crear con defaults
-      await _supabase.from('app_dat_precio_general_tienda').insert({
-        'id_tienda': storeId,
-        'precio_regular': defaults.precioRegular,
-        'precio_venta_carnaval': defaults.precioVentaCarnaval,
-        'precio_venta_carnaval_transferencia':
-            defaults.precioVentaCarnavalTransferencia,
-      });
-
-      return defaults;
-    } catch (e) {
-      print('❌ Error obteniendo/creando configuración de precios: $e');
-      return defaults;
-    }
   }
 
   /// Aplica cambio de precio global vía RPC (recomendada).
@@ -196,6 +229,14 @@ class PriceManagementService {
     required double precioCarnavalTransferencia,
   }) async {
     try {
+      await _supabase.from('app_dat_precio_general_tienda').upsert({
+        'id_tienda': storeId,
+        'precio_regular': precioRegular,
+        'precio_venta_carnaval': precioCarnaval,
+        'precio_venta_carnaval_transferencia': precioCarnavalTransferencia,
+        'updated_at': DateTime.now().toIso8601String(),
+      }, onConflict: 'id_tienda');
+
       await _supabase.rpc(
         'rpc_apply_global_price_change',
         params: {

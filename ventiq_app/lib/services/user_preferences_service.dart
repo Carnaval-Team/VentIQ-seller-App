@@ -99,11 +99,11 @@ class UserPreferencesService {
   // en el mismo teléfono usan el mismo stock local).
   static const String _offlineInventoryStoreKey = 'offline_inventory_store_id';
   // Legacy: dueño por usuario (ya no se usa para wipe; se migra a tienda)
-  static const String _offlineDataOwnerKey =
-      'offline_data_owner';
+  static const String _offlineDataOwnerKey = 'offline_data_owner';
   // Dispositivo preparado para full offline (admin primero + switch local)
   static const String _deviceFullOfflineReadyKey = 'device_full_offline_ready';
-  static const String _deviceFullOfflineStoreKey = 'device_full_offline_store_id';
+  static const String _deviceFullOfflineStoreKey =
+      'device_full_offline_store_id';
   static const String _deviceFullOfflineAdminEmailKey =
       'device_full_offline_admin_email';
   static const String _deviceFullOfflineAdminPasswordKey =
@@ -117,7 +117,8 @@ class UserPreferencesService {
   static const String _defaultOrderItemsKey = 'default_order_items';
 
   // Conteos de inventario durante cierre (por TPV)
-  static const String _inventoryCountCierreKeyPrefix = 'inventory_count_cierre_';
+  static const String _inventoryCountCierreKeyPrefix =
+      'inventory_count_cierre_';
   // Conteos de inventario durante apertura (por TPV)
   static const String _inventoryCountAperturaKeyPrefix =
       'inventory_count_apertura_';
@@ -516,7 +517,9 @@ class UserPreferencesService {
     await prefs.setBool(_isLoggedInKey, false);
     await clearPromotionData();
     // Limpiar cache de rol admin por tienda para no heredar gerente→vendedor
-    final keys = prefs.getKeys().where((k) => k.startsWith(_adminRoleKeyPrefix));
+    final keys = prefs.getKeys().where(
+      (k) => k.startsWith(_adminRoleKeyPrefix),
+    );
     for (final k in keys) {
       await prefs.remove(k);
     }
@@ -526,7 +529,9 @@ class UserPreferencesService {
   }
 
   /// Usuarios offline de una tienda (para el selector local).
-  Future<List<Map<String, dynamic>>> getOfflineUsersForStore(int storeId) async {
+  Future<List<Map<String, dynamic>>> getOfflineUsersForStore(
+    int storeId,
+  ) async {
     final all = await getOfflineUsers();
     return all.where((u) {
       final id = u['idTienda'];
@@ -548,21 +553,17 @@ class UserPreferencesService {
     if (usersJson != null) {
       final decoded = jsonDecode(usersJson) as List<dynamic>;
       offlineUsers =
-          decoded.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+          decoded
+              .map((item) => Map<String, dynamic>.from(item as Map))
+              .toList();
     }
 
     final existingIndex = offlineUsers.indexWhere(
       (user) => user['email'] == email,
     );
-    final row = {
-      ...userData,
-      'lastSync': DateTime.now().toIso8601String(),
-    };
+    final row = {...userData, 'lastSync': DateTime.now().toIso8601String()};
     if (existingIndex != -1) {
-      offlineUsers[existingIndex] = {
-        ...offlineUsers[existingIndex],
-        ...row,
-      };
+      offlineUsers[existingIndex] = {...offlineUsers[existingIndex], ...row};
     } else {
       offlineUsers.add(row);
     }
@@ -601,6 +602,16 @@ class UserPreferencesService {
 
     // Limpiar órdenes al cerrar sesión
     await _clearOrdersOnLogout();
+  }
+
+  Future<void> clearAllCachedDataForOnlineLogout() async {
+    final prefs = await SharedPreferences.getInstance();
+    OrderService().clearAllOrders();
+    await OfflineDatabaseService().clearAll();
+    await prefs.clear();
+    _cachedShowSkuEnabled = false;
+    _skuCacheLoaded = false;
+    print('🗑️ Caché local eliminada completamente al cerrar sesión online');
   }
 
   // Método privado para limpiar órdenes durante logout
@@ -1078,9 +1089,7 @@ class UserPreferencesService {
     _skuCacheLoaded = true;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_showSkuEnabledKey, enabled);
-    print(
-      'UserPreferencesService: Mostrar SKU actualizado: $enabled',
-    );
+    print('UserPreferencesService: Mostrar SKU actualizado: $enabled');
   }
 
   Future<bool> isShowSkuEnabled() async {
@@ -1192,9 +1201,7 @@ class UserPreferencesService {
       print(
         '  - Categorías: ${hasCategories ? "✅" : "❌"} (${stats['categories']})',
       );
-      print(
-        '  - Productos: ${hasProducts ? "✅" : "❌"} (${stats['products']})',
-      );
+      print('  - Productos: ${hasProducts ? "✅" : "❌"} (${stats['products']})');
 
       // Requiere al menos credenciales y categorías para funcionar offline
       return hasCredentials && hasCategories;
@@ -1739,14 +1746,16 @@ class UserPreferencesService {
       final rawCategory = productsData[categoryKey];
       if (rawCategory is! List) continue;
 
-      final categoryProducts = rawCategory
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
+      final categoryProducts =
+          rawCategory
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
 
       for (int i = 0; i < categoryProducts.length; i++) {
         final productIdRaw = categoryProducts[i]['id'];
-        final matchesId = productIdRaw == productId ||
+        final matchesId =
+            productIdRaw == productId ||
             (productIdRaw is num && productIdRaw.toInt() == productId);
         if (!matchesId) continue;
 
@@ -1755,7 +1764,9 @@ class UserPreferencesService {
             (categoryProducts[i]['cantidad'] as num?)?.toDouble() ?? 0;
         final nextQty = currentQty - quantityToSubtract;
         categoryProducts[i]['cantidad'] =
-            quantityToSubtract >= 0 ? nextQty.clamp(0, double.infinity) : nextQty;
+            quantityToSubtract >= 0
+                ? nextQty.clamp(0, double.infinity)
+                : nextQty;
 
         // Actualizar inventario en detalles_completos (si existe)
         if (categoryProducts[i]['detalles_completos'] != null) {
@@ -1763,19 +1774,21 @@ class UserPreferencesService {
             categoryProducts[i]['detalles_completos'] as Map,
           );
           final rawInventario = detalles['inventario'];
-          final inventarioList = rawInventario is List
-              ? rawInventario
-                  .whereType<Map>()
-                  .map((e) => Map<String, dynamic>.from(e))
-                  .toList()
-              : <Map<String, dynamic>>[];
+          final inventarioList =
+              rawInventario is List
+                  ? rawInventario
+                      .whereType<Map>()
+                      .map((e) => Map<String, dynamic>.from(e))
+                      .toList()
+                  : <Map<String, dynamic>>[];
 
           bool inventoryUpdated = false;
 
           bool matchesInventoryItem(Map<String, dynamic> inv) {
-            final varianteData = inv['variante'] is Map
-                ? Map<String, dynamic>.from(inv['variante'] as Map)
-                : null;
+            final varianteData =
+                inv['variante'] is Map
+                    ? Map<String, dynamic>.from(inv['variante'] as Map)
+                    : null;
 
             // FASE 5: la presentación manda. Si se pidió una concreta y la fila
             // es de otra, NO es la fila a tocar — sin esto el delta de «2
@@ -1800,9 +1813,10 @@ class UserPreferencesService {
             }
 
             if (locationId != null) {
-              final ubicacion = inv['ubicacion'] is Map
-                  ? Map<String, dynamic>.from(inv['ubicacion'] as Map)
-                  : null;
+              final ubicacion =
+                  inv['ubicacion'] is Map
+                      ? Map<String, dynamic>.from(inv['ubicacion'] as Map)
+                      : null;
               return ubicacion?['id'] == locationId;
             }
 
@@ -1815,9 +1829,10 @@ class UserPreferencesService {
             final currentInvQty =
                 (inv['cantidad_disponible'] as num?)?.toDouble() ?? 0;
             final nextInvQty = currentInvQty - quantityToSubtract;
-            inv['cantidad_disponible'] = quantityToSubtract >= 0
-                ? nextInvQty.clamp(0, double.infinity)
-                : nextInvQty;
+            inv['cantidad_disponible'] =
+                quantityToSubtract >= 0
+                    ? nextInvQty.clamp(0, double.infinity)
+                    : nextInvQty;
           }
 
           for (int j = 0; j < inventarioList.length; j++) {
@@ -1912,21 +1927,25 @@ class UserPreferencesService {
       final raw = data?['orders'];
       if (raw is! List) return;
 
-      final opId = operationId ?? int.tryParse(orderId.replaceFirst('ORD-', ''));
+      final opId =
+          operationId ?? int.tryParse(orderId.replaceFirst('ORD-', ''));
       var changed = false;
-      final updated = raw.map((item) {
-        if (item is! Map) return item;
-        final map = Map<String, dynamic>.from(item);
-        final rowOp = map['id_operacion'];
-        final rowOpInt =
-            rowOp is int ? rowOp : (rowOp is num ? rowOp.toInt() : int.tryParse('$rowOp'));
-        final rowId = map['id']?.toString();
-        if (rowId == orderId || (opId != null && rowOpInt == opId)) {
-          map['estado'] = estado;
-          changed = true;
-        }
-        return map;
-      }).toList();
+      final updated =
+          raw.map((item) {
+            if (item is! Map) return item;
+            final map = Map<String, dynamic>.from(item);
+            final rowOp = map['id_operacion'];
+            final rowOpInt =
+                rowOp is int
+                    ? rowOp
+                    : (rowOp is num ? rowOp.toInt() : int.tryParse('$rowOp'));
+            final rowId = map['id']?.toString();
+            if (rowId == orderId || (opId != null && rowOpInt == opId)) {
+              map['estado'] = estado;
+              changed = true;
+            }
+            return map;
+          }).toList();
 
       if (changed) {
         await mergeOfflineData({'orders': updated});
@@ -2008,13 +2027,13 @@ class UserPreferencesService {
     base['local_turno_id'] = entry['local_id'];
     base['status'] = entry['status'];
     base['server_id_turno'] = entry['server_id_turno'];
-    base['client_uuid'] =
-        entry['client_uuid_apertura'] ?? base['client_uuid'];
+    base['client_uuid'] = entry['client_uuid_apertura'] ?? base['client_uuid'];
     if (entry['fecha_apertura'] != null) {
       base['fecha_apertura'] = entry['fecha_apertura'];
     }
     if (entry['id_tpv'] != null) base['id_tpv'] = entry['id_tpv'];
-    if (entry['id_vendedor'] != null) base['id_vendedor'] = entry['id_vendedor'];
+    if (entry['id_vendedor'] != null)
+      base['id_vendedor'] = entry['id_vendedor'];
     // Preferir id servidor si ya se sincronizó la apertura; si no, local_id.
     base['id'] = entry['server_id_turno'] ?? entry['local_id'] ?? base['id'];
     return base;
@@ -2113,21 +2132,58 @@ class UserPreferencesService {
     return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
-  /// Turnos que aún deben subirse (open o closed_pending_sync).
+  /// Turnos que realmente requieren sincronización.
+  /// Un turno abierto que ya existe en el servidor solo queda pendiente cuando
+  /// contiene ventas locales aún no sincronizadas.
   Future<List<Map<String, dynamic>>> getOfflineTurnosPendingSync() async {
     final all = await getOfflineTurnos();
-    return all
-        .where(
-          (t) =>
-              t['status'] == offlineTurnoStatusOpen ||
-              t['status'] == offlineTurnoStatusClosedPending,
-        )
-        .toList()
-      ..sort((a, b) {
-        final fa = a['fecha_apertura']?.toString() ?? '';
-        final fb = b['fecha_apertura']?.toString() ?? '';
-        return fa.compareTo(fb);
-      });
+    final orders = await getPendingOrders();
+    final unsyncedOrders = orders.where(
+      (order) => order['synced'] != true && order['is_pending_sync'] != false,
+    );
+    final pendingOrderCountByTurno = <String, int>{};
+    for (final order in unsyncedOrders) {
+      final localTurnoId = order['local_turno_id']?.toString();
+      if (localTurnoId == null || localTurnoId.isEmpty) continue;
+      pendingOrderCountByTurno.update(
+        localTurnoId,
+        (count) => count + 1,
+        ifAbsent: () => 1,
+      );
+    }
+
+    final pending =
+        all
+            .where((turno) {
+              final status = turno['status']?.toString();
+              if (status == offlineTurnoStatusClosedPending) return true;
+              if (status != offlineTurnoStatusOpen) return false;
+              final localId = turno['local_id']?.toString();
+              final serverId = turno['server_id_turno'] ?? turno['id_turno'];
+              final hasServerTurno =
+                  serverId is num ||
+                  int.tryParse(serverId?.toString() ?? '') != null;
+              return !hasServerTurno ||
+                  (localId != null &&
+                      (pendingOrderCountByTurno[localId] ?? 0) > 0);
+            })
+            .map((turno) {
+              final localId = turno['local_id']?.toString();
+              return {
+                ...turno,
+                'pending_orders_count':
+                    localId == null
+                        ? 0
+                        : pendingOrderCountByTurno[localId] ?? 0,
+              };
+            })
+            .toList()
+          ..sort((a, b) {
+            final fa = a['fecha_apertura']?.toString() ?? '';
+            final fb = b['fecha_apertura']?.toString() ?? '';
+            return fa.compareTo(fb);
+          });
+    return pending;
   }
 
   /// Dump legible de la cola de turnos offline para diagnóstico.
@@ -2237,11 +2293,12 @@ class UserPreferencesService {
         aperturaPayload['local_id']?.toString() ?? UuidGenerator.v4();
     final clientUuid =
         aperturaPayload['client_uuid']?.toString() ?? UuidGenerator.v4();
-    final payload = Map<String, dynamic>.from(aperturaPayload)
-      ..['local_id'] = localId
-      ..['local_turno_id'] = localId
-      ..['client_uuid'] = clientUuid
-      ..['id'] = localId;
+    final payload =
+        Map<String, dynamic>.from(aperturaPayload)
+          ..['local_id'] = localId
+          ..['local_turno_id'] = localId
+          ..['client_uuid'] = clientUuid
+          ..['id'] = localId;
 
     final entry = <String, dynamic>{
       'local_id': localId,
@@ -2297,15 +2354,14 @@ class UserPreferencesService {
 
       final clientUuidCierre =
           cierrePayload['client_uuid']?.toString() ?? UuidGenerator.v4();
-      final cierre = Map<String, dynamic>.from(cierrePayload)
-        ..['client_uuid'] = clientUuidCierre
-        ..['local_turno_id'] = id;
+      final cierre =
+          Map<String, dynamic>.from(cierrePayload)
+            ..['client_uuid'] = clientUuidCierre
+            ..['local_turno_id'] = id;
 
       final idx = all.indexWhere((t) => t['local_id']?.toString() == id);
       if (idx < 0) {
-        print(
-          '[TURNO_SYNC] ❌ markOfflineTurnoClosed: $id no está en cola',
-        );
+        print('[TURNO_SYNC] ❌ markOfflineTurnoClosed: $id no está en cola');
         throw StateError('Turno $id no encontrado en cola');
       }
 
@@ -2351,7 +2407,8 @@ class UserPreferencesService {
         'cerrado_local': isClosedPending || isSynced,
         'cerrado_online': isSynced || entry['cerrado_online'] == true,
         if (entry['synced_at'] != null) 'synced_at': entry['synced_at'],
-        if (entry['fecha_cierre'] != null) 'fecha_cierre': entry['fecha_cierre'],
+        if (entry['fecha_cierre'] != null)
+          'fecha_cierre': entry['fecha_cierre'],
         if (entry['fecha_apertura'] != null)
           'fecha_apertura': entry['fecha_apertura'],
         if (entry['server_id_turno'] != null)
@@ -2381,15 +2438,14 @@ class UserPreferencesService {
       if (t['status'] != offlineTurnoStatusClosedPending) continue;
       final sid = t['server_id_turno'];
       final sidInt =
-          sid is int
-              ? sid
-              : (sid is num ? sid.toInt() : int.tryParse('$sid'));
+          sid is int ? sid : (sid is num ? sid.toInt() : int.tryParse('$sid'));
       if (serverId != null && sidInt != null && sidInt == serverId) {
         return t;
       }
       // Mismo server id aún no pegado en entry pero sí en apertura.
       if (serverId != null && t['apertura'] is Map) {
-        final apId = (t['apertura'] as Map)['id'] ??
+        final apId =
+            (t['apertura'] as Map)['id'] ??
             (t['apertura'] as Map)['server_id_turno'];
         final apInt =
             apId is int
@@ -2398,9 +2454,11 @@ class UserPreferencesService {
         if (apInt != null && apInt == serverId) return t;
       }
 
-      final tTpv = t['id_tpv'] ??
+      final tTpv =
+          t['id_tpv'] ??
           (t['apertura'] is Map ? (t['apertura'] as Map)['id_tpv'] : null);
-      final tVend = t['id_vendedor'] ??
+      final tVend =
+          t['id_vendedor'] ??
           (t['apertura'] is Map ? (t['apertura'] as Map)['id_vendedor'] : null);
       final tpvInt =
           tTpv is int
@@ -2495,12 +2553,9 @@ class UserPreferencesService {
             ? Map<String, dynamic>.from(turnoEntry['cierre'] as Map)
             : <String, dynamic>{};
 
-    final efectivoInicial =
-        (apertura['efectivo_inicial'] ?? 0).toDouble();
-    final efectivoFinal =
-        (cierre['efectivo_final'] ?? 0).toDouble();
-    final diferenciaCierre =
-        (cierre['diferencia'] ?? 0).toDouble();
+    final efectivoInicial = (apertura['efectivo_inicial'] ?? 0).toDouble();
+    final efectivoFinal = (cierre['efectivo_final'] ?? 0).toDouble();
+    final diferenciaCierre = (cierre['diferencia'] ?? 0).toDouble();
 
     final orders = await getPendingOrders();
     final turnoOrders =
@@ -2512,12 +2567,12 @@ class UserPreferencesService {
           final created = o['fecha_creacion'] ?? o['created_offline_at'];
           if (created == null) return false;
           final dt = DateTime.tryParse(created.toString())?.toUtc();
-          final from = DateTime.tryParse(
-            '${turnoEntry['fecha_apertura'] ?? ''}',
-          )?.toUtc();
-          final to = DateTime.tryParse(
-            '${turnoEntry['fecha_cierre'] ?? ''}',
-          )?.toUtc();
+          final from =
+              DateTime.tryParse(
+                '${turnoEntry['fecha_apertura'] ?? ''}',
+              )?.toUtc();
+          final to =
+              DateTime.tryParse('${turnoEntry['fecha_cierre'] ?? ''}')?.toUtc();
           if (dt == null || from == null) return false;
           if (dt.isBefore(from)) return false;
           if (to != null && dt.isAfter(to)) return false;
@@ -2580,8 +2635,7 @@ class UserPreferencesService {
       }
     } catch (_) {}
 
-    final efectivoEsperado =
-        efectivoInicial + totalEfectivo - egresosEfectivo;
+    final efectivoEsperado = efectivoInicial + totalEfectivo - egresosEfectivo;
     final ticketPromedio = operaciones > 0 ? ventas / operaciones : 0.0;
 
     return {
@@ -2848,8 +2902,7 @@ class UserPreferencesService {
     if (open != null) {
       final localId = open['local_id']?.toString();
       if (localId == null) return;
-      final usuario =
-          await resolveUsuario() ?? open['usuario']?.toString();
+      final usuario = await resolveUsuario() ?? open['usuario']?.toString();
       final mergedApertura = {
         ...Map<String, dynamic>.from(
           open['apertura'] is Map
@@ -2866,14 +2919,15 @@ class UserPreferencesService {
       await upsertOfflineTurno({
         ...open,
         'apertura': mergedApertura,
-        'fecha_apertura':
-            turnoData['fecha_apertura'] ?? open['fecha_apertura'],
+        'fecha_apertura': turnoData['fecha_apertura'] ?? open['fecha_apertura'],
         'id_tpv': turnoData['id_tpv'] ?? open['id_tpv'],
         'id_vendedor': turnoData['id_vendedor'] ?? open['id_vendedor'],
         if (usuario != null) 'usuario': usuario,
         'server_id_turno':
             turnoData['server_id_turno'] ??
-            (turnoData['id'] is int ? turnoData['id'] : open['server_id_turno']),
+            (turnoData['id'] is int
+                ? turnoData['id']
+                : open['server_id_turno']),
         'client_uuid_apertura':
             turnoData['client_uuid'] ?? open['client_uuid_apertura'],
       });
@@ -2905,7 +2959,9 @@ class UserPreferencesService {
       final filtered =
           all.where((t) => t['status'] != offlineTurnoStatusOpen).toList();
       await _persistOfflineTurnos(filtered);
-      print('🗑️ Turno offline abierto eliminado (cola de cerrados conservada)');
+      print(
+        '🗑️ Turno offline abierto eliminado (cola de cerrados conservada)',
+      );
     });
   }
 
@@ -2999,17 +3055,11 @@ class UserPreferencesService {
   }
 
   /// Normaliza claves del resumen para la UI de apertura.
-  Map<String, dynamic> normalizePreviousShiftSummary(
-    Map<String, dynamic> raw,
-  ) {
-    final ventas = _asDouble(
-      raw['ventas_totales'] ?? raw['total_ventas'],
-    );
+  Map<String, dynamic> normalizePreviousShiftSummary(Map<String, dynamic> raw) {
+    final ventas = _asDouble(raw['ventas_totales'] ?? raw['total_ventas']);
     final efectivoInicial = _asDouble(raw['efectivo_inicial']);
     final efectivoReal = _asDouble(
-      raw['efectivo_real'] ??
-          raw['efectivo_final'] ??
-          raw['efectivo_esperado'],
+      raw['efectivo_real'] ?? raw['efectivo_final'] ?? raw['efectivo_esperado'],
     );
     final productos = _asInt(raw['productos_vendidos']);
     final ticket = _asDouble(raw['ticket_promedio']);
@@ -3150,17 +3200,40 @@ class UserPreferencesService {
 
   /// Obtener resumen de datos offline para sincronización
   Future<Map<String, dynamic>> getOfflineSyncSummary() async {
-    final pendingOrders = await getPendingOrders();
+    final allOrders = await getPendingOrders();
+    final pendingOrders =
+        allOrders
+            .where(
+              (order) =>
+                  order['synced'] != true && order['is_pending_sync'] != false,
+            )
+            .toList();
     final pendingOperations = await getPendingOperations();
     final turno = await getOfflineTurno();
     final pendingTurnos = await getOfflineTurnosPendingSync();
+    final pendingTurnoIds =
+        pendingTurnos
+            .map((turno) => turno['local_id']?.toString())
+            .whereType<String>()
+            .toSet();
+    final embeddedPendingOrders =
+        pendingOrders
+            .where(
+              (order) =>
+                  pendingTurnoIds.contains(order['local_turno_id']?.toString()),
+            )
+            .length;
+    final standalonePendingOrders =
+        pendingOrders.length - embeddedPendingOrders;
     final closedPending =
         pendingTurnos
             .where((t) => t['status'] == offlineTurnoStatusClosedPending)
             .length;
     final allTurnos = await getOfflineTurnos();
     final syncedTurnos =
-        allTurnos.where((t) => t['status'] == offlineTurnoStatusSynced).toList();
+        allTurnos
+            .where((t) => t['status'] == offlineTurnoStatusSynced)
+            .toList();
     syncedTurnos.sort((a, b) {
       final fa = a['synced_at']?.toString() ?? '';
       final fb = b['synced_at']?.toString() ?? '';
@@ -3169,7 +3242,9 @@ class UserPreferencesService {
     final lastSynced = syncedTurnos.isNotEmpty ? syncedTurnos.first : null;
 
     return {
-      'pending_orders_count': pendingOrders.length,
+      'pending_orders_count': standalonePendingOrders,
+      'pending_turno_orders_count': embeddedPendingOrders,
+      'pending_turno_ids': pendingTurnoIds.toList(),
       'pending_operations_count': pendingOperations.length,
       'has_open_turno': turno != null,
       'pending_turnos_count': pendingTurnos.length,
@@ -3276,8 +3351,7 @@ class UserPreferencesService {
       }
 
       final operations = await getPendingOperations();
-      final unsyncedOps =
-          operations.where((o) => o['synced'] != true).toList();
+      final unsyncedOps = operations.where((o) => o['synced'] != true).toList();
       if (unsyncedOps.isNotEmpty) {
         print(
           '🔎 hasUnsyncedOfflineData: ${unsyncedOps.length} operación(es) '
@@ -3314,7 +3388,8 @@ class UserPreferencesService {
         return true;
       }
 
-      final adminPending = await OfflineDatabaseService().countPendingAdminOps();
+      final adminPending =
+          await OfflineDatabaseService().countPendingAdminOps();
       if (adminPending > 0) {
         print(
           '🔎 hasUnsyncedOfflineData: $adminPending operación(es) admin '
@@ -3501,8 +3576,7 @@ class UserPreferencesService {
       if (raw == null || raw.isEmpty) return null;
       final data = jsonDecode(raw) as Map<String, dynamic>;
       final updatedAt = DateTime.tryParse('${data['updated_at'] ?? ''}');
-      if (updatedAt == null ||
-          DateTime.now().difference(updatedAt) > maxAge) {
+      if (updatedAt == null || DateTime.now().difference(updatedAt) > maxAge) {
         await clearSyncModulesCheckpoint();
         return null;
       }
@@ -3551,7 +3625,9 @@ class UserPreferencesService {
       }
 
       // Sin turno open local: no mezclar órdenes ajenas al resumen base.
-      print('ℹ️ No hay turno open offline; se usa resumen base sin sumar órdenes');
+      print(
+        'ℹ️ No hay turno open offline; se usa resumen base sin sumar órdenes',
+      );
       return await getResumenCierreCache();
     } catch (e) {
       print('❌ Error actualizando resumen con órdenes offline: $e');
@@ -3638,9 +3714,7 @@ class UserPreferencesService {
       final syncedSet = syncedOfflineIds.toSet();
       final restantes =
           egresos
-              .where(
-                (e) => !syncedSet.contains(e['offline_id']?.toString()),
-              )
+              .where((e) => !syncedSet.contains(e['offline_id']?.toString()))
               .toList();
       await saveEgresosOffline(restantes);
       print(
@@ -4107,10 +4181,7 @@ class UserPreferencesService {
     try {
       final decoded = jsonDecode(licenciaStr);
       if (decoded is! Map) return null;
-      return {
-        'licencia': Map<String, dynamic>.from(decoded),
-        'firma': firma,
-      };
+      return {'licencia': Map<String, dynamic>.from(decoded), 'firma': firma};
     } catch (e) {
       print('❌ Error leyendo licencia firmada: $e');
       return null;
@@ -4151,10 +4222,9 @@ class UserPreferencesService {
   Future<bool> touchAndValidateClock() async {
     final now = DateTime.now();
     final lastSeen = await getLastSeenTimestamp();
-    if (lastSeen != null && now.isBefore(lastSeen.subtract(const Duration(minutes: 2)))) {
-      print(
-        '⛔ Rollback de reloj detectado: now=$now lastSeen=$lastSeen',
-      );
+    if (lastSeen != null &&
+        now.isBefore(lastSeen.subtract(const Duration(minutes: 2)))) {
+      print('⛔ Rollback de reloj detectado: now=$now lastSeen=$lastSeen');
       return false;
     }
     await updateLastSeenTimestamp(now);
@@ -4557,10 +4627,7 @@ class UserPreferencesService {
   ) async {
     await Supabase.instance.client.rpc(
       'fn_set_productos_orden_default',
-      params: {
-        'p_id_tienda': idTienda,
-        'p_items': _toServerPayload(items),
-      },
+      params: {'p_id_tienda': idTienda, 'p_items': _toServerPayload(items)},
     );
   }
 
@@ -4633,9 +4700,7 @@ class UserPreferencesService {
           final mapped = _mapServerDefaultItems(serverRows);
           await _saveDefaultOrderItemsLocal(mapped);
           await _markDefaultOrderItemsMigrated(true);
-          print(
-            '☁️ Productos por defecto desde servidor: ${mapped.length}',
-          );
+          print('☁️ Productos por defecto desde servidor: ${mapped.length}');
           return mapped;
         }
 
@@ -4663,17 +4728,11 @@ class UserPreferencesService {
   Future<Map<String, dynamic>> uploadLocalDefaultOrderItemsToServer() async {
     try {
       if (!await _canReachDefaultItemsServer()) {
-        return {
-          'success': false,
-          'message': 'Sin conexión al servidor',
-        };
+        return {'success': false, 'message': 'Sin conexión al servidor'};
       }
       final idTienda = await getIdTienda();
       if (idTienda == null) {
-        return {
-          'success': false,
-          'message': 'No hay tienda seleccionada',
-        };
+        return {'success': false, 'message': 'No hay tienda seleccionada'};
       }
       final local = await _getDefaultOrderItemsLocal();
       await _pushDefaultOrderItemsToServer(idTienda, local);
@@ -4681,16 +4740,14 @@ class UserPreferencesService {
       return {
         'success': true,
         'count': local.length,
-        'message': local.isEmpty
-            ? 'Lista vacía sincronizada en el servidor'
-            : 'Se subieron ${local.length} productos al servidor',
+        'message':
+            local.isEmpty
+                ? 'Lista vacía sincronizada en el servidor'
+                : 'Se subieron ${local.length} productos al servidor',
       };
     } catch (e) {
       print('❌ Error subiendo productos por defecto: $e');
-      return {
-        'success': false,
-        'message': 'Error al subir: $e',
-      };
+      return {'success': false, 'message': 'Error al subir: $e'};
     }
   }
 
@@ -4721,9 +4778,10 @@ class UserPreferencesService {
       return {
         'success': true,
         'clearedServer': clearedServer,
-        'message': clearedServer
-            ? 'Lista eliminada en servidor y dispositivo'
-            : 'Lista eliminada en este dispositivo',
+        'message':
+            clearedServer
+                ? 'Lista eliminada en servidor y dispositivo'
+                : 'Lista eliminada en este dispositivo',
       };
     } catch (e) {
       print('❌ Error limpiando productos por defecto: $e');

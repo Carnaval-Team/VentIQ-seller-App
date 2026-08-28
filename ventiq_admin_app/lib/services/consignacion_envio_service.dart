@@ -65,15 +65,20 @@ class ConsignacionEnvioService {
       final productosJson = productos.map((p) {
         final precioVentaCup = (p['precio_venta'] ?? 0.0) as double;
         final tasaCambio = (p['tasa_cambio'] ?? 440.0) as double;
-        final precioCostoUsd = tasaCambio > 0 ? precioVentaCup / tasaCambio : 0.0;
-        
+        final precioCostoUsd = tasaCambio > 0
+            ? precioVentaCup / tasaCambio
+            : 0.0;
+
         return {
           'id_inventario': p['id_inventario'],
           'id_producto': p['id_producto'],
           'cantidad': p['cantidad'],
-          'precio_costo_usd': precioCostoUsd, // Precio configurado convertido a USD
-          'precio_costo_cup': precioVentaCup, // Precio configurado por consignador
-          'precio_venta': precioVentaCup, // Mismo valor para compatibilidad con RPC
+          'precio_costo_usd':
+              precioCostoUsd, // Precio configurado convertido a USD
+          'precio_costo_cup':
+              precioVentaCup, // Precio configurado por consignador
+          'precio_venta':
+              precioVentaCup, // Mismo valor para compatibilidad con RPC
           'tasa_cambio': tasaCambio,
           // ⭐ DATOS ORIGINALES (el RPC los obtiene del inventario, pero los pasamos por si acaso)
           'id_presentacion': p['id_presentacion'],
@@ -81,10 +86,12 @@ class ConsignacionEnvioService {
           'id_ubicacion': p['id_ubicacion'],
         };
       }).toList();
-      
+
       debugPrint('💰 Productos con precios de costo para consignación:');
       for (var p in productosJson) {
-        debugPrint('   - ID Producto: ${p['id_producto']}, Cantidad: ${p['cantidad']}, Precio Costo Consignación: ${p['precio_venta']}');
+        debugPrint(
+          '   - ID Producto: ${p['id_producto']}, Cantidad: ${p['cantidad']}, Precio Costo Consignación: ${p['precio_venta']}',
+        );
       }
 
       // Llamar función RPC
@@ -103,15 +110,15 @@ class ConsignacionEnvioService {
 
       debugPrint('📊 Respuesta del RPC: $response');
       debugPrint('📊 Tipo de respuesta: ${response.runtimeType}');
-      
+
       if (response != null && response is List && response.isNotEmpty) {
         debugPrint('📊 Primer elemento: ${response[0]}');
         debugPrint('📊 Tipo del primer elemento: ${response[0].runtimeType}');
-        
+
         final resultado = response[0] as Map<String, dynamic>;
         debugPrint('📊 Claves del mapa: ${resultado.keys.toList()}');
         debugPrint('📊 Valores del mapa: ${resultado.values.toList()}');
-        
+
         debugPrint('✅ Envío creado exitosamente');
         debugPrint('   ID Envío: ${resultado['id_envio']}');
         debugPrint('   Número: ${resultado['numero_envio']}');
@@ -142,21 +149,27 @@ class ConsignacionEnvioService {
   }) async {
     try {
       debugPrint('🔄 Creando solicitud de devolución...');
-      debugPrint('   Operación extracción pre-construida: $idOperacionExtraccion');
-      
+      debugPrint(
+        '   Operación extracción pre-construida: $idOperacionExtraccion',
+      );
+
       // Preparar productos en formato JSONB incluyendo presentación/variante/ubicación
       // para que el RPC pueda almacenarlos y obtener_productos_envio2 los pueda consultar
-      final productosJson = productos.map((p) => {
-        'id_inventario': p['id_inventario'],
-        'id_producto': p['id_producto'],
-        'cantidad': p['cantidad'],
-        'precio_costo_usd': p['precio_costo_usd'] ?? 0.0,
-        'precio_costo_cup': p['precio_costo_cup'] ?? 0.0,
-        'tasa_cambio': p['tasa_cambio'] ?? 440.0,
-        'id_presentacion': p['id_presentacion'],
-        'id_variante': p['id_variante'],
-        'id_ubicacion': p['id_ubicacion'],
-      }).toList();
+      final productosJson = productos
+          .map(
+            (p) => {
+              'id_inventario': p['id_inventario'],
+              'id_producto': p['id_producto'],
+              'cantidad': p['cantidad'],
+              'precio_costo_usd': p['precio_costo_usd'] ?? 0.0,
+              'precio_costo_cup': p['precio_costo_cup'] ?? 0.0,
+              'tasa_cambio': p['tasa_cambio'] ?? 440.0,
+              'id_presentacion': p['id_presentacion'],
+              'id_variante': p['id_variante'],
+              'id_ubicacion': p['id_ubicacion'],
+            },
+          )
+          .toList();
 
       final response = await _supabase.rpc(
         'crear_devolucion_consignacion_v2',
@@ -229,10 +242,14 @@ class ConsignacionEnvioService {
       debugPrint('💰 Actualizando precios del envío $idEnvio...');
 
       // Preparar productos con precios
-      final productosJson = productos.map((p) => {
-        'id_envio_producto': p['id_envio_producto'],
-        'precio_venta_cup': p['precio_venta_cup'],
-      }).toList();
+      final productosJson = productos
+          .map(
+            (p) => {
+              'id_envio_producto': p['id_envio_producto'],
+              'precio_venta_cup': p['precio_venta_cup'],
+            },
+          )
+          .toList();
 
       // Llamar función RPC
       final response = await _supabase.rpc(
@@ -247,7 +264,9 @@ class ConsignacionEnvioService {
       if (response != null && response is List && response.isNotEmpty) {
         final resultado = response[0] as Map<String, dynamic>;
         final success = resultado['success'] as bool;
-        debugPrint(success ? '✅ Precios actualizados' : '❌ Error actualizando precios');
+        debugPrint(
+          success ? '✅ Precios actualizados' : '❌ Error actualizando precios',
+        );
         return success;
       }
 
@@ -272,10 +291,7 @@ class ConsignacionEnvioService {
 
       final response = await _supabase.rpc(
         'marcar_envio_en_transito',
-        params: {
-          'p_id_envio': idEnvio,
-          'p_id_usuario': idUsuario,
-        },
+        params: {'p_id_envio': idEnvio, 'p_id_usuario': idUsuario},
       );
 
       if (response != null && response is List && response.isNotEmpty) {
@@ -319,7 +335,8 @@ class ConsignacionEnvioService {
           'tipo_movimiento': MOVIMIENTO_ENTREGA,
           'estado_anterior': ESTADO_ACEPTADO,
           'estado_nuevo': ESTADO_ENTREGADO,
-          'descripcion': 'Envío marcado como entregado automáticamente al completar recepción',
+          'descripcion':
+              'Envío marcado como entregado automáticamente al completar recepción',
         });
 
         debugPrint('✅ Envío entregado exitosamente');
@@ -360,22 +377,34 @@ class ConsignacionEnvioService {
       if (response != null && response is List && response.isNotEmpty) {
         final resultado = response[0] as Map<String, dynamic>;
         final success = resultado['success'] as bool?;
-        
+
         if (success == true) {
-          final idOperacionExtraccion = resultado['id_operacion_extraccion'] as int?;
-          final idOperacionRecepcion = resultado['id_operacion_recepcion'] as int?;
+          final idOperacionExtraccion =
+              resultado['id_operacion_extraccion'] as int?;
+          final idOperacionRecepcion =
+              resultado['id_operacion_recepcion'] as int?;
           final mensaje = resultado['mensaje'] as String?;
-          
+
           debugPrint('✅ Envío aceptado exitosamente');
-          debugPrint('   ID Operación Extracción: $idOperacionExtraccion (estado: PENDIENTE)');
-          debugPrint('   ID Operación Recepción: $idOperacionRecepcion (estado: PENDIENTE)');
+          debugPrint(
+            '   ID Operación Extracción: $idOperacionExtraccion (estado: PENDIENTE)',
+          );
+          debugPrint(
+            '   ID Operación Recepción: $idOperacionRecepcion (estado: PENDIENTE)',
+          );
           debugPrint('   Mensaje: $mensaje');
           debugPrint('   ℹ️ Operaciones creadas con estado PENDIENTE');
-          debugPrint('   ℹ️ La recepción NO se puede completar hasta que la extracción esté completada');
-          
+          debugPrint(
+            '   ℹ️ La recepción NO se puede completar hasta que la extracción esté completada',
+          );
+
           // 2. Configurar precios de venta y precio promedio
-          if (idOperacionRecepcion != null && preciosProductos != null && preciosProductos.isNotEmpty) {
-            debugPrint('\n💰 Configurando precios de venta y precio promedio...');
+          if (idOperacionRecepcion != null &&
+              preciosProductos != null &&
+              preciosProductos.isNotEmpty) {
+            debugPrint(
+              '\n💰 Configurando precios de venta y precio promedio...',
+            );
             await configurarPreciosRecepcion(
               idOperacionRecepcion: idOperacionRecepcion,
               idTiendaDestino: idTiendaDestino,
@@ -386,7 +415,7 @@ class ConsignacionEnvioService {
         } else {
           debugPrint('❌ Error: ${resultado['mensaje']}');
         }
-        
+
         // Devolvemos el resultado completo sea success true o false
         // para que la UI pueda mostrar el mensaje de error si existe.
         return resultado;
@@ -406,21 +435,26 @@ class ConsignacionEnvioService {
     required List<dynamic> preciosProductos,
   }) async {
     try {
-      debugPrint('💾 Guardando precios de venta en detalles del envío: $idEnvio');
-      
+      debugPrint(
+        '💾 Guardando precios de venta en detalles del envío: $idEnvio',
+      );
+
       for (final precioData in preciosProductos) {
         final precioMap = precioData as Map<String, dynamic>;
         final idProducto = precioMap['id_producto'] as int?;
-        final precioVentaCup = (precioMap['precio_venta_cup'] as num?)?.toDouble() ?? 0.0;
-        
+        final precioVentaCup =
+            (precioMap['precio_venta_cup'] as num?)?.toDouble() ?? 0.0;
+
         if (idProducto != null && precioVentaCup > 0) {
           await _supabase
               .from('app_dat_consignacion_envio_producto')
               .update({'precio_venta_cup': precioVentaCup})
               .eq('id_envio', idEnvio)
               .eq('id_producto', idProducto);
-          
-          debugPrint('✅ Precio de venta actualizado: Producto $idProducto = \$$precioVentaCup CUP');
+
+          debugPrint(
+            '✅ Precio de venta actualizado: Producto $idProducto = \$$precioVentaCup CUP',
+          );
         }
       }
     } catch (e) {
@@ -437,7 +471,9 @@ class ConsignacionEnvioService {
     required List<dynamic> preciosProductos,
   }) async {
     try {
-      debugPrint('💰 Configurando precios para operación de recepción: $idOperacionRecepcion');
+      debugPrint(
+        '💰 Configurando precios para operación de recepción: $idOperacionRecepcion',
+      );
 
       // ✅ NUEVO: Guardar precios en detalles del envío
       await actualizarPreciosEnvioProductos(
@@ -446,7 +482,7 @@ class ConsignacionEnvioService {
       );
 
       final response = await _supabase.rpc(
-        'configurar_precios_recepcion_consignacion',
+        'configurar_precios_recepcion_consignacion_v2',
         params: {
           'p_id_operacion_recepcion': idOperacionRecepcion,
           'p_id_tienda_destino': idTiendaDestino,
@@ -457,29 +493,32 @@ class ConsignacionEnvioService {
       if (response != null && response is List && response.isNotEmpty) {
         final resultado = response[0] as Map<String, dynamic>;
         final success = resultado['success'] as bool?;
-        
+
         if (success == true) {
           final preciosConfigurados = resultado['precios_configurados'] as int?;
           final mensaje = resultado['mensaje'] as String?;
-          
+
           debugPrint('✅ Precios configurados exitosamente');
           debugPrint('   Productos: $preciosConfigurados');
           debugPrint('   Mensaje: $mensaje');
           debugPrint('   ✅ app_dat_precio_venta actualizado (CUP)');
-          debugPrint('   ✅ app_dat_producto_presentacion.precio_promedio actualizado (USD, promedio ponderado)');
-          
-          // Actualizar estado del envío a CONFIGURADO (2)
-          final estadoActualizado = await ConsignacionEnvioListadoService.actualizarEstadoEnvio(
-            idEnvio,
-            ConsignacionEnvioListadoService.ESTADO_CONFIGURADO,
+          debugPrint(
+            '   ✅ app_dat_producto_presentacion.precio_promedio actualizado (USD, promedio ponderado)',
           );
-          
+
+          // Actualizar estado del envío a CONFIGURADO (2)
+          final estadoActualizado =
+              await ConsignacionEnvioListadoService.actualizarEstadoEnvio(
+                idEnvio,
+                ConsignacionEnvioListadoService.ESTADO_CONFIGURADO,
+              );
+
           if (estadoActualizado) {
             debugPrint('✅ Estado del envío actualizado a CONFIGURADO');
           } else {
             debugPrint('⚠️ No se pudo actualizar el estado del envío');
           }
-          
+
           return resultado;
         } else {
           debugPrint('⚠️ Error configurando precios: ${resultado['mensaje']}');
@@ -506,9 +545,9 @@ class ConsignacionEnvioService {
       debugPrint('   Productos aceptados: ${idsProductosAceptados.length}');
 
       // Preparar productos aceptados en formato JSONB
-      final productosJson = idsProductosAceptados.map((id) => {
-        'id_envio_producto': id,
-      }).toList();
+      final productosJson = idsProductosAceptados
+          .map((id) => {'id_envio_producto': id})
+          .toList();
 
       final response = await _supabase.rpc(
         'aceptar_envio_consignacion_parcial',
@@ -522,12 +561,18 @@ class ConsignacionEnvioService {
       if (response != null && response is List && response.isNotEmpty) {
         final resultado = response[0] as Map<String, dynamic>;
         final success = resultado['success'] as bool;
-        
+
         if (success) {
           debugPrint('✅ Envío procesado exitosamente');
-          debugPrint('   Productos aceptados: ${resultado['productos_aceptados']}');
-          debugPrint('   Productos rechazados: ${resultado['productos_rechazados']}');
-          debugPrint('   ID Operación Recepción: ${resultado['id_operacion_recepcion']}');
+          debugPrint(
+            '   Productos aceptados: ${resultado['productos_aceptados']}',
+          );
+          debugPrint(
+            '   Productos rechazados: ${resultado['productos_rechazados']}',
+          );
+          debugPrint(
+            '   ID Operación Recepción: ${resultado['id_operacion_recepcion']}',
+          );
           return resultado;
         } else {
           debugPrint('❌ Error: ${resultado['mensaje']}');
@@ -589,7 +634,7 @@ class ConsignacionEnvioService {
         final resultado = response[0] as Map<String, dynamic>;
         final success = resultado['success'] as bool;
         final mensaje = resultado['mensaje'] as String? ?? '';
-        
+
         if (success) {
           debugPrint('✅ Envío rechazado con éxito: $mensaje');
         } else {
@@ -613,7 +658,9 @@ class ConsignacionEnvioService {
     required String motivoRechazo,
   }) async {
     try {
-      debugPrint('❌ Rechazando producto $idEnvioProducto del envío $idEnvio...');
+      debugPrint(
+        '❌ Rechazando producto $idEnvioProducto del envío $idEnvio...',
+      );
 
       final response = await _supabase.rpc(
         'rechazar_producto_envio_consignacion2',
@@ -629,7 +676,7 @@ class ConsignacionEnvioService {
         final resultado = response[0] as Map<String, dynamic>;
         final success = resultado['success'] as bool;
         final mensaje = resultado['mensaje'] as String? ?? '';
-        
+
         if (success) {
           debugPrint('✅ Producto rechazado con éxito: $mensaje');
         } else {
@@ -671,9 +718,7 @@ class ConsignacionEnvioService {
   }
 
   /// Obtiene el detalle completo de un envío
-  static Future<Map<String, dynamic>?> obtenerDetalleEnvio(
-    int idEnvio,
-  ) async {
+  static Future<Map<String, dynamic>?> obtenerDetalleEnvio(int idEnvio) async {
     try {
       final response = await _supabase.rpc(
         'obtener_detalle_envio',
@@ -718,27 +763,27 @@ class ConsignacionEnvioService {
   ) async {
     try {
       debugPrint('📦 Obteniendo productos del envío: $idEnvio');
-      
+
       final response = await _supabase.rpc(
         'obtener_productos_envio2',
-        params: {
-          'p_id_envio': idEnvio,
-        },
+        params: {'p_id_envio': idEnvio},
       );
 
       if (response == null) {
         debugPrint('⚠️ Respuesta nula');
         return [];
       }
-      
+
       final productos = List<Map<String, dynamic>>.from(response as List);
       debugPrint('✅ Productos obtenidos: ${productos.length}');
-      
+
       // Logging de los campos retornados
       if (productos.isNotEmpty) {
-        debugPrint('📋 Campos del primer producto: ${productos[0].keys.toList()}');
+        debugPrint(
+          '📋 Campos del primer producto: ${productos[0].keys.toList()}',
+        );
       }
-      
+
       return productos;
     } catch (e) {
       debugPrint('❌ Error obteniendo productos del envío: $e');

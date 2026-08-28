@@ -51,9 +51,7 @@ BEGIN
     WITH productos AS (
         SELECT p.id
         FROM public.app_dat_producto p
-        WHERE COALESCE(p.es_servicio, false) = false
-          AND COALESCE(p.es_elaborado, false) = false
-          AND (
+        WHERE (
                 p_ids_producto IS NULL
                 OR p.id = ANY (p_ids_producto)
               )

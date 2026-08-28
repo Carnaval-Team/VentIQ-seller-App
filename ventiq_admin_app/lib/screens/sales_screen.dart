@@ -52,14 +52,17 @@ class _SalesScreenState extends State<SalesScreen>
   DateTime? _pdfStartDate;
   DateTime? _pdfEndDate;
   bool _isGeneratingPdf = false;
+  bool _isExportingProductHistory = false;
   bool _isPdfFabExpanded = false;
   String _selectedTPV = 'Todos';
   // Tab TPVs: si es true, el reporte de vendedores se extiende hasta el cierre
   // del turno cuando este cerró después de la fecha_hasta (o hasta ahora si sigue abierto).
   bool _tpvHastaCierreTurno = false;
+
   /// Criterio de fecha para ventas de productos (tab Tiempo Real):
   /// 'creacion' = o.created_at | 'completado' = eo.created_at del estado 2
   String _productDateFilterMode = 'creacion';
+  bool _useCurrentProductPrices = false;
   bool _filtersExpanded = false;
   double _totalSales = 0.0;
   int _totalProductsSold = 0;
@@ -195,8 +198,9 @@ class _SalesScreenState extends State<SalesScreen>
     if (tabController == null) return const SizedBox.shrink();
 
     // Mapear al índice “lógico” (con Tiempo Real = 0) para reutilizar el switch.
-    final logicalIndex =
-        _canViewRealTime ? tabController.index : tabController.index + 1;
+    final logicalIndex = _canViewRealTime
+        ? tabController.index
+        : tabController.index + 1;
 
     if (logicalIndex == 5 || logicalIndex == 6) {
       // 5 = Paquetería, 6 = Analista — sin FAB.
@@ -215,22 +219,10 @@ class _SalesScreenState extends State<SalesScreen>
 
     switch (logicalIndex) {
       case 0: // Tiempo Real
-        isPdfAction = true;
-        isLoading = _isGeneratingPdf;
-        label = _isGeneratingPdf ? 'Generando...' : 'Exportar factura PDF';
-        icon = Icons.picture_as_pdf_outlined;
-        action =
-            _isGeneratingPdf
-                ? null
-                : () async {
-                  await _pickPdfDateRange(context);
-                  if (_pdfStartDate != null && _pdfEndDate != null) {
-                    await _generateInvoicesPdf(
-                      start: _pdfStartDate!,
-                      end: _pdfEndDate!,
-                    );
-                  }
-                };
+        isLoading = _isGeneratingPdf || _isExportingProductHistory;
+        label = isLoading ? 'Generando...' : 'Opciones de exportación';
+        icon = Icons.download_outlined;
+        action = isLoading ? null : _showRealtimeExportMenu;
         break;
 
       case 1: // TPVs
@@ -238,18 +230,17 @@ class _SalesScreenState extends State<SalesScreen>
         isLoading = _isGeneratingPdf;
         label = _isGeneratingPdf ? 'Generando...' : 'Exportar factura PDF';
         icon = Icons.picture_as_pdf_outlined;
-        action =
-            _isGeneratingPdf
-                ? null
-                : () async {
-                  await _pickPdfDateRange(context);
-                  if (_pdfStartDate != null && _pdfEndDate != null) {
-                    await _generateInvoicesPdf(
-                      start: _pdfStartDate!,
-                      end: _pdfEndDate!,
-                    );
-                  }
-                };
+        action = _isGeneratingPdf
+            ? null
+            : () async {
+                await _pickPdfDateRange(context);
+                if (_pdfStartDate != null && _pdfEndDate != null) {
+                  await _generateInvoicesPdf(
+                    start: _pdfStartDate!,
+                    end: _pdfEndDate!,
+                  );
+                }
+              };
         break;
 
       case 2: // Proveedores
@@ -259,10 +250,9 @@ class _SalesScreenState extends State<SalesScreen>
         isLoading = _isExportingPDF;
         label = _isExportingPDF ? 'Exportando...' : 'Exportar Resumen';
         icon = Icons.download_outlined;
-        action =
-            _supplierReports.isNotEmpty && !_isExportingPDF
-                ? () async => _showExportMenu()
-                : null;
+        action = _supplierReports.isNotEmpty && !_isExportingPDF
+            ? () async => _showExportMenu()
+            : null;
         break;
 
       case 3: // Desglose ventas
@@ -274,18 +264,17 @@ class _SalesScreenState extends State<SalesScreen>
         isLoading = _isGeneratingPdf;
         label = _isGeneratingPdf ? 'Generando...' : 'Exportar factura PDF';
         icon = Icons.picture_as_pdf_outlined;
-        action =
-            _isGeneratingPdf
-                ? null
-                : () async {
-                  await _pickPdfDateRange(context);
-                  if (_pdfStartDate != null && _pdfEndDate != null) {
-                    await _generateInvoicesPdf(
-                      start: _pdfStartDate!,
-                      end: _pdfEndDate!,
-                    );
-                  }
-                };
+        action = _isGeneratingPdf
+            ? null
+            : () async {
+                await _pickPdfDateRange(context);
+                if (_pdfStartDate != null && _pdfEndDate != null) {
+                  await _generateInvoicesPdf(
+                    start: _pdfStartDate!,
+                    end: _pdfEndDate!,
+                  );
+                }
+              };
         break;
     }
 
@@ -311,17 +300,16 @@ class _SalesScreenState extends State<SalesScreen>
 
     final isDisabled = onPressed == null && !isLoading;
     final backgroundColor = isDisabled ? Colors.grey : AppColors.primary;
-    final fabIcon =
-        isLoading
-            ? const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Colors.white,
-              ),
-            )
-            : Icon(icon);
+    final fabIcon = isLoading
+        ? const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Colors.white,
+            ),
+          )
+        : Icon(icon);
 
     if (isPdfAction && !_isPdfFabExpanded) {
       return FloatingActionButton(
@@ -352,12 +340,11 @@ class _SalesScreenState extends State<SalesScreen>
       final storeId = await UserPreferencesService().getIdTienda();
       Map<String, dynamic>? storeData;
       if (storeId != null) {
-        storeData =
-            await Supabase.instance.client
-                .from('app_dat_tienda')
-                .select('denominacion, direccion, ubicacion, phone, imagen_url')
-                .eq('id', storeId)
-                .maybeSingle();
+        storeData = await Supabase.instance.client
+            .from('app_dat_tienda')
+            .select('denominacion, direccion, ubicacion, phone, imagen_url')
+            .eq('id', storeId)
+            .maybeSingle();
       }
 
       final storeName = storeData?['denominacion'] as String? ?? 'Inventtia';
@@ -446,7 +433,9 @@ class _SalesScreenState extends State<SalesScreen>
 
       // Calcular en CUP puro con fallback: si precioCostoCup == 0 usar precioCosto * valorUsd
       final costoTotal = productReports.fold<double>(0.0, (sum, p) {
-        final cu = p.precioCostoCup > 0 ? p.precioCostoCup : p.precioCosto * p.valorUsd;
+        final cu = p.precioCostoCup > 0
+            ? p.precioCostoCup
+            : p.precioCosto * p.valorUsd;
         return sum + cu * p.totalVendido;
       });
       // Ingresos CUP = precioVentaCup * totalVendido (para consistencia con la tabla)
@@ -465,66 +454,62 @@ class _SalesScreenState extends State<SalesScreen>
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
           margin: const pw.EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-          build:
-              (context) => [
-                _buildPdfHeader(
-                  logoBytes: logoBytes,
-                  storeName: storeName,
-                  storeAddress: storeAddress,
-                  storeLocation: storeLocation,
-                  storePhone: storePhone,
-                  dateLabel: dateLabel,
+          build: (context) => [
+            _buildPdfHeader(
+              logoBytes: logoBytes,
+              storeName: storeName,
+              storeAddress: storeAddress,
+              storeLocation: storeLocation,
+              storePhone: storePhone,
+              dateLabel: dateLabel,
+            ),
+            pw.SizedBox(height: 16),
+            pw.Text(
+              'Facturas',
+              style: pw.TextStyle(
+                fontSize: 16,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColor.fromHex('#0F172A'),
+              ),
+            ),
+            pw.SizedBox(height: 8),
+            ...orders.map(
+              (order) => pw.Container(
+                margin: const pw.EdgeInsets.only(bottom: 12),
+                padding: const pw.EdgeInsets.all(12),
+                decoration: pw.BoxDecoration(
+                  color: PdfColor.fromHex('#F8FAFC'),
+                  borderRadius: pw.BorderRadius.circular(10),
+                  border: pw.Border.all(color: PdfColors.grey300, width: 0.8),
                 ),
-                pw.SizedBox(height: 16),
-                pw.Text(
-                  'Facturas',
-                  style: pw.TextStyle(
-                    fontSize: 16,
-                    fontWeight: pw.FontWeight.bold,
-                    color: PdfColor.fromHex('#0F172A'),
-                  ),
+                child: _buildOrderPdfSection(
+                  order,
+                  costById: costById,
+                  costByName: costByName,
                 ),
-                pw.SizedBox(height: 8),
-                ...orders.map(
-                  (order) => pw.Container(
-                    margin: const pw.EdgeInsets.only(bottom: 12),
-                    padding: const pw.EdgeInsets.all(12),
-                    decoration: pw.BoxDecoration(
-                      color: PdfColor.fromHex('#F8FAFC'),
-                      borderRadius: pw.BorderRadius.circular(10),
-                      border: pw.Border.all(
-                        color: PdfColors.grey300,
-                        width: 0.8,
-                      ),
-                    ),
-                    child: _buildOrderPdfSection(
-                      order,
-                      costById: costById,
-                      costByName: costByName,
-                    ),
-                  ),
-                ),
-                pw.SizedBox(height: 12),
-                pw.Text(
-                  'Costos y Ganancias (por producto)',
-                  style: pw.TextStyle(
-                    fontSize: 14,
-                    fontWeight: pw.FontWeight.bold,
-                    color: PdfColor.fromHex('#0F172A'),
-                  ),
-                ),
-                pw.SizedBox(height: 6),
-                _buildProductCostsTable(productReports),
-                pw.SizedBox(height: 16),
-                _buildPdfSummaryTotals(
-                  ventaTotal: ventaTotal,
-                  descuentoTotal: descuentoTotal,
-                  costoTotal: costoTotal,
-                  gananciaTotal: gananciaTotal,
-                  gananciasReales: gananciasReales,
-                  pagoTotal: pagoTotal,
-                ),
-              ],
+              ),
+            ),
+            pw.SizedBox(height: 12),
+            pw.Text(
+              'Costos y Ganancias (por producto)',
+              style: pw.TextStyle(
+                fontSize: 14,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColor.fromHex('#0F172A'),
+              ),
+            ),
+            pw.SizedBox(height: 6),
+            _buildProductCostsTable(productReports),
+            pw.SizedBox(height: 16),
+            _buildPdfSummaryTotals(
+              ventaTotal: ventaTotal,
+              descuentoTotal: descuentoTotal,
+              costoTotal: costoTotal,
+              gananciaTotal: gananciaTotal,
+              gananciasReales: gananciasReales,
+              pagoTotal: pagoTotal,
+            ),
+          ],
         ),
       );
 
@@ -605,8 +590,7 @@ class _SalesScreenState extends State<SalesScreen>
   }) async {
     if (orders.isEmpty) return;
 
-    final completedOrders =
-        orders.where(_isVendorOrderCompleted).toList();
+    final completedOrders = orders.where(_isVendorOrderCompleted).toList();
     final paymentTotals = _calculateVendorPaymentTotals(completedOrders);
 
     final dateRange = _getDateRange();
@@ -617,12 +601,11 @@ class _SalesScreenState extends State<SalesScreen>
       final storeId = await UserPreferencesService().getIdTienda();
       Map<String, dynamic>? storeData;
       if (storeId != null) {
-        storeData =
-            await Supabase.instance.client
-                .from('app_dat_tienda')
-                .select('denominacion, direccion, ubicacion, phone, imagen_url')
-                .eq('id', storeId)
-                .maybeSingle();
+        storeData = await Supabase.instance.client
+            .from('app_dat_tienda')
+            .select('denominacion, direccion, ubicacion, phone, imagen_url')
+            .eq('id', storeId)
+            .maybeSingle();
       }
 
       final storeName = storeData?['denominacion'] as String? ?? 'Inventtia';
@@ -634,65 +617,58 @@ class _SalesScreenState extends State<SalesScreen>
 
       final dateLabel =
           '${_formatDateForPdf(start)} - ${_formatDateForPdf(end)}';
-      final totalVentas = completedOrders.fold<double>(
-        0.0,
-        (sum, o) {
-          final summary = _calculateDiscountSummary(o);
-          return sum + (summary['cobrado'] ?? o.totalOperacion);
-        },
-      );
+      final totalVentas = completedOrders.fold<double>(0.0, (sum, o) {
+        final summary = _calculateDiscountSummary(o);
+        return sum + (summary['cobrado'] ?? o.totalOperacion);
+      });
 
       final pdf = pw.Document();
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
           margin: const pw.EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-          build:
-              (context) => [
-                _buildPdfHeader(
-                  logoBytes: logoBytes,
-                  storeName: storeName,
-                  storeAddress: storeAddress,
-                  storeLocation: storeLocation,
-                  storePhone: storePhone,
-                  dateLabel: dateLabel,
-                  reportTitle: 'Reporte de Órdenes',
-                  extraLines: ['Vendedor: ${vendor.nombreCompleto}'],
+          build: (context) => [
+            _buildPdfHeader(
+              logoBytes: logoBytes,
+              storeName: storeName,
+              storeAddress: storeAddress,
+              storeLocation: storeLocation,
+              storePhone: storePhone,
+              dateLabel: dateLabel,
+              reportTitle: 'Reporte de Órdenes',
+              extraLines: ['Vendedor: ${vendor.nombreCompleto}'],
+            ),
+            pw.SizedBox(height: 16),
+            _buildVendorOrdersPdfSummary(
+              orderCount: orders.length,
+              totalVentas: totalVentas,
+              totalEfectivoOferta: paymentTotals.efectivoOferta,
+              totalEfectivoRegular: paymentTotals.efectivoRegular,
+              totalTransferencias: paymentTotals.transferencias,
+            ),
+            pw.SizedBox(height: 16),
+            pw.Text(
+              'Detalle de órdenes',
+              style: pw.TextStyle(
+                fontSize: 14,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColor.fromHex('#0F172A'),
+              ),
+            ),
+            pw.SizedBox(height: 8),
+            ...orders.map(
+              (order) => pw.Container(
+                margin: const pw.EdgeInsets.only(bottom: 12),
+                padding: const pw.EdgeInsets.all(12),
+                decoration: pw.BoxDecoration(
+                  color: PdfColor.fromHex('#F8FAFC'),
+                  borderRadius: pw.BorderRadius.circular(10),
+                  border: pw.Border.all(color: PdfColors.grey300, width: 0.8),
                 ),
-                pw.SizedBox(height: 16),
-                _buildVendorOrdersPdfSummary(
-                  orderCount: orders.length,
-                  totalVentas: totalVentas,
-                  totalEfectivoOferta: paymentTotals.efectivoOferta,
-                  totalEfectivoRegular: paymentTotals.efectivoRegular,
-                  totalTransferencias: paymentTotals.transferencias,
-                ),
-                pw.SizedBox(height: 16),
-                pw.Text(
-                  'Detalle de órdenes',
-                  style: pw.TextStyle(
-                    fontSize: 14,
-                    fontWeight: pw.FontWeight.bold,
-                    color: PdfColor.fromHex('#0F172A'),
-                  ),
-                ),
-                pw.SizedBox(height: 8),
-                ...orders.map(
-                  (order) => pw.Container(
-                    margin: const pw.EdgeInsets.only(bottom: 12),
-                    padding: const pw.EdgeInsets.all(12),
-                    decoration: pw.BoxDecoration(
-                      color: PdfColor.fromHex('#F8FAFC'),
-                      borderRadius: pw.BorderRadius.circular(10),
-                      border: pw.Border.all(
-                        color: PdfColors.grey300,
-                        width: 0.8,
-                      ),
-                    ),
-                    child: _buildVendorOrderPdfDetailSection(order),
-                  ),
-                ),
-              ],
+                child: _buildVendorOrderPdfDetailSection(order),
+              ),
+            ),
+          ],
         ),
       );
 
@@ -710,10 +686,9 @@ class _SalesScreenState extends State<SalesScreen>
         final output = await getTemporaryDirectory();
         final file = File('${output.path}/$fileName');
         await file.writeAsBytes(pdfBytes);
-        await Share.shareXFiles(
-          [XFile(file.path, mimeType: 'application/pdf')],
-          text: 'Órdenes de ${vendor.nombreCompleto} · $dateLabel',
-        );
+        await Share.shareXFiles([
+          XFile(file.path, mimeType: 'application/pdf'),
+        ], text: 'Órdenes de ${vendor.nombreCompleto} · $dateLabel');
       }
 
       if (mounted) {
@@ -811,8 +786,7 @@ class _SalesScreenState extends State<SalesScreen>
   List<dynamic> _filterUniqueOrderItems(List<dynamic> items) {
     final seenProductIds = <dynamic>{};
     return items.where((item) {
-      final precioUnitario =
-          (item['precio_unitario'] ?? 0.0).toDouble();
+      final precioUnitario = (item['precio_unitario'] ?? 0.0).toDouble();
       if (precioUnitario == 0.0) return false;
       final productId =
           item['id_producto'] ?? item['producto_id'] ?? item['id'];
@@ -841,10 +815,9 @@ class _SalesScreenState extends State<SalesScreen>
     final original = summary['original'] ?? order.totalOperacion;
 
     final cliente = order.detalles['cliente'] as Map<String, dynamic>?;
-    final clienteNombre =
-        cliente != null
-            ? (cliente['nombre_completo'] ?? 'N/A').toString()
-            : null;
+    final clienteNombre = cliente != null
+        ? (cliente['nombre_completo'] ?? 'N/A').toString()
+        : null;
     final pagos = (order.detalles['pagos'] as List?) ?? [];
     final rawItems = (order.detalles['items'] as List?) ?? [];
     final items = _filterUniqueOrderItems(rawItems);
@@ -917,9 +890,9 @@ class _SalesScreenState extends State<SalesScreen>
                     item['nombre']?.toString() ??
                     'Producto';
                 final cantidad = _formatCantidadDecimal(item['cantidad']);
-                final importe = _toDoubleSafe(item['importe']).toStringAsFixed(
-                  2,
-                );
+                final importe = _toDoubleSafe(
+                  item['importe'],
+                ).toStringAsFixed(2);
                 return pw.TableRow(
                   children: [
                     _pdfBodyCell(nombre),
@@ -943,10 +916,9 @@ class _SalesScreenState extends State<SalesScreen>
           ),
           pw.SizedBox(height: 4),
           ...pagos.map((pago) {
-            final pagoMap =
-                pago is Map<String, dynamic>
-                    ? pago
-                    : Map<String, dynamic>.from(pago as Map);
+            final pagoMap = pago is Map<String, dynamic>
+                ? pago
+                : Map<String, dynamic>.from(pago as Map);
             return pw.Padding(
               padding: const pw.EdgeInsets.only(bottom: 4),
               child: pw.Row(
@@ -989,7 +961,12 @@ class _SalesScreenState extends State<SalesScreen>
                 _pdfSummaryRow('Subtotal', original, fontSize: 10),
                 _pdfSummaryRow('Descuento', -descuento, fontSize: 10),
               ],
-              _pdfSummaryRow('Total orden', cobrado, isBold: true, fontSize: 11),
+              _pdfSummaryRow(
+                'Total orden',
+                cobrado,
+                isBold: true,
+                fontSize: 11,
+              ),
             ],
           ),
         ),
@@ -1103,10 +1080,9 @@ class _SalesScreenState extends State<SalesScreen>
         'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/render/image/public/images_back/';
 
     // Construir URL de render con dimensiones fijas para supabase
-    final renderUrl =
-        url.contains(objectPrefix)
-            ? '${url.replaceFirst(objectPrefix, renderPrefix)}?width=500&height=600'
-            : url;
+    final renderUrl = url.contains(objectPrefix)
+        ? '${url.replaceFirst(objectPrefix, renderPrefix)}?width=500&height=600'
+        : url;
 
     try {
       final response = await http.get(Uri.parse(renderUrl));
@@ -1227,8 +1203,9 @@ class _SalesScreenState extends State<SalesScreen>
     final double descuento = summary['descuento'] ?? 0.0;
 
     final cliente = order.detalles['cliente'] as Map<String, dynamic>?;
-    final clienteNombre =
-        cliente != null ? (cliente['nombre_completo'] ?? 'Cliente') : 'Cliente';
+    final clienteNombre = cliente != null
+        ? (cliente['nombre_completo'] ?? 'Cliente')
+        : 'Cliente';
     final pagos = (order.detalles['pagos'] as List?) ?? [];
 
     final items = (order.detalles['items'] as List?) ?? [];
@@ -1323,9 +1300,9 @@ class _SalesScreenState extends State<SalesScreen>
                 costById: costById,
                 costByName: costByName,
               );
-              final costoTotal = (costoUnitario *
-                      _toDoubleSafe(item['cantidad']))
-                  .toStringAsFixed(2);
+              final costoTotal =
+                  (costoUnitario * _toDoubleSafe(item['cantidad']))
+                      .toStringAsFixed(2);
               final subtotal = _toDoubleSafe(
                 item['importe'],
               ).toStringAsFixed(2);
@@ -1333,12 +1310,11 @@ class _SalesScreenState extends State<SalesScreen>
                   _toDoubleSafe(item['importe']) -
                   (costoUnitario * _toDoubleSafe(item['cantidad']));
               final ganancia = gananciaValue.toStringAsFixed(2);
-              final gananciaColor =
-                  gananciaValue < 0
-                      ? PdfColor.fromHex('#DC2626')
-                      : gananciaValue > 0
-                      ? PdfColor.fromHex('#15803D')
-                      : PdfColor.fromHex('#334155');
+              final gananciaColor = gananciaValue < 0
+                  ? PdfColor.fromHex('#DC2626')
+                  : gananciaValue > 0
+                  ? PdfColor.fromHex('#15803D')
+                  : PdfColor.fromHex('#334155');
 
               final aditamentos =
                   (item['aditamentos'] as List?) ??
@@ -1512,13 +1488,14 @@ class _SalesScreenState extends State<SalesScreen>
 
     // Ganancia en CUP puro con fallback: si precioCostoCup == 0 usar precioCosto * valorUsd
     final totalGanancia = sorted.fold<double>(0.0, (sum, p) {
-      final cu = p.precioCostoCup > 0 ? p.precioCostoCup : p.precioCosto * p.valorUsd;
+      final cu = p.precioCostoCup > 0
+          ? p.precioCostoCup
+          : p.precioCosto * p.valorUsd;
       return sum + (p.precioVentaCup - cu) * p.totalVendido;
     });
-    final totalGananciaColor =
-        totalGanancia < 0
-            ? PdfColor.fromHex('#DC2626')
-            : PdfColor.fromHex('#15803D');
+    final totalGananciaColor = totalGanancia < 0
+        ? PdfColor.fromHex('#DC2626')
+        : PdfColor.fromHex('#15803D');
 
     return pw.Table(
       border: pw.TableBorder(
@@ -1543,15 +1520,16 @@ class _SalesScreenState extends State<SalesScreen>
           ],
         ),
         ...sorted.map((p) {
-          final costoUnitPdf = p.precioCostoCup > 0 ? p.precioCostoCup : p.precioCosto * p.valorUsd;
+          final costoUnitPdf = p.precioCostoCup > 0
+              ? p.precioCostoCup
+              : p.precioCosto * p.valorUsd;
           final gananciaLinea =
               (p.precioVentaCup - costoUnitPdf) * p.totalVendido;
-          final gananciaColor =
-              gananciaLinea < 0
-                  ? PdfColor.fromHex('#DC2626')
-                  : gananciaLinea > 0
-                  ? PdfColor.fromHex('#15803D')
-                  : PdfColor.fromHex('#334155');
+          final gananciaColor = gananciaLinea < 0
+              ? PdfColor.fromHex('#DC2626')
+              : gananciaLinea > 0
+              ? PdfColor.fromHex('#15803D')
+              : PdfColor.fromHex('#334155');
           return pw.TableRow(
             children: [
               _pdfBodyCell(p.nombreProducto),
@@ -1568,9 +1546,7 @@ class _SalesScreenState extends State<SalesScreen>
         }),
         // Totals row
         pw.TableRow(
-          decoration: pw.BoxDecoration(
-            color: PdfColor.fromHex('#EEF2FF'),
-          ),
+          decoration: pw.BoxDecoration(color: PdfColor.fromHex('#EEF2FF')),
           children: [
             _pdfBodyCell('TOTAL', isBold: true),
             _pdfBodyCell(
@@ -1687,16 +1663,14 @@ class _SalesScreenState extends State<SalesScreen>
     PdfColor? negativeColor,
   }) {
     final isNegative = value < 0;
-    final display =
-        isNegative
-            ? '- \$${value.abs().toStringAsFixed(2)}'
-            : '\$${value.toStringAsFixed(2)}';
+    final display = isNegative
+        ? '- \$${value.abs().toStringAsFixed(2)}'
+        : '\$${value.toStringAsFixed(2)}';
     final defaultPositive = PdfColor.fromHex('#0F172A');
     final defaultNegative = PdfColor.fromHex('#DC2626');
-    final valueColor =
-        isNegative
-            ? (negativeColor ?? defaultNegative)
-            : (positiveColor ?? defaultPositive);
+    final valueColor = isNegative
+        ? (negativeColor ?? defaultNegative)
+        : (positiveColor ?? defaultPositive);
     return pw.Row(
       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
       children: [
@@ -1748,8 +1722,9 @@ class _SalesScreenState extends State<SalesScreen>
   }
 
   Future<void> _initTabsAndData() async {
-    final canViewRealTime =
-        await PermissionsService().canPerformAction('sales.view_realtime');
+    final canViewRealTime = await PermissionsService().canPerformAction(
+      'sales.view_realtime',
+    );
     if (!mounted) return;
     _tabController?.dispose();
     final controller = TabController(
@@ -1849,7 +1824,7 @@ class _SalesScreenState extends State<SalesScreen>
       _isLoading = true;
       _salesBreakdownFuture = null; // Limpiar caché de desglose
     });
-    
+
     // Si estamos en la pestaña de desglose, recargar inmediatamente
     if (_logicalTabIndex == 3) {
       _salesBreakdownFuture = _fetchSalesBreakdown();
@@ -1909,6 +1884,7 @@ class _SalesScreenState extends State<SalesScreen>
         fechaDesde: dateRange['start'],
         fechaHasta: dateRange['end'],
         filtroFecha: _productDateFilterMode,
+        useCurrentPrices: _useCurrentProductPrices,
       );
 
       setState(() {
@@ -1964,14 +1940,13 @@ class _SalesScreenState extends State<SalesScreen>
       }
 
       // Filtrar vendedores que tengan ventas reales (productos > 0 o dinero > 0)
-      final filteredReports =
-          reportsWithEgresos
-              .where(
-                (report) =>
-                    report.totalProductosVendidos > 0 ||
-                    report.totalDineroGeneral > 0,
-              )
-              .toList();
+      final filteredReports = reportsWithEgresos
+          .where(
+            (report) =>
+                report.totalProductosVendidos > 0 ||
+                report.totalDineroGeneral > 0,
+          )
+          .toList();
 
       setState(() {
         _vendorReports = filteredReports;
@@ -2043,8 +2018,10 @@ class _SalesScreenState extends State<SalesScreen>
       final Map<int, SupplierSalesReport> groupedReports = {};
 
       for (final report in _productSalesReports) {
-        final ingresos = (report.precioVentaCup.round() * report.totalVendido).roundToDouble();
-        final costo = (report.precioCostoCup.round() * report.totalVendido).roundToDouble();
+        final ingresos = (report.precioVentaCup.round() * report.totalVendido)
+            .roundToDouble();
+        final costo = (report.precioCostoCup.round() * report.totalVendido)
+            .roundToDouble();
         final ganancia = ingresos - costo;
         final cantidad = report.totalVendido;
 
@@ -2076,21 +2053,22 @@ class _SalesScreenState extends State<SalesScreen>
       }
 
       // Calcular márgenes finales y convertir a lista
-      final List<SupplierSalesReport> reports =
-          groupedReports.values.map((item) {
-            final margen = item.totalVentas > 0
-                ? (item.totalGanancia / item.totalVentas) * 100
-                : 0.0;
-            return SupplierSalesReport(
-              idProveedor: item.idProveedor,
-              nombreProveedor: item.nombreProveedor,
-              totalVentas: item.totalVentas,
-              totalCosto: item.totalCosto,
-              totalGanancia: item.totalGanancia,
-              cantidadProductos: item.cantidadProductos,
-              margenPorcentaje: margen,
-            );
-          }).toList();
+      final List<SupplierSalesReport> reports = groupedReports.values.map((
+        item,
+      ) {
+        final margen = item.totalVentas > 0
+            ? (item.totalGanancia / item.totalVentas) * 100
+            : 0.0;
+        return SupplierSalesReport(
+          idProveedor: item.idProveedor,
+          nombreProveedor: item.nombreProveedor,
+          totalVentas: item.totalVentas,
+          totalCosto: item.totalCosto,
+          totalGanancia: item.totalGanancia,
+          cantidadProductos: item.cantidadProductos,
+          margenPorcentaje: margen,
+        );
+      }).toList();
 
       reports.sort((a, b) => b.totalVentas.compareTo(a.totalVentas));
 
@@ -2114,34 +2092,24 @@ class _SalesScreenState extends State<SalesScreen>
   Widget build(BuildContext context) {
     if (!_tabsReady || _tabController == null) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+        body: Center(
+          child: CircularProgressIndicator(color: AppColors.primary),
+        ),
       );
     }
 
     final tabs = <Widget>[
       if (_canViewRealTime)
-        const Tab(
-          text: 'Tiempo Real',
-          icon: Icon(Icons.timeline, size: 18),
-        ),
+        const Tab(text: 'Tiempo Real', icon: Icon(Icons.timeline, size: 18)),
       const Tab(text: 'TPVs', icon: Icon(Icons.point_of_sale, size: 18)),
-      const Tab(
-        text: 'Proveedores',
-        icon: Icon(Icons.inventory, size: 18),
-      ),
-      const Tab(
-        text: 'Desglose',
-        icon: Icon(Icons.receipt_long, size: 18),
-      ),
+      const Tab(text: 'Proveedores', icon: Icon(Icons.inventory, size: 18)),
+      const Tab(text: 'Desglose', icon: Icon(Icons.receipt_long, size: 18)),
       const Tab(text: 'Análisis', icon: Icon(Icons.analytics, size: 18)),
       const Tab(
         text: 'Paquetería',
         icon: Icon(Icons.local_shipping_outlined, size: 18),
       ),
-      const Tab(
-        text: 'Analista',
-        icon: Icon(Icons.smart_toy, size: 18),
-      ),
+      const Tab(text: 'Analista', icon: Icon(Icons.smart_toy, size: 18)),
     ];
 
     final tabViews = <Widget>[
@@ -2176,12 +2144,11 @@ class _SalesScreenState extends State<SalesScreen>
             tooltip: 'Actualizar',
           ),
           Builder(
-            builder:
-                (context) => IconButton(
-                  icon: const Icon(Icons.menu, color: Colors.white),
-                  onPressed: () => Scaffold.of(context).openEndDrawer(),
-                  tooltip: 'Menú',
-                ),
+            builder: (context) => IconButton(
+              icon: const Icon(Icons.menu, color: Colors.white),
+              onPressed: () => Scaffold.of(context).openEndDrawer(),
+              tooltip: 'Menú',
+            ),
           ),
         ],
         bottom: TabBar(
@@ -2193,13 +2160,9 @@ class _SalesScreenState extends State<SalesScreen>
           tabs: tabs,
         ),
       ),
-      body:
-          (_isLoadingProducts || _isLoadingVendors)
-              ? _buildLoadingState()
-              : TabBarView(
-                controller: _tabController,
-                children: tabViews,
-              ),
+      body: (_isLoadingProducts || _isLoadingVendors)
+          ? _buildLoadingState()
+          : TabBarView(controller: _tabController, children: tabViews),
       floatingActionButton: _buildGeneratePdfFab(),
       endDrawer: const AdminDrawer(),
       bottomNavigationBar: AdminBottomNavigation(
@@ -2216,10 +2179,9 @@ class _SalesScreenState extends State<SalesScreen>
   }
 
   Widget _buildRealTimeTab() {
-    final todaySales =
-        _sales
-            .where((sale) => sale.saleDate.day == DateTime.now().day)
-            .toList();
+    final todaySales = _sales
+        .where((sale) => sale.saleDate.day == DateTime.now().day)
+        .toList();
     final totalToday = todaySales.fold(0.0, (sum, sale) => sum + sale.total);
     final salesCount = todaySales.length;
 
@@ -2262,9 +2224,8 @@ class _SalesScreenState extends State<SalesScreen>
                   children: [
                     Expanded(
                       child: ElevatedButton.icon(
-                        onPressed:
-                            () =>
-                                Navigator.pushNamed(context, '/tpv-management'),
+                        onPressed: () =>
+                            Navigator.pushNamed(context, '/tpv-management'),
                         icon: Icon(Icons.devices),
                         label: Text('TPVs y Vendedores'),
                       ),
@@ -2272,8 +2233,8 @@ class _SalesScreenState extends State<SalesScreen>
                     SizedBox(width: 12),
                     Expanded(
                       child: ElevatedButton.icon(
-                        onPressed:
-                            () => Navigator.pushNamed(context, '/tpv-prices'),
+                        onPressed: () =>
+                            Navigator.pushNamed(context, '/tpv-prices'),
                         icon: Icon(Icons.attach_money),
                         label: Text('Precios TPV'),
                       ),
@@ -2309,8 +2270,8 @@ class _SalesScreenState extends State<SalesScreen>
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: _vendorReports.length,
-              itemBuilder:
-                  (context, index) => _buildVendorCard(_vendorReports[index]),
+              itemBuilder: (context, index) =>
+                  _buildVendorCard(_vendorReports[index]),
             ),
         ],
       ),
@@ -2337,51 +2298,48 @@ class _SalesScreenState extends State<SalesScreen>
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
               Expanded(
-                child:
-                    _isLoadingWarehouses
-                        ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                        : DropdownButton<int?>(
-                          isExpanded: true,
-                          value: _selectedWarehouseId,
-                          underline: const SizedBox(),
-                          items: [
-                            DropdownMenuItem<int?>(
-                              value: null,
-                              child: const Text('Todos los almacenes'),
-                            ),
-                            ..._warehouses.map((warehouse) {
-                              return DropdownMenuItem<int?>(
-                                value: warehouse['id'] as int?,
-                                child: Text(
-                                  warehouse['denominacion'] as String? ??
-                                      'Sin nombre',
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              );
-                            }).toList(),
-                          ],
-                          onChanged: (value) {
-                            setState(() {
-                              _selectedWarehouseId = value;
-                              _selectedWarehouseName =
-                                  value != null
-                                      ? _warehouses.firstWhere(
-                                        (w) => w['id'] == value,
-                                        orElse:
-                                            () => {
-                                              'denominacion': 'Desconocido',
-                                            },
-                                      )['denominacion']
-                                      : null;
-                            });
-                            // Recargar productos (encadena _loadSupplierReports internamente)
-                            _loadProductSalesData();
-                          },
-                        ),
+                child: _isLoadingWarehouses
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : DropdownButton<int?>(
+                        isExpanded: true,
+                        value: _selectedWarehouseId,
+                        underline: const SizedBox(),
+                        items: [
+                          DropdownMenuItem<int?>(
+                            value: null,
+                            child: const Text('Todos los almacenes'),
+                          ),
+                          ..._warehouses.map((warehouse) {
+                            return DropdownMenuItem<int?>(
+                              value: warehouse['id'] as int?,
+                              child: Text(
+                                warehouse['denominacion'] as String? ??
+                                    'Sin nombre',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            );
+                          }).toList(),
+                        ],
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedWarehouseId = value;
+                            _selectedWarehouseName = value != null
+                                ? _warehouses.firstWhere(
+                                    (w) => w['id'] == value,
+                                    orElse: () => {
+                                      'denominacion': 'Desconocido',
+                                    },
+                                  )['denominacion']
+                                : null;
+                          });
+                          // Recargar productos (encadena _loadSupplierReports internamente)
+                          _loadProductSalesData();
+                        },
+                      ),
               ),
             ],
           ),
@@ -2464,156 +2422,161 @@ class _SalesScreenState extends State<SalesScreen>
 
           _isLoadingSuppliers
               ? const Padding(
-                padding: EdgeInsets.all(32),
-                child: Center(
-                  child: CircularProgressIndicator(color: AppColors.primary),
-                ),
-              )
+                  padding: EdgeInsets.all(32),
+                  child: Center(
+                    child: CircularProgressIndicator(color: AppColors.primary),
+                  ),
+                )
               : _supplierReports.isEmpty
               ? const Padding(
-                padding: EdgeInsets.all(32),
-                child: Center(
-                  child: Text(
-                    'No hay datos de proveedores para el período',
-                    style: TextStyle(color: AppColors.textSecondary),
+                  padding: EdgeInsets.all(32),
+                  child: Center(
+                    child: Text(
+                      'No hay datos de proveedores para el período',
+                      style: TextStyle(color: AppColors.textSecondary),
+                    ),
                   ),
-                ),
-              )
+                )
               : Card(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: DataTable(
-                    columns: const [
-                      DataColumn(
-                        label: Text(
-                          'Proveedor',
-                          style: TextStyle(fontWeight: FontWeight.bold),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: DataTable(
+                      columns: const [
+                        DataColumn(
+                          label: Text(
+                            'Proveedor',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                         ),
-                      ),
-                      DataColumn(
-                        label: Text(
-                          'Ventas',
-                          style: TextStyle(fontWeight: FontWeight.bold),
+                        DataColumn(
+                          label: Text(
+                            'Ventas',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                         ),
-                      ),
-                      DataColumn(
-                        label: Text(
-                          'Costo',
-                          style: TextStyle(fontWeight: FontWeight.bold),
+                        DataColumn(
+                          label: Text(
+                            'Costo',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                         ),
-                      ),
-                      DataColumn(
-                        label: Text(
-                          'Ganancia',
-                          style: TextStyle(fontWeight: FontWeight.bold),
+                        DataColumn(
+                          label: Text(
+                            'Ganancia',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                         ),
-                      ),
-                      DataColumn(
-                        label: Text(
-                          'Acciones',
-                          style: TextStyle(fontWeight: FontWeight.bold),
+                        DataColumn(
+                          label: Text(
+                            'Acciones',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                         ),
-                      ),
-                    ],
-                    rows: [
-                      ..._supplierReports.map((report) {
-                        return DataRow(
+                      ],
+                      rows: [
+                        ..._supplierReports.map((report) {
+                          return DataRow(
+                            cells: [
+                              DataCell(Text(report.nombreProveedor)),
+                              DataCell(
+                                Text(
+                                  '\$${report.totalVentas.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    color: AppColors.success,
+                                  ),
+                                ),
+                              ),
+                              DataCell(
+                                Text(
+                                  '\$${report.totalCosto.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    color: AppColors.warning,
+                                  ),
+                                ),
+                              ),
+                              DataCell(
+                                Text(
+                                  '\$${report.totalGanancia.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              DataCell(
+                                ElevatedButton.icon(
+                                  onPressed: () =>
+                                      _showSupplierDetailDialog(report),
+                                  icon: const Icon(
+                                    Icons.info_outline,
+                                    size: 16,
+                                  ),
+                                  label: const Text('Detalles'),
+                                  style: ElevatedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 8,
+                                    ),
+                                    backgroundColor: AppColors.primary,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        }).toList(),
+                        // Fila de TOTALES
+                        DataRow(
+                          color: MaterialStateProperty.all(
+                            Colors.grey.shade100,
+                          ),
                           cells: [
-                            DataCell(Text(report.nombreProveedor)),
+                            const DataCell(
+                              Text(
+                                'TOTAL',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ),
                             DataCell(
                               Text(
-                                '\$${report.totalVentas.toStringAsFixed(2)}',
+                                '\$${totalVentas.toStringAsFixed(2)}',
                                 style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
                                   color: AppColors.success,
                                 ),
                               ),
                             ),
                             DataCell(
                               Text(
-                                '\$${report.totalCosto.toStringAsFixed(2)}',
+                                '\$${totalCosto.toStringAsFixed(2)}',
                                 style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
                                   color: AppColors.warning,
                                 ),
                               ),
                             ),
                             DataCell(
                               Text(
-                                '\$${report.totalGanancia.toStringAsFixed(2)}',
+                                '\$${totalGanancia.toStringAsFixed(2)}',
                                 style: const TextStyle(
-                                  color: AppColors.primary,
                                   fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                  color: AppColors.primary,
                                 ),
                               ),
                             ),
-                            DataCell(
-                              ElevatedButton.icon(
-                                onPressed:
-                                    () => _showSupplierDetailDialog(report),
-                                icon: const Icon(Icons.info_outline, size: 16),
-                                label: const Text('Detalles'),
-                                style: ElevatedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                  backgroundColor: AppColors.primary,
-                                  foregroundColor: Colors.white,
-                                ),
-                              ),
-                            ),
+                            const DataCell(Text('')),
                           ],
-                        );
-                      }).toList(),
-                      // Fila de TOTALES
-                      DataRow(
-                        color: MaterialStateProperty.all(Colors.grey.shade100),
-                        cells: [
-                          const DataCell(
-                            Text(
-                              'TOTAL',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ),
-                          DataCell(
-                            Text(
-                              '\$${totalVentas.toStringAsFixed(2)}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                                color: AppColors.success,
-                              ),
-                            ),
-                          ),
-                          DataCell(
-                            Text(
-                              '\$${totalCosto.toStringAsFixed(2)}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                                color: AppColors.warning,
-                              ),
-                            ),
-                          ),
-                          DataCell(
-                            Text(
-                              '\$${totalGanancia.toStringAsFixed(2)}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                                color: AppColors.primary,
-                              ),
-                            ),
-                          ),
-                          const DataCell(Text('')),
-                        ],
-                      ),
-                    ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
         ],
       ),
     );
@@ -2631,48 +2594,51 @@ class _SalesScreenState extends State<SalesScreen>
             FutureBuilder<Map<String, dynamic>>(
               future: _salesBreakdownFuture,
               builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(32),
-                    child: CircularProgressIndicator(color: AppColors.primary),
-                  ),
-                );
-              }
-              if (snapshot.hasError) {
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Text(
-                      'Error al cargar el desglose: ${snapshot.error}',
-                      style: const TextStyle(color: AppColors.error),
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(32),
+                      child: CircularProgressIndicator(
+                        color: AppColors.primary,
+                      ),
                     ),
-                  ),
+                  );
+                }
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Text(
+                        'Error al cargar el desglose: ${snapshot.error}',
+                        style: const TextStyle(color: AppColors.error),
+                      ),
+                    ),
+                  );
+                }
+
+                final data = snapshot.data;
+                if (data == null) {
+                  return const Center(child: Text('No hay datos disponibles.'));
+                }
+
+                final completas = (data['ordenes_completas'] as List?) ?? [];
+                final incompletas =
+                    (data['ordenes_incompletas'] as List?) ?? [];
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildBreakdownSummaryCard(completas, incompletas),
+                    const SizedBox(height: 16),
+                    if (incompletas.isNotEmpty)
+                      _buildIncompleteOrdersSection(incompletas),
+                    const SizedBox(height: 16),
+                    if (completas.isNotEmpty)
+                      _buildCompleteOrdersSection(completas),
+                  ],
                 );
-              }
-
-              final data = snapshot.data;
-              if (data == null) {
-                return const Center(child: Text('No hay datos disponibles.'));
-              }
-
-              final completas = (data['ordenes_completas'] as List?) ?? [];
-              final incompletas = (data['ordenes_incompletas'] as List?) ?? [];
-
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildBreakdownSummaryCard(completas, incompletas),
-                  const SizedBox(height: 16),
-                  if (incompletas.isNotEmpty)
-                    _buildIncompleteOrdersSection(incompletas),
-                  const SizedBox(height: 16),
-                  if (completas.isNotEmpty)
-                    _buildCompleteOrdersSection(completas),
-                ],
-              );
-            },
-          ),
+              },
+            ),
         ],
       ),
     );
@@ -2715,9 +2681,23 @@ class _SalesScreenState extends State<SalesScreen>
               Expanded(
                 child: Column(
                   children: [
-                    const Text('Órdenes Completas', style: TextStyle(fontSize: 12, color: AppColors.textSecondary), textAlign: TextAlign.center),
+                    const Text(
+                      'Órdenes Completas',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
                     const SizedBox(height: 4),
-                    Text('${completas.length}', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.success)),
+                    Text(
+                      '${completas.length}',
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.success,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -2725,9 +2705,25 @@ class _SalesScreenState extends State<SalesScreen>
               Expanded(
                 child: Column(
                   children: [
-                    const Text('Órdenes Incompletas', style: TextStyle(fontSize: 12, color: AppColors.textSecondary), textAlign: TextAlign.center),
+                    const Text(
+                      'Órdenes Incompletas',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
                     const SizedBox(height: 4),
-                    Text('${incompletas.length}', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: incompletas.isNotEmpty ? AppColors.error : AppColors.success)),
+                    Text(
+                      '${incompletas.length}',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: incompletas.isNotEmpty
+                            ? AppColors.error
+                            : AppColors.success,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -2755,7 +2751,7 @@ class _SalesScreenState extends State<SalesScreen>
                 ],
               ),
             ),
-          ]
+          ],
         ],
       ),
     );
@@ -2785,29 +2781,66 @@ class _SalesScreenState extends State<SalesScreen>
               final orden = incompletas[index];
               final total = orden['total_operacion'] ?? 0.0;
               final venta = orden['venta'] as Map?;
-              final razonesList = (orden['razones_incompletitud'] as List?) ?? [];
-              final razon = razonesList.isNotEmpty ? razonesList.join(', ') : 'Desconocida';
-              final fecha = orden['created_at'] != null ? DateFormat('dd/MM/yy HH:mm').format(DateTime.parse(orden['created_at'])) : '';
-              final vendedor = orden['vendedor'] != null ? orden['vendedor']['nombre_completo'] : 'N/A';
-              
-              final tieneItemsSinInventario = razonesList.contains('SIN_INVENTARIO_EN_ITEMS');
+              final razonesList =
+                  (orden['razones_incompletitud'] as List?) ?? [];
+              final razon = razonesList.isNotEmpty
+                  ? razonesList.join(', ')
+                  : 'Desconocida';
+              final fecha = orden['created_at'] != null
+                  ? DateFormat(
+                      'dd/MM/yy HH:mm',
+                    ).format(DateTime.parse(orden['created_at']))
+                  : '';
+              final vendedor = orden['vendedor'] != null
+                  ? orden['vendedor']['nombre_completo']
+                  : 'N/A';
+
+              final tieneItemsSinInventario = razonesList.contains(
+                'SIN_INVENTARIO_EN_ITEMS',
+              );
               final items = (orden['items'] as List?) ?? [];
-              final itemsSinInv = items.where((it) => (it as Map)['inventario'] == null).toList();
+              final itemsSinInv = items
+                  .where((it) => (it as Map)['inventario'] == null)
+                  .toList();
 
               return ExpansionTile(
                 leading: CircleAvatar(
                   backgroundColor: AppColors.error.withOpacity(0.1),
-                  child: const Icon(Icons.error_outline, color: AppColors.error, size: 20),
+                  child: const Icon(
+                    Icons.error_outline,
+                    color: AppColors.error,
+                    size: 20,
+                  ),
                 ),
-                title: Text('Orden #${orden['id_operacion'] ?? ''} - ${venta != null ? venta['tpv_nombre'] : 'Sin TPV'}'),
+                title: Text(
+                  'Orden #${orden['id_operacion'] ?? ''} - ${venta != null ? venta['tpv_nombre'] : 'Sin TPV'}',
+                ),
                 subtitle: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Falta: $razon', style: const TextStyle(color: AppColors.error, fontWeight: FontWeight.w500)),
-                    Text('$fecha • Vendedor: $vendedor', style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                    Text(
+                      'Falta: $razon',
+                      style: const TextStyle(
+                        color: AppColors.error,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Text(
+                      '$fecha • Vendedor: $vendedor',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
                   ],
                 ),
-                trailing: Text('\$${total is num ? total.toStringAsFixed(2) : total}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                trailing: Text(
+                  '\$${total is num ? total.toStringAsFixed(2) : total}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
                 children: [
                   _buildOrderDetailsContent(orden),
                   if (tieneItemsSinInventario && itemsSinInv.isNotEmpty)
@@ -2818,7 +2851,9 @@ class _SalesScreenState extends State<SalesScreen>
                         child: ElevatedButton.icon(
                           onPressed: () => _reinyectarInventarioOrden(orden),
                           icon: const Icon(Icons.healing, size: 18),
-                          label: Text('Reinyectar inventario (${itemsSinInv.length} items)'),
+                          label: Text(
+                            'Reinyectar inventario (${itemsSinInv.length} items)',
+                          ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.warning,
                             foregroundColor: Colors.white,
@@ -2861,16 +2896,32 @@ class _SalesScreenState extends State<SalesScreen>
               final venta = orden['venta'] as Map?;
               final items = orden['items'] as List? ?? [];
               final pagos = orden['pagos'] as List? ?? [];
-              final fecha = orden['created_at'] != null ? DateFormat('dd/MM/yy HH:mm').format(DateTime.parse(orden['created_at'])) : '';
-              final vendedor = orden['vendedor'] != null ? orden['vendedor']['nombre_completo'] : 'N/A';
-              
+              final fecha = orden['created_at'] != null
+                  ? DateFormat(
+                      'dd/MM/yy HH:mm',
+                    ).format(DateTime.parse(orden['created_at']))
+                  : '';
+              final vendedor = orden['vendedor'] != null
+                  ? orden['vendedor']['nombre_completo']
+                  : 'N/A';
+
               return ExpansionTile(
-                title: Text('Orden #${orden['id_operacion'] ?? ''} - ${venta != null ? venta['tpv_nombre'] : 'Sin TPV'}'),
-                subtitle: Text('$fecha • Vendedor: $vendedor', style: const TextStyle(fontSize: 12)),
-                trailing: Text('\$${total is num ? total.toStringAsFixed(2) : total}', style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.success, fontSize: 14)),
-                children: [
-                  _buildOrderDetailsContent(orden)
-                ],
+                title: Text(
+                  'Orden #${orden['id_operacion'] ?? ''} - ${venta != null ? venta['tpv_nombre'] : 'Sin TPV'}',
+                ),
+                subtitle: Text(
+                  '$fecha • Vendedor: $vendedor',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                trailing: Text(
+                  '\$${total is num ? total.toStringAsFixed(2) : total}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.success,
+                    fontSize: 14,
+                  ),
+                ),
+                children: [_buildOrderDetailsContent(orden)],
               );
             },
           ),
@@ -2879,7 +2930,10 @@ class _SalesScreenState extends State<SalesScreen>
               padding: const EdgeInsets.all(16.0),
               child: Text(
                 'Mostrando las primeras 100 de ${completas.length} órdenes.',
-                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                ),
                 textAlign: TextAlign.center,
               ),
             ),
@@ -2892,7 +2946,7 @@ class _SalesScreenState extends State<SalesScreen>
     final venta = orden['venta'] as Map?;
     final items = orden['items'] as List? ?? [];
     final pagos = orden['pagos'] as List? ?? [];
-    
+
     return Container(
       padding: const EdgeInsets.all(16),
       color: AppColors.background,
@@ -2903,14 +2957,29 @@ class _SalesScreenState extends State<SalesScreen>
           if (venta != null) ...[
             Row(
               children: [
-                const Icon(Icons.person_outline, size: 16, color: AppColors.primary),
+                const Icon(
+                  Icons.person_outline,
+                  size: 16,
+                  color: AppColors.primary,
+                ),
                 const SizedBox(width: 8),
-                Text('Cliente: ${venta['cliente_nombre'] ?? 'General'}', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                Text(
+                  'Cliente: ${venta['cliente_nombre'] ?? 'General'}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
                 const Spacer(),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
-                    color: (venta['es_pagada'] == true) ? AppColors.success.withOpacity(0.1) : AppColors.warning.withOpacity(0.1),
+                    color: (venta['es_pagada'] == true)
+                        ? AppColors.success.withOpacity(0.1)
+                        : AppColors.warning.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
@@ -2918,27 +2987,47 @@ class _SalesScreenState extends State<SalesScreen>
                     style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
-                      color: (venta['es_pagada'] == true) ? AppColors.success : AppColors.warning,
+                      color: (venta['es_pagada'] == true)
+                          ? AppColors.success
+                          : AppColors.warning,
                     ),
                   ),
-                )
+                ),
               ],
             ),
             const SizedBox(height: 12),
           ] else ...[
             const Row(
               children: [
-                Icon(Icons.warning_amber_rounded, size: 16, color: AppColors.warning),
+                Icon(
+                  Icons.warning_amber_rounded,
+                  size: 16,
+                  color: AppColors.warning,
+                ),
                 SizedBox(width: 8),
-                Text('Sin registro de operación de venta', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.warning)),
+                Text(
+                  'Sin registro de operación de venta',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                    color: AppColors.warning,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 12),
           ],
-          
+
           // PAGOS
           if (pagos.isNotEmpty) ...[
-            const Text('💰 Pagos Registrados:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: AppColors.textSecondary)),
+            const Text(
+              '💰 Pagos Registrados:',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+                color: AppColors.textSecondary,
+              ),
+            ),
             const SizedBox(height: 6),
             ...pagos.map((p) {
               final monto = p['monto'] ?? 0.0;
@@ -2946,25 +3035,62 @@ class _SalesScreenState extends State<SalesScreen>
                 padding: const EdgeInsets.only(bottom: 4.0, left: 8.0),
                 child: Row(
                   children: [
-                    Icon(p['es_efectivo'] == true ? Icons.money : Icons.credit_card, size: 14, color: Colors.grey[600]),
+                    Icon(
+                      p['es_efectivo'] == true
+                          ? Icons.money
+                          : Icons.credit_card,
+                      size: 14,
+                      color: Colors.grey[600],
+                    ),
                     const SizedBox(width: 8),
-                    Expanded(child: Text('${p['medio_pago'] ?? 'Pago'} - Ref: ${p['referencia_pago'] ?? 'N/A'}', style: const TextStyle(fontSize: 12))),
-                    Text('\$${monto is num ? monto.toStringAsFixed(2) : monto}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    Expanded(
+                      child: Text(
+                        '${p['medio_pago'] ?? 'Pago'} - Ref: ${p['referencia_pago'] ?? 'N/A'}',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                    Text(
+                      '\$${monto is num ? monto.toStringAsFixed(2) : monto}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ],
                 ),
               );
             }).toList(),
             const SizedBox(height: 12),
           ] else ...[
-            const Text('💰 Pagos Registrados: Ninguno', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: AppColors.warning)),
+            const Text(
+              '💰 Pagos Registrados: Ninguno',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+                color: AppColors.warning,
+              ),
+            ),
             const SizedBox(height: 12),
           ],
 
           // ITEMS Y AUDITORIA DE INVENTARIO
-          const Text('📦 Items y Extracción de Inventario:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: AppColors.textSecondary)),
+          const Text(
+            '📦 Items y Extracción de Inventario:',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+              color: AppColors.textSecondary,
+            ),
+          ),
           const SizedBox(height: 8),
           if (items.isEmpty)
-            const Text('No hay items en esta orden.', style: TextStyle(color: AppColors.warning, fontStyle: FontStyle.italic)),
+            const Text(
+              'No hay items en esta orden.',
+              style: TextStyle(
+                color: AppColors.warning,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
           ...items.map((item) {
             final inv = item['inventario'] as Map?;
             return Card(
@@ -2982,13 +3108,32 @@ class _SalesScreenState extends State<SalesScreen>
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('${_formatCantidadDecimal(item['cantidad'])}x ', style: const TextStyle(fontWeight: FontWeight.bold)),
-                        Expanded(child: Text('${item['producto_nombre'] ?? 'Producto'}', style: const TextStyle(fontWeight: FontWeight.w600))),
+                        Text(
+                          '${_formatCantidadDecimal(item['cantidad'])}x ',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        Expanded(
+                          child: Text(
+                            '${item['producto_nombre'] ?? 'Producto'}',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            Text('\$${item['importe'] is num ? (item['importe'] as num).toStringAsFixed(2) : item['importe']}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                            Text('\$${item['precio_unitario'] is num ? (item['precio_unitario'] as num).toStringAsFixed(2) : item['precio_unitario']} c/u', style: const TextStyle(color: AppColors.textSecondary, fontSize: 10)),
+                            Text(
+                              '\$${item['importe'] is num ? (item['importe'] as num).toStringAsFixed(2) : item['importe']}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              '\$${item['precio_unitario'] is num ? (item['precio_unitario'] as num).toStringAsFixed(2) : item['precio_unitario']} c/u',
+                              style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 10,
+                              ),
+                            ),
                           ],
                         ),
                       ],
@@ -3000,13 +3145,39 @@ class _SalesScreenState extends State<SalesScreen>
                       ),
                       Row(
                         children: [
-                          const Icon(Icons.inventory_2_outlined, size: 14, color: AppColors.info),
+                          const Icon(
+                            Icons.inventory_2_outlined,
+                            size: 14,
+                            color: AppColors.info,
+                          ),
                           const SizedBox(width: 6),
-                          Text('Inventario (ID: ${inv['id_inventario']}):', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                          Text(
+                            'Inventario (ID: ${inv['id_inventario']}):',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
                           const Spacer(),
-                          Text('${inv['cantidad_inicial']} ', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                          const Icon(Icons.arrow_forward, size: 10, color: Colors.grey),
-                          Text(' ${inv['cantidad_final']} unidades', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                          Text(
+                            '${inv['cantidad_inicial']} ',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey,
+                            ),
+                          ),
+                          const Icon(
+                            Icons.arrow_forward,
+                            size: 10,
+                            color: Colors.grey,
+                          ),
+                          Text(
+                            ' ${inv['cantidad_final']} unidades',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ],
                       ),
                     ] else ...[
@@ -3016,9 +3187,19 @@ class _SalesScreenState extends State<SalesScreen>
                       ),
                       const Row(
                         children: [
-                          Icon(Icons.warning_amber_rounded, size: 14, color: AppColors.warning),
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            size: 14,
+                            color: AppColors.warning,
+                          ),
                           SizedBox(width: 6),
-                          Text('No se registró extracción de inventario.', style: TextStyle(fontSize: 11, color: AppColors.warning)),
+                          Text(
+                            'No se registró extracción de inventario.',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.warning,
+                            ),
+                          ),
                         ],
                       ),
                     ],
@@ -3036,7 +3217,9 @@ class _SalesScreenState extends State<SalesScreen>
     final supabase = Supabase.instance.client;
     final idOperacion = orden['id_operacion'];
     final items = (orden['items'] as List?) ?? [];
-    final itemsSinInv = items.where((it) => (it as Map)['inventario'] == null).toList();
+    final itemsSinInv = items
+        .where((it) => (it as Map)['inventario'] == null)
+        .toList();
 
     if (itemsSinInv.isEmpty) return;
 
@@ -3048,9 +3231,15 @@ class _SalesScreenState extends State<SalesScreen>
           'Se insertarán ${itemsSinInv.length} registro(s) de inventario para la orden #$idOperacion. ¿Continuar?',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.warning, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.warning,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Reinyectar'),
           ),
@@ -3062,7 +3251,9 @@ class _SalesScreenState extends State<SalesScreen>
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator(color: AppColors.primary)),
+      builder: (_) => const Center(
+        child: CircularProgressIndicator(color: AppColors.primary),
+      ),
     );
 
     int exitos = 0;
@@ -3079,7 +3270,9 @@ class _SalesScreenState extends State<SalesScreen>
           // 1. Cargar la extracción completa
           final extRows = await supabase
               .from('app_dat_extraccion_productos')
-              .select('id, id_operacion, id_producto, id_variante, id_opcion_variante, id_ubicacion, id_presentacion, cantidad, sku_producto, sku_ubicacion')
+              .select(
+                'id, id_operacion, id_producto, id_variante, id_opcion_variante, id_ubicacion, id_presentacion, cantidad, sku_producto, sku_ubicacion',
+              )
               .eq('id', idExtraccion)
               .limit(1);
           if ((extRows as List).isEmpty) {
@@ -3097,7 +3290,9 @@ class _SalesScreenState extends State<SalesScreen>
           // 2. Buscar última fila de inventario que coincida (id desc limit 1)
           var invQuery = supabase
               .from('app_dat_inventario_productos')
-              .select('id, id_ubicacion, cantidad_final, sku_producto, sku_ubicacion')
+              .select(
+                'id, id_ubicacion, cantidad_final, sku_producto, sku_ubicacion',
+              )
               .eq('id_producto', idProducto);
           if (idVariante != null) {
             invQuery = invQuery.eq('id_variante', idVariante);
@@ -3121,14 +3316,16 @@ class _SalesScreenState extends State<SalesScreen>
           String? skuUbicacionInv;
           if ((invRows as List).isNotEmpty) {
             final lastInv = Map<String, dynamic>.from(invRows.first);
-            cantidadFinalUltima = (lastInv['cantidad_final'] as num?)?.toDouble() ?? 0.0;
+            cantidadFinalUltima =
+                (lastInv['cantidad_final'] as num?)?.toDouble() ?? 0.0;
             idUbicacionInventario = lastInv['id_ubicacion'];
             skuProductoInv = lastInv['sku_producto'];
             skuUbicacionInv = lastInv['sku_ubicacion'];
           }
 
           // 3. Si la extracción no tiene id_ubicacion (o difiere) y el inventario sí lo tiene, actualizamos la extracción
-          if (idUbicacionInventario != null && idUbicacion != idUbicacionInventario) {
+          if (idUbicacionInventario != null &&
+              idUbicacion != idUbicacionInventario) {
             await supabase
                 .from('app_dat_extraccion_productos')
                 .update({'id_ubicacion': idUbicacionInventario})
@@ -3170,7 +3367,12 @@ class _SalesScreenState extends State<SalesScreen>
         ? '✅ Reinyectados $exitos registro(s) de inventario.'
         : '⚠️ $exitos OK, ${errores.length} error(es): ${errores.take(2).join(' | ')}';
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: errores.isEmpty ? AppColors.success : AppColors.warning),
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: errores.isEmpty
+            ? AppColors.success
+            : AppColors.warning,
+      ),
     );
 
     setState(() {
@@ -3465,22 +3667,20 @@ class _SalesScreenState extends State<SalesScreen>
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children:
-                _analystSuggestions
-                    .map(
-                      (suggestion) => ActionChip(
-                        label: Text(
-                          suggestion,
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                        backgroundColor: AppColors.primary.withOpacity(0.08),
-                        onPressed:
-                            _analystController.isLoading
-                                ? null
-                                : () => _sendAnalystQuestion(suggestion),
-                      ),
-                    )
-                    .toList(),
+            children: _analystSuggestions
+                .map(
+                  (suggestion) => ActionChip(
+                    label: Text(
+                      suggestion,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    backgroundColor: AppColors.primary.withOpacity(0.08),
+                    onPressed: _analystController.isLoading
+                        ? null
+                        : () => _sendAnalystQuestion(suggestion),
+                  ),
+                )
+                .toList(),
           ),
         ],
       ),
@@ -3492,19 +3692,19 @@ class _SalesScreenState extends State<SalesScreen>
     SalesAnalystMessage message,
   ) {
     final isUser = message.isUser;
-    final bubbleColor =
-        message.isError
-            ? AppColors.error.withOpacity(0.08)
-            : isUser
-            ? AppColors.primary
-            : Colors.white;
+    final bubbleColor = message.isError
+        ? AppColors.error.withOpacity(0.08)
+        : isUser
+        ? AppColors.primary
+        : Colors.white;
     final textColor = isUser ? Colors.white : AppColors.textPrimary;
     final borderColor = message.isError ? AppColors.error : AppColors.border;
     final maxWidth = MediaQuery.of(context).size.width * 0.75;
 
     return Column(
-      crossAxisAlignment:
-          isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      crossAxisAlignment: isUser
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
       children: [
         Align(
           alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
@@ -3516,16 +3716,15 @@ class _SalesScreenState extends State<SalesScreen>
                 color: bubbleColor,
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: borderColor, width: 1),
-                boxShadow:
-                    isUser
-                        ? null
-                        : [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
+                boxShadow: isUser
+                    ? null
+                    : [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
               ),
               child: Text(
                 message.text,
@@ -3622,15 +3821,14 @@ class _SalesScreenState extends State<SalesScreen>
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children:
-          sections
-              .map(
-                (section) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: section,
-                ),
-              )
-              .toList(),
+      children: sections
+          .map(
+            (section) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: section,
+            ),
+          )
+          .toList(),
     );
   }
 
@@ -3742,40 +3940,38 @@ class _SalesScreenState extends State<SalesScreen>
       icon: icon,
       accent: isFormula ? AppColors.info : null,
       child: Column(
-        children:
-            items
-                .map(
-                  (item) => Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          width: 6,
-                          height: 6,
-                          margin: const EdgeInsets.only(top: 6),
-                          decoration: BoxDecoration(
-                            color:
-                                isFormula ? AppColors.info : AppColors.primary,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            item,
-                            style: TextStyle(
-                              fontSize: 12,
-                              height: 1.4,
-                              fontFamily: isFormula ? 'Courier' : null,
-                            ),
-                          ),
-                        ),
-                      ],
+        children: items
+            .map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      margin: const EdgeInsets.only(top: 6),
+                      decoration: BoxDecoration(
+                        color: isFormula ? AppColors.info : AppColors.primary,
+                        shape: BoxShape.circle,
+                      ),
                     ),
-                  ),
-                )
-                .toList(),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        item,
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 1.4,
+                          fontFamily: isFormula ? 'Courier' : null,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+            .toList(),
       ),
     );
   }
@@ -3792,27 +3988,24 @@ class _SalesScreenState extends State<SalesScreen>
             fontSize: 12,
             fontWeight: FontWeight.bold,
           ),
-          columns:
-              table.columns
-                  .map((column) => DataColumn(label: Text(column)))
+          columns: table.columns
+              .map((column) => DataColumn(label: Text(column)))
+              .toList(),
+          rows: table.rows.map((row) {
+            final cells = List<String>.generate(
+              table.columns.length,
+              (index) => index < row.length ? row[index] : '',
+            );
+            return DataRow(
+              cells: cells
+                  .map(
+                    (cell) => DataCell(
+                      Text(cell, style: const TextStyle(fontSize: 12)),
+                    ),
+                  )
                   .toList(),
-          rows:
-              table.rows.map((row) {
-                final cells = List<String>.generate(
-                  table.columns.length,
-                  (index) => index < row.length ? row[index] : '',
-                );
-                return DataRow(
-                  cells:
-                      cells
-                          .map(
-                            (cell) => DataCell(
-                              Text(cell, style: const TextStyle(fontSize: 12)),
-                            ),
-                          )
-                          .toList(),
-                );
-              }).toList(),
+            );
+          }).toList(),
         ),
       ),
     );
@@ -3846,10 +4039,9 @@ class _SalesScreenState extends State<SalesScreen>
 
   Widget _buildAnalystBarChart(SalesAnalystChart chart) {
     final values = chart.series.first.values;
-    final length =
-        chart.labels.length < values.length
-            ? chart.labels.length
-            : values.length;
+    final length = chart.labels.length < values.length
+        ? chart.labels.length
+        : values.length;
     if (length == 0) {
       return const SizedBox.shrink();
     }
@@ -3914,10 +4106,9 @@ class _SalesScreenState extends State<SalesScreen>
 
   Widget _buildAnalystLineChart(SalesAnalystChart chart) {
     final values = chart.series.first.values;
-    final length =
-        chart.labels.length < values.length
-            ? chart.labels.length
-            : values.length;
+    final length = chart.labels.length < values.length
+        ? chart.labels.length
+        : values.length;
     if (length == 0) {
       return const SizedBox.shrink();
     }
@@ -3980,10 +4171,9 @@ class _SalesScreenState extends State<SalesScreen>
 
   Widget _buildAnalystPieChart(SalesAnalystChart chart) {
     final values = chart.series.first.values;
-    final length =
-        chart.labels.length < values.length
-            ? chart.labels.length
-            : values.length;
+    final length = chart.labels.length < values.length
+        ? chart.labels.length
+        : values.length;
     if (length == 0) {
       return const SizedBox.shrink();
     }
@@ -4068,10 +4258,9 @@ class _SalesScreenState extends State<SalesScreen>
                   minLines: 1,
                   maxLines: 3,
                   textInputAction: TextInputAction.send,
-                  onSubmitted:
-                      _analystController.isLoading
-                          ? null
-                          : (_) => _sendAnalystQuestion(),
+                  onSubmitted: _analystController.isLoading
+                      ? null
+                      : (_) => _sendAnalystQuestion(),
                   decoration: InputDecoration(
                     hintText: 'Ej: ¿Qué proveedor genera más ganancias?',
                     filled: true,
@@ -4093,10 +4282,9 @@ class _SalesScreenState extends State<SalesScreen>
               ),
               const SizedBox(width: 12),
               ElevatedButton(
-                onPressed:
-                    _analystController.isLoading
-                        ? null
-                        : () => _sendAnalystQuestion(),
+                onPressed: _analystController.isLoading
+                    ? null
+                    : () => _sendAnalystQuestion(),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.all(14),
                   shape: RoundedRectangleBorder(
@@ -4104,17 +4292,16 @@ class _SalesScreenState extends State<SalesScreen>
                   ),
                   backgroundColor: AppColors.primary,
                 ),
-                child:
-                    _analystController.isLoading
-                        ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                        : const Icon(Icons.send, color: Colors.white, size: 18),
+                child: _analystController.isLoading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.send, color: Colors.white, size: 18),
               ),
             ],
           ),
@@ -4228,18 +4415,18 @@ class _SalesScreenState extends State<SalesScreen>
                 const SizedBox(height: 8),
                 _isLoadingMetrics
                     ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
                     : Text(
-                      '\$${totalSales.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.success,
+                        '\$${totalSales.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.success,
+                        ),
                       ),
-                    ),
                 Text(
                   'Ventas',
                   style: const TextStyle(color: AppColors.textSecondary),
@@ -4263,18 +4450,18 @@ class _SalesScreenState extends State<SalesScreen>
                 const SizedBox(height: 8),
                 _isLoadingMetrics
                     ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
                     : Text(
-                      '$totalProducts',
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.primary,
+                        '$totalProducts',
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.primary,
+                        ),
                       ),
-                    ),
                 Text(
                   'Productos',
                   style: const TextStyle(color: AppColors.textSecondary),
@@ -4287,6 +4474,751 @@ class _SalesScreenState extends State<SalesScreen>
     );
   }
 
+  Future<void> _showRealtimeExportMenu() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Wrap(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.picture_as_pdf),
+                title: const Text('Reporte de ventas por producto en PDF'),
+                onTap: () async {
+                  Navigator.of(sheetContext).pop();
+                  await _exportProductSalesReportPdf();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.table_view),
+                title: const Text('Reporte de ventas por producto en Excel'),
+                onTap: () async {
+                  Navigator.of(sheetContext).pop();
+                  await _exportProductSalesReportExcel();
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  List<ProductSalesReport> get _sortedProductSalesReports =>
+      [..._productSalesReports]..sort(
+        (a, b) => a.nombreProducto.toLowerCase().compareTo(
+          b.nombreProducto.toLowerCase(),
+        ),
+      );
+
+  Future<void> _exportProductSalesReportPdf() async {
+    setState(() => _isExportingProductHistory = true);
+    try {
+      final pdf = pw.Document();
+      final rows = _sortedProductSalesReports.map((report) {
+        final salePrice = report.precioVentaCup.roundToDouble();
+        final unitCost = report.precioCostoCup.roundToDouble();
+        final revenue = salePrice * report.totalVendido;
+        final totalCost = unitCost * report.totalVendido;
+        return [
+          report.nombreProducto,
+          salePrice.toStringAsFixed(0),
+          report.totalVendido.toStringAsFixed(2),
+          revenue.toStringAsFixed(2),
+          unitCost.toStringAsFixed(0),
+          totalCost.toStringAsFixed(2),
+          (revenue - totalCost).toStringAsFixed(2),
+        ];
+      }).toList();
+      final totalQuantity = _productSalesReports.fold<double>(
+        0,
+        (sum, report) => sum + report.totalVendido,
+      );
+      final totalRevenue = _productSalesReports.fold<double>(
+        0,
+        (sum, report) =>
+            sum + report.precioVentaCup.round() * report.totalVendido,
+      );
+      final totalCost = _productSalesReports.fold<double>(
+        0,
+        (sum, report) =>
+            sum + report.precioCostoCup.round() * report.totalVendido,
+      );
+      rows.add([
+        'TOTALES',
+        '-',
+        totalQuantity.toStringAsFixed(2),
+        totalRevenue.toStringAsFixed(2),
+        '-',
+        totalCost.toStringAsFixed(2),
+        (totalRevenue - totalCost).toStringAsFixed(2),
+      ]);
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4.landscape,
+          margin: const pw.EdgeInsets.all(24),
+          build: (_) => [
+            pw.Text(
+              'Reporte de Ventas por Producto',
+              style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+            ),
+            pw.Text(
+              '${DateFormat('dd/MM/yyyy').format(_startDate)} - '
+              '${DateFormat('dd/MM/yyyy').format(_endDate)} · '
+              '${_useCurrentProductPrices ? 'Precios actuales' : 'Precios históricos'}',
+            ),
+            pw.SizedBox(height: 12),
+            pw.TableHelper.fromTextArray(
+              headers: const [
+                'Producto',
+                'Precio (u)',
+                'Cantidad',
+                'Total venta',
+                'Costo (u)',
+                'Total costo',
+                'Ganancia',
+              ],
+              data: rows,
+              headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+              headerDecoration: const pw.BoxDecoration(
+                color: PdfColors.grey300,
+              ),
+              cellStyle: const pw.TextStyle(fontSize: 8),
+            ),
+          ],
+        ),
+      );
+      final bytes = await pdf.save();
+      final fileName =
+          'reporte_ventas_productos_${DateFormat('yyyyMMdd').format(_startDate)}_'
+          '${DateFormat('yyyyMMdd').format(_endDate)}.pdf';
+      if (kIsWeb) {
+        web_download.downloadFileWeb(bytes, fileName, 'application/pdf');
+      } else {
+        final output = await getTemporaryDirectory();
+        final file = File('${output.path}/$fileName');
+        await file.writeAsBytes(bytes);
+        await Share.shareXFiles([
+          XFile(file.path, mimeType: 'application/pdf'),
+        ], text: 'Reporte de ventas por producto');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error exportando reporte: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isExportingProductHistory = false);
+    }
+  }
+
+  Future<void> _exportProductSalesReportExcel() async {
+    setState(() => _isExportingProductHistory = true);
+    try {
+      final workbook = excel.Excel.createExcel();
+      final sheet = workbook['Ventas por producto'];
+      sheet.appendRow([excel.TextCellValue('Reporte de Ventas por Producto')]);
+      sheet.appendRow([
+        excel.TextCellValue('Período'),
+        excel.TextCellValue(
+          '${DateFormat('dd/MM/yyyy').format(_startDate)} - ${DateFormat('dd/MM/yyyy').format(_endDate)}',
+        ),
+      ]);
+      sheet.appendRow([
+        excel.TextCellValue('Método de cálculo'),
+        excel.TextCellValue(
+          _useCurrentProductPrices ? 'Precios actuales' : 'Precios históricos',
+        ),
+      ]);
+      sheet.appendRow([]);
+      sheet.appendRow([
+        excel.TextCellValue('Producto'),
+        excel.TextCellValue('Precio unitario'),
+        excel.TextCellValue('Cantidad vendida'),
+        excel.TextCellValue('Total venta'),
+        excel.TextCellValue('Costo unitario'),
+        excel.TextCellValue('Total costo'),
+        excel.TextCellValue('Ganancia'),
+      ]);
+      double totalQuantity = 0;
+      double totalRevenue = 0;
+      double totalCost = 0;
+      for (final report in _sortedProductSalesReports) {
+        final salePrice = report.precioVentaCup.roundToDouble();
+        final unitCost = report.precioCostoCup.roundToDouble();
+        final revenue = salePrice * report.totalVendido;
+        final cost = unitCost * report.totalVendido;
+        totalQuantity += report.totalVendido;
+        totalRevenue += revenue;
+        totalCost += cost;
+        sheet.appendRow([
+          excel.TextCellValue(report.nombreProducto),
+          excel.DoubleCellValue(salePrice),
+          excel.DoubleCellValue(report.totalVendido),
+          excel.DoubleCellValue(revenue),
+          excel.DoubleCellValue(unitCost),
+          excel.DoubleCellValue(cost),
+          excel.DoubleCellValue(revenue - cost),
+        ]);
+      }
+      sheet.appendRow([]);
+      sheet.appendRow([
+        excel.TextCellValue('TOTALES'),
+        excel.TextCellValue(''),
+        excel.DoubleCellValue(totalQuantity),
+        excel.DoubleCellValue(totalRevenue),
+        excel.TextCellValue(''),
+        excel.DoubleCellValue(totalCost),
+        excel.DoubleCellValue(totalRevenue - totalCost),
+      ]);
+
+      final bytes = workbook.encode();
+      if (bytes == null) throw Exception('No se pudo generar el archivo Excel');
+      final fileName =
+          'reporte_ventas_productos_${DateFormat('yyyyMMdd').format(_startDate)}_'
+          '${DateFormat('yyyyMMdd').format(_endDate)}.xlsx';
+      const mime =
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      if (kIsWeb) {
+        web_download.downloadFileWeb(Uint8List.fromList(bytes), fileName, mime);
+      } else {
+        final output = await getApplicationDocumentsDirectory();
+        final file = File('${output.path}/$fileName');
+        await file.writeAsBytes(bytes);
+        await Share.shareXFiles([
+          XFile(file.path, mimeType: mime),
+        ], text: 'Reporte de ventas por producto');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error exportando reporte: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isExportingProductHistory = false);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _loadProductHistoryForExport(
+    ProductSalesReport product,
+  ) {
+    return SalesService.getProductChronologicalReport(
+      productId: product.idProducto,
+      fechaDesde: _startDate,
+      fechaHasta: _endDate,
+      filtroFecha: _productDateFilterMode,
+    );
+  }
+
+  String _productHistoryEventName(Map<String, dynamic> event) {
+    switch (event['tipo_evento']?.toString()) {
+      case 'venta':
+        return 'Venta';
+      case 'cambio_precio_venta':
+        return 'Cambio precio venta';
+      default:
+        return 'Cambio costo';
+    }
+  }
+
+  String _productHistoryChange(Map<String, dynamic> event) {
+    if (event['tipo_evento'] == 'venta') return '-';
+    final isSalePrice = event['tipo_evento'] == 'cambio_precio_venta';
+    final previous = (event['valor_anterior'] as num?)?.toDouble();
+    final next = (event['valor_nuevo'] as num?)?.toDouble();
+    final decimals = isSalePrice ? 2 : 4;
+    return '${previous?.toStringAsFixed(decimals) ?? 'Sin anterior'} → '
+        '${next?.toStringAsFixed(decimals) ?? '-'} ${isSalePrice ? 'CUP' : 'USD'}';
+  }
+
+  String _productHistoryFileName(String productName, String extension) {
+    final safeName = productName
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9áéíóúñ]+'), '_')
+        .replaceAll(RegExp(r'^_+|_+$'), '');
+    return 'historial_${safeName}_${DateFormat('yyyyMMdd').format(_startDate)}_'
+        '${DateFormat('yyyyMMdd').format(_endDate)}.$extension';
+  }
+
+  Future<void> _exportProductHistoryPdf(ProductSalesReport product) async {
+    setState(() => _isExportingProductHistory = true);
+    try {
+      final events = await _loadProductHistoryForExport(product);
+      final pdf = pw.Document();
+      final dateFormat = DateFormat('dd/MM/yyyy HH:mm');
+      final headers = [
+        'Fecha',
+        'Evento',
+        'Operación',
+        'Cant.',
+        'Venta u.',
+        'Costo u.',
+        'Ingreso',
+        'Costo',
+        'Ganancia',
+        'Cambio',
+        'Detalle',
+      ];
+      final rows = events.map((event) {
+        final date = DateTime.tryParse(event['evento_fecha']?.toString() ?? '');
+        String number(String key, [int decimals = 2]) {
+          return (event[key] as num?)?.toDouble().toStringAsFixed(decimals) ??
+              '-';
+        }
+
+        return [
+          date == null ? '-' : dateFormat.format(date.toLocal()),
+          _productHistoryEventName(event),
+          event['id_operacion']?.toString() ?? '-',
+          number('cantidad'),
+          number('precio_venta_cup'),
+          number('precio_costo_cup'),
+          number('ingreso_total'),
+          number('costo_total'),
+          number('ganancia_total'),
+          _productHistoryChange(event),
+          event['descripcion']?.toString() ?? '-',
+        ];
+      }).toList();
+
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a3.landscape,
+          margin: const pw.EdgeInsets.all(20),
+          build: (_) => [
+            pw.Text(
+              'Historial de ${product.nombreProducto}',
+              style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+            ),
+            pw.SizedBox(height: 4),
+            pw.Text(
+              'Período: ${DateFormat('dd/MM/yyyy').format(_startDate)} - '
+              '${DateFormat('dd/MM/yyyy').format(_endDate)}',
+            ),
+            pw.SizedBox(height: 12),
+            pw.TableHelper.fromTextArray(
+              headers: headers,
+              data: rows,
+              headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+              headerDecoration: const pw.BoxDecoration(
+                color: PdfColors.grey300,
+              ),
+              cellStyle: const pw.TextStyle(fontSize: 7),
+              cellPadding: const pw.EdgeInsets.all(3),
+            ),
+          ],
+        ),
+      );
+
+      final bytes = await pdf.save();
+      final fileName = _productHistoryFileName(product.nombreProducto, 'pdf');
+      if (kIsWeb) {
+        web_download.downloadFileWeb(bytes, fileName, 'application/pdf');
+      } else {
+        final output = await getTemporaryDirectory();
+        final file = File('${output.path}/$fileName');
+        await file.writeAsBytes(bytes);
+        await Share.shareXFiles([
+          XFile(file.path, mimeType: 'application/pdf'),
+        ], text: 'Historial de ${product.nombreProducto}');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error exportando historial: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isExportingProductHistory = false);
+    }
+  }
+
+  Future<void> _exportProductHistoryExcel(ProductSalesReport product) async {
+    setState(() => _isExportingProductHistory = true);
+    try {
+      final events = await _loadProductHistoryForExport(product);
+      final workbook = excel.Excel.createExcel();
+      final sheet = workbook['Historial'];
+      sheet.appendRow([
+        excel.TextCellValue('Producto'),
+        excel.TextCellValue(product.nombreProducto),
+      ]);
+      sheet.appendRow([
+        excel.TextCellValue('Período'),
+        excel.TextCellValue(
+          '${DateFormat('dd/MM/yyyy').format(_startDate)} - ${DateFormat('dd/MM/yyyy').format(_endDate)}',
+        ),
+      ]);
+      sheet.appendRow([]);
+      sheet.appendRow([
+        excel.TextCellValue('Fecha'),
+        excel.TextCellValue('Evento'),
+        excel.TextCellValue('Operación'),
+        excel.TextCellValue('Cantidad'),
+        excel.TextCellValue('Venta unitario CUP'),
+        excel.TextCellValue('Costo unitario CUP'),
+        excel.TextCellValue('Ingreso'),
+        excel.TextCellValue('Costo'),
+        excel.TextCellValue('Ganancia'),
+        excel.TextCellValue('Cambio'),
+        excel.TextCellValue('Detalle del cálculo'),
+      ]);
+      for (final event in events) {
+        final date = DateTime.tryParse(event['evento_fecha']?.toString() ?? '');
+        excel.CellValue number(String key) {
+          final value = (event[key] as num?)?.toDouble();
+          return value == null
+              ? excel.TextCellValue('')
+              : excel.DoubleCellValue(value);
+        }
+
+        sheet.appendRow([
+          excel.TextCellValue(
+            date == null
+                ? ''
+                : DateFormat('dd/MM/yyyy HH:mm').format(date.toLocal()),
+          ),
+          excel.TextCellValue(_productHistoryEventName(event)),
+          event['id_operacion'] == null
+              ? excel.TextCellValue('')
+              : excel.IntCellValue((event['id_operacion'] as num).toInt()),
+          number('cantidad'),
+          number('precio_venta_cup'),
+          number('precio_costo_cup'),
+          number('ingreso_total'),
+          number('costo_total'),
+          number('ganancia_total'),
+          excel.TextCellValue(_productHistoryChange(event)),
+          excel.TextCellValue(event['descripcion']?.toString() ?? ''),
+        ]);
+      }
+
+      final bytes = workbook.encode();
+      if (bytes == null) throw Exception('No se pudo generar el archivo Excel');
+      final fileName = _productHistoryFileName(product.nombreProducto, 'xlsx');
+      const mime =
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      if (kIsWeb) {
+        web_download.downloadFileWeb(Uint8List.fromList(bytes), fileName, mime);
+      } else {
+        final output = await getApplicationDocumentsDirectory();
+        final file = File('${output.path}/$fileName');
+        await file.writeAsBytes(bytes);
+        await Share.shareXFiles([
+          XFile(file.path, mimeType: mime),
+        ], text: 'Historial de ${product.nombreProducto}');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error exportando historial: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isExportingProductHistory = false);
+    }
+  }
+
+  Future<void> _showProductChronologicalReport(
+    ProductSalesReport product,
+  ) async {
+    final horizontalController = ScrollController();
+    final verticalController = ScrollController();
+    final reportFuture = SalesService.getProductChronologicalReport(
+      productId: product.idProducto,
+      fechaDesde: _startDate,
+      fechaHasta: _endDate,
+      filtroFecha: _productDateFilterMode,
+    );
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        final size = MediaQuery.sizeOf(context);
+        return Dialog(
+          insetPadding: const EdgeInsets.all(12),
+          child: SizedBox(
+            width: size.width - 24,
+            height: size.height - 24,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.timeline, color: AppColors.primary),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              product.nombreProducto,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              'Ventas y cambios de precios del ${DateFormat('dd/MM/yyyy').format(_startDate)} '
+                              'al ${DateFormat('dd/MM/yyyy').format(_endDate)}',
+                              style: const TextStyle(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      PopupMenuButton<String>(
+                        tooltip: 'Exportar historial',
+                        icon: const Icon(Icons.download),
+                        onSelected: (format) async {
+                          if (format == 'pdf') {
+                            await _exportProductHistoryPdf(product);
+                          } else {
+                            await _exportProductHistoryExcel(product);
+                          }
+                        },
+                        itemBuilder: (_) => const [
+                          PopupMenuItem(
+                            value: 'pdf',
+                            child: ListTile(
+                              leading: Icon(Icons.picture_as_pdf),
+                              title: Text('Exportar PDF'),
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'excel',
+                            child: ListTile(
+                              leading: Icon(Icons.table_view),
+                              title: Text('Exportar Excel'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: FutureBuilder<List<Map<String, dynamic>>>(
+                    future: reportFuture,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState != ConnectionState.done) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      if (snapshot.hasError) {
+                        return Center(
+                          child: Text(
+                            'Error cargando el reporte: ${snapshot.error}',
+                            style: const TextStyle(color: AppColors.error),
+                          ),
+                        );
+                      }
+
+                      final events = snapshot.data ?? [];
+                      if (events.isEmpty) {
+                        return const Center(
+                          child: Text('No hay eventos para el período'),
+                        );
+                      }
+
+                      return Scrollbar(
+                        controller: horizontalController,
+                        thumbVisibility: true,
+                        trackVisibility: true,
+                        scrollbarOrientation: ScrollbarOrientation.bottom,
+                        child: SingleChildScrollView(
+                          controller: horizontalController,
+                          scrollDirection: Axis.horizontal,
+                          child: SizedBox(
+                            width: 1900,
+                            child: Scrollbar(
+                              controller: verticalController,
+                              thumbVisibility: true,
+                              trackVisibility: true,
+                              child: SingleChildScrollView(
+                                controller: verticalController,
+                                child: DataTable(
+                                  columnSpacing: 18,
+                                  dataRowMinHeight: 48,
+                                  dataRowMaxHeight: 110,
+                                  columns: const [
+                                    DataColumn(label: Text('Fecha')),
+                                    DataColumn(label: Text('Evento')),
+                                    DataColumn(label: Text('Operación')),
+                                    DataColumn(label: Text('Cantidad')),
+                                    DataColumn(label: Text('Venta (u)')),
+                                    DataColumn(label: Text('Costo CUP (u)')),
+                                    DataColumn(label: Text('Ingreso')),
+                                    DataColumn(label: Text('Costo')),
+                                    DataColumn(label: Text('Ganancia')),
+                                    DataColumn(label: Text('Cambio')),
+                                    DataColumn(
+                                      label: Text('Detalle del cálculo'),
+                                    ),
+                                  ],
+                                  rows: events.map((event) {
+                                    final type = event['tipo_evento']
+                                        ?.toString();
+                                    final isSale = type == 'venta';
+                                    final isSalePrice =
+                                        type == 'cambio_precio_venta';
+                                    final color = isSale
+                                        ? Colors.white
+                                        : isSalePrice
+                                        ? Colors.blue.shade50
+                                        : Colors.orange.shade50;
+                                    final date = DateTime.tryParse(
+                                      event['evento_fecha']?.toString() ?? '',
+                                    );
+                                    final previous =
+                                        (event['valor_anterior'] as num?)
+                                            ?.toDouble();
+                                    final next = (event['valor_nuevo'] as num?)
+                                        ?.toDouble();
+                                    final change = isSale
+                                        ? '-'
+                                        : '${previous?.toStringAsFixed(isSalePrice ? 2 : 4) ?? 'Sin anterior'} → '
+                                              '${next?.toStringAsFixed(isSalePrice ? 2 : 4) ?? '-'} '
+                                              '${isSalePrice ? 'CUP' : 'USD'}';
+
+                                    String money(String key) {
+                                      final value = (event[key] as num?)
+                                          ?.toDouble();
+                                      return value == null
+                                          ? '-'
+                                          : '\$${value.toStringAsFixed(2)}';
+                                    }
+
+                                    return DataRow(
+                                      color: WidgetStatePropertyAll(color),
+                                      cells: [
+                                        DataCell(
+                                          Text(
+                                            date == null
+                                                ? '-'
+                                                : DateFormat(
+                                                    'dd/MM/yyyy HH:mm',
+                                                  ).format(date.toLocal()),
+                                          ),
+                                        ),
+                                        DataCell(
+                                          Row(
+                                            children: [
+                                              Icon(
+                                                isSale
+                                                    ? Icons.shopping_cart
+                                                    : isSalePrice
+                                                    ? Icons.sell
+                                                    : Icons.inventory,
+                                                size: 16,
+                                                color: isSale
+                                                    ? AppColors.success
+                                                    : isSalePrice
+                                                    ? AppColors.info
+                                                    : AppColors.warning,
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Text(
+                                                isSale
+                                                    ? 'Venta'
+                                                    : isSalePrice
+                                                    ? 'Cambio venta'
+                                                    : 'Cambio costo',
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        DataCell(
+                                          Text(
+                                            event['id_operacion']?.toString() ??
+                                                '-',
+                                          ),
+                                        ),
+                                        DataCell(
+                                          Text(
+                                            (event['cantidad'] as num?)
+                                                    ?.toStringAsFixed(2) ??
+                                                '-',
+                                          ),
+                                        ),
+                                        DataCell(
+                                          Text(money('precio_venta_cup')),
+                                        ),
+                                        DataCell(
+                                          Text(money('precio_costo_cup')),
+                                        ),
+                                        DataCell(Text(money('ingreso_total'))),
+                                        DataCell(Text(money('costo_total'))),
+                                        DataCell(
+                                          Text(
+                                            money('ganancia_total'),
+                                            style: TextStyle(
+                                              color:
+                                                  ((event['ganancia_total']
+                                                                  as num?)
+                                                              ?.toDouble() ??
+                                                          0) >=
+                                                      0
+                                                  ? AppColors.success
+                                                  : AppColors.error,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                        DataCell(Text(change)),
+                                        DataCell(
+                                          SizedBox(
+                                            width: 520,
+                                            child: Text(
+                                              event['descripcion']
+                                                      ?.toString() ??
+                                                  '-',
+                                              softWrap: true,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  }).toList(),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    horizontalController.dispose();
+    verticalController.dispose();
+  }
+
   Widget _buildProductSalesReport() {
     return Container(
       decoration: BoxDecoration(
@@ -4297,11 +5229,36 @@ class _SalesScreenState extends State<SalesScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: Text(
-              'Reporte de Ventas por Producto',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Reporte de Ventas por Producto',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _isLoadingProducts
+                      ? null
+                      : () {
+                          setState(() {
+                            _useCurrentProductPrices =
+                                !_useCurrentProductPrices;
+                          });
+                          _loadProductSalesData();
+                        },
+                  icon: Icon(
+                    _useCurrentProductPrices ? Icons.update : Icons.history,
+                  ),
+                  label: Text(
+                    _useCurrentProductPrices
+                        ? 'Precios actuales'
+                        : 'Precios históricos',
+                  ),
+                ),
+              ],
             ),
           ),
           if (_isLoadingProducts)
@@ -4372,86 +5329,94 @@ class _SalesScreenState extends State<SalesScreen>
                 ],
                 rows: [
                   // Product rows
-                  ...([..._productSalesReports]
-                    ..sort(
-                      (a, b) => a.nombreProducto.toLowerCase().compareTo(
-                        b.nombreProducto.toLowerCase(),
-                      ),
-                    )).map((report) {
-                    final precioVentaInt = report.precioVentaCup.round();
-                    final costoUnitarioCup = report.precioCostoCup.round();
-                    final ingresosCup = precioVentaInt * report.totalVendido;
-                    final totalCostoCup = costoUnitarioCup * report.totalVendido;
-                    final ganancias = ingresosCup - totalCostoCup;
+                  ...([..._productSalesReports]..sort(
+                        (a, b) => a.nombreProducto.toLowerCase().compareTo(
+                          b.nombreProducto.toLowerCase(),
+                        ),
+                      ))
+                      .map((report) {
+                        final precioVentaInt = report.precioVentaCup.round();
+                        final costoUnitarioCup = report.precioCostoCup.round();
+                        final ingresosCup =
+                            precioVentaInt * report.totalVendido;
+                        final totalCostoCup =
+                            costoUnitarioCup * report.totalVendido;
+                        final ganancias = ingresosCup - totalCostoCup;
 
-                    return DataRow(
-                      cells: [
-                        DataCell(
-                          SizedBox(
-                            width: 180,
-                            child: Text(
-                              report.nombreProducto,
-                              overflow: TextOverflow.visible,
-                              softWrap: true,
-                              maxLines: 2,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w500,
-                                fontSize: 13,
+                        return DataRow(
+                          onSelectChanged: (_) =>
+                              _showProductChronologicalReport(report),
+                          cells: [
+                            DataCell(
+                              SizedBox(
+                                width: 180,
+                                child: Text(
+                                  report.nombreProducto,
+                                  overflow: TextOverflow.visible,
+                                  softWrap: true,
+                                  maxLines: 2,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 13,
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ),
-                        DataCell(
-                          Text(
-                            '\$$precioVentaInt',
-                            style: const TextStyle(color: AppColors.info),
-                          ),
-                        ),
-                        DataCell(
-                          Text(
-                            _formatCantidadDecimal(report.totalVendido),
-                            style: const TextStyle(color: AppColors.primary),
-                          ),
-                        ),
-                        DataCell(
-                          Text(
-                            '\$${ingresosCup.toStringAsFixed(0)}',
-                            style: const TextStyle(
-                              color: AppColors.success,
-                              fontWeight: FontWeight.bold,
+                            DataCell(
+                              Text(
+                                '\$$precioVentaInt',
+                                style: const TextStyle(color: AppColors.info),
+                              ),
                             ),
-                          ),
-                        ),
-                        DataCell(
-                          Text(
-                            '\$${costoUnitarioCup.toStringAsFixed(0)}',
-                            style: const TextStyle(color: AppColors.warning),
-                          ),
-                        ),
-                        DataCell(
-                          Text(
-                            '\$${totalCostoCup.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              color: AppColors.warning,
-                              fontWeight: FontWeight.w500,
+                            DataCell(
+                              Text(
+                                _formatCantidadDecimal(report.totalVendido),
+                                style: const TextStyle(
+                                  color: AppColors.primary,
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                        DataCell(
-                          Text(
-                            '\$${ganancias.toStringAsFixed(2)}',
-                            style: TextStyle(
-                              color:
-                                  ganancias >= 0
+                            DataCell(
+                              Text(
+                                '\$${ingresosCup.toStringAsFixed(0)}',
+                                style: const TextStyle(
+                                  color: AppColors.success,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              Text(
+                                '\$${costoUnitarioCup.toStringAsFixed(0)}',
+                                style: const TextStyle(
+                                  color: AppColors.warning,
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              Text(
+                                '\$${totalCostoCup.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  color: AppColors.warning,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              Text(
+                                '\$${ganancias.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  color: ganancias >= 0
                                       ? AppColors.success
                                       : AppColors.error,
-                              fontWeight: FontWeight.bold,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                      ],
-                    );
-                  }).toList(),
+                          ],
+                        );
+                      })
+                      .toList(),
                   // Totals row
                   if (_productSalesReports.isNotEmpty)
                     DataRow(
@@ -4471,7 +5436,12 @@ class _SalesScreenState extends State<SalesScreen>
                         const DataCell(Text('-')), // No average price
                         DataCell(
                           Text(
-                            _formatCantidadDecimal(_productSalesReports.fold(0.0, (sum, report) => sum + report.totalVendido)),
+                            _formatCantidadDecimal(
+                              _productSalesReports.fold(
+                                0.0,
+                                (sum, report) => sum + report.totalVendido,
+                              ),
+                            ),
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               color: AppColors.primary,
@@ -4498,16 +5468,27 @@ class _SalesScreenState extends State<SalesScreen>
                           ),
                         ),
                         DataCell(
-                          Builder(builder: (context) {
-                            final totalGan = _productSalesReports.fold(0.0, (sum, r) => sum + (r.precioVentaCup.round() - r.precioCostoCup.round()) * r.totalVendido);
-                            return Text(
-                              '\$${totalGan.toStringAsFixed(0)}',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: totalGan >= 0 ? AppColors.success : AppColors.error,
-                              ),
-                            );
-                          }),
+                          Builder(
+                            builder: (context) {
+                              final totalGan = _productSalesReports.fold(
+                                0.0,
+                                (sum, r) =>
+                                    sum +
+                                    (r.precioVentaCup.round() -
+                                            r.precioCostoCup.round()) *
+                                        r.totalVendido,
+                              );
+                              return Text(
+                                '\$${totalGan.toStringAsFixed(0)}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: totalGan >= 0
+                                      ? AppColors.success
+                                      : AppColors.error,
+                                ),
+                              );
+                            },
+                          ),
                         ),
                       ],
                     ),
@@ -4615,96 +5596,92 @@ class _SalesScreenState extends State<SalesScreen>
                     ),
                   ),
                 ],
-                rows:
-                    _productAnalysis.map((analysis) {
-                      return DataRow(
-                        cells: [
-                          DataCell(
-                            SizedBox(
-                              width: 200,
-                              child: Text(
-                                analysis.nombreProducto,
-                                overflow: TextOverflow.visible,
-                                softWrap: true,
-                                maxLines: 2,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w500,
-                                  fontSize: 13,
-                                ),
-                              ),
+                rows: _productAnalysis.map((analysis) {
+                  return DataRow(
+                    cells: [
+                      DataCell(
+                        SizedBox(
+                          width: 200,
+                          child: Text(
+                            analysis.nombreProducto,
+                            overflow: TextOverflow.visible,
+                            softWrap: true,
+                            maxLines: 2,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w500,
+                              fontSize: 13,
                             ),
                           ),
-                          DataCell(
-                            Text(
-                              '\$${analysis.valorUsd.toStringAsFixed(2)}',
-                              style: const TextStyle(
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
+                        ),
+                      ),
+                      DataCell(
+                        Text(
+                          '\$${analysis.valorUsd.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
                           ),
-                          DataCell(
-                            Text(
-                              '\$${analysis.precioCostoUsd.toStringAsFixed(4)}',
-                              style: const TextStyle(color: AppColors.warning),
-                            ),
+                        ),
+                      ),
+                      DataCell(
+                        Text(
+                          '\$${analysis.precioCostoUsd.toStringAsFixed(4)}',
+                          style: const TextStyle(color: AppColors.warning),
+                        ),
+                      ),
+                      DataCell(
+                        Text(
+                          '\$${analysis.precioVentaUsd.toStringAsFixed(4)}',
+                          style: const TextStyle(color: AppColors.info),
+                        ),
+                      ),
+                      DataCell(
+                        Text(
+                          '\$${analysis.precioCostoCup.toStringAsFixed(2)}',
+                          style: const TextStyle(color: AppColors.warning),
+                        ),
+                      ),
+                      DataCell(
+                        Text(
+                          '\$${analysis.precioVentaCup.toStringAsFixed(2)}',
+                          style: const TextStyle(color: AppColors.success),
+                        ),
+                      ),
+                      DataCell(
+                        Text(
+                          '\$${analysis.gananciaUsd.toStringAsFixed(4)}',
+                          style: TextStyle(
+                            color: analysis.gananciaUsd >= 0
+                                ? AppColors.success
+                                : AppColors.error,
+                            fontWeight: FontWeight.bold,
                           ),
-                          DataCell(
-                            Text(
-                              '\$${analysis.precioVentaUsd.toStringAsFixed(4)}',
-                              style: const TextStyle(color: AppColors.info),
-                            ),
+                        ),
+                      ),
+                      DataCell(
+                        Text(
+                          '\$${analysis.gananciaCup.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            color: analysis.gananciaCup >= 0
+                                ? AppColors.success
+                                : AppColors.error,
+                            fontWeight: FontWeight.bold,
                           ),
-                          DataCell(
-                            Text(
-                              '\$${analysis.precioCostoCup.toStringAsFixed(2)}',
-                              style: const TextStyle(color: AppColors.warning),
-                            ),
+                        ),
+                      ),
+                      DataCell(
+                        Text(
+                          '${analysis.porcGananciaCup.toStringAsFixed(1)}%',
+                          style: TextStyle(
+                            color: analysis.porcGananciaCup >= 0
+                                ? AppColors.success
+                                : AppColors.error,
+                            fontWeight: FontWeight.bold,
                           ),
-                          DataCell(
-                            Text(
-                              '\$${analysis.precioVentaCup.toStringAsFixed(2)}',
-                              style: const TextStyle(color: AppColors.success),
-                            ),
-                          ),
-                          DataCell(
-                            Text(
-                              '\$${analysis.gananciaUsd.toStringAsFixed(4)}',
-                              style: TextStyle(
-                                color:
-                                    analysis.gananciaUsd >= 0
-                                        ? AppColors.success
-                                        : AppColors.error,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          DataCell(
-                            Text(
-                              '\$${analysis.gananciaCup.toStringAsFixed(2)}',
-                              style: TextStyle(
-                                color:
-                                    analysis.gananciaCup >= 0
-                                        ? AppColors.success
-                                        : AppColors.error,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          DataCell(
-                            Text(
-                              '${analysis.porcGananciaCup.toStringAsFixed(1)}%',
-                              style: TextStyle(
-                                color:
-                                    analysis.porcGananciaCup >= 0
-                                        ? AppColors.success
-                                        : AppColors.error,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      );
-                    }).toList(),
+                        ),
+                      ),
+                    ],
+                  );
+                }).toList(),
               ),
             ),
         ],
@@ -4826,8 +5803,8 @@ class _SalesScreenState extends State<SalesScreen>
                   children: [
                     Expanded(
                       child: ElevatedButton.icon(
-                        onPressed:
-                            () => _showVendorTransferenciasDetail(vendor),
+                        onPressed: () =>
+                            _showVendorTransferenciasDetail(vendor),
                         icon: const Icon(Icons.account_balance, size: 16),
                         label: const Text(
                           'Transferencias',
@@ -4843,8 +5820,8 @@ class _SalesScreenState extends State<SalesScreen>
                     const SizedBox(width: 6),
                     Expanded(
                       child: ElevatedButton.icon(
-                        onPressed:
-                            () => _showVendorOrdenesPendientesDetail(vendor),
+                        onPressed: () =>
+                            _showVendorOrdenesPendientesDetail(vendor),
                         icon: const Icon(Icons.pending_actions, size: 16),
                         label: const Text(
                           'Órdenes Pendientes',
@@ -5005,10 +5982,9 @@ class _SalesScreenState extends State<SalesScreen>
 
   Widget _buildPeriodSelector({bool showDateBasisFilter = false}) {
     final isExpanded = showDateBasisFilter ? _filtersExpanded : true;
-    final dateBasisLabel =
-        _productDateFilterMode == 'completado'
-            ? 'Fecha de completado'
-            : 'Fecha de creación';
+    final dateBasisLabel = _productDateFilterMode == 'completado'
+        ? 'Fecha de completado'
+        : 'Fecha de creación';
 
     return Container(
       decoration: BoxDecoration(
@@ -5020,10 +5996,9 @@ class _SalesScreenState extends State<SalesScreen>
         children: [
           InkWell(
             borderRadius: BorderRadius.circular(12),
-            onTap:
-                showDateBasisFilter
-                    ? () => setState(() => _filtersExpanded = !_filtersExpanded)
-                    : null,
+            onTap: showDateBasisFilter
+                ? () => setState(() => _filtersExpanded = !_filtersExpanded)
+                : null,
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
@@ -5053,9 +6028,7 @@ class _SalesScreenState extends State<SalesScreen>
                   ),
                   if (showDateBasisFilter)
                     Icon(
-                      isExpanded
-                          ? Icons.expand_less
-                          : Icons.expand_more,
+                      isExpanded ? Icons.expand_less : Icons.expand_more,
                       color: AppColors.primary,
                     )
                   else
@@ -5073,10 +6046,7 @@ class _SalesScreenState extends State<SalesScreen>
                 children: [
                   const Text(
                     'Rango de fechas',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 8),
                   GestureDetector(
@@ -5164,9 +6134,7 @@ class _SalesScreenState extends State<SalesScreen>
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         decoration: BoxDecoration(
-          color: active
-              ? AppColors.primary.withOpacity(0.12)
-              : Colors.grey[50],
+          color: active ? AppColors.primary.withOpacity(0.12) : Colors.grey[50],
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: active ? AppColors.primary : AppColors.border,
@@ -5190,15 +6158,14 @@ class _SalesScreenState extends State<SalesScreen>
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: active ? AppColors.primary : const Color(0xFF374151),
+                      color: active
+                          ? AppColors.primary
+                          : const Color(0xFF374151),
                     ),
                   ),
                   Text(
                     subtitle,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey[600],
-                    ),
+                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
                   ),
                 ],
               ),
@@ -5305,92 +6272,88 @@ class _SalesScreenState extends State<SalesScreen>
 
       showDialog(
         context: context,
-        builder:
-            (context) => AlertDialog(
-              title: Text(
-                'Egresos de ${vendor.nombreCompleto}',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              content: SizedBox(
-                width: double.maxFinite,
-                height: 400,
-                child:
-                    deliveries.isEmpty
-                        ? const Center(
-                          child: Text(
-                            'No hay egresos registrados para este vendedor en el período seleccionado',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: AppColors.textSecondary),
+        builder: (context) => AlertDialog(
+          title: Text(
+            'Egresos de ${vendor.nombreCompleto}',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 400,
+            child: deliveries.isEmpty
+                ? const Center(
+                    child: Text(
+                      'No hay egresos registrados para este vendedor en el período seleccionado',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppColors.textSecondary),
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: deliveries.length,
+                    itemBuilder: (context, index) {
+                      final delivery = deliveries[index];
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: AppColors.error.withOpacity(0.1),
+                            child: const Icon(
+                              Icons.money_off,
+                              color: AppColors.error,
+                              size: 20,
+                            ),
                           ),
-                        )
-                        : ListView.builder(
-                          itemCount: deliveries.length,
-                          itemBuilder: (context, index) {
-                            final delivery = deliveries[index];
-                            return Card(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              child: ListTile(
-                                leading: CircleAvatar(
-                                  backgroundColor: AppColors.error.withOpacity(
-                                    0.1,
-                                  ),
-                                  child: const Icon(
-                                    Icons.money_off,
-                                    color: AppColors.error,
-                                    size: 20,
-                                  ),
-                                ),
-                                title: Text(
-                                  '\$${delivery.montoEntrega.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.error,
-                                  ),
-                                ),
-                                subtitle: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      delivery.motivoEntrega,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                    Text(
-                                      'Recibe: ${delivery.nombreRecibe}',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: AppColors.textSecondary,
-                                      ),
-                                    ),
-                                    Text(
-                                      'Autoriza: ${delivery.nombreAutoriza}',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: AppColors.textSecondary,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                trailing: Text(
-                                  _formatDateTime(delivery.fechaEntrega),
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: AppColors.textSecondary,
-                                  ),
+                          title: Text(
+                            '\$${delivery.montoEntrega.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.error,
+                            ),
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                delivery.motivoEntrega,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
-                            );
-                          },
+                              Text(
+                                'Recibe: ${delivery.nombreRecibe}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              Text(
+                                'Autoriza: ${delivery.nombreAutoriza}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                          trailing: Text(
+                            _formatDateTime(delivery.fechaEntrega),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
                         ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cerrar'),
-                ),
-              ],
+                      );
+                    },
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cerrar'),
             ),
+          ],
+        ),
       );
     } catch (e) {
       print('Error loading vendor egresos detail: $e');
@@ -5416,8 +6379,7 @@ class _SalesScreenState extends State<SalesScreen>
 
       if (!mounted) return;
 
-      final completedOrders =
-          orders.where(_isVendorOrderCompleted).toList();
+      final completedOrders = orders.where(_isVendorOrderCompleted).toList();
       final paymentTotals = _calculateVendorPaymentTotals(completedOrders);
       final totalEfectivoOferta = paymentTotals.efectivoOferta;
       final totalEfectivoRegular = paymentTotals.efectivoRegular;
@@ -5427,119 +6389,304 @@ class _SalesScreenState extends State<SalesScreen>
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder:
-            (context) => DraggableScrollableSheet(
-              initialChildSize: 0.8,
-              maxChildSize: 0.95,
-              minChildSize: 0.5,
-              builder:
-                  (context, scrollController) => Container(
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.vertical(
-                        top: Radius.circular(20),
-                      ),
-                    ),
-                    child: Column(
-                      children: [
-                        // Handle
-                        Container(
-                          margin: const EdgeInsets.symmetric(vertical: 8),
-                          width: 40,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: Colors.grey[300],
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                        // Header
-                        Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Órdenes de ${vendor.nombreCompleto}',
-                                      style: const TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w600,
-                                        color: Color(0xFF1F2937),
+        builder: (context) => DraggableScrollableSheet(
+          initialChildSize: 0.8,
+          maxChildSize: 0.95,
+          minChildSize: 0.5,
+          builder: (context, scrollController) => Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Column(
+              children: [
+                // Handle
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                // Header
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Órdenes de ${vendor.nombreCompleto}',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1F2937),
+                              ),
+                            ),
+                            Text(
+                              '${orders.length} órdenes encontradas',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            // Totales separados por tipo de pago
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                // Efectivo Oferta (tipo_pago = 1)
+                                if (totalEfectivoOferta > 0)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.shade700.withOpacity(
+                                        0.1,
+                                      ),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: Colors.green.shade700
+                                            .withOpacity(0.3),
                                       ),
                                     ),
-                                    Text(
-                                      '${orders.length} órdenes encontradas',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: Colors.grey[600],
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    // Totales separados por tipo de pago
-                                    Wrap(
-                                      spacing: 8,
-                                      runSpacing: 8,
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        // Efectivo Oferta (tipo_pago = 1)
-                                        if (totalEfectivoOferta > 0)
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                              vertical: 6,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: Colors.green.shade700
-                                                  .withOpacity(0.1),
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              border: Border.all(
-                                                color: Colors.green.shade700
-                                                    .withOpacity(0.3),
+                                        Icon(
+                                          Icons.local_offer,
+                                          size: 16,
+                                          color: Colors.green.shade700,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Efectivo (Oferta): \$${totalEfectivoOferta.toStringAsFixed(2)}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.green.shade700,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                // Efectivo Regular (tipo_pago = 2)
+                                if (totalEfectivoRegular > 0)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.success.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: AppColors.success.withOpacity(
+                                          0.3,
+                                        ),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.attach_money,
+                                          size: 16,
+                                          color: AppColors.success,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Efectivo (Regular): \$${totalEfectivoRegular.toStringAsFixed(2)}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppColors.success,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                // Transferencias
+                                if (totalTransferencias > 0)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.info.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: AppColors.info.withOpacity(0.3),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.account_balance,
+                                          size: 16,
+                                          color: AppColors.info,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Transfer: \$${totalTransferencias.toStringAsFixed(2)}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppColors.info,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Exportar PDF',
+                        onPressed: orders.isEmpty
+                            ? null
+                            : () => _exportVendorOrdersToPdf(
+                                vendor: vendor,
+                                orders: orders,
+                              ),
+                        icon: const Icon(
+                          Icons.picture_as_pdf_outlined,
+                          color: Colors.red,
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                // Content
+                Expanded(
+                  child: orders.isEmpty
+                      ? const Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.shopping_cart_outlined,
+                                size: 64,
+                                color: Colors.grey,
+                              ),
+                              SizedBox(height: 16),
+                              Text(
+                                'No hay órdenes',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                              SizedBox(height: 8),
+                              Text(
+                                'No se encontraron órdenes para este vendedor\nen el período seleccionado',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          controller: scrollController,
+                          padding: const EdgeInsets.all(16),
+                          itemCount: orders.length,
+                          itemBuilder: (context, index) {
+                            final order = orders[index];
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.grey[200]!),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.05),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: ExpansionTile(
+                                tilePadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
+                                childrenPadding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  0,
+                                  16,
+                                  16,
+                                ),
+                                title: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Row(
+                                        children: [
+                                          Flexible(
+                                            child: Text(
+                                              'Orden #${order.idOperacion}',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 16,
                                               ),
-                                            ),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(
-                                                  Icons.local_offer,
-                                                  size: 16,
-                                                  color: Colors.green.shade700,
-                                                ),
-                                                const SizedBox(width: 4),
-                                                Text(
-                                                  'Efectivo (Oferta): \$${totalEfectivoOferta.toStringAsFixed(2)}',
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w600,
-                                                    color:
-                                                        Colors.green.shade700,
-                                                  ),
-                                                ),
-                                              ],
+                                              overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
-                                        // Efectivo Regular (tipo_pago = 2)
-                                        if (totalEfectivoRegular > 0)
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                              vertical: 6,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: AppColors.success
-                                                  .withOpacity(0.1),
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              border: Border.all(
-                                                color: AppColors.success
-                                                    .withOpacity(0.3),
-                                              ),
-                                            ),
+                                          _buildVendorPackageBadge(order),
+                                        ],
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: _getStatusColor(
+                                          order.estadoNombre,
+                                        ),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Text(
+                                        order.estadoNombre,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                subtitle: Padding(
+                                  padding: const EdgeInsets.only(top: 8),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      _buildDiscountRow(order),
+                                      Row(
+                                        children: [
+                                          Expanded(
                                             child: Row(
-                                              mainAxisSize: MainAxisSize.min,
                                               children: [
                                                 Icon(
                                                   Icons.attach_money,
@@ -5548,810 +6695,512 @@ class _SalesScreenState extends State<SalesScreen>
                                                 ),
                                                 const SizedBox(width: 4),
                                                 Text(
-                                                  'Efectivo (Regular): \$${totalEfectivoRegular.toStringAsFixed(2)}',
-                                                  style: TextStyle(
-                                                    fontSize: 12,
+                                                  '\$${order.totalOperacion.toStringAsFixed(2)}',
+                                                  style: const TextStyle(
                                                     fontWeight: FontWeight.w600,
-                                                    color: AppColors.success,
+                                                    fontSize: 15,
                                                   ),
                                                 ),
-                                              ],
-                                            ),
-                                          ),
-                                        // Transferencias
-                                        if (totalTransferencias > 0)
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                              vertical: 6,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: AppColors.info.withOpacity(
-                                                0.1,
-                                              ),
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              border: Border.all(
-                                                color: AppColors.info
-                                                    .withOpacity(0.3),
-                                              ),
-                                            ),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
+                                                const SizedBox(width: 16),
                                                 Icon(
-                                                  Icons.account_balance,
+                                                  Icons.shopping_bag,
                                                   size: 16,
                                                   color: AppColors.info,
                                                 ),
                                                 const SizedBox(width: 4),
                                                 Text(
-                                                  'Transfer: \$${totalTransferencias.toStringAsFixed(2)}',
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: AppColors.info,
+                                                  '${order.cantidadItems} prod.',
+                                                  style: const TextStyle(
+                                                    fontSize: 14,
                                                   ),
                                                 ),
                                               ],
                                             ),
                                           ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              IconButton(
-                                tooltip: 'Exportar PDF',
-                                onPressed:
-                                    orders.isEmpty
-                                        ? null
-                                        : () => _exportVendorOrdersToPdf(
-                                          vendor: vendor,
-                                          orders: orders,
+                                          Text(
+                                            _formatOrderDate(
+                                              order.fechaOperacion,
+                                            ),
+                                            style: TextStyle(
+                                              color: Colors.grey[600],
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      // Medios de pago
+                                      if (order.detalles['pagos'] != null &&
+                                          (order.detalles['pagos'] as List)
+                                              .isNotEmpty) ...[
+                                        const SizedBox(height: 8),
+                                        Wrap(
+                                          spacing: 6,
+                                          runSpacing: 4,
+                                          children: _buildPaymentMethodChips(
+                                            order.detalles['pagos'] as List,
+                                          ),
                                         ),
-                                icon: const Icon(
-                                  Icons.picture_as_pdf_outlined,
-                                  color: Colors.red,
+                                      ],
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              IconButton(
-                                onPressed: () => Navigator.pop(context),
-                                icon: const Icon(Icons.close),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Divider(height: 1),
-                        // Content
-                        Expanded(
-                          child:
-                              orders.isEmpty
-                                  ? const Center(
-                                    child: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
+                                children: [
+                                  const Divider(),
+                                  const SizedBox(height: 8),
+
+                                  // Paquete (si hay paqueteria)
+                                  _buildVendorPackageSection(order),
+
+                                  // Cliente (oculto si hay paqueteria)
+                                  if (order.detalles['cliente'] != null &&
+                                      _getPackageInfoFromOrder(order) ==
+                                          null) ...[
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Icon(
-                                          Icons.shopping_cart_outlined,
-                                          size: 64,
-                                          color: Colors.grey,
+                                          Icons.person,
+                                          size: 20,
+                                          color: AppColors.primary,
                                         ),
-                                        SizedBox(height: 16),
-                                        Text(
-                                          'No hay órdenes',
-                                          style: TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.w500,
-                                            color: Colors.grey,
-                                          ),
-                                        ),
-                                        SizedBox(height: 8),
-                                        Text(
-                                          'No se encontraron órdenes para este vendedor\nen el período seleccionado',
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(color: Colors.grey),
-                                        ),
-                                      ],
-                                    ),
-                                  )
-                                  : ListView.builder(
-                                    controller: scrollController,
-                                    padding: const EdgeInsets.all(16),
-                                    itemCount: orders.length,
-                                    itemBuilder: (context, index) {
-                                      final order = orders[index];
-                                      return Container(
-                                        margin: const EdgeInsets.only(
-                                          bottom: 12,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius: BorderRadius.circular(
-                                            12,
-                                          ),
-                                          border: Border.all(
-                                            color: Colors.grey[200]!,
-                                          ),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Colors.black.withOpacity(
-                                                0.05,
-                                              ),
-                                              blurRadius: 4,
-                                              offset: const Offset(0, 2),
-                                            ),
-                                          ],
-                                        ),
-                                        child: ExpansionTile(
-                                          tilePadding:
-                                              const EdgeInsets.symmetric(
-                                                horizontal: 16,
-                                                vertical: 8,
-                                              ),
-                                          childrenPadding:
-                                              const EdgeInsets.fromLTRB(
-                                                16,
-                                                0,
-                                                16,
-                                                16,
-                                              ),
-                                          title: Row(
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
                                             children: [
-                                              Expanded(
-                                                child: Row(
-                                                  children: [
-                                                    Flexible(
-                                                      child: Text(
-                                                        'Orden #${order.idOperacion}',
-                                                        style: const TextStyle(
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                          fontSize: 16,
-                                                        ),
-                                                        overflow:
-                                                            TextOverflow.ellipsis,
-                                                      ),
-                                                    ),
-                                                    _buildVendorPackageBadge(
-                                                      order,
-                                                    ),
-                                                  ],
+                                              const Text(
+                                                'Cliente:',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 14,
                                                 ),
                                               ),
-                                              Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 8,
-                                                      vertical: 4,
-                                                    ),
-                                                decoration: BoxDecoration(
-                                                  color: _getStatusColor(
-                                                    order.estadoNombre,
-                                                  ),
-                                                  borderRadius:
-                                                      BorderRadius.circular(12),
-                                                ),
-                                                child: Text(
-                                                  order.estadoNombre,
-                                                  style: const TextStyle(
-                                                    color: Colors.white,
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w500,
-                                                  ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                order.detalles['cliente']['nombre_completo'] ??
+                                                    'N/A',
+                                                style: const TextStyle(
+                                                  fontSize: 14,
                                                 ),
                                               ),
                                             ],
                                           ),
-                                          subtitle: Padding(
-                                            padding: const EdgeInsets.only(
-                                              top: 8,
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 16),
+                                  ],
+
+                                  // Productos
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(
+                                        Icons.inventory_2,
+                                        size: 20,
+                                        color: AppColors.primary,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'Productos:',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 14,
+                                              ),
                                             ),
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                _buildDiscountRow(order),
-                                                Row(
-                                                  children: [
-                                                    Expanded(
-                                                      child: Row(
-                                                        children: [
-                                                          Icon(
-                                                            Icons.attach_money,
-                                                            size: 16,
-                                                            color:
-                                                                AppColors
-                                                                    .success,
+                                            const SizedBox(height: 8),
+                                            if (order.detalles['items'] != null)
+                                              ...() {
+                                                // Obtener lista de items
+                                                final items =
+                                                    order.detalles['items']
+                                                        as List;
+
+                                                // Filtrar productos con precio_unitario = 0.0 y eliminar duplicados
+                                                final seenProductIds =
+                                                    <dynamic>{};
+                                                final uniqueItems = items.where((
+                                                  item,
+                                                ) {
+                                                  final precioUnitario =
+                                                      (item['precio_unitario'] ??
+                                                              0.0)
+                                                          .toDouble();
+
+                                                  // Filtrar productos con precio 0
+                                                  if (precioUnitario == 0.0) {
+                                                    return false;
+                                                  }
+
+                                                  // Obtener ID del producto para verificar duplicados
+                                                  final productId =
+                                                      item['id_producto'] ??
+                                                      item['producto_id'] ??
+                                                      item['id'];
+
+                                                  // Si ya vimos este producto, no lo incluimos
+                                                  if (seenProductIds.contains(
+                                                    productId,
+                                                  )) {
+                                                    return false;
+                                                  }
+
+                                                  // Agregar a la lista de vistos
+                                                  seenProductIds.add(productId);
+                                                  return true;
+                                                }).toList();
+
+                                                // Generar widgets para items únicos
+                                                return uniqueItems.map((item) {
+                                                  return Container(
+                                                    margin:
+                                                        const EdgeInsets.only(
+                                                          bottom: 6,
+                                                        ),
+                                                    padding:
+                                                        const EdgeInsets.all(
+                                                          12,
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.grey[50],
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            8,
                                                           ),
-                                                          const SizedBox(
-                                                            width: 4,
+                                                      border: Border.all(
+                                                        color:
+                                                            Colors.grey[200]!,
+                                                      ),
+                                                    ),
+                                                    child: Row(
+                                                      children: [
+                                                        Expanded(
+                                                          flex: 3,
+                                                          child: Text(
+                                                            item['producto_nombre'] ??
+                                                                item['nombre'] ??
+                                                                'Producto',
+                                                            style:
+                                                                const TextStyle(
+                                                                  fontSize: 13,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w500,
+                                                                ),
                                                           ),
-                                                          Text(
-                                                            '\$${order.totalOperacion.toStringAsFixed(2)}',
+                                                        ),
+                                                        Expanded(
+                                                          flex: 1,
+                                                          child: Text(
+                                                            'x${_formatCantidadDecimal(item['cantidad'])}',
+                                                            textAlign: TextAlign
+                                                                .center,
+                                                            style: TextStyle(
+                                                              fontSize: 13,
+                                                              color: Colors
+                                                                  .grey[600],
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        Expanded(
+                                                          flex: 1,
+                                                          child: Text(
+                                                            '\$${(item['importe'] ?? 0.0).toStringAsFixed(2)}',
+                                                            textAlign:
+                                                                TextAlign.right,
                                                             style:
                                                                 const TextStyle(
                                                                   fontWeight:
                                                                       FontWeight
                                                                           .w600,
-                                                                  fontSize: 15,
-                                                                ),
-                                                          ),
-                                                          const SizedBox(
-                                                            width: 16,
-                                                          ),
-                                                          Icon(
-                                                            Icons.shopping_bag,
-                                                            size: 16,
-                                                            color:
-                                                                AppColors.info,
-                                                          ),
-                                                          const SizedBox(
-                                                            width: 4,
-                                                          ),
-                                                          Text(
-                                                            '${order.cantidadItems} prod.',
-                                                            style:
-                                                                const TextStyle(
-                                                                  fontSize: 14,
-                                                                ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                    Text(
-                                                      _formatOrderDate(
-                                                        order.fechaOperacion,
-                                                      ),
-                                                      style: TextStyle(
-                                                        color: Colors.grey[600],
-                                                        fontSize: 12,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                // Medios de pago
-                                                if (order.detalles['pagos'] !=
-                                                        null &&
-                                                    (order.detalles['pagos']
-                                                            as List)
-                                                        .isNotEmpty) ...[
-                                                  const SizedBox(height: 8),
-                                                  Wrap(
-                                                    spacing: 6,
-                                                    runSpacing: 4,
-                                                    children:
-                                                        _buildPaymentMethodChips(
-                                                          order.detalles['pagos']
-                                                              as List,
-                                                        ),
-                                                  ),
-                                                ],
-                                              ],
-                                            ),
-                                          ),
-                                          children: [
-                                            const Divider(),
-                                            const SizedBox(height: 8),
-
-                                            // Paquete (si hay paqueteria)
-                                            _buildVendorPackageSection(order),
-
-                                            // Cliente (oculto si hay paqueteria)
-                                            if (order.detalles['cliente'] !=
-                                                    null &&
-                                                _getPackageInfoFromOrder(
-                                                      order,
-                                                    ) ==
-                                                    null) ...[
-                                              Row(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Icon(
-                                                    Icons.person,
-                                                    size: 20,
-                                                    color: AppColors.primary,
-                                                  ),
-                                                  const SizedBox(width: 8),
-                                                  Expanded(
-                                                    child: Column(
-                                                      crossAxisAlignment:
-                                                          CrossAxisAlignment
-                                                              .start,
-                                                      children: [
-                                                        const Text(
-                                                          'Cliente:',
-                                                          style: TextStyle(
-                                                            fontWeight:
-                                                                FontWeight.w600,
-                                                            fontSize: 14,
-                                                          ),
-                                                        ),
-                                                        const SizedBox(
-                                                          height: 2,
-                                                        ),
-                                                        Text(
-                                                          order.detalles['cliente']['nombre_completo'] ??
-                                                              'N/A',
-                                                          style:
-                                                              const TextStyle(
-                                                                fontSize: 14,
-                                                              ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                              const SizedBox(height: 16),
-                                            ],
-
-                                            // Productos
-                                            Row(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Icon(
-                                                  Icons.inventory_2,
-                                                  size: 20,
-                                                  color: AppColors.primary,
-                                                ),
-                                                const SizedBox(width: 8),
-                                                Expanded(
-                                                  child: Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    children: [
-                                                      const Text(
-                                                        'Productos:',
-                                                        style: TextStyle(
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                          fontSize: 14,
-                                                        ),
-                                                      ),
-                                                      const SizedBox(height: 8),
-                                                      if (order
-                                                              .detalles['items'] !=
-                                                          null)
-                                                        ...() {
-                                                          // Obtener lista de items
-                                                          final items =
-                                                              order.detalles['items']
-                                                                  as List;
-
-                                                          // Filtrar productos con precio_unitario = 0.0 y eliminar duplicados
-                                                          final seenProductIds =
-                                                              <dynamic>{};
-                                                          final uniqueItems =
-                                                              items.where((
-                                                                item,
-                                                              ) {
-                                                                final precioUnitario =
-                                                                    (item['precio_unitario'] ??
-                                                                            0.0)
-                                                                        .toDouble();
-
-                                                                // Filtrar productos con precio 0
-                                                                if (precioUnitario ==
-                                                                    0.0) {
-                                                                  return false;
-                                                                }
-
-                                                                // Obtener ID del producto para verificar duplicados
-                                                                final productId =
-                                                                    item['id_producto'] ??
-                                                                    item['producto_id'] ??
-                                                                    item['id'];
-
-                                                                // Si ya vimos este producto, no lo incluimos
-                                                                if (seenProductIds
-                                                                    .contains(
-                                                                      productId,
-                                                                    )) {
-                                                                  return false;
-                                                                }
-
-                                                                // Agregar a la lista de vistos
-                                                                seenProductIds
-                                                                    .add(
-                                                                      productId,
-                                                                    );
-                                                                return true;
-                                                              }).toList();
-
-                                                          // Generar widgets para items únicos
-                                                          return uniqueItems.map((
-                                                            item,
-                                                          ) {
-                                                            return Container(
-                                                              margin:
-                                                                  const EdgeInsets.only(
-                                                                    bottom: 6,
-                                                                  ),
-                                                              padding:
-                                                                  const EdgeInsets.all(
-                                                                    12,
-                                                                  ),
-                                                              decoration: BoxDecoration(
-                                                                color:
-                                                                    Colors
-                                                                        .grey[50],
-                                                                borderRadius:
-                                                                    BorderRadius.circular(
-                                                                      8,
-                                                                    ),
-                                                                border: Border.all(
-                                                                  color:
-                                                                      Colors
-                                                                          .grey[200]!,
-                                                                ),
-                                                              ),
-                                                              child: Row(
-                                                                children: [
-                                                                  Expanded(
-                                                                    flex: 3,
-                                                                    child: Text(
-                                                                      item['producto_nombre'] ??
-                                                                          item['nombre'] ??
-                                                                          'Producto',
-                                                                      style: const TextStyle(
-                                                                        fontSize:
-                                                                            13,
-                                                                        fontWeight:
-                                                                            FontWeight.w500,
-                                                                      ),
-                                                                    ),
-                                                                  ),
-                                                                  Expanded(
-                                                                    flex: 1,
-                                                                    child: Text(
-                                                                      'x${_formatCantidadDecimal(item['cantidad'])}',
-                                                                      textAlign:
-                                                                          TextAlign
-                                                                              .center,
-                                                                      style: TextStyle(
-                                                                        fontSize:
-                                                                            13,
-                                                                        color:
-                                                                            Colors.grey[600],
-                                                                      ),
-                                                                    ),
-                                                                  ),
-                                                                  Expanded(
-                                                                    flex: 1,
-                                                                    child: Text(
-                                                                      '\$${(item['importe'] ?? 0.0).toStringAsFixed(2)}',
-                                                                      textAlign:
-                                                                          TextAlign
-                                                                              .right,
-                                                                      style: const TextStyle(
-                                                                        fontWeight:
-                                                                            FontWeight.w600,
-                                                                        fontSize:
-                                                                            13,
-                                                                        color: Color(
-                                                                          0xFF4A90E2,
-                                                                        ),
-                                                                      ),
-                                                                    ),
-                                                                  ),
-                                                                ],
-                                                              ),
-                                                            );
-                                                          }).toList();
-                                                        }(),
-                                                    ],
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-
-                                            // Desglose de Pagos
-                                            if (order.detalles['pagos'] !=
-                                                    null &&
-                                                (order.detalles['pagos']
-                                                        as List)
-                                                    .isNotEmpty) ...[
-                                              const SizedBox(height: 16),
-                                              Row(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Icon(
-                                                    Icons.payment,
-                                                    size: 20,
-                                                    color: AppColors.primary,
-                                                  ),
-                                                  const SizedBox(width: 8),
-                                                  Expanded(
-                                                    child: Column(
-                                                      crossAxisAlignment:
-                                                          CrossAxisAlignment
-                                                              .start,
-                                                      children: [
-                                                        const Text(
-                                                          'Desglose de Pagos:',
-                                                          style: TextStyle(
-                                                            fontWeight:
-                                                                FontWeight.w600,
-                                                            fontSize: 14,
-                                                          ),
-                                                        ),
-                                                        const SizedBox(
-                                                          height: 8,
-                                                        ),
-                                                        ...List.generate(
-                                                          (order.detalles['pagos']
-                                                                  as List)
-                                                              .length,
-                                                          (paymentIndex) {
-                                                            final payment =
-                                                                order
-                                                                    .detalles['pagos'][paymentIndex];
-                                                            return Container(
-                                                              margin:
-                                                                  const EdgeInsets.only(
-                                                                    bottom: 6,
-                                                                  ),
-                                                              padding:
-                                                                  const EdgeInsets.all(
-                                                                    12,
-                                                                  ),
-                                                              decoration: BoxDecoration(
-                                                                color: _getPaymentColorByType(
-                                                                  payment['es_efectivo'] ??
-                                                                      false,
-                                                                  payment['es_digital'] ??
-                                                                      false,
-                                                                ).withOpacity(
-                                                                  0.1,
-                                                                ),
-                                                                borderRadius:
-                                                                    BorderRadius.circular(
-                                                                      8,
-                                                                    ),
-                                                                border: Border.all(
-                                                                  color: _getPaymentColorByType(
-                                                                    payment['es_efectivo'] ??
-                                                                        false,
-                                                                    payment['es_digital'] ??
-                                                                        false,
-                                                                  ).withOpacity(
-                                                                    0.3,
-                                                                  ),
-                                                                ),
-                                                              ),
-                                                              child: Row(
-                                                                children: [
-                                                                  Icon(
-                                                                    _getPaymentIconByType(
-                                                                      payment['es_efectivo'] ??
-                                                                          false,
-                                                                      payment['es_digital'] ??
-                                                                          false,
-                                                                    ),
-                                                                    size: 16,
-                                                                    color: _getPaymentColorByType(
-                                                                      payment['es_efectivo'] ??
-                                                                          false,
-                                                                      payment['es_digital'] ??
-                                                                          false,
-                                                                    ),
-                                                                  ),
-                                                                  const SizedBox(
-                                                                    width: 8,
-                                                                  ),
-                                                                  Expanded(
-                                                                    child: Text(
-                                                                      () {
-                                                                        String
-                                                                        metodoPago =
-                                                                            payment['medio_pago'] ??
-                                                                            'N/A';
-                                                                        bool
-                                                                        esEfectivo =
-                                                                            payment['es_efectivo'] ??
-                                                                            false;
-                                                                        int
-                                                                        tipoPago =
-                                                                            payment['tipo_pago'] ??
-                                                                            1;
-
-                                                                        // Si es efectivo, diferenciar según tipo_pago
-                                                                        if (esEfectivo &&
-                                                                            metodoPago.toLowerCase().contains(
-                                                                              'efectivo',
-                                                                            )) {
-                                                                          if (tipoPago ==
-                                                                              1) {
-                                                                            return 'Pago Oferta (Efectivo)';
-                                                                          } else if (tipoPago ==
-                                                                              2) {
-                                                                            return 'Pago Regular (Efectivo)';
-                                                                          }
-                                                                        }
-                                                                        return metodoPago;
-                                                                      }(),
-                                                                      style: TextStyle(
-                                                                        fontSize:
-                                                                            13,
-                                                                        fontWeight:
-                                                                            FontWeight.w500,
-                                                                        color: _getPaymentColorByType(
-                                                                          payment['es_efectivo'] ??
-                                                                              false,
-                                                                          payment['es_digital'] ??
-                                                                              false,
-                                                                        ),
-                                                                      ),
-                                                                    ),
-                                                                  ),
-                                                                  Text(
-                                                                    '\$${(payment['total'] ?? 0.0).toStringAsFixed(2)}',
-                                                                    style: TextStyle(
-                                                                      fontWeight:
-                                                                          FontWeight
-                                                                              .w600,
-                                                                      fontSize:
-                                                                          13,
-                                                                      color: _getPaymentColorByType(
-                                                                        payment['es_efectivo'] ??
-                                                                            false,
-                                                                        payment['es_digital'] ??
-                                                                            false,
-                                                                      ),
-                                                                    ),
-                                                                  ),
-                                                                ],
-                                                              ),
-                                                            );
-                                                          },
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ],
-
-                                            // Observaciones
-                                            if (order.observaciones != null &&
-                                                order
-                                                    .observaciones!
-                                                    .isNotEmpty) ...[
-                                              const SizedBox(height: 16),
-                                              Row(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Icon(
-                                                    Icons.note,
-                                                    size: 20,
-                                                    color: AppColors.primary,
-                                                  ),
-                                                  const SizedBox(width: 8),
-                                                  Expanded(
-                                                    child: Column(
-                                                      crossAxisAlignment:
-                                                          CrossAxisAlignment
-                                                              .start,
-                                                      children: [
-                                                        const Text(
-                                                          'Observaciones:',
-                                                          style: TextStyle(
-                                                            fontWeight:
-                                                                FontWeight.w600,
-                                                            fontSize: 14,
-                                                          ),
-                                                        ),
-                                                        const SizedBox(
-                                                          height: 4,
-                                                        ),
-                                                        Container(
-                                                          width:
-                                                              double.infinity,
-                                                          padding:
-                                                              const EdgeInsets.all(
-                                                                12,
-                                                              ),
-                                                          decoration: BoxDecoration(
-                                                            color:
-                                                                Colors.blue[50],
-                                                            borderRadius:
-                                                                BorderRadius.circular(
-                                                                  8,
-                                                                ),
-                                                            border: Border.all(
-                                                              color:
-                                                                  Colors
-                                                                      .blue[200]!,
-                                                            ),
-                                                          ),
-                                                          child: Text(
-                                                            order.observaciones ??
-                                                                '',
-                                                            style:
-                                                                const TextStyle(
                                                                   fontSize: 13,
+                                                                  color: Color(
+                                                                    0xFF4A90E2,
+                                                                  ),
                                                                 ),
                                                           ),
                                                         ),
                                                       ],
                                                     ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ],
-
-                                            // Botón de cancelación para gerentes
-                                            FutureBuilder<UserRole>(
-                                              future: PermissionsService()
-                                                  .getUserRole(),
-                                              builder: (context, snapshot) {
-                                                final userRole =
-                                                    snapshot.data ??
-                                                        UserRole.none;
-                                                final isGerente =
-                                                    userRole ==
-                                                        UserRole.gerente;
-
-                                                if (!isGerente) {
-                                                  return const SizedBox.shrink();
-                                                }
-
-                                                return Column(
-                                                  children: [
-                                                    const SizedBox(height: 16),
-                                                    SizedBox(
-                                                      width: double.infinity,
-                                                      child:
-                                                          OutlinedButton.icon(
-                                                        onPressed: () =>
-                                                            _showCancelOrderDialog(
-                                                              order,
-                                                            ),
-                                                        icon: const Icon(
-                                                          Icons
-                                                              .cancel_outlined,
-                                                        ),
-                                                        label: const Text(
-                                                          'Cancelar Operación',
-                                                        ),
-                                                        style:
-                                                            OutlinedButton
-                                                                .styleFrom(
-                                                          foregroundColor:
-                                                              Colors.red,
-                                                          side:
-                                                              const BorderSide(
-                                                                color:
-                                                                    Colors.red,
-                                                              ),
-                                                          padding:
-                                                              const EdgeInsets
-                                                                  .symmetric(
-                                                                vertical: 12,
-                                                              ),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                );
-                                              },
-                                            ),
+                                                  );
+                                                }).toList();
+                                              }(),
                                           ],
                                         ),
+                                      ),
+                                    ],
+                                  ),
+
+                                  // Desglose de Pagos
+                                  if (order.detalles['pagos'] != null &&
+                                      (order.detalles['pagos'] as List)
+                                          .isNotEmpty) ...[
+                                    const SizedBox(height: 16),
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Icon(
+                                          Icons.payment,
+                                          size: 20,
+                                          color: AppColors.primary,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              const Text(
+                                                'Desglose de Pagos:',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 8),
+                                              ...List.generate(
+                                                (order.detalles['pagos']
+                                                        as List)
+                                                    .length,
+                                                (paymentIndex) {
+                                                  final payment = order
+                                                      .detalles['pagos'][paymentIndex];
+                                                  return Container(
+                                                    margin:
+                                                        const EdgeInsets.only(
+                                                          bottom: 6,
+                                                        ),
+                                                    padding:
+                                                        const EdgeInsets.all(
+                                                          12,
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      color: _getPaymentColorByType(
+                                                        payment['es_efectivo'] ??
+                                                            false,
+                                                        payment['es_digital'] ??
+                                                            false,
+                                                      ).withOpacity(0.1),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            8,
+                                                          ),
+                                                      border: Border.all(
+                                                        color: _getPaymentColorByType(
+                                                          payment['es_efectivo'] ??
+                                                              false,
+                                                          payment['es_digital'] ??
+                                                              false,
+                                                        ).withOpacity(0.3),
+                                                      ),
+                                                    ),
+                                                    child: Row(
+                                                      children: [
+                                                        Icon(
+                                                          _getPaymentIconByType(
+                                                            payment['es_efectivo'] ??
+                                                                false,
+                                                            payment['es_digital'] ??
+                                                                false,
+                                                          ),
+                                                          size: 16,
+                                                          color: _getPaymentColorByType(
+                                                            payment['es_efectivo'] ??
+                                                                false,
+                                                            payment['es_digital'] ??
+                                                                false,
+                                                          ),
+                                                        ),
+                                                        const SizedBox(
+                                                          width: 8,
+                                                        ),
+                                                        Expanded(
+                                                          child: Text(
+                                                            () {
+                                                              String
+                                                              metodoPago =
+                                                                  payment['medio_pago'] ??
+                                                                  'N/A';
+                                                              bool esEfectivo =
+                                                                  payment['es_efectivo'] ??
+                                                                  false;
+                                                              int tipoPago =
+                                                                  payment['tipo_pago'] ??
+                                                                  1;
+
+                                                              // Si es efectivo, diferenciar según tipo_pago
+                                                              if (esEfectivo &&
+                                                                  metodoPago
+                                                                      .toLowerCase()
+                                                                      .contains(
+                                                                        'efectivo',
+                                                                      )) {
+                                                                if (tipoPago ==
+                                                                    1) {
+                                                                  return 'Pago Oferta (Efectivo)';
+                                                                } else if (tipoPago ==
+                                                                    2) {
+                                                                  return 'Pago Regular (Efectivo)';
+                                                                }
+                                                              }
+                                                              return metodoPago;
+                                                            }(),
+                                                            style: TextStyle(
+                                                              fontSize: 13,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w500,
+                                                              color: _getPaymentColorByType(
+                                                                payment['es_efectivo'] ??
+                                                                    false,
+                                                                payment['es_digital'] ??
+                                                                    false,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        Text(
+                                                          '\$${(payment['total'] ?? 0.0).toStringAsFixed(2)}',
+                                                          style: TextStyle(
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                            fontSize: 13,
+                                                            color: _getPaymentColorByType(
+                                                              payment['es_efectivo'] ??
+                                                                  false,
+                                                              payment['es_digital'] ??
+                                                                  false,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+
+                                  // Observaciones
+                                  if (order.observaciones != null &&
+                                      order.observaciones!.isNotEmpty) ...[
+                                    const SizedBox(height: 16),
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Icon(
+                                          Icons.note,
+                                          size: 20,
+                                          color: AppColors.primary,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              const Text(
+                                                'Observaciones:',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Container(
+                                                width: double.infinity,
+                                                padding: const EdgeInsets.all(
+                                                  12,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.blue[50],
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                  border: Border.all(
+                                                    color: Colors.blue[200]!,
+                                                  ),
+                                                ),
+                                                child: Text(
+                                                  order.observaciones ?? '',
+                                                  style: const TextStyle(
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+
+                                  // Botón de cancelación para gerentes
+                                  FutureBuilder<UserRole>(
+                                    future: PermissionsService().getUserRole(),
+                                    builder: (context, snapshot) {
+                                      final userRole =
+                                          snapshot.data ?? UserRole.none;
+                                      final isGerente =
+                                          userRole == UserRole.gerente;
+
+                                      if (!isGerente) {
+                                        return const SizedBox.shrink();
+                                      }
+
+                                      return Column(
+                                        children: [
+                                          const SizedBox(height: 16),
+                                          SizedBox(
+                                            width: double.infinity,
+                                            child: OutlinedButton.icon(
+                                              onPressed: () =>
+                                                  _showCancelOrderDialog(order),
+                                              icon: const Icon(
+                                                Icons.cancel_outlined,
+                                              ),
+                                              label: const Text(
+                                                'Cancelar Operación',
+                                              ),
+                                              style: OutlinedButton.styleFrom(
+                                                foregroundColor: Colors.red,
+                                                side: const BorderSide(
+                                                  color: Colors.red,
+                                                ),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      vertical: 12,
+                                                    ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       );
                                     },
                                   ),
+                                ],
+                              ),
+                            );
+                          },
                         ),
-                      ],
-                    ),
-                  ),
+                ),
+              ],
             ),
+          ),
+        ),
       );
     } catch (e) {
       if (mounted) {
@@ -6724,10 +7573,12 @@ class _SalesScreenState extends State<SalesScreen>
         'listar_ordenes',
         params: {
           'con_inventario_param': false,
-          'fecha_desde_param':
-              dateRange['start']!.toIso8601String().split('T')[0],
-          'fecha_hasta_param':
-              dateRange['end']!.toIso8601String().split('T')[0],
+          'fecha_desde_param': dateRange['start']!.toIso8601String().split(
+            'T',
+          )[0],
+          'fecha_hasta_param': dateRange['end']!.toIso8601String().split(
+            'T',
+          )[0],
           'id_estado_param': 1, // Solo órdenes pendientes
           'id_tienda_param': await UserPreferencesService().getIdTienda(),
           'id_tipo_operacion_param': null,
@@ -6791,460 +7642,406 @@ class _SalesScreenState extends State<SalesScreen>
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder:
-            (context) => DraggableScrollableSheet(
-              initialChildSize: 0.8,
-              maxChildSize: 0.95,
-              minChildSize: 0.5,
-              builder:
-                  (context, scrollController) => Container(
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.vertical(
-                        top: Radius.circular(20),
-                      ),
-                    ),
-                    child: Column(
-                      children: [
-                        // Handle
-                        Container(
-                          margin: const EdgeInsets.symmetric(vertical: 8),
-                          width: 40,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: Colors.grey[300],
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                        // Header
-                        Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Órdenes Pendientes de ${vendor.nombreCompleto}',
-                                      style: const TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w600,
-                                        color: Color(0xFF1F2937),
+        builder: (context) => DraggableScrollableSheet(
+          initialChildSize: 0.8,
+          maxChildSize: 0.95,
+          minChildSize: 0.5,
+          builder: (context, scrollController) => Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Column(
+              children: [
+                // Handle
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                // Header
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Órdenes Pendientes de ${vendor.nombreCompleto}',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1F2937),
+                              ),
+                            ),
+                            Text(
+                              '${pendingOrders.length} órdenes pendientes',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            // Totales separados por tipo de pago
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                // Efectivo Oferta (tipo_pago = 1)
+                                if (totalEfectivoOferta > 0)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.shade700.withOpacity(
+                                        0.1,
+                                      ),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: Colors.green.shade700
+                                            .withOpacity(0.3),
                                       ),
                                     ),
-                                    Text(
-                                      '${pendingOrders.length} órdenes pendientes',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: Colors.grey[600],
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    // Totales separados por tipo de pago
-                                    Wrap(
-                                      spacing: 8,
-                                      runSpacing: 8,
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        // Efectivo Oferta (tipo_pago = 1)
-                                        if (totalEfectivoOferta > 0)
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                              vertical: 6,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: Colors.green.shade700
-                                                  .withOpacity(0.1),
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              border: Border.all(
-                                                color: Colors.green.shade700
-                                                    .withOpacity(0.3),
-                                              ),
-                                            ),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(
-                                                  Icons.local_offer,
-                                                  size: 16,
-                                                  color: Colors.green.shade700,
-                                                ),
-                                                const SizedBox(width: 4),
-                                                Text(
-                                                  'Efectivo (Oferta): \$${totalEfectivoOferta.toStringAsFixed(2)}',
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w600,
-                                                    color:
-                                                        Colors.green.shade700,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
+                                        Icon(
+                                          Icons.local_offer,
+                                          size: 16,
+                                          color: Colors.green.shade700,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Efectivo (Oferta): \$${totalEfectivoOferta.toStringAsFixed(2)}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.green.shade700,
                                           ),
-                                        // Efectivo Regular (tipo_pago = 2)
-                                        if (totalEfectivoRegular > 0)
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                              vertical: 6,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: AppColors.success
-                                                  .withOpacity(0.1),
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              border: Border.all(
-                                                color: AppColors.success
-                                                    .withOpacity(0.3),
-                                              ),
-                                            ),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(
-                                                  Icons.attach_money,
-                                                  size: 16,
-                                                  color: AppColors.success,
-                                                ),
-                                                const SizedBox(width: 4),
-                                                Text(
-                                                  'Efectivo (Regular): \$${totalEfectivoRegular.toStringAsFixed(2)}',
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: AppColors.success,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        // Transferencias
-                                        if (totalTransferencias > 0)
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                              vertical: 6,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: AppColors.info.withOpacity(
-                                                0.1,
-                                              ),
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              border: Border.all(
-                                                color: AppColors.info
-                                                    .withOpacity(0.3),
-                                              ),
-                                            ),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(
-                                                  Icons.account_balance,
-                                                  size: 16,
-                                                  color: AppColors.info,
-                                                ),
-                                                const SizedBox(width: 4),
-                                                Text(
-                                                  'Transfer: \$${totalTransferencias.toStringAsFixed(2)}',
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: AppColors.info,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
+                                        ),
                                       ],
                                     ),
-                                  ],
+                                  ),
+                                // Efectivo Regular (tipo_pago = 2)
+                                if (totalEfectivoRegular > 0)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.success.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: AppColors.success.withOpacity(
+                                          0.3,
+                                        ),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.attach_money,
+                                          size: 16,
+                                          color: AppColors.success,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Efectivo (Regular): \$${totalEfectivoRegular.toStringAsFixed(2)}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppColors.success,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                // Transferencias
+                                if (totalTransferencias > 0)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.info.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: AppColors.info.withOpacity(0.3),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.account_balance,
+                                          size: 16,
+                                          color: AppColors.info,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Transfer: \$${totalTransferencias.toStringAsFixed(2)}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppColors.info,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                // Content
+                Expanded(
+                  child: pendingOrders.isEmpty
+                      ? const Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.pending_actions_outlined,
+                                size: 64,
+                                color: Colors.grey,
+                              ),
+                              SizedBox(height: 16),
+                              Text(
+                                'No hay órdenes pendientes',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.grey,
                                 ),
                               ),
-                              IconButton(
-                                onPressed: () => Navigator.pop(context),
-                                icon: const Icon(Icons.close),
+                              SizedBox(height: 8),
+                              Text(
+                                'No se encontraron órdenes pendientes\npara este vendedor en el período seleccionado',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.grey),
                               ),
                             ],
                           ),
-                        ),
-                        const Divider(height: 1),
-                        // Content
-                        Expanded(
-                          child:
-                              pendingOrders.isEmpty
-                                  ? const Center(
-                                    child: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        Icon(
-                                          Icons.pending_actions_outlined,
-                                          size: 64,
-                                          color: Colors.grey,
-                                        ),
-                                        SizedBox(height: 16),
-                                        Text(
-                                          'No hay órdenes pendientes',
-                                          style: TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.w500,
-                                            color: Colors.grey,
-                                          ),
-                                        ),
-                                        SizedBox(height: 8),
-                                        Text(
-                                          'No se encontraron órdenes pendientes\npara este vendedor en el período seleccionado',
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(color: Colors.grey),
-                                        ),
-                                      ],
-                                    ),
-                                  )
-                                  : ListView.builder(
-                                    controller: scrollController,
-                                    padding: const EdgeInsets.all(16),
-                                    itemCount: pendingOrders.length,
-                                    itemBuilder: (context, index) {
-                                      final order = pendingOrders[index];
+                        )
+                      : ListView.builder(
+                          controller: scrollController,
+                          padding: const EdgeInsets.all(16),
+                          itemCount: pendingOrders.length,
+                          itemBuilder: (context, index) {
+                            final order = pendingOrders[index];
 
-                                      return Container(
-                                        margin: const EdgeInsets.only(
-                                          bottom: 12,
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: AppColors.warning.withOpacity(0.3),
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.grey.withOpacity(0.1),
+                                    spreadRadius: 1,
+                                    blurRadius: 3,
+                                    offset: const Offset(0, 1),
+                                  ),
+                                ],
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Expanded(
+                                        child: Row(
+                                          children: [
+                                            Flexible(
+                                              child: Text(
+                                                'Orden #${order.idOperacion}',
+                                                style: const TextStyle(
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Color(0xFF1F2937),
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                            _buildVendorPackageBadge(order),
+                                          ],
                                         ),
-                                        padding: const EdgeInsets.all(16),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
                                         decoration: BoxDecoration(
-                                          color: Colors.white,
+                                          color: AppColors.warning.withOpacity(
+                                            0.1,
+                                          ),
                                           borderRadius: BorderRadius.circular(
-                                            12,
+                                            6,
                                           ),
                                           border: Border.all(
                                             color: AppColors.warning
                                                 .withOpacity(0.3),
                                           ),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Colors.grey.withOpacity(
-                                                0.1,
-                                              ),
-                                              spreadRadius: 1,
-                                              blurRadius: 3,
-                                              offset: const Offset(0, 1),
-                                            ),
-                                          ],
                                         ),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment
-                                                      .spaceBetween,
-                                              children: [
-                                                Expanded(
-                                                  child: Row(
-                                                    children: [
-                                                      Flexible(
-                                                        child: Text(
-                                                          'Orden #${order.idOperacion}',
-                                                          style: const TextStyle(
-                                                            fontSize: 16,
-                                                            fontWeight:
-                                                                FontWeight.w600,
-                                                            color: Color(
-                                                              0xFF1F2937,
-                                                            ),
-                                                          ),
-                                                          overflow:
-                                                              TextOverflow
-                                                                  .ellipsis,
-                                                        ),
-                                                      ),
-                                                      _buildVendorPackageBadge(
-                                                        order,
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                                Container(
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 8,
-                                                        vertical: 4,
-                                                      ),
-                                                  decoration: BoxDecoration(
-                                                    color: AppColors.warning
-                                                        .withOpacity(0.1),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          6,
-                                                        ),
-                                                    border: Border.all(
-                                                      color: AppColors.warning
-                                                          .withOpacity(0.3),
-                                                    ),
-                                                  ),
-                                                  child: Text(
-                                                    order.estadoNombre,
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      fontWeight:
-                                                          FontWeight.w500,
-                                                      color: AppColors.warning,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            _buildVendorPackageSection(order),
-                                            const SizedBox(height: 8),
-                                            Row(
-                                              children: [
-                                                Icon(
-                                                  Icons.access_time,
-                                                  size: 16,
-                                                  color: Colors.grey[600],
-                                                ),
-                                                const SizedBox(width: 4),
-                                                Text(
-                                                  _formatDateTime(
-                                                    order.fechaOperacion,
-                                                  ),
-                                                  style: TextStyle(
-                                                    fontSize: 14,
-                                                    color: Colors.grey[600],
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 16),
-                                                Icon(
-                                                  Icons.shopping_cart,
-                                                  size: 16,
-                                                  color: Colors.grey[600],
-                                                ),
-                                                const SizedBox(width: 4),
-                                                Text(
-                                                  '${order.cantidadItems} items',
-                                                  style: TextStyle(
-                                                    fontSize: 14,
-                                                    color: Colors.grey[600],
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 8),
-                                            Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment
-                                                      .spaceBetween,
-                                              children: [
-                                                Text(
-                                                  'TPV: ${order.tpvNombre}',
-                                                  style: TextStyle(
-                                                    fontSize: 14,
-                                                    color: Colors.grey[700],
-                                                  ),
-                                                ),
-                                                Text(
-                                                  '\$${order.totalOperacion.toStringAsFixed(2)}',
-                                                  style: const TextStyle(
-                                                    fontSize: 16,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: AppColors.primary,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 8),
-                                            // Fila con observaciones y botón de productos
-                                            Row(
-                                              children: [
-                                                // Observaciones (si existen)
-                                                if (order.observaciones !=
-                                                        null &&
-                                                    order
-                                                        .observaciones!
-                                                        .isNotEmpty)
-                                                  Expanded(
-                                                    child: Container(
-                                                      padding:
-                                                          const EdgeInsets.all(
-                                                            8,
-                                                          ),
-                                                      decoration: BoxDecoration(
-                                                        color: Colors.grey[100],
-                                                        borderRadius:
-                                                            BorderRadius.circular(
-                                                              6,
-                                                            ),
-                                                      ),
-                                                      child: Text(
-                                                        'Obs: ${order.observaciones}',
-                                                        style: TextStyle(
-                                                          fontSize: 12,
-                                                          color:
-                                                              Colors.grey[700],
-                                                          fontStyle:
-                                                              FontStyle.italic,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-
-                                                // Espaciado si hay observaciones
-                                                if (order.observaciones !=
-                                                        null &&
-                                                    order
-                                                        .observaciones!
-                                                        .isNotEmpty)
-                                                  const SizedBox(width: 8),
-
-                                                // Botón de productos
-                                                ElevatedButton.icon(
-                                                  onPressed:
-                                                      () =>
-                                                          _showOrderProductsDetail(
-                                                            order,
-                                                          ),
-                                                  icon: const Icon(
-                                                    Icons.inventory_2,
-                                                    size: 16,
-                                                  ),
-                                                  label: const Text(
-                                                    'Productos',
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                    ),
-                                                  ),
-                                                  style: ElevatedButton.styleFrom(
-                                                    backgroundColor:
-                                                        AppColors.primary,
-                                                    foregroundColor:
-                                                        Colors.white,
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                          horizontal: 12,
-                                                          vertical: 6,
-                                                        ),
-                                                    minimumSize: Size.zero,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
+                                        child: Text(
+                                          order.estadoNombre,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500,
+                                            color: AppColors.warning,
+                                          ),
                                         ),
-                                      );
-                                    },
+                                      ),
+                                    ],
                                   ),
+                                  _buildVendorPackageSection(order),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.access_time,
+                                        size: 16,
+                                        color: Colors.grey[600],
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        _formatDateTime(order.fechaOperacion),
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Icon(
+                                        Icons.shopping_cart,
+                                        size: 16,
+                                        color: Colors.grey[600],
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '${order.cantidadItems} items',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        'TPV: ${order.tpvNombre}',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: Colors.grey[700],
+                                        ),
+                                      ),
+                                      Text(
+                                        '\$${order.totalOperacion.toStringAsFixed(2)}',
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.primary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  // Fila con observaciones y botón de productos
+                                  Row(
+                                    children: [
+                                      // Observaciones (si existen)
+                                      if (order.observaciones != null &&
+                                          order.observaciones!.isNotEmpty)
+                                        Expanded(
+                                          child: Container(
+                                            padding: const EdgeInsets.all(8),
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey[100],
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                            ),
+                                            child: Text(
+                                              'Obs: ${order.observaciones}',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey[700],
+                                                fontStyle: FontStyle.italic,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+
+                                      // Espaciado si hay observaciones
+                                      if (order.observaciones != null &&
+                                          order.observaciones!.isNotEmpty)
+                                        const SizedBox(width: 8),
+
+                                      // Botón de productos
+                                      ElevatedButton.icon(
+                                        onPressed: () =>
+                                            _showOrderProductsDetail(order),
+                                        icon: const Icon(
+                                          Icons.inventory_2,
+                                          size: 16,
+                                        ),
+                                        label: const Text(
+                                          'Productos',
+                                          style: TextStyle(fontSize: 12),
+                                        ),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: AppColors.primary,
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 6,
+                                          ),
+                                          minimumSize: Size.zero,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
                         ),
-                      ],
-                    ),
-                  ),
+                ),
+              ],
             ),
+          ),
+        ),
       );
     } catch (e) {
       print('Error loading pending orders: $e');
@@ -7264,113 +8061,104 @@ class _SalesScreenState extends State<SalesScreen>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder:
-          (context) => DraggableScrollableSheet(
-            initialChildSize: 0.7,
-            maxChildSize: 0.9,
-            minChildSize: 0.4,
-            builder:
-                (context, scrollController) => Container(
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(20),
-                    ),
-                  ),
-                  child: Column(
-                    children: [
-                      // Handle
-                      Container(
-                        margin: const EdgeInsets.symmetric(vertical: 8),
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                      // Header
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Productos - Orden #${order.idOperacion}',
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w600,
-                                      color: Color(0xFF1F2937),
-                                    ),
-                                  ),
-                                  Text(
-                                    'TPV: ${order.tpvNombre}',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.grey[600],
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 6,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.primary.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: AppColors.primary.withOpacity(
-                                          0.3,
-                                        ),
-                                      ),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          Icons.attach_money,
-                                          size: 16,
-                                          color: AppColors.primary,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          'Total: \$${order.totalOperacion.toStringAsFixed(2)}',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            color: AppColors.primary,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        maxChildSize: 0.9,
+        minChildSize: 0.4,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              // Handle
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              // Header
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Productos - Orden #${order.idOperacion}',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1F2937),
+                            ),
+                          ),
+                          Text(
+                            'TPV: ${order.tpvNombre}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: AppColors.primary.withOpacity(0.3),
                               ),
                             ),
-                            IconButton(
-                              onPressed: () => Navigator.pop(context),
-                              icon: const Icon(Icons.close),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.attach_money,
+                                  size: 16,
+                                  color: AppColors.primary,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Total: \$${order.totalOperacion.toStringAsFixed(2)}',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                      const Divider(height: 1),
-                      // Content
-                      Expanded(
-                        child: _buildOrderProductsAccordion(
-                          order,
-                          scrollController,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
                 ),
+              ),
+              const Divider(height: 1),
+              // Content
+              Expanded(
+                child: _buildOrderProductsAccordion(order, scrollController),
+              ),
+            ],
           ),
+        ),
+      ),
     );
   }
 
@@ -7483,13 +8271,13 @@ class _SalesScreenState extends State<SalesScreen>
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: items.length,
-                  separatorBuilder:
-                      (context, index) => const Divider(height: 1),
+                  separatorBuilder: (context, index) =>
+                      const Divider(height: 1),
                   itemBuilder: (context, index) {
                     final item = items[index] as Map<String, dynamic>;
                     final cantidad = (item['cantidad'] ?? 0).toDouble();
-                    final precioUnitario =
-                        (item['precio_unitario'] ?? 0.0).toDouble();
+                    final precioUnitario = (item['precio_unitario'] ?? 0.0)
+                        .toDouble();
                     final importe = (item['importe'] ?? 0.0).toDouble();
                     final productoNombre =
                         item['producto_nombre']?.toString() ??
@@ -7614,8 +8402,8 @@ class _SalesScreenState extends State<SalesScreen>
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     itemCount: pagos.length,
-                    separatorBuilder:
-                        (context, index) => const Divider(height: 1),
+                    separatorBuilder: (context, index) =>
+                        const Divider(height: 1),
                     itemBuilder: (context, index) {
                       final pago = pagos[index] as Map<String, dynamic>;
                       final total = (pago['total'] ?? 0.0).toDouble();
@@ -7635,12 +8423,11 @@ class _SalesScreenState extends State<SalesScreen>
                               width: 40,
                               height: 40,
                               decoration: BoxDecoration(
-                                color:
-                                    esEfectivo
-                                        ? AppColors.success.withOpacity(0.1)
-                                        : esDigital
-                                        ? AppColors.info.withOpacity(0.1)
-                                        : AppColors.warning.withOpacity(0.1),
+                                color: esEfectivo
+                                    ? AppColors.success.withOpacity(0.1)
+                                    : esDigital
+                                    ? AppColors.info.withOpacity(0.1)
+                                    : AppColors.warning.withOpacity(0.1),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Icon(
@@ -7649,12 +8436,11 @@ class _SalesScreenState extends State<SalesScreen>
                                     : esDigital
                                     ? Icons.smartphone
                                     : Icons.account_balance,
-                                color:
-                                    esEfectivo
-                                        ? AppColors.success
-                                        : esDigital
-                                        ? AppColors.info
-                                        : AppColors.warning,
+                                color: esEfectivo
+                                    ? AppColors.success
+                                    : esDigital
+                                    ? AppColors.info
+                                    : AppColors.warning,
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -7730,16 +8516,14 @@ class _SalesScreenState extends State<SalesScreen>
       if (!mounted) return;
 
       // Filtrar solo órdenes que tengan transferencias como método de pago
-      final transferOrders =
-          orders.where((order) {
-            if (order.detalles['pagos'] == null) return false;
-            final pagos = order.detalles['pagos'] as List;
-            return pagos.any((pago) {
-              final metodoPago =
-                  pago['medio_pago']?.toString().toLowerCase() ?? '';
-              return metodoPago.contains('transferencia');
-            });
-          }).toList();
+      final transferOrders = orders.where((order) {
+        if (order.detalles['pagos'] == null) return false;
+        final pagos = order.detalles['pagos'] as List;
+        return pagos.any((pago) {
+          final metodoPago = pago['medio_pago']?.toString().toLowerCase() ?? '';
+          return metodoPago.contains('transferencia');
+        });
+      }).toList();
 
       // Calcular total de transferencias
       double totalTransferencias = 0.0;
@@ -7760,88 +8544,218 @@ class _SalesScreenState extends State<SalesScreen>
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder:
-            (context) => DraggableScrollableSheet(
-              initialChildSize: 0.8,
-              maxChildSize: 0.95,
-              minChildSize: 0.5,
-              builder:
-                  (context, scrollController) => Container(
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.vertical(
-                        top: Radius.circular(20),
-                      ),
-                    ),
-                    child: Column(
-                      children: [
-                        // Handle
-                        Container(
-                          margin: const EdgeInsets.symmetric(vertical: 8),
-                          width: 40,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: Colors.grey[300],
-                            borderRadius: BorderRadius.circular(2),
-                          ),
+        builder: (context) => DraggableScrollableSheet(
+          initialChildSize: 0.8,
+          maxChildSize: 0.95,
+          minChildSize: 0.5,
+          builder: (context, scrollController) => Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Column(
+              children: [
+                // Handle
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                // Header
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Transferencias de ${vendor.nombreCompleto}',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1F2937),
+                              ),
+                            ),
+                            Text(
+                              '${transferOrders.length} órdenes con transferencias',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.success.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: AppColors.success.withOpacity(0.3),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.account_balance,
+                                    size: 16,
+                                    color: AppColors.success,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Total: \$${totalTransferencias.toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.success,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
-                        // Header
-                        Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                // Content
+                Expanded(
+                  child: transferOrders.isEmpty
+                      ? const Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                              Icon(
+                                Icons.account_balance_outlined,
+                                size: 64,
+                                color: Colors.grey,
+                              ),
+                              SizedBox(height: 16),
+                              Text(
+                                'No hay transferencias',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                              SizedBox(height: 8),
+                              Text(
+                                'No se encontraron órdenes con transferencias\npara este vendedor en el período seleccionado',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          controller: scrollController,
+                          padding: const EdgeInsets.all(16),
+                          itemCount: transferOrders.length,
+                          itemBuilder: (context, index) {
+                            final order = transferOrders[index];
+
+                            // Calcular total de transferencias para esta orden
+                            double orderTransferTotal = 0.0;
+                            if (order.detalles['pagos'] != null) {
+                              final pagos = order.detalles['pagos'] as List;
+                              for (final pago in pagos) {
+                                final metodoPago =
+                                    pago['medio_pago']
+                                        ?.toString()
+                                        .toLowerCase() ??
+                                    '';
+                                if (metodoPago.contains('transferencia')) {
+                                  orderTransferTotal += (pago['total'] ?? 0.0)
+                                      .toDouble();
+                                }
+                              }
+                            }
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.grey[200]!),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.05),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: ExpansionTile(
+                                tilePadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
+                                childrenPadding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  0,
+                                  16,
+                                  16,
+                                ),
+                                title: Row(
                                   children: [
-                                    Text(
-                                      'Transferencias de ${vendor.nombreCompleto}',
-                                      style: const TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w600,
-                                        color: Color(0xFF1F2937),
+                                    Expanded(
+                                      child: Row(
+                                        children: [
+                                          Flexible(
+                                            child: Text(
+                                              'Orden #${order.idOperacion}',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 16,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          _buildVendorPackageBadge(order),
+                                        ],
                                       ),
                                     ),
-                                    Text(
-                                      '${transferOrders.length} órdenes con transferencias',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: Colors.grey[600],
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
                                     Container(
                                       padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 6,
+                                        horizontal: 8,
+                                        vertical: 4,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: AppColors.success.withOpacity(
-                                          0.1,
-                                        ),
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                          color: AppColors.success.withOpacity(
-                                            0.3,
-                                          ),
-                                        ),
+                                        color: AppColors.success,
+                                        borderRadius: BorderRadius.circular(12),
                                       ),
                                       child: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          Icon(
+                                          const Icon(
                                             Icons.account_balance,
-                                            size: 16,
-                                            color: AppColors.success,
+                                            size: 12,
+                                            color: Colors.white,
                                           ),
-                                          const SizedBox(width: 6),
+                                          const SizedBox(width: 4),
                                           Text(
-                                            'Total: \$${totalTransferencias.toStringAsFixed(2)}',
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w600,
-                                              color: AppColors.success,
+                                            '\$${orderTransferTotal.toStringAsFixed(2)}',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w500,
                                             ),
                                           ),
                                         ],
@@ -7849,303 +8763,130 @@ class _SalesScreenState extends State<SalesScreen>
                                     ),
                                   ],
                                 ),
-                              ),
-                              IconButton(
-                                onPressed: () => Navigator.pop(context),
-                                icon: const Icon(Icons.close),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Divider(height: 1),
-                        // Content
-                        Expanded(
-                          child:
-                              transferOrders.isEmpty
-                                  ? const Center(
-                                    child: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        Icon(
-                                          Icons.account_balance_outlined,
-                                          size: 64,
-                                          color: Colors.grey,
-                                        ),
-                                        SizedBox(height: 16),
-                                        Text(
-                                          'No hay transferencias',
-                                          style: TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.w500,
-                                            color: Colors.grey,
+                                subtitle: Padding(
+                                  padding: const EdgeInsets.only(top: 8),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      // Primera fila: Total y productos
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            Icons.attach_money,
+                                            size: 16,
+                                            color: AppColors.textSecondary,
                                           ),
-                                        ),
-                                        SizedBox(height: 8),
-                                        Text(
-                                          'No se encontraron órdenes con transferencias\npara este vendedor en el período seleccionado',
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(color: Colors.grey),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            'Total: \$${order.totalOperacion.toStringAsFixed(2)}',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 15,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 16),
+                                          Icon(
+                                            Icons.shopping_bag,
+                                            size: 16,
+                                            color: AppColors.info,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            '${order.cantidadItems} prod.',
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      // Segunda fila: Fecha
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            Icons.access_time,
+                                            size: 14,
+                                            color: Colors.grey[600],
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            _formatOrderDate(
+                                              order.fechaOperacion,
+                                            ),
+                                            style: TextStyle(
+                                              color: Colors.grey[600],
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      // Solo mostrar chips de transferencias
+                                      if (order.detalles['pagos'] != null) ...[
+                                        const SizedBox(height: 8),
+                                        Wrap(
+                                          spacing: 6,
+                                          runSpacing: 4,
+                                          children: _buildTransferPaymentChips(
+                                            order.detalles['pagos'] as List,
+                                          ),
                                         ),
                                       ],
-                                    ),
-                                  )
-                                  : ListView.builder(
-                                    controller: scrollController,
-                                    padding: const EdgeInsets.all(16),
-                                    itemCount: transferOrders.length,
-                                    itemBuilder: (context, index) {
-                                      final order = transferOrders[index];
-
-                                      // Calcular total de transferencias para esta orden
-                                      double orderTransferTotal = 0.0;
-                                      if (order.detalles['pagos'] != null) {
-                                        final pagos =
-                                            order.detalles['pagos'] as List;
-                                        for (final pago in pagos) {
-                                          final metodoPago =
-                                              pago['medio_pago']
-                                                  ?.toString()
-                                                  .toLowerCase() ??
-                                              '';
-                                          if (metodoPago.contains(
-                                            'transferencia',
-                                          )) {
-                                            orderTransferTotal +=
-                                                (pago['total'] ?? 0.0)
-                                                    .toDouble();
-                                          }
-                                        }
-                                      }
-
-                                      return Container(
-                                        margin: const EdgeInsets.only(
-                                          bottom: 12,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius: BorderRadius.circular(
-                                            12,
-                                          ),
-                                          border: Border.all(
-                                            color: Colors.grey[200]!,
-                                          ),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Colors.black.withOpacity(
-                                                0.05,
-                                              ),
-                                              blurRadius: 4,
-                                              offset: const Offset(0, 2),
-                                            ),
-                                          ],
-                                        ),
-                                        child: ExpansionTile(
-                                          tilePadding:
-                                              const EdgeInsets.symmetric(
-                                                horizontal: 16,
-                                                vertical: 8,
-                                              ),
-                                          childrenPadding:
-                                              const EdgeInsets.fromLTRB(
-                                                16,
-                                                0,
-                                                16,
-                                                16,
-                                              ),
-                                          title: Row(
-                                            children: [
-                                              Expanded(
-                                                child: Row(
-                                                  children: [
-                                                    Flexible(
-                                                      child: Text(
-                                                        'Orden #${order.idOperacion}',
-                                                        style: const TextStyle(
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                          fontSize: 16,
-                                                        ),
-                                                        overflow:
-                                                            TextOverflow.ellipsis,
-                                                      ),
-                                                    ),
-                                                    _buildVendorPackageBadge(
-                                                      order,
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                              Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 8,
-                                                      vertical: 4,
-                                                    ),
-                                                decoration: BoxDecoration(
-                                                  color: AppColors.success,
-                                                  borderRadius:
-                                                      BorderRadius.circular(12),
-                                                ),
-                                                child: Row(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  children: [
-                                                    const Icon(
-                                                      Icons.account_balance,
-                                                      size: 12,
-                                                      color: Colors.white,
-                                                    ),
-                                                    const SizedBox(width: 4),
-                                                    Text(
-                                                      '\$${orderTransferTotal.toStringAsFixed(2)}',
-                                                      style: const TextStyle(
-                                                        color: Colors.white,
-                                                        fontSize: 12,
-                                                        fontWeight:
-                                                            FontWeight.w500,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          subtitle: Padding(
-                                            padding: const EdgeInsets.only(
-                                              top: 8,
-                                            ),
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                // Primera fila: Total y productos
-                                                Row(
-                                                  children: [
-                                                    Icon(
-                                                      Icons.attach_money,
-                                                      size: 16,
-                                                      color:
-                                                          AppColors
-                                                              .textSecondary,
-                                                    ),
-                                                    const SizedBox(width: 4),
-                                                    Text(
-                                                      'Total: \$${order.totalOperacion.toStringAsFixed(2)}',
-                                                      style: const TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        fontSize: 15,
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 16),
-                                                    Icon(
-                                                      Icons.shopping_bag,
-                                                      size: 16,
-                                                      color: AppColors.info,
-                                                    ),
-                                                    const SizedBox(width: 4),
-                                                    Text(
-                                                      '${order.cantidadItems} prod.',
-                                                      style: const TextStyle(
-                                                        fontSize: 14,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                const SizedBox(height: 6),
-                                                // Segunda fila: Fecha
-                                                Row(
-                                                  children: [
-                                                    Icon(
-                                                      Icons.access_time,
-                                                      size: 14,
-                                                      color: Colors.grey[600],
-                                                    ),
-                                                    const SizedBox(width: 4),
-                                                    Text(
-                                                      _formatOrderDate(
-                                                        order.fechaOperacion,
-                                                      ),
-                                                      style: TextStyle(
-                                                        color: Colors.grey[600],
-                                                        fontSize: 12,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                // Solo mostrar chips de transferencias
-                                                if (order.detalles['pagos'] !=
-                                                    null) ...[
-                                                  const SizedBox(height: 8),
-                                                  Wrap(
-                                                    spacing: 6,
-                                                    runSpacing: 4,
-                                                    children:
-                                                        _buildTransferPaymentChips(
-                                                          order.detalles['pagos']
-                                                              as List,
-                                                        ),
-                                                  ),
-                                                ],
-                                              ],
-                                            ),
-                                          ),
-                                          children: [
-                                            _buildVendorPackageSection(order),
-                                            // Aquí se puede agregar más detalle de la orden si es necesario
-                                            Container(
-                                              width: double.infinity,
-                                              padding: const EdgeInsets.all(12),
-                                              decoration: BoxDecoration(
-                                                color: Colors.grey[50],
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                              ),
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    'Estado: ${order.estadoNombre}',
-                                                    style: const TextStyle(
-                                                      fontSize: 14,
-                                                      fontWeight:
-                                                          FontWeight.w500,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 4),
-                                                  Text(
-                                                    'TPV: ${order.tpvNombre}',
-                                                    style: TextStyle(
-                                                      fontSize: 13,
-                                                      color: Colors.grey[600],
-                                                    ),
-                                                  ),
-                                                  if (order.observaciones !=
-                                                      null) ...[
-                                                    const SizedBox(height: 4),
-                                                    Text(
-                                                      'Observaciones: ${order.observaciones}',
-                                                      style: TextStyle(
-                                                        fontSize: 13,
-                                                        color: Colors.grey[600],
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    },
+                                    ],
                                   ),
+                                ),
+                                children: [
+                                  _buildVendorPackageSection(order),
+                                  // Aquí se puede agregar más detalle de la orden si es necesario
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey[50],
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Estado: ${order.estadoNombre}',
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'TPV: ${order.tpvNombre}',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                        if (order.observaciones != null) ...[
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            'Observaciones: ${order.observaciones}',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: Colors.grey[600],
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
                         ),
-                      ],
-                    ),
-                  ),
+                ),
+              ],
             ),
+          ),
+        ),
       );
     } catch (e) {
       print('Error loading vendor transferencias detail: $e');
@@ -8162,11 +8903,10 @@ class _SalesScreenState extends State<SalesScreen>
 
   // Método para construir chips solo de transferencias
   List<Widget> _buildTransferPaymentChips(List pagos) {
-    final transferPayments =
-        pagos.where((pago) {
-          final metodoPago = pago['medio_pago']?.toString().toLowerCase() ?? '';
-          return metodoPago.contains('transferencia');
-        }).toList();
+    final transferPayments = pagos.where((pago) {
+      final metodoPago = pago['medio_pago']?.toString().toLowerCase() ?? '';
+      return metodoPago.contains('transferencia');
+    }).toList();
 
     return transferPayments.map<Widget>((payment) {
       final metodoPago = payment['medio_pago'] ?? 'N/A';
@@ -8213,11 +8953,12 @@ class _SalesScreenState extends State<SalesScreen>
   String? _getPackageNumberFromOrder(VendorOrder order) {
     final paq = order.detalles['paqueteria'];
     if (paq is! Map) return null;
-    final numero = paq['numero_paquete']?.toString() ??
+    final numero =
+        paq['numero_paquete']?.toString() ??
         (paq['paqueteria'] is Map
             ? (paq['paqueteria']['paquete'] is Map
-                ? paq['paqueteria']['paquete']['numero']?.toString()
-                : null)
+                  ? paq['paqueteria']['paquete']['numero']?.toString()
+                  : null)
             : null);
     if (numero == null || numero.trim().isEmpty) return null;
     return numero.trim();
@@ -8274,17 +9015,19 @@ class _SalesScreenState extends State<SalesScreen>
 
     final paquete = info['paquete'];
     final paqueteMap = paquete is Map ? paquete : const {};
-    final numero = paqueteMap['numero']?.toString() ??
+    final numero =
+        paqueteMap['numero']?.toString() ??
         order.detalles['paqueteria']?['numero_paquete']?.toString();
-    final descripcion = paqueteMap['descripcion']?.toString() ??
+    final descripcion =
+        paqueteMap['descripcion']?.toString() ??
         order.detalles['paqueteria']?['descripcion']?.toString();
     final fotoUrl = paqueteMap['foto_url']?.toString();
     final fotosExtrasRaw = paqueteMap['fotos_extras'];
     final List<String> fotosExtras = fotosExtrasRaw is List
         ? fotosExtrasRaw
-            .map((e) => e?.toString() ?? '')
-            .where((e) => e.trim().isNotEmpty)
-            .toList()
+              .map((e) => e?.toString() ?? '')
+              .where((e) => e.trim().isNotEmpty)
+              .toList()
         : <String>[];
     final remitente = info['remitente'] is Map
         ? Map<String, dynamic>.from(info['remitente'] as Map)
@@ -8306,8 +9049,11 @@ class _SalesScreenState extends State<SalesScreen>
         children: [
           Row(
             children: [
-              const Icon(Icons.local_shipping_outlined,
-                  size: 16, color: Colors.blue),
+              const Icon(
+                Icons.local_shipping_outlined,
+                size: 16,
+                color: Colors.blue,
+              ),
               const SizedBox(width: 6),
               const Text(
                 'Paquete',
@@ -8345,8 +9091,11 @@ class _SalesScreenState extends State<SalesScreen>
                     height: 100,
                     color: Colors.grey[100],
                     alignment: Alignment.center,
-                    child: Icon(Icons.broken_image_outlined,
-                        color: Colors.grey[400], size: 36),
+                    child: Icon(
+                      Icons.broken_image_outlined,
+                      color: Colors.grey[400],
+                      size: 36,
+                    ),
                   ),
                   loadingBuilder: (_, child, progress) {
                     if (progress == null) return child;
@@ -8679,9 +9428,10 @@ class _SalesScreenState extends State<SalesScreen>
                                   final product = products[index];
                                   final orders =
                                       ordersByProduct[product.idProducto] ??
-                                          const <SupplierProductOrderDetail>[];
-                                  final isExpanded = expandedProducts
-                                      .contains(product.idProducto);
+                                      const <SupplierProductOrderDetail>[];
+                                  final isExpanded = expandedProducts.contains(
+                                    product.idProducto,
+                                  );
 
                                   return Container(
                                     decoration: BoxDecoration(
@@ -8693,8 +9443,9 @@ class _SalesScreenState extends State<SalesScreen>
                                     child: Column(
                                       children: [
                                         InkWell(
-                                          borderRadius:
-                                              BorderRadius.circular(10),
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
                                           onTap: () {
                                             setDialogState(() {
                                               if (isExpanded) {
@@ -8739,14 +9490,15 @@ class _SalesScreenState extends State<SalesScreen>
                                                         style: TextStyle(
                                                           fontSize: 12,
                                                           color: orders.isEmpty
-                                                              ? Colors.orange[800]
-                                                              : Colors.grey[600],
+                                                              ? Colors
+                                                                    .orange[800]
+                                                              : Colors
+                                                                    .grey[600],
                                                           fontWeight:
                                                               orders.isEmpty
-                                                                  ? FontWeight
-                                                                      .w600
-                                                                  : FontWeight
-                                                                      .normal,
+                                                              ? FontWeight.w600
+                                                              : FontWeight
+                                                                    .normal,
                                                         ),
                                                       ),
                                                     ],
@@ -8863,20 +9615,19 @@ class _SalesScreenState extends State<SalesScreen>
                                                           '#${order.idOperacion}',
                                                           style:
                                                               const TextStyle(
-                                                            fontSize: 12,
-                                                          ),
+                                                                fontSize: 12,
+                                                              ),
                                                         ),
                                                       ),
                                                       DataCell(
                                                         Text(
                                                           _formatDateTime(
-                                                            order
-                                                                .fechaCreacion,
+                                                            order.fechaCreacion,
                                                           ),
                                                           style:
                                                               const TextStyle(
-                                                            fontSize: 12,
-                                                          ),
+                                                                fontSize: 12,
+                                                              ),
                                                         ),
                                                       ),
                                                       DataCell(
@@ -8887,8 +9638,8 @@ class _SalesScreenState extends State<SalesScreen>
                                                           ),
                                                           style:
                                                               const TextStyle(
-                                                            fontSize: 12,
-                                                          ),
+                                                                fontSize: 12,
+                                                              ),
                                                         ),
                                                       ),
                                                       DataCell(
@@ -8896,24 +9647,24 @@ class _SalesScreenState extends State<SalesScreen>
                                                           order.cantidad % 1 ==
                                                                   0
                                                               ? order.cantidad
-                                                                  .toInt()
-                                                                  .toString()
+                                                                    .toInt()
+                                                                    .toString()
                                                               : order.cantidad
-                                                                  .toStringAsFixed(
-                                                                    2,
-                                                                  ),
+                                                                    .toStringAsFixed(
+                                                                      2,
+                                                                    ),
                                                           style:
                                                               const TextStyle(
-                                                            fontSize: 12,
-                                                          ),
+                                                                fontSize: 12,
+                                                              ),
                                                         ),
                                                       ),
                                                       DataCell(
                                                         ConstrainedBox(
                                                           constraints:
                                                               const BoxConstraints(
-                                                            maxWidth: 140,
-                                                          ),
+                                                                maxWidth: 140,
+                                                              ),
                                                           child: Text(
                                                             order.nombreCliente,
                                                             overflow:
@@ -8921,8 +9672,8 @@ class _SalesScreenState extends State<SalesScreen>
                                                                     .ellipsis,
                                                             style:
                                                                 const TextStyle(
-                                                              fontSize: 12,
-                                                            ),
+                                                                  fontSize: 12,
+                                                                ),
                                                           ),
                                                         ),
                                                       ),
@@ -9016,7 +9767,6 @@ class _SalesScreenState extends State<SalesScreen>
     }
   }
 
-
   Future<Map<int, List<SupplierProductOrderDetail>>>
   _resolveSupplierOrdersForExport({
     required SupplierSalesReport supplier,
@@ -9069,12 +9819,11 @@ class _SalesScreenState extends State<SalesScreen>
       final storeId = await UserPreferencesService().getIdTienda();
       Map<String, dynamic>? storeData;
       if (storeId != null) {
-        storeData =
-            await Supabase.instance.client
-                .from('app_dat_tienda')
-                .select('denominacion, direccion, ubicacion, phone, imagen_url')
-                .eq('id', storeId)
-                .maybeSingle();
+        storeData = await Supabase.instance.client
+            .from('app_dat_tienda')
+            .select('denominacion, direccion, ubicacion, phone, imagen_url')
+            .eq('id', storeId)
+            .maybeSingle();
       }
 
       final storeName = storeData?['denominacion'] as String? ?? 'Inventtia';
@@ -9219,8 +9968,7 @@ class _SalesScreenState extends State<SalesScreen>
                   ),
                   ...exportProducts.map((product) {
                     final orderCount =
-                        (resolvedOrders[product.idProducto] ?? const [])
-                            .length;
+                        (resolvedOrders[product.idProducto] ?? const []).length;
                     return pw.TableRow(
                       children: [
                         _pdfBodyCell(product.nombreProducto),
@@ -9477,9 +10225,7 @@ class _SalesScreenState extends State<SalesScreen>
       ]);
 
       sheet.appendRow([]);
-      sheet.appendRow([
-        excel.TextCellValue('Detalle de órdenes por producto'),
-      ]);
+      sheet.appendRow([excel.TextCellValue('Detalle de órdenes por producto')]);
       sheet.appendRow([]);
       sheet.appendRow([
         excel.TextCellValue('Producto'),
@@ -9605,12 +10351,11 @@ class _SalesScreenState extends State<SalesScreen>
       final storeId = await UserPreferencesService().getIdTienda();
       Map<String, dynamic>? storeData;
       if (storeId != null) {
-        storeData =
-            await Supabase.instance.client
-                .from('app_dat_tienda')
-                .select('denominacion, direccion, ubicacion, phone, imagen_url')
-                .eq('id', storeId)
-                .maybeSingle();
+        storeData = await Supabase.instance.client
+            .from('app_dat_tienda')
+            .select('denominacion, direccion, ubicacion, phone, imagen_url')
+            .eq('id', storeId)
+            .maybeSingle();
       }
 
       final storeName = storeData?['denominacion'] as String? ?? 'Inventtia';
@@ -9638,178 +10383,172 @@ class _SalesScreenState extends State<SalesScreen>
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
           margin: const pw.EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-          build:
-              (context) => [
-                _buildPdfHeader(
-                  logoBytes: logoBytes,
-                  storeName: storeName,
-                  storeAddress: storeAddress,
-                  storeLocation: storeLocation,
-                  storePhone: storePhone,
-                  dateLabel: dateLabel,
+          build: (context) => [
+            _buildPdfHeader(
+              logoBytes: logoBytes,
+              storeName: storeName,
+              storeAddress: storeAddress,
+              storeLocation: storeLocation,
+              storePhone: storePhone,
+              dateLabel: dateLabel,
+            ),
+            pw.SizedBox(height: 16),
+            pw.Text(
+              'Resumen de Ventas por Proveedor',
+              style: pw.TextStyle(
+                fontSize: 16,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColor.fromHex('#0F172A'),
+              ),
+            ),
+            if (_selectedWarehouseId != null) ...[
+              pw.SizedBox(height: 8),
+              pw.Text(
+                'Almacén: $_selectedWarehouseName',
+                style: pw.TextStyle(
+                  fontSize: 11,
+                  color: PdfColor.fromHex('#475569'),
+                  fontStyle: pw.FontStyle.italic,
                 ),
-                pw.SizedBox(height: 16),
-                pw.Text(
-                  'Resumen de Ventas por Proveedor',
-                  style: pw.TextStyle(
-                    fontSize: 16,
-                    fontWeight: pw.FontWeight.bold,
-                    color: PdfColor.fromHex('#0F172A'),
+              ),
+            ],
+            pw.SizedBox(height: 8),
+            pw.Table(
+              border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.8),
+              columnWidths: {
+                0: const pw.FlexColumnWidth(3),
+                1: const pw.FlexColumnWidth(2),
+                2: const pw.FlexColumnWidth(2),
+                3: const pw.FlexColumnWidth(2),
+              },
+              children: [
+                // Encabezado
+                pw.TableRow(
+                  decoration: pw.BoxDecoration(
+                    color: PdfColor.fromHex('#F1F5F9'),
                   ),
-                ),
-                if (_selectedWarehouseId != null) ...[
-                  pw.SizedBox(height: 8),
-                  pw.Text(
-                    'Almacén: $_selectedWarehouseName',
-                    style: pw.TextStyle(
-                      fontSize: 11,
-                      color: PdfColor.fromHex('#475569'),
-                      fontStyle: pw.FontStyle.italic,
-                    ),
-                  ),
-                ],
-                pw.SizedBox(height: 8),
-                pw.Table(
-                  border: pw.TableBorder.all(
-                    color: PdfColors.grey300,
-                    width: 0.8,
-                  ),
-                  columnWidths: {
-                    0: const pw.FlexColumnWidth(3),
-                    1: const pw.FlexColumnWidth(2),
-                    2: const pw.FlexColumnWidth(2),
-                    3: const pw.FlexColumnWidth(2),
-                  },
                   children: [
-                    // Encabezado
-                    pw.TableRow(
-                      decoration: pw.BoxDecoration(
-                        color: PdfColor.fromHex('#F1F5F9'),
+                    _pdfHeaderCell('Proveedor'),
+                    _pdfHeaderCell('Ventas'),
+                    _pdfHeaderCell('Costo'),
+                    _pdfHeaderCell('Ganancia'),
+                  ],
+                ),
+                // Filas de datos
+                ..._supplierReports.map((report) {
+                  return pw.TableRow(
+                    children: [
+                      _pdfBodyCell(report.nombreProveedor),
+                      _pdfBodyCell(
+                        '\$${report.totalVentas.toStringAsFixed(2)}',
                       ),
-                      children: [
-                        _pdfHeaderCell('Proveedor'),
-                        _pdfHeaderCell('Ventas'),
-                        _pdfHeaderCell('Costo'),
-                        _pdfHeaderCell('Ganancia'),
-                      ],
+                      _pdfBodyCell('\$${report.totalCosto.toStringAsFixed(2)}'),
+                      _pdfBodyCell(
+                        '\$${report.totalGanancia.toStringAsFixed(2)}',
+                      ),
+                    ],
+                  );
+                }).toList(),
+                // Fila de TOTALES
+                pw.TableRow(
+                  decoration: pw.BoxDecoration(
+                    color: PdfColor.fromHex('#E2E8F0'),
+                  ),
+                  children: [
+                    _pdfBodyCell('TOTAL', isBold: true),
+                    _pdfBodyCell(
+                      '\$${totalVentas.toStringAsFixed(2)}',
+                      isBold: true,
                     ),
-                    // Filas de datos
-                    ..._supplierReports.map((report) {
-                      return pw.TableRow(
-                        children: [
-                          _pdfBodyCell(report.nombreProveedor),
-                          _pdfBodyCell(
-                            '\$${report.totalVentas.toStringAsFixed(2)}',
-                          ),
-                          _pdfBodyCell(
-                            '\$${report.totalCosto.toStringAsFixed(2)}',
-                          ),
-                          _pdfBodyCell(
-                            '\$${report.totalGanancia.toStringAsFixed(2)}',
-                          ),
-                        ],
-                      );
-                    }).toList(),
-                    // Fila de TOTALES
-                    pw.TableRow(
-                      decoration: pw.BoxDecoration(
-                        color: PdfColor.fromHex('#E2E8F0'),
-                      ),
-                      children: [
-                        _pdfBodyCell('TOTAL', isBold: true),
-                        _pdfBodyCell(
-                          '\$${totalVentas.toStringAsFixed(2)}',
-                          isBold: true,
-                        ),
-                        _pdfBodyCell(
-                          '\$${totalCosto.toStringAsFixed(2)}',
-                          isBold: true,
-                        ),
-                        _pdfBodyCell(
-                          '\$${totalGanancia.toStringAsFixed(2)}',
-                          isBold: true,
-                        ),
-                      ],
+                    _pdfBodyCell(
+                      '\$${totalCosto.toStringAsFixed(2)}',
+                      isBold: true,
+                    ),
+                    _pdfBodyCell(
+                      '\$${totalGanancia.toStringAsFixed(2)}',
+                      isBold: true,
                     ),
                   ],
                 ),
-                pw.SizedBox(height: 16),
-                pw.Divider(),
-                pw.SizedBox(height: 8),
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(12),
-                  decoration: pw.BoxDecoration(
-                    color: PdfColor.fromHex('#F8FAFC'),
-                    borderRadius: pw.BorderRadius.circular(8),
-                    border: pw.Border.all(color: PdfColors.grey300, width: 0.8),
+              ],
+            ),
+            pw.SizedBox(height: 16),
+            pw.Divider(),
+            pw.SizedBox(height: 8),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(12),
+              decoration: pw.BoxDecoration(
+                color: PdfColor.fromHex('#F8FAFC'),
+                borderRadius: pw.BorderRadius.circular(8),
+                border: pw.Border.all(color: PdfColors.grey300, width: 0.8),
+              ),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    'Resumen General',
+                    style: pw.TextStyle(
+                      fontSize: 12,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColor.fromHex('#0F172A'),
+                    ),
                   ),
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  pw.SizedBox(height: 8),
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: [
                       pw.Text(
-                        'Resumen General',
+                        'Total Ventas:',
+                        style: const pw.TextStyle(fontSize: 11),
+                      ),
+                      pw.Text(
+                        '\$${totalVentas.toStringAsFixed(2)}',
                         style: pw.TextStyle(
-                          fontSize: 12,
+                          fontSize: 11,
                           fontWeight: pw.FontWeight.bold,
-                          color: PdfColor.fromHex('#0F172A'),
                         ),
-                      ),
-                      pw.SizedBox(height: 8),
-                      pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        children: [
-                          pw.Text(
-                            'Total Ventas:',
-                            style: const pw.TextStyle(fontSize: 11),
-                          ),
-                          pw.Text(
-                            '\$${totalVentas.toStringAsFixed(2)}',
-                            style: pw.TextStyle(
-                              fontSize: 11,
-                              fontWeight: pw.FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                      pw.SizedBox(height: 4),
-                      pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        children: [
-                          pw.Text(
-                            'Total Costo:',
-                            style: const pw.TextStyle(fontSize: 11),
-                          ),
-                          pw.Text(
-                            '\$${totalCosto.toStringAsFixed(2)}',
-                            style: pw.TextStyle(
-                              fontSize: 11,
-                              fontWeight: pw.FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                      pw.SizedBox(height: 4),
-                      pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        children: [
-                          pw.Text(
-                            'Total Ganancia:',
-                            style: const pw.TextStyle(fontSize: 11),
-                          ),
-                          pw.Text(
-                            '\$${totalGanancia.toStringAsFixed(2)}',
-                            style: pw.TextStyle(
-                              fontSize: 11,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColor.fromHex('#16A34A'),
-                            ),
-                          ),
-                        ],
                       ),
                     ],
                   ),
-                ),
-              ],
+                  pw.SizedBox(height: 4),
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Text(
+                        'Total Costo:',
+                        style: const pw.TextStyle(fontSize: 11),
+                      ),
+                      pw.Text(
+                        '\$${totalCosto.toStringAsFixed(2)}',
+                        style: pw.TextStyle(
+                          fontSize: 11,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  pw.SizedBox(height: 4),
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Text(
+                        'Total Ganancia:',
+                        style: const pw.TextStyle(fontSize: 11),
+                      ),
+                      pw.Text(
+                        '\$${totalGanancia.toStringAsFixed(2)}',
+                        style: pw.TextStyle(
+                          fontSize: 11,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColor.fromHex('#16A34A'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       );
 

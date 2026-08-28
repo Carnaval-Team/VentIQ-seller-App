@@ -3,6 +3,7 @@ import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/order.dart';
 import '../models/expense.dart';
+import '../models/payment_method.dart';
 import '../services/order_service.dart';
 import '../services/bluetooth_printer_service.dart';
 import '../services/printer_manager.dart';
@@ -37,6 +38,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   double _totalEfectivoReal = 0.0; // Cambio: era _totalDescuentos
   double _totalEfectivo = 0.0; // Ventas pagadas en efectivo
   double _totalTransferencia = 0.0; // Ventas pagadas con transferencia/digital
+  Map<String, double> _totalesPorMedioPago = {};
   bool _isLoading = true;
 
   // Expenses data
@@ -64,12 +66,21 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
   /// Calcula el desglose de pagos (efectivo/transferencia) y el total de ventas
   /// a partir de las órdenes locales. Soporta órdenes con pagos mixtos.
-  ({double efectivo, double transferencia, double total, int productos})
-  _calculatePaymentBreakdownFromOrders(List<Order> orders) {
+  Future<
+    ({
+      double efectivo,
+      double transferencia,
+      double total,
+      int productos,
+      Map<String, double> porMedio,
+    })
+  >
+  _calculatePaymentBreakdownFromOrders(List<Order> orders) async {
     double efectivo = 0.0;
     double transferencia = 0.0;
     double total = 0.0;
     int productos = 0;
+    final porMedio = <String, double>{};
 
     for (final order in orders) {
       final isCompletedOrOffline =
@@ -88,6 +99,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
       double efectivoOrden = 0.0;
       double transferenciaOrden = 0.0;
+      double pendienteOrden = 0.0;
       final pagos = order.pagos;
 
       if (pagos != null && pagos.isNotEmpty) {
@@ -100,37 +112,71 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                 pago['monto_entrega'] ??
                 pago['total'],
           );
+          final idMedioPago = int.tryParse(
+            '${pago['id_medio_pago'] ?? pago['medio_pago_id'] ?? ''}',
+          );
+          final esPendiente = idMedioPago == PaymentMethod.pagoPendienteId;
           final esEfectivo =
-              pago['es_efectivo'] == true ||
-              pago['medio_pago_es_efectivo'] == true ||
-              pago['id_medio_pago'] == 1 ||
-              pago['medio_pago_id'] == 1;
+              !esPendiente &&
+              (pago['es_efectivo'] == true ||
+                  pago['medio_pago_es_efectivo'] == true ||
+                  idMedioPago == 1 ||
+                  idMedioPago == 999);
           final esDigital =
-              pago['es_digital'] == true ||
-              pago['medio_pago_es_digital'] == true;
+              !esPendiente &&
+              (pago['es_digital'] == true ||
+                  pago['medio_pago_es_digital'] == true);
 
-          if (esEfectivo) {
+          final nombreMedio =
+              (pago['medio_pago_denominacion'] ??
+                      pago['medio_pago_nombre'] ??
+                      pago['denominacion'] ??
+                      pago['metodo_pago'] ??
+                      pago['medio_pago'])
+                  ?.toString()
+                  .trim();
+          final etiqueta =
+              esPendiente
+                  ? 'Cuenta por cobrar'
+                  : nombreMedio != null && nombreMedio.isNotEmpty
+                  ? nombreMedio
+                  : esEfectivo
+                  ? 'Efectivo'
+                  : esDigital
+                  ? 'Transferencia/Digital'
+                  : 'Otro medio de pago';
+          porMedio.update(
+            etiqueta,
+            (value) => value + monto,
+            ifAbsent: () => monto,
+          );
+
+          if (esPendiente) {
+            pendienteOrden += monto;
+          } else if (esEfectivo) {
             efectivoOrden += monto;
-          } else if (esDigital) {
-            transferenciaOrden += monto;
           } else {
-            // Cualquier otro medio se considera transferencia/digital
             transferenciaOrden += monto;
           }
         }
       }
 
-      // Fallback: solo para órdenes offline que no tengan pagos desglosados.
-      // No usar paymentMethod de órdenes online porque en listar_ordenes se
-      // asigna 'Efectivo' por defecto, lo que haría que todo parezca efectivo.
-      if (order.isOfflineOrder &&
-          efectivoOrden + transferenciaOrden == 0 &&
-          order.total > 0) {
-        final method = (order.paymentMethod ?? '').toLowerCase();
-        if (method.contains('efectivo') || method.contains('cash')) {
-          efectivoOrden = order.total;
+      final montoSinClasificar =
+          order.total - efectivoOrden - transferenciaOrden - pendienteOrden;
+      if (montoSinClasificar > 0.01) {
+        final esCuentaPorCobrar = await _orderService.isVentaPendienteDePago(
+          order,
+        );
+        final etiqueta = esCuentaPorCobrar ? 'Cuenta por cobrar' : 'Efectivo';
+        porMedio.update(
+          etiqueta,
+          (value) => value + montoSinClasificar,
+          ifAbsent: () => montoSinClasificar,
+        );
+        if (esCuentaPorCobrar) {
+          pendienteOrden += montoSinClasificar;
         } else {
-          transferenciaOrden = order.total;
+          efectivoOrden += montoSinClasificar;
         }
       }
 
@@ -143,6 +189,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       transferencia: transferencia,
       total: total,
       productos: productos,
+      porMedio: porMedio,
     );
   }
 
@@ -267,7 +314,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           // Calcular totales y desglose por tipo de pago desde las órdenes
           // locales (online + pendientes offline). Esto evita duplicar ventas
           // y asegura que el efectivo/transferencia cuadren con los pagos reales.
-          final breakdown = _calculatePaymentBreakdownFromOrders(ordenesVendidas);
+          final breakdown = await _calculatePaymentBreakdownFromOrders(
+            ordenesVendidas,
+          );
 
           setState(() {
             _productosVendidos = productosVendidos;
@@ -278,12 +327,12 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
             _totalEfectivo = breakdown.efectivo;
             _totalTransferencia = breakdown.transferencia;
+            _totalesPorMedioPago = breakdown.porMedio;
 
             // Efectivo real en caja: ventas en efectivo menos egresos en efectivo
             _totalEfectivoReal = breakdown.efectivo - _egresosEfectivo;
 
-            // Compatibilidad con UI antigua: transferencia = ventas transferencia
-            _totalEgresado = _totalTransferencia + _egresosEfectivo;
+            _totalEgresado = _totalEgresos;
 
             _isLoading = false;
           });
@@ -323,7 +372,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         }
       }
 
-      final breakdown = _calculatePaymentBreakdownFromOrders(ordenesVendidas);
+      final breakdown = await _calculatePaymentBreakdownFromOrders(
+        ordenesVendidas,
+      );
 
       setState(() {
         _productosVendidos = productosVendidos;
@@ -332,7 +383,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         _totalProductos = breakdown.productos.toDouble();
         _totalEfectivo = breakdown.efectivo;
         _totalTransferencia = breakdown.transferencia;
-        _totalEgresado = breakdown.transferencia + _egresosEfectivo;
+        _totalesPorMedioPago = breakdown.porMedio;
+        _totalEgresado = _totalEgresos;
         _totalEfectivoReal = breakdown.efectivo - _egresosEfectivo;
         _isLoading = false;
       });
@@ -1541,6 +1593,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         totalProductos: _totalProductos,
         totalEgresado: _totalEgresado,
         totalEfectivoReal: _totalEfectivoReal,
+        totalesPorMedioPago: _totalesPorMedioPago,
       );
 
       if (printed) {
@@ -1657,7 +1710,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Total Productos: ${PriceUtils.formatQuantity(_totalProductos)}'),
+                          Text(
+                            'Total Productos: ${PriceUtils.formatQuantity(_totalProductos)}',
+                          ),
                           Text(
                             'Total Ventas: \$${_totalVentas.toStringAsFixed(0)}',
                           ),
@@ -1760,6 +1815,16 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         'Total Ventas: \$${_totalVentas.toStringAsFixed(0)}',
         styles: PosStyles(align: PosAlign.left),
       );
+      final mediosPago =
+          _totalesPorMedioPago.entries.toList()..sort(
+            (a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()),
+          );
+      for (final medio in mediosPago) {
+        bytes += generator.text(
+          '${medio.key}: \$${medio.value.toStringAsFixed(0)}',
+          styles: PosStyles(align: PosAlign.left),
+        );
+      }
       bytes += generator.text(
         'Total Egresado: \$${_totalEgresado.toStringAsFixed(0)}',
         styles: PosStyles(align: PosAlign.left),
@@ -1932,7 +1997,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         // Calcular totales y desglose por tipo de pago desde las órdenes
         // locales (offline + pendientes). Evita duplicar ventas si el resumen
         // cache ya incluye órdenes offline.
-        final breakdown = _calculatePaymentBreakdownFromOrders(ordenesVendidas);
+        final breakdown = await _calculatePaymentBreakdownFromOrders(
+          ordenesVendidas,
+        );
 
         setState(() {
           _productosVendidos = productosVendidos;
@@ -1943,12 +2010,12 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
           _totalEfectivo = breakdown.efectivo;
           _totalTransferencia = breakdown.transferencia;
+          _totalesPorMedioPago = breakdown.porMedio;
 
           // Efectivo real en caja: ventas en efectivo menos egresos en efectivo
           _totalEfectivoReal = breakdown.efectivo - _egresosEfectivo;
 
-          // Compatibilidad con UI antigua
-          _totalEgresado = _totalTransferencia + _egresosEfectivo;
+          _totalEgresado = _totalEgresos;
 
           _isLoading = false;
         });
@@ -1960,15 +2027,14 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         print('  - Órdenes completadas/offline: ${ordenesVendidas.length}');
         print('  - Items vendidos: ${productosVendidos.length}');
         print(
-          '  - Total Egresado: $_totalEgresado (incluye egresos efectivo: $_egresosEfectivo)',
+          '  - Total Egresado: $_totalEgresado (efectivo: $_egresosEfectivo, digital: $_egresosTransferencias)',
         );
         print(
           '  - Efectivo Real: $_totalEfectivoReal (descontando egresos efectivo)',
         );
 
         // Mostrar información de órdenes offline si las hay
-        final offlineOrdersCount =
-            orders.where((o) => o.isOfflineOrder).length;
+        final offlineOrdersCount = orders.where((o) => o.isOfflineOrder).length;
         if (offlineOrdersCount > 0) {
           print('📱 Órdenes offline incluidas en el cálculo:');
           print('  - Órdenes offline: $offlineOrdersCount');
@@ -2004,7 +2070,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         }
       }
 
-      final breakdown = _calculatePaymentBreakdownFromOrders(ordenesVendidas);
+      final breakdown = await _calculatePaymentBreakdownFromOrders(
+        ordenesVendidas,
+      );
 
       setState(() {
         _productosVendidos = productosVendidos;
@@ -2014,9 +2082,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
         _totalEfectivo = breakdown.efectivo;
         _totalTransferencia = breakdown.transferencia;
+        _totalesPorMedioPago = breakdown.porMedio;
 
         _totalEfectivoReal = breakdown.efectivo - _egresosEfectivo;
-        _totalEgresado = _totalTransferencia + _egresosEfectivo;
+        _totalEgresado = _totalEgresos;
 
         _isLoading = false;
       });

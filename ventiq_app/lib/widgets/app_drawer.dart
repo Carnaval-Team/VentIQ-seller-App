@@ -62,12 +62,10 @@ Future<void> _promptLogoutOrSwitchUser(BuildContext context) async {
     // Selector local solo si el dispositivo está preparado Y
     // (sin red O modo offline completo activo). Con red + modo online
     // hay que cerrar la sesión real en Supabase.
-    final useLocalSwitch =
-        fullOfflineReady && (!online || stayFullyOffline);
+    final useLocalSwitch = fullOfflineReady && (!online || stayFullyOffline);
 
     // Usar el navigator raíz: el context del drawer se desmonta al cerrarlo.
-    final dialogContext =
-        globalNavigatorKey.currentContext ?? context;
+    final dialogContext = globalNavigatorKey.currentContext ?? context;
 
     if (useLocalSwitch) {
       final bool? confirm = await showDialog<bool>(
@@ -122,11 +120,13 @@ Future<void> _promptLogoutOrSwitchUser(BuildContext context) async {
         return AlertDialog(
           title: const Text('Cerrar Sesión'),
           content: Text(
-            hasUnsynced
-                ? 'Hay ventas u operaciones sin sincronizar. '
-                    'El inventario de la tienda${storeId != null ? ' #$storeId' : ''} '
-                    'se conserva. ¿Cerrar sesión?'
-                : '¿Cerrar sesión? El inventario local se conserva.',
+            online
+                ? hasUnsynced
+                    ? 'Hay ventas u operaciones sin sincronizar. Al cerrar sesión online se eliminarán todos los datos locales y la caché. ¿Continuar?'
+                    : '¿Cerrar sesión? Se eliminarán todos los datos locales y la caché de este dispositivo.'
+                : hasUnsynced
+                ? 'Hay ventas u operaciones sin sincronizar y se conservarán localmente. ¿Cerrar sesión?'
+                : '¿Cerrar sesión?',
           ),
           actions: [
             TextButton(
@@ -153,7 +153,11 @@ Future<void> _promptLogoutOrSwitchUser(BuildContext context) async {
       AdminAccessService().clearMemoryCache();
     }
 
-    if (fullOfflineReady) {
+    if (online) {
+      await prefs.clearAllCachedDataForOnlineLogout();
+      print('🔓 Sesión online cerrada y caché eliminada → login');
+      _goAfterLogout('/login');
+    } else if (fullOfflineReady) {
       await prefs.clearSessionKeepingStoreOffline();
       print('🔓 Sesión cerrada → selector local de usuarios');
       _goAfterLogout('/offline-user-switch');
@@ -253,16 +257,18 @@ class _AppDrawerState extends State<AppDrawer> {
   /// Cargar versión de la app desde changelog.json
   Future<void> _loadAppVersion() async {
     try {
-      final String changelogString = await rootBundle.loadString('assets/changelog.json');
+      final String changelogString = await rootBundle.loadString(
+        'assets/changelog.json',
+      );
       final Map<String, dynamic> changelog = json.decode(changelogString);
       final String version = changelog['current_version'] ?? '1.0.0';
-      
+
       if (mounted) {
         setState(() {
           _appVersion = 'v$version';
         });
       }
-      
+
       print('✅ Versión de la app cargada en drawer: $_appVersion');
     } catch (e) {
       print('❌ Error cargando versión desde changelog.json en drawer: $e');
@@ -524,9 +530,10 @@ class _AppDrawerState extends State<AppDrawer> {
                   _buildDrawerItem(
                     context,
                     icon: Icons.shopping_cart,
-                    title: _modoRestaurante
-                        ? 'Venta de Mostrador'
-                        : 'Venta de Productos',
+                    title:
+                        _modoRestaurante
+                            ? 'Venta de Mostrador'
+                            : 'Venta de Productos',
                     subtitle: 'Ir al catálogo de productos',
                     onTap: () {
                       Navigator.pop(context);
@@ -649,9 +656,10 @@ class _AppDrawerState extends State<AppDrawer> {
                 _buildDrawerItem(
                   context,
                   icon: Icons.logout,
-                  title: _inventoryOnly || _canManageInventory
-                      ? 'Cambiar usuario / Salir'
-                      : 'Cerrar Sesión',
+                  title:
+                      _inventoryOnly || _canManageInventory
+                          ? 'Cambiar usuario / Salir'
+                          : 'Cerrar Sesión',
                   subtitle: 'Salir o cambiar de cuenta en este dispositivo',
                   onTap: () {
                     // Cerrar drawer; la navegación post-logout usa globalNavigatorKey.

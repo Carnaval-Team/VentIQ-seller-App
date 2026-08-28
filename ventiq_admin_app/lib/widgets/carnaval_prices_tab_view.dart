@@ -13,6 +13,7 @@ class CarnavalPricesTabView extends StatefulWidget {
 class _CarnavalPricesTabViewState extends State<CarnavalPricesTabView> {
   final _service = CarnavalPricesService();
   final ScrollController _pricesScroll = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
 
   bool _isInitializing = true;
   bool _isLoadingPrices = false;
@@ -24,6 +25,47 @@ class _CarnavalPricesTabViewState extends State<CarnavalPricesTabView> {
   int _pricesTotal = 0;
   String _pricesSearch = '';
   List<Map<String, dynamic>> _pricesItems = [];
+  bool _onlyActiveCarnaval = true;
+  bool _onlyBelowConfiguredPercentage = false;
+  bool _isFiltering = false;
+  int _filterGeneration = 0;
+  double? _configuredCashPercentage;
+  double? _configuredTransferPercentage;
+
+  List<Map<String, dynamic>> get _filteredPricesItems {
+    return _pricesItems.where((item) {
+      if (_onlyActiveCarnaval && item['carnaval_status'] != true) return false;
+      if (_onlyBelowConfiguredPercentage) {
+        final cash = (item['diff_percent_descuento'] as num?)?.toDouble();
+        final transfer = (item['diff_percent_price'] as num?)?.toDouble();
+        final belowCash =
+            cash != null &&
+            _configuredCashPercentage != null &&
+            _roundPercentage(cash) <
+                _roundPercentage(_configuredCashPercentage!);
+        final belowTransfer =
+            transfer != null &&
+            _configuredTransferPercentage != null &&
+            _roundPercentage(transfer) <
+                _roundPercentage(_configuredTransferPercentage!);
+        if (!belowCash && !belowTransfer) return false;
+      }
+      return true;
+    }).toList();
+  }
+
+  double _roundPercentage(double value) => (value * 100).round() / 100;
+
+  Future<void> _applyFilterChange(VoidCallback change) async {
+    final generation = ++_filterGeneration;
+    setState(() {
+      change();
+      _isFiltering = true;
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    if (!mounted || generation != _filterGeneration) return;
+    setState(() => _isFiltering = false);
+  }
 
   @override
   void initState() {
@@ -35,6 +77,7 @@ class _CarnavalPricesTabViewState extends State<CarnavalPricesTabView> {
   @override
   void dispose() {
     _pricesScroll.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -43,6 +86,9 @@ class _CarnavalPricesTabViewState extends State<CarnavalPricesTabView> {
     try {
       _storeId = await StoreService.getCurrentStoreId();
       if (_storeId != null) {
+        final percentages = await _service.getConfiguredPercentages(_storeId!);
+        _configuredCashPercentage = percentages['cash'];
+        _configuredTransferPercentage = percentages['transfer'];
         await _loadPrices(reset: true);
       }
     } catch (e) {
@@ -149,6 +195,113 @@ class _CarnavalPricesTabViewState extends State<CarnavalPricesTabView> {
     );
   }
 
+  Future<void> _showFiltersDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Filtrar precios Carnaval'),
+              content: SizedBox(
+                width: 460,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: _searchController,
+                      decoration: InputDecoration(
+                        labelText: 'Buscar producto',
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: _pricesSearch.isEmpty
+                            ? null
+                            : IconButton(
+                                onPressed: () {
+                                  _searchController.clear();
+                                  _pricesSearch = '';
+                                  _loadPrices(reset: true);
+                                  setDialogState(() {});
+                                },
+                                icon: const Icon(Icons.clear),
+                              ),
+                        border: const OutlineInputBorder(),
+                      ),
+                      onChanged: (value) {
+                        _pricesSearch = value;
+                        _loadPrices(reset: true);
+                        setDialogState(() {});
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        ChoiceChip(
+                          label: const Text('Activos en Carnaval'),
+                          selected: _onlyActiveCarnaval,
+                          onSelected: (_) {
+                            _applyFilterChange(
+                              () => _onlyActiveCarnaval = true,
+                            );
+                            setDialogState(() {});
+                          },
+                        ),
+                        ChoiceChip(
+                          label: const Text('Todos sincronizados'),
+                          selected: !_onlyActiveCarnaval,
+                          onSelected: (_) {
+                            _applyFilterChange(
+                              () => _onlyActiveCarnaval = false,
+                            );
+                            setDialogState(() {});
+                          },
+                        ),
+                        FilterChip(
+                          avatar: const Icon(Icons.trending_down, size: 18),
+                          label: const Text(
+                            'Por debajo del porcentaje configurado',
+                          ),
+                          selected: _onlyBelowConfiguredPercentage,
+                          onSelected: (selected) {
+                            _applyFilterChange(
+                              () => _onlyBelowConfiguredPercentage = selected,
+                            );
+                            setDialogState(() {});
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    _searchController.clear();
+                    _pricesSearch = '';
+                    _applyFilterChange(() {
+                      _onlyActiveCarnaval = true;
+                      _onlyBelowConfiguredPercentage = false;
+                    });
+                    _loadPrices(reset: true);
+                    setDialogState(() {});
+                  },
+                  child: const Text('Restablecer'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cerrar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildPricesTable() {
     if (_isInitializing) {
       return const Center(child: CircularProgressIndicator());
@@ -163,6 +316,8 @@ class _CarnavalPricesTabViewState extends State<CarnavalPricesTabView> {
       );
     }
 
+    final filteredItems = _filteredPricesItems;
+
     return Card(
       margin: EdgeInsets.zero,
       child: Column(
@@ -175,25 +330,21 @@ class _CarnavalPricesTabViewState extends State<CarnavalPricesTabView> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Precios Inventtia vs Carnaval (${_pricesItems.length}/$_pricesTotal)',
+                    'Precios Inventtia vs Carnaval (${filteredItems.length}/$_pricesTotal)',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
-                SizedBox(
-                  width: 260,
-                  child: TextField(
-                    decoration: const InputDecoration(
-                      hintText: 'Buscar...',
-                      prefixIcon: Icon(Icons.search),
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    onChanged: (v) {
-                      _pricesSearch = v;
-                      _loadPrices(reset: true);
-                    },
+                OutlinedButton.icon(
+                  onPressed: _isFiltering ? null : _showFiltersDialog,
+                  icon: const Icon(Icons.filter_list),
+                  label: Text(
+                    (_pricesSearch.isEmpty &&
+                            _onlyActiveCarnaval &&
+                            !_onlyBelowConfiguredPercentage)
+                        ? 'Filtros'
+                        : 'Filtros activos',
                   ),
                 ),
               ],
@@ -221,12 +372,11 @@ class _CarnavalPricesTabViewState extends State<CarnavalPricesTabView> {
                         child: Center(
                           child: Text(
                             'Inventtia',
-                            style: Theme.of(
-                              context,
-                            ).textTheme.bodySmall?.copyWith(
-                              color: AppColors.textSecondary,
-                              fontWeight: FontWeight.w600,
-                            ),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: AppColors.textSecondary,
+                                  fontWeight: FontWeight.w600,
+                                ),
                           ),
                         ),
                       ),
@@ -235,12 +385,11 @@ class _CarnavalPricesTabViewState extends State<CarnavalPricesTabView> {
                         child: Center(
                           child: Text(
                             'Carnaval Desc.',
-                            style: Theme.of(
-                              context,
-                            ).textTheme.bodySmall?.copyWith(
-                              color: AppColors.textSecondary,
-                              fontWeight: FontWeight.w600,
-                            ),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: AppColors.textSecondary,
+                                  fontWeight: FontWeight.w600,
+                                ),
                           ),
                         ),
                       ),
@@ -249,12 +398,11 @@ class _CarnavalPricesTabViewState extends State<CarnavalPricesTabView> {
                         child: Center(
                           child: Text(
                             'Carnaval Price',
-                            style: Theme.of(
-                              context,
-                            ).textTheme.bodySmall?.copyWith(
-                              color: AppColors.textSecondary,
-                              fontWeight: FontWeight.w600,
-                            ),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: AppColors.textSecondary,
+                                  fontWeight: FontWeight.w600,
+                                ),
                           ),
                         ),
                       ),
@@ -263,12 +411,11 @@ class _CarnavalPricesTabViewState extends State<CarnavalPricesTabView> {
                         child: Center(
                           child: Text(
                             'Diff %',
-                            style: Theme.of(
-                              context,
-                            ).textTheme.bodySmall?.copyWith(
-                              color: AppColors.textSecondary,
-                              fontWeight: FontWeight.w600,
-                            ),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: AppColors.textSecondary,
+                                  fontWeight: FontWeight.w600,
+                                ),
                           ),
                         ),
                       ),
@@ -277,12 +424,11 @@ class _CarnavalPricesTabViewState extends State<CarnavalPricesTabView> {
                         child: Center(
                           child: Text(
                             'Diff transf%',
-                            style: Theme.of(
-                              context,
-                            ).textTheme.bodySmall?.copyWith(
-                              color: AppColors.textSecondary,
-                              fontWeight: FontWeight.w600,
-                            ),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: AppColors.textSecondary,
+                                  fontWeight: FontWeight.w600,
+                                ),
                           ),
                         ),
                       ),
@@ -291,12 +437,11 @@ class _CarnavalPricesTabViewState extends State<CarnavalPricesTabView> {
                         child: Center(
                           child: Text(
                             'Estado',
-                            style: Theme.of(
-                              context,
-                            ).textTheme.bodySmall?.copyWith(
-                              color: AppColors.textSecondary,
-                              fontWeight: FontWeight.w600,
-                            ),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: AppColors.textSecondary,
+                                  fontWeight: FontWeight.w600,
+                                ),
                           ),
                         ),
                       ),
@@ -307,12 +452,11 @@ class _CarnavalPricesTabViewState extends State<CarnavalPricesTabView> {
                           alignment: Alignment.centerRight,
                           child: Text(
                             'Acc',
-                            style: Theme.of(
-                              context,
-                            ).textTheme.bodySmall?.copyWith(
-                              color: AppColors.textSecondary,
-                              fontWeight: FontWeight.w600,
-                            ),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: AppColors.textSecondary,
+                                  fontWeight: FontWeight.w600,
+                                ),
                           ),
                         ),
                       ),
@@ -323,7 +467,7 @@ class _CarnavalPricesTabViewState extends State<CarnavalPricesTabView> {
             ),
           ),
           const Divider(height: 1),
-          if (_isLoadingPrices)
+          if (_isLoadingPrices || _isFiltering)
             const LinearProgressIndicator(minHeight: 2)
           else
             const SizedBox(height: 2),
@@ -332,16 +476,17 @@ class _CarnavalPricesTabViewState extends State<CarnavalPricesTabView> {
               controller: _pricesScroll,
               child: ListView.builder(
                 controller: _pricesScroll,
-                itemCount: _pricesItems.length + (_isMoreLoadingPrices ? 1 : 0),
+                itemCount:
+                    filteredItems.length + (_isMoreLoadingPrices ? 1 : 0),
                 itemBuilder: (context, index) {
-                  if (index >= _pricesItems.length) {
+                  if (index >= filteredItems.length) {
                     return const Padding(
                       padding: EdgeInsets.all(12),
                       child: Center(child: CircularProgressIndicator()),
                     );
                   }
 
-                  final row = _pricesItems[index];
+                  final row = filteredItems[index];
                   final inv =
                       (row['precio_inventtia'] as num?)?.toDouble() ?? 0.0;
                   final carD =
@@ -350,8 +495,8 @@ class _CarnavalPricesTabViewState extends State<CarnavalPricesTabView> {
                   final carP =
                       (row['precio_carnaval_price'] as num?)?.toDouble() ?? 0.0;
 
-                  final diffD =
-                      (row['diff_percent_descuento'] as num?)?.toDouble();
+                  final diffD = (row['diff_percent_descuento'] as num?)
+                      ?.toDouble();
                   final diffP = (row['diff_percent_price'] as num?)?.toDouble();
                   final isBad = (row['is_mal_precio'] as bool?) ?? false;
 
@@ -564,12 +709,11 @@ class _CarnavalPricesTabViewState extends State<CarnavalPricesTabView> {
                 IconButton(
                   tooltip: 'Refrescar',
                   icon: const Icon(Icons.refresh),
-                  onPressed:
-                      _storeId == null
-                          ? null
-                          : () async {
-                            await _loadPrices(reset: true);
-                          },
+                  onPressed: _storeId == null
+                      ? null
+                      : () async {
+                          await _loadPrices(reset: true);
+                        },
                 ),
               ],
             ),

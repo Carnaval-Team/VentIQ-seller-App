@@ -25,8 +25,43 @@ class CarnavalPricesService {
 
     final data = List<Map<String, dynamic>>.from(response as List);
     final total = data.isNotEmpty ? (data.first['total_count'] ?? 0) as int : 0;
+    final carnavalIds = data
+        .map((item) => item['carnaval_product_id'])
+        .whereType<num>()
+        .map((id) => id.toInt())
+        .toList();
+
+    if (carnavalIds.isNotEmpty) {
+      final carnavalProducts = await _supabase
+          .schema('carnavalapp')
+          .from('Productos')
+          .select('id, status')
+          .inFilter('id', carnavalIds);
+      final activeById = {
+        for (final product in carnavalProducts)
+          (product['id'] as num).toInt(): product['status'] as bool?,
+      };
+      for (final item in data) {
+        final id = (item['carnaval_product_id'] as num?)?.toInt();
+        item['carnaval_status'] = activeById[id];
+      }
+    }
 
     return {'items': data, 'total': total};
+  }
+
+  Future<Map<String, double?>> getConfiguredPercentages(int storeId) async {
+    final response = await _supabase
+        .from('app_dat_precio_general_tienda')
+        .select('precio_venta_carnaval, precio_venta_carnaval_transferencia')
+        .eq('id_tienda', storeId)
+        .maybeSingle();
+
+    return {
+      'cash': (response?['precio_venta_carnaval'] as num?)?.toDouble(),
+      'transfer': (response?['precio_venta_carnaval_transferencia'] as num?)
+          ?.toDouble(),
+    };
   }
 
   Future<void> updateCarnavalPrices({

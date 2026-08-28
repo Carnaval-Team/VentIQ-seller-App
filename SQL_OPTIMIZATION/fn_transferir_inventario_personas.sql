@@ -47,20 +47,18 @@ DECLARE
   c_motivo_recepcion       CONSTANT INTEGER := 2;
 
   v_item                   JSONB;
-  v_productos_base         JSONB;
   v_productos_extraccion   JSONB := '[]'::JSONB;
   v_productos_recepcion    JSONB := '[]'::JSONB;
   v_cantidad               NUMERIC;
 
   v_ext_result             JSONB;
   v_rec_result             JSONB;
+  v_cont_result            JSONB;
   v_id_extraccion          BIGINT;
   v_id_recepcion           BIGINT;
 
   v_id_tipo_transferencia  BIGINT;
   v_id_operacion_padre     BIGINT;
-  v_estado_actual          SMALLINT;
-  v_op_a_completar         BIGINT;
 
   v_entregado              TEXT;
   v_transporta             TEXT;
@@ -128,9 +126,7 @@ BEGIN
     );
   END IF;
 
-  v_productos_base := public.fn_productos_json_a_presentacion_base(p_productos);
-
-  FOR v_item IN SELECT value FROM jsonb_array_elements(v_productos_base)
+  FOR v_item IN SELECT value FROM jsonb_array_elements(p_productos)
   LOOP
     IF v_item->>'id_producto' IS NULL OR v_item->>'cantidad' IS NULL THEN
       RAISE EXCEPTION 'Cada producto debe tener id_producto y cantidad';
@@ -278,29 +274,43 @@ BEGIN
 
   -- 4. Completar operaciones
   IF p_completar_operaciones THEN
-    FOREACH v_op_a_completar IN ARRAY ARRAY[v_id_extraccion, v_id_recepcion, v_id_operacion_padre]
-    LOOP
-      SELECT eo.estado
-      INTO v_estado_actual
-      FROM public.app_dat_estado_operacion eo
-      WHERE eo.id_operacion = v_op_a_completar
-      ORDER BY eo.created_at DESC
-      LIMIT 1;
+    -- La extracción ya mueve el inventario al crearla; solo cambia su estado.
+    INSERT INTO public.app_dat_estado_operacion (
+      id_operacion,
+      estado,
+      uuid,
+      created_at
+    ) VALUES (
+      v_id_extraccion,
+      2,
+      p_uuid,
+      NOW()
+    );
 
-      IF COALESCE(v_estado_actual, 0) <> 2 THEN
-        INSERT INTO public.app_dat_estado_operacion (
-          id_operacion,
-          estado,
-          uuid,
-          created_at
-        ) VALUES (
-          v_op_a_completar,
-          2,
-          p_uuid,
-          NOW()
-        );
-      END IF;
-    END LOOP;
+    -- La recepción solo registra el detalle al crearla. Debe contabilizarse
+    -- para insertar la entrada en app_dat_inventario_productos del destino.
+    v_cont_result := public.fn_contabilizar_operacion(
+      p_id_operacion => v_id_recepcion,
+      p_uuid          => p_uuid,
+      p_comentario    => 'Recepción completada automáticamente por transferencia'
+    );
+
+    IF COALESCE(v_cont_result->>'status', '') <> 'success' THEN
+      RAISE EXCEPTION 'Error contabilizando recepción: %',
+        COALESCE(v_cont_result->>'message', v_cont_result::TEXT);
+    END IF;
+
+    INSERT INTO public.app_dat_estado_operacion (
+      id_operacion,
+      estado,
+      uuid,
+      created_at
+    ) VALUES (
+      v_id_operacion_padre,
+      2,
+      p_uuid,
+      NOW()
+    );
   END IF;
 
   RETURN jsonb_build_object(
@@ -312,7 +322,7 @@ BEGIN
     'id_extraccion', v_id_extraccion,
     'id_recepcion', v_id_recepcion,
     'id_operacion_transferencia', v_id_operacion_padre,
-    'total_productos', jsonb_array_length(v_productos_base),
+    'total_productos', jsonb_array_length(p_productos),
     'monto_total', 0,
     'entregado_por', v_entregado,
     'transportado_por', v_transporta,

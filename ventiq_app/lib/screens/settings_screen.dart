@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
@@ -38,6 +39,9 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen>
     with WidgetsBindingObserver {
+  static const String _downloadAppUrl =
+      'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/vendedor%20cuba.apk';
+
   final OrderService _orderService = OrderService();
   final UserPreferencesService _userPreferencesService =
       UserPreferencesService();
@@ -60,7 +64,8 @@ class _SettingsScreenState extends State<SettingsScreen>
   Map<String, dynamic>? _currentTurno; // Turno abierto (online u offline)
   Map<String, dynamic>? _dataSyncSummary; // Resumen de datos pendientes
   bool _isLoadingDataSection = false;
-  bool _isModoRestauranteEnabled = false; // Modo restaurante (mesas y comensales)
+  bool _isModoRestauranteEnabled =
+      false; // Modo restaurante (mesas y comensales)
   bool _isLoadingModoRestaurante = false;
 
   // Impresora recordada para el turno actual
@@ -281,8 +286,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     final printUsdEnabled = await _userPreferencesService.isPrintUsdEnabled();
     final staticTextEnabled =
         await _userPreferencesService.isStaticTextEnabled();
-    final showSkuEnabled =
-        await _userPreferencesService.isShowSkuEnabled();
+    final showSkuEnabled = await _userPreferencesService.isShowSkuEnabled();
     final limitDataEnabled =
         await _userPreferencesService.isLimitDataUsageEnabled();
     final offlineModeEnabled =
@@ -338,8 +342,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         'server_id=${turno?['server_id_turno']} '
         'fa=${turno?['fecha_apertura']} fc=${turno?['fecha_cierre']}',
       );
-      final summary =
-          await _userPreferencesService.getOfflineSyncSummary();
+      final summary = await _userPreferencesService.getOfflineSyncSummary();
       print(
         '[TURNO_SYNC] Settings summary pending_turnos='
         '${summary['pending_turnos_count']} '
@@ -680,9 +683,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          value
-              ? 'SKU de producto visible'
-              : 'SKU de producto oculto',
+          value ? 'SKU de producto visible' : 'SKU de producto oculto',
         ),
         backgroundColor: value ? Colors.green : Colors.orange,
         duration: const Duration(seconds: 2),
@@ -856,8 +857,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       final fullOfflineReady =
           await _userPreferencesService.isDeviceFullOfflineReady();
       if (fullOfflineReady) {
-        final isAdmin =
-            await _userPreferencesService.isInventoryOnlySession();
+        final isAdmin = await _userPreferencesService.isInventoryOnlySession();
         if (!isAdmin) {
           if (mounted) {
             setState(() => _isOfflineModeEnabled = true);
@@ -904,25 +904,26 @@ class _SettingsScreenState extends State<SettingsScreen>
         if (!mounted) return false;
         final confirmed = await showDialog<bool>(
           context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Volver a modo online'),
-            content: const Text(
-              'Este dispositivo está preparado para trabajar 100% offline. '
-              'Al continuar se desactivará el modo offline y se eliminará '
-              'la preparación full-offline del dispositivo (deberás volver '
-              'a prepararlo si quieres reactivarla). ¿Deseas continuar?',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancelar'),
+          builder:
+              (ctx) => AlertDialog(
+                title: const Text('Volver a modo online'),
+                content: const Text(
+                  'Este dispositivo está preparado para trabajar 100% offline. '
+                  'Al continuar se desactivará el modo offline y se eliminará '
+                  'la preparación full-offline del dispositivo (deberás volver '
+                  'a prepararlo si quieres reactivarla). ¿Deseas continuar?',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('Cancelar'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('Sí, volver a online'),
+                  ),
+                ],
               ),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Sí, volver a online'),
-              ),
-            ],
-          ),
         );
         if (confirmed != true) {
           if (mounted) {
@@ -1011,7 +1012,8 @@ class _SettingsScreenState extends State<SettingsScreen>
 
     try {
       final saved = await _userPreferencesService.getSavedCredentials();
-      var email = saved['email'] ?? await _userPreferencesService.getUserEmail();
+      var email =
+          saved['email'] ?? await _userPreferencesService.getUserEmail();
       var password = saved['password'];
 
       if ((password == null || password.isEmpty) &&
@@ -1031,7 +1033,8 @@ class _SettingsScreenState extends State<SettingsScreen>
           email.isEmpty ||
           password.isEmpty) {
         final admin =
-            await _userPreferencesService.getDeviceFullOfflineAdminCredentials();
+            await _userPreferencesService
+                .getDeviceFullOfflineAdminCredentials();
         email = admin['email'] ?? email;
         password = admin['password'] ?? password;
       }
@@ -1155,9 +1158,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         subtitle += '\nLicencia offline válida';
       }
     } else if (license != null) {
-      subtitle = license.isValid
-          ? 'Licencia offline válida'
-          : license.message;
+      subtitle = license.isValid ? 'Licencia offline válida' : license.message;
     } else {
       subtitle = 'No se encontró información de suscripción';
     }
@@ -1352,7 +1353,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                   onTap: () => _showComingSoon('Cambiar Contraseña'),
                 ),
               ]), */
-
               const SizedBox(height: 16),
 
               // Sección de suscripción
@@ -1419,8 +1419,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                   title: 'Productos por Defecto',
                   subtitle:
                       'Configura productos que se agregan automáticamente al crear una orden',
-                  onTap: () => Navigator.pushNamed(
-                      context, '/default-order-items'),
+                  onTap:
+                      () =>
+                          Navigator.pushNamed(context, '/default-order-items'),
                 ),
               ]),
 
@@ -1449,11 +1450,11 @@ class _SettingsScreenState extends State<SettingsScreen>
               // Sección de datos (turno actual + sincronización)
               _buildSectionHeader('Datos'),
               _buildSettingsCard([
-                _buildCurrentTurnoTile(),
-                if (_hasPendingOfflineData) ...[
+                //_buildCurrentTurnoTile(),
+                /* if (_hasPendingOfflineData) ...[
                   _buildDivider(),
                   _buildPendingDataSummaryTile(),
-                ],
+                ], */
                 _buildDivider(),
                 _buildSettingsTile(
                   icon: Icons.sync_outlined,
@@ -1933,17 +1934,18 @@ class _SettingsScreenState extends State<SettingsScreen>
             : 'Activar para gestionar mesas y cuentas por comensal',
         style: TextStyle(fontSize: 13, color: Colors.grey[600]),
       ),
-      trailing: _isLoadingModoRestaurante
-          ? const SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : Switch(
-              value: _isModoRestauranteEnabled,
-              onChanged: _onModoRestauranteChanged,
-              activeColor: const Color(0xFFE65100),
-            ),
+      trailing:
+          _isLoadingModoRestaurante
+              ? const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+              : Switch(
+                value: _isModoRestauranteEnabled,
+                onChanged: _onModoRestauranteChanged,
+                activeColor: const Color(0xFFE65100),
+              ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     );
   }
@@ -1988,7 +1990,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                 value: _isOfflineModeEnabled,
                 // Deshabilitar mientras se procesa el cambio para evitar
                 // toggles rápidos que dejen trabajos de sync a medias.
-                onChanged: _isTogglingOfflineMode ? null : _onOfflineModeChanged,
+                onChanged:
+                    _isTogglingOfflineMode ? null : _onOfflineModeChanged,
                 activeColor: Colors.blue,
               ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -2058,13 +2061,27 @@ class _SettingsScreenState extends State<SettingsScreen>
     final syncedAt = turno['synced_at']?.toString();
     final efectivoInicial = _readTurnoEfectivoInicial(turno);
     final turnoId = _formatTurnoId(turno);
-    final source = _turnoSourceLabel(turno);
-    final sourceColor = _turnoSourceColor(source);
+    final detectedSource = _turnoSourceLabel(turno);
     final usuario = turno['usuario']?.toString();
     final status = turno['status']?.toString();
+    final localId = turno['local_id']?.toString();
+    final serverId = turno['server_id_turno'] ?? turno['id'];
+    final hasServerTurno =
+        serverId is num || int.tryParse(serverId?.toString() ?? '') != null;
+    final pendingTurnoIds =
+        (_dataSyncSummary?['pending_turno_ids'] as List<dynamic>? ?? [])
+            .map((id) => id.toString())
+            .toSet();
+    final isOnlineSynced =
+        status != UserPreferencesService.offlineTurnoStatusClosedPending &&
+        hasServerTurno &&
+        (localId == null || !pendingTurnoIds.contains(localId));
+    final source = isOnlineSynced ? 'SINCRONIZADO' : detectedSource;
+    final sourceColor = _turnoSourceColor(source);
     final titlePrefix =
         turno['cerrado_online'] == true ||
-                status == UserPreferencesService.offlineTurnoStatusSynced
+                status == UserPreferencesService.offlineTurnoStatusSynced ||
+                isOnlineSynced
             ? 'Turno sincronizado'
             : status == UserPreferencesService.offlineTurnoStatusClosedPending
             ? 'Turno cerrado'
@@ -2090,6 +2107,11 @@ class _SettingsScreenState extends State<SettingsScreen>
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (isOnlineSynced)
+            const Text(
+              'Sin órdenes pendientes de sincronización',
+              style: TextStyle(fontSize: 12, color: Colors.green),
+            ),
           if (fechaApertura != null)
             Text(
               'Apertura: ${_formatTurnoDate(fechaApertura)}',
@@ -2142,6 +2164,8 @@ class _SettingsScreenState extends State<SettingsScreen>
         _dataSyncSummary?['pending_operations_count'] as int? ?? 0;
     final closedPending =
         _dataSyncSummary?['closed_turnos_pending_count'] as int? ?? 0;
+    final ordersInTurnos =
+        _dataSyncSummary?['pending_turno_orders_count'] as int? ?? 0;
 
     final parts = <String>[];
     if (_pendingOrdersCount > 0) {
@@ -2151,16 +2175,18 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
     if (_pendingOfflineTurnosCount > 0) {
       parts.add(
-        '$_pendingOfflineTurnosCount turno${_pendingOfflineTurnosCount == 1 ? '' : 's'}',
+        '$_pendingOfflineTurnosCount turno${_pendingOfflineTurnosCount == 1 ? '' : 's'}'
+        '${ordersInTurnos > 0 ? ' ($ordersInTurnos venta${ordersInTurnos == 1 ? '' : 's'} incluida${ordersInTurnos == 1 ? '' : 's'})' : ''}',
       );
     }
     if (pendingOps > 0) {
       parts.add('$pendingOps operación${pendingOps == 1 ? '' : 'es'}');
     }
 
-    final subtitle = parts.isEmpty
-        ? 'Datos pendientes de sincronizar'
-        : '${parts.join(' · ')} por sincronizar';
+    final subtitle =
+        parts.isEmpty
+            ? 'Datos pendientes de sincronizar'
+            : '${parts.join(' · ')} por sincronizar';
 
     return ListTile(
       leading: Container(
@@ -2169,7 +2195,11 @@ class _SettingsScreenState extends State<SettingsScreen>
           color: Colors.blue.withOpacity(0.1),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: const Icon(Icons.cloud_upload_outlined, color: Colors.blue, size: 20),
+        child: const Icon(
+          Icons.cloud_upload_outlined,
+          color: Colors.blue,
+          size: 20,
+        ),
       ),
       title: const Text(
         'Pendientes de sincronizar',
@@ -2186,9 +2216,10 @@ class _SettingsScreenState extends State<SettingsScreen>
         style: TextStyle(fontSize: 12, color: Colors.grey[600]),
       ),
       trailing: const Icon(Icons.chevron_right, color: Colors.grey),
-      onTap: _pendingOfflineTurnosCount > 0
-          ? _showPendingTurnosDialog
-          : () => _showSyncDialog(),
+      onTap:
+          _pendingOfflineTurnosCount > 0
+              ? _showPendingTurnosDialog
+              : () => _showSyncDialog(),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     );
   }
@@ -2204,17 +2235,22 @@ class _SettingsScreenState extends State<SettingsScreen>
     return double.tryParse(direct?.toString() ?? '');
   }
 
+  String _shortLocalTurnoId(String localId) {
+    final separator = localId.indexOf('-');
+    return separator > 0 ? localId.substring(0, separator) : localId;
+  }
+
   String _formatTurnoId(Map<String, dynamic> turno) {
+    final localId = turno['local_id']?.toString();
+    if (localId != null && localId.isNotEmpty) {
+      return _shortLocalTurnoId(localId);
+    }
     final serverId = turno['server_id_turno'] ?? turno['id'];
     if (serverId is int) return '#$serverId';
     if (serverId != null && int.tryParse(serverId.toString()) != null) {
       return '#${serverId.toString()}';
     }
-    final localId = turno['local_id']?.toString();
-    if (localId != null && localId.length >= 8) {
-      return localId.substring(0, 8);
-    }
-    return localId ?? 'local';
+    return 'local';
   }
 
   String _turnoSourceLabel(Map<String, dynamic> turno) {
@@ -2229,8 +2265,8 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
 
     final localId = turno['local_id']?.toString();
-    final serverId = turno['server_id_turno'] ??
-        (turno['id'] is int ? turno['id'] : null);
+    final serverId =
+        turno['server_id_turno'] ?? (turno['id'] is int ? turno['id'] : null);
     if (localId != null && serverId == null) return 'OFFLINE';
     if (localId != null) return 'SYNC';
     return 'ONLINE';
@@ -2738,15 +2774,32 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ),
                 const Divider(),
                 ListTile(
-                  leading: const Icon(Icons.store_outlined, color: Colors.orange),
-                  title: const Text('Turnos offline pendientes'),
-                  subtitle: Text(
-                    '$_pendingOfflineTurnosCount turno(s) por sincronizar',
+                  leading: Icon(
+                    _pendingOfflineTurnosCount > 0
+                        ? Icons.cloud_upload_outlined
+                        : Icons.cloud_done_outlined,
+                    color:
+                        _pendingOfflineTurnosCount > 0
+                            ? Colors.orange
+                            : Colors.green,
                   ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _showPendingTurnosDialog();
-                  },
+                  title: Text(
+                    _pendingOfflineTurnosCount > 0
+                        ? 'Turnos con sincronización pendiente'
+                        : 'Turno sincronizado',
+                  ),
+                  subtitle: Text(
+                    _pendingOfflineTurnosCount > 0
+                        ? '$_pendingOfflineTurnosCount turno(s) con datos offline por sincronizar'
+                        : 'Sin órdenes ni turnos pendientes de sincronización',
+                  ),
+                  onTap:
+                      _pendingOfflineTurnosCount > 0
+                          ? () {
+                            Navigator.pop(context);
+                            _showPendingTurnosDialog();
+                          }
+                          : null,
                 ),
               ],
             ),
@@ -2820,7 +2873,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                     Icons.calendar_month,
                     '${syncSummary['pending_turnos_count']} turno(s) pendientes de sync',
                     syncSummary['closed_turnos_pending_count'] != null &&
-                            (syncSummary['closed_turnos_pending_count'] as int) >
+                            (syncSummary['closed_turnos_pending_count']
+                                    as int) >
                                 0
                         ? '${syncSummary['closed_turnos_pending_count']} cerrado(s) + '
                             '${syncSummary['has_open_turno'] == true ? '1 abierto' : '0 abiertos'}'
@@ -2926,109 +2980,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
   }
 
-  /// Mostrar QR a pantalla completa para facilitar el escaneo
-  void _showFullScreenQR() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder:
-            (context) => Scaffold(
-              backgroundColor: Colors.black,
-              appBar: AppBar(
-                backgroundColor: Colors.transparent,
-                elevation: 0,
-                leading: IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white, size: 28),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-                title: const Text(
-                  'Código QR - Inventtia Caja',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                centerTitle: true,
-              ),
-              body: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // QR a pantalla completa
-                    Container(
-                      margin: const EdgeInsets.all(24),
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.white.withOpacity(0.1),
-                            blurRadius: 20,
-                            spreadRadius: 5,
-                          ),
-                        ],
-                      ),
-                      child: Image.asset(
-                        'assets/Lk1KNR.png',
-                        width: MediaQuery.of(context).size.width * 0.8,
-                        height: MediaQuery.of(context).size.width * 0.8,
-                        fit: BoxFit.contain,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    // Información
-                    Text(
-                      'Escanea este código para descargar Inventtia Caja',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.9),
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Inventtia Caja $_appVersion',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.7),
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 32),
-                    // Botón para cerrar
-                    ElevatedButton.icon(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close, size: 20),
-                      label: const Text(
-                        'Cerrar',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF4A90E2),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 32,
-                          vertical: 12,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(25),
-                        ),
-                        elevation: 5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-      ),
-    );
-  }
-
-  /// Mostrar diálogo con QR para descargar la aplicación
+  /// Mostrar diálogo para descargar la aplicación
   void _showDownloadDialog() {
     showDialog(
       context: context,
@@ -3068,68 +3020,8 @@ class _SettingsScreenState extends State<SettingsScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
-                'Escanea el código QR para descargar Inventtia Caja en tu dispositivo:',
+                'Enlace directo para descargar Inventtia Caja:',
                 style: TextStyle(fontSize: 14, color: Color(0xFF6B7280)),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 20),
-              // Imagen del QR (clickeable para pantalla completa)
-              GestureDetector(
-                onTap: () => _showFullScreenQR(),
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey[300]!, width: 1),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Stack(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.asset(
-                          'assets/Lk1KNR.png',
-                          width: 200,
-                          height: 200,
-                          fit: BoxFit.contain,
-                        ),
-                      ),
-                      // Indicador de que es clickeable
-                      Positioned(
-                        top: 8,
-                        right: 8,
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.6),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(
-                            Icons.fullscreen,
-                            color: Colors.white,
-                            size: 16,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Toca la imagen para ver a pantalla completa',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFF9CA3AF),
-                  fontStyle: FontStyle.italic,
-                ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
@@ -3141,9 +3033,47 @@ class _SettingsScreenState extends State<SettingsScreen>
                   fontWeight: FontWeight.w500,
                 ),
               ),
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.asset(
+                  'assets/Lk1KNR.png',
+                  width: 180,
+                  height: 180,
+                  fit: BoxFit.contain,
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'O comparte el enlace directo:',
+                style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              SelectableText(
+                _downloadAppUrl,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF4A90E2),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ],
           ),
           actions: [
+            TextButton.icon(
+              onPressed: () => Share.share(_downloadAppUrl),
+              icon: const Icon(Icons.share, size: 20),
+              label: const Text('Compartir link'),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF4A90E2),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+              ),
+            ),
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
               style: TextButton.styleFrom(
@@ -3178,7 +3108,9 @@ class _SettingsScreenState extends State<SettingsScreen>
         child: const Icon(Icons.inventory_2, color: Colors.white, size: 32),
       ),
       children: [
-        const Text('Punto de venta (caja) de Inventtia para gestionar ventas y turnos.'),
+        const Text(
+          'Punto de venta (caja) de Inventtia para gestionar ventas y turnos.',
+        ),
         const SizedBox(height: 8),
         const Text(
           'Desarrollado para optimizar el proceso de pedidos y gestión de productos.',
@@ -3236,10 +3168,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           'Cargando estado...',
           style: TextStyle(fontSize: 13, color: Colors.grey),
         ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 4,
-        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       );
     }
 
@@ -3299,10 +3228,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         onPressed: () => _showSmartSyncDetails(status),
         tooltip: 'Ver detalles',
       ),
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 4,
-      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     );
   }
 
@@ -3500,8 +3426,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       );
 
       // Sincronizar todos los módulos como hace la sync por módulos.
-      final wasOffline =
-          await _userPreferencesService.isOfflineModeEnabled();
+      final wasOffline = await _userPreferencesService.isOfflineModeEnabled();
       if (wasOffline) {
         await _userPreferencesService.setOfflineMode(false);
       }
@@ -3710,7 +3635,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                   final turnos = snapshot.data ?? [];
                   if (turnos.isEmpty) {
                     return const Text(
-                        'No hay turnos pendientes de sincronizar.');
+                      'No hay turnos pendientes de sincronizar.',
+                    );
                   }
                   return SizedBox(
                     width: double.maxFinite,
@@ -3720,7 +3646,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                       itemBuilder: (context, index) {
                         final t = turnos[index];
                         final localId = t['local_id']?.toString() ?? 'N/A';
+                        final displayId = _shortLocalTurnoId(localId);
                         final status = t['status']?.toString() ?? '';
+                        final pendingOrders =
+                            (t['pending_orders_count'] as num?)?.toInt() ?? 0;
                         final fechaApertura =
                             t['fecha_apertura']?.toString() ?? '';
                         final estado =
@@ -3735,9 +3664,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                             color:
                                 status == 'open' ? Colors.green : Colors.orange,
                           ),
-                          title: Text('Turno $localId'),
+                          title: Text('Turno $displayId'),
                           subtitle: Text(
-                            'Apertura: $fechaApertura\nEstado: $estado',
+                            'Apertura: $fechaApertura\nEstado: $estado'
+                            '${pendingOrders > 0 ? '\n$pendingOrders venta${pendingOrders == 1 ? '' : 's'} pendiente${pendingOrders == 1 ? '' : 's'} incluida${pendingOrders == 1 ? '' : 's'}' : ''}',
                           ),
                           isThreeLine: true,
                           trailing: Row(
@@ -3757,8 +3687,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                                 ),
                               IconButton(
                                 tooltip: 'Sincronizar',
-                                icon: const Icon(Icons.sync,
-                                    color: Color(0xFF4A90E2)),
+                                icon: const Icon(
+                                  Icons.sync,
+                                  color: Color(0xFF4A90E2),
+                                ),
                                 onPressed: () async {
                                   await _syncSingleTurno(localId);
                                   setDialogState(() => refreshKey++);
@@ -3770,8 +3702,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                               () => _showTurnoDetailDialog(
                                 t,
                                 onSync:
-                                    () =>
-                                        setDialogState(() => refreshKey++),
+                                    () => setDialogState(() => refreshKey++),
                               ),
                         );
                       },
@@ -3798,11 +3729,12 @@ class _SettingsScreenState extends State<SettingsScreen>
     VoidCallback? onSync,
   }) {
     final localId = turno['local_id']?.toString() ?? 'N/A';
+    final displayId = _shortLocalTurnoId(localId);
     showDialog(
       context: context,
       builder:
           (context) => AlertDialog(
-            title: Text('Cierre de caja - $localId'),
+            title: Text('Cierre de caja - $displayId'),
             content: FutureBuilder<List<dynamic>>(
               future: Future.wait([
                 _userPreferencesService.getOfflineTurnoCuadre(turno),
@@ -3813,14 +3745,14 @@ class _SettingsScreenState extends State<SettingsScreen>
                 final cierre = turno['cierre'] ?? {};
                 final cuadre =
                     (snapshot.data != null
-                            ? snapshot.data![0] as Map<String, dynamic>?
-                            : null) ??
-                        {};
+                        ? snapshot.data![0] as Map<String, dynamic>?
+                        : null) ??
+                    {};
                 final usdRate =
                     (snapshot.data != null
-                            ? snapshot.data![1] as double?
-                            : null) ??
-                        0.0;
+                        ? snapshot.data![1] as double?
+                        : null) ??
+                    0.0;
 
                 final fechaApertura =
                     apertura['fecha_apertura']?.toString() ??
@@ -3844,8 +3776,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                             0)
                         .toDouble();
                 final totalTransferencias =
-                    (cuadre['total_transferencias'] as num? ?? 0)
-                        .toDouble();
+                    (cuadre['total_transferencias'] as num? ?? 0).toDouble();
                 final efectivoEsperado =
                     (cuadre['efectivo_esperado'] as num? ??
                             efectivoInicial + totalEfectivo)
@@ -3864,7 +3795,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                     (cuadre['operaciones_totales'] as num? ?? 0).toInt();
                 final ticketPromedio =
                     (cuadre['ticket_promedio'] as num? ?? 0).toDouble();
-                final diferencia = (cuadre['diferencia'] as num? ?? 0).toDouble();
+                final diferencia =
+                    (cuadre['diferencia'] as num? ?? 0).toDouble();
                 final totalVentasUsd =
                     usdRate > 0 ? totalVentas / usdRate : null;
 
@@ -3877,7 +3809,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                         'Apertura: $fechaApertura',
                         style: const TextStyle(fontWeight: FontWeight.w500),
                       ),
-                      Text('Efectivo inicial: \$${efectivoInicial.toStringAsFixed(2)}'),
+                      Text(
+                        'Efectivo inicial: \$${efectivoInicial.toStringAsFixed(2)}',
+                      ),
                       Text('Cierre: $fechaCierre'),
                       const SizedBox(height: 12),
                       Text(
@@ -3890,16 +3824,25 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ),
                       Text('Productos vendidos: $productosVendidos'),
                       Text('Operaciones: $operacionesTotales'),
-                      Text('Ticket promedio: \$${ticketPromedio.toStringAsFixed(2)}'),
+                      Text(
+                        'Ticket promedio: \$${ticketPromedio.toStringAsFixed(2)}',
+                      ),
                       const SizedBox(height: 8),
                       Text('Efectivo: \$${totalEfectivo.toStringAsFixed(2)}'),
-                      Text('Transferencias: \$${totalTransferencias.toStringAsFixed(2)}'),
-                      Text('Efectivo esperado: \$${efectivoEsperado.toStringAsFixed(2)}'),
+                      Text(
+                        'Transferencias: \$${totalTransferencias.toStringAsFixed(2)}',
+                      ),
+                      Text(
+                        'Efectivo esperado: \$${efectivoEsperado.toStringAsFixed(2)}',
+                      ),
                       if (diferencia.abs() > 0.01)
                         Text(
                           'Diferencia: ${diferencia >= 0 ? '+' : ''}\$${diferencia.toStringAsFixed(2)}',
                           style: TextStyle(
-                            color: diferencia >= 0 ? Colors.green[700] : Colors.red,
+                            color:
+                                diferencia >= 0
+                                    ? Colors.green[700]
+                                    : Colors.red,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -3908,9 +3851,15 @@ class _SettingsScreenState extends State<SettingsScreen>
                         'Egresos:',
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
-                      Text('Egresos efectivo: \$${egresosEfectivo.toStringAsFixed(2)}'),
-                      Text('Egresos digitales: \$${egresosDigitales.toStringAsFixed(2)}'),
-                      Text('Egresos totales: \$${egresosTotales.toStringAsFixed(2)}'),
+                      Text(
+                        'Egresos efectivo: \$${egresosEfectivo.toStringAsFixed(2)}',
+                      ),
+                      Text(
+                        'Egresos digitales: \$${egresosDigitales.toStringAsFixed(2)}',
+                      ),
+                      Text(
+                        'Egresos totales: \$${egresosTotales.toStringAsFixed(2)}',
+                      ),
                     ],
                   ),
                 );
@@ -3979,8 +3928,9 @@ class _SettingsScreenState extends State<SettingsScreen>
       'Settings ANTES sync single',
     );
     final sync = AutoSyncService();
-    final result =
-        await sync.syncOfflineTurnoAfterLocalCierre(localId: localId);
+    final result = await sync.syncOfflineTurnoAfterLocalCierre(
+      localId: localId,
+    );
     print(
       '[TURNO_SYNC] Settings._syncSingleTurno END '
       'success=${result['success']} msg=${result['message']}',
@@ -3996,8 +3946,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               ? 'Sincronización del turno completada'
               : 'Error: ${result['message'] ?? 'No especificado'}',
         ),
-        backgroundColor:
-            result['success'] == true ? Colors.green : Colors.red,
+        backgroundColor: result['success'] == true ? Colors.green : Colors.red,
       ),
     );
     await _refreshDataSection();
@@ -5371,66 +5320,70 @@ class _SyncDialogState extends State<_SyncDialog> {
               child: SingleChildScrollView(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: _tasks.asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final task = entry.value;
-                    final isFailed = _failedIndexes.contains(index);
-                    final isCompleted =
-                        !isFailed &&
-                        (_isCompleted || index < _currentIndex);
-                    final isCurrent =
-                        !_isCompleted &&
-                        !_hasError &&
-                        index == _currentIndex;
+                  children:
+                      _tasks.asMap().entries.map((entry) {
+                        final index = entry.key;
+                        final task = entry.value;
+                        final isFailed = _failedIndexes.contains(index);
+                        final isCompleted =
+                            !isFailed &&
+                            (_isCompleted || index < _currentIndex);
+                        final isCurrent =
+                            !_isCompleted &&
+                            !_hasError &&
+                            index == _currentIndex;
 
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          Icon(
-                            isFailed
-                                ? Icons.error_outline
-                                : isCompleted
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            children: [
+                              Icon(
+                                isFailed
+                                    ? Icons.error_outline
+                                    : isCompleted
                                     ? Icons.check_circle
                                     : isCurrent
-                                        ? Icons.sync
-                                        : Icons.circle_outlined,
-                            size: 16,
-                            color: isFailed
-                                ? Colors.orange
-                                : isCompleted
-                                    ? Colors.green
-                                    : isCurrent
+                                    ? Icons.sync
+                                    : Icons.circle_outlined,
+                                size: 16,
+                                color:
+                                    isFailed
+                                        ? Colors.orange
+                                        : isCompleted
+                                        ? Colors.green
+                                        : isCurrent
                                         ? Colors.blue
                                         : Colors.grey,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              task['name']!,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: isCompleted || isCurrent || isFailed
-                                    ? Colors.black87
-                                    : Colors.grey,
-                                fontWeight: isCurrent
-                                    ? FontWeight.w600
-                                    : FontWeight.normal,
                               ),
-                            ),
-                          ),
-                          if (!isCompleted && !isCurrent && !isFailed)
-                            Text(
-                              'Pendiente',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Colors.grey[500],
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  task['name']!,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color:
+                                        isCompleted || isCurrent || isFailed
+                                            ? Colors.black87
+                                            : Colors.grey,
+                                    fontWeight:
+                                        isCurrent
+                                            ? FontWeight.w600
+                                            : FontWeight.normal,
+                                  ),
+                                ),
                               ),
-                            ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
+                              if (!isCompleted && !isCurrent && !isFailed)
+                                Text(
+                                  'Pendiente',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey[500],
+                                  ),
+                                ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
                 ),
               ),
             ),

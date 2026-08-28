@@ -16,7 +16,8 @@ class SubscriptionDetailScreen extends StatefulWidget {
   const SubscriptionDetailScreen({super.key});
 
   @override
-  State<SubscriptionDetailScreen> createState() => _SubscriptionDetailScreenState();
+  State<SubscriptionDetailScreen> createState() =>
+      _SubscriptionDetailScreenState();
 }
 
 class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
@@ -25,7 +26,7 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
   final _subscriptionGuard = SubscriptionGuardService();
   final _authService = AuthService();
   final _connectivity = ConnectivityService();
-  
+
   Subscription? _activeSubscription;
   List<Subscription> _subscriptionHistory = [];
   OfflineLicenseStatus? _licenseStatus;
@@ -41,7 +42,7 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
 
   Future<void> _loadSubscriptionData() async {
     setState(() => _isLoading = true);
-    
+
     try {
       _idTienda = await _userPreferencesService.getIdTienda();
       if (_idTienda == null) {
@@ -57,15 +58,20 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
         forceRefresh: _connectivity.isConnected,
       );
       _licenseStatus = _subscriptionGuard.lastOfflineStatus;
-      
+
       // Cargar historial de suscripciones (solo online)
       if (_connectivity.isConnected) {
-        _subscriptionHistory = await _subscriptionService.getSubscriptionHistory(_idTienda!);
+        _subscriptionHistory = await _subscriptionService
+            .getSubscriptionHistory(_idTienda!);
       }
-      
-      print('✅ Datos de suscripción cargados - Estado: ${_activeSubscription?.isActive ?? false ? "ACTIVA" : "INACTIVA"}');
+
+      print(
+        '✅ Datos de suscripción cargados - Estado: ${_activeSubscription?.isActive ?? false ? "ACTIVA" : "INACTIVA"}',
+      );
       if (_licenseStatus != null) {
-        print('🔐 Licencia offline: ${_licenseStatus!.isValid} — ${_licenseStatus!.message}');
+        print(
+          '🔐 Licencia offline: ${_licenseStatus!.isValid} — ${_licenseStatus!.message}',
+        );
       }
       // No auto-navegar al cargar: el usuario debe quedarse en esta pantalla
       // si la abrió desde el menú. Entrar a la app solo con acción explícita.
@@ -120,38 +126,40 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
             ),
         ],
       ),
-      body: _isLoading 
-        ? const Center(child: CircularProgressIndicator())
-        : RefreshIndicator(
-            onRefresh: _loadSubscriptionData,
-            child: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildCurrentSubscriptionCard(),
-                  if (_licenseStatus != null && !_licenseStatus!.isValid) ...[
-                    const SizedBox(height: 16),
-                    _buildLicenseBlockedCard(),
-                  ],
-                  const SizedBox(height: 20),
-                  _buildContactCard(),
-                  const SizedBox(height: 20),
-                  if (_subscriptionHistory.isNotEmpty) ...[
-                    _buildHistoryCard(),
-                    const SizedBox(height: 20),
-                  ],
-                ],
+      body:
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : RefreshIndicator(
+                onRefresh: _loadSubscriptionData,
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildCurrentSubscriptionCard(),
+                      if (_licenseStatus != null &&
+                          !_licenseStatus!.isValid) ...[
+                        const SizedBox(height: 16),
+                        _buildLicenseBlockedCard(),
+                      ],
+                      const SizedBox(height: 20),
+                      _buildContactCard(),
+                      const SizedBox(height: 20),
+                      if (_subscriptionHistory.isNotEmpty) ...[
+                        _buildHistoryCard(),
+                        const SizedBox(height: 20),
+                      ],
+                    ],
+                  ),
+                ),
               ),
-            ),
-          ),
     );
   }
 
   Widget _buildCurrentSubscriptionCard() {
     final subscription = _activeSubscription;
-    
+
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -163,14 +171,21 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
             Row(
               children: [
                 Icon(
-                  subscription?.isActive == true ? Icons.check_circle : Icons.error,
-                  color: subscription?.isActive == true ? Colors.green : Colors.red,
+                  subscription?.isActive == true
+                      ? Icons.check_circle
+                      : Icons.error,
+                  color:
+                      subscription?.isActive == true
+                          ? Colors.green
+                          : Colors.red,
                   size: 28,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    subscription?.isActive == true ? 'Suscripción Activa' : 'Suscripción Inactiva',
+                    subscription?.isActive == true
+                        ? 'Suscripción Activa'
+                        : 'Suscripción Inactiva',
                     style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
@@ -180,16 +195,28 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            
+
             if (subscription != null) ...[
-              _buildInfoRow('Plan', subscription.planDenominacion ?? 'No especificado'),
+              _buildInfoRow(
+                'Plan',
+                subscription.planDenominacion ?? 'No especificado',
+              ),
               _buildInfoRow('Estado', subscription.estadoText),
-              _buildInfoRow('Fecha de inicio', DateFormat('dd/MM/yyyy').format(subscription.fechaInicio)),
+              _buildInfoRow(
+                'Fecha de inicio',
+                DateFormat('dd/MM/yyyy').format(subscription.fechaInicio),
+              ),
               if (subscription.fechaFin != null)
-                _buildInfoRow('Fecha de fin', DateFormat('dd/MM/yyyy').format(subscription.fechaFin!)),
+                _buildInfoRow(
+                  'Fecha de fin',
+                  DateFormat('dd/MM/yyyy').format(subscription.fechaFin!),
+                ),
               if (subscription.diasRestantes > 0)
-                _buildInfoRow('Días restantes', '${subscription.diasRestantes} días'),
-              
+                _buildInfoRow(
+                  'Días restantes',
+                  '${subscription.diasRestantes} días',
+                ),
+
               const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(12),
@@ -242,10 +269,7 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
                 const Expanded(
                   child: Text(
                     'App bloqueada',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                 ),
               ],
@@ -263,17 +287,19 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: (_isRevalidating || !online) ? null : _revalidateLicense,
-                icon: _isRevalidating
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.cloud_sync),
+                onPressed:
+                    (_isRevalidating || !online) ? null : _revalidateLicense,
+                icon:
+                    _isRevalidating
+                        ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                        : const Icon(Icons.cloud_sync),
                 label: Text(
                   online
                       ? (_isRevalidating
@@ -316,15 +342,17 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
       final ok = await _subscriptionGuard.forceCheck();
       if (!mounted) return;
 
-      final licenseStatus = hardStatus?.isValid == true
-          ? hardStatus!
-          : (_subscriptionGuard.lastOfflineStatus ??
-              await OfflineLicenseService().validateLocalLicense(
-                storeId: _idTienda,
-              ));
+      final licenseStatus =
+          hardStatus?.isValid == true
+              ? hardStatus!
+              : (_subscriptionGuard.lastOfflineStatus ??
+                  await OfflineLicenseService().validateLocalLicense(
+                    storeId: _idTienda,
+                  ));
 
-      _activeSubscription =
-          await _subscriptionGuard.getCurrentSubscription(forceRefresh: false);
+      _activeSubscription = await _subscriptionGuard.getCurrentSubscription(
+        forceRefresh: false,
+      );
       if (!mounted) return;
 
       // Licencia local/online válida → entrar
@@ -389,10 +417,7 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
                 SizedBox(width: 12),
                 Text(
                   'Soporte y Contacto',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
@@ -402,7 +427,7 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
               style: TextStyle(fontSize: 16, color: Colors.grey),
             ),
             const SizedBox(height: 16),
-            
+
             _buildContactButton(
               icon: Icons.phone,
               label: 'WhatsApp: 53765120',
@@ -435,19 +460,17 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
                 SizedBox(width: 12),
                 Text(
                   'Historial de Suscripciones',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
             const SizedBox(height: 16),
-            
-            ..._subscriptionHistory.take(3).map((subscription) => 
-              _buildHistoryItem(subscription)
-            ).toList(),
-            
+
+            ..._subscriptionHistory
+                .take(3)
+                .map((subscription) => _buildHistoryItem(subscription))
+                .toList(),
+
             if (_subscriptionHistory.length > 3)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
@@ -553,10 +576,7 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
                 ),
                 Text(
                   '${DateFormat('dd/MM/yyyy').format(subscription.fechaInicio)} - ${subscription.estadoText}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey,
-                  ),
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
               ],
             ),
@@ -571,11 +591,14 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
       return Colors.red;
     }
 
-    if (_activeSubscription == null || !_activeSubscription!.isActive || _activeSubscription!.isExpired) {
+    if (_activeSubscription == null ||
+        !_activeSubscription!.isActive ||
+        _activeSubscription!.isExpired) {
       return Colors.red;
     }
 
-    if (_activeSubscription!.diasRestantes > 0 && _activeSubscription!.diasRestantes <= 30) {
+    if (_activeSubscription!.diasRestantes > 0 &&
+        _activeSubscription!.diasRestantes <= 30) {
       return Colors.orange;
     }
 
@@ -599,7 +622,8 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
       return 'Tu suscripción está ${_activeSubscription!.estadoText.toLowerCase()}. Contacta al administrador para activarla.';
     }
 
-    if (_activeSubscription!.diasRestantes > 0 && _activeSubscription!.diasRestantes <= 30) {
+    if (_activeSubscription!.diasRestantes > 0 &&
+        _activeSubscription!.diasRestantes <= 30) {
       return 'Tu suscripción vence en ${_activeSubscription!.diasRestantes} días. Contacta al administrador para renovarla.';
     }
 
@@ -613,15 +637,11 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
   Future<void> _logout() async {
     try {
       await _authService.signOut();
-      await _userPreferencesService.clearUserData();
-      _subscriptionGuard.clearCache();
-      
+      await _userPreferencesService.clearAllCachedDataForOnlineLogout();
+      _subscriptionGuard.clearMemoryCacheOnly();
+
       if (mounted) {
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          '/login',
-          (route) => false,
-        );
+        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
       }
     } catch (e) {
       print('❌ Error durante logout: $e');
@@ -637,7 +657,8 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
   }
 
   Future<void> _launchWhatsApp(String phoneNumber) async {
-    final url = 'https://wa.me/$phoneNumber?text=Hola, necesito ayuda con mi suscripción de Inventtia Caja';
+    final url =
+        'https://wa.me/$phoneNumber?text=Hola, necesito ayuda con mi suscripción de Inventtia Caja';
     try {
       if (await canLaunchUrl(Uri.parse(url))) {
         await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);

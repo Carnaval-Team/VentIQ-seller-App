@@ -43,6 +43,7 @@ class _AperturaScreenState extends State<AperturaScreen>
   // Inventory management
   List<InventoryProduct> _inventoryProducts = [];
   Map<int, TextEditingController> _inventoryControllers = {};
+
   /// Stock real por producto (RPC batch / offline). Key = id_producto.
   Map<int, _StockRealProductoApertura> _stockRealByProduct = {};
   bool _isLoadingInventory = false;
@@ -167,17 +168,20 @@ class _AperturaScreenState extends State<AperturaScreen>
           if (!fechaOperacion.isBefore(fechaTurno)) continue;
 
           // Verificar que el último estado de la operación sea 1 (pendiente)
-          final estadoResponse = await supabase
-              .from('app_dat_estado_operacion')
-              .select('estado')
-              .eq('id_operacion', opId)
-              .order('id', ascending: false)
-              .limit(1)
-              .maybeSingle();
+          final estadoResponse =
+              await supabase
+                  .from('app_dat_estado_operacion')
+                  .select('estado')
+                  .eq('id_operacion', opId)
+                  .order('id', ascending: false)
+                  .limit(1)
+                  .maybeSingle();
 
           final ultimoEstado = estadoResponse?['estado'] as int?;
           if (ultimoEstado != null && ultimoEstado != 1) {
-            print('⏭️ Operación $opId tiene estado $ultimoEstado, no se puede recibir');
+            print(
+              '⏭️ Operación $opId tiene estado $ultimoEstado, no se puede recibir',
+            );
             continue;
           }
 
@@ -270,17 +274,20 @@ class _AperturaScreenState extends State<AperturaScreen>
       }
 
       // Verificar que el último estado de la operación sea 1 (pendiente)
-      final estadoResponse = await supabase
-          .from('app_dat_estado_operacion')
-          .select('estado')
-          .eq('id_operacion', operacionId)
-          .order('id', ascending: false)
-          .limit(1)
-          .maybeSingle();
+      final estadoResponse =
+          await supabase
+              .from('app_dat_estado_operacion')
+              .select('estado')
+              .eq('id_operacion', operacionId)
+              .order('id', ascending: false)
+              .limit(1)
+              .maybeSingle();
 
       final ultimoEstado = estadoResponse?['estado'] as int?;
       if (ultimoEstado != null && ultimoEstado != 1) {
-        print('⏭️ Operación $operacionId tiene estado $ultimoEstado, no se puede recibir');
+        print(
+          '⏭️ Operación $operacionId tiene estado $ultimoEstado, no se puede recibir',
+        );
         return false;
       }
 
@@ -419,8 +426,7 @@ class _AperturaScreenState extends State<AperturaScreen>
 
       if (!useLocal && offlineOpen != null) {
         // Solo intentar sync si hay red real; si no, seguir con datos locales.
-        final hasNetwork =
-            await ConnectivityService().performImmediateCheck();
+        final hasNetwork = await ConnectivityService().performImmediateCheck();
         if (hasNetwork) {
           await _triggerPendingAperturaSync();
         } else {
@@ -597,8 +603,7 @@ class _AperturaScreenState extends State<AperturaScreen>
         } catch (e) {
           print('⚠️ Resumen online falló ($e) — fallback local');
         }
-        resumenTurno ??=
-            await _userPrefs.getPreviousShiftSummaryFromLocal();
+        resumenTurno ??= await _userPrefs.getPreviousShiftSummaryFromLocal();
       }
 
       if (resumenTurno != null) {
@@ -606,8 +611,7 @@ class _AperturaScreenState extends State<AperturaScreen>
         final sales =
             (resumenTurno['ventas_totales'] as num?)?.toDouble() ?? 0.0;
         final cashSuggested =
-            (resumenTurno['efectivo_sugerido_apertura'] as num?)
-                ?.toDouble() ??
+            (resumenTurno['efectivo_sugerido_apertura'] as num?)?.toDouble() ??
             (resumenTurno['efectivo_real'] as num?)?.toDouble() ??
             (resumenTurno['efectivo_final'] as num?)?.toDouble() ??
             (resumenTurno['efectivo_inicial'] as num?)?.toDouble() ??
@@ -626,12 +630,6 @@ class _AperturaScreenState extends State<AperturaScreen>
             _previousShiftTicketAvg = ticket;
             _isLoadingPreviousShift = false;
           });
-
-          // Prefill monto inicial si el campo está vacío.
-          if (_montoInicialController.text.trim().isEmpty &&
-              cashSuggested > 0) {
-            _montoInicialController.text = cashSuggested.toStringAsFixed(2);
-          }
         }
       } else {
         print('ℹ️ No hay datos del turno anterior');
@@ -802,9 +800,7 @@ class _AperturaScreenState extends State<AperturaScreen>
 
         // Crear lista consolidada (solo con stock) y controllers
         final products =
-            productsByIdMap.values
-                .where((p) => p.cantidadFinal > 0)
-                .toList();
+            productsByIdMap.values.where((p) => p.cantidadFinal > 0).toList();
         for (var product in products) {
           // Crear controller para cada producto único
           if (!_inventoryControllers.containsKey(product.id)) {
@@ -871,9 +867,7 @@ class _AperturaScreenState extends State<AperturaScreen>
       final idTpv = await _userPrefs.getIdTpv();
       await _userPrefs.saveInventoryCountApertura(
         idTpv,
-        _pendingInventoryCounts.map(
-          (k, v) => MapEntry(k.toString(), v),
-        ),
+        _pendingInventoryCounts.map((k, v) => MapEntry(k.toString(), v)),
       );
     });
   }
@@ -1071,119 +1065,18 @@ class _AperturaScreenState extends State<AperturaScreen>
               : _existingOpenTurno != null
               ? _buildExistingOpenTurnoView()
               : Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[300]!),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.lock_open,
-                          color: const Color(0xFF4A90E2),
-                          size: 24,
-                        ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          'Apertura de Caja',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1F2937),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    _buildInfoRow(
-                      'Fecha actual:',
-                      _formatDate(DateTime.now().toLocal()),
-                    ),
-                    _buildInfoRow(
-                      'Hora actual:',
-                      _formatTime(DateTime.now().toLocal()),
-                    ),
-                    _buildInfoRow('Usuario:', _userName),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              _buildPreviousShiftSummary(),
-
-              const SizedBox(height: 20),
-
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[300]!),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Row(
-                    // children: [
-                    //   Icon(
-                    //     Icons.checklist,
-                    //     color: const Color(0xFF4A90E2),
-                    //     size: 20,
-                    //   ),
-                    //   const SizedBox(width: 8),
-                    //   const Text(
-                    //     'Opciones de Apertura',
-                    //     style: TextStyle(
-                    //       fontSize: 16,
-                    //       fontWeight: FontWeight.w600,
-                    //       color: Color(0xFF1F2937),
-                    //     ),
-                    //   ),
-                    // ],
-                    //),
-                    // const SizedBox(height: 16),
-                    if (_isLoadingStoreConfig || _checkingInventoryStatus)
+                key: _formKey,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Container(
                         padding: const EdgeInsets.all(16),
-                        child: const Center(
-                          child: CircularProgressIndicator(
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Color(0xFF4A90E2),
-                            ),
-                          ),
-                        ),
-                      )
-                    else if (_manejaInventario)
-                      Container(
-                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color:
-                              _inventorySet
-                                  ? Colors.green[50]
-                                  : (_inventoryAlreadyDone
-                                      ? Colors.blue[50]
-                                      : Colors.orange[50]),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color:
-                                _inventorySet
-                                    ? Colors.green[200]!
-                                    : (_inventoryAlreadyDone
-                                        ? Colors.blue[200]!
-                                        : Colors.orange[200]!),
-                          ),
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[300]!),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1191,307 +1084,415 @@ class _AperturaScreenState extends State<AperturaScreen>
                             Row(
                               children: [
                                 Icon(
-                                  _inventorySet
-                                      ? Icons.check_circle
-                                      : (_inventoryAlreadyDone
-                                          ? Icons.info_outline
-                                          : Icons.warning_amber),
+                                  Icons.lock_open,
+                                  color: const Color(0xFF4A90E2),
+                                  size: 24,
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Apertura de Caja',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF1F2937),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            _buildInfoRow(
+                              'Fecha actual:',
+                              _formatDate(DateTime.now().toLocal()),
+                            ),
+                            _buildInfoRow(
+                              'Hora actual:',
+                              _formatTime(DateTime.now().toLocal()),
+                            ),
+                            _buildInfoRow('Usuario:', _userName),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      _buildPreviousShiftSummary(),
+
+                      const SizedBox(height: 20),
+
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[300]!),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Row(
+                            // children: [
+                            //   Icon(
+                            //     Icons.checklist,
+                            //     color: const Color(0xFF4A90E2),
+                            //     size: 20,
+                            //   ),
+                            //   const SizedBox(width: 8),
+                            //   const Text(
+                            //     'Opciones de Apertura',
+                            //     style: TextStyle(
+                            //       fontSize: 16,
+                            //       fontWeight: FontWeight.w600,
+                            //       color: Color(0xFF1F2937),
+                            //     ),
+                            //   ),
+                            // ],
+                            //),
+                            // const SizedBox(height: 16),
+                            if (_isLoadingStoreConfig ||
+                                _checkingInventoryStatus)
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                child: const Center(
+                                  child: CircularProgressIndicator(
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Color(0xFF4A90E2),
+                                    ),
+                                  ),
+                                ),
+                              )
+                            else if (_manejaInventario)
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
                                   color:
                                       _inventorySet
-                                          ? Colors.green[700]
+                                          ? Colors.green[50]
                                           : (_inventoryAlreadyDone
-                                              ? Colors.blue[700]
-                                              : Colors.orange[700]),
-                                  size: 18,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  _inventorySet
-                                      ? 'Inventario Establecido'
-                                      : (_inventoryAlreadyDone
-                                          ? 'Inventario Opcional'
-                                          : 'Inventario Requerido'),
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
+                                              ? Colors.blue[50]
+                                              : Colors.orange[50]),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
                                     color:
                                         _inventorySet
-                                            ? Colors.green[700]
+                                            ? Colors.green[200]!
                                             : (_inventoryAlreadyDone
-                                                ? Colors.blue[700]
-                                                : Colors.orange[700]),
+                                                ? Colors.blue[200]!
+                                                : Colors.orange[200]!),
                                   ),
                                 ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              _inventorySet
-                                  ? 'Has establecido el inventario inicial del turno (${_inventoryProducts.where((p) => (_inventoryControllers[p.id]?.text ?? '').isNotEmpty).length} productos contados)'
-                                  : (_inventoryAlreadyDone
-                                      ? 'Ya se realizó un inventario en este almacén. Puedes realizar otro si lo deseas.'
-                                      : 'Debes establecer el inventario inicial del turno anterior antes de continuar'),
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Colors.grey[700],
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton.icon(
-                                onPressed: _showInventoryCountModal,
-                                icon: Icon(
-                                  _inventorySet
-                                      ? Icons.edit
-                                      : Icons.inventory_2,
-                                ),
-                                label: Text(
-                                  _inventorySet
-                                      ? 'Editar Inventario'
-                                      : 'Establecer Inventario',
-                                ),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor:
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          _inventorySet
+                                              ? Icons.check_circle
+                                              : (_inventoryAlreadyDone
+                                                  ? Icons.info_outline
+                                                  : Icons.warning_amber),
+                                          color:
+                                              _inventorySet
+                                                  ? Colors.green[700]
+                                                  : (_inventoryAlreadyDone
+                                                      ? Colors.blue[700]
+                                                      : Colors.orange[700]),
+                                          size: 18,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          _inventorySet
+                                              ? 'Inventario Establecido'
+                                              : (_inventoryAlreadyDone
+                                                  ? 'Inventario Opcional'
+                                                  : 'Inventario Requerido'),
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            color:
+                                                _inventorySet
+                                                    ? Colors.green[700]
+                                                    : (_inventoryAlreadyDone
+                                                        ? Colors.blue[700]
+                                                        : Colors.orange[700]),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(
                                       _inventorySet
-                                          ? Colors.green
+                                          ? 'Has establecido el inventario inicial del turno (${_inventoryProducts.where((p) => (_inventoryControllers[p.id]?.text ?? '').isNotEmpty).length} productos contados)'
                                           : (_inventoryAlreadyDone
-                                              ? Colors.blue
-                                              : Colors.orange),
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 12,
-                                  ),
+                                              ? 'Ya se realizó un inventario en este almacén. Puedes realizar otro si lo deseas.'
+                                              : 'Debes establecer el inventario inicial del turno anterior antes de continuar'),
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.grey[700],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: ElevatedButton.icon(
+                                        onPressed: _showInventoryCountModal,
+                                        icon: Icon(
+                                          _inventorySet
+                                              ? Icons.edit
+                                              : Icons.inventory_2,
+                                        ),
+                                        label: Text(
+                                          _inventorySet
+                                              ? 'Editar Inventario'
+                                              : 'Establecer Inventario',
+                                        ),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor:
+                                              _inventorySet
+                                                  ? Colors.green
+                                                  : (_inventoryAlreadyDone
+                                                      ? Colors.blue
+                                                      : Colors.orange),
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 12,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            else
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue[50],
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.blue[200]!),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.info_outline,
+                                          color: const Color(0xFF4A90E2),
+                                          size: 18,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        const Text(
+                                          'Opciones de Inventario',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            color: Color(0xFF4A90E2),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          '1. ',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                            color: Color(0xFF1F2937),
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: Text(
+                                            'Este turno no manejará inventario (solo ventas)',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: Colors.grey[700],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          '2. ',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                            color: Color(0xFF1F2937),
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: Text(
+                                            'La apertura se realizará sin conteo de productos',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: Colors.grey[700],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ),
                           ],
                         ),
-                      )
-                    else
+                      ),
+
+                      const SizedBox(height: 20),
+
                       Container(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.blue[50],
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.blue[200]!),
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[300]!),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.info_outline,
-                                  color: const Color(0xFF4A90E2),
-                                  size: 18,
-                                ),
-                                const SizedBox(width: 8),
-                                const Text(
-                                  'Opciones de Inventario',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF4A90E2),
-                                  ),
-                                ),
-                              ],
+                            const Text(
+                              'Monto Inicial en Caja',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1F2937),
+                              ),
                             ),
                             const SizedBox(height: 12),
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  '1. ',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF1F2937),
+                            TextFormField(
+                              controller: _montoInicialController,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
                                   ),
-                                ),
-                                Expanded(
-                                  child: Text(
-                                    'Este turno no manejará inventario (solo ventas)',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: Colors.grey[700],
-                                    ),
-                                  ),
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(
+                                  RegExp(r'^\d+\.?\d{0,2}'),
                                 ),
                               ],
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  '2. ',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF1F2937),
-                                  ),
+                              decoration: InputDecoration(
+                                labelText: 'Monto inicial (\$)',
+                                prefixIcon: const Icon(Icons.attach_money),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
-                                Expanded(
-                                  child: Text(
-                                    'La apertura se realizará sin conteo de productos',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: Colors.grey[700],
-                                    ),
-                                  ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
                                 ),
-                              ],
+                              ),
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'El monto inicial es requerido';
+                                }
+                                final monto = double.tryParse(value);
+                                if (monto == null || monto < 0) {
+                                  return 'Ingrese un monto válido';
+                                }
+                                return null;
+                              },
                             ),
                           ],
                         ),
                       ),
-                  ],
-                ),
-              ),
 
-              const SizedBox(height: 20),
+                      const SizedBox(height: 20),
 
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[300]!),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Monto Inicial en Caja',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1F2937),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _montoInicialController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(
-                          RegExp(r'^\d+\.?\d{0,2}'),
+                      // Inventory counting section removed since it's disabled
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[300]!),
                         ),
-                      ],
-                      decoration: InputDecoration(
-                        labelText: 'Monto inicial (\$)',
-                        prefixIcon: const Icon(Icons.attach_money),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'El monto inicial es requerido';
-                        }
-                        final monto = double.tryParse(value);
-                        if (monto == null || monto < 0) {
-                          return 'Ingrese un monto válido';
-                        }
-                        return null;
-                      },
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // Inventory counting section removed since it's disabled
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[300]!),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Observaciones',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1F2937),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Opcional - Notas adicionales sobre la apertura',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _observacionesController,
-                      maxLines: 3,
-                      decoration: InputDecoration(
-                        hintText:
-                            'Ej: Apertura normal del día, billetes verificados...',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 30),
-
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isProcessing ? null : _crearApertura,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF4A90E2),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child:
-                      _isProcessing
-                          ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                Colors.white,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Observaciones',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1F2937),
                               ),
                             ),
-                          )
-                          : const Text(
-                            'Crear Apertura',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
+                            const SizedBox(height: 8),
+                            Text(
+                              'Opcional - Notas adicionales sobre la apertura',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: _observacionesController,
+                              maxLines: 3,
+                              decoration: InputDecoration(
+                                hintText:
+                                    'Ej: Apertura normal del día, billetes verificados...',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 30),
+
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _isProcessing ? null : _crearApertura,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF4A90E2),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
                             ),
                           ),
+                          child:
+                              _isProcessing
+                                  ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.white,
+                                      ),
+                                    ),
+                                  )
+                                  : const Text(
+                                    'Crear Apertura',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 
@@ -1499,8 +1500,7 @@ class _AperturaScreenState extends State<AperturaScreen>
     final turno = _existingOpenTurno!;
     final isOffline = _existingTurnoIsOffline;
     final typeColor = isOffline ? Colors.orange : const Color(0xFF059669);
-    final typeBg =
-        isOffline ? Colors.orange.shade50 : const Color(0xFFECFDF5);
+    final typeBg = isOffline ? Colors.orange.shade50 : const Color(0xFFECFDF5);
     final typeBorder =
         isOffline ? Colors.orange.shade200 : const Color(0xFFA7F3D0);
 
@@ -1527,8 +1527,7 @@ class _AperturaScreenState extends State<AperturaScreen>
     final idVendedor = turno['id_vendedor']?.toString() ?? '—';
     final manejaInventario = turno['maneja_inventario'] == true;
     final productos = turno['productos'];
-    final productosCount =
-        productos is List ? productos.length : 0;
+    final productosCount = productos is List ? productos.length : 0;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -1555,9 +1554,7 @@ class _AperturaScreenState extends State<AperturaScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        isOffline
-                            ? 'Apertura OFFLINE'
-                            : 'Apertura ONLINE',
+                        isOffline ? 'Apertura OFFLINE' : 'Apertura ONLINE',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
@@ -1569,10 +1566,7 @@ class _AperturaScreenState extends State<AperturaScreen>
                         isOffline
                             ? 'Turno creado sin conexión (pendiente de sincronizar o local).'
                             : 'Turno registrado en el servidor.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[700],
-                        ),
+                        style: TextStyle(fontSize: 12, color: Colors.grey[700]),
                       ),
                     ],
                   ),
@@ -1826,19 +1820,6 @@ class _AperturaScreenState extends State<AperturaScreen>
     }
 
     final montoInicial = double.parse(_montoInicialController.text);
-    if (_previousShiftCash > 0) {
-      final diferencia = montoInicial - _previousShiftCash;
-      if (diferencia.abs() > 0) {
-        final shouldContinue = await _showCashDifferenceDialog(
-          montoInicial,
-          _previousShiftCash,
-          diferencia,
-        );
-        if (!shouldContinue) {
-          return;
-        }
-      }
-    }
 
     setState(() {
       _isProcessing = true;
@@ -1896,7 +1877,7 @@ class _AperturaScreenState extends State<AperturaScreen>
               // Diferencia vs debe-haber (oculto al usuario; va a observaciones)
               final cantidadSistema =
                   _stockRealByProduct[product.id]?.debeHaber ??
-                      product.cantidadFinalReal;
+                  product.cantidadFinalReal;
               final diferencia = cantidadContada - cantidadSistema;
 
               if (diferencia > 0) {
@@ -2133,128 +2114,6 @@ class _AperturaScreenState extends State<AperturaScreen>
     );
   }
 
-  Future<bool> _showCashDifferenceDialog(
-    double montoInicial,
-    double montoEsperado,
-    double diferencia,
-  ) async {
-    return await showDialog<bool>(
-          context: context,
-          barrierDismissible: false,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: Row(
-                children: [
-                  Icon(
-                    Icons.warning_amber_rounded,
-                    color: Colors.orange,
-                    size: 28,
-                  ),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Diferencia de Efectivo',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                  ),
-                ],
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Se detectó una diferencia entre el monto inicial y el efectivo inicial del turno anterior:',
-                    style: TextStyle(fontSize: 14),
-                  ),
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[50],
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey[300]!),
-                    ),
-                    child: Column(
-                      children: [
-                        _buildDialogInfoRow(
-                          'Efectivo Inicial:',
-                          '\$${montoEsperado.toStringAsFixed(2)}',
-                        ),
-                        _buildDialogInfoRow(
-                          'Monto Inicial:',
-                          '\$${montoInicial.toStringAsFixed(2)}',
-                        ),
-                        const Divider(),
-                        _buildDialogInfoRow(
-                          'Diferencia:',
-                          '${diferencia >= 0 ? '+' : ''}\$${diferencia.toStringAsFixed(2)}',
-                          isHighlight: true,
-                          color: diferencia >= 0 ? Colors.green : Colors.red,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    '¿Desea continuar con la apertura?',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text(
-                    'Cancelar',
-                    style: TextStyle(color: Colors.grey),
-                  ),
-                ),
-                ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF4A90E2),
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Continuar'),
-                ),
-              ],
-            );
-          },
-        ) ??
-        false;
-  }
-
-  Widget _buildDialogInfoRow(
-    String label,
-    String value, {
-    bool isHighlight = false,
-    Color? color,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[700],
-              fontWeight: isHighlight ? FontWeight.w600 : FontWeight.normal,
-            ),
-          ),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: color ?? (isHighlight ? Colors.black87 : Colors.black87),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   /// Widget del modal de conteo de inventario (misma UX que el cierre).
   Widget _buildInventoryCountModal() {
     return DraggableScrollableSheet(
@@ -2348,9 +2207,9 @@ class _AperturaScreenState extends State<AperturaScreen>
                                 for (final p in _inventoryProducts) {
                                   final debe =
                                       _stockRealByProduct[p.id]?.debeHaber ??
-                                          p.cantidadFinalReal;
-                                  _inventoryControllers[p.id]?.text =
-                                      _formatInventoryQty(debe);
+                                      p.cantidadFinalReal;
+                                  _inventoryControllers[p.id]
+                                      ?.text = _formatInventoryQty(debe);
                                   _pendingInventoryCounts[p.id] = debe;
                                 }
                                 _scheduleSaveInventoryCounts();
@@ -2376,138 +2235,140 @@ class _AperturaScreenState extends State<AperturaScreen>
                     ),
 
                   Expanded(
-                    child: _isLoadingInventory
-                        ? const Center(child: CircularProgressIndicator())
-                        : _inventoryProducts.isEmpty
+                    child:
+                        _isLoadingInventory
+                            ? const Center(child: CircularProgressIndicator())
+                            : _inventoryProducts.isEmpty
                             ? const Center(
-                                child: Text('No hay productos de inventario'),
-                              )
+                              child: Text('No hay productos de inventario'),
+                            )
                             : ListView.builder(
-                                controller: scrollController,
-                                keyboardDismissBehavior:
-                                    ScrollViewKeyboardDismissBehavior.onDrag,
-                                padding:
-                                    const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                                itemCount: _inventoryProducts.length,
-                                itemBuilder: (context, index) {
-                                  final product = _inventoryProducts[index];
-                                  final controller =
-                                      _inventoryControllers[product.id]!;
-                                  final debeHaber = _stockRealByProduct[
-                                              product.id]
-                                          ?.debeHaber ??
-                                      product.cantidadFinalReal;
-                                  final isMissing =
-                                      _missingInventoryProductIds
-                                          .contains(product.id);
-
-                                  return Container(
-                                    margin: const EdgeInsets.only(bottom: 12),
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: isMissing
-                                          ? Colors.red[50]
-                                          : Colors.grey[50],
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: isMissing
-                                            ? Colors.red[400]!
-                                            : Colors.grey[200]!,
-                                      ),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        if (isMissing) ...[
-                                          Icon(
-                                            Icons.warning_amber_rounded,
-                                            color: Colors.red[700],
-                                            size: 20,
-                                          ),
-                                          const SizedBox(width: 8),
-                                        ],
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                product.nombreProducto,
-                                                style: const TextStyle(
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.w500,
-                                                  color: Color(0xFF1F2937),
-                                                ),
-                                              ),
-                                              if (_mostrarDebeHaberEnConteo) ...[
-                                                const SizedBox(height: 4),
-                                                Text(
-                                                  'Debe haber: ${_formatInventoryQty(debeHaber)}',
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: Colors.blue[700],
-                                                  ),
-                                                ),
-                                              ],
-                                            ],
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        SizedBox(
-                                          width: 100,
-                                          child: TextFormField(
-                                            controller: controller,
-                                            keyboardType: const TextInputType
-                                                .numberWithOptions(
-                                              decimal: true,
-                                            ),
-                                            textInputAction:
-                                                TextInputAction.next,
-                                            scrollPadding:
-                                                const EdgeInsets.only(
-                                              bottom: 120,
-                                            ),
-                                            inputFormatters: [
-                                              FilteringTextInputFormatter.allow(
-                                                RegExp(r'^\d+\.?\d{0,2}'),
-                                              ),
-                                            ],
-                                            decoration: InputDecoration(
-                                              labelText: 'Real',
-                                              hintText: '0',
-                                              border: OutlineInputBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                              ),
-                                              contentPadding:
-                                                  const EdgeInsets.symmetric(
-                                                horizontal: 12,
-                                                vertical: 8,
-                                              ),
-                                              isDense: true,
-                                            ),
-                                            style: const TextStyle(
-                                              fontSize: 14,
-                                            ),
-                                            onChanged: (value) {
-                                              _onInventoryCountChanged(
-                                                product.id,
-                                                value,
-                                              );
-                                              if (_missingInventoryProductIds
-                                                  .contains(product.id)) {
-                                                _missingInventoryProductIds
-                                                    .remove(product.id);
-                                                modalSetState(() {});
-                                              }
-                                            },
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                },
+                              controller: scrollController,
+                              keyboardDismissBehavior:
+                                  ScrollViewKeyboardDismissBehavior.onDrag,
+                              padding: const EdgeInsets.fromLTRB(
+                                16,
+                                16,
+                                16,
+                                24,
                               ),
+                              itemCount: _inventoryProducts.length,
+                              itemBuilder: (context, index) {
+                                final product = _inventoryProducts[index];
+                                final controller =
+                                    _inventoryControllers[product.id]!;
+                                final debeHaber =
+                                    _stockRealByProduct[product.id]
+                                        ?.debeHaber ??
+                                    product.cantidadFinalReal;
+                                final isMissing = _missingInventoryProductIds
+                                    .contains(product.id);
+
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 12),
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        isMissing
+                                            ? Colors.red[50]
+                                            : Colors.grey[50],
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color:
+                                          isMissing
+                                              ? Colors.red[400]!
+                                              : Colors.grey[200]!,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      if (isMissing) ...[
+                                        Icon(
+                                          Icons.warning_amber_rounded,
+                                          color: Colors.red[700],
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 8),
+                                      ],
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              product.nombreProducto,
+                                              style: const TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w500,
+                                                color: Color(0xFF1F2937),
+                                              ),
+                                            ),
+                                            if (_mostrarDebeHaberEnConteo) ...[
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                'Debe haber: ${_formatInventoryQty(debeHaber)}',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Colors.blue[700],
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      SizedBox(
+                                        width: 100,
+                                        child: TextFormField(
+                                          controller: controller,
+                                          keyboardType:
+                                              const TextInputType.numberWithOptions(
+                                                decimal: true,
+                                              ),
+                                          textInputAction: TextInputAction.next,
+                                          scrollPadding: const EdgeInsets.only(
+                                            bottom: 120,
+                                          ),
+                                          inputFormatters: [
+                                            FilteringTextInputFormatter.allow(
+                                              RegExp(r'^\d+\.?\d{0,2}'),
+                                            ),
+                                          ],
+                                          decoration: InputDecoration(
+                                            labelText: 'Real',
+                                            hintText: '0',
+                                            border: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            contentPadding:
+                                                const EdgeInsets.symmetric(
+                                                  horizontal: 12,
+                                                  vertical: 8,
+                                                ),
+                                            isDense: true,
+                                          ),
+                                          style: const TextStyle(fontSize: 14),
+                                          onChanged: (value) {
+                                            _onInventoryCountChanged(
+                                              product.id,
+                                              value,
+                                            );
+                                            if (_missingInventoryProductIds
+                                                .contains(product.id)) {
+                                              _missingInventoryProductIds
+                                                  .remove(product.id);
+                                              modalSetState(() {});
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
                   ),
 
                   Container(
@@ -2529,8 +2390,7 @@ class _AperturaScreenState extends State<AperturaScreen>
                           child: OutlinedButton(
                             onPressed: () => Navigator.pop(context),
                             style: OutlinedButton.styleFrom(
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 12),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
                               side: BorderSide(color: Colors.grey[400]!),
                             ),
                             child: const Text('Cancelar'),
@@ -2541,17 +2401,17 @@ class _AperturaScreenState extends State<AperturaScreen>
                           flex: 2,
                           child: ElevatedButton(
                             onPressed: () {
-                              final missing = _inventoryProducts
-                                  .where(
-                                    (p) =>
-                                        (_inventoryControllers[p.id]
-                                                ?.text
-                                                .trim()
-                                                .isEmpty ??
-                                            true),
-                                  )
-                                  .map((p) => p.id)
-                                  .toSet();
+                              final missing =
+                                  _inventoryProducts
+                                      .where(
+                                        (p) =>
+                                            (_inventoryControllers[p.id]?.text
+                                                    .trim()
+                                                    .isEmpty ??
+                                                true),
+                                      )
+                                      .map((p) => p.id)
+                                      .toSet();
                               if (missing.isNotEmpty) {
                                 modalSetState(() {
                                   _missingInventoryProductIds
@@ -2589,8 +2449,7 @@ class _AperturaScreenState extends State<AperturaScreen>
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF4A90E2),
                               foregroundColor: Colors.white,
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 12),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
                             child: const Text(
                               'Guardar Inventario',

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
 import '../config/app_colors.dart';
@@ -26,6 +27,75 @@ import '../utils/screen_protection_mixin.dart';
 import '../utils/navigation_guard.dart';
 import 'store_data_management_screen.dart';
 import 'catalogo_productos_screen.dart';
+
+const String _adminAppDownloadUrl = 'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/vendedor%20admin.apk';
+
+void _showDownloadAppDialog(BuildContext context) {
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Row(
+        children: [
+          Icon(Icons.download_outlined, color: Color(0xFF4A90E2)),
+          SizedBox(width: 8),
+          Text('Descargar Inventtia Admin'),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Escanea el código QR o comparte el enlace para descargar la app de administración:',
+              style: TextStyle(fontSize: 14, color: Color(0xFF6B7280)),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.asset(
+                'assets/Lk1KNR.png',
+                width: 180,
+                height: 180,
+                fit: BoxFit.contain,
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'O comparte el enlace directo:',
+              style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            SelectableText(
+              _adminAppDownloadUrl,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 13,
+                color: Color(0xFF4A90E2),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton.icon(
+          onPressed: () => Share.share(_adminAppDownloadUrl),
+          icon: const Icon(Icons.share, size: 20),
+          label: const Text('Compartir link'),
+          style: TextButton.styleFrom(
+            foregroundColor: const Color(0xFF4A90E2),
+          ),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cerrar'),
+        ),
+      ],
+    ),
+  );
+}
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -172,6 +242,11 @@ class _SettingsScreenState extends State<SettingsScreen>
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.share, color: Colors.white),
+            onPressed: () => _showDownloadAppDialog(context),
+            tooltip: 'Compartir app de administración',
+          ),
           Builder(
             builder:
                 (context) => IconButton(

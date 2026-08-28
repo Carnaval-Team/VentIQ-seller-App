@@ -45,6 +45,7 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
   String? _selectedStatus;
   DateTime? _dateFrom;
   DateTime? _dateTo;
+  bool _filterByStatusDate = false;
 
   @override
   void initState() {
@@ -153,6 +154,7 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       orderIdFilter: _searchOrderId,
       dateFrom: _dateFrom,
       dateTo: _dateTo,
+      filterByStatusDate: _filterByStatusDate,
     );
     final ordersWithDireccion = await _enrichOrdersWithDireccion(orders);
     setState(() {
@@ -177,6 +179,7 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       orderIdFilter: _searchOrderId,
       dateFrom: _dateFrom,
       dateTo: _dateTo,
+      filterByStatusDate: _filterByStatusDate,
     );
     final ordersWithDireccion = await _enrichOrdersWithDireccion(orders);
     setState(() {
@@ -266,13 +269,12 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder:
-          (_) => CarnavalOrderDetailSheet(
-            order: order,
-            isAdmin: _isAdmin,
-            carnavalStoreId: _carnavalStoreId!,
-            onOrderUpdated: _loadOrders,
-          ),
+      builder: (_) => CarnavalOrderDetailSheet(
+        order: order,
+        isAdmin: _isAdmin,
+        carnavalStoreId: _carnavalStoreId!,
+        onOrderUpdated: _loadOrders,
+      ),
     );
   }
 
@@ -300,14 +302,13 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder:
-            (_) => CarnavalAuditScreen(
-              carnavalStoreId: _carnavalStoreId!,
-              isAdmin: _isAdmin,
-              dateFrom: _dateFrom,
-              dateTo: _dateTo,
-              statusFilter: _selectedStatus,
-            ),
+        builder: (_) => CarnavalAuditScreen(
+          carnavalStoreId: _carnavalStoreId!,
+          isAdmin: _isAdmin,
+          dateFrom: _dateFrom,
+          dateTo: _dateTo,
+          statusFilter: _selectedStatus,
+        ),
       ),
     );
   }
@@ -317,167 +318,208 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Órdenes Carnaval')),
       endDrawer: const AdminDrawer(),
-      body:
-          _isLoading && _orders.isEmpty
-              ? const Center(child: CircularProgressIndicator())
-              : _carnavalStoreId == null
-              ? const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Text(
-                    'Tu tienda no está vinculada a Carnaval.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 16),
-                  ),
+      body: _isLoading && _orders.isEmpty
+          ? const Center(child: CircularProgressIndicator())
+          : _carnavalStoreId == null
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'Tu tienda no está vinculada a Carnaval.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16),
                 ),
-              )
-              : Column(
-                children: [
-                  // Search bar + dashboard icon
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _searchController,
-                            keyboardType: TextInputType.number,
-                            onSubmitted: (_) => _onSearch(),
-                            decoration: InputDecoration(
-                              hintText: 'Buscar por ID de orden...',
-                              prefixIcon: const Icon(Icons.search, size: 20),
-                              suffixIcon:
-                                  _searchController.text.isNotEmpty
-                                      ? IconButton(
-                                        icon: const Icon(Icons.clear, size: 20),
-                                        onPressed: () {
-                                          _searchController.clear();
-                                          _loadOrders();
-                                        },
-                                      )
-                                      : null,
-                              isDense: true,
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 10,
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
+              ),
+            )
+          : Column(
+              children: [
+                // Search bar + dashboard icon
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _searchController,
+                          keyboardType: TextInputType.number,
+                          onSubmitted: (_) => _onSearch(),
+                          decoration: InputDecoration(
+                            hintText: 'Buscar por ID de orden...',
+                            prefixIcon: const Icon(Icons.search, size: 20),
+                            suffixIcon: _searchController.text.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear, size: 20),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      _loadOrders();
+                                    },
+                                  )
+                                : null,
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        if (_isAdmin)
-                          IconButton(
-                            onPressed: _openDashboard,
-                            icon: const Icon(Icons.dashboard),
-                            tooltip: 'Dashboard',
-                            style: IconButton.styleFrom(
-                              backgroundColor: Colors.indigo.withValues(
-                                alpha: 0.1,
-                              ),
+                      ),
+                      const SizedBox(width: 8),
+                      if (_isAdmin)
+                        IconButton(
+                          onPressed: _openDashboard,
+                          icon: const Icon(Icons.dashboard),
+                          tooltip: 'Dashboard',
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.indigo.withValues(
+                              alpha: 0.1,
                             ),
                           ),
+                        ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        onPressed: _openAudit,
+                        icon: const Icon(Icons.rule_folder_outlined),
+                        tooltip: 'Auditoría Carnaval vs Inventtia',
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.teal.withValues(alpha: 0.1),
+                        ),
+                      ),
+                      if (_isAdmin) ...[
                         const SizedBox(width: 8),
                         IconButton(
-                          onPressed: _openAudit,
-                          icon: const Icon(Icons.rule_folder_outlined),
-                          tooltip: 'Auditoría Carnaval vs Inventtia',
+                          onPressed: _openBitacora,
+                          icon: const Icon(Icons.fact_check_outlined),
+                          tooltip: 'Bitácora de capitán',
                           style: IconButton.styleFrom(
-                            backgroundColor: Colors.teal.withValues(alpha: 0.1),
-                          ),
-                        ),
-                        if (_isAdmin) ...[
-                          const SizedBox(width: 8),
-                          IconButton(
-                            onPressed: _openBitacora,
-                            icon: const Icon(Icons.fact_check_outlined),
-                            tooltip: 'Bitácora de capitán',
-                            style: IconButton.styleFrom(
-                              backgroundColor: Colors.deepPurple.withValues(
-                                alpha: 0.1,
-                              ),
+                            backgroundColor: Colors.deepPurple.withValues(
+                              alpha: 0.1,
                             ),
                           ),
-                        ],
+                        ),
                       ],
-                    ),
+                    ],
                   ),
-                  // Date range filter
-                  _buildDateRangeRow(),
-                  // Status chips
-                  SizedBox(
-                    height: 48,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                  child: SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(
+                        value: false,
+                        icon: Icon(Icons.add_circle_outline, size: 16),
+                        label: Text('Fecha de creación'),
                       ),
-                      children: [
-                        _buildStatusChip(null, 'Todos'),
-                        ..._allStatuses.map((s) => _buildStatusChip(s, s)),
-                      ],
+                      ButtonSegment(
+                        value: true,
+                        icon: Icon(Icons.history, size: 16),
+                        label: Text('Llegada al estado'),
+                      ),
+                    ],
+                    selected: {_filterByStatusDate},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (selection) {
+                      final byStatusDate = selection.first;
+                      if (byStatusDate && _selectedStatus == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Selecciona primero el estado que deseas consultar',
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+                      setState(() => _filterByStatusDate = byStatusDate);
+                      _loadOrders();
+                    },
+                  ),
+                ),
+                if (_filterByStatusDate && _selectedStatus != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Mostrando órdenes que llegaron a “$_selectedStatus” durante el período',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.indigo,
+                        ),
+                      ),
                     ),
                   ),
-                  // Orders list
-                  Expanded(
-                    child:
-                        _isLoading
-                            ? const Center(child: CircularProgressIndicator())
-                            : RefreshIndicator(
-                              onRefresh: _loadOrders,
-                              child:
-                                  _orders.isEmpty
-                                      ? ListView(
-                                        children: const [
-                                          SizedBox(height: 120),
-                                          Center(
-                                            child: Column(
-                                              children: [
-                                                Icon(
-                                                  Icons.receipt_long,
-                                                  size: 64,
-                                                  color: Colors.grey,
-                                                ),
-                                                SizedBox(height: 16),
-                                                Text(
-                                                  'No hay órdenes',
-                                                  style: TextStyle(
-                                                    fontSize: 18,
-                                                    color: Colors.grey,
-                                                  ),
-                                                ),
-                                              ],
+                // Date range filter
+                _buildDateRangeRow(),
+                // Status chips
+                SizedBox(
+                  height: 48,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    children: [
+                      _buildStatusChip(null, 'Todos'),
+                      ..._allStatuses.map((s) => _buildStatusChip(s, s)),
+                    ],
+                  ),
+                ),
+                // Orders list
+                Expanded(
+                  child: _isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : RefreshIndicator(
+                          onRefresh: _loadOrders,
+                          child: _orders.isEmpty
+                              ? ListView(
+                                  children: const [
+                                    SizedBox(height: 120),
+                                    Center(
+                                      child: Column(
+                                        children: [
+                                          Icon(
+                                            Icons.receipt_long,
+                                            size: 64,
+                                            color: Colors.grey,
+                                          ),
+                                          SizedBox(height: 16),
+                                          Text(
+                                            'No hay órdenes',
+                                            style: TextStyle(
+                                              fontSize: 18,
+                                              color: Colors.grey,
                                             ),
                                           ),
                                         ],
-                                      )
-                                      : ListView.builder(
-                                        controller: _scrollController,
-                                        padding: const EdgeInsets.all(12),
-                                        itemCount:
-                                            _orders.length + (_hasMore ? 1 : 0),
-                                        itemBuilder: (context, index) {
-                                          if (index == _orders.length) {
-                                            return const Padding(
-                                              padding: EdgeInsets.all(16),
-                                              child: Center(
-                                                child:
-                                                    CircularProgressIndicator(),
-                                              ),
-                                            );
-                                          }
-                                          return _buildOrderCard(
-                                            _orders[index],
-                                          );
-                                        },
                                       ),
-                            ),
-                  ),
-                ],
-              ),
+                                    ),
+                                  ],
+                                )
+                              : ListView.builder(
+                                  controller: _scrollController,
+                                  padding: const EdgeInsets.all(12),
+                                  itemCount:
+                                      _orders.length + (_hasMore ? 1 : 0),
+                                  itemBuilder: (context, index) {
+                                    if (index == _orders.length) {
+                                      return const Padding(
+                                        padding: EdgeInsets.all(16),
+                                        child: Center(
+                                          child: CircularProgressIndicator(),
+                                        ),
+                                      );
+                                    }
+                                    return _buildOrderCard(_orders[index]);
+                                  },
+                                ),
+                        ),
+                ),
+              ],
+            ),
     );
   }
 
@@ -506,8 +548,9 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                   vertical: 6,
                 ),
                 side: BorderSide(
-                  color:
-                      _dateFrom != null ? Colors.indigo : Colors.grey.shade300,
+                  color: _dateFrom != null
+                      ? Colors.indigo
+                      : Colors.grey.shade300,
                 ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
@@ -615,6 +658,7 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
         onSelected: (_) {
           setState(() {
             _selectedStatus = isSelected ? null : status;
+            if (_selectedStatus == null) _filterByStatusDate = false;
           });
           _loadOrders();
         },
@@ -672,15 +716,18 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     final repartidorId = repartidor is int
         ? repartidor
         : int.tryParse(repartidor?.toString() ?? '');
-    final repartidorInfo =
-        repartidorId != null ? _repartidores[repartidorId] : null;
+    final repartidorInfo = repartidorId != null
+        ? _repartidores[repartidorId]
+        : null;
     final repartidorNombre = (repartidorInfo?['nombre'] as String?)?.trim();
     final repartidorTel = CarnavalService.formatRepartidorTelefono(
       repartidorInfo?['telefono'],
     );
-    final repartidorLabel = (repartidorNombre != null &&
-            repartidorNombre.isNotEmpty)
-        ? (repartidorTel != null ? '$repartidorNombre · $repartidorTel' : repartidorNombre)
+    final repartidorLabel =
+        (repartidorNombre != null && repartidorNombre.isNotEmpty)
+        ? (repartidorTel != null
+              ? '$repartidorNombre · $repartidorTel'
+              : repartidorNombre)
         : 'Repartidor #$repartidor';
     final usuario = order['Usuarios'] as Map<String, dynamic>?;
     final clienteName = usuario?['name'] as String? ?? '';
@@ -732,10 +779,9 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       margin: const EdgeInsets.only(bottom: 8),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side:
-            isPaqueteria
-                ? const BorderSide(color: Colors.blue, width: 2)
-                : BorderSide.none,
+        side: isPaqueteria
+            ? const BorderSide(color: Colors.blue, width: 2)
+            : BorderSide.none,
       ),
       child: InkWell(
         onTap: () => _openOrderDetail(order),

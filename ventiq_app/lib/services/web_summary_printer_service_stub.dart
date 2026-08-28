@@ -9,6 +9,7 @@ class WebSummaryPrinterServiceImpl {
     required double totalProductos,
     required double totalEgresado,
     required double totalEfectivoReal,
+    required Map<String, double> totalesPorMedioPago,
   }) async {
     print(
       '❌ Impresión web de resumen detallado no disponible en esta plataforma',

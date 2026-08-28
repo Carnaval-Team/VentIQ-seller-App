@@ -23,10 +23,23 @@ class InventoryOperationsScreen extends StatefulWidget {
 
 class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   final _searchController = TextEditingController();
+  final _montoController = TextEditingController();
 
   List<Map<String, dynamic>> _operations = [];
+
+  /// Operaciones filtradas por monto si el usuario introdujo un valor.
+  List<Map<String, dynamic>> get _operacionesFiltradas {
+    if (_montoFiltro == null) return _operations;
+    final target = (_montoFiltro! * 100).round();
+    return _operations.where((op) {
+      final total = _calculateTotalPrice(op);
+      return (total * 100).round() == target;
+    }).toList();
+  }
+
   bool _isLoading = true;
   String _searchQuery = '';
+  double? _montoFiltro;
   DateTime? _fechaDesde;
   DateTime? _fechaHasta;
   int? _tipoOperacionId;
@@ -59,9 +72,16 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     19, // Transferencia de productos (padre actual)
   ];
 
+  void _setCurrentMonthRange() {
+    final now = DateTime.now();
+    _fechaDesde = DateTime(now.year, now.month, 1);
+    _fechaHasta = DateTime(now.year, now.month + 1, 0);
+  }
+
   @override
   void initState() {
     super.initState();
+    _setCurrentMonthRange();
     print('🚀 InventoryOperationsScreen inicializado');
     print('  • ScrollController configurado para detectar paginación');
     print('  • Threshold de carga: 200px del final');
@@ -70,6 +90,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     _loadTiposOperacion();
     _initPermissionsAndOperations();
     _searchController.addListener(_onSearchChanged);
+    _montoController.addListener(_onMontoChanged);
     _scrollController.addListener(_onScroll);
   }
 
@@ -99,6 +120,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _montoController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -108,6 +130,13 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       _searchQuery = _searchController.text;
     });
     _debounceSearch();
+  }
+
+  void _onMontoChanged() {
+    final text = _montoController.text.trim();
+    setState(() {
+      _montoFiltro = text.isEmpty ? null : double.tryParse(text);
+    });
   }
 
   void _onScroll() {
@@ -255,278 +284,257 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder:
-          (context) => DraggableScrollableSheet(
-            initialChildSize: 0.7,
-            maxChildSize: 0.9,
-            minChildSize: 0.5,
-            builder:
-                (context, scrollController) => Container(
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(20),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        maxChildSize: 0.9,
+        minChildSize: 0.5,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              // Handle
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              // Header
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Seleccionar Rango de Fechas',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1F2937),
+                        ),
+                      ),
                     ),
-                  ),
-                  child: Column(
-                    children: [
-                      // Handle
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              // Content
+              Expanded(
+                child: ListView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    // Quick date options
+                    const Text(
+                      'Opciones rápidas:',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1F2937),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Quick date buttons
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _buildQuickDateButton(
+                          'Hoy',
+                          () => _setQuickDateRange(0),
+                        ),
+                        _buildQuickDateButton(
+                          'Ayer',
+                          () => _setQuickDateRange(1),
+                        ),
+                        _buildQuickDateButton(
+                          'Últimos 7 días',
+                          () => _setQuickDateRange(7),
+                        ),
+                        _buildQuickDateButton(
+                          'Últimos 15 días',
+                          () => _setQuickDateRange(15),
+                        ),
+                        _buildQuickDateButton(
+                          'Últimos 30 días',
+                          () => _setQuickDateRange(30),
+                        ),
+                        _buildQuickDateButton(
+                          'Este mes',
+                          () => _setCurrentMonth(),
+                        ),
+                        _buildQuickDateButton(
+                          'Mes anterior',
+                          () => _setPreviousMonth(),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 24),
+                    const Divider(),
+                    const SizedBox(height: 16),
+
+                    // Custom date range selection
+                    const Text(
+                      'Selección personalizada:',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1F2937),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Calendar button
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _showNativeDateRangePicker,
+                        icon: const Icon(Icons.calendar_month),
+                        label: const Text('Abrir Calendario de Rango'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF4A90E2),
+                          side: const BorderSide(color: Color(0xFF4A90E2)),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Current selection display
+                    if (_fechaDesde != null && _fechaHasta != null) ...[
                       Container(
-                        margin: const EdgeInsets.symmetric(vertical: 8),
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                      // Header
-                      Padding(
+                        width: double.infinity,
                         padding: const EdgeInsets.all(16),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Expanded(
-                              child: Text(
-                                'Seleccionar Rango de Fechas',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF1F2937),
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              onPressed: () => Navigator.pop(context),
-                              icon: const Icon(Icons.close),
-                            ),
-                          ],
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF4A90E2).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: const Color(0xFF4A90E2).withOpacity(0.3),
+                          ),
                         ),
-                      ),
-                      const Divider(height: 1),
-                      // Content
-                      Expanded(
-                        child: ListView(
-                          controller: scrollController,
-                          padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Quick date options
-                            const Text(
-                              'Opciones rápidas:',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF1F2937),
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-
-                            // Quick date buttons
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                _buildQuickDateButton(
-                                  'Hoy',
-                                  () => _setQuickDateRange(0),
-                                ),
-                                _buildQuickDateButton(
-                                  'Ayer',
-                                  () => _setQuickDateRange(1),
-                                ),
-                                _buildQuickDateButton(
-                                  'Últimos 7 días',
-                                  () => _setQuickDateRange(7),
-                                ),
-                                _buildQuickDateButton(
-                                  'Últimos 15 días',
-                                  () => _setQuickDateRange(15),
-                                ),
-                                _buildQuickDateButton(
-                                  'Últimos 30 días',
-                                  () => _setQuickDateRange(30),
-                                ),
-                                _buildQuickDateButton(
-                                  'Este mes',
-                                  () => _setCurrentMonth(),
-                                ),
-                                _buildQuickDateButton(
-                                  'Mes anterior',
-                                  () => _setPreviousMonth(),
-                                ),
-                              ],
-                            ),
-
-                            const SizedBox(height: 24),
-                            const Divider(),
-                            const SizedBox(height: 16),
-
-                            // Custom date range selection
-                            const Text(
-                              'Selección personalizada:',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF1F2937),
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-
-                            // Calendar button
-                            SizedBox(
-                              width: double.infinity,
-                              child: OutlinedButton.icon(
-                                onPressed: _showNativeDateRangePicker,
-                                icon: const Icon(Icons.calendar_month),
-                                label: const Text('Abrir Calendario de Rango'),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: const Color(0xFF4A90E2),
-                                  side: const BorderSide(
-                                    color: Color(0xFF4A90E2),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 12,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-
-                            // Current selection display
-                            if (_fechaDesde != null && _fechaHasta != null) ...[
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  color: const Color(
-                                    0xFF4A90E2,
-                                  ).withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: const Color(
-                                      0xFF4A90E2,
-                                    ).withOpacity(0.3),
-                                  ),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.date_range,
-                                          color: const Color(0xFF4A90E2),
-                                          size: 20,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          'Rango seleccionado:',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w500,
-                                            color: Colors.grey[700],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      '${_formatDateLong(_fechaDesde!)} - ${_formatDateLong(_fechaHasta!)}',
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
-                                        color: Color(0xFF1F2937),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      '${_fechaHasta!.difference(_fechaDesde!).inDays + 1} día(s)',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey[600],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                            ],
-
-                            // Action buttons
                             Row(
                               children: [
-                                if (_fechaDesde != null ||
-                                    _fechaHasta != null) ...[
-                                  Expanded(
-                                    child: OutlinedButton.icon(
-                                      onPressed: () {
-                                        Navigator.pop(context);
-                                        _clearDateFilter();
-                                      },
-                                      icon: const Icon(Icons.clear),
-                                      label: const Text('Limpiar'),
-                                      style: OutlinedButton.styleFrom(
-                                        foregroundColor: Colors.red,
-                                        side: const BorderSide(
-                                          color: Colors.red,
-                                        ),
-                                        padding: const EdgeInsets.symmetric(
-                                          vertical: 12,
-                                        ),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                ],
-                                Expanded(
-                                  child: ElevatedButton.icon(
-                                    onPressed:
-                                        _fechaDesde != null &&
-                                                _fechaHasta != null
-                                            ? () {
-                                              print(
-                                                '🔄 Aplicando filtro de fechas: $_fechaDesde - $_fechaHasta',
-                                              );
-                                              Navigator.pop(context);
-                                              _currentPage = 1;
-                                              _loadOperations();
-                                            }
-                                            : null,
-                                    icon: const Icon(Icons.check),
-                                    label: const Text('Aplicar Filtro'),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor:
-                                          _fechaDesde != null &&
-                                                  _fechaHasta != null
-                                              ? const Color(0xFF4A90E2)
-                                              : Colors.grey,
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 12,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                    ),
+                                Icon(
+                                  Icons.date_range,
+                                  color: const Color(0xFF4A90E2),
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Rango seleccionado:',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.grey[700],
                                   ),
                                 ),
                               ],
                             ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '${_formatDateLong(_fechaDesde!)} - ${_formatDateLong(_fechaHasta!)}',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1F2937),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '${_fechaHasta!.difference(_fechaDesde!).inDays + 1} día(s)',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
                           ],
                         ),
                       ),
+                      const SizedBox(height: 16),
                     ],
-                  ),
+
+                    // Action buttons
+                    Row(
+                      children: [
+                        if (_fechaDesde != null || _fechaHasta != null) ...[
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                Navigator.pop(context);
+                                _clearDateFilter();
+                              },
+                              icon: const Icon(Icons.clear),
+                              label: const Text('Limpiar'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.red,
+                                side: const BorderSide(color: Colors.red),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                        ],
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed:
+                                _fechaDesde != null && _fechaHasta != null
+                                ? () {
+                                    print(
+                                      '🔄 Aplicando filtro de fechas: $_fechaDesde - $_fechaHasta',
+                                    );
+                                    Navigator.pop(context);
+                                    _currentPage = 1;
+                                    _loadOperations();
+                                  }
+                                : null,
+                            icon: const Icon(Icons.check),
+                            label: const Text('Aplicar Filtro'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor:
+                                  _fechaDesde != null && _fechaHasta != null
+                                  ? const Color(0xFF4A90E2)
+                                  : Colors.grey,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
+              ),
+            ],
           ),
+        ),
+      ),
     );
   }
 
@@ -609,21 +617,20 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         context: context,
         firstDate: DateTime(2020),
         lastDate: today,
-        initialDateRange:
-            _fechaDesde != null && _fechaHasta != null
-                ? DateTimeRange(
-                    start: DateTime(
-                      _fechaDesde!.year,
-                      _fechaDesde!.month,
-                      _fechaDesde!.day,
-                    ),
-                    end: DateTime(
-                      _fechaHasta!.year,
-                      _fechaHasta!.month,
-                      _fechaHasta!.day,
-                    ),
-                  )
-                : DateTimeRange(start: today, end: today),
+        initialDateRange: _fechaDesde != null && _fechaHasta != null
+            ? DateTimeRange(
+                start: DateTime(
+                  _fechaDesde!.year,
+                  _fechaDesde!.month,
+                  _fechaDesde!.day,
+                ),
+                end: DateTime(
+                  _fechaHasta!.year,
+                  _fechaHasta!.month,
+                  _fechaHasta!.day,
+                ),
+              )
+            : DateTimeRange(start: today, end: today),
         helpText: 'Seleccionar rango de fechas',
         cancelText: 'Cancelar',
         confirmText: 'Confirmar',
@@ -683,20 +690,18 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   }
 
   void _clearDateFilter() {
-    setState(() {
-      _fechaDesde = null;
-      _fechaHasta = null;
-    });
+    setState(_setCurrentMonthRange);
     _currentPage = 1;
     _loadOperations();
   }
 
   void _clearAllFilters() {
     setState(() {
-      _fechaDesde = null;
-      _fechaHasta = null;
+      _setCurrentMonthRange();
       _tipoOperacionId = null;
+      _montoFiltro = null;
     });
+    _montoController.clear();
     _currentPage = 1;
     _loadOperations();
   }
@@ -737,11 +742,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
             'denominacion': 'Apertura de Caja',
             'accion': 'apertura_caja',
           },
-          {
-            'id': 17,
-            'denominacion': 'Cierre de Caja',
-            'accion': 'cierre_caja',
-          },
+          {'id': 17, 'denominacion': 'Cierre de Caja', 'accion': 'cierre_caja'},
           {'id': 18, 'denominacion': 'Extracción', 'accion': 'salida'},
           {
             'id': 19,
@@ -780,118 +781,111 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder:
-          (context) => DraggableScrollableSheet(
-            initialChildSize: 0.6,
-            maxChildSize: 0.85,
-            minChildSize: 0.4,
-            builder:
-                (context, scrollController) => Container(
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(20),
-                    ),
-                  ),
-                  child: Column(
-                    children: [
-                      Container(
-                        margin: const EdgeInsets.symmetric(vertical: 8),
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(2),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        maxChildSize: 0.85,
+        minChildSize: 0.4,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Filtrar por Tipo de Operación',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1F2937),
                         ),
                       ),
-                      Padding(
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: _isLoadingTipos && _tiposOperacion.isEmpty
+                    ? const Center(child: CircularProgressIndicator())
+                    : ListView.builder(
+                        controller: scrollController,
                         padding: const EdgeInsets.all(16),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Expanded(
-                              child: Text(
-                                'Filtrar por Tipo de Operación',
+                        itemCount: tiposOperacion.length,
+                        itemBuilder: (context, index) {
+                          final tipo = tiposOperacion[index];
+                          final tipoId = tipo['id'] as int?;
+                          final isSelected = _tipoOperacionId == tipoId;
+                          final nombre =
+                              tipo['denominacion']?.toString() ?? 'Sin nombre';
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: isSelected
+                                    ? const Color(0xFF4A90E2)
+                                    : Colors.grey[300]!,
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                              color: isSelected
+                                  ? const Color(0xFF4A90E2).withOpacity(0.1)
+                                  : Colors.white,
+                            ),
+                            child: ListTile(
+                              title: Text(
+                                nombre,
                                 style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF1F2937),
+                                  fontWeight: isSelected
+                                      ? FontWeight.w600
+                                      : FontWeight.normal,
+                                  color: isSelected
+                                      ? const Color(0xFF4A90E2)
+                                      : const Color(0xFF1F2937),
                                 ),
                               ),
+                              trailing: isSelected
+                                  ? const Icon(
+                                      Icons.check_circle,
+                                      color: Color(0xFF4A90E2),
+                                    )
+                                  : null,
+                              onTap: () {
+                                Navigator.pop(context);
+                                setState(() {
+                                  _tipoOperacionId = tipoId;
+                                });
+                                _currentPage = 1;
+                                _loadOperations();
+                              },
                             ),
-                            IconButton(
-                              onPressed: () => Navigator.pop(context),
-                              icon: const Icon(Icons.close),
-                            ),
-                          ],
-                        ),
+                          );
+                        },
                       ),
-                      const Divider(height: 1),
-                      Expanded(
-                        child: _isLoadingTipos && _tiposOperacion.isEmpty
-                            ? const Center(child: CircularProgressIndicator())
-                            : ListView.builder(
-                                controller: scrollController,
-                                padding: const EdgeInsets.all(16),
-                                itemCount: tiposOperacion.length,
-                                itemBuilder: (context, index) {
-                                  final tipo = tiposOperacion[index];
-                                  final tipoId = tipo['id'] as int?;
-                                  final isSelected =
-                                      _tipoOperacionId == tipoId;
-                                  final nombre =
-                                      tipo['denominacion']?.toString() ??
-                                      'Sin nombre';
-
-                                  return Container(
-                                    margin: const EdgeInsets.only(bottom: 8),
-                                    decoration: BoxDecoration(
-                                      border: Border.all(
-                                        color: isSelected
-                                            ? const Color(0xFF4A90E2)
-                                            : Colors.grey[300]!,
-                                      ),
-                                      borderRadius: BorderRadius.circular(8),
-                                      color: isSelected
-                                          ? const Color(0xFF4A90E2)
-                                              .withOpacity(0.1)
-                                          : Colors.white,
-                                    ),
-                                    child: ListTile(
-                                      title: Text(
-                                        nombre,
-                                        style: TextStyle(
-                                          fontWeight: isSelected
-                                              ? FontWeight.w600
-                                              : FontWeight.normal,
-                                          color: isSelected
-                                              ? const Color(0xFF4A90E2)
-                                              : const Color(0xFF1F2937),
-                                        ),
-                                      ),
-                                      trailing: isSelected
-                                          ? const Icon(
-                                              Icons.check_circle,
-                                              color: Color(0xFF4A90E2),
-                                            )
-                                          : null,
-                                      onTap: () {
-                                        Navigator.pop(context);
-                                        setState(() {
-                                          _tipoOperacionId = tipoId;
-                                        });
-                                        _currentPage = 1;
-                                        _loadOperations();
-                                      },
-                                    ),
-                                  );
-                                },
-                              ),
-                      ),
-                    ],
-                  ),
-                ),
+              ),
+            ],
           ),
+        ),
+      ),
     );
   }
 
@@ -937,34 +931,53 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
           ),
           const SizedBox(width: 12),
 
+          // Monto filter
+          SizedBox(
+            width: 110,
+            child: TextField(
+              controller: _montoController,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: InputDecoration(
+                hintText: 'Monto',
+                prefixIcon: const Icon(Icons.attach_money),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+
           // Compact date filter icon
           Container(
             decoration: BoxDecoration(
-              color:
-                  _fechaDesde != null && _fechaHasta != null
-                      ? const Color(0xFF4A90E2).withOpacity(0.1)
-                      : Colors.grey.withOpacity(0.1),
+              color: _fechaDesde != null && _fechaHasta != null
+                  ? const Color(0xFF4A90E2).withOpacity(0.1)
+                  : Colors.grey.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color:
-                    _fechaDesde != null && _fechaHasta != null
-                        ? const Color(0xFF4A90E2)
-                        : Colors.grey.withOpacity(0.3),
+                color: _fechaDesde != null && _fechaHasta != null
+                    ? const Color(0xFF4A90E2)
+                    : Colors.grey.withOpacity(0.3),
               ),
             ),
             child: IconButton(
               onPressed: _showDateRangeDialog,
               icon: Icon(
                 Icons.date_range,
-                color:
-                    _fechaDesde != null && _fechaHasta != null
-                        ? const Color(0xFF4A90E2)
-                        : Colors.grey[600],
+                color: _fechaDesde != null && _fechaHasta != null
+                    ? const Color(0xFF4A90E2)
+                    : Colors.grey[600],
               ),
-              tooltip:
-                  _fechaDesde != null && _fechaHasta != null
-                      ? '${_formatDate(_fechaDesde!)} - ${_formatDate(_fechaHasta!)}'
-                      : 'Seleccionar rango de fechas',
+              tooltip: _fechaDesde != null && _fechaHasta != null
+                  ? '${_formatDate(_fechaDesde!)} - ${_formatDate(_fechaHasta!)}'
+                  : 'Seleccionar rango de fechas',
             ),
           ),
 
@@ -972,38 +985,35 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
           const SizedBox(width: 12),
           Container(
             decoration: BoxDecoration(
-              color:
-                  _tipoOperacionId != null
-                      ? const Color(0xFF4A90E2).withOpacity(0.1)
-                      : Colors.grey.withOpacity(0.1),
+              color: _tipoOperacionId != null
+                  ? const Color(0xFF4A90E2).withOpacity(0.1)
+                  : Colors.grey.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color:
-                    _tipoOperacionId != null
-                        ? const Color(0xFF4A90E2)
-                        : Colors.grey.withOpacity(0.3),
+                color: _tipoOperacionId != null
+                    ? const Color(0xFF4A90E2)
+                    : Colors.grey.withOpacity(0.3),
               ),
             ),
             child: IconButton(
               onPressed: _showOperationTypeDialog,
               icon: Icon(
                 Icons.filter_list,
-                color:
-                    _tipoOperacionId != null
-                        ? const Color(0xFF4A90E2)
-                        : Colors.grey[600],
+                color: _tipoOperacionId != null
+                    ? const Color(0xFF4A90E2)
+                    : Colors.grey[600],
               ),
-              tooltip:
-                  _tipoOperacionId != null
-                      ? 'Tipo: ${_tipoOperacionNombreSeleccionado ?? _tipoOperacionId}'
-                      : 'Filtrar por tipo de operación',
+              tooltip: _tipoOperacionId != null
+                  ? 'Tipo: ${_tipoOperacionNombreSeleccionado ?? _tipoOperacionId}'
+                  : 'Filtrar por tipo de operación',
             ),
           ),
 
           // Clear filter button
           if (_fechaDesde != null ||
               _fechaHasta != null ||
-              _tipoOperacionId != null) ...[
+              _tipoOperacionId != null ||
+              _montoFiltro != null) ...[
             const SizedBox(width: 8),
             Container(
               decoration: BoxDecoration(
@@ -1031,37 +1041,36 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         backgroundColor: Colors.white,
         displacement: 40.0,
         strokeWidth: 2.5,
-        child:
-            _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _operations.isEmpty
-                ? ListView(
-                  // Necesario para que el RefreshIndicator funcione con contenido vacío
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  children: const [
-                    SizedBox(height: 200), // Espacio para permitir el pull
-                    Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.inventory_2_outlined,
-                            size: 64,
-                            color: Colors.grey,
-                          ),
-                          SizedBox(height: 16),
-                          Text('No se encontraron operaciones'),
-                          SizedBox(height: 8),
-                          Text(
-                            'Desliza hacia abajo para actualizar',
-                            style: TextStyle(color: Colors.grey, fontSize: 12),
-                          ),
-                        ],
-                      ),
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _operacionesFiltradas.isEmpty
+            ? ListView(
+                // Necesario para que el RefreshIndicator funcione con contenido vacío
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: const [
+                  SizedBox(height: 200), // Espacio para permitir el pull
+                  Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.inventory_2_outlined,
+                          size: 64,
+                          color: Colors.grey,
+                        ),
+                        SizedBox(height: 16),
+                        Text('No se encontraron operaciones'),
+                        SizedBox(height: 8),
+                        Text(
+                          'Desliza hacia abajo para actualizar',
+                          style: TextStyle(color: Colors.grey, fontSize: 12),
+                        ),
+                      ],
                     ),
-                  ],
-                )
-                : _buildOperationsListContent(),
+                  ),
+                ],
+              )
+            : _buildOperationsListContent(),
       ),
     );
   }
@@ -1069,17 +1078,18 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   /// Construye el contenido de la lista de operaciones
   /// Usa infinite scroll en ambas plataformas (móvil y web)
   Widget _buildOperationsListContent() {
+    final operations = _operacionesFiltradas;
     return ListView.builder(
       controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
-      itemCount: _operations.length + (_isLoadingMore ? 1 : 0),
+      itemCount: operations.length + (_isLoadingMore ? 1 : 0),
       itemBuilder: (context, index) {
-        if (index == _operations.length) {
+        if (index == operations.length) {
           // Mostrar indicador de carga al final
           return _buildLoadingMoreIndicator();
         }
-        final operation = _operations[index];
+        final operation = operations[index];
         return _buildOperationCard(operation);
       },
     );
@@ -1377,10 +1387,12 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
   /// Detecta si la operación es una venta
   bool _isVentaOperation(Map<String, dynamic> operation) {
-    final tipo =
-        (operation['tipo_operacion_nombre'] ?? '').toString().toLowerCase();
-    final accion =
-        (operation['tipo_operacion_accion'] ?? '').toString().toLowerCase();
+    final tipo = (operation['tipo_operacion_nombre'] ?? '')
+        .toString()
+        .toLowerCase();
+    final accion = (operation['tipo_operacion_accion'] ?? '')
+        .toString()
+        .toLowerCase();
     return tipo.contains('venta') || accion.contains('venta');
   }
 
@@ -1443,10 +1455,9 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         return true;
       }
 
-      final ref =
-          (referencia != null && referencia.trim().isNotEmpty)
-              ? referencia.trim()
-              : 'Registro manual Admin - ${DateTime.now().millisecondsSinceEpoch}';
+      final ref = (referencia != null && referencia.trim().isNotEmpty)
+          ? referencia.trim()
+          : 'Registro manual Admin - ${DateTime.now().millisecondsSinceEpoch}';
       final userId = Supabase.instance.client.auth.currentUser?.id;
 
       print(
@@ -1527,7 +1538,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         operation['tipo_operacion_nombre']?.toString().toLowerCase() ?? '';
     final accion =
         operation['tipo_operacion_accion']?.toString().toLowerCase() ?? '';
-    final isCashRegister = accion == 'apertura_caja' ||
+    final isCashRegister =
+        accion == 'apertura_caja' ||
         accion == 'cierre_caja' ||
         tipoOperacion.contains('apertura de caja') ||
         tipoOperacion.contains('cierre de caja');
@@ -1551,295 +1563,269 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder:
-          (context) => DraggableScrollableSheet(
-            initialChildSize: 0.7,
-            maxChildSize: 0.9,
-            minChildSize: 0.5,
-            builder:
-                (context, scrollController) => Container(
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(20),
-                    ),
-                  ),
-                  child: Column(
-                    children: [
-                      // Handle
-                      Container(
-                        margin: const EdgeInsets.symmetric(vertical: 8),
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                      // Header
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Row(
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        maxChildSize: 0.9,
+        minChildSize: 0.5,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              // Handle
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              // Header
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Text(
+                            'Operación #${operation['id']}',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1F2937),
+                            ),
+                          ),
+                          if ((operation['observaciones'] ?? '')
+                              .toString()
+                              .contains('Venta desde orden')) ...[
+                            const SizedBox(width: 12),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.purple.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: Colors.purple.withOpacity(0.3),
+                                ),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
+                                  Icon(
+                                    Icons.shopping_bag,
+                                    size: 12,
+                                    color: Colors.purple,
+                                  ),
+                                  SizedBox(width: 6),
                                   Text(
-                                    'Operación #${operation['id']}',
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w600,
-                                      color: Color(0xFF1F2937),
+                                    'Carnaval App',
+                                    style: TextStyle(
+                                      color: Colors.purple,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
                                     ),
                                   ),
-                                  if ((operation['observaciones'] ?? '')
-                                      .toString()
-                                      .contains('Venta desde orden')) ...[
-                                    const SizedBox(width: 12),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.purple.withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(
-                                          color: Colors.purple.withOpacity(0.3),
-                                        ),
-                                      ),
-                                      child: const Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            Icons.shopping_bag,
-                                            size: 12,
-                                            color: Colors.purple,
-                                          ),
-                                          SizedBox(width: 6),
-                                          Text(
-                                            'Carnaval App',
-                                            style: TextStyle(
-                                              color: Colors.purple,
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
                                 ],
                               ),
                             ),
-                            IconButton(
-                              onPressed: () => Navigator.pop(context),
-                              icon: const Icon(Icons.close),
-                            ),
                           ],
-                        ),
+                        ],
                       ),
-                      const Divider(height: 1),
-                      // Content
-                      Expanded(
-                        child: ListView(
-                          controller: scrollController,
-                          padding: const EdgeInsets.all(16),
-                          children: [
-                            // Información general
-                            _buildModalDetailRow(
-                              'Tipo:',
-                              operation['tipo_operacion_nombre'] ?? 'N/A',
-                            ),
-                            _buildModalDetailRow(
-                              'Estado:',
-                              operation['estado_nombre'] ?? 'N/A',
-                            ),
-                            _buildModalDetailRow(
-                              'Fecha:',
-                              _formatDateTime(
-                                DateTime.parse(operation['created_at']),
-                              ),
-                            ),
-                            // Mostrar almacén para operaciones de recepción y extracción
-                            if (tipoOperacion.toLowerCase().contains(
-                                  'recepci',
-                                ) ||
-                                tipoOperacion.toLowerCase().contains(
-                                  'extrac',
-                                ) ||
-                                tipoOperacion.toLowerCase() == 'extracción' ||
-                                tipoOperacion.toLowerCase().contains(
-                                  'productos',
-                                )) ...[
-                              FutureBuilder<String>(
-                                future:
-                                    InventoryService.getWarehouseFromOperation(
-                                      operation['id'],
-                                      operation['tipo_operacion_nombre'] ?? '',
-                                    ),
-                                builder: (context, snapshot) {
-                                  if (snapshot.connectionState ==
-                                      ConnectionState.waiting) {
-                                    return _buildModalDetailRow(
-                                      'Almacén:',
-                                      'Cargando...',
-                                    );
-                                  }
-
-                                  final almacen = snapshot.data ?? 'N/A';
-                                  return _buildModalDetailRow(
-                                    'Almacén:',
-                                    almacen,
-                                  );
-                                },
-                              ),
-                            ],
-                            // Origen / destino para transferencias unificadas
-                            if (_isUnifiedTransfer(operation)) ...[
-                              Builder(
-                                builder: (context) {
-                                  final det =
-                                      operation['detalles']
-                                          as Map<String, dynamic>?;
-                                  final esp =
-                                      det?['detalles_especificos']
-                                          as Map<String, dynamic>?;
-                                  final idExt = esp?['id_extraccion'];
-                                  final idRec = esp?['id_recepcion'];
-                                  return Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      if (idExt != null)
-                                        FutureBuilder<String>(
-                                          future:
-                                              InventoryService.getWarehouseFromOperation(
-                                                idExt is int
-                                                    ? idExt
-                                                    : int.parse(
-                                                      idExt.toString(),
-                                                    ),
-                                                'extraccion',
-                                              ),
-                                          builder: (context, snap) {
-                                            if (snap.connectionState ==
-                                                ConnectionState.waiting) {
-                                              return _buildModalDetailRow(
-                                                'Almacén Origen:',
-                                                'Cargando...',
-                                              );
-                                            }
-                                            return _buildModalDetailRow(
-                                              'Almacén Origen:',
-                                              snap.data ?? 'N/A',
-                                            );
-                                          },
-                                        ),
-                                      if (idRec != null)
-                                        FutureBuilder<String>(
-                                          future:
-                                              InventoryService.getWarehouseFromOperation(
-                                                idRec is int
-                                                    ? idRec
-                                                    : int.parse(
-                                                      idRec.toString(),
-                                                    ),
-                                                'recepcion',
-                                              ),
-                                          builder: (context, snap) {
-                                            if (snap.connectionState ==
-                                                ConnectionState.waiting) {
-                                              return _buildModalDetailRow(
-                                                'Almacén Destino:',
-                                                'Cargando...',
-                                              );
-                                            }
-                                            return _buildModalDetailRow(
-                                              'Almacén Destino:',
-                                              snap.data ?? 'N/A',
-                                            );
-                                          },
-                                        ),
-                                    ],
-                                  );
-                                },
-                              ),
-                            ],
-                            _buildModalDetailRow(
-                              'Total:',
-                              '\$${_calculateTotalPrice(operation).toStringAsFixed(2)}',
-                            ),
-                            _buildModalDetailRow(
-                              'Items:',
-                              '${_calculateTotalItems(operation)}',
-                            ),
-                            ..._buildOperationMetaSection(operation),
-                            if (_isVentaOperation(operation) &&
-                                operation['id'] != null)
-                              _buildOperationPhotoDetail(
-                                (operation['id'] as num).toInt(),
-                              ),
-
-                            // Show specific details based on operation type
-                            if (operation['detalles'] != null) ...[
-                              const SizedBox(height: 16),
-                              const Text(
-                                'Detalles específicos:',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF1F2937),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              _buildFormattedDetails(
-                                operation['detalles'],
-                                observaciones: operation['observaciones'],
-                              ),
-                            ],
-
-                            // Completar: transferencia unificada (salida/entrada) u otras ops
-                            if (_isUnifiedTransfer(operation)) ...[
-                              ..._buildTransferCompleteActions(operation),
-                            ] else if (_shouldShowCompleteButton(operation)) ...[
-                              const SizedBox(height: 24),
-                              _buildCompleteButton(operation),
-                            ],
-
-                            // Show cancel button for pending operations
-                            if (_shouldShowCancelButton(operation)) ...[
-                              const SizedBox(height: 12),
-                              _buildCancelButton(operation),
-                            ],
-
-                            // Show payment details section for sales
-                            if (_isVentaOperation(operation) &&
-                                operation['id'] != null) ...[
-                              const SizedBox(height: 24),
-                              _PaymentDetailsSection(
-                                operationId: (operation['id'] as num).toInt(),
-                                suggestedAmount: _calculateTotalPrice(
-                                  operation,
-                                ),
-                                getPaymentDetails: _getPaymentDetails,
-                                canRegisterMissingPayment:
-                                    _canRegisterMissingPayment,
-                                registerMissingPayment: _registerMissingPayment,
-                              ),
-                            ],
-
-                            // Show print button for all operations
-                            const SizedBox(height: 24),
-                            _buildPrintButton(operation),
-                          ],
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              // Content
+              Expanded(
+                child: ListView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    // Información general
+                    _buildModalDetailRow(
+                      'Tipo:',
+                      operation['tipo_operacion_nombre'] ?? 'N/A',
+                    ),
+                    _buildModalDetailRow(
+                      'Estado:',
+                      operation['estado_nombre'] ?? 'N/A',
+                    ),
+                    _buildModalDetailRow(
+                      'Fecha:',
+                      _formatDateTime(DateTime.parse(operation['created_at'])),
+                    ),
+                    // Mostrar almacén para operaciones de recepción y extracción
+                    if (tipoOperacion.toLowerCase().contains('recepci') ||
+                        tipoOperacion.toLowerCase().contains('extrac') ||
+                        tipoOperacion.toLowerCase() == 'extracción' ||
+                        tipoOperacion.toLowerCase().contains('productos')) ...[
+                      FutureBuilder<String>(
+                        future: InventoryService.getWarehouseFromOperation(
+                          operation['id'],
+                          operation['tipo_operacion_nombre'] ?? '',
                         ),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return _buildModalDetailRow(
+                              'Almacén:',
+                              'Cargando...',
+                            );
+                          }
+
+                          final almacen = snapshot.data ?? 'N/A';
+                          return _buildModalDetailRow('Almacén:', almacen);
+                        },
                       ),
                     ],
-                  ),
+                    // Origen / destino para transferencias unificadas
+                    if (_isUnifiedTransfer(operation)) ...[
+                      Builder(
+                        builder: (context) {
+                          final det =
+                              operation['detalles'] as Map<String, dynamic>?;
+                          final esp =
+                              det?['detalles_especificos']
+                                  as Map<String, dynamic>?;
+                          final idExt = esp?['id_extraccion'];
+                          final idRec = esp?['id_recepcion'];
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (idExt != null)
+                                FutureBuilder<String>(
+                                  future:
+                                      InventoryService.getWarehouseFromOperation(
+                                        idExt is int
+                                            ? idExt
+                                            : int.parse(idExt.toString()),
+                                        'extraccion',
+                                      ),
+                                  builder: (context, snap) {
+                                    if (snap.connectionState ==
+                                        ConnectionState.waiting) {
+                                      return _buildModalDetailRow(
+                                        'Almacén Origen:',
+                                        'Cargando...',
+                                      );
+                                    }
+                                    return _buildModalDetailRow(
+                                      'Almacén Origen:',
+                                      snap.data ?? 'N/A',
+                                    );
+                                  },
+                                ),
+                              if (idRec != null)
+                                FutureBuilder<String>(
+                                  future:
+                                      InventoryService.getWarehouseFromOperation(
+                                        idRec is int
+                                            ? idRec
+                                            : int.parse(idRec.toString()),
+                                        'recepcion',
+                                      ),
+                                  builder: (context, snap) {
+                                    if (snap.connectionState ==
+                                        ConnectionState.waiting) {
+                                      return _buildModalDetailRow(
+                                        'Almacén Destino:',
+                                        'Cargando...',
+                                      );
+                                    }
+                                    return _buildModalDetailRow(
+                                      'Almacén Destino:',
+                                      snap.data ?? 'N/A',
+                                    );
+                                  },
+                                ),
+                            ],
+                          );
+                        },
+                      ),
+                    ],
+                    _buildModalDetailRow(
+                      'Total:',
+                      '\$${_calculateTotalPrice(operation).toStringAsFixed(2)}',
+                    ),
+                    _buildModalDetailRow(
+                      'Items:',
+                      '${_calculateTotalItems(operation)}',
+                    ),
+                    ..._buildOperationMetaSection(operation),
+                    if (_isVentaOperation(operation) && operation['id'] != null)
+                      _buildOperationPhotoDetail(
+                        (operation['id'] as num).toInt(),
+                      ),
+
+                    // Show specific details based on operation type
+                    if (operation['detalles'] != null) ...[
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Detalles específicos:',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1F2937),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _buildFormattedDetails(
+                        operation['detalles'],
+                        observaciones: operation['observaciones'],
+                      ),
+                    ],
+
+                    // Completar: transferencia unificada (salida/entrada) u otras ops
+                    if (_isUnifiedTransfer(operation)) ...[
+                      ..._buildTransferCompleteActions(operation),
+                    ] else if (_shouldShowCompleteButton(operation)) ...[
+                      const SizedBox(height: 24),
+                      _buildCompleteButton(operation),
+                    ],
+
+                    // Show cancel button for pending operations
+                    if (_shouldShowCancelButton(operation)) ...[
+                      const SizedBox(height: 12),
+                      _buildCancelButton(operation),
+                    ],
+
+                    // Show payment details section for sales
+                    if (_isVentaOperation(operation) &&
+                        operation['id'] != null) ...[
+                      const SizedBox(height: 24),
+                      _PaymentDetailsSection(
+                        operationId: (operation['id'] as num).toInt(),
+                        suggestedAmount: _calculateTotalPrice(operation),
+                        getPaymentDetails: _getPaymentDetails,
+                        canRegisterMissingPayment: _canRegisterMissingPayment,
+                        registerMissingPayment: _registerMissingPayment,
+                      ),
+                    ],
+
+                    // Show print button for all operations
+                    const SizedBox(height: 24),
+                    _buildPrintButton(operation),
+                  ],
                 ),
+              ),
+            ],
           ),
+        ),
+      ),
     );
   }
 
@@ -1849,101 +1835,95 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder:
-          (context) => DraggableScrollableSheet(
-            initialChildSize: 0.7,
-            maxChildSize: 0.9,
-            minChildSize: 0.5,
-            builder:
-                (context, scrollController) => Container(
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(20),
-                    ),
-                  ),
-                  child: Column(
-                    children: [
-                      // Handle
-                      Container(
-                        margin: const EdgeInsets.symmetric(vertical: 8),
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                      // Header
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'Ajuste #${operation['id']}',
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF1F2937),
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              onPressed: () => Navigator.pop(context),
-                              icon: const Icon(Icons.close),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Divider(height: 1),
-                      // Content
-                      Expanded(
-                        child: ListView(
-                          controller: scrollController,
-                          padding: const EdgeInsets.all(16),
-                          children: [
-                            // Información general
-                            _buildModalDetailRow(
-                              'Tipo:',
-                              operation['tipo_operacion_nombre'] ?? 'N/A',
-                            ),
-                            _buildModalDetailRow(
-                              'Estado:',
-                              operation['estado_nombre'] ?? 'N/A',
-                            ),
-                            _buildModalDetailRow(
-                              'Fecha:',
-                              _formatDateTime(
-                                DateTime.parse(operation['created_at']),
-                              ),
-                            ),
-                            ..._buildOperationMetaSection(operation),
-
-                            // Detalles del ajuste
-                            const SizedBox(height: 16),
-                            const Text(
-                              'Detalles del Ajuste:',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF1F2937),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            _buildAdjustmentDetailsSection(operation),
-
-                            // Show print button for all operations
-                            const SizedBox(height: 24),
-                            _buildPrintButton(operation),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        maxChildSize: 0.9,
+        minChildSize: 0.5,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
           ),
+          child: Column(
+            children: [
+              // Handle
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              // Header
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Ajuste #${operation['id']}',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1F2937),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              // Content
+              Expanded(
+                child: ListView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    // Información general
+                    _buildModalDetailRow(
+                      'Tipo:',
+                      operation['tipo_operacion_nombre'] ?? 'N/A',
+                    ),
+                    _buildModalDetailRow(
+                      'Estado:',
+                      operation['estado_nombre'] ?? 'N/A',
+                    ),
+                    _buildModalDetailRow(
+                      'Fecha:',
+                      _formatDateTime(DateTime.parse(operation['created_at'])),
+                    ),
+                    ..._buildOperationMetaSection(operation),
+
+                    // Detalles del ajuste
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Detalles del Ajuste:',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1F2937),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildAdjustmentDetailsSection(operation),
+
+                    // Show print button for all operations
+                    const SizedBox(height: 24),
+                    _buildPrintButton(operation),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -1976,17 +1956,16 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     final rawIds = detEsp?['ids_operaciones'];
     List<int>? sessionIds;
     if (rawIds is List && rawIds.isNotEmpty) {
-      sessionIds =
-          rawIds
-              .map((e) => (e is int) ? e : int.tryParse(e.toString()))
-              .whereType<int>()
-              .toList();
+      sessionIds = rawIds
+          .map((e) => (e is int) ? e : int.tryParse(e.toString()))
+          .whereType<int>()
+          .toList();
     }
 
     final Future<Map<String, dynamic>> detailFuture =
         (sessionIds != null && sessionIds.isNotEmpty)
-            ? InventoryService.getAdjustmentDetailsByIds(sessionIds)
-            : InventoryService.getAdjustmentDetails(operation['id'] as int);
+        ? InventoryService.getAdjustmentDetailsByIds(sessionIds)
+        : InventoryService.getAdjustmentDetails(operation['id'] as int);
 
     return FutureBuilder<Map<String, dynamic>>(
       future: detailFuture,
@@ -2029,14 +2008,12 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         final diferencia = detail['diferencia'] ?? 0;
 
         if (precioUnitario != null) {
-          final precioNum =
-              (precioUnitario is double)
-                  ? precioUnitario
-                  : double.tryParse(precioUnitario.toString()) ?? 0.0;
-          final diferenciaNum =
-              (diferencia is double)
-                  ? diferencia
-                  : double.tryParse(diferencia.toString()) ?? 0.0;
+          final precioNum = (precioUnitario is double)
+              ? precioUnitario
+              : double.tryParse(precioUnitario.toString()) ?? 0.0;
+          final diferenciaNum = (diferencia is double)
+              ? diferencia
+              : double.tryParse(diferencia.toString()) ?? 0.0;
 
           total += (diferenciaNum.abs() * precioNum);
         }
@@ -2050,10 +2027,12 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     // Ordenar detalles alfabéticamente por nombre de producto
     final sortedDetails = List<dynamic>.from(details);
     sortedDetails.sort((a, b) {
-      final nameA =
-          (a['producto_nombre'] ?? 'Producto').toString().toLowerCase();
-      final nameB =
-          (b['producto_nombre'] ?? 'Producto').toString().toLowerCase();
+      final nameA = (a['producto_nombre'] ?? 'Producto')
+          .toString()
+          .toLowerCase();
+      final nameB = (b['producto_nombre'] ?? 'Producto')
+          .toString()
+          .toLowerCase();
       return nameA.compareTo(nameB);
     });
 
@@ -2278,12 +2257,11 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
   Widget _buildOperationPhotoDetail(int operationId) {
     return FutureBuilder<Map<String, dynamic>?>(
-      future:
-          Supabase.instance.client
-              .from('app_dat_operacion_venta')
-              .select('foto_operacion_url')
-              .eq('id_operacion', operationId)
-              .maybeSingle(),
+      future: Supabase.instance.client
+          .from('app_dat_operacion_venta')
+          .select('foto_operacion_url')
+          .eq('id_operacion', operationId)
+          .maybeSingle(),
       builder: (context, snapshot) {
         final url = snapshot.data?['foto_operacion_url'] as String?;
         if (url == null || url.isEmpty) return const SizedBox.shrink();
@@ -2298,14 +2276,12 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
               ),
               const SizedBox(height: 8),
               InkWell(
-                onTap:
-                    () => showDialog<void>(
-                      context: context,
-                      builder:
-                          (_) => Dialog(
-                            child: InteractiveViewer(child: Image.network(url)),
-                          ),
-                    ),
+                onTap: () => showDialog<void>(
+                  context: context,
+                  builder: (_) => Dialog(
+                    child: InteractiveViewer(child: Image.network(url)),
+                  ),
+                ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
                   child: Image.network(
@@ -2313,13 +2289,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                     height: 180,
                     width: double.infinity,
                     fit: BoxFit.cover,
-                    errorBuilder:
-                        (_, __, ___) => const ListTile(
-                          leading: Icon(Icons.broken_image_outlined),
-                          title: Text(
-                            'No se pudo cargar la foto de la operación',
-                          ),
-                        ),
+                    errorBuilder: (_, __, ___) => const ListTile(
+                      leading: Icon(Icons.broken_image_outlined),
+                      title: Text('No se pudo cargar la foto de la operación'),
+                    ),
                   ),
                 ),
               ),
@@ -2438,14 +2411,12 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
           (especificos.containsKey('extraccion') ||
               especificos.containsKey('recepcion'));
 
-      final extItems =
-          isTransfer
-              ? (especificos['extraccion']?['items'] as List<dynamic>?)
-              : null;
-      final recItems =
-          isTransfer
-              ? (especificos['recepcion']?['items'] as List<dynamic>?)
-              : null;
+      final extItems = isTransfer
+          ? (especificos['extraccion']?['items'] as List<dynamic>?)
+          : null;
+      final recItems = isTransfer
+          ? (especificos['recepcion']?['items'] as List<dynamic>?)
+          : null;
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2674,10 +2645,9 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
             borderRadius: BorderRadius.circular(8),
           ),
           child: Column(
-            children:
-                sortedItems.asMap().entries.map((entry) {
-                  int index = entry.key;
-                  Map<String, dynamic> item = entry.value;
+            children: sortedItems.asMap().entries.map((entry) {
+              int index = entry.key;
+              Map<String, dynamic> item = entry.value;
 
                   return Container(
                     padding: const EdgeInsets.all(12),
@@ -2790,23 +2760,75 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                                 ),
                               ),
                             ),
-                            if (item['importe'] != null) ...[
-                              const SizedBox(height: 6),
-                              Text(
-                                '\$${_formatFieldValue(item['importe'])}',
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF1F2937),
-                                ),
-                              ),
-                            ],
                           ],
+                          if (item['sku_producto'] != null) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              'SKU: ${item['sku_producto']}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey[500],
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                          ],
+                          if (item['precio_unitario'] != null) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              'Precio: \$${_formatFieldValue(item['precio_unitario'])}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    // Quantity and Subtotal
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF4A90E2).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: const Color(0xFF4A90E2).withOpacity(0.3),
+                            ),
+                          ),
+                          child: Text(
+                            'Cant: ${item['cantidad_fisica'] ?? item['cantidad'] ?? 0}',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF4A90E2),
+                            ),
+                          ),
                         ),
+                        if (item['importe'] != null) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            '\$${_formatFieldValue(item['importe'])}',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1F2937),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
-                  );
-                }).toList(),
+                  ],
+                ),
+              );
+            }).toList(),
           ),
         ),
       ],
@@ -2977,12 +2999,11 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
             if (item is Map<String, dynamic>) {
               final cantidad = item['cantidad'];
               if (cantidad != null) {
-                final cantidadNum =
-                    (cantidad is int)
-                        ? cantidad
-                        : (cantidad is double)
-                        ? cantidad.toInt()
-                        : int.tryParse(cantidad.toString()) ?? 0;
+                final cantidadNum = (cantidad is int)
+                    ? cantidad
+                    : (cantidad is double)
+                    ? cantidad.toInt()
+                    : int.tryParse(cantidad.toString()) ?? 0;
                 totalItems += cantidadNum;
               }
             }
@@ -3013,10 +3034,9 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
               // Intentar obtener el importe (precio total del item)
               final importe = item['importe'];
               if (importe != null) {
-                final importeNum =
-                    (importe is double)
-                        ? importe
-                        : double.tryParse(importe.toString()) ?? 0.0;
+                final importeNum = (importe is double)
+                    ? importe
+                    : double.tryParse(importe.toString()) ?? 0.0;
                 totalPrice += importeNum;
               } else {
                 // Si no hay importe, intentar calcular cantidad * precio_unitario
@@ -3024,14 +3044,12 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                     item['cantidad'] ?? item['cantidad_fisica'] ?? 0;
                 final precioUnitario = item['precio_unitario'] ?? 0;
 
-                final cantidadNum =
-                    (cantidad is double)
-                        ? cantidad
-                        : double.tryParse(cantidad.toString()) ?? 0.0;
-                final precioNum =
-                    (precioUnitario is double)
-                        ? precioUnitario
-                        : double.tryParse(precioUnitario.toString()) ?? 0.0;
+                final cantidadNum = (cantidad is double)
+                    ? cantidad
+                    : double.tryParse(cantidad.toString()) ?? 0.0;
+                final precioNum = (precioUnitario is double)
+                    ? precioUnitario
+                    : double.tryParse(precioUnitario.toString()) ?? 0.0;
 
                 totalPrice += (cantidadNum * precioNum);
               }
@@ -3296,10 +3314,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       if (mounted) {
         Navigator.of(context, rootNavigator: true).pop(); // loading if open
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -3396,41 +3411,38 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Completar Operación'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '¿Está seguro de completar la operación #${operation['id']}?',
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: commentController,
-                  decoration: const InputDecoration(
-                    labelText: 'Comentario (opcional)',
-                    hintText: 'Ingrese un comentario sobre la operación',
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLines: 3,
-                ),
-              ],
+      builder: (context) => AlertDialog(
+        title: const Text('Completar Operación'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('¿Está seguro de completar la operación #${operation['id']}?'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: commentController,
+              decoration: const InputDecoration(
+                labelText: 'Comentario (opcional)',
+                hintText: 'Ingrese un comentario sobre la operación',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancelar'),
-              ),
-              ElevatedButton(
-                onPressed:
-                    () => _completeOperation(operation, commentController.text),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                child: const Text('Completar'),
-              ),
-            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
           ),
+          ElevatedButton(
+            onPressed: () =>
+                _completeOperation(operation, commentController.text),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+            child: const Text('Completar'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -3445,16 +3457,15 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder:
-            (context) => const AlertDialog(
-              content: Row(
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(width: 16),
-                  Text('Completando operación...'),
-                ],
-              ),
-            ),
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Completando operación...'),
+            ],
+          ),
+        ),
       );
 
       // Get user UUID from preferences
@@ -3470,12 +3481,12 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       }
 
       final result = await InventoryService.completeOperation(
-        idOperacion:
-            operationId is int
-                ? operationId
-                : int.parse(operationId.toString()),
-        comentario:
-            comment.isEmpty ? 'Operación completada desde la app' : comment,
+        idOperacion: operationId is int
+            ? operationId
+            : int.parse(operationId.toString()),
+        comentario: comment.isEmpty
+            ? 'Operación completada desde la app'
+            : comment,
         uuid: userUuid,
       );
 
@@ -3548,58 +3559,56 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Row(
-              children: [
-                const Icon(Icons.cancel_outlined, color: Colors.red, size: 24),
-                const SizedBox(width: 8),
-                const Text('Cancelar Operación'),
-              ],
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.cancel_outlined, color: Colors.red, size: 24),
+            const SizedBox(width: 8),
+            const Text('Cancelar Operación'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '¿Está seguro de cancelar la operación #${operation['id']}?',
+              style: const TextStyle(fontSize: 16),
             ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '¿Está seguro de cancelar la operación #${operation['id']}?',
-                  style: const TextStyle(fontSize: 16),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Esta acción no se puede deshacer.',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.red,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: commentController,
-                  decoration: const InputDecoration(
-                    labelText: 'Motivo de cancelación',
-                    hintText:
-                        'Ingrese el motivo por el cual cancela la operación',
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLines: 3,
-                ),
-              ],
+            const SizedBox(height: 8),
+            const Text(
+              'Esta acción no se puede deshacer.',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.red,
+                fontWeight: FontWeight.w500,
+              ),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('No, mantener'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: commentController,
+              decoration: const InputDecoration(
+                labelText: 'Motivo de cancelación',
+                hintText: 'Ingrese el motivo por el cual cancela la operación',
+                border: OutlineInputBorder(),
               ),
-              ElevatedButton(
-                onPressed:
-                    () => _cancelOperation(operation, commentController.text),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                child: const Text('Sí, cancelar'),
-              ),
-            ],
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('No, mantener'),
           ),
+          ElevatedButton(
+            onPressed: () =>
+                _cancelOperation(operation, commentController.text),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Sí, cancelar'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -3639,16 +3648,15 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder:
-            (context) => const AlertDialog(
-              content: Row(
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(width: 16),
-                  Text('Cancelando operación...'),
-                ],
-              ),
-            ),
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Cancelando operación...'),
+            ],
+          ),
+        ),
       );
 
       // Get user UUID from preferences
@@ -3671,10 +3679,9 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       final result = await supabase.rpc(
         'fn_registrar_cambio_estado_operacion_mejorado',
         params: {
-          'p_id_operacion':
-              operationId is int
-                  ? operationId
-                  : int.parse(operationId.toString()),
+          'p_id_operacion': operationId is int
+              ? operationId
+              : int.parse(operationId.toString()),
           'p_nuevo_estado': 3, // Estado cancelada
         },
       );
@@ -3783,147 +3790,141 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF4A90E2).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.point_of_sale,
-                    color: Color(0xFF4A90E2),
-                    size: 24,
-                  ),
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF4A90E2).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.point_of_sale,
+                color: Color(0xFF4A90E2),
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'Detalles de Apertura / Cierre de Caja',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1F2937),
                 ),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Text(
-                    'Detalles de Apertura / Cierre de Caja',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1F2937),
-                    ),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Operation ID and Status
+              _buildOpeningDetailRow(
+                'ID Operación:',
+                '#${operation['id']}',
+                Icons.tag,
+              ),
+              _buildOpeningDetailRow(
+                'Estado:',
+                operation['estado_nombre'] ?? 'N/A',
+                Icons.info_outline,
+                valueColor: _getStatusColor(operation['estado_nombre'] ?? ''),
+              ),
+              _buildOpeningDetailRow(
+                'Fecha y Hora:',
+                _formatDateTime(DateTime.parse(operation['created_at'])),
+                Icons.schedule,
+              ),
+              _buildOpeningDetailRow(
+                'Tipo:',
+                operation['tipo_operacion_nombre'] ?? 'N/A',
+                Icons.category_outlined,
+              ),
+              _buildOpeningDetailRow(
+                'Vendedor:',
+                operation['usuario_nombre'] ??
+                    operation['usuario_email'] ??
+                    'N/A',
+                Icons.person,
+              ),
+              if ((operation['tpv_nombre'] ?? '').toString().isNotEmpty)
+                _buildOpeningDetailRow(
+                  'TPV:',
+                  operation['tpv_nombre'].toString(),
+                  Icons.point_of_sale,
+                ),
+
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 16),
+
+              // Cash Register Details
+              Text(
+                (operation['tipo_operacion_accion']?.toString() ==
+                        'cierre_caja')
+                    ? 'Información del Cierre'
+                    : 'Información de la Apertura',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1F2937),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Extract cash details from operation data
+              if (operation['detalles'] != null) ...[
+                _buildCashRegisterDetails(operation['detalles']),
+              ] else ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: Colors.grey[600],
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'No hay detalles específicos disponibles',
+                        style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                      ),
+                    ],
                   ),
                 ),
               ],
-            ),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Operation ID and Status
-                  _buildOpeningDetailRow(
-                    'ID Operación:',
-                    '#${operation['id']}',
-                    Icons.tag,
-                  ),
-                  _buildOpeningDetailRow(
-                    'Estado:',
-                    operation['estado_nombre'] ?? 'N/A',
-                    Icons.info_outline,
-                    valueColor: _getStatusColor(
-                      operation['estado_nombre'] ?? '',
-                    ),
-                  ),
-                  _buildOpeningDetailRow(
-                    'Fecha y Hora:',
-                    _formatDateTime(DateTime.parse(operation['created_at'])),
-                    Icons.schedule,
-                  ),
-                  _buildOpeningDetailRow(
-                    'Tipo:',
-                    operation['tipo_operacion_nombre'] ?? 'N/A',
-                    Icons.category_outlined,
-                  ),
-                  _buildOpeningDetailRow(
-                    'Vendedor:',
-                    operation['usuario_nombre'] ??
-                        operation['usuario_email'] ??
-                        'N/A',
-                    Icons.person,
-                  ),
-                  if ((operation['tpv_nombre'] ?? '').toString().isNotEmpty)
-                    _buildOpeningDetailRow(
-                      'TPV:',
-                      operation['tpv_nombre'].toString(),
-                      Icons.point_of_sale,
-                    ),
 
-                  const SizedBox(height: 16),
-                  const Divider(),
-                  const SizedBox(height: 16),
+              ..._buildCashRegisterObservationBlocks(operation),
 
-                  // Cash Register Details
-                  Text(
-                    (operation['tipo_operacion_accion']?.toString() ==
-                            'cierre_caja')
-                        ? 'Información del Cierre'
-                        : 'Información de la Apertura',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1F2937),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Extract cash details from operation data
-                  if (operation['detalles'] != null) ...[
-                    _buildCashRegisterDetails(operation['detalles']),
-                  ] else ...[
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[50],
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey[300]!),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.info_outline,
-                            color: Colors.grey[600],
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'No hay detalles específicos disponibles',
-                            style: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-
-                  ..._buildCashRegisterObservationBlocks(operation),
-
-                  // Show product list if available
-                  if (operation['detalles'] != null &&
-                      operation['detalles']['items'] != null &&
-                      operation['detalles']['items'] is List &&
-                      (operation['detalles']['items'] as List).isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    _buildProductsList(operation['detalles']['items']),
-                  ],
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cerrar'),
-              ),
+              // Show product list if available
+              if (operation['detalles'] != null &&
+                  operation['detalles']['items'] != null &&
+                  operation['detalles']['items'] is List &&
+                  (operation['detalles']['items'] as List).isNotEmpty) ...[
+                const SizedBox(height: 16),
+                _buildProductsList(operation['detalles']['items']),
+              ],
             ],
           ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -4221,52 +4222,53 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   void _showAccessDeniedDialog() {
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Row(
-              children: [
-                const Icon(Icons.lock_outline, color: Colors.red, size: 24),
-                const SizedBox(width: 8),
-                const Text(
-                  'Acceso Denegado',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.red,
-                  ),
-                ),
-              ],
-            ),
-            content: const Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'No tienes permisos para ver los detalles de apertura de caja.',
-                  style: TextStyle(fontSize: 14),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  'Solo los gerentes, supervisores y almaceneros pueden acceder a esta información.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Entendido'),
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.lock_outline, color: Colors.red, size: 24),
+            const SizedBox(width: 8),
+            const Text(
+              'Acceso Denegado',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.red,
               ),
-            ],
+            ),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'No tienes permisos para ver los detalles de apertura de caja.',
+              style: TextStyle(fontSize: 14),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Solo los gerentes, supervisores y almaceneros pueden acceder a esta información.',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Entendido'),
           ),
+        ],
+      ),
     );
   }
 
   /// 🖨️ Construir botones de impresión y exportación
   Widget _buildPrintButton(Map<String, dynamic> operation) {
     // Obtener el estado de la operación
-    final estadoNombre =
-        (operation['estado_nombre'] ?? '').toString().toLowerCase().trim();
+    final estadoNombre = (operation['estado_nombre'] ?? '')
+        .toString()
+        .toLowerCase()
+        .trim();
 
     // Validar si la operación está completada
     final isCompleted =
@@ -4413,49 +4415,45 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       // Mostrar diálogo de selección de tipo de impresora
       final printerType = await showDialog<String>(
         context: context,
-        builder:
-            (context) => AlertDialog(
-              title: Row(
-                children: [
-                  const Icon(Icons.print, color: Color(0xFF4A90E2)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: const Text(
-                      'Seleccionar Impresora',
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('¿Cómo deseas imprimir la operación?'),
-                  const SizedBox(height: 16),
-                  ListTile(
-                    leading: const Icon(Icons.wifi, color: Color(0xFF10B981)),
-                    title: const Text('Impresora WiFi'),
-                    subtitle: const Text('Imprimir por red WiFi'),
-                    onTap: () => Navigator.pop(context, 'wifi'),
-                  ),
-                  ListTile(
-                    leading: const Icon(
-                      Icons.bluetooth,
-                      color: Color(0xFF4A90E2),
-                    ),
-                    title: const Text('Impresora Bluetooth'),
-                    subtitle: const Text('Imprimir por Bluetooth'),
-                    onTap: () => Navigator.pop(context, 'bluetooth'),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancelar'),
+        builder: (context) => AlertDialog(
+          title: Row(
+            children: [
+              const Icon(Icons.print, color: Color(0xFF4A90E2)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: const Text(
+                  'Seleccionar Impresora',
+                  overflow: TextOverflow.ellipsis,
                 ),
-              ],
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('¿Cómo deseas imprimir la operación?'),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.wifi, color: Color(0xFF10B981)),
+                title: const Text('Impresora WiFi'),
+                subtitle: const Text('Imprimir por red WiFi'),
+                onTap: () => Navigator.pop(context, 'wifi'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.bluetooth, color: Color(0xFF4A90E2)),
+                title: const Text('Impresora Bluetooth'),
+                subtitle: const Text('Imprimir por Bluetooth'),
+                onTap: () => Navigator.pop(context, 'bluetooth'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
             ),
+          ],
+        ),
       );
 
       if (printerType == null || !mounted) return;
@@ -4484,26 +4482,22 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
       // Obtener detalles de la operación (incluye items de transferencia unificada)
       final printableItems = _extractPrintableItems(operation);
-      final details =
-          printableItems.map((item) {
-            return {
-              'cantidad': item['cantidad_contada'] ?? item['cantidad'] ?? 0,
-              'producto_nombre':
-                  item['producto_nombre'] ??
-                  item['nombre_producto'] ??
-                  'Producto',
-              'producto': {
-                'denominacion':
-                    item['producto_nombre'] ??
-                    item['nombre_producto'] ??
-                    'Producto',
-                'codigo_barras': item['codigo_barras'],
-              },
-              'presentacion':
-                  item['presentacion_nombre'] ?? item['presentacion'],
-              'ubicacion': item['ubicacion_nombre'] ?? item['ubicacion'],
-            };
-          }).toList();
+      final details = printableItems.map((item) {
+        return {
+          'cantidad': item['cantidad_contada'] ?? item['cantidad'] ?? 0,
+          'producto_nombre':
+              item['producto_nombre'] ?? item['nombre_producto'] ?? 'Producto',
+          'producto': {
+            'denominacion':
+                item['producto_nombre'] ??
+                item['nombre_producto'] ??
+                'Producto',
+            'codigo_barras': item['codigo_barras'],
+          },
+          'presentacion': item['presentacion_nombre'] ?? item['presentacion'],
+          'ubicacion': item['ubicacion_nombre'] ?? item['ubicacion'],
+        };
+      }).toList();
       print('📦 Detalles obtenidos de la vista: ${details.length} productos');
 
       if (!mounted) return;
@@ -4524,17 +4518,16 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder:
-            (context) => const AlertDialog(
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(color: Color(0xFF10B981)),
-                  SizedBox(height: 16),
-                  Text('Imprimiendo por WiFi...'),
-                ],
-              ),
-            ),
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF10B981)),
+              SizedBox(height: 16),
+              Text('Imprimiendo por WiFi...'),
+            ],
+          ),
+        ),
       );
 
       // Conectar e imprimir
@@ -4611,17 +4604,16 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder:
-            (context) => const AlertDialog(
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(color: Color(0xFF4A90E2)),
-                  SizedBox(height: 16),
-                  Text('Conectando a impresora...'),
-                ],
-              ),
-            ),
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              SizedBox(height: 16),
+              Text('Conectando a impresora...'),
+            ],
+          ),
+        ),
       );
 
       // Conectar
@@ -4647,22 +4639,22 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder:
-            (context) => const AlertDialog(
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(color: Color(0xFF4A90E2)),
-                  SizedBox(height: 16),
-                  Text('Imprimiendo ticket...'),
-                ],
-              ),
-            ),
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              SizedBox(height: 16),
+              Text('Imprimiendo ticket...'),
+            ],
+          ),
+        ),
       );
 
       // Datos de la tienda para el encabezado
       final currentStore = await UserPreferencesService().getCurrentStoreInfo();
-      final storeName = (currentStore?['denominacion'] as String?)?.isNotEmpty == true
+      final storeName =
+          (currentStore?['denominacion'] as String?)?.isNotEmpty == true
           ? currentStore!['denominacion'] as String
           : 'INVENTTIA';
 
@@ -4722,8 +4714,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         final destino = esp?['destino']?.toString();
         if ((origen != null && origen.isNotEmpty) ||
             (destino != null && destino.isNotEmpty)) {
-          almacenNombre =
-              '${origen ?? 'N/A'} → ${destino ?? 'N/A'}';
+          almacenNombre = '${origen ?? 'N/A'} → ${destino ?? 'N/A'}';
         }
       } else {
         final tipoOp = operation['tipo_operacion_nombre'] ?? '';
@@ -4748,17 +4739,16 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder:
-            (context) => const AlertDialog(
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(color: Color(0xFF4A90E2)),
-                  SizedBox(height: 16),
-                  Text('Generando PDF...'),
-                ],
-              ),
-            ),
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              SizedBox(height: 16),
+              Text('Generando PDF...'),
+            ],
+          ),
+        ),
       );
 
       await exportService.exportInventoryOperationPdf(
@@ -4936,23 +4926,22 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   void _showPrintError(String title, String message) {
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Row(
-              children: [
-                const Icon(Icons.error, color: Colors.red),
-                const SizedBox(width: 8),
-                Text(title),
-              ],
-            ),
-            content: Text(message),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('OK'),
-              ),
-            ],
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.error, color: Colors.red),
+            const SizedBox(width: 8),
+            Text(title),
+          ],
+        ),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
           ),
+        ],
+      ),
     );
   }
 
@@ -4960,27 +4949,26 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   void _showPrintSuccess(String title, String message) {
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Row(
-              children: [
-                const Icon(Icons.check_circle, color: Colors.green),
-                const SizedBox(width: 8),
-                Text(title),
-              ],
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.check_circle, color: Colors.green),
+            const SizedBox(width: 8),
+            Text(title),
+          ],
+        ),
+        content: Text(message),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
             ),
-            content: Text(message),
-            actions: [
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('¡Genial!'),
-              ),
-            ],
+            child: const Text('¡Genial!'),
           ),
+        ],
+      ),
     );
   }
 
@@ -5007,118 +4995,107 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Row(
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.inventory_2_outlined, color: Colors.red, size: 28),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Stock Insuficiente',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(
-                  Icons.inventory_2_outlined,
-                  color: Colors.red,
-                  size: 28,
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Text(
-                    'Stock Insuficiente',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    border: Border.all(color: Colors.red.shade300, width: 2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'No hay suficiente stock para completar esta extracción. Revisa las cantidades disponibles antes de intentar de nuevo.',
+                    style: TextStyle(fontSize: 13, height: 1.5),
                   ),
                 ),
-              ],
-            ),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.red.shade50,
-                        border: Border.all(
-                          color: Colors.red.shade300,
-                          width: 2,
-                        ),
-                        borderRadius: BorderRadius.circular(8),
+                if (productos.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Productos con stock insuficiente:',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+                  ...productos.map(
+                    (p) => Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
                       ),
-                      child: const Text(
-                        'No hay suficiente stock para completar esta extracción. Revisa las cantidades disponibles antes de intentar de nuevo.',
-                        style: TextStyle(fontSize: 13, height: 1.5),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.warning_amber_rounded,
+                            color: Colors.orange,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  p['nombre'] ?? '',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Disponible: ${p['disponible']}  •  Solicitado: ${p['solicitado']}',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    if (productos.isNotEmpty) ...[
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Productos con stock insuficiente:',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      ...productos.map(
-                        (p) => Container(
-                          margin: const EdgeInsets.only(bottom: 6),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade50,
-                            border: Border.all(color: Colors.grey.shade300),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.warning_amber_rounded,
-                                color: Colors.orange,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      p['nombre'] ?? '',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      'Disponible: ${p['disponible']}  •  Solicitado: ${p['solicitado']}',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.grey.shade700,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ] else ...[
-                      const SizedBox(height: 12),
-                      Text(message, style: const TextStyle(fontSize: 12)),
-                    ],
-                  ],
-                ),
-              ),
+                  ),
+                ] else ...[
+                  const SizedBox(height: 12),
+                  Text(message, style: const TextStyle(fontSize: 12)),
+                ],
+              ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                style: TextButton.styleFrom(foregroundColor: Colors.red),
-                child: const Text('Entendido'),
-              ),
-            ],
           ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -5129,121 +5106,117 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   ) {
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Row(
-              children: [
-                const Icon(
-                  Icons.local_shipping_outlined,
-                  color: Colors.deepOrange,
-                  size: 28,
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Text(
-                    'Recepción de Consignación',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ],
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(
+              Icons.local_shipping_outlined,
+              color: Colors.deepOrange,
+              size: 28,
             ),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Mensaje principal
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.shade50,
-                      border: Border.all(
-                        color: Colors.orange.shade300,
-                        width: 2,
-                      ),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          '⚠️ Mercancía no recibida',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                            color: Colors.deepOrange,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'No puedes completar la recepción hasta que la mercancía esté físicamente en tu negocio.',
-                          style: TextStyle(fontSize: 13, height: 1.5),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Instrucciones
-                  const Text(
-                    '📋 Pasos a seguir:',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                  const SizedBox(height: 8),
-                  _buildInstructionStep(
-                    '1',
-                    'Verifica que la mercancía haya llegado a tu almacén',
-                  ),
-                  _buildInstructionStep(
-                    '2',
-                    'Inspecciona la mercancía (cantidad, estado, etc.)',
-                  ),
-                  _buildInstructionStep(
-                    '4',
-                    'Luego podrás completar la recepción aquí',
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Información técnica
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          '🔍 Información técnica:',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Operación Extracción: #$idOperacionExtraccion',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontFamily: 'monospace',
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Recepción de Consignación',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                style: TextButton.styleFrom(foregroundColor: Colors.deepOrange),
-                child: const Text('Entendido'),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Mensaje principal
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  border: Border.all(color: Colors.orange.shade300, width: 2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '⚠️ Mercancía no recibida',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: Colors.deepOrange,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'No puedes completar la recepción hasta que la mercancía esté físicamente en tu negocio.',
+                      style: TextStyle(fontSize: 13, height: 1.5),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Instrucciones
+              const Text(
+                '📋 Pasos a seguir:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+              const SizedBox(height: 8),
+              _buildInstructionStep(
+                '1',
+                'Verifica que la mercancía haya llegado a tu almacén',
+              ),
+              _buildInstructionStep(
+                '2',
+                'Inspecciona la mercancía (cantidad, estado, etc.)',
+              ),
+              _buildInstructionStep(
+                '4',
+                'Luego podrás completar la recepción aquí',
+              ),
+              const SizedBox(height: 16),
+
+              // Información técnica
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '🔍 Información técnica:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Operación Extracción: #$idOperacionExtraccion',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            style: TextButton.styleFrom(foregroundColor: Colors.deepOrange),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -5393,13 +5366,12 @@ class _PaymentDetailsSectionState extends State<_PaymentDetailsSection> {
                         border: OutlineInputBorder(),
                         isDense: true,
                       ),
-                      items:
-                          medios.map((m) {
-                            return DropdownMenuItem<int>(
-                              value: m['id'] as int,
-                              child: Text(m['denominacion']?.toString() ?? ''),
-                            );
-                          }).toList(),
+                      items: medios.map((m) {
+                        return DropdownMenuItem<int>(
+                          value: m['id'] as int,
+                          child: Text(m['denominacion']?.toString() ?? ''),
+                        );
+                      }).toList(),
                       onChanged: (id) {
                         if (id == null) return;
                         setDialogState(() {
@@ -5461,8 +5433,7 @@ class _PaymentDetailsSectionState extends State<_PaymentDetailsSection> {
     }
 
     final monto =
-        double.tryParse(montoController.text.trim().replaceAll(',', '.')) ??
-        -1;
+        double.tryParse(montoController.text.trim().replaceAll(',', '.')) ?? -1;
     montoController.dispose();
     final referencia = refController.text.trim();
     refController.dispose();
@@ -5563,8 +5534,9 @@ class _PaymentDetailsSectionState extends State<_PaymentDetailsSection> {
                   final referencia =
                       payment['referencia_pago']?.toString() ?? '-';
                   final fecha = payment['fecha_pago'] ?? payment['created_at'];
-                  final tipoPago =
-                      payment['tipo_pago'] == 1 ? 'Efectivo' : 'Digital';
+                  final tipoPago = payment['tipo_pago'] == 1
+                      ? 'Efectivo'
+                      : 'Digital';
 
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
@@ -5627,22 +5599,19 @@ class _PaymentDetailsSectionState extends State<_PaymentDetailsSection> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed:
-                            _isRegistering ? null : _openCreatePaymentDialog,
-                        icon:
-                            _isRegistering
-                                ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                                : const Icon(
-                                  Icons.payment,
+                        onPressed: _isRegistering
+                            ? null
+                            : _openCreatePaymentDialog,
+                        icon: _isRegistering
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
                                   color: Colors.white,
                                 ),
+                              )
+                            : const Icon(Icons.payment, color: Colors.white),
                         label: Text(
                           _isRegistering
                               ? 'Registrando...'

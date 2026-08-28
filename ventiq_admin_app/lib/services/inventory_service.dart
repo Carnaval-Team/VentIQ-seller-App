@@ -244,14 +244,21 @@ class InventoryService {
       final userUuid = await _prefsService.getUserId();
       final userData = await _prefsService.getUserData();
       final idTiendaRaw = userData['idTienda'];
-      final idTienda =
-          idTiendaRaw is int
-              ? idTiendaRaw
-              : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
+      final idTienda = idTiendaRaw is int
+          ? idTiendaRaw
+          : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
 
       if (userUuid == null || idTienda == null) {
         throw Exception('No se encontró información del usuario o tienda');
       }
+
+      final now = DateTime.now();
+      final effectiveFechaDesde =
+          fechaDesde ??
+          (fechaHasta == null ? DateTime(now.year, now.month, 1) : null);
+      final effectiveFechaHasta =
+          fechaHasta ??
+          (fechaDesde == null ? DateTime(now.year, now.month + 1, 0) : null);
 
       // Get regular inventory operations
       final response = await _supabase.rpc(
@@ -263,8 +270,8 @@ class InventoryService {
           'p_estados': null,
           // Usar componentes locales (yyyy-MM-dd); toIso8601String puede
           // correr el día por zona horaria (sobre todo en web).
-          'p_fecha_desde': _toDateParam(fechaDesde),
-          'p_fecha_hasta': _toDateParam(fechaHasta),
+          'p_fecha_desde': _toDateParam(effectiveFechaDesde),
+          'p_fecha_hasta': _toDateParam(effectiveFechaHasta),
           'p_uuid_usuario_operador': null,
           'p_busqueda': busqueda,
           'p_limite': limite,
@@ -281,10 +288,9 @@ class InventoryService {
       List<Map<String, dynamic>> operations = [];
 
       if (response is List && response.isNotEmpty) {
-        operations =
-            response
-                .map((item) => Map<String, dynamic>.from(item as Map))
-                .toList();
+        operations = response
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList();
         totalCount =
             (response.first as Map<String, dynamic>)['total_count'] ?? 0;
       }
@@ -297,7 +303,9 @@ class InventoryService {
   }
 
   /// Get operation details (products moved in the operation)
-  static Future<Map<String, dynamic>> getOperationDetails(int operationId) async {
+  static Future<Map<String, dynamic>> getOperationDetails(
+    int operationId,
+  ) async {
     try {
       print('🔍 Obteniendo detalles de operación $operationId...');
 
@@ -329,7 +337,7 @@ class InventoryService {
         final producto = item['productos'];
         final presentacion = item['presentaciones'];
         final ubicacion = item['ubicaciones'];
-        
+
         return {
           'id': item['id'],
           'cantidad': item['cantidad'],
@@ -351,28 +359,36 @@ class InventoryService {
   }
 
   /// Get warehouse name from operation (reception or extraction)
-  static Future<String> getWarehouseFromOperation(int operationId, String operationType) async {
+  static Future<String> getWarehouseFromOperation(
+    int operationId,
+    String operationType,
+  ) async {
     try {
-      print('🔍 Obteniendo almacén para operación $operationId (tipo: $operationType)...');
+      print(
+        '🔍 Obteniendo almacén para operación $operationId (tipo: $operationType)...',
+      );
 
       final typeLC = operationType.toLowerCase();
       String tableName = '';
-      
+
       // Detectar si es recepción (con todas las variantes posibles)
-      if (typeLC.contains('recepción') || typeLC.contains('recepcion') || 
-          typeLC.contains('reception') || typeLC.contains('received') ||
+      if (typeLC.contains('recepción') ||
+          typeLC.contains('recepcion') ||
+          typeLC.contains('reception') ||
+          typeLC.contains('received') ||
           typeLC.contains('recibido')) {
         tableName = 'app_dat_recepcion_productos';
         print('   → Detectado como RECEPCIÓN');
-      } 
+      }
       // Detectar si es extracción (con todas las variantes posibles)
-      else if (typeLC.contains('extracción') || typeLC.contains('extraccion') || 
-               typeLC.contains('extraction') || typeLC.contains('extracted') ||
-               typeLC.contains('extraído')) {
+      else if (typeLC.contains('extracción') ||
+          typeLC.contains('extraccion') ||
+          typeLC.contains('extraction') ||
+          typeLC.contains('extracted') ||
+          typeLC.contains('extraído')) {
         tableName = 'app_dat_extraccion_productos';
         print('   → Detectado como EXTRACCIÓN');
-      } 
-      else {
+      } else {
         print('   → Tipo no reconocido: $operationType');
         return 'N/A';
       }
@@ -387,7 +403,9 @@ class InventoryService {
 
       print('   📋 Registros encontrados: ${response.length}');
       if (response.isEmpty) {
-        print('⚠️ No se encontraron registros en $tableName para operación $operationId');
+        print(
+          '⚠️ No se encontraron registros en $tableName para operación $operationId',
+        );
         return 'N/A';
       }
 
@@ -413,7 +431,7 @@ class InventoryService {
 
       final almacen = layoutResponse['app_dat_almacen'];
       final almacenNombre = almacen?['denominacion'] ?? 'N/A';
-      
+
       print('✅ Almacén obtenido: $almacenNombre');
       return almacenNombre;
     } catch (e) {
@@ -424,7 +442,9 @@ class InventoryService {
   }
 
   /// Get adjustment details from app_dat_ajuste_inventario
-  static Future<Map<String, dynamic>> getAdjustmentDetails(int operationId) async {
+  static Future<Map<String, dynamic>> getAdjustmentDetails(
+    int operationId,
+  ) async {
     try {
       print('🔍 Obteniendo detalles de ajuste para operación $operationId...');
 
@@ -456,7 +476,7 @@ class InventoryService {
       for (final item in response as List) {
         final producto = item['app_dat_producto'];
         final idUbicacion = item['id_ubicacion'];
-        
+
         // Get location name and warehouse
         String ubicacionNombre = 'N/A';
         String almacenNombre = 'N/A';
@@ -480,7 +500,7 @@ class InventoryService {
             print('⚠️ No se pudo obtener ubicación $idUbicacion: $e');
           }
         }
-        
+
         details.add({
           'id': item['id'],
           'cantidad_anterior': item['cantidad_anterior'],
@@ -513,7 +533,9 @@ class InventoryService {
     try {
       if (operationIds.isEmpty) return {'details': []};
 
-      print('🔍 Obteniendo detalles de ajuste para ${operationIds.length} operaciones: $operationIds');
+      print(
+        '🔍 Obteniendo detalles de ajuste para ${operationIds.length} operaciones: $operationIds',
+      );
 
       final response = await _supabase
           .from('app_dat_ajuste_inventario')
@@ -536,7 +558,9 @@ class InventoryService {
           .inFilter('id_operacion', operationIds)
           .order('id', ascending: true);
 
-      print('✅ Detalles de ajuste (sesión) obtenidos: ${(response as List).length} registros');
+      print(
+        '✅ Detalles de ajuste (sesión) obtenidos: ${(response as List).length} registros',
+      );
 
       final details = <Map<String, dynamic>>[];
       for (final item in response as List) {
@@ -617,10 +641,9 @@ class InventoryService {
       // Get store ID from preferences
       final userData = await _prefsService.getUserData();
       final idTiendaRaw = userData['idTienda'];
-      final idTienda =
-          idTiendaRaw is int
-              ? idTiendaRaw
-              : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
+      final idTienda = idTiendaRaw is int
+          ? idTiendaRaw
+          : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
 
       if (idTienda == null) {
         throw Exception('No se encontró el ID de tienda en las preferencias');
@@ -663,10 +686,9 @@ class InventoryService {
       print('📦 RPC Response first: ${response[0]}');
 
       // Handle nested response structure from fn_listar_inventario_productos_paged
-      final data =
-          response is List
-              ? response as List<dynamic>
-              : (response['data'] as List<dynamic>? ?? []);
+      final data = response is List
+          ? response as List<dynamic>
+          : (response['data'] as List<dynamic>? ?? []);
       print('📦 Encontradas ${data.length} variantes con stock');
 
       final List<InventoryProduct> products = [];
@@ -779,7 +801,9 @@ class InventoryService {
     @Deprecated('Usar completarOperaciones') int? estadoInicial,
   }) async {
     try {
-      print('🔄 Transferencia atómica (fn_transferir_inventario_entre_layouts)...');
+      print(
+        '🔄 Transferencia atómica (fn_transferir_inventario_entre_layouts)...',
+      );
       print(
         '📦 Layout origen: $idLayoutOrigen → Layout destino: $idLayoutDestino',
       );
@@ -788,10 +812,9 @@ class InventoryService {
       final userUuid = await _prefsService.getUserId();
       final userData = await _prefsService.getUserData();
       final idTiendaRaw = userData['idTienda'];
-      final idTienda =
-          idTiendaRaw is int
-              ? idTiendaRaw
-              : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
+      final idTienda = idTiendaRaw is int
+          ? idTiendaRaw
+          : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
 
       if (userUuid == null || idTienda == null) {
         throw Exception(
@@ -805,21 +828,21 @@ class InventoryService {
         }
       }
 
-      final completar =
-          estadoInicial != null ? estadoInicial == 2 : completarOperaciones;
+      final completar = estadoInicial != null
+          ? estadoInicial == 2
+          : completarOperaciones;
 
-      final quienEntrega =
-          entregadoPor.trim().isNotEmpty
-              ? entregadoPor.trim()
-              : (autorizadoPor?.trim().isNotEmpty == true
-                  ? autorizadoPor!.trim()
-                  : '');
-      final quienTransporta =
-          transportadoPor.trim().isNotEmpty
-              ? transportadoPor.trim()
-              : quienEntrega;
-      final quienRecibe =
-          recibidoPor.trim().isNotEmpty ? recibidoPor.trim() : quienTransporta;
+      final quienEntrega = entregadoPor.trim().isNotEmpty
+          ? entregadoPor.trim()
+          : (autorizadoPor?.trim().isNotEmpty == true
+                ? autorizadoPor!.trim()
+                : '');
+      final quienTransporta = transportadoPor.trim().isNotEmpty
+          ? transportadoPor.trim()
+          : quienEntrega;
+      final quienRecibe = recibidoPor.trim().isNotEmpty
+          ? recibidoPor.trim()
+          : quienTransporta;
 
       if (quienEntrega.isEmpty ||
           quienTransporta.isEmpty ||
@@ -893,8 +916,7 @@ class InventoryService {
         'id_extraccion': result['id_extraccion'],
         'id_recepcion': result['id_recepcion'],
         'id_operacion_transferencia': result['id_operacion_transferencia'],
-        'total_productos':
-            result['total_productos'] ?? productos.length,
+        'total_productos': result['total_productos'] ?? productos.length,
         'estado': result['estado'] ?? (completar ? 'completado' : 'pendiente'),
       };
     } catch (e) {
@@ -1006,12 +1028,11 @@ class InventoryService {
       print('🔄 Confirmando transferencia $idOperacionGeneral...');
 
       // Get the linked extraction and reception operations
-      final operationsResponse =
-          await _supabase
-              .from('app_dat_operacion_transferencia')
-              .select('id_extraccion, id_recepcion')
-              .eq('id_operacion', idOperacionGeneral)
-              .single();
+      final operationsResponse = await _supabase
+          .from('app_dat_operacion_transferencia')
+          .select('id_extraccion, id_recepcion')
+          .eq('id_operacion', idOperacionGeneral)
+          .single();
 
       if (operationsResponse.isEmpty) {
         throw Exception(
@@ -1198,9 +1219,8 @@ class InventoryService {
         '📦 Parámetros: entregadoPor=$entregadoPor, idTienda=$idTienda, productos=${productos.length}',
       );
 
-      // FASE 1 presentaciones: ya NO se convierte a presentación base.
-      // La línea viaja con la presentación que eligió el usuario; la RPC
-      // resuelve la base solo si id_presentacion viene null.
+      // NUEVO: Procesar productos para conversión automática a presentación base
+      print('🔄 Procesando productos para conversión a presentación base...');
       final productosConvertidos = await processProductsForReception(productos);
 
       final response = await _supabase.rpc(
@@ -1255,10 +1275,9 @@ class InventoryService {
 
       for (final ingredient in ingredients) {
         final productIdRaw = ingredient['id_producto'];
-        final productId =
-            productIdRaw is int
-                ? productIdRaw
-                : int.tryParse(productIdRaw.toString()) ?? 0;
+        final productId = productIdRaw is int
+            ? productIdRaw
+            : int.tryParse(productIdRaw.toString()) ?? 0;
 
         if (productId == 0) {
           print('⚠️ ID de producto inválido: $productIdRaw, saltando...');
@@ -1484,19 +1503,17 @@ class InventoryService {
       }
 
       // Handle nested response structure from fn_listar_inventario_productos_paged
-      final data =
-          response is List
-              ? response as List<dynamic>
-              : (response['data'] as List<dynamic>? ?? []);
+      final data = response is List
+          ? response as List<dynamic>
+          : (response['data'] as List<dynamic>? ?? []);
       print('📦 Encontradas ${data.length} variantes con stock');
 
-      final variants =
-          data.map<Map<String, dynamic>>((item) {
-            final stockDisponible =
-                (item['stock_disponible'] as num?)?.toDouble() ?? 0.0;
+      final variants = data.map<Map<String, dynamic>>((item) {
+        final stockDisponible =
+            (item['stock_disponible'] as num?)?.toDouble() ?? 0.0;
 
-            // Debug logging for variant data analysis
-            /* print('🔍 Processing item:');
+        // Debug logging for variant data analysis
+        /* print('🔍 Processing item:');
             print('   - id_variante: ${item['id_variante']} (${item['id_variante'].runtimeType})');
             print('   - variante: ${item['variante']} (${item['variante'].runtimeType})');
             print('   - id_opcion_variante: ${item['id_opcion_variante']} (${item['id_opcion_variante'].runtimeType})');
@@ -1505,48 +1522,45 @@ class InventoryService {
             print('   - um: ${item['um']} (${item['um'].runtimeType})');
             print('   - stock_disponible: ${item['stock_disponible']}');*/
 
-            return {
-              'id_producto': item['id_producto'] ?? idProducto,
-              'nombre_producto': item['denominacion'] ?? 'Producto sin nombre',
-              'sku_producto': item['sku_producto'] ?? '',
+        return {
+          'id_producto': item['id_producto'] ?? idProducto,
+          'nombre_producto': item['denominacion'] ?? 'Producto sin nombre',
+          'sku_producto': item['sku_producto'] ?? '',
 
-              // Información de variante
-              'id_variante': item['id_variante'],
-              'variante_nombre': item['variante'] ?? 'Sin variante',
-              'id_opcion_variante': item['id_opcion_variante'],
-              'opcion_variante_nombre': item['opcion_variante'] ?? 'Única',
+          // Información de variante
+          'id_variante': item['id_variante'],
+          'variante_nombre': item['variante'] ?? 'Sin variante',
+          'id_opcion_variante': item['id_opcion_variante'],
+          'opcion_variante_nombre': item['opcion_variante'] ?? 'Única',
 
-              // Información de presentación - Handle null id_presentacion
-              'id_presentacion':
-                  item['id_presentacion'], // Keep original null value
-              'presentacion_nombre':
-                  item['id_presentacion'] != null
-                      ? _safeSubstring(
-                        item['um'] ?? 'UN',
-                        0,
-                        3,
-                      ) // Safe substring to prevent RangeError
-                      : 'Sin presentación',
-              'presentacion_codigo':
-                  item['id_presentacion'] != null
-                      ? (item['um_codigo'] ?? 'UN')
-                      : 'SIN_PRES',
+          // Información de presentación - Handle null id_presentacion
+          'id_presentacion':
+              item['id_presentacion'], // Keep original null value
+          'presentacion_nombre': item['id_presentacion'] != null
+              ? _safeSubstring(
+                  item['um'] ?? 'UN',
+                  0,
+                  3,
+                ) // Safe substring to prevent RangeError
+              : 'Sin presentación',
+          'presentacion_codigo': item['id_presentacion'] != null
+              ? (item['um_codigo'] ?? 'UN')
+              : 'SIN_PRES',
 
-              // Stock disponible
-              'stock_disponible': stockDisponible,
-              'stock_reservado':
-                  (item['stock_reservado'] as num?)?.toDouble() ?? 0.0,
-              'stock_actual': (item['stock_actual'] as num?)?.toDouble() ?? 0.0,
+          // Stock disponible
+          'stock_disponible': stockDisponible,
+          'stock_reservado':
+              (item['stock_reservado'] as num?)?.toDouble() ?? 0.0,
+          'stock_actual': (item['stock_actual'] as num?)?.toDouble() ?? 0.0,
 
-              // Información adicional
-              'precio_unitario':
-                  (item['precio_venta'] as num?)?.toDouble() ?? 0.0,
-              'id_layout': idLayout,
+          // Información adicional
+          'precio_unitario': (item['precio_venta'] as num?)?.toDouble() ?? 0.0,
+          'id_layout': idLayout,
 
-              // Clave única para agrupación - Solo por presentación para transferencias
-              'presentation_key': '${item['id_presentacion'] ?? 'null'}',
-            };
-          }).toList();
+          // Clave única para agrupación - Solo por presentación para transferencias
+          'presentation_key': '${item['id_presentacion'] ?? 'null'}',
+        };
+      }).toList();
 
       // Agrupar por presentación únicamente (ignorar variantes)
       final Map<String, Map<String, dynamic>> groupedPresentations = {};
@@ -1615,52 +1629,48 @@ class InventoryService {
       final data = response['data'] as List<dynamic>? ?? [];
       print('📦 Encontradas ${data.length} presentaciones configuradas');
 
-      final presentations =
-          data.map<Map<String, dynamic>>((item) {
-            return {
-              'id_producto': item['id_producto'] ?? idProducto,
-              'nombre_producto': item['denominacion'] ?? 'Producto sin nombre',
-              'sku_producto': item['sku_producto'] ?? '',
+      final presentations = data.map<Map<String, dynamic>>((item) {
+        return {
+          'id_producto': item['id_producto'] ?? idProducto,
+          'nombre_producto': item['denominacion'] ?? 'Producto sin nombre',
+          'sku_producto': item['sku_producto'] ?? '',
 
-              // Información de variante
-              'id_variante': item['id_variante'],
-              'variante_nombre': item['variante'] ?? 'Sin variante',
-              'id_opcion_variante': item['id_opcion_variante'],
-              'opcion_variante_nombre': item['opcion_variante'] ?? 'Única',
+          // Información de variante
+          'id_variante': item['id_variante'],
+          'variante_nombre': item['variante'] ?? 'Sin variante',
+          'id_opcion_variante': item['id_opcion_variante'],
+          'opcion_variante_nombre': item['opcion_variante'] ?? 'Única',
 
-              // Información de presentación
-              'id_presentacion':
-                  item['id_presentacion'], // Keep original null value
-              'presentacion_nombre':
-                  item['id_presentacion'] != null
-                      ? _safeSubstring(
-                        item['um'] ?? 'UN',
-                        0,
-                        3,
-                      ) // Safe substring to prevent RangeError
-                      : 'Sin presentación',
-              'presentacion_codigo':
-                  item['id_presentacion'] != null
-                      ? (item['um_codigo'] ?? 'UN')
-                      : 'SIN_PRES',
+          // Información de presentación
+          'id_presentacion':
+              item['id_presentacion'], // Keep original null value
+          'presentacion_nombre': item['id_presentacion'] != null
+              ? _safeSubstring(
+                  item['um'] ?? 'UN',
+                  0,
+                  3,
+                ) // Safe substring to prevent RangeError
+              : 'Sin presentación',
+          'presentacion_codigo': item['id_presentacion'] != null
+              ? (item['um_codigo'] ?? 'UN')
+              : 'SIN_PRES',
 
-              // Stock (puede ser 0)
-              'stock_disponible':
-                  (item['stock_disponible'] as num?)?.toDouble() ?? 0.0,
-              'stock_reservado':
-                  (item['stock_reservado'] as num?)?.toDouble() ?? 0.0,
-              'stock_actual': (item['stock_actual'] as num?)?.toDouble() ?? 0.0,
+          // Stock (puede ser 0)
+          'stock_disponible':
+              (item['stock_disponible'] as num?)?.toDouble() ?? 0.0,
+          'stock_reservado':
+              (item['stock_reservado'] as num?)?.toDouble() ?? 0.0,
+          'stock_actual': (item['stock_actual'] as num?)?.toDouble() ?? 0.0,
 
-              // Información adicional
-              'precio_unitario':
-                  (item['precio_venta'] as num?)?.toDouble() ?? 0.0,
-              'id_layout': idLayout,
+          // Información adicional
+          'precio_unitario': (item['precio_venta'] as num?)?.toDouble() ?? 0.0,
+          'id_layout': idLayout,
 
-              // Clave única
-              'variant_key':
-                  '${item['id_variante'] ?? 'null'}_${item['id_opcion_variante'] ?? 'null'}_${item['id_presentacion'] ?? 'null'}',
-            };
-          }).toList();
+          // Clave única
+          'variant_key':
+              '${item['id_variante'] ?? 'null'}_${item['id_opcion_variante'] ?? 'null'}_${item['id_presentacion'] ?? 'null'}',
+        };
+      }).toList();
 
       print('📊 Presentaciones encontradas: ${presentations.length}');
       for (final pres in presentations) {
@@ -1676,68 +1686,176 @@ class InventoryService {
     }
   }
 
-  /// Valida las lineas de recepcion sin convertir a presentacion base.
-  ///
-  /// FASE 1 de presentaciones (docs/PLAN_PRESENTACIONES_INVENTARIO.md).
-  /// Antes este metodo hacia `cantidad * factor` y cambiaba el id_presentacion
-  /// por el de la base, o sea que aplanaba una SEGUNDA vez lo que ya venia del
-  /// product_quantity_dialog. Con eso "4 cajas" llegaba al inventario como
-  /// "48 unidades" y el empaque fisico se perdia.
-  ///
-  /// Ahora la presentacion elegida viaja intacta hasta la RPC. Lo unico que se
-  /// hace aqui es validar la forma de la linea; la resolucion de la
-  /// presentacion base cuando falta, y el rebalanceo en los egresos, viven en
-  /// el SQL (fn_presentaciones_producto / fn_descontar_con_rebalanceo).
+  /// Procesa productos para recepción convirtiendo a presentación base
   static Future<List<Map<String, dynamic>>> processProductsForReception(
     List<Map<String, dynamic>> productos,
   ) async {
-    return _validarLineasSinConvertir(productos, 'recepción');
+    final processedProducts = <Map<String, dynamic>>[];
+
+    print('🔄 ===== PROCESANDO PRODUCTOS PARA RECEPCIÓN =====');
+    print('🔄 Total productos a procesar: ${productos.length}');
+
+    for (final producto in productos) {
+      try {
+        final productIdRaw = producto['id_producto'];
+        final productId = productIdRaw is int
+            ? productIdRaw
+            : int.tryParse(productIdRaw.toString()) ?? 0;
+
+        if (productId == 0) {
+          print('⚠️ ID de producto inválido: $productIdRaw, saltando...');
+          continue;
+        }
+
+        final presentacionId = producto['id_presentacion'] as int?;
+        final cantidadOriginal = (producto['cantidad'] as num).toDouble();
+
+        print('🔄 Procesando producto ID: $productId');
+        print('🔄 Presentación seleccionada: $presentacionId');
+        print('🔄 Cantidad original: $cantidadOriginal');
+
+        if (presentacionId == null) {
+          print(
+            '⚠️ No hay presentación seleccionada, usando cantidad original',
+          );
+          processedProducts.add(producto);
+          continue;
+        }
+
+        // Convertir a presentación base
+        final cantidadEnBase = await ProductService.convertToBasePresentacion(
+          productId: productId,
+          fromPresentacionId: presentacionId,
+          cantidad: cantidadOriginal,
+        );
+
+        // Obtener presentación base
+        final basePresentation = await ProductService.getBasePresentacion(
+          productId,
+        );
+
+        if (basePresentation != null) {
+          // Crear producto procesado con presentación base
+          final processedProduct = Map<String, dynamic>.from(producto);
+          processedProduct['id_presentacion'] =
+              basePresentation['id_presentacion'];
+          processedProduct['cantidad'] = cantidadEnBase;
+          processedProduct['cantidad_original'] = cantidadOriginal;
+          processedProduct['presentacion_original'] = presentacionId;
+          processedProduct['conversion_applied'] =
+              cantidadEnBase != cantidadOriginal;
+
+          processedProducts.add(processedProduct);
+
+          print('✅ Producto procesado:');
+          print(
+            '   - Cantidad original: $cantidadOriginal (presentación: $presentacionId)',
+          );
+          print(
+            '   - Cantidad en base: $cantidadEnBase (presentación: ${basePresentation['id_presentacion']})',
+          );
+          print(
+            '   - Conversión aplicada: ${cantidadEnBase != cantidadOriginal}',
+          );
+        } else {
+          print('⚠️ No se pudo obtener presentación base, usando original');
+          processedProducts.add(producto);
+        }
+      } catch (e) {
+        print('❌ Error procesando producto: $e');
+        processedProducts.add(producto); // Agregar original en caso de error
+      }
+    }
+
+    print('✅ Procesamiento completado: ${processedProducts.length} productos');
+    return processedProducts;
   }
 
-  /// Igual que processProductsForReception, para extracciones.
-  ///
-  /// El rebalanceo (abrir cajas si no hay sueltas) lo hace
-  /// fn_descontar_con_rebalanceo dentro de fn_crear_extraccion_con_movimiento.
-  /// No hay que anticiparlo en el cliente.
+  /// Procesa productos para extracción convirtiendo a presentación base
   static Future<List<Map<String, dynamic>>> processProductsForExtraction(
     List<Map<String, dynamic>> productos,
   ) async {
-    return _validarLineasSinConvertir(productos, 'extracción');
-  }
+    final processedProducts = <Map<String, dynamic>>[];
 
-  /// Deja pasar la linea tal cual, avisando de lo que el SQL va a resolver.
-  ///
-  /// Se conserva el comportamiento tolerante de antes: una linea con id de
-  /// producto invalido se salta en vez de tumbar la operacion completa.
-  static List<Map<String, dynamic>> _validarLineasSinConvertir(
-    List<Map<String, dynamic>> productos,
-    String etiqueta,
-  ) {
-    final resultado = <Map<String, dynamic>>[];
+    print('🔄 ===== PROCESANDO PRODUCTOS PARA EXTRACCIÓN =====');
+    print('🔄 Total productos a procesar: ${productos.length}');
 
     for (final producto in productos) {
-      final productIdRaw = producto['id_producto'];
-      final productId =
-          productIdRaw is int
-              ? productIdRaw
-              : int.tryParse(productIdRaw.toString()) ?? 0;
+      try {
+        final productIdRaw = producto['id_producto'];
+        final productId = productIdRaw is int
+            ? productIdRaw
+            : int.tryParse(productIdRaw.toString()) ?? 0;
 
-      if (productId == 0) {
-        print('⚠️ $etiqueta: id_producto inválido ($productIdRaw), se omite');
-        continue;
+        if (productId == 0) {
+          print('⚠️ ID de producto inválido: $productIdRaw, saltando...');
+          continue;
+        }
+
+        final presentacionId = producto['id_presentacion'] as int?;
+        final cantidadOriginal = (producto['cantidad'] as num).toDouble();
+
+        print('🔄 Procesando extracción producto ID: $productId');
+        print('🔄 Presentación seleccionada: $presentacionId');
+        print('🔄 Cantidad a extraer: $cantidadOriginal');
+
+        if (presentacionId == null) {
+          print(
+            '⚠️ No hay presentación seleccionada, usando cantidad original',
+          );
+          processedProducts.add(producto);
+          continue;
+        }
+
+        // Convertir a presentación base
+        final cantidadEnBase = await ProductService.convertToBasePresentacion(
+          productId: productId,
+          fromPresentacionId: presentacionId,
+          cantidad: cantidadOriginal,
+        );
+
+        // Obtener presentación base
+        final basePresentation = await ProductService.getBasePresentacion(
+          productId,
+        );
+
+        if (basePresentation != null) {
+          // Crear producto procesado con presentación base
+          final processedProduct = Map<String, dynamic>.from(producto);
+          processedProduct['id_presentacion'] =
+              basePresentation['id_presentacion'];
+          processedProduct['cantidad'] = cantidadEnBase;
+          processedProduct['cantidad_original'] = cantidadOriginal;
+          processedProduct['presentacion_original'] = presentacionId;
+          processedProduct['conversion_applied'] =
+              cantidadEnBase != cantidadOriginal;
+
+          processedProducts.add(processedProduct);
+
+          print('✅ Extracción procesada:');
+          print(
+            '   - Cantidad original: $cantidadOriginal (presentación: $presentacionId)',
+          );
+          print(
+            '   - Cantidad en base: $cantidadEnBase (presentación: ${basePresentation['id_presentacion']})',
+          );
+          print(
+            '   - Conversión aplicada: ${cantidadEnBase != cantidadOriginal}',
+          );
+        } else {
+          print('⚠️ No se pudo obtener presentación base, usando original');
+          processedProducts.add(producto);
+        }
+      } catch (e) {
+        print('❌ Error procesando extracción: $e');
+        processedProducts.add(producto); // Agregar original en caso de error
       }
-
-      if (producto['id_presentacion'] == null) {
-        // No es un error: la RPC resuelve la presentacion base del producto.
-        print('ℹ️ $etiqueta: producto $productId sin id_presentacion, '
-            'la RPC usará la presentación base');
-      }
-
-      resultado.add(producto);
     }
 
-    print('✅ $etiqueta: ${resultado.length} líneas listas sin conversión');
-    return resultado;
+    print(
+      '✅ Procesamiento de extracción completado: ${processedProducts.length} productos',
+    );
+    return processedProducts;
   }
 
   /// Descompone un producto elaborado recursivamente
@@ -1767,18 +1885,17 @@ class InventoryService {
 
     for (final ingredient in ingredients) {
       final ingredientIdRaw = ingredient['producto_id'];
-      final ingredientId =
-          ingredientIdRaw is int
-              ? ingredientIdRaw
-              : int.tryParse(ingredientIdRaw.toString()) ?? 0;
+      final ingredientId = ingredientIdRaw is int
+          ? ingredientIdRaw
+          : int.tryParse(ingredientIdRaw.toString()) ?? 0;
 
       if (ingredientId == 0) {
         print('⚠️ ID de ingrediente inválido: $ingredientIdRaw, saltando...');
         continue;
       }
 
-      final cantidadNecesaria =
-          (ingredient['cantidad_necesaria'] as num).toDouble();
+      final cantidadNecesaria = (ingredient['cantidad_necesaria'] as num)
+          .toDouble();
       final unidadMedidaIngrediente =
           ingredient['unidad_medida'] as String? ?? 'und';
       final denominacionIngrediente =
@@ -1876,12 +1993,11 @@ class InventoryService {
     try {
       print('🔍 Verificando si producto $productId es elaborado...');
 
-      final response =
-          await _supabase
-              .from('app_dat_producto')
-              .select('es_elaborado')
-              .eq('id', productId)
-              .single();
+      final response = await _supabase
+          .from('app_dat_producto')
+          .select('es_elaborado')
+          .eq('id', productId)
+          .single();
 
       final isElaborated = response['es_elaborado'] ?? false;
       print('📋 Producto $productId es elaborado: $isElaborated');
@@ -1927,10 +2043,9 @@ class InventoryService {
 
     for (final producto in productos) {
       final productIdRaw = producto['id_producto'];
-      final productId =
-          productIdRaw is int
-              ? productIdRaw
-              : int.tryParse(productIdRaw.toString()) ?? 0;
+      final productId = productIdRaw is int
+          ? productIdRaw
+          : int.tryParse(productIdRaw.toString()) ?? 0;
 
       if (productId == 0) {
         print('⚠️ ID de producto inválido: $productIdRaw, saltando...');
@@ -1972,12 +2087,11 @@ class InventoryService {
       final ingredientData = entry.value;
 
       // Obtener información del producto para mantener estructura consistente
-      final productInfo =
-          await _supabase
-              .from('app_dat_producto')
-              .select('denominacion, sku')
-              .eq('id', productId)
-              .single();
+      final productInfo = await _supabase
+          .from('app_dat_producto')
+          .select('denominacion, sku')
+          .eq('id', productId)
+          .single();
 
       productosFinales.add({
         'id_producto': productId,
@@ -2014,10 +2128,9 @@ class InventoryService {
     try {
       final userData = await _prefsService.getUserData();
       final idTiendaRaw = userData['idTienda'];
-      final idTienda =
-          idTiendaRaw is int
-              ? idTiendaRaw
-              : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
+      final idTienda = idTiendaRaw is int
+          ? idTiendaRaw
+          : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
 
       if (idTienda == null) {
         throw Exception('No se encontró el ID de tienda en las preferencias');
@@ -2170,11 +2283,15 @@ class InventoryService {
     bool includeZero = false,
   }) async {
     try {
-      print('🔍 Calling obtener_reporte_inventario_completo_con_ceros with params:');
+      print(
+        '🔍 Calling obtener_reporte_inventario_completo_con_ceros with params:',
+      );
       print('  - idAlmacen: $idAlmacen');
       print('  - idTienda: $idTienda');
       print('  - fechaDesde: ${fechaDesde?.toIso8601String().split('T')[0]}');
-      print('  - fechaHasta: ${fechaHasta != null ? '${fechaHasta.toIso8601String().split('T')[0]} 23:59:59' : null}');
+      print(
+        '  - fechaHasta: ${fechaHasta != null ? '${fechaHasta.toIso8601String().split('T')[0]} 23:59:59' : null}',
+      );
       print('  - includeZero: $includeZero');
 
       final response = await _supabase.rpc(
@@ -2182,7 +2299,7 @@ class InventoryService {
         params: {
           'p_id_tienda': idTienda,
           'p_fecha_desde': fechaDesde?.toIso8601String().split('T')[0],
-          'p_fecha_hasta': fechaHasta != null 
+          'p_fecha_hasta': fechaHasta != null
               ? '${fechaHasta.toIso8601String().split('T')[0]} 23:59:59'
               : null,
           'p_id_almacen': idAlmacen,
@@ -2234,7 +2351,9 @@ class InventoryService {
       print('  - idAlmacen: $idAlmacen');
       print('  - idTienda: $idTienda');
       print('  - fechaDesde: ${fechaDesde?.toIso8601String().split('T')[0]}');
-      print('  - fechaHasta: ${fechaHasta != null ? '${fechaHasta.toIso8601String().split('T')[0]} 23:59:59' : null}');
+      print(
+        '  - fechaHasta: ${fechaHasta != null ? '${fechaHasta.toIso8601String().split('T')[0]} 23:59:59' : null}',
+      );
       print('  - includeZero: $includeZero');
 
       final response = await _supabase.rpc(
@@ -2281,7 +2400,7 @@ class InventoryService {
     }
   }
 
- /// Obtiene inventario simple para exportación
+  /// Obtiene inventario simple para exportación
   static Future<List<Map<String, dynamic>>> getIPVReport({
     int? idAlmacen,
     int? idTienda,
@@ -2290,24 +2409,23 @@ class InventoryService {
     bool includeZero = false,
   }) async {
     try {
-      print('🔍 Calling obtener_reporte_inventario_completo_con_ceros with params:');
+      print(
+        '🔍 Calling obtener_reporte_inventario_completo_con_ceros with params:',
+      );
       print('  - idAlmacen: $idAlmacen');
       print('  - idTienda: $idTienda');
       print('  - fechaDesde: ${fechaDesde?.toIso8601String().split('T')[0]}');
-      print('  - fechaHasta: ${fechaHasta != null ? '${fechaHasta.toIso8601String().split('T')[0]} 23:59:59' : null}');
+      print(
+        '  - fechaHasta: ${fechaHasta != null ? '${fechaHasta.toIso8601String().split('T')[0]} 23:59:59' : null}',
+      );
       print('  - includeZero: $includeZero');
 
       final response = await _supabase.rpc(
-        // FASE 3 presentaciones: la v2 añade id_presentacion,
-        // presentacion_nombre, presentacion_factor, cantidad_final_formateada
-        // ("12 Bolsas") y equivalente_base. Las 48 columnas de obtener_ipv salen
-        // idénticas (verificado fila por fila: 1.189 filas, 0 diferencias).
-        // Ver presentaciones_inventario/21_ipv_con_presentacion.sql
-        'obtener_ipv2',
+        'obtener_ipv',
         params: {
           'p_id_tienda': idTienda,
           'p_fecha_desde': fechaDesde?.toIso8601String().split('T')[0],
-          'p_fecha_hasta': fechaHasta != null 
+          'p_fecha_hasta': fechaHasta != null
               ? '${fechaHasta.toIso8601String().split('T')[0]} 23:59:59'
               : null,
           'p_id_almacen': idAlmacen,
@@ -2407,14 +2525,12 @@ class InventoryService {
       print('🧪 Ingredientes finales: ${productosDescompuestos.length}');
 
       // Paso 2: Asociar ingredientes con la ubicación especificada
-      final productosConUbicacion =
-          productosDescompuestos.map((producto) {
-            return {
-              ...producto,
-              'id_ubicacion':
-                  idUbicacion, // Asociar cada ingrediente con la zona
-            };
-          }).toList();
+      final productosConUbicacion = productosDescompuestos.map((producto) {
+        return {
+          ...producto,
+          'id_ubicacion': idUbicacion, // Asociar cada ingrediente con la zona
+        };
+      }).toList();
 
       // Paso 3: Aplicar conversiones de presentación a ingredientes finales
       final checkResult = await checkIngredientsInventoryInZone(
@@ -2424,10 +2540,9 @@ class InventoryService {
 
       final availableIngredientsRaw =
           checkResult['available_ingredients'] as List;
-      final availableIngredients =
-          availableIngredientsRaw
-              .map((item) => Map<String, dynamic>.from(item as Map))
-              .toList();
+      final availableIngredients = availableIngredientsRaw
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .toList();
 
       print(
         '🔍 DEBUG: availableIngredients.length = ${availableIngredients.length}',
@@ -2458,23 +2573,20 @@ class InventoryService {
       }
 
       // Crear productos para extracción con formato correcto
-      final productosParaExtraccion =
-          availableIngredients
-              .map(
-                (ingredient) => {
-                  'id_producto': ingredient['id_producto'],
-                  'cantidad':
-                      (ingredient['cantidad_necesaria_presentacion'] as num)
-                          .toDouble(),
-                  'id_presentacion': ingredient['id_presentacion'],
-                  'id_ubicacion': idUbicacion,
-                  'id_variante': ingredient['id_variante'],
-                  'id_opcion_variante': ingredient['id_opcion_variante'],
-                  'precio_unitario':
-                      0.0, // Precio por defecto para extracciones
-                },
-              )
-              .toList();
+      final productosParaExtraccion = availableIngredients
+          .map(
+            (ingredient) => {
+              'id_producto': ingredient['id_producto'],
+              'cantidad': (ingredient['cantidad_necesaria_presentacion'] as num)
+                  .toDouble(),
+              'id_presentacion': ingredient['id_presentacion'],
+              'id_ubicacion': idUbicacion,
+              'id_variante': ingredient['id_variante'],
+              'id_opcion_variante': ingredient['id_opcion_variante'],
+              'precio_unitario': 0.0, // Precio por defecto para extracciones
+            },
+          )
+          .toList();
 
       print(
         '🔍 DEBUG: productosParaExtraccion.length = ${productosParaExtraccion.length}',
@@ -2484,10 +2596,9 @@ class InventoryService {
       // Paso 4: Obtener datos del usuario
       final userData = await _prefsService.getUserData();
       final idTiendaRaw = userData['idTienda'];
-      final idTienda =
-          idTiendaRaw is int
-              ? idTiendaRaw
-              : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
+      final idTienda = idTiendaRaw is int
+          ? idTiendaRaw
+          : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
 
       if (idTienda == null) {
         throw Exception('No se encontró información de la tienda');
@@ -2559,17 +2670,26 @@ class InventoryService {
             .maybeSingle();
 
         if (transferLink != null) {
+          final isReception = transferLink['id_recepcion'] == idOperacion;
           print(
             '🔄 Operación de transferencia detectada ($idOperacion) — '
-            'completando solo estado (inventario ya aplicado)',
+            '${isReception ? 'contabilizando recepción' : 'completando estado'}',
           );
           final response = await _supabase.rpc(
-            'fn_registrar_cambio_estado_operacion',
-            params: {
-              'p_id_operacion': idOperacion,
-              'p_nuevo_estado': 2,
-              'p_uuid_usuario': uuid,
-            },
+            isReception
+                ? 'fn_contabilizar_operacion'
+                : 'fn_registrar_cambio_estado_operacion',
+            params: isReception
+                ? {
+                    'p_id_operacion': idOperacion,
+                    'p_comentario': comentario,
+                    'p_uuid': uuid,
+                  }
+                : {
+                    'p_id_operacion': idOperacion,
+                    'p_nuevo_estado': 2,
+                    'p_uuid_usuario': uuid,
+                  },
           );
           if (response is Map && response['status'] == 'error') {
             return Map<String, dynamic>.from(response);
@@ -2594,7 +2714,9 @@ class InventoryService {
             .select('id, id_producto, id_presentacion')
             .eq('id_operacion', idOperacion);
 
-        print('📦 Productos de recepción encontrados: ${productosRecepcion.length}');
+        print(
+          '📦 Productos de recepción encontrados: ${productosRecepcion.length}',
+        );
 
         for (var producto in productosRecepcion) {
           final idPresentacion = producto['id_presentacion'];
@@ -2602,8 +2724,10 @@ class InventoryService {
           final idRecepcion = producto['id'];
 
           if (idPresentacion == null) {
-            print('⚠️ Producto $idProducto sin presentación asignada (ID recepción: $idRecepcion)');
-            
+            print(
+              '⚠️ Producto $idProducto sin presentación asignada (ID recepción: $idRecepcion)',
+            );
+
             // Obtener la presentación base del producto
             try {
               final basePresentacion = await _supabase
@@ -2616,16 +2740,18 @@ class InventoryService {
               if (basePresentacion.isNotEmpty) {
                 final idPresentacionBase = basePresentacion.first['id'];
                 print('   ✅ Asignando presentación base: $idPresentacionBase');
-                
+
                 // Actualizar el registro de recepción con la presentación base
                 await _supabase
                     .from('app_dat_recepcion_productos')
                     .update({'id_presentacion': idPresentacionBase})
                     .eq('id', idRecepcion);
-                    
+
                 print('   ✅ Presentación asignada exitosamente');
               } else {
-                print('   ❌ No se encontró presentación base para producto $idProducto');
+                print(
+                  '   ❌ No se encontró presentación base para producto $idProducto',
+                );
                 // Obtener cualquier presentación disponible como fallback
                 final cualquierPresentacion = await _supabase
                     .from('app_dat_producto_presentacion')
@@ -2634,17 +2760,22 @@ class InventoryService {
                     .limit(1);
 
                 if (cualquierPresentacion.isNotEmpty) {
-                  final idPresentacionFallback = cualquierPresentacion.first['id'];
-                  print('   ✅ Asignando presentación fallback: $idPresentacionFallback');
-                  
+                  final idPresentacionFallback =
+                      cualquierPresentacion.first['id'];
+                  print(
+                    '   ✅ Asignando presentación fallback: $idPresentacionFallback',
+                  );
+
                   await _supabase
                       .from('app_dat_recepcion_productos')
                       .update({'id_presentacion': idPresentacionFallback})
                       .eq('id', idRecepcion);
-                      
+
                   print('   ✅ Presentación fallback asignada exitosamente');
                 } else {
-                  print('   ❌ No hay presentaciones disponibles para producto $idProducto');
+                  print(
+                    '   ❌ No hay presentaciones disponibles para producto $idProducto',
+                  );
                 }
               }
             } catch (e) {
@@ -2674,22 +2805,33 @@ class InventoryService {
             .select('id')
             .eq('id_operacion_recepcion', idOperacion);
 
-        final esRecepcionConsignacion = productosRecepcionConsignacion.isNotEmpty || envioConsignacion.isNotEmpty;
+        final esRecepcionConsignacion =
+            productosRecepcionConsignacion.isNotEmpty ||
+            envioConsignacion.isNotEmpty;
 
         if (esRecepcionConsignacion) {
           print('📦 Esta es una operación de RECEPCIÓN de consignación');
-          print('   - Productos en app_dat_producto_consignacion: ${productosRecepcionConsignacion.length}');
-          print('   - Envíos en app_dat_consignacion_envio: ${envioConsignacion.length}');
-          
-          final validacion = await ConsignacionService.validarOrdenOperacionesConsignacion(idOperacion);
-          
+          print(
+            '   - Productos en app_dat_producto_consignacion: ${productosRecepcionConsignacion.length}',
+          );
+          print(
+            '   - Envíos en app_dat_consignacion_envio: ${envioConsignacion.length}',
+          );
+
+          final validacion =
+              await ConsignacionService.validarOrdenOperacionesConsignacion(
+                idOperacion,
+              );
+
           if (validacion['valido'] != true) {
-            final mensaje = validacion['mensaje'] ?? 'La operación de extracción debe completarse primero';
+            final mensaje =
+                validacion['mensaje'] ??
+                'La operación de extracción debe completarse primero';
             final idExp = validacion['id_operacion_extraccion'];
-            
+
             print('❌ Validación fallida: $mensaje');
             print('   ID Operación Extracción: $idExp');
-            
+
             return {
               'success': false,
               'message': validacion['mensaje'],
@@ -2710,7 +2852,9 @@ class InventoryService {
             .maybeSingle();
 
         if (envioDevolucionExtraccion != null) {
-          print('📦 Extracción de devolución/consignación detectada — marcando como Completada sin recontabilizar');
+          print(
+            '📦 Extracción de devolución/consignación detectada — marcando como Completada sin recontabilizar',
+          );
           await _supabase.rpc(
             'fn_registrar_cambio_estado_operacion',
             params: {
@@ -2727,21 +2871,30 @@ class InventoryService {
             final idUsuario = userData['id'];
             final idEnvio = envioDevolucionExtraccion['id'] as int;
             print('🚚 Moviendo envío $idEnvio a EN TRÁNSITO...');
-            await ConsignacionEnvioService.marcarEnTransito(idEnvio: idEnvio, idUsuario: idUsuario);
+            await ConsignacionEnvioService.marcarEnTransito(
+              idEnvio: idEnvio,
+              idUsuario: idUsuario,
+            );
           } catch (e) {
             print('⚠️ Error moviendo envío a EN TRÁNSITO: $e');
           }
 
           return {
             'status': 'success',
-            'message': 'Extracción completada. Inventario ya había sido aplicado al aprobar la devolución.',
+            'message':
+                'Extracción completada. Inventario ya había sido aplicado al aprobar la devolución.',
           };
         }
 
         // 3. CASO EXTRACCIÓN NORMAL: Validar que el envío esté configurado
-        final validacionExtraccion = await ConsignacionService.validarEstadoEnvioParaExtraccion(idOperacion);
+        final validacionExtraccion =
+            await ConsignacionService.validarEstadoEnvioParaExtraccion(
+              idOperacion,
+            );
         if (validacionExtraccion['valido'] != true) {
-          print('❌ Validación de extracción fallida: ${validacionExtraccion['mensaje']}');
+          print(
+            '❌ Validación de extracción fallida: ${validacionExtraccion['mensaje']}',
+          );
           return {
             'success': false,
             'message': validacionExtraccion['mensaje'],
@@ -2758,12 +2911,16 @@ class InventoryService {
       // no tengan su movimiento registrado en app_dat_inventario_productos.
       // (Es idempotente: si ya existe el registro, lo omite.)
       // =====================================================
-      print('\n📦 Registrando movimientos de inventario para operación $idOperacion...');
+      print(
+        '\n📦 Registrando movimientos de inventario para operación $idOperacion...',
+      );
       try {
         // ── CASO RECEPCIÓN ───────────────────────────────────────────────────
         final productosRecepcion = await _supabase
             .from('app_dat_recepcion_productos')
-            .select('id, id_producto, id_variante, id_opcion_variante, id_ubicacion, id_presentacion, cantidad, sku_producto, sku_ubicacion, id_proveedor')
+            .select(
+              'id, id_producto, id_variante, id_opcion_variante, id_ubicacion, id_presentacion, cantidad, sku_producto, sku_ubicacion, id_proveedor',
+            )
             .eq('id_operacion', idOperacion);
 
         for (final rp in productosRecepcion as List) {
@@ -2777,14 +2934,16 @@ class InventoryService {
               .limit(1);
 
           if ((yaExiste as List).isNotEmpty) {
-            print('   ⏭️ Inventario ya registrado para recepcion_producto $idRP');
+            print(
+              '   ⏭️ Inventario ya registrado para recepcion_producto $idRP',
+            );
             continue;
           }
 
-          final idProducto   = rp['id_producto']        as int?;
-          final idUbicacion  = rp['id_ubicacion']        as int?;
-          final idPresentacion = rp['id_presentacion']   as int?;
-          final cantidad     = (rp['cantidad'] as num?)?.toDouble() ?? 0.0;
+          final idProducto = rp['id_producto'] as int?;
+          final idUbicacion = rp['id_ubicacion'] as int?;
+          final idPresentacion = rp['id_presentacion'] as int?;
+          final cantidad = (rp['cantidad'] as num?)?.toDouble() ?? 0.0;
 
           if (idProducto == null) continue;
 
@@ -2793,35 +2952,43 @@ class InventoryService {
               .from('app_dat_inventario_productos')
               .select('cantidad_final')
               .eq('id_producto', idProducto);
-          if (idUbicacion  != null) stockQuery = stockQuery.eq('id_ubicacion',   idUbicacion);
-          if (idPresentacion != null) stockQuery = stockQuery.eq('id_presentacion', idPresentacion);
-          final stockRows = await stockQuery.order('id', ascending: false).limit(1);
+          if (idUbicacion != null)
+            stockQuery = stockQuery.eq('id_ubicacion', idUbicacion);
+          if (idPresentacion != null)
+            stockQuery = stockQuery.eq('id_presentacion', idPresentacion);
+          final stockRows = await stockQuery
+              .order('id', ascending: false)
+              .limit(1);
 
           final cantidadInicial = (stockRows as List).isNotEmpty
               ? ((stockRows.first['cantidad_final'] as num?)?.toDouble() ?? 0.0)
               : 0.0;
 
           await _supabase.from('app_dat_inventario_productos').insert({
-            'id_producto':        idProducto,
-            'id_variante':        rp['id_variante'],
+            'id_producto': idProducto,
+            'id_variante': rp['id_variante'],
             'id_opcion_variante': rp['id_opcion_variante'],
-            'id_ubicacion':       idUbicacion,
-            'id_presentacion':    idPresentacion,
-            'cantidad_inicial':   cantidadInicial,
-            'cantidad_final':     cantidadInicial + cantidad,
-            'sku_producto':       rp['sku_producto'],
-            'sku_ubicacion':      rp['sku_ubicacion'],
-            'origen_cambio':      1, // 1 = recepción
-            'id_recepcion':       idRP,
-            'id_proveedor':       rp['id_proveedor'],
+            'id_ubicacion': idUbicacion,
+            'id_presentacion': idPresentacion,
+            'cantidad_inicial': cantidadInicial,
+            'cantidad_final': cantidadInicial + cantidad,
+            'sku_producto': rp['sku_producto'],
+            'sku_ubicacion': rp['sku_ubicacion'],
+            'origen_cambio': 1, // 1 = recepción
+            'id_recepcion': idRP,
+            'id_proveedor': rp['id_proveedor'],
           });
-          print('   ✅ Recepción: producto $idProducto  +$cantidad  (${cantidadInicial} → ${cantidadInicial + cantidad})');
+          print(
+            '   ✅ Recepción: producto $idProducto  +$cantidad  (${cantidadInicial} → ${cantidadInicial + cantidad})',
+          );
         }
 
         // ── CASO EXTRACCIÓN ──────────────────────────────────────────────────
         final productosExtraccion = await _supabase
             .from('app_dat_extraccion_productos')
-            .select('id, id_producto, id_variante, id_opcion_variante, id_ubicacion, id_presentacion, cantidad, sku_producto, sku_ubicacion')
+            .select(
+              'id, id_producto, id_variante, id_opcion_variante, id_ubicacion, id_presentacion, cantidad, sku_producto, sku_ubicacion',
+            )
             .eq('id_operacion', idOperacion);
 
         for (final ep in productosExtraccion as List) {
@@ -2835,14 +3002,16 @@ class InventoryService {
               .limit(1);
 
           if ((yaExiste as List).isNotEmpty) {
-            print('   ⏭️ Inventario ya registrado para extraccion_producto $idEP');
+            print(
+              '   ⏭️ Inventario ya registrado para extraccion_producto $idEP',
+            );
             continue;
           }
 
-          final idProducto    = ep['id_producto']       as int?;
-          final idUbicacion   = ep['id_ubicacion']       as int?;
-          final idPresentacion = ep['id_presentacion']   as int?;
-          final cantidad      = (ep['cantidad'] as num?)?.toDouble() ?? 0.0;
+          final idProducto = ep['id_producto'] as int?;
+          final idUbicacion = ep['id_ubicacion'] as int?;
+          final idPresentacion = ep['id_presentacion'] as int?;
+          final cantidad = (ep['cantidad'] as num?)?.toDouble() ?? 0.0;
 
           if (idProducto == null) continue;
 
@@ -2850,28 +3019,34 @@ class InventoryService {
               .from('app_dat_inventario_productos')
               .select('cantidad_final')
               .eq('id_producto', idProducto);
-          if (idUbicacion   != null) stockQuery = stockQuery.eq('id_ubicacion',    idUbicacion);
-          if (idPresentacion != null) stockQuery = stockQuery.eq('id_presentacion', idPresentacion);
-          final stockRows = await stockQuery.order('id', ascending: false).limit(1);
+          if (idUbicacion != null)
+            stockQuery = stockQuery.eq('id_ubicacion', idUbicacion);
+          if (idPresentacion != null)
+            stockQuery = stockQuery.eq('id_presentacion', idPresentacion);
+          final stockRows = await stockQuery
+              .order('id', ascending: false)
+              .limit(1);
 
           final cantidadInicial = (stockRows as List).isNotEmpty
               ? ((stockRows.first['cantidad_final'] as num?)?.toDouble() ?? 0.0)
               : 0.0;
 
           await _supabase.from('app_dat_inventario_productos').insert({
-            'id_producto':        idProducto,
-            'id_variante':        ep['id_variante'],
+            'id_producto': idProducto,
+            'id_variante': ep['id_variante'],
             'id_opcion_variante': ep['id_opcion_variante'],
-            'id_ubicacion':       idUbicacion,
-            'id_presentacion':    idPresentacion,
-            'cantidad_inicial':   cantidadInicial,
-            'cantidad_final':     cantidadInicial - cantidad,
-            'sku_producto':       ep['sku_producto'],
-            'sku_ubicacion':      ep['sku_ubicacion'],
-            'origen_cambio':      2, // 2 = extracción
-            'id_extraccion':      idEP,
+            'id_ubicacion': idUbicacion,
+            'id_presentacion': idPresentacion,
+            'cantidad_inicial': cantidadInicial,
+            'cantidad_final': cantidadInicial - cantidad,
+            'sku_producto': ep['sku_producto'],
+            'sku_ubicacion': ep['sku_ubicacion'],
+            'origen_cambio': 2, // 2 = extracción
+            'id_extraccion': idEP,
           });
-          print('   ✅ Extracción: producto $idProducto  -$cantidad  (${cantidadInicial} → ${cantidadInicial - cantidad})');
+          print(
+            '   ✅ Extracción: producto $idProducto  -$cantidad  (${cantidadInicial} → ${cantidadInicial - cantidad})',
+          );
         }
       } catch (e) {
         print('⚠️ Error registrando movimientos de inventario: $e');
@@ -2903,18 +3078,23 @@ class InventoryService {
       try {
         final userData = await _prefsService.getUserData();
         final idUsuario = userData['id'];
-        
+
         // A. Si fue una extracción -> Mover envío a EN TRÁNSITO
         final dataEnvioExtraccion = await _supabase
             .from('app_dat_consignacion_envio')
             .select('id')
             .eq('id_operacion_extraccion', idOperacion)
             .maybeSingle();
-            
+
         if (dataEnvioExtraccion != null) {
           final idEnvio = dataEnvioExtraccion['id'] as int;
-          print('🚚 Operación de extracción completada. Moviendo envío $idEnvio a EN TRÁNSITO...');
-          await ConsignacionEnvioService.marcarEnTransito(idEnvio: idEnvio, idUsuario: idUsuario);
+          print(
+            '🚚 Operación de extracción completada. Moviendo envío $idEnvio a EN TRÁNSITO...',
+          );
+          await ConsignacionEnvioService.marcarEnTransito(
+            idEnvio: idEnvio,
+            idUsuario: idUsuario,
+          );
         }
 
         // B. Si fue una recepción -> Actualizar envío a ACEPTADO
@@ -2925,17 +3105,20 @@ class InventoryService {
             .select('id')
             .eq('id_operacion_recepcion', idOperacion)
             .maybeSingle();
-            
+
         if (dataEnvioRecepcion != null) {
           final idEnvio = dataEnvioRecepcion['id'] as int;
-          print('✅ Operación de recepción completada. Moviendo envío $idEnvio a ACEPTADO...');
-          
-          // Actualizar estado del envío a ACEPTADO (4)
-          final estadoActualizado = await ConsignacionEnvioListadoService.actualizarEstadoEnvio(
-            idEnvio,
-            ConsignacionEnvioListadoService.ESTADO_ACEPTADO,
+          print(
+            '✅ Operación de recepción completada. Moviendo envío $idEnvio a ACEPTADO...',
           );
-          
+
+          // Actualizar estado del envío a ACEPTADO (4)
+          final estadoActualizado =
+              await ConsignacionEnvioListadoService.actualizarEstadoEnvio(
+                idEnvio,
+                ConsignacionEnvioListadoService.ESTADO_ACEPTADO,
+              );
+
           if (estadoActualizado) {
             print('✅ Estado del envío actualizado a ACEPTADO');
           } else {
@@ -2950,7 +3133,7 @@ class InventoryService {
       // ACTUALIZAR PRECIO PROMEDIO DE PRESENTACIONES RECIBIDAS
       // =====================================================
       print('\n📊 Iniciando actualización de precios promedio...');
-      
+
       try {
         // Verificar si esta operación de recepción pertenece a un envío de devolución
         // Usar app_dat_consignacion_envio_movimiento para relacionar la operación con el envío
@@ -2959,12 +3142,12 @@ class InventoryService {
             .select('id, tipo_envio')
             .eq('id_operacion_recepcion', idOperacion)
             .maybeSingle();
-        
+
         bool esDevolucion = false;
-        
+
         if (envioRecepcion != null) {
           final idEnvio = envioRecepcion['id'] as int;
-          
+
           // Obtener el movimiento del envío desde app_dat_consignacion_envio_movimiento
           final movimientoEnvio = await _supabase
               .from('app_dat_consignacion_envio_movimiento')
@@ -2973,10 +3156,12 @@ class InventoryService {
               .order('created_at', ascending: false)
               .limit(1)
               .maybeSingle();
-          
+
           // Verificar si el tipo_envio es 2 (devolución) O si el último movimiento indica devolución
-          esDevolucion = (envioRecepcion['tipo_envio'] as int?) == 2 || 
-                        (movimientoEnvio != null && (movimientoEnvio['tipo_movimiento'] as int?) == 2);
+          esDevolucion =
+              (envioRecepcion['tipo_envio'] as int?) == 2 ||
+              (movimientoEnvio != null &&
+                  (movimientoEnvio['tipo_movimiento'] as int?) == 2);
         }
 
         // Verificar si esta recepción pertenece a una transferencia.
@@ -2992,68 +3177,140 @@ class InventoryService {
 
         if (esDevolucion || esTransferencia) {
           final motivo = esDevolucion ? 'devolución' : 'transferencia';
-          print('⚠️ Esta es una operación de ${motivo.toUpperCase()} - NO se actualizarán los precios promedio');
+          print(
+            '⚠️ Esta es una operación de ${motivo.toUpperCase()} - NO se actualizarán los precios promedio',
+          );
           return {
             'success': true,
-            'message': 'Operación completada ($motivo - precios no actualizados)',
+            'message':
+                'Operación completada ($motivo - precios no actualizados)',
             'operacion_completada': true,
             'es_devolucion': esDevolucion,
             'es_transferencia': esTransferencia,
           };
         }
-        
+
         // Obtener todos los productos recibidos en esta operación
         final productosRecibidos = await _supabase
             .from('app_dat_recepcion_productos')
             .select('id_producto, id_presentacion, precio_unitario, cantidad')
             .eq('id_operacion', idOperacion);
 
-        print('📦 Productos recibidos encontrados: ${productosRecibidos.length}');
+        print(
+          '📦 Productos recibidos encontrados: ${productosRecibidos.length}',
+        );
 
         if (productosRecibidos.isNotEmpty) {
-          // FASE 3 presentaciones: la ponderación del costo promedio se hace en
-          // el servidor (`fn_actualizar_precio_promedio_recepcion_v2`, ver
-          // presentaciones_inventario/20_costo_promedio_en_base.sql).
-          //
-          // Antes se calculaba aquí, fila por fila, con dos errores:
-          //   1. Ponderaba cantidades de presentaciones distintas como si fueran
-          //      la misma unidad: 10 Bolsas a 1 USD + 2 Bultos (de 10) a 9,50
-          //      daba (10 + 19) / 12 = 2,42, que no es el costo de nada.
-          //   2. Escribía el promedio en la fila de la presentación recibida, así
-          //      que un producto acababa con un costo distinto por presentación
-          //      (medido: 21 de 40 productos multipresentación inconsistentes).
-          //
-          // El servidor convierte a unidades base con el factor_rel de cada
-          // línea, agrupa las líneas del mismo producto en una sola ponderación
-          // y escribe solo en la presentación base.
-          final resultadoPrecios = await updateAveragePriceAfterReception(
-            idOperacion: idOperacion,
-            productos: List<Map<String, dynamic>>.from(productosRecibidos),
-          );
+          int productosActualizados = 0;
 
-          final productosActualizados =
-              (resultadoPrecios['productos_actualizados'] as int?) ?? 0;
+          for (var producto in productosRecibidos) {
+            try {
+              final idPresentacion = producto['id_presentacion'];
 
-          if (resultadoPrecios['status'] != 'success') {
-            // No se aborta la operación: la recepción ya está registrada y el
-            // costo se puede recalcular. Pero se propaga el mensaje en vez de
-            // tragárselo, que es lo que mantuvo oculto el fallo permanente de la
-            // RPC vieja ("column reference cantidad is ambiguous" en el 100 % de
-            // las llamadas).
-            print('⚠️ Costo promedio NO actualizado: ${resultadoPrecios['message']}');
+              // Validar que id_presentacion no sea null
+              if (idPresentacion == null) {
+                print(
+                  '\n⚠️ Producto sin presentación asignada - saltando actualización de precio',
+                );
+                continue;
+              }
+
+              final precioUnitario =
+                  (producto['precio_unitario'] as num?)?.toDouble() ?? 0.0;
+              final cantidadRecibida =
+                  (producto['cantidad'] as num?)?.toDouble() ?? 0.0;
+
+              print('\n📝 Procesando presentación ID: $idPresentacion');
+              print(
+                '   - Precio unitario recibido: \$${precioUnitario.toStringAsFixed(2)}',
+              );
+              print('   - Cantidad recibida: $cantidadRecibida');
+
+              // Obtener el precio promedio anterior de app_dat_producto_presentacion
+              final presentacionData = await _supabase
+                  .from('app_dat_producto_presentacion')
+                  .select('precio_promedio, id_producto')
+                  .eq('id', idPresentacion)
+                  .single();
+
+              final precioPromedioAnterior =
+                  (presentacionData['precio_promedio'] as num?)?.toDouble() ??
+                  0.0;
+              final idProducto = presentacionData['id_producto'];
+
+              print(
+                '   - Precio promedio anterior: \$${precioPromedioAnterior.toStringAsFixed(2)}',
+              );
+              print('   - ID Producto: $idProducto');
+
+              // Obtener la cantidad real anterior del último registro en app_dat_inventario_productos
+              // Se usa cantidad_inicial porque es la cantidad que había ANTES de esta recepción
+              final ultimoInventario = await _supabase
+                  .from('app_dat_inventario_productos')
+                  .select('cantidad_inicial')
+                  .eq('id_presentacion', idPresentacion)
+                  .order('created_at', ascending: false)
+                  .limit(1);
+
+              double cantidadAnterior = 0.0;
+              if (ultimoInventario.isNotEmpty) {
+                final ultimoReg = ultimoInventario.first;
+                // Usar cantidad_inicial (cantidad que había antes de esta recepción)
+                cantidadAnterior =
+                    (ultimoReg['cantidad_inicial'] as num?)?.toDouble() ?? 0.0;
+              }
+
+              print(
+                '   - Cantidad real anterior (último inventario - cantidad_inicial): $cantidadAnterior',
+              );
+
+              // Calcular nuevo precio promedio
+              // Fórmula: (precio_anterior * cantidad_anterior + precio_nuevo * cantidad_nueva) / (cantidad_anterior + cantidad_nueva)
+              double nuevoPrecioPromedio = 0.0;
+
+              if (precioPromedioAnterior <= 0) {
+                nuevoPrecioPromedio = precioUnitario;
+              } else if (cantidadAnterior + cantidadRecibida > 0) {
+                nuevoPrecioPromedio =
+                    (precioPromedioAnterior * cantidadAnterior +
+                        precioUnitario * cantidadRecibida) /
+                    (cantidadAnterior + cantidadRecibida);
+              } else {
+                nuevoPrecioPromedio = precioUnitario;
+              }
+
+              print(
+                '   - Nuevo precio promedio calculado: \$${nuevoPrecioPromedio.toStringAsFixed(2)}',
+              );
+              print(
+                '   - Fórmula: (\$${precioPromedioAnterior.toStringAsFixed(2)} × $cantidadAnterior + \$${precioUnitario.toStringAsFixed(2)} × $cantidadRecibida) / ${cantidadAnterior + cantidadRecibida}',
+              );
+
+              // Actualizar el precio promedio en app_dat_producto_presentacion
+              await _supabase
+                  .from('app_dat_producto_presentacion')
+                  .update({'precio_promedio': nuevoPrecioPromedio})
+                  .eq('id', idPresentacion);
+
+              print('   ✅ Precio promedio actualizado exitosamente');
+              productosActualizados++;
+            } catch (e) {
+              print('   ❌ Error procesando presentación: $e');
+            }
           }
 
           print('\n✅ Resumen de actualización:');
           print('   - Productos procesados: ${productosRecibidos.length}');
-          print('   - Costos actualizados: $productosActualizados');
-          print('   - Mensaje del servidor: ${resultadoPrecios['message']}');
+          print('   - Productos actualizados: $productosActualizados');
+          print(
+            '   - Tasa de éxito: ${(productosActualizados / productosRecibidos.length * 100).toStringAsFixed(1)}%',
+          );
 
           // =====================================================
           // VERIFICAR MÁRGENES DE GANANCIA Y AJUSTAR PRECIO VENTA
           // =====================================================
           print('\n📊 Verificando márgenes de ganancia configurados...');
           await _verificarMargenesYAjustarPrecios(productosRecibidos);
-
         } else {
           print('⚠️ No se encontraron productos en la recepción');
         }
@@ -3102,7 +3359,9 @@ class InventoryService {
       // Obtener tasa USD→CUP
       final tasaUsdCup = await CurrencyService.getEffectiveUsdToCupRate();
       if (tasaUsdCup <= 0) {
-        print('⚠️ Tasa USD→CUP inválida ($tasaUsdCup), saltando verificación de márgenes');
+        print(
+          '⚠️ Tasa USD→CUP inválida ($tasaUsdCup), saltando verificación de márgenes',
+        );
         return;
       }
       print('💱 Tasa USD→CUP: $tasaUsdCup');
@@ -3111,7 +3370,9 @@ class InventoryService {
       final idTienda = await _prefsService.getIdTienda();
       String metodoRedondeo = 'NO_REDONDEAR';
       if (idTienda != null) {
-        metodoRedondeo = await StoreConfigService.getMetodoRedondeoPrecioVenta(idTienda);
+        metodoRedondeo = await StoreConfigService.getMetodoRedondeoPrecioVenta(
+          idTienda,
+        );
       }
       print('🔧 Método de redondeo: $metodoRedondeo');
 
@@ -3127,17 +3388,22 @@ class InventoryService {
       for (final idProducto in productosUnicos) {
         try {
           // 1. Obtener margen activo
-          final margen = await MarginService.getMargenActivoProducto(idProducto);
+          final margen = await MarginService.getMargenActivoProducto(
+            idProducto,
+          );
           if (margen == null) {
             print('   ⏭️ Producto $idProducto: sin margen configurado');
             continue;
           }
 
           final margenDeseado = (margen['margen_deseado'] as num).toDouble();
-          final tipoMargen = margen['tipo_margen'] as int; // 1=%, 2=monto fijo CUP
+          final tipoMargen =
+              margen['tipo_margen'] as int; // 1=%, 2=monto fijo CUP
 
           print('\n   📊 Producto $idProducto:');
-          print('      - Margen deseado: ${tipoMargen == 1 ? '$margenDeseado%' : '$margenDeseado CUP'}');
+          print(
+            '      - Margen deseado: ${tipoMargen == 1 ? '$margenDeseado%' : '$margenDeseado CUP'}',
+          );
 
           // 2. Obtener precio_promedio de la presentación base
           final presentacionBase = await _supabase
@@ -3153,7 +3419,8 @@ class InventoryService {
             continue;
           }
 
-          final precioPromedioUsd = (presentacionBase['precio_promedio'] as num?)?.toDouble() ?? 0;
+          final precioPromedioUsd =
+              (presentacionBase['precio_promedio'] as num?)?.toDouble() ?? 0;
           if (precioPromedioUsd <= 0) {
             print('      ⚠️ Precio promedio USD = 0, saltando');
             continue;
@@ -3161,15 +3428,22 @@ class InventoryService {
 
           // 3. Convertir costo a CUP
           final costoCup = precioPromedioUsd * tasaUsdCup;
-          print('      - Costo promedio: \$$precioPromedioUsd USD = $costoCup CUP');
+          print(
+            '      - Costo promedio: \$$precioPromedioUsd USD = $costoCup CUP',
+          );
 
           // 4. Obtener precio de venta actual en CUP
           final precioVentaData = await _supabase
               .from('app_dat_precio_venta')
               .select('id, precio_venta_cup')
               .eq('id_producto', idProducto)
-              .lte('fecha_desde', DateTime.now().toIso8601String().split('T')[0])
-              .or('fecha_hasta.is.null,fecha_hasta.gte.${DateTime.now().toIso8601String().split('T')[0]}')
+              .lte(
+                'fecha_desde',
+                DateTime.now().toIso8601String().split('T')[0],
+              )
+              .or(
+                'fecha_hasta.is.null,fecha_hasta.gte.${DateTime.now().toIso8601String().split('T')[0]}',
+              )
               .order('created_at', ascending: false)
               .limit(1)
               .maybeSingle();
@@ -3179,13 +3453,18 @@ class InventoryService {
             continue;
           }
 
-          final precioVentaActual = (precioVentaData['precio_venta_cup'] as num?)?.toDouble() ?? 0;
+          final precioVentaActual =
+              (precioVentaData['precio_venta_cup'] as num?)?.toDouble() ?? 0;
           print('      - Precio venta actual: $precioVentaActual CUP');
 
           // 5. Calcular ganancia actual
           final gananciaActualCup = precioVentaActual - costoCup;
-          final gananciaActualPct = costoCup > 0 ? (gananciaActualCup / costoCup) * 100 : 0;
-          print('      - Ganancia actual: $gananciaActualCup CUP (${gananciaActualPct.toStringAsFixed(1)}%)');
+          final gananciaActualPct = costoCup > 0
+              ? (gananciaActualCup / costoCup) * 100
+              : 0;
+          print(
+            '      - Ganancia actual: $gananciaActualCup CUP (${gananciaActualPct.toStringAsFixed(1)}%)',
+          );
 
           // 6. Verificar si cumple el margen
           bool cumpleMargen;
@@ -3212,8 +3491,13 @@ class InventoryService {
           print('      - Nuevo precio calculado: $nuevoPrecioVenta CUP');
 
           // 7. Aplicar redondeo
-          final precioRedondeado = _aplicarRedondeo(nuevoPrecioVenta, metodoRedondeo);
-          print('      - Precio redondeado ($metodoRedondeo): $precioRedondeado CUP');
+          final precioRedondeado = _aplicarRedondeo(
+            nuevoPrecioVenta,
+            metodoRedondeo,
+          );
+          print(
+            '      - Precio redondeado ($metodoRedondeo): $precioRedondeado CUP',
+          );
 
           // 8. Actualizar precio de venta
           await _supabase
@@ -3221,8 +3505,9 @@ class InventoryService {
               .update({'precio_venta_cup': precioRedondeado})
               .eq('id', precioVentaData['id']);
 
-          print('      ✅ Precio de venta actualizado: $precioVentaActual → $precioRedondeado CUP');
-
+          print(
+            '      ✅ Precio de venta actualizado: $precioVentaActual → $precioRedondeado CUP',
+          );
         } catch (e) {
           print('   ❌ Error verificando margen para producto $idProducto: $e');
         }
@@ -3305,14 +3590,19 @@ class InventoryService {
 
         if (productosConsignacion.isNotEmpty) {
           print('📦 Esta es una operación de extracción de consignación');
-          print('   - Productos de consignación encontrados: ${productosConsignacion.length}');
-          
+          print(
+            '   - Productos de consignación encontrados: ${productosConsignacion.length}',
+          );
+
           // Obtener el ID de la operación de recepción vinculada
-          final idOperacionRecepcion = productosConsignacion.first['id_operacion_recepcion'] as int?;
-          
+          final idOperacionRecepcion =
+              productosConsignacion.first['id_operacion_recepcion'] as int?;
+
           if (idOperacionRecepcion != null) {
-            print('🔗 Operación de recepción vinculada encontrada: $idOperacionRecepcion');
-            
+            print(
+              '🔗 Operación de recepción vinculada encontrada: $idOperacionRecepcion',
+            );
+
             // Verificar si la operación de recepción ya está cancelada
             final estadoRecepcion = await _supabase
                 .from('app_dat_estado_operacion')
@@ -3320,24 +3610,32 @@ class InventoryService {
                 .eq('id_operacion', idOperacionRecepcion)
                 .order('created_at', ascending: false)
                 .limit(1);
-            
-            final yaEstaCancelada = estadoRecepcion.isNotEmpty && 
-                                   estadoRecepcion.first['estado'] == 3;
-            
+
+            final yaEstaCancelada =
+                estadoRecepcion.isNotEmpty &&
+                estadoRecepcion.first['estado'] == 3;
+
             if (!yaEstaCancelada) {
-              print('🚫 Cancelando automáticamente la operación de recepción $idOperacionRecepcion...');
-              
+              print(
+                '🚫 Cancelando automáticamente la operación de recepción $idOperacionRecepcion...',
+              );
+
               // Cancelar la operación de recepción vinculada
               final resultadoCancelacion = await cancelOperation(
                 idOperacion: idOperacionRecepcion,
-                comentario: 'Cancelada automáticamente porque la operación de extracción $idOperacion fue cancelada',
+                comentario:
+                    'Cancelada automáticamente porque la operación de extracción $idOperacion fue cancelada',
                 uuid: uuid,
               );
-              
+
               if (resultadoCancelacion['status'] == 'success') {
-                print('✅ Operación de recepción $idOperacionRecepcion cancelada automáticamente');
+                print(
+                  '✅ Operación de recepción $idOperacionRecepcion cancelada automáticamente',
+                );
               } else {
-                print('⚠️ Error cancelando operación de recepción: ${resultadoCancelacion['message']}');
+                print(
+                  '⚠️ Error cancelando operación de recepción: ${resultadoCancelacion['message']}',
+                );
               }
             } else {
               print('ℹ️ La operación de recepción ya estaba cancelada');
@@ -3349,7 +3647,9 @@ class InventoryService {
           print('ℹ️ No es una operación de extracción de consignación');
         }
       } catch (e) {
-        print('⚠️ Error verificando/cancelando operación de recepción vinculada: $e');
+        print(
+          '⚠️ Error verificando/cancelando operación de recepción vinculada: $e',
+        );
         print('   - La operación de extracción fue cancelada exitosamente');
       }
 
@@ -3578,17 +3878,16 @@ class InventoryService {
       print('   - Importe: $importeTotal');
       print('   - ID Medio Pago: $idMedioPago');
 
-      final response =
-          await _supabase
-              .from('app_dat_operacion_venta')
-              .insert({
-                'id_operacion': idOperacion,
-                'id_tpv': idTpv,
-                'importe_total': importeTotal,
-                'es_pagada': true,
-              })
-              .select('id_operacion, id_tpv, importe_total, es_pagada')
-              .single();
+      final response = await _supabase
+          .from('app_dat_operacion_venta')
+          .insert({
+            'id_operacion': idOperacion,
+            'id_tpv': idTpv,
+            'importe_total': importeTotal,
+            'es_pagada': true,
+          })
+          .select('id_operacion, id_tpv, importe_total, es_pagada')
+          .single();
 
       final idOperacionVenta = response['id_operacion'] as int;
       print('✅ Operación de venta creada con id_operacion: $idOperacionVenta');
@@ -3617,17 +3916,16 @@ class InventoryService {
       print('   - ID Medio Pago: $idMedioPago');
       print('   - Monto: $monto');
 
-      final response =
-          await _supabase
-              .from('app_dat_pago_venta')
-              .insert({
-                'id_operacion_venta': idOperacionVenta,
-                'id_medio_pago': idMedioPago,
-                'monto': monto,
-                'creado_por': uuid,
-              })
-              .select('id, id_operacion_venta, id_medio_pago, monto')
-              .single();
+      final response = await _supabase
+          .from('app_dat_pago_venta')
+          .insert({
+            'id_operacion_venta': idOperacionVenta,
+            'id_medio_pago': idMedioPago,
+            'monto': monto,
+            'creado_por': uuid,
+          })
+          .select('id, id_operacion_venta, id_medio_pago, monto')
+          .single();
 
       print('✅ Pago registrado: ${response['id']}');
       return {'status': 'success', 'id_pago': response['id'], 'data': response};
@@ -3654,7 +3952,9 @@ class InventoryService {
           .eq('id_operacion', idOperacion)
           .maybeSingle();
       if ((recepcionDetalle?['motivo'] as int?) == 2) {
-        print('⚠️ Recepción por transferencia — no se actualiza precio de costo');
+        print(
+          '⚠️ Recepción por transferencia — no se actualiza precio de costo',
+        );
         return {
           'status': 'success',
           'message': 'Transferencia: precio de costo no actualizado',
@@ -3675,11 +3975,8 @@ class InventoryService {
 
       // Llamar a la función RPC en Supabase
       final response = await _supabase.rpc(
-        'fn_actualizar_precio_promedio_recepcion_v2',
-        params: {
-          'p_id_operacion': idOperacion,
-          'p_productos': productosJson,
-        },
+        'fn_actualizar_precio_promedio_recepcion_v3',
+        params: {'p_id_operacion': idOperacion, 'p_productos': productosJson},
       );
 
       print('✅ Respuesta actualización de precios: $response');
@@ -3690,17 +3987,12 @@ class InventoryService {
       if (response != null && response is List && response.isNotEmpty) {
         // Obtener el primer (y único) elemento de la lista
         final resultRow = response[0] as Map<String, dynamic>;
-        
-        // Los nombres son los de la RPC: `mensaje` y `tiempo_ms`.
-        // Antes se leían 'message' y 'tiempo_ejecucion_ms', que no existen en el
-        // RETURNS TABLE — el mensaje real del servidor se perdía y siempre se
-        // reportaba 'Sin mensaje' con 0 ms. Eso ocultó durante meses que la RPC
-        // fallaba en el 100 % de las llamadas.
+
         final success = resultRow['success'] as bool? ?? false;
-        final message = resultRow['mensaje'] as String? ?? 'Sin mensaje';
+        final message = resultRow['message'] as String? ?? 'Sin mensaje';
         final productosActualizados =
-            (resultRow['productos_actualizados'] as num?)?.toInt() ?? 0;
-        final tiempoMs = (resultRow['tiempo_ms'] as num?)?.toInt() ?? 0;
+            resultRow['productos_actualizados'] as int? ?? 0;
+        final tiempoMs = resultRow['tiempo_ejecucion_ms'] as int? ?? 0;
 
         print('📊 Resultado de la función:');
         print('   - Success: $success');
@@ -3709,7 +4001,9 @@ class InventoryService {
         print('   - Tiempo: ${tiempoMs}ms');
 
         if (success) {
-          print('✅ Precios promedio actualizados: $productosActualizados productos en ${tiempoMs}ms');
+          print(
+            '✅ Precios promedio actualizados: $productosActualizados productos en ${tiempoMs}ms',
+          );
           return {
             'status': 'success',
             'message': message,
@@ -3750,7 +4044,9 @@ class InventoryService {
     required int idPresentacion,
   }) async {
     try {
-      print('🔍 Obteniendo stock real del producto $idProducto en ubicación $idUbicacion, presentación $idPresentacion...');
+      print(
+        '🔍 Obteniendo stock real del producto $idProducto en ubicación $idUbicacion, presentación $idPresentacion...',
+      );
 
       final response = await _supabase.rpc(
         'get_stock_real_by_location_presentation',
@@ -3768,10 +4064,13 @@ class InventoryService {
 
       // Handle response as list or single object
       final data = response is List ? response.first : response;
-      final cantidadDisponible = (data['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
+      final cantidadDisponible =
+          (data['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
 
       print('✅ Stock real obtenido: $cantidadDisponible unidades');
-      print('📊 ID Inventario: ${data['id_inventario']}, Fecha: ${data['created_at']}');
+      print(
+        '📊 ID Inventario: ${data['id_inventario']}, Fecha: ${data['created_at']}',
+      );
 
       return cantidadDisponible;
     } catch (e) {
@@ -3808,8 +4107,9 @@ class InventoryService {
 
     final result = <String, StockBreakdown>{
       for (final item in items)
-        _locationKey(item.idProducto, item.idUbicacion):
-            StockBreakdown.empty(item.cantidadFinal),
+        _locationKey(item.idProducto, item.idUbicacion): StockBreakdown.empty(
+          item.cantidadFinal,
+        ),
     };
 
     final productIds = items.map((i) => i.idProducto).toSet().toList();
@@ -3819,10 +4119,7 @@ class InventoryService {
     try {
       final response = await _supabase.rpc(
         'fn_stock_breakdown_by_locations',
-        params: {
-          'p_product_ids': productIds,
-          'p_ubicacion_ids': ubicIds,
-        },
+        params: {'p_product_ids': productIds, 'p_ubicacion_ids': ubicIds},
       );
 
       if (response is! List) return result;
@@ -3877,10 +4174,7 @@ class InventoryService {
     try {
       final response = await _supabase.rpc(
         'fn_stock_breakdown_by_products',
-        params: {
-          'p_product_ids': productIds,
-          'p_id_almacen': warehouseId,
-        },
+        params: {'p_product_ids': productIds, 'p_id_almacen': warehouseId},
       );
 
       if (response is! List) return result;
