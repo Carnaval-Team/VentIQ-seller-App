@@ -4,6 +4,7 @@ import '../config/app_colors.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
 import '../services/inventory_service.dart';
+import '../services/presentacion_cadena_service.dart';
 import '../services/warehouse_service.dart';
 import '../services/user_preferences_service.dart';
 import '../widgets/product_selector_widget.dart';
@@ -197,6 +198,16 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
     final adjustmentController = TextEditingController();
     final isExcess = widget.adjustmentType == 'excess';
 
+    // FASE 2: el saldo completo del producto en la zona, desglosado por
+    // presentacion. Ajustar una presentacion a ciegas es la via rapida a un
+    // descuadre: si hay 4 Bultos ademas de las 100 Bolsas, el operador necesita
+    // verlo antes de decidir cuanto sumar o restar.
+    final zoneId = _selectedZone?['id'] as int?;
+    final stockMixto = await PresentacionCadenaService.stockMixto(
+      productId,
+      idUbicacion: zoneId,
+    );
+
     return showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -215,6 +226,60 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
                   Text('Presentación: $presentationName',
                       style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
                   const SizedBox(height: 12),
+
+                  // Saldo mixto de TODO el producto en la zona: deja claro que
+                  // se esta ajustando una sola presentacion de varias.
+                  if (stockMixto.desglose.length > 1) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.blue.shade100),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.inventory_2,
+                                  size: 16, color: Colors.blue.shade700),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Saldo total en la zona',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.blue.shade900,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            stockMixto.texto,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.blue.shade900,
+                            ),
+                          ),
+                          Text(
+                            'Solo se ajusta "$presentationName". Las demás '
+                            'presentaciones no se tocan.',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.blue.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
                   PresentacionEquivalenciaBanner(productId: productId),
                   const SizedBox(height: 16),
                   Container(
@@ -350,7 +415,12 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
         final result = await InventoryService.insertInventoryAdjustment(
           idProducto: row.idProducto,
           idUbicacion: row.idUbicacion,
-          idPresentacion: row.idPresentacion ?? 0,
+          // FASE 5: `?? 0` ROMPIA el ajuste. `fn_insertar_ajuste_inventario2`
+          // valida el id contra app_dat_producto_presentacion y devuelve
+          // «id_presentacion 0 no existe» (22023). Mandando null el servidor
+          // resuelve la presentacion base con la cascada de
+          // fn_presentaciones_producto, que es el contrato de la Fase 1.
+          idPresentacion: row.idPresentacion,
           cantidadAnterior: row.stockActual,
           cantidadNueva: cantidadNueva,
           motivo: motivo,

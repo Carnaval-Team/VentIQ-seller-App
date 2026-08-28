@@ -28,6 +28,12 @@ class ProductMovementsService {
   /// como tipo_movimiento=Reajuste, estado=Reajuste, tipo_operacion=
   /// "Reajuste de cancelación".
   static bool isCancelacionReajuste(Map<String, dynamic> m) {
+    // FASE 2/3 presentaciones: una conversión (abrir/empaquetar) también llega
+    // sin id_operacion, así que caía en esta rama y se etiquetaba como
+    // "Reajuste de cancelación" — un movimiento deliberado disfrazado de
+    // corrección de error. La v4 la marca con es_conversion.
+    if (m['es_conversion'] == true) return false;
+
     final tipoMov = (m['tipo_movimiento'] as String?)?.toLowerCase().trim() ?? '';
     if (tipoMov != 'reajuste') return false;
 
@@ -82,7 +88,13 @@ class ProductMovementsService {
       print('Filtros: desde=$dateFrom, hasta=$dateTo, tipoOp=$operationTypeId, almacen=$warehouseId');
 
       final response = await _supabase.rpc(
-        'get_product_movements_v3',
+        // FASE 3 presentaciones: la v4 añade id_presentacion,
+        // presentacion_nombre, presentacion_factor, cantidad_formateada
+        // ("21 Bultos"), id_conversion y es_conversion. Las 28 columnas de la v3
+        // no se movieron (verificado fila por fila contra producción), así que
+        // el resto de la pantalla sigue leyendo lo mismo.
+        // Ver presentaciones_inventario/17_kardex_con_presentacion.sql
+        'get_product_movements_v4',
         params: {
           'p_id_producto': productId,
           'p_fecha_desde': dateFrom == null

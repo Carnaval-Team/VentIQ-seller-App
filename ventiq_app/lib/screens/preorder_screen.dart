@@ -1839,6 +1839,11 @@ class _PreorderScreenState extends State<PreorderScreen> {
           'id_medio_pago': item.paymentMethod?.id,
           'metodo_pago': item.paymentMethod?.denominacion,
           'inventory_metadata': item.inventoryData,
+          // FASE 4: igual que en checkout_screen — la cantidad está en la
+          // presentación elegida, así que la preorden pendiente debe llevarla.
+          'id_presentacion': item.idPresentacion,
+          'presentacion_nombre': item.presentacionNombre,
+          'presentacion_factor': item.presentacionFactor,
         };
       }).toList(),
       'desglose_pagos': paymentBreakdown.values.toList(),
@@ -1857,18 +1862,23 @@ class _PreorderScreenState extends State<PreorderScreen> {
       if (item.producto.esElaborado || item.producto.esServicio) continue;
       final inventoryMetadata = item.inventoryData;
       if (inventoryMetadata != null) {
+        // FASE 5: igual que en checkout_screen — delta por presentación y sin
+        // truncar la cantidad.
         await _userPreferencesService.updateProductInventoryInCache(
           item.producto.id,
           (inventoryMetadata['id_variante'] as num?)?.toInt(),
-          item.cantidad.toInt(),
+          item.cantidad,
           inventoryId: (inventoryMetadata['id_inventario'] as num?)?.toInt(),
           locationId: (inventoryMetadata['id_ubicacion'] as num?)?.toInt(),
+          presentationId: item.idPresentacion ??
+              (inventoryMetadata['id_presentacion'] as num?)?.toInt(),
         );
       } else {
         await _userPreferencesService.updateProductInventoryInCache(
           item.producto.id,
           null,
-          item.cantidad.toInt(),
+          item.cantidad,
+          presentationId: item.idPresentacion,
         );
       }
     }

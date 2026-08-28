@@ -1198,8 +1198,9 @@ class InventoryService {
         '📦 Parámetros: entregadoPor=$entregadoPor, idTienda=$idTienda, productos=${productos.length}',
       );
 
-      // NUEVO: Procesar productos para conversión automática a presentación base
-      print('🔄 Procesando productos para conversión a presentación base...');
+      // FASE 1 presentaciones: ya NO se convierte a presentación base.
+      // La línea viaja con la presentación que eligió el usuario; la RPC
+      // resuelve la base solo si id_presentacion viene null.
       final productosConvertidos = await processProductsForReception(productos);
 
       final response = await _supabase.rpc(
@@ -1675,178 +1676,68 @@ class InventoryService {
     }
   }
 
-  /// Procesa productos para recepción convirtiendo a presentación base
+  /// Valida las lineas de recepcion sin convertir a presentacion base.
+  ///
+  /// FASE 1 de presentaciones (docs/PLAN_PRESENTACIONES_INVENTARIO.md).
+  /// Antes este metodo hacia `cantidad * factor` y cambiaba el id_presentacion
+  /// por el de la base, o sea que aplanaba una SEGUNDA vez lo que ya venia del
+  /// product_quantity_dialog. Con eso "4 cajas" llegaba al inventario como
+  /// "48 unidades" y el empaque fisico se perdia.
+  ///
+  /// Ahora la presentacion elegida viaja intacta hasta la RPC. Lo unico que se
+  /// hace aqui es validar la forma de la linea; la resolucion de la
+  /// presentacion base cuando falta, y el rebalanceo en los egresos, viven en
+  /// el SQL (fn_presentaciones_producto / fn_descontar_con_rebalanceo).
   static Future<List<Map<String, dynamic>>> processProductsForReception(
     List<Map<String, dynamic>> productos,
   ) async {
-    final processedProducts = <Map<String, dynamic>>[];
-
-    print('🔄 ===== PROCESANDO PRODUCTOS PARA RECEPCIÓN =====');
-    print('🔄 Total productos a procesar: ${productos.length}');
-
-    for (final producto in productos) {
-      try {
-        final productIdRaw = producto['id_producto'];
-        final productId =
-            productIdRaw is int
-                ? productIdRaw
-                : int.tryParse(productIdRaw.toString()) ?? 0;
-
-        if (productId == 0) {
-          print('⚠️ ID de producto inválido: $productIdRaw, saltando...');
-          continue;
-        }
-
-        final presentacionId = producto['id_presentacion'] as int?;
-        final cantidadOriginal = (producto['cantidad'] as num).toDouble();
-
-        print('🔄 Procesando producto ID: $productId');
-        print('🔄 Presentación seleccionada: $presentacionId');
-        print('🔄 Cantidad original: $cantidadOriginal');
-
-        if (presentacionId == null) {
-          print(
-            '⚠️ No hay presentación seleccionada, usando cantidad original',
-          );
-          processedProducts.add(producto);
-          continue;
-        }
-
-        // Convertir a presentación base
-        final cantidadEnBase = await ProductService.convertToBasePresentacion(
-          productId: productId,
-          fromPresentacionId: presentacionId,
-          cantidad: cantidadOriginal,
-        );
-
-        // Obtener presentación base
-        final basePresentation = await ProductService.getBasePresentacion(
-          productId,
-        );
-
-        if (basePresentation != null) {
-          // Crear producto procesado con presentación base
-          final processedProduct = Map<String, dynamic>.from(producto);
-          processedProduct['id_presentacion'] =
-              basePresentation['id_presentacion'];
-          processedProduct['cantidad'] = cantidadEnBase;
-          processedProduct['cantidad_original'] = cantidadOriginal;
-          processedProduct['presentacion_original'] = presentacionId;
-          processedProduct['conversion_applied'] =
-              cantidadEnBase != cantidadOriginal;
-
-          processedProducts.add(processedProduct);
-
-          print('✅ Producto procesado:');
-          print(
-            '   - Cantidad original: $cantidadOriginal (presentación: $presentacionId)',
-          );
-          print(
-            '   - Cantidad en base: $cantidadEnBase (presentación: ${basePresentation['id_presentacion']})',
-          );
-          print(
-            '   - Conversión aplicada: ${cantidadEnBase != cantidadOriginal}',
-          );
-        } else {
-          print('⚠️ No se pudo obtener presentación base, usando original');
-          processedProducts.add(producto);
-        }
-      } catch (e) {
-        print('❌ Error procesando producto: $e');
-        processedProducts.add(producto); // Agregar original en caso de error
-      }
-    }
-
-    print('✅ Procesamiento completado: ${processedProducts.length} productos');
-    return processedProducts;
+    return _validarLineasSinConvertir(productos, 'recepción');
   }
 
-  /// Procesa productos para extracción convirtiendo a presentación base
+  /// Igual que processProductsForReception, para extracciones.
+  ///
+  /// El rebalanceo (abrir cajas si no hay sueltas) lo hace
+  /// fn_descontar_con_rebalanceo dentro de fn_crear_extraccion_con_movimiento.
+  /// No hay que anticiparlo en el cliente.
   static Future<List<Map<String, dynamic>>> processProductsForExtraction(
     List<Map<String, dynamic>> productos,
   ) async {
-    final processedProducts = <Map<String, dynamic>>[];
+    return _validarLineasSinConvertir(productos, 'extracción');
+  }
 
-    print('🔄 ===== PROCESANDO PRODUCTOS PARA EXTRACCIÓN =====');
-    print('🔄 Total productos a procesar: ${productos.length}');
+  /// Deja pasar la linea tal cual, avisando de lo que el SQL va a resolver.
+  ///
+  /// Se conserva el comportamiento tolerante de antes: una linea con id de
+  /// producto invalido se salta en vez de tumbar la operacion completa.
+  static List<Map<String, dynamic>> _validarLineasSinConvertir(
+    List<Map<String, dynamic>> productos,
+    String etiqueta,
+  ) {
+    final resultado = <Map<String, dynamic>>[];
 
     for (final producto in productos) {
-      try {
-        final productIdRaw = producto['id_producto'];
-        final productId =
-            productIdRaw is int
-                ? productIdRaw
-                : int.tryParse(productIdRaw.toString()) ?? 0;
+      final productIdRaw = producto['id_producto'];
+      final productId =
+          productIdRaw is int
+              ? productIdRaw
+              : int.tryParse(productIdRaw.toString()) ?? 0;
 
-        if (productId == 0) {
-          print('⚠️ ID de producto inválido: $productIdRaw, saltando...');
-          continue;
-        }
-
-        final presentacionId = producto['id_presentacion'] as int?;
-        final cantidadOriginal = (producto['cantidad'] as num).toDouble();
-
-        print('🔄 Procesando extracción producto ID: $productId');
-        print('🔄 Presentación seleccionada: $presentacionId');
-        print('🔄 Cantidad a extraer: $cantidadOriginal');
-
-        if (presentacionId == null) {
-          print(
-            '⚠️ No hay presentación seleccionada, usando cantidad original',
-          );
-          processedProducts.add(producto);
-          continue;
-        }
-
-        // Convertir a presentación base
-        final cantidadEnBase = await ProductService.convertToBasePresentacion(
-          productId: productId,
-          fromPresentacionId: presentacionId,
-          cantidad: cantidadOriginal,
-        );
-
-        // Obtener presentación base
-        final basePresentation = await ProductService.getBasePresentacion(
-          productId,
-        );
-
-        if (basePresentation != null) {
-          // Crear producto procesado con presentación base
-          final processedProduct = Map<String, dynamic>.from(producto);
-          processedProduct['id_presentacion'] =
-              basePresentation['id_presentacion'];
-          processedProduct['cantidad'] = cantidadEnBase;
-          processedProduct['cantidad_original'] = cantidadOriginal;
-          processedProduct['presentacion_original'] = presentacionId;
-          processedProduct['conversion_applied'] =
-              cantidadEnBase != cantidadOriginal;
-
-          processedProducts.add(processedProduct);
-
-          print('✅ Extracción procesada:');
-          print(
-            '   - Cantidad original: $cantidadOriginal (presentación: $presentacionId)',
-          );
-          print(
-            '   - Cantidad en base: $cantidadEnBase (presentación: ${basePresentation['id_presentacion']})',
-          );
-          print(
-            '   - Conversión aplicada: ${cantidadEnBase != cantidadOriginal}',
-          );
-        } else {
-          print('⚠️ No se pudo obtener presentación base, usando original');
-          processedProducts.add(producto);
-        }
-      } catch (e) {
-        print('❌ Error procesando extracción: $e');
-        processedProducts.add(producto); // Agregar original en caso de error
+      if (productId == 0) {
+        print('⚠️ $etiqueta: id_producto inválido ($productIdRaw), se omite');
+        continue;
       }
+
+      if (producto['id_presentacion'] == null) {
+        // No es un error: la RPC resuelve la presentacion base del producto.
+        print('ℹ️ $etiqueta: producto $productId sin id_presentacion, '
+            'la RPC usará la presentación base');
+      }
+
+      resultado.add(producto);
     }
 
-    print(
-      '✅ Procesamiento de extracción completado: ${processedProducts.length} productos',
-    );
-    return processedProducts;
+    print('✅ $etiqueta: ${resultado.length} líneas listas sin conversión');
+    return resultado;
   }
 
   /// Descompone un producto elaborado recursivamente
@@ -2407,7 +2298,12 @@ class InventoryService {
       print('  - includeZero: $includeZero');
 
       final response = await _supabase.rpc(
-        'obtener_ipv',
+        // FASE 3 presentaciones: la v2 añade id_presentacion,
+        // presentacion_nombre, presentacion_factor, cantidad_final_formateada
+        // ("12 Bolsas") y equivalente_base. Las 48 columnas de obtener_ipv salen
+        // idénticas (verificado fila por fila: 1.189 filas, 0 diferencias).
+        // Ver presentaciones_inventario/21_ipv_con_presentacion.sql
+        'obtener_ipv2',
         params: {
           'p_id_tienda': idTienda,
           'p_fecha_desde': fechaDesde?.toIso8601String().split('T')[0],
@@ -3115,90 +3011,42 @@ class InventoryService {
         print('📦 Productos recibidos encontrados: ${productosRecibidos.length}');
 
         if (productosRecibidos.isNotEmpty) {
-          int productosActualizados = 0;
+          // FASE 3 presentaciones: la ponderación del costo promedio se hace en
+          // el servidor (`fn_actualizar_precio_promedio_recepcion_v2`, ver
+          // presentaciones_inventario/20_costo_promedio_en_base.sql).
+          //
+          // Antes se calculaba aquí, fila por fila, con dos errores:
+          //   1. Ponderaba cantidades de presentaciones distintas como si fueran
+          //      la misma unidad: 10 Bolsas a 1 USD + 2 Bultos (de 10) a 9,50
+          //      daba (10 + 19) / 12 = 2,42, que no es el costo de nada.
+          //   2. Escribía el promedio en la fila de la presentación recibida, así
+          //      que un producto acababa con un costo distinto por presentación
+          //      (medido: 21 de 40 productos multipresentación inconsistentes).
+          //
+          // El servidor convierte a unidades base con el factor_rel de cada
+          // línea, agrupa las líneas del mismo producto en una sola ponderación
+          // y escribe solo en la presentación base.
+          final resultadoPrecios = await updateAveragePriceAfterReception(
+            idOperacion: idOperacion,
+            productos: List<Map<String, dynamic>>.from(productosRecibidos),
+          );
 
-          for (var producto in productosRecibidos) {
-            try {
-              final idPresentacion = producto['id_presentacion'];
-              
-              // Validar que id_presentacion no sea null
-              if (idPresentacion == null) {
-                print('\n⚠️ Producto sin presentación asignada - saltando actualización de precio');
-                continue;
-              }
-              
-              final precioUnitario = (producto['precio_unitario'] as num?)?.toDouble() ?? 0.0;
-              final cantidadRecibida = (producto['cantidad'] as num?)?.toDouble() ?? 0.0;
+          final productosActualizados =
+              (resultadoPrecios['productos_actualizados'] as int?) ?? 0;
 
-              print('\n📝 Procesando presentación ID: $idPresentacion');
-              print('   - Precio unitario recibido: \$${precioUnitario.toStringAsFixed(2)}');
-              print('   - Cantidad recibida: $cantidadRecibida');
-
-              // Obtener el precio promedio anterior de app_dat_producto_presentacion
-              final presentacionData = await _supabase
-                  .from('app_dat_producto_presentacion')
-                  .select('precio_promedio, id_producto')
-                  .eq('id', idPresentacion)
-                  .single();
-
-              final precioPromedioAnterior = 
-                  (presentacionData['precio_promedio'] as num?)?.toDouble() ?? 0.0;
-              final idProducto = presentacionData['id_producto'];
-
-              print('   - Precio promedio anterior: \$${precioPromedioAnterior.toStringAsFixed(2)}');
-              print('   - ID Producto: $idProducto');
-
-              // Obtener la cantidad real anterior del último registro en app_dat_inventario_productos
-              // Se usa cantidad_inicial porque es la cantidad que había ANTES de esta recepción
-              final ultimoInventario = await _supabase
-                  .from('app_dat_inventario_productos')
-                  .select('cantidad_inicial')
-                  .eq('id_presentacion', idPresentacion)
-                  .order('created_at', ascending: false)
-                  .limit(1);
-
-              double cantidadAnterior = 0.0;
-              if (ultimoInventario.isNotEmpty) {
-                final ultimoReg = ultimoInventario.first;
-                // Usar cantidad_inicial (cantidad que había antes de esta recepción)
-                cantidadAnterior = (ultimoReg['cantidad_inicial'] as num?)?.toDouble() ?? 0.0;
-              }
-
-              print('   - Cantidad real anterior (último inventario - cantidad_inicial): $cantidadAnterior');
-
-              // Calcular nuevo precio promedio
-              // Fórmula: (precio_anterior * cantidad_anterior + precio_nuevo * cantidad_nueva) / (cantidad_anterior + cantidad_nueva)
-              double nuevoPrecioPromedio = 0.0;
-              
-              if (cantidadAnterior + cantidadRecibida > 0) {
-                nuevoPrecioPromedio = 
-                    (precioPromedioAnterior * cantidadAnterior + precioUnitario * cantidadRecibida) / 
-                    (cantidadAnterior + cantidadRecibida);
-              } else {
-                nuevoPrecioPromedio = precioUnitario;
-              }
-
-              print('   - Nuevo precio promedio calculado: \$${nuevoPrecioPromedio.toStringAsFixed(2)}');
-              print('   - Fórmula: (\$${precioPromedioAnterior.toStringAsFixed(2)} × $cantidadAnterior + \$${precioUnitario.toStringAsFixed(2)} × $cantidadRecibida) / ${cantidadAnterior + cantidadRecibida}');
-
-              // Actualizar el precio promedio en app_dat_producto_presentacion
-              await _supabase
-                  .from('app_dat_producto_presentacion')
-                  .update({'precio_promedio': nuevoPrecioPromedio})
-                  .eq('id', idPresentacion);
-
-              print('   ✅ Precio promedio actualizado exitosamente');
-              productosActualizados++;
-
-            } catch (e) {
-              print('   ❌ Error procesando presentación: $e');
-            }
+          if (resultadoPrecios['status'] != 'success') {
+            // No se aborta la operación: la recepción ya está registrada y el
+            // costo se puede recalcular. Pero se propaga el mensaje en vez de
+            // tragárselo, que es lo que mantuvo oculto el fallo permanente de la
+            // RPC vieja ("column reference cantidad is ambiguous" en el 100 % de
+            // las llamadas).
+            print('⚠️ Costo promedio NO actualizado: ${resultadoPrecios['message']}');
           }
 
           print('\n✅ Resumen de actualización:');
           print('   - Productos procesados: ${productosRecibidos.length}');
-          print('   - Productos actualizados: $productosActualizados');
-          print('   - Tasa de éxito: ${(productosActualizados / productosRecibidos.length * 100).toStringAsFixed(1)}%');
+          print('   - Costos actualizados: $productosActualizados');
+          print('   - Mensaje del servidor: ${resultadoPrecios['message']}');
 
           // =====================================================
           // VERIFICAR MÁRGENES DE GANANCIA Y AJUSTAR PRECIO VENTA
@@ -3843,10 +3691,16 @@ class InventoryService {
         // Obtener el primer (y único) elemento de la lista
         final resultRow = response[0] as Map<String, dynamic>;
         
+        // Los nombres son los de la RPC: `mensaje` y `tiempo_ms`.
+        // Antes se leían 'message' y 'tiempo_ejecucion_ms', que no existen en el
+        // RETURNS TABLE — el mensaje real del servidor se perdía y siempre se
+        // reportaba 'Sin mensaje' con 0 ms. Eso ocultó durante meses que la RPC
+        // fallaba en el 100 % de las llamadas.
         final success = resultRow['success'] as bool? ?? false;
-        final message = resultRow['message'] as String? ?? 'Sin mensaje';
-        final productosActualizados = resultRow['productos_actualizados'] as int? ?? 0;
-        final tiempoMs = resultRow['tiempo_ejecucion_ms'] as int? ?? 0;
+        final message = resultRow['mensaje'] as String? ?? 'Sin mensaje';
+        final productosActualizados =
+            (resultRow['productos_actualizados'] as num?)?.toInt() ?? 0;
+        final tiempoMs = (resultRow['tiempo_ms'] as num?)?.toInt() ?? 0;
 
         print('📊 Resultado de la función:');
         print('   - Success: $success');

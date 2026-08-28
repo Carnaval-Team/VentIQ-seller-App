@@ -13,6 +13,7 @@ import '../models/product.dart';
 import '../services/product_movements_service.dart';
 import '../services/user_preferences_service.dart';
 import '../config/app_colors.dart';
+import '../utils/stock_mixto_formatter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/web_download_stub.dart'
     if (dart.library.html) '../services/web_download_web.dart'
@@ -322,6 +323,36 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
     }
   }
 
+  /// Cantidad de una fila del kardex, con su presentación cuando se conoce.
+  ///
+  /// FASE 3 presentaciones. `cantidad_formateada` la arma el SQL
+  /// (`fn_presentacion_item_json` + `fn_plural_presentacion`), así que el texto
+  /// es idéntico al de las listas de operaciones y los reportes.
+  ///
+  /// Sin presentación (movimientos previos a la Fase 1) se muestra la cantidad
+  /// sola: el ledger no sabe en qué unidad estaba expresada esa fila, y ponerle
+  /// "unidades" sería afirmar algo que no consta.
+  String _qtyConPresentacion(Map<String, dynamic> movement) {
+    final formateada = movement['cantidad_formateada']?.toString();
+    if (formateada != null && formateada.trim().isNotEmpty) {
+      // El SQL ya formatea el signo; en el kardex la columna indica el sentido.
+      return formateada.startsWith('-') ? formateada.substring(1) : formateada;
+    }
+    final qty = (_asDouble(movement['cantidad']) ?? 0).abs();
+    return StockMixtoFormatter.cantidad(qty);
+  }
+
+  /// "Bulto (= 10 base)". El factor solo se muestra cuando no es 1: en el 90 %
+  /// de las filas es 1 y repetirlo sería ruido. En las 131 filas `es_base` con
+  /// factor 12/24/30 (anomalía documentada en el plan) es justo lo que permite
+  /// detectar el problema desde el kardex.
+  String _presentacionConFactor(Map<String, dynamic> movement) {
+    final nombre = movement['presentacion_nombre']?.toString() ?? '';
+    final factor = _asDouble(movement['presentacion_factor']);
+    if (factor == null || factor == 1) return nombre;
+    return '$nombre (= ${StockMixtoFormatter.cantidad(factor)} base)';
+  }
+
   Color _getMovementTypeColor(String tipoMovimiento) {
     switch (tipoMovimiento) {
       case 'Recepción':
@@ -334,6 +365,12 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
         return Colors.purple;
       case 'Ajuste':
         return Colors.teal;
+      // FASE 3 presentaciones: abrir/empaquetar. Índigo para que no se confunda
+      // con un ajuste (teal) ni con un reajuste de cancelación (púrpura): no es
+      // una corrección, es un movimiento deliberado que no cambia el
+      // equivalente en unidades base.
+      case 'Conversión':
+        return Colors.indigo;
       default:
         return Colors.grey;
     }
@@ -351,6 +388,8 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
         return Icons.swap_horiz;
       case 'Ajuste':
         return Icons.tune;
+      case 'Conversión':
+        return Icons.unfold_more;
       default:
         return Icons.info;
     }
@@ -2714,7 +2753,18 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       final fileName = 'Movimientos_${productName}_$dateStr.xlsx';
       final labels = _exportFilterLabels();
 
-      // Mismos totales que el PDF
+      // Mismos totales que el PDF.
+      //
+      // FASE 3 presentaciones: los totales van en EQUIVALENTE BASE, no en
+      // cantidades crudas. Sumar 4 cajas + 4 unidades como "8" es falso; el
+      // equivalente (4×12 + 4 = 52) sí se puede sumar. Cuando la fila no trae
+      // presentación se usa la cantidad cruda, que es lo único que hay.
+      double equivDe(Map<String, dynamic> m) {
+        final eq = _asDouble(m['equivalente_base']);
+        if (eq != null) return eq.abs();
+        return (_asDouble(m['cantidad']) ?? 0).abs();
+      }
+
       final totalRecepciones = movimientosExport
           .where((m) {
             final tipo = m['tipo_movimiento'] as String? ?? '';
@@ -2722,10 +2772,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
             return tipo == 'Recepción' ||
                 ((tipo == 'Reajuste' || tipo == 'Ajuste') && cant > 0);
           })
-          .fold<double>(
-            0,
-            (s, m) => s + ((m['cantidad'] as num?)?.toDouble().abs() ?? 0),
-          );
+          .fold<double>(0, (s, m) => s + equivDe(m));
       final totalExtracciones = movimientosExport
           .where((m) {
             final tipo = m['tipo_movimiento'] as String? ?? '';
@@ -2733,10 +2780,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
             return tipo == 'Extracción' ||
                 ((tipo == 'Reajuste' || tipo == 'Ajuste') && cant < 0);
           })
-          .fold<double>(
-            0,
-            (s, m) => s + ((m['cantidad'] as num?)?.toDouble().abs() ?? 0),
-          );
+          .fold<double>(0, (s, m) => s + equivDe(m));
 
       final book = excel.Excel.createExcel();
       final defaultSheet = book.getDefaultSheet();
@@ -2802,7 +2846,9 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       writeCell(0, 'Almacén: ${labels.almacen}', fontSize: 10);
       writeCell(
         2,
-        'Entradas: ${totalRecepciones.toStringAsFixed(2)}',
+        // "u. base" y no un número suelto: el total es la suma de equivalentes,
+        // no de cantidades crudas de distintas presentaciones.
+        'Entradas: ${StockMixtoFormatter.cantidad(totalRecepciones)} u. base',
         bold: true,
         fontSize: 10,
       );
@@ -2810,7 +2856,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       writeCell(0, 'Tipo movimiento: ${labels.tipoMov}', fontSize: 10);
       writeCell(
         2,
-        'Salidas: ${totalExtracciones.toStringAsFixed(2)}',
+        'Salidas: ${StockMixtoFormatter.cantidad(totalExtracciones)} u. base',
         bold: true,
         fontSize: 10,
       );
@@ -2864,6 +2910,10 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
 
         final nOp = m['id_operacion']?.toString() ?? '-';
         final rowBg = i.isEven ? excel.ExcelColor.white : altBg;
+        // FASE 3: la cantidad va con su presentación ("21 Bultos"). Sumar 4
+        // cajas + 4 unidades como "8" en el pie sería falso, así que el total
+        // se etiqueta en unidades base más abajo.
+        final qtyTexto = _qtyConPresentacion(m);
         final values = <String>[
           fechaFmt,
           m['almacen'] as String? ?? '-',
@@ -2871,8 +2921,8 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
           tipoMov,
           m['tipo_operacion'] as String? ?? '-',
           m['estado_operacion_nombre'] as String? ?? 'Completada',
-          isEntrada ? cantidadNum.abs().toStringAsFixed(2) : '',
-          !isEntrada ? cantidadNum.abs().toStringAsFixed(2) : '',
+          isEntrada ? qtyTexto : '',
+          !isEntrada ? qtyTexto : '',
           (m['cantidad_final'] as num?)?.toStringAsFixed(2) ?? '-',
           (m['observaciones'] as String?)?.trim() ?? '',
         ];
@@ -2946,8 +2996,17 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       final tipoMovStr = labels.tipoMov;
       final tipoOpStr = labels.tipoOp;
 
-      // Totales calculados sobre los datos a exportar
-      // Reajuste y Ajuste con cantidad positiva son entradas, con negativa son salidas
+      // Totales calculados sobre los datos a exportar.
+      // Reajuste y Ajuste con cantidad positiva son entradas, con negativa son salidas.
+      //
+      // FASE 3 presentaciones: se suma el EQUIVALENTE BASE. Sumar 4 cajas + 4
+      // unidades como "8" daría un total sin significado.
+      double equivDe(Map<String, dynamic> m) {
+        final eq = _asDouble(m['equivalente_base']);
+        if (eq != null) return eq.abs();
+        return (_asDouble(m['cantidad']) ?? 0).abs();
+      }
+
       final totalRecepciones = movimientosExport
           .where((m) {
             final tipo = m['tipo_movimiento'] as String? ?? '';
@@ -2955,10 +3014,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
             return tipo == 'Recepción' ||
                 ((tipo == 'Reajuste' || tipo == 'Ajuste') && cant > 0);
           })
-          .fold<double>(
-            0,
-            (s, m) => s + ((m['cantidad'] as num?)?.toDouble().abs() ?? 0),
-          );
+          .fold<double>(0, (s, m) => s + equivDe(m));
       final totalExtracciones = movimientosExport
           .where((m) {
             final tipo = m['tipo_movimiento'] as String? ?? '';
@@ -2966,10 +3022,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
             return tipo == 'Extracción' ||
                 ((tipo == 'Reajuste' || tipo == 'Ajuste') && cant < 0);
           })
-          .fold<double>(
-            0,
-            (s, m) => s + ((m['cantidad'] as num?)?.toDouble().abs() ?? 0),
-          );
+          .fold<double>(0, (s, m) => s + equivDe(m));
 
       // Anchos de columna: Fecha, Almacén, N° Op., Tipo Mov., Tipo Op., Estado, Entrada, Salida, Saldo, Observaciones
       final colWidths = {
@@ -3109,7 +3162,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                                   pw.TextStyle(font: regularFont, fontSize: 8),
                             ),
                             pw.Text(
-                              'Entradas: ${totalRecepciones.toStringAsFixed(2)}',
+                              'Entradas: ${StockMixtoFormatter.cantidad(totalRecepciones)} u. base',
                               style: pw.TextStyle(
                                 font: boldFont,
                                 fontSize: 8,
@@ -3117,7 +3170,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                               ),
                             ),
                             pw.Text(
-                              'Salidas: ${totalExtracciones.toStringAsFixed(2)}',
+                              'Salidas: ${StockMixtoFormatter.cantidad(totalExtracciones)} u. base',
                               style: pw.TextStyle(
                                 font: boldFont,
                                 fontSize: 8,
@@ -3276,12 +3329,13 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                         ),
                       ),
                       dataCell(
-                        isEntrada ? cantidadNum.abs().toStringAsFixed(2) : '',
+                        // FASE 3: "21 Bultos" en vez de "21.00".
+                        isEntrada ? _qtyConPresentacion(m) : '',
                         bold: true,
                         color: isEntrada ? PdfColors.green800 : PdfColors.white,
                       ),
                       dataCell(
-                        !isEntrada ? cantidadNum.abs().toStringAsFixed(2) : '',
+                        !isEntrada ? _qtyConPresentacion(m) : '',
                         bold: true,
                         color: !isEntrada
                             ? (isControl ? PdfColors.blue800 : (isReajuste ? PdfColors.red700 : PdfColors.orange800))
@@ -3795,7 +3849,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                   padding: const EdgeInsets.symmetric(
                       horizontal: 4, vertical: 8),
                   child: Text(
-                    isEntrada ? cantidadNum.abs().toStringAsFixed(2) : '',
+                    isEntrada ? _qtyConPresentacion(movement) : '',
                     style: const TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
@@ -3811,7 +3865,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                   padding: const EdgeInsets.symmetric(
                       horizontal: 4, vertical: 8),
                   child: Text(
-                    !isEntrada ? cantidadNum.abs().toStringAsFixed(2) : '',
+                    !isEntrada ? _qtyConPresentacion(movement) : '',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
@@ -3978,7 +4032,20 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                   tipoMovimiento == 'Control'
                       ? 'Cantidad Contada'
                       : 'Cantidad Movida',
-                  '${movement['cantidad']}',
+                  // FASE 3: "21 Bultos", no "21.0". El texto viene del SQL.
+                  _qtyConPresentacion(movement),
+                ),
+              // La presentación y su factor: el dato que faltaba para saber si
+              // "21" eran bultos de 10 o bolsas de 1.
+              if (_hasText(movement['presentacion_nombre']))
+                _buildDetailRow(
+                  'Presentación',
+                  _presentacionConFactor(movement),
+                ),
+              if (movement['es_conversion'] == true)
+                _buildDetailRow(
+                  'Tipo',
+                  'Cambio de presentación (abrir/empaquetar)',
                 ),
               if (movement['cantidad_inicial'] != null)
                 _buildDetailRow(

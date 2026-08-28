@@ -4976,7 +4976,10 @@ class _SyncDialogState extends State<_SyncDialog> {
           'id_variante': inventoryMetadata['id_variante'],
           'id_opcion_variante': inventoryMetadata['id_opcion_variante'],
           'id_ubicacion': inventoryMetadata['id_ubicacion'],
-          'id_presentacion': inventoryMetadata['id_presentacion'],
+          // FASE 4: se prefiere la presentación guardada en el ítem; la de
+          // `inventory_metadata` queda como respaldo para órdenes viejas.
+          'id_presentacion': itemData['id_presentacion'] ??
+              inventoryMetadata['id_presentacion'],
           'cantidad': itemData['cantidad'],
           'precio_unitario': itemData['precio_unitario'],
           'sku_producto':
@@ -5645,7 +5648,10 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
           'id_variante': inventoryMetadata['id_variante'],
           'id_opcion_variante': inventoryMetadata['id_opcion_variante'],
           'id_ubicacion': inventoryMetadata['id_ubicacion'],
-          'id_presentacion': inventoryMetadata['id_presentacion'],
+          // FASE 4: se prefiere la presentación guardada en el ítem; la de
+          // `inventory_metadata` queda como respaldo para órdenes viejas.
+          'id_presentacion': itemData['id_presentacion'] ??
+              inventoryMetadata['id_presentacion'],
           'cantidad': itemData['cantidad'],
           'precio_unitario': itemData['precio_unitario'],
           'sku_producto':
@@ -5928,7 +5934,10 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
           'id_variante': inventoryMetadata['id_variante'],
           'id_opcion_variante': inventoryMetadata['id_opcion_variante'],
           'id_ubicacion': inventoryMetadata['id_ubicacion'],
-          'id_presentacion': inventoryMetadata['id_presentacion'],
+          // FASE 4: se prefiere la presentación guardada en el ítem; la de
+          // `inventory_metadata` queda como respaldo para órdenes viejas.
+          'id_presentacion': itemData['id_presentacion'] ??
+              inventoryMetadata['id_presentacion'],
           'cantidad': itemData['cantidad'],
           'precio_unitario': itemData['precio_unitario'],
           'sku_producto':

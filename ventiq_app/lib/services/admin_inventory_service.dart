@@ -123,6 +123,7 @@ class AdminInventoryService {
     await _applyStockDeltaLocally(
       productId: productId,
       delta: cantidadNueva - cantidadAnterior,
+      presentationId: presentationId,
     );
 
     if (_connectivity.isConnected) {
@@ -175,8 +176,11 @@ class AdminInventoryService {
     for (final p in productos) {
       final id = (p['id_producto'] as num?)?.toInt();
       final qty = (p['cantidad'] as num?)?.toDouble() ?? 0;
+      // FASE 5: la linea ya trae su presentacion; el delta local debe usarla.
+      final presId = (p['id_presentacion'] as num?)?.toInt();
       if (id != null && qty != 0) {
-        await _applyStockDeltaLocally(productId: id, delta: qty);
+        await _applyStockDeltaLocally(
+            productId: id, delta: qty, presentationId: presId);
       }
     }
 
@@ -1075,8 +1079,11 @@ class AdminInventoryService {
     for (final p in productos) {
       final id = (p['id_producto'] as num?)?.toInt();
       final qty = (p['cantidad'] as num?)?.toDouble() ?? 0;
+      // FASE 5: la linea ya trae su presentacion; el delta local debe usarla.
+      final presId = (p['id_presentacion'] as num?)?.toInt();
       if (id != null && qty != 0) {
-        await _applyStockDeltaLocally(productId: id, delta: -qty);
+        await _applyStockDeltaLocally(
+            productId: id, delta: -qty, presentationId: presId);
       }
     }
 
@@ -1141,6 +1148,8 @@ class AdminInventoryService {
     for (final p in productos) {
       final id = (p['id_producto'] as num?)?.toInt();
       final qty = (p['cantidad'] as num?)?.toDouble() ?? 0;
+      // FASE 5: la linea ya trae su presentacion; el delta local debe usarla.
+      final presId = (p['id_presentacion'] as num?)?.toInt();
       if (id == null || qty == 0) continue;
       final product = await _db.getProductById(id);
       int? productLayout;
@@ -1156,7 +1165,8 @@ class AdminInventoryService {
       }
       // Solo ajustar cache visible si el stock cacheado es del layout origen.
       if (productLayout == null || productLayout == idLayoutOrigen) {
-        await _applyStockDeltaLocally(productId: id, delta: -qty);
+        await _applyStockDeltaLocally(
+            productId: id, delta: -qty, presentationId: presId);
       }
     }
 
@@ -1219,8 +1229,11 @@ class AdminInventoryService {
     for (final p in productos) {
       final id = (p['id_producto'] as num?)?.toInt();
       final qty = (p['cantidad'] as num?)?.toDouble() ?? 0;
+      // FASE 5: la linea ya trae su presentacion; el delta local debe usarla.
+      final presId = (p['id_presentacion'] as num?)?.toInt();
       if (id != null && qty != 0) {
-        await _applyStockDeltaLocally(productId: id, delta: -qty);
+        await _applyStockDeltaLocally(
+            productId: id, delta: -qty, presentationId: presId);
       }
     }
 
@@ -1346,15 +1359,22 @@ class AdminInventoryService {
     }
   }
 
+  /// FASE 5: el delta local va sobre la PRESENTACION movida.
+  ///
+  /// Antes no se pasaba presentacion y se truncaba con `.toInt()`: en un producto
+  /// con Bultos y Bolsas el delta caia sobre la primera fila del cache (la base),
+  /// y una recepcion/extraccion fraccionada (0,5) no movia nada.
   Future<void> _applyStockDeltaLocally({
     required int productId,
     required double delta,
+    int? presentationId,
   }) async {
     await _prefs.updateProductInventoryInCache(
       productId,
       null,
       // updateProductInventoryInCache resta; para sumar pasamos negativo
-      (-delta).toInt(),
+      -delta,
+      presentationId: presentationId,
     );
   }
 
@@ -1479,7 +1499,16 @@ class AdminInventoryService {
     }
   }
 
-  /// Normaliza productos de recepción forzando id_ubicacion e id_presentacion.
+  /// Normaliza productos de recepción forzando id_ubicacion.
+  ///
+  /// FASE 1 presentaciones: ya NO resuelve id_presentacion. Antes elegia la base
+  /// con `orElse: presentaciones.first`, que en los 9 productos sin fila
+  /// es_base podia devolver la Caja y registrar cajas donde el usuario conto
+  /// unidades. Ahora se deja null y lo resuelve la RPC con
+  /// fn_presentaciones_producto, que aplica la cascada correcta.
+  ///
+  /// id_ubicacion si se sigue rellenando aqui: el ledger la necesita y el
+  /// dispositivo offline es el unico que sabe con que layout esta trabajando.
   Future<List<Map<String, dynamic>>> _normalizeReceptionProducts(
     List<dynamic> productos,
   ) async {
@@ -1496,28 +1525,6 @@ class AdminInventoryService {
       final normalized = Map<String, dynamic>.from(p);
       if (normalized['id_ubicacion'] == null && defaultLocationId != null) {
         normalized['id_ubicacion'] = defaultLocationId;
-      }
-      if (normalized['id_presentacion'] == null) {
-        final productId = (normalized['id_producto'] as num?)?.toInt();
-        final product =
-            productId != null ? await _db.getProductById(productId) : null;
-        if (product != null) {
-          final detalles = product['detalles_completos'];
-          if (detalles is Map) {
-            final presentaciones = detalles['presentaciones'];
-            if (presentaciones is List && presentaciones.isNotEmpty) {
-              final base = presentaciones.cast<Map?>().firstWhere(
-                (x) => x?['es_base'] == true,
-                orElse: () => presentaciones.first as Map?,
-              );
-              final presId = (base?['id'] as num?)?.toInt() ??
-                  (base?['id_presentacion'] as num?)?.toInt();
-              if (presId != null) {
-                normalized['id_presentacion'] = presId;
-              }
-            }
-          }
-        }
       }
       out.add(normalized);
     }

@@ -5,8 +5,10 @@ import '../models/warehouse.dart';
 import '../models/inventory.dart';
 import '../services/warehouse_service.dart';
 import '../services/inventory_service.dart';
+import '../services/presentacion_cadena_service.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
+import '../widgets/cantidad_mixta_input.dart';
 import '../widgets/conversion_info_widget.dart';
 import '../widgets/product_selector_widget.dart';
 import '../widgets/location_selector_widget.dart';
@@ -1015,6 +1017,15 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
   List<Map<String, dynamic>> _availablePresentations = [];
   bool _isLoadingPresentations = false;
 
+  // ── FASE 2 presentaciones: extraccion mixta ──────────────────────────────
+  // Permite pedir "2 cajas Y 3 unidades" en un solo paso. En egresos importa
+  // ademas porque si falta saldo suelto, fn_descontar_con_rebalanceo abre el
+  // empaque mayor: el widget avisa antes de confirmar.
+  bool _modoMixto = false;
+  List<PresentacionCadena> _cadena = [];
+  List<LineaMixta> _lineasMixtas = [];
+  StockMixto? _stockMixto;
+
   @override
   void initState() {
     super.initState();
@@ -1022,6 +1033,45 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
     print('🔍 DEBUG: Stock inicial del producto: $_maxAvailableStock');
     _loadLocationSpecificVariants();
     _loadAvailablePresentations(); // NUEVO: Cargar presentaciones disponibles
+    _cargarMixto();
+  }
+
+  int? get _idProducto {
+    final raw = widget.product['id'] ?? widget.product['id_producto'];
+    if (raw == null) return null;
+    return raw is int ? raw : int.tryParse(raw.toString());
+  }
+
+  /// Lee la cadena y el saldo real por presentacion en la ubicacion de origen.
+  ///
+  /// El saldo se pide a `fn_stock_mixto_json` (no al dropdown viejo) porque es la
+  /// misma fuente que va a usar el SQL al descontar: mostrar otra cosa seria
+  /// prometerle al usuario un stock que el servidor no ve.
+  Future<void> _cargarMixto() async {
+    final idProducto = _idProducto;
+    if (idProducto == null) return;
+
+    final cadena = await PresentacionCadenaService.cadena(idProducto);
+    if (!mounted) return;
+
+    StockMixto? stock;
+    final idUbicacion = widget.sourceLocation != null
+        ? int.tryParse(widget.sourceLocation!.id)
+        : null;
+
+    if (cadena.length > 1) {
+      stock = await PresentacionCadenaService.stockMixto(
+        idProducto,
+        idUbicacion: idUbicacion,
+      );
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _cadena = cadena;
+      _stockMixto = stock;
+      _modoMixto = cadena.length > 1;
+    });
   }
 
   Future<void> _loadLocationSpecificVariants() async {
@@ -1456,15 +1506,33 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                         ),
 
                       const SizedBox(height: 20),
-                      // Presentation Selection Section
-                      if (_isLoadingPresentations)
-                        const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(20),
-                            child: CircularProgressIndicator(),
-                          ),
-                        )
-                      else if (_availablePresentations.isNotEmpty) ...[
+
+                      // ── FASE 2: captura mixta o dropdown clasico ──────────
+                      if (_modoMixto) ...[
+                        _buildSelectorModoMixto(),
+                        const SizedBox(height: 12),
+                        CantidadMixtaInput(
+                          idProducto: _idProducto!,
+                          stockActual: _stockMixto,
+                          avisarRebalanceo: true,
+                          onChanged: (lineas) =>
+                              setState(() => _lineasMixtas = lineas),
+                        ),
+                        const SizedBox(height: 20),
+                      ] else ...[
+                        if (_cadena.length > 1) ...[
+                          _buildSelectorModoMixto(),
+                          const SizedBox(height: 12),
+                        ],
+                        // Presentation Selection Section
+                        if (_isLoadingPresentations)
+                          const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(20),
+                              child: CircularProgressIndicator(),
+                            ),
+                          )
+                        else if (_availablePresentations.isNotEmpty) ...[
                         Text(
                           'Seleccionar Presentación',
                           style: const TextStyle(
@@ -1542,19 +1610,22 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                         ),
 
                         const SizedBox(height: 20),
+                        ],
                       ],
                     ],
 
-                    // Quantity Input
-                    Text(
-                      'Cantidad a Extraer',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                        color: AppColors.black87,
+                    // Quantity Input — solo en modo simple: en el mixto cada
+                    // presentacion tiene su propio campo.
+                    if (!_modoMixto) ...[
+                      Text(
+                        'Cantidad a Extraer',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                          color: AppColors.black87,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
+                      const SizedBox(height: 12),
                     TextFormField(
                       controller: _quantityController,
                       keyboardType: const TextInputType.numberWithOptions(
@@ -1612,6 +1683,7 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                         return null;
                       },
                     ),
+                    ],
                   ],
                 ),
               ),
@@ -1657,7 +1729,9 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                       onPressed:
                           _selectedVariant == null
                               ? null
-                              : () async {
+                              : (_modoMixto
+                                  ? _agregarMixto
+                                  : () async {
                                 final quantity = double.tryParse(
                                   _quantityController.text,
                                 );
@@ -1745,7 +1819,7 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                                     ),
                                   );
                                 }
-                              },
+                              }),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.warning,
                         foregroundColor: Colors.white,
@@ -1771,6 +1845,111 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
         ),
       ),
     );
+  }
+
+  /// Alterna captura mixta / una sola presentacion.
+  Widget _buildSelectorModoMixto() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            _modoMixto ? Icons.view_list : Icons.looks_one,
+            size: 18,
+            color: AppColors.primary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _modoMixto
+                  ? 'Varias presentaciones a la vez'
+                  : 'Una sola presentación',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _modoMixto = !_modoMixto;
+                _lineasMixtas = [];
+                _quantityController.clear();
+              });
+            },
+            child: Text(
+              _modoMixto ? 'Cambiar a una' : 'Cambiar a varias',
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Agrega UNA linea de extraccion por presentacion con cantidad.
+  ///
+  /// No valida contra el stock suelto: si falta saldo en la presentacion pedida,
+  /// `fn_descontar_con_rebalanceo` abre el empaque mayor y lo deja registrado.
+  /// Validar aca rechazaria extracciones que el servidor si puede cumplir. Lo
+  /// unico que se hace es avisar (lo hace el widget) para que el usuario sepa
+  /// que se va a romper un empaque.
+  Future<void> _agregarMixto() async {
+    if (_lineasMixtas.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Escriba la cantidad de al menos una presentación'),
+        ),
+      );
+      return;
+    }
+
+    final idUbicacion = widget.sourceLocation != null
+        ? int.tryParse(widget.sourceLocation!.id)
+        : null;
+
+    try {
+      for (final linea in _lineasMixtas) {
+        final baseProductData = {
+          'id_producto': widget.product['id'],
+          'id_variante': widget.product['id_variante'],
+          'id_opcion_variante': widget.product['id_opcion_variante'],
+          'id_ubicacion': idUbicacion,
+          'precio_unitario':
+              (widget.product['precio_venta'] as num?)?.toDouble() ?? 0.0,
+          'sku_producto': widget.product['sku'] ?? '',
+          'sku_ubicacion': widget.product['ubicacion'] ?? '',
+          'denominacion': widget.product['denominacion'] ??
+              widget.product['nombre_producto'] ??
+              '',
+          'variante': widget.product['variante'] ?? '',
+          'opcionVariante': widget.product['opcion_variante'] ?? '',
+          'zona_nombre': widget.sourceLocation?.name ?? 'Sin zona',
+        };
+
+        final processed =
+            await PresentationConverter.processProductForExtraction(
+          productId: widget.product['id'].toString(),
+          selectedPresentation: linea.presentacion.toPresentationMap(),
+          cantidad: linea.cantidad,
+          baseProductData: baseProductData,
+        );
+
+        widget.onProductAdded(processed);
+      }
+
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      print('❌ Error procesando extracción mixta: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error procesando producto: $e')),
+        );
+      }
+    }
   }
 
   Widget _buildInfoRow(String label, String value, {Color? valueColor}) {

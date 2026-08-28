@@ -6,7 +6,9 @@ import '../services/promotion_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/price_change_service.dart';
 import '../services/currency_service.dart';
+import '../services/preview_rebalanceo_service.dart';
 import '../utils/price_utils.dart';
+import '../utils/presentacion_cadena_local.dart';
 import '../utils/promotion_rules.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/elaborated_product_chip.dart';
@@ -2991,6 +2993,57 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   }
 
   // Build inventory data for fn_registrar_venta RPC
+  /// Id de la fila `app_dat_producto_presentacion` que el usuario eligió, o
+  /// `null` si no hay ninguna cargada.
+  ///
+  /// FASE 4 presentaciones. Ojo con el nombre de los campos de
+  /// `ProductPresentation`: `id` es la FILA (lo que el ledger guarda en
+  /// `id_presentacion`) e `idPresentacion` es la FK al nomenclador
+  /// (1=Unidad, 3=Caja...). Mandar `idPresentacion` haría que el servidor no
+  /// encontrara la fila y cayera al fallback de la base — el mismo choque de
+  /// nombres que causó el bug de valoración del `19`.
+  int? _presentacionElegidaId(Product product) {
+    return _selectedPresentationsByProduct['${product.id}']?.id;
+  }
+
+  /// Nombre de la presentación elegida ("Bulto").
+  String? _presentacionElegidaNombre(Product product) {
+    return _selectedPresentationsByProduct['${product.id}']
+        ?.presentacion
+        .denominacion;
+  }
+
+  /// Factor RELATIVO A LA BASE de la presentación elegida.
+  ///
+  /// No es `presentation.cantidad` a secas: hay 131 filas `es_base` con factor
+  /// 12/24/30, y ahí `cantidad` no es el equivalente real. El factor relativo es
+  /// `cantidad / cantidad_de_la_base`, que es lo que calcula
+  /// `PresentacionCadenaLocal` replicando `fn_presentaciones_producto`.
+  double? _presentacionElegidaFactorRel(Product product) {
+    final elegida = _selectedPresentationsByProduct['${product.id}'];
+    if (elegida == null) return null;
+
+    final cadena = PresentacionCadenaLocal.resolverDesdeCrudas(
+      _productPresentations
+          .map((p) => {
+                'id': p.id,
+                'cantidad': p.cantidad,
+                'es_base': p.esBase,
+                'presentacion': {
+                  'id': p.idPresentacion,
+                  'denominacion': p.presentacion.denominacion,
+                  'sku_codigo': p.presentacion.skuCodigo,
+                },
+              })
+          .toList(),
+    );
+
+    for (final p in cadena) {
+      if (p.idPresentacion == elegida.id) return p.factorRel;
+    }
+    return null;
+  }
+
   Map<String, dynamic> _buildInventoryData(
     Product product,
     ProductVariant? variant,
@@ -3027,7 +3080,25 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       'id_variante': inventoryMetadata['id_variante'],
       'id_opcion_variante': inventoryMetadata['id_opcion_variante'],
       'id_ubicacion': inventoryMetadata['id_ubicacion'],
-      'id_presentacion': inventoryMetadata['id_presentacion'],
+      // FASE 4 presentaciones: la presentación ELEGIDA en la UI manda sobre la
+      // del inventario.
+      //
+      // `inventoryMetadata['id_presentacion']` es la presentación de la fila de
+      // inventario que resolvió el catálogo — normalmente la base. Si el usuario
+      // eligió "Bulto" en el selector y se manda esa, el servidor registra la
+      // venta contra la presentación equivocada: cantidad en Bultos con el
+      // id_presentacion de la Bolsa.
+      //
+      // Fallback al inventario cuando el producto no tiene presentaciones
+      // cargadas (offline sin caché): el servidor resuelve la base.
+      'id_presentacion': _presentacionElegidaId(product) ??
+          inventoryMetadata['id_presentacion'],
+      // Nombre y factor relativo de la presentación elegida, para que
+      // `OrderService` los congele en el `OrderItem`. Van por aquí porque
+      // `Product` no lleva las presentaciones: la cadena vive en el estado de
+      // esta pantalla (`_productPresentations`), no en el modelo.
+      'presentacion_nombre': _presentacionElegidaNombre(product),
+      'presentacion_factor_rel': _presentacionElegidaFactorRel(product),
       'sku_producto':
           inventoryMetadata['sku_producto'] ?? product.id.toString(),
       'sku_ubicacion': inventoryMetadata['sku_ubicacion'],
@@ -3076,30 +3147,78 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     try {
       final conversionFactor = _getPresentationConversionFactor(currentProduct);
 
+      // ══════════════════════════════════════════════════════════════════════
+      // FASE 4.1 · Preguntar antes de abrir o armar un empaque.
+      //
+      // Se consulta ANTES de tocar el carrito: con cocina activa
+      // `addItemToCurrentOrder` ya descuenta inventario, así que preguntar
+      // después sería preguntar por algo ya hecho.
+      //
+      // La consulta es de solo lectura y NO reserva stock: entre esto y la
+      // venta otra caja puede mover el saldo. El error de la venta se sigue
+      // manejando igual; este diálogo no lo sustituye.
+      // ══════════════════════════════════════════════════════════════════════
+      final invPreview = _buildInventoryData(currentProduct, null);
+      final idPresPreview = (invPreview['id_presentacion'] as num?)?.toInt();
+      final idUbicPreview = (invPreview['id_ubicacion'] as num?)?.toInt();
+      final cantidadPreview = currentProduct.variantes.isEmpty
+          ? selectedQuantity
+          : variantQuantities.values.fold<double>(0, (s, v) => s + v);
+
+      if (idPresPreview != null &&
+          idUbicPreview != null &&
+          cantidadPreview > 0) {
+        final seguir = await PreviewRebalanceoService.confirmarSiHaceFalta(
+          context,
+          idProducto: currentProduct.id,
+          idUbicacion: idUbicPreview,
+          idPresentacion: idPresPreview,
+          cantidad: cantidadPreview,
+        );
+        if (!seguir) return;
+      }
+
       if (currentProduct.variantes.isEmpty) {
         // Producto sin variantes
         if (selectedQuantity > 0) {
           final basePrice = _getEffectiveBasePrice(currentProduct);
           final discountPrice = _calculateDiscountPrice(basePrice);
           final finalPrice = discountPrice ?? basePrice;
-          final cantidadEnUnidadesBase = selectedQuantity * conversionFactor;
+
+          // ══════════════════════════════════════════════════════════════════
+          // FASE 4 presentaciones: la cantidad va EN LA PRESENTACION ELEGIDA.
+          //
+          // Antes se mandaba `selectedQuantity * conversionFactor` (unidades
+          // base) y el precio por unidad base. El servidor guardaba entonces
+          // "24 Unidades" cuando el cajero vendio "2 Cajas": el ledger perdia
+          // el empaque y el criterio central del plan (transferir 2 cajas deja
+          // 2 Cajas, no 24 Unidades) se rompia en la venta.
+          //
+          // Ahora: cantidad = lo que el usuario escribio, precio_unitario =
+          // precio base x factor. El IMPORTE no cambia -- es el mismo producto
+          // de los dos numeros -- asi que ni el total de la orden ni el
+          // arqueo se mueven.
+          // ══════════════════════════════════════════════════════════════════
+          final cantidadEnPresentacion = selectedQuantity;
+          final precioPorPresentacion = finalPrice * conversionFactor;
+          final precioBasePorPresentacion = basePrice * conversionFactor;
 
           // await: con cocina activa esto PIDE el plato (mueve inventario y
           // dispara comanda) y puede fallar por falta de stock. Sin await la
           // excepcion se perderia y el mensaje diria "agregado" de todos modos.
           await orderService.addItemToCurrentOrder(
             producto: currentProduct,
-            cantidad: cantidadEnUnidadesBase,
+            cantidad: cantidadEnPresentacion,
             ubicacionAlmacen: _getLocationName(currentProduct, null),
             inventoryData: _buildInventoryData(currentProduct, null),
-            precioUnitario: finalPrice,
-            precioBase: basePrice,
+            precioUnitario: precioPorPresentacion,
+            precioBase: precioBasePorPresentacion,
             promotionData: _getActivePromotion(),
           );
           _acumularDestinoCocina(orderService, destinosCocina);
-          totalItemsAdded += cantidadEnUnidadesBase;
+          totalItemsAdded += cantidadEnPresentacion;
           addedItems.add(
-            '${currentProduct.denominacion} (x${PriceUtils.formatQuantity(cantidadEnUnidadesBase)})',
+            '${currentProduct.denominacion} (x${PriceUtils.formatQuantity(cantidadEnPresentacion)})',
           );
 
           // Resetear cantidad después de agregar
@@ -3114,22 +3233,27 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
             final basePrice = _getEffectiveBasePrice(currentProduct, entry.key);
             final discountPrice = _calculateDiscountPrice(basePrice);
             final finalPrice = discountPrice ?? basePrice;
-            final cantidadEnUnidadesBase = entry.value * conversionFactor;
+            // FASE 4: igual que la rama sin variantes — cantidad en la
+            // presentación elegida, precio × factor. Ver el comentario largo
+            // arriba.
+            final cantidadEnPresentacion = entry.value;
+            final precioPorPresentacion = finalPrice * conversionFactor;
+            final precioBasePorPresentacion = basePrice * conversionFactor;
 
             await orderService.addItemToCurrentOrder(
               producto: currentProduct,
               variante: entry.key,
-              cantidad: cantidadEnUnidadesBase,
+              cantidad: cantidadEnPresentacion,
               ubicacionAlmacen: _getLocationName(currentProduct, entry.key),
               inventoryData: _buildInventoryData(currentProduct, entry.key),
-              precioUnitario: finalPrice,
-              precioBase: basePrice,
+              precioUnitario: precioPorPresentacion,
+              precioBase: precioBasePorPresentacion,
               promotionData: _getActivePromotion(),
             );
             _acumularDestinoCocina(orderService, destinosCocina);
-            totalItemsAdded += cantidadEnUnidadesBase;
+            totalItemsAdded += cantidadEnPresentacion;
             addedItems.add(
-              '${entry.key.nombre} (x${PriceUtils.formatQuantity(cantidadEnUnidadesBase)})',
+              '${entry.key.nombre} (x${PriceUtils.formatQuantity(cantidadEnPresentacion)})',
             );
           }
         }

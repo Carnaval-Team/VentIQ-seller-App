@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../utils/stock_mixto_formatter.dart';
+
 // Models for JSON fields from RPC function
 class InventorySummary {
   final int totalInventario;
@@ -311,6 +313,25 @@ class InventoryProduct {
               : null,
     );
   }
+
+  /// Cantidad en almacén con su presentación: "4 Cajas" en vez de "4 unidades".
+  ///
+  /// FASE 3 presentaciones. `presentacion` viene de
+  /// `fn_listar_inventario_productos_paged2`, que ya la trae por fila (columna
+  /// 24). Se pluraliza con la misma regla que el SQL.
+  ///
+  /// Ojo: esto es el saldo de UNA presentación, no el mixto del producto. La
+  /// RPC devuelve una fila por (ubicación, variante, presentación), así que un
+  /// producto con cajas y unidades aparece en dos filas.
+  String get cantidadConPresentacion =>
+      '${StockMixtoFormatter.cantidad(cantidadFinal)} '
+      '${StockMixtoFormatter.plural(presentacion, cantidadFinal)}';
+
+  /// Igual que [cantidadConPresentacion] para cualquier cantidad de esta fila
+  /// (disponible, reservado, inicial...).
+  String cantidadEnPresentacion(double valor) =>
+      '${StockMixtoFormatter.cantidad(valor)} '
+      '${StockMixtoFormatter.plural(presentacion, valor)}';
 
   // Convert to legacy InventoryItem for compatibility
   InventoryItem toInventoryItem() {

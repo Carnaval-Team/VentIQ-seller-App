@@ -131,11 +131,18 @@ class PresentationService {
   }) async {
     try {
       // If this is going to be the base presentation, remove base flag from others
+      //
+      // FASE 2.0 presentaciones: el `.eq('es_base', true)` no es cosmetico. El
+      // trigger trg_congelar_factor_presentacion rechaza (SQLSTATE 23001) apagar
+      // es_base en una presentacion con movimientos, y Postgres lo dispara por
+      // FILA AFECTADA — sin ese filtro este UPDATE toca todas las filas del
+      // producto, incluidas las que ya tienen es_base = false, y explota.
       if (esBase) {
         await _supabase
             .from('app_dat_producto_presentacion')
             .update({'es_base': false})
-            .eq('id_producto', productId);
+            .eq('id_producto', productId)
+            .eq('es_base', true);
       }
 
       final response = await _supabase
@@ -163,25 +170,39 @@ class PresentationService {
   static Future<ProductPresentation> updateProductPresentation(ProductPresentation productPresentation) async {
     try {
       // If this is going to be the base presentation, remove base flag from others
+      // (ver la nota de addPresentationToProduct sobre el `.eq('es_base', true)`)
       if (productPresentation.esBase) {
         await _supabase
             .from('app_dat_producto_presentacion')
             .update({'es_base': false})
             .eq('id_producto', productPresentation.idProducto)
+            .eq('es_base', true)
             .neq('id', productPresentation.id);
       }
 
+      // FASE 2.0: los dos campos van en UPDATE separados y cada uno filtrado por
+      // "solo si cambia". Juntos, guardar sin tocar nada reescribia los mismos
+      // valores, la fila contaba como afectada y el trigger la rechazaba con
+      // 23001. Hacerlo asi mantiene el rechazo cuando el cambio es real.
+      await _supabase
+          .from('app_dat_producto_presentacion')
+          .update({'cantidad': productPresentation.cantidad})
+          .eq('id', productPresentation.id)
+          .neq('cantidad', productPresentation.cantidad);
+
+      await _supabase
+          .from('app_dat_producto_presentacion')
+          .update({'es_base': productPresentation.esBase})
+          .eq('id', productPresentation.id)
+          .neq('es_base', productPresentation.esBase);
+
       final response = await _supabase
           .from('app_dat_producto_presentacion')
-          .update({
-            'cantidad': productPresentation.cantidad,
-            'es_base': productPresentation.esBase,
-          })
-          .eq('id', productPresentation.id)
           .select('''
             *,
             presentacion:app_nom_presentacion(*)
           ''')
+          .eq('id', productPresentation.id)
           .single();
 
       return ProductPresentation.fromJson(response);
@@ -210,16 +231,23 @@ class PresentationService {
   static Future<bool> setBasePresentation(int productId, int productPresentationId) async {
     try {
       // Remove base flag from all presentations of this product
+      //
+      // FASE 2.0: filtrado a las que HOY son base y dejan de serlo. Sin los dos
+      // filtros, el trigger trg_congelar_factor_presentacion rechaza con 23001
+      // (dispara por fila afectada, no por fila que cambia de valor).
       await _supabase
           .from('app_dat_producto_presentacion')
           .update({'es_base': false})
-          .eq('id_producto', productId);
+          .eq('id_producto', productId)
+          .eq('es_base', true)
+          .neq('id', productPresentationId);
 
       // Set the selected presentation as base
       await _supabase
           .from('app_dat_producto_presentacion')
           .update({'es_base': true})
-          .eq('id', productPresentationId);
+          .eq('id', productPresentationId)
+          .eq('es_base', false);
 
       return true;
     } catch (e) {

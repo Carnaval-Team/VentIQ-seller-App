@@ -947,7 +947,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
         [
           _buildDetailRow(
             'En almacén',
-            '${item.cantidadFinal.toStringAsFixed(2)} unidades',
+            item.cantidadConPresentacion,
           ),
           const SizedBox(height: 8),
           Center(
@@ -1306,7 +1306,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                                           ),
                                         ),
                                         Text(
-                                          '${item.cantidadFinal.toStringAsFixed(0)} unidades',
+                                          item.cantidadConPresentacion,
                                           style: TextStyle(
                                             fontSize: 18,
                                             fontWeight: FontWeight.bold,
@@ -1393,19 +1393,19 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                             [
                               _buildDetailRow(
                                 'Cantidad Inicial',
-                                '${item.cantidadInicial.toStringAsFixed(2)} unidades',
+                                item.cantidadEnPresentacion(item.cantidadInicial),
                               ),
                               _buildDetailRow(
                                 'Stock Disponible',
-                                '${item.stockDisponible.toStringAsFixed(2)} unidades',
+                                item.cantidadEnPresentacion(item.stockDisponible),
                               ),
                               _buildDetailRow(
                                 'Stock Reservado',
-                                '${item.stockReservado.toStringAsFixed(2)} unidades',
+                                item.cantidadEnPresentacion(item.stockReservado),
                               ),
                               _buildDetailRow(
                                 'Stock Ajustado',
-                                '${item.stockDisponibleAjustado.toStringAsFixed(2)} unidades',
+                                item.cantidadEnPresentacion(item.stockDisponibleAjustado),
                               ),
                             ],
                           ),

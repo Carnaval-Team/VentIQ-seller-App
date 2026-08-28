@@ -18,6 +18,7 @@ import '../services/currency_service.dart';
 import '../services/server_time_service.dart';
 import '../services/mesa_service.dart';
 import '../services/mesa_cuenta_service.dart';
+import '../services/sales_mode_service.dart';
 import '../services/bank_sms_service.dart';
 import '../utils/price_utils.dart';
 import '../utils/promotion_rules.dart';
@@ -227,7 +228,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         if (config != null) {
           // Usar configuración del cache
           _noSolicitarCliente = config['no_solicitar_cliente'] ?? false;
-          _modoRestaurante = config['modo_restaurante'] ?? false;
+          // Ojo: no es el flag de tienda a secas. En una venta de mostrador
+          // (drawer → "Venta de Mostrador") no hay mesa ni comensal, así que el
+          // checkout tiene que pedir cliente como en el flujo normal.
+          _modoRestaurante =
+              (config['modo_restaurante'] ?? false) &&
+              !SalesModeService.mostradorActivo;
           _solicitarImagenOperacion =
               config['solicitar_imagen_operacion'] ?? false;
           print(
@@ -242,9 +248,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             storeId,
           );
           _noSolicitarCliente = noSolicitar;
-          _modoRestaurante = await StoreConfigService.getModoRestaurante(
-            storeId,
-          );
+          _modoRestaurante =
+              await StoreConfigService.getModoRestaurante(storeId) &&
+              !SalesModeService.mostradorActivo;
           _solicitarImagenOperacion =
               await StoreConfigService.getSolicitarImagenOperacion(storeId);
           print(
@@ -2067,6 +2073,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 'id_medio_pago': item.paymentMethod?.id,
                 'metodo_pago': item.paymentMethod?.denominacion,
                 'inventory_metadata': item.inventoryData,
+                // FASE 4 presentaciones: `cantidad` está en la presentación
+                // elegida, así que la orden pendiente tiene que llevar cuál es.
+                // Sin esto, al sincronizar horas después el ítem se sube sin
+                // presentación y el servidor cae al fallback de la base: "2"
+                // se interpreta como 2 Bolsas cuando eran 2 Bultos.
+                //
+                // Nombre y factor van también porque el resumen de cierre se
+                // arma offline y no puede consultar la cadena.
+                'id_presentacion': item.idPresentacion,
+                'presentacion_nombre': item.presentacionNombre,
+                'presentacion_factor': item.presentacionFactor,
               };
             }).toList(),
         'desglose_pagos': paymentBreakdown.values.toList(),
@@ -2126,18 +2143,25 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           final locationId =
               (inventoryMetadata['id_ubicacion'] as num?)?.toInt();
 
+          // FASE 5: el delta va sobre la PRESENTACION vendida y sin truncar.
+          // `item.cantidad` esta en la presentacion elegida desde la Fase 4, asi
+          // que aplicarlo a la base descontaria Bolsas por Bultos; y `.toInt()`
+          // se comia las ventas fraccionadas (0,5 kg -> 0).
           await _userPreferencesService.updateProductInventoryInCache(
             item.producto.id,
             variantId,
-            item.cantidad.toInt(),
+            item.cantidad,
             inventoryId: inventoryId,
             locationId: locationId,
+            presentationId: item.idPresentacion ??
+                (inventoryMetadata['id_presentacion'] as num?)?.toInt(),
           );
         } else {
           await _userPreferencesService.updateProductInventoryInCache(
             item.producto.id,
             null,
-            item.cantidad.toInt(),
+            item.cantidad,
+            presentationId: item.idPresentacion,
           );
         }
       }
@@ -2168,12 +2192,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       // Si era flujo de mesa, volvemos a la pantalla de la mesa.
       final idMesaOffline = _mesaSeleccionada?.id;
-      _orderService.clearActiveMesa();
-      // En offline no pasamos por finalizeOrderWithDetails (donde
-      // OrderService llama a marcarCerrada + clearActive), así que limpiamos
-      // aquí la cuenta activa para que NavigationHelper.goHome regrese a
-      // /mesas en vez de a /categories.
-      MesaCuentaService().clearActive();
+      // En una venta de mostrador no se toca el contexto de mesa: la cuenta
+      // activa pertenece a otro comensal y limpiarla le borraría al mesero el
+      // atajo a su nota abierta.
+      if (!SalesModeService.mostradorActivo) {
+        _orderService.clearActiveMesa();
+        // En offline no pasamos por finalizeOrderWithDetails (donde
+        // OrderService llama a marcarCerrada + clearActive), así que limpiamos
+        // aquí la cuenta activa para que NavigationHelper.goHome regrese a
+        // /mesas en vez de a /categories.
+        MesaCuentaService().clearActive();
+      }
       if (_modoRestaurante && idMesaOffline != null) {
         Navigator.pushNamedAndRemoveUntil(
           context,
@@ -2289,12 +2318,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         // Si estábamos en flujo de mesa, volver a la pantalla de la mesa
         // (más natural que ir a /orders global).
         final idMesa = _mesaSeleccionada?.id;
-        _orderService.clearActiveMesa();
-        // Belt-and-suspenders: OrderService.finalizeOrderWithDetails ya hace
-        // clearActive() tras marcarCerrada, pero si esa rama no se ejecutó
-        // por alguna razón (cuenta no asociada, error silencioso), aquí lo
-        // garantizamos para que el Home vuelva a /mesas.
-        MesaCuentaService().clearActive();
+        // Igual que en offline: la venta de mostrador no arrastra la mesa.
+        if (!SalesModeService.mostradorActivo) {
+          _orderService.clearActiveMesa();
+          // Belt-and-suspenders: OrderService.finalizeOrderWithDetails ya hace
+          // clearActive() tras marcarCerrada, pero si esa rama no se ejecutó
+          // por alguna razón (cuenta no asociada, error silencioso), aquí lo
+          // garantizamos para que el Home vuelva a /mesas.
+          MesaCuentaService().clearActive();
+        }
         if (_modoRestaurante && idMesa != null) {
           Navigator.pushNamedAndRemoveUntil(
             context,

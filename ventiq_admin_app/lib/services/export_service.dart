@@ -484,7 +484,10 @@ class ExportService {
                     style: pw.TextStyle(font: regularFont),
                   ),
                   pw.Text(
-                    '• Stock total: ${products.fold<double>(0, (sum, p) => sum + p.cantidadFinal).toStringAsFixed(0)} unidades',
+                    // FASE 3 presentaciones: no se puede decir "unidades".
+                    // Las filas vienen por presentación, así que este total
+                    // suma Cajas con Unidades. Se declara el alcance real.
+                    '• Stock total: ${products.fold<double>(0, (sum, p) => sum + p.cantidadFinal).toStringAsFixed(0)} en ${products.length} línea(s) de presentación',
                     style: pw.TextStyle(font: regularFont),
                   ),
                 ],
@@ -927,7 +930,9 @@ class ExportService {
       'Total de productos: ${products.length}',
       'Productos con stock: ${products.where((p) => p.cantidadFinal > 0).length}',
       'Productos sin stock: ${products.where((p) => p.cantidadFinal <= 0).length}',
-      'Stock total: ${products.fold<double>(0, (sum, p) => sum + p.cantidadFinal).toStringAsFixed(0)} unidades',
+      // FASE 3 presentaciones: ver nota en el PDF. Cada fila es una
+      // presentación distinta; sumarlas no da "unidades" de nada.
+      'Stock total: ${products.fold<double>(0, (sum, p) => sum + p.cantidadFinal).toStringAsFixed(0)} en ${products.length} línea(s) de presentación',
     ];
 
     for (final summary in summaryData) {
@@ -2225,7 +2230,7 @@ class ExportService {
       CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
     );
     totalStockCell.value = TextCellValue(
-      '• Stock total: ${products.fold<double>(0, (sum, p) => sum + p.cantidadFinal).toStringAsFixed(0)} unidades',
+      '• Stock total: ${products.fold<double>(0, (sum, p) => sum + p.cantidadFinal).toStringAsFixed(0)} en ${products.length} línea(s) de presentación',
     );
   }
 

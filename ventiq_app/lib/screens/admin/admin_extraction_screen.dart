@@ -4,6 +4,9 @@ import 'package:flutter/services.dart';
 import '../../services/admin_inventory_service.dart';
 import '../../services/admin_ticket_printer_service.dart';
 import '../../services/user_preferences_service.dart';
+import '../../utils/presentacion_cadena_local.dart';
+import '../../utils/presentation_selection.dart';
+import '../../widgets/captura_mixta_presentacion.dart';
 
 /// Extracción de mercancía (offline-first).
 class AdminExtractionScreen extends StatefulWidget {
@@ -28,6 +31,15 @@ class _AdminExtractionScreenState extends State<AdminExtractionScreen> {
   bool _saving = false;
   bool _searching = false;
   bool _loadingMotives = true;
+
+  // ── FASE 2 presentaciones ────────────────────────────────────────────────
+  // Las lineas capturadas por presentacion. Vacio = el usuario no escribio
+  // nada todavia (o el producto no tiene cadena en el cache).
+  List<LineaPresentacion> _lineasMixtas = [];
+
+  /// Si el producto elegido tiene cadena en el cache. Se calcula UNA vez al
+  /// seleccionar, no en cada build: resolver() ordena y divide toda la cadena.
+  bool _tieneCadena = false;
 
   @override
   void initState() {
@@ -78,6 +90,31 @@ class _AdminExtractionScreenState extends State<AdminExtractionScreen> {
   void _addLine() {
     final p = _selected;
     if (p == null) return;
+
+    // ── FASE 2: una linea por presentacion con cantidad ────────────────────
+    // El widget resuelve la cadena desde el cache; si el producto la tiene,
+    // _lineasMixtas trae la presentacion REAL elegida por el usuario en vez del
+    // null que mandaba PresentationSelection.
+    if (_lineasMixtas.isNotEmpty) {
+      setState(() {
+        for (final linea in _lineasMixtas) {
+          _lines.add({
+            'id_producto': p['id'],
+            'id_variante': null,
+            'id_presentacion': linea.presentacion.idPresentacion,
+            'cantidad': linea.cantidad,
+            'denominacion': p['denominacion'],
+            'presentacion_nombre': linea.presentacion.nombre,
+          });
+        }
+        _limpiarSeleccion();
+      });
+      return;
+    }
+
+    // Fallback: producto sin cadena en el cache. Se manda null y la RPC resuelve
+    // la base con fn_presentaciones_producto (cascada correcta, aguanta los 9
+    // productos sin fila es_base).
     final qty = double.tryParse(_qtyCtrl.text.replaceAll(',', '.')) ?? 0;
     if (qty <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -86,19 +123,7 @@ class _AdminExtractionScreenState extends State<AdminExtractionScreen> {
       return;
     }
 
-    int? presentationId;
-    final detalles = p['detalles_completos'];
-    if (detalles is Map) {
-      final presentaciones = detalles['presentaciones'];
-      if (presentaciones is List && presentaciones.isNotEmpty) {
-        final base = presentaciones.cast<Map>().firstWhere(
-              (x) => x['es_base'] == true,
-              orElse: () => presentaciones.first as Map,
-            );
-        presentationId = (base['id'] as num?)?.toInt() ??
-            (base['id_presentacion'] as num?)?.toInt();
-      }
-    }
+    final int? presentationId = PresentationSelection.forInventoryPayload();
 
     setState(() {
       _lines.add({
@@ -108,11 +133,17 @@ class _AdminExtractionScreenState extends State<AdminExtractionScreen> {
         'cantidad': qty,
         'denominacion': p['denominacion'],
       });
-      _selected = null;
-      _searchCtrl.clear();
-      _searchResults = [];
-      _qtyCtrl.text = '1';
+      _limpiarSeleccion();
     });
+  }
+
+  void _limpiarSeleccion() {
+    _selected = null;
+    _lineasMixtas = [];
+    _tieneCadena = false;
+    _searchCtrl.clear();
+    _searchResults = [];
+    _qtyCtrl.text = '1';
   }
 
   Future<void> _save() async {
@@ -271,6 +302,9 @@ class _AdminExtractionScreenState extends State<AdminExtractionScreen> {
                 subtitle: Text('Stock: ${p['cantidad'] ?? 0}'),
                 onTap: () => setState(() {
                   _selected = p;
+                  _lineasMixtas = [];
+                  _tieneCadena =
+                      PresentacionCadenaLocal.resolver(p).isNotEmpty;
                   _searchCtrl.text = p['denominacion']?.toString() ?? '';
                   _searchResults = [];
                 }),
@@ -278,37 +312,66 @@ class _AdminExtractionScreenState extends State<AdminExtractionScreen> {
             ),
           if (_selected != null) ...[
             const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _qtyCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Cantidad',
-                      border: OutlineInputBorder(),
+            // FASE 2: un campo por presentacion. Si el producto no tiene cadena
+            // en el cache, el widget lo avisa y abajo queda el campo unico.
+            CapturaMixtaPresentacion(
+              key: ValueKey('ext_${_selected!['id']}'),
+              producto: _selected!,
+              avisarRebalanceo: true,
+              onChanged: (lineas) => setState(() => _lineasMixtas = lineas),
+            ),
+            if (!_tieneCadena) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _qtyCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Cantidad',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                      ],
                     ),
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
-                    ],
                   ),
-                ),
-                const SizedBox(width: 8),
-                FilledButton(
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: _addLine,
+                    child: const Text('Agregar'),
+                  ),
+                ],
+              ),
+            ] else ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
                   onPressed: _addLine,
                   child: const Text('Agregar'),
                 ),
-              ],
-            ),
+              ),
+            ],
           ],
           const SizedBox(height: 12),
           ..._lines.asMap().entries.map((e) {
             final i = e.key;
             final l = e.value;
+            final cant = (l['cantidad'] as num?)?.toDouble() ?? 0;
+            final pres = l['presentacion_nombre']?.toString();
             return ListTile(
               title: Text(l['denominacion']?.toString() ?? 'Producto'),
-              subtitle: Text('Cantidad: ${l['cantidad']}'),
+              // Sin presentacion conocida se muestra la cantidad sola: el
+              // ledger no sabe en que unidad esta esa linea.
+              subtitle: Text(
+                pres == null || pres.isEmpty
+                    ? 'Cantidad: ${FormatoPresentacion.cantidad(cant)}'
+                    : '${FormatoPresentacion.cantidad(cant)} '
+                        '${FormatoPresentacion.plural(pres, cant)}',
+              ),
               trailing: IconButton(
                 icon: const Icon(Icons.delete_outline),
                 onPressed: () => setState(() => _lines.removeAt(i)),

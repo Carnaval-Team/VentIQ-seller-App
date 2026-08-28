@@ -3,7 +3,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_colors.dart';
 import '../models/product.dart';
 import '../models/warehouse.dart';
+import '../services/currency_service.dart';
+import '../services/presentacion_cadena_service.dart';
 import '../utils/presentation_converter.dart';
+import 'cantidad_mixta_input.dart';
 import 'price_currency_converter_widget.dart';
 import 'presentacion_equivalencia_widget.dart';
 
@@ -51,6 +54,21 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
   double? _finalPriceInUSD;
   String _finalCurrency = 'USD';
 
+  // ── FASE 2 presentaciones: captura mixta ─────────────────────────────────
+  // El modo mixto permite entrar "4 cajas Y 4 unidades" en un solo formulario,
+  // que es el objetivo de la fase. El modo simple (un dropdown + una cantidad)
+  // se conserva para productos de una sola presentacion y como salida si algo
+  // falla al leer la cadena.
+  bool _modoMixto = false;
+  List<PresentacionCadena> _cadena = [];
+  List<LineaMixta> _lineasMixtas = [];
+
+  /// Moneda en la que el usuario escribe los precios del modo mixto.
+  String _monedaEntradaMixta = 'USD';
+
+  /// Tasa USD→CUP para convertir los precios mixtos. Se lee una vez.
+  double? _usdToCupRate;
+
   @override
   void initState() {
     super.initState();
@@ -62,8 +80,39 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
     print('  - sku.isEmpty: ${widget.product.sku.isEmpty}');
 
     _finalCurrency = widget.invoiceCurrency;
+    _monedaEntradaMixta = widget.invoiceCurrency;
     _initializeVariantsAndPresentations();
     _loadLastPurchasePrice();
+    _cargarCadenaMixta();
+  }
+
+  /// Lee la cadena de presentaciones y decide si ofrecer captura mixta.
+  ///
+  /// Solo se ofrece con 2+ presentaciones: con una sola, el modo mixto seria un
+  /// formulario mas complicado para hacer exactamente lo mismo.
+  Future<void> _cargarCadenaMixta() async {
+    final idProducto = int.tryParse(widget.product.id);
+    if (idProducto == null) return;
+
+    final cadena = await PresentacionCadenaService.cadena(idProducto);
+    if (!mounted) return;
+
+    setState(() {
+      _cadena = cadena;
+      // Por defecto arranca en mixto cuando hay cadena real: es lo que la fase
+      // vino a habilitar. El usuario puede volver al modo simple.
+      _modoMixto = cadena.length > 1;
+    });
+
+    if (cadena.length > 1) {
+      // La tasa solo hace falta si el usuario va a escribir precios en CUP.
+      try {
+        final rate = await CurrencyService.getEffectiveUsdToCupRate();
+        if (mounted) setState(() => _usdToCupRate = rate);
+      } catch (e) {
+        print('⚠️ No se pudo leer la tasa USD→CUP: $e');
+      }
+    }
   }
 
   @override
@@ -254,6 +303,12 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
   }
 
   void _submitForm() async {
+    // ── Modo mixto: una linea por presentacion con cantidad ─────────────────
+    if (_modoMixto) {
+      await _submitMixto();
+      return;
+    }
+
     if (_formKey.currentState!.validate()) {
       final cantidad =
           double.tryParse(
@@ -271,7 +326,9 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
           double.tryParse(_descuentoMontoController.text) ?? 0;
       final bonificacionCantidad =
           double.tryParse(_bonificacionCantidadController.text) ?? 0;
-      final monedaGuardar = _finalCurrency ?? _getCurrentInputCurrency();
+      // _finalCurrency nunca es null (arranca en 'USD' y el convertidor solo lo
+      // reasigna), asi que el `??` de antes era codigo muerto.
+      final monedaGuardar = _finalCurrency;
 
       try {
         final baseProductData = {
@@ -304,16 +361,111 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
             );
 
         widget.onProductAdded(productData);
-        Navigator.of(context).pop();
+        if (mounted) Navigator.of(context).pop();
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al agregar producto: $e'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        _mostrarError('Error al agregar producto: $e');
       }
     }
+  }
+
+  /// Emite UNA linea por presentacion con cantidad.
+  ///
+  /// FASE 2: es el punto donde "4 cajas + 4 unidades" deja de ser un solo
+  /// registro aplanado y pasa a ser dos lineas, cada una con su
+  /// `id_presentacion` y su precio. La pantalla de recepcion ya deduplica por
+  /// `id_producto + id_presentacion`, asi que alcanza con llamar
+  /// `onProductAdded` una vez por linea.
+  Future<void> _submitMixto() async {
+    if (_lineasMixtas.isEmpty) {
+      _mostrarError('Escriba la cantidad de al menos una presentación');
+      return;
+    }
+
+    // Todas las lineas necesitan precio: sin el, la recepcion entra con costo 0
+    // y arruina el precio_promedio ponderado.
+    final sinPrecio = _lineasMixtas
+        .where((l) => (l.precioUnitario ?? 0) <= 0)
+        .map((l) => l.presentacion.nombre)
+        .toList();
+
+    if (sinPrecio.isNotEmpty) {
+      _mostrarError('Falta el precio de: ${sinPrecio.join(', ')}');
+      return;
+    }
+
+    final precioReferencia =
+        double.tryParse(_precioReferenciaController.text) ?? 0;
+    final descuentoPorcentaje =
+        double.tryParse(_descuentoPorcentajeController.text) ?? 0;
+    final descuentoMonto = double.tryParse(_descuentoMontoController.text) ?? 0;
+    final bonificacionCantidad =
+        double.tryParse(_bonificacionCantidadController.text) ?? 0;
+
+    try {
+      for (final linea in _lineasMixtas) {
+        // Los precios se guardan siempre en USD (igual que el modo simple, que
+        // delega esto en PriceCurrencyConverterWidget).
+        final precioUSD = _aUSD(linea.precioUnitario!);
+
+        final baseProductData = <String, dynamic>{
+          'id_producto': widget.product.id,
+          'precio_referencia': precioReferencia,
+          // Los datos avanzados son de la operacion, no de la presentacion: se
+          // aplican una sola vez, en la primera linea, para no duplicar
+          // descuentos ni bonificaciones al partir en varias lineas.
+          'descuento_porcentaje':
+              linea == _lineasMixtas.first ? descuentoPorcentaje : 0,
+          'descuento_monto': linea == _lineasMixtas.first ? descuentoMonto : 0,
+          'bonificacion_cantidad':
+              linea == _lineasMixtas.first ? bonificacionCantidad : 0,
+          'denominacion': widget.product.name,
+          'sku_producto': widget.product.sku,
+          'moneda_precio': 'USD',
+        };
+
+        if (_selectedVariant != null) {
+          baseProductData['id_variante'] = _selectedVariant!['id'];
+          if (_selectedVariant!['opcion'] != null) {
+            baseProductData['id_opcion_variante'] =
+                _selectedVariant!['opcion']['id'];
+          }
+          baseProductData['variant_info'] = _selectedVariant!;
+        }
+
+        final productData =
+            await PresentationConverter.processProductForReception(
+          productId: widget.product.id,
+          selectedPresentation: linea.presentacion.toPresentationMap(),
+          cantidad: linea.cantidad,
+          precioUnitario: precioUSD,
+          baseProductData: baseProductData,
+        );
+
+        widget.onProductAdded(productData);
+      }
+
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      _mostrarError('Error al agregar producto: $e');
+    }
+  }
+
+  /// Convierte a USD el precio escrito en la moneda de entrada del modo mixto.
+  double _aUSD(double monto) {
+    if (_monedaEntradaMixta == 'USD') return monto;
+    if (_usdToCupRate != null && _usdToCupRate! > 0) {
+      return monto / _usdToCupRate!;
+    }
+    // Sin tasa no se inventa una conversion: se guarda el valor tal cual y el
+    // usuario ve el aviso en la UI.
+    return monto;
+  }
+
+  void _mostrarError(String mensaje) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(mensaje), backgroundColor: AppColors.error),
+    );
   }
 
   @override
@@ -421,18 +573,21 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
                       _buildInputSection(),
                       SizedBox(height: 16),
 
-                      // ← NUEVO: Convertidor de moneda integrado
-                      PriceCurrencyConverterWidget(
-                        invoiceCurrency: widget.invoiceCurrency,
-                        priceController: _precioUnitarioController,
-                        onPriceConverted: (convertedPrice, currency) {
-                          print('💱 Precio convertido a USD: $convertedPrice');
-                          setState(() {
-                            _finalPriceInUSD = convertedPrice;
-                            _finalCurrency = currency; // Siempre 'USD'
-                          });
-                        },
-                      ),
+                      // El convertidor de moneda solo aplica al modo simple: en
+                      // el mixto hay N precios y la conversion la hace _aUSD con
+                      // el selector propio del bloque mixto.
+                      if (!_modoMixto)
+                        PriceCurrencyConverterWidget(
+                          invoiceCurrency: widget.invoiceCurrency,
+                          priceController: _precioUnitarioController,
+                          onPriceConverted: (convertedPrice, currency) {
+                            print('💱 Precio convertido a USD: $convertedPrice');
+                            setState(() {
+                              _finalPriceInUSD = convertedPrice;
+                              _finalCurrency = currency; // Siempre 'USD'
+                            });
+                          },
+                        ),
                       SizedBox(height: 24),
 
                       // Advanced options
@@ -548,10 +703,204 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
     );
   }
 
-  Widget _buildInputSection() {
+  /// Dropdown de variante. Extraido para reusarlo en los dos modos.
+  Widget _buildVariantDropdown() {
+    return DropdownButtonFormField<Map<String, dynamic>>(
+      value: _selectedVariant,
+      decoration: InputDecoration(
+        labelText: 'Variante',
+        border: OutlineInputBorder(
+          borderSide: BorderSide(color: AppColors.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderSide: BorderSide(color: AppColors.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderSide: BorderSide(color: AppColors.primary, width: 2),
+        ),
+        isDense: true,
+        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      ),
+      isExpanded: true,
+      items: [
+        DropdownMenuItem<Map<String, dynamic>>(
+          value: null,
+          child: Text(
+            'Sin variante',
+            style: TextStyle(color: AppColors.textSecondary),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        ..._availableVariants.map((variant) {
+          final atributo =
+              variant['atributo']?['denominacion'] ??
+              variant['atributo']?['label'] ??
+              '';
+          final opcion = variant['opcion']?['valor'] ?? '';
+          return DropdownMenuItem<Map<String, dynamic>>(
+            value: variant,
+            child: Text(
+              '$atributo - $opcion',
+              style: TextStyle(color: AppColors.textPrimary),
+              overflow: TextOverflow.ellipsis,
+            ),
+          );
+        }).toList(),
+      ],
+      onChanged: (value) => setState(() => _selectedVariant = value),
+    );
+  }
+
+  /// Alterna entre captura mixta y captura de una sola presentacion.
+  ///
+  /// El modo simple se conserva porque para entrar 10 cajas y nada mas, el mixto
+  /// es un formulario mas grande sin beneficio. Cambiar de modo descarta lo
+  /// escrito en el otro, asi que se avisa.
+  Widget _buildSelectorModo() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.surface.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            _modoMixto ? Icons.view_list : Icons.looks_one,
+            size: 18,
+            color: AppColors.primary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _modoMixto
+                  ? 'Varias presentaciones a la vez'
+                  : 'Una sola presentación',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _modoMixto = !_modoMixto;
+                // Al salir del mixto se descartan las lineas: dejarlas
+                // guardaria cantidades que el formulario simple ya no muestra.
+                _lineasMixtas = [];
+              });
+            },
+            child: Text(
+              _modoMixto ? 'Cambiar a una' : 'Cambiar a varias',
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Moneda en la que se escriben los precios del modo mixto.
+  ///
+  /// El modo simple usa PriceCurrencyConverterWidget, que maneja UN precio. Con
+  /// N precios ese widget no sirve, asi que la eleccion de moneda se hace una
+  /// vez para todas las filas y la conversion la hace _aUSD.
+  Widget _buildSelectorMonedaMixta() {
+    final sinTasa = _monedaEntradaMixta == 'CUP' &&
+        (_usdToCupRate == null || _usdToCupRate! <= 0);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Row(
+          children: [
+            const Text(
+              'Precios en:',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+            const SizedBox(width: 8),
+            ...['USD', 'CUP'].map(
+              (m) => Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: ChoiceChip(
+                  label: Text(m, style: const TextStyle(fontSize: 12)),
+                  selected: _monedaEntradaMixta == m,
+                  onSelected: (_) =>
+                      setState(() => _monedaEntradaMixta = m),
+                ),
+              ),
+            ),
+            if (_monedaEntradaMixta == 'CUP' &&
+                _usdToCupRate != null &&
+                _usdToCupRate! > 0)
+              Expanded(
+                child: Text(
+                  '1 USD = ${_usdToCupRate!.toStringAsFixed(2)} CUP',
+                  textAlign: TextAlign.right,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        if (sinTasa)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'No se pudo leer la tasa USD→CUP: los precios se guardarían sin '
+              'convertir. Use USD o reintente.',
+              style: TextStyle(fontSize: 11, color: Colors.orange.shade800),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildInputSection() {
+    if (_modoMixto) {
+      // El modo mixto solo se activa cuando la cadena vino de la RPC, y para eso
+      // el id ya tuvo que parsearse bien en _cargarCadenaMixta.
+      final idProducto = int.parse(widget.product.id);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSelectorModo(),
+          const SizedBox(height: 12),
+
+          // Variante primero: cambia el saldo que se muestra por presentacion.
+          if (_availableVariants.isNotEmpty) ...[
+            _buildVariantDropdown(),
+            const SizedBox(height: 16),
+          ],
+
+          _buildSelectorMonedaMixta(),
+          const SizedBox(height: 12),
+
+          CantidadMixtaInput(
+            // La key fuerza a reconstruir el estado interno cuando cambia la
+            // moneda: los precios ya escritos estaban en la moneda anterior y
+            // dejarlos seria cambiarles el significado en silencio.
+            key: ValueKey('mixto_$idProducto\_$_monedaEntradaMixta'),
+            idProducto: idProducto,
+            capturarPrecio: true,
+            monedaLabel: _monedaEntradaMixta,
+            precioSugeridoBase: _lastPurchasePrice,
+            onChanged: (lineas) => setState(() => _lineasMixtas = lineas),
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_cadena.length > 1) ...[
+          _buildSelectorModo(),
+          const SizedBox(height: 12),
+        ],
+
         // Presentation Selection
         if (_availablePresentations.isNotEmpty) ...[
           DropdownButtonFormField<Map<String, dynamic>>(
@@ -603,50 +952,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
 
         // Variant Selection
         if (_availableVariants.isNotEmpty) ...[
-          DropdownButtonFormField<Map<String, dynamic>>(
-            value: _selectedVariant,
-            decoration: InputDecoration(
-              labelText: 'Variante',
-              border: OutlineInputBorder(
-                borderSide: BorderSide(color: AppColors.border),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderSide: BorderSide(color: AppColors.border),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderSide: BorderSide(color: AppColors.primary, width: 2),
-              ),
-              isDense: true,
-              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            ),
-            isExpanded: true,
-            items: [
-              DropdownMenuItem<Map<String, dynamic>>(
-                value: null,
-                child: Text(
-                  'Sin variante',
-                  style: TextStyle(color: AppColors.textSecondary),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              ..._availableVariants.map((variant) {
-                final atributo =
-                    variant['atributo']?['denominacion'] ??
-                    variant['atributo']?['label'] ??
-                    '';
-                final opcion = variant['opcion']?['valor'] ?? '';
-                return DropdownMenuItem<Map<String, dynamic>>(
-                  value: variant,
-                  child: Text(
-                    '$atributo - $opcion',
-                    style: TextStyle(color: AppColors.textPrimary),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                );
-              }).toList(),
-            ],
-            onChanged: (value) => setState(() => _selectedVariant = value),
-          ),
+          _buildVariantDropdown(),
           SizedBox(height: 16),
         ],
 
@@ -890,11 +1196,5 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
         ),
       ],
     );
-  }
-
-  String _getCurrentInputCurrency() {
-    // Obtener la moneda actual del PriceCurrencyConverterWidget
-    // Por ahora, usar la moneda de factura como fallback
-    return widget.invoiceCurrency;
   }
 }

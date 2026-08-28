@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 
 import '../../services/admin_inventory_service.dart';
 import '../../services/admin_ticket_printer_service.dart';
+import '../../utils/presentacion_cadena_local.dart';
+import '../../utils/presentation_selection.dart';
 
 /// Ajuste de inventario (offline-first).
 class AdminAdjustmentScreen extends StatefulWidget {
@@ -23,6 +25,28 @@ class _AdminAdjustmentScreenState extends State<AdminAdjustmentScreen> {
   Map<String, dynamic>? _selected;
   bool _saving = false;
   bool _searching = false;
+
+  // ── FASE 2 presentaciones ────────────────────────────────────────────────
+  // El ajuste es DISTINTO de recepcion/extraccion: no se capturan varias
+  // presentaciones a la vez, porque "cantidad nueva" es un conteo fisico de UNA
+  // presentacion concreta. Sumar 2 cajas y 3 unidades en un ajuste no significa
+  // nada: hay que decir cuanto hay de cada una, por separado.
+  //
+  // Asi que aca la cadena sirve para dos cosas: elegir CUAL presentacion se
+  // esta contando (antes se mandaba null y el SQL adivinaba la base), y mostrar
+  // la equivalencia para que el operador sepa en que esta contando.
+  List<PresentacionLocal> _cadena = [];
+  int? _idPresentacionElegida;
+
+  PresentacionLocal? get _presentacionElegida {
+    for (final p in _cadena) {
+      if (p.idPresentacion == _idPresentacionElegida) return p;
+    }
+    return null;
+  }
+
+  String get _nombreBase =>
+      PresentacionCadenaLocal.base(_cadena)?.nombre ?? 'unidad';
 
   @override
   void dispose() {
@@ -48,8 +72,14 @@ class _AdminAdjustmentScreenState extends State<AdminAdjustmentScreen> {
   }
 
   void _select(Map<String, dynamic> p) {
+    final cadena = PresentacionCadenaLocal.resolver(p);
     setState(() {
       _selected = p;
+      _cadena = cadena;
+      // Arranca en la base: es la presentacion en la que se cuenta por defecto y
+      // coincide con lo que hacia el SQL cuando se le mandaba null.
+      _idPresentacionElegida =
+          PresentacionCadenaLocal.base(cadena)?.idPresentacion;
       _searchCtrl.text = p['denominacion']?.toString() ?? '';
       _searchResults = [];
       _qtyCtrl.text = '${p['cantidad'] ?? 0}';
@@ -85,16 +115,14 @@ class _AdminAdjustmentScreenState extends State<AdminAdjustmentScreen> {
                 ? (first['ubicacion']['id'] as num?)?.toInt()
                 : null);
       }
-      final presentaciones = detalles['presentaciones'];
-      if (presentaciones is List && presentaciones.isNotEmpty) {
-        final base = presentaciones.cast<Map>().firstWhere(
-              (x) => x['es_base'] == true,
-              orElse: () => presentaciones.first as Map,
-            );
-        presentationId = (base['id'] as num?)?.toInt() ??
-            (base['id_presentacion'] as num?)?.toInt();
-      }
     }
+
+    // FASE 2: la presentacion la elige el usuario en el dropdown, resuelta desde
+    // el cache con la cascada del SQL. Si el producto no tiene cadena cacheada
+    // se manda null y la resuelve fn_insertar_ajuste_inventario2 (que ademas LEE
+    // el saldo real en vez de creerle a cantidadAnterior).
+    presentationId =
+        _idPresentacionElegida ?? PresentationSelection.forInventoryPayload();
 
     setState(() => _saving = true);
     try {
@@ -198,6 +226,37 @@ class _AdminAdjustmentScreenState extends State<AdminAdjustmentScreen> {
               'Stock actual: ${_selected!['cantidad'] ?? 0}',
               style: TextStyle(color: Colors.grey[700]),
             ),
+
+            // ── FASE 2: en qué presentación se está contando ───────────────
+            if (_cadena.length > 1) ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<int>(
+                value: _idPresentacionElegida,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Presentación que se cuenta *',
+                  border: OutlineInputBorder(),
+                  helperText: 'El ajuste solo toca esta presentación',
+                ),
+                items: _cadena
+                    .map(
+                      (p) => DropdownMenuItem<int>(
+                        value: p.idPresentacion,
+                        child: Text(
+                          p.esBase
+                              ? '${p.nombre} (base)'
+                              : '${p.nombre} = '
+                                  '${FormatoPresentacion.cantidad(p.factorRel)} '
+                                  '${FormatoPresentacion.plural(_nombreBase, p.factorRel)}',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (v) =>
+                    setState(() => _idPresentacionElegida = v),
+              ),
+            ],
           ],
           const SizedBox(height: 12),
           TextField(
@@ -206,9 +265,13 @@ class _AdminAdjustmentScreenState extends State<AdminAdjustmentScreen> {
             inputFormatters: [
               FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
             ],
-            decoration: const InputDecoration(
-              labelText: 'Cantidad nueva',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              // La etiqueta dice la unidad para que nadie cuente cajas creyendo
+              // que anota unidades.
+              labelText: _presentacionElegida == null
+                  ? 'Cantidad nueva'
+                  : 'Cantidad nueva (${_presentacionElegida!.nombre})',
+              border: const OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 12),

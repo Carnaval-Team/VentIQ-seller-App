@@ -1086,7 +1086,12 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                     if (val == null || val.trim().isEmpty) return null;
                     final q = double.tryParse(val.trim());
                     if (q == null || q < 0) return 'Inválido';
-                    if (q > stock) return '>stock';
+                    // FASE 2: pedir mas de lo que hay SUELTO en esta
+                    // presentacion ya no es un error. Si falta saldo,
+                    // fn_descontar_con_rebalanceo abre el empaque mayor (o
+                    // empaqueta sueltas) y lo deja registrado en el kardex.
+                    // Bloquear aca rechazaria traslados que el servidor si
+                    // puede cumplir; el aviso lo da la columna de al lado.
                     return null;
                   },
                   onChanged: (_) => setState(() {}),
@@ -1100,14 +1105,29 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
             child: Builder(builder: (context) {
               final qty = double.tryParse(ctrl.text.trim()) ?? 0;
               final remaining = stock - qty;
-              final isValid = qty >= 0 && qty <= stock;
+
+              // Se pide mas de lo que hay suelto: el servidor va a convertir.
+              if (qty > stock) {
+                return Tooltip(
+                  message:
+                      'Hay $stock suelto en esta presentación. Al confirmar, el '
+                      'sistema convertirá desde otra presentación y lo dejará '
+                      'registrado.',
+                  child: Icon(
+                    Icons.auto_awesome,
+                    size: 18,
+                    color: Colors.blue.shade700,
+                  ),
+                );
+              }
+
               return Text(
-                isValid ? remaining.toInt().toString() : '—',
+                qty >= 0 ? remaining.toInt().toString() : '—',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
-                  color: !isValid
+                  color: qty < 0
                       ? Colors.red
                       : remaining == 0
                       ? Colors.orange[700]

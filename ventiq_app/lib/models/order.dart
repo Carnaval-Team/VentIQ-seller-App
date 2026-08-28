@@ -1,5 +1,6 @@
 import 'product.dart';
 import 'payment_method.dart';
+import '../utils/presentacion_cadena_local.dart';
 import '../utils/promotion_rules.dart';
 
 class Order {
@@ -177,6 +178,26 @@ class OrderItem {
   // Campo para ingredientes de productos elaborados
   final List<dynamic>? ingredientes;
 
+  // ── FASE 4 presentaciones ──────────────────────────────────────────────────
+  // `cantidad` está expresada EN ESTA PRESENTACIÓN, no en unidades base: 2 aquí
+  // con `presentacionNombre = 'Bulto'` son 2 Bultos.
+  //
+  // Se guardan los tres datos y no solo el id porque el cierre de turno y el
+  // resumen de ventas se arman OFFLINE, cuando ya no se puede consultar
+  // `app_dat_producto_presentacion` para saber cómo se llamaba ni cuánto valía.
+  //
+  /// Id de la fila `app_dat_producto_presentacion` (lo que el ledger guarda en
+  /// `id_presentacion`). `null` = el servidor resuelve la base.
+  final int? idPresentacion;
+
+  /// Nombre para mostrar ("Bulto"). Congelado al momento de la venta.
+  final String? presentacionNombre;
+
+  /// Factor relativo a la base de esta presentación. Congelado a propósito: si
+  /// alguien crea otra presentación después, el equivalente de esta venta no
+  /// debe cambiar. Es la misma razón por la que existe el trigger del `12`.
+  final double? presentacionFactor;
+
   OrderItem({
     required this.id,
     required this.producto,
@@ -192,7 +213,25 @@ class OrderItem {
     this.cantidadFinal,
     this.entradasProducto,
     this.ingredientes,
+    this.idPresentacion,
+    this.presentacionNombre,
+    this.presentacionFactor,
   });
+
+  /// Equivalente en unidades base de la línea. Es lo único sumable entre líneas
+  /// de presentaciones distintas: 2 Bultos + 3 Bolsas no son 5 de nada.
+  double get equivalenteBase => cantidad * (presentacionFactor ?? 1);
+
+  /// "2 Bultos" cuando se conoce la presentación, "2" cuando no.
+  ///
+  /// No inventa la palabra "unidades" si `presentacionNombre` es null: el ítem
+  /// no sabe en qué estaba expresado (misma regla que `StockMixtoFormatter`).
+  String get cantidadFormateada {
+    final n = FormatoPresentacion.cantidad(cantidad);
+    final nombre = presentacionNombre;
+    if (nombre == null || nombre.isEmpty) return n;
+    return '$n ${FormatoPresentacion.plural(nombre, cantidad)}';
+  }
 
   double get subtotal {
     return _getFinalPrice() * cantidad;
@@ -274,6 +313,9 @@ class OrderItem {
     double? cantidadFinal,
     double? entradasProducto,
     List<dynamic>? ingredientes,
+    int? idPresentacion,
+    String? presentacionNombre,
+    double? presentacionFactor,
   }) {
     return OrderItem(
       id: id ?? this.id,
@@ -290,6 +332,12 @@ class OrderItem {
       cantidadFinal: cantidadFinal ?? this.cantidadFinal,
       entradasProducto: entradasProducto ?? this.entradasProducto,
       ingredientes: ingredientes ?? this.ingredientes,
+      // FASE 4: `copyWith(cantidad: ...)` se usa al sumar unidades de un item que
+      // ya está en el carrito. Sin arrastrar estos tres, el item perdía la
+      // presentación al cambiar la cantidad.
+      idPresentacion: idPresentacion ?? this.idPresentacion,
+      presentacionNombre: presentacionNombre ?? this.presentacionNombre,
+      presentacionFactor: presentacionFactor ?? this.presentacionFactor,
     );
   }
 
@@ -310,6 +358,11 @@ class OrderItem {
       'cantidadFinal': cantidadFinal,
       'entradasProducto': entradasProducto,
       'ingredientes': ingredientes,
+      // FASE 4: sin esto la cola offline reconstruye el item sin presentación y
+      // el cierre de turno vuelve a sumar Bultos con Bolsas.
+      'idPresentacion': idPresentacion,
+      'presentacionNombre': presentacionNombre,
+      'presentacionFactor': presentacionFactor,
     };
   }
 
@@ -352,6 +405,11 @@ class OrderItem {
               ? (json['entradasProducto'] as num).toDouble()
               : null,
       ingredientes: json['ingredientes'] as List<dynamic>?,
+      // Los items guardados ANTES de Fase 4 no traen estas claves: quedan en
+      // null y `equivalenteBase` cae a factor 1, que es el comportamiento viejo.
+      idPresentacion: (json['idPresentacion'] as num?)?.toInt(),
+      presentacionNombre: json['presentacionNombre'] as String?,
+      presentacionFactor: (json['presentacionFactor'] as num?)?.toDouble(),
     );
   }
 }

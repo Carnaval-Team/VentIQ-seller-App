@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/mesa_cuenta.dart';
 import '../services/mesa_cuenta_service.dart';
-import '../services/store_config_service.dart';
+import '../services/sales_mode_service.dart';
 import '../services/user_preferences_service.dart';
 
 /// Helper centralizado para decisiones de navegación que dependen de banderas
@@ -23,6 +23,9 @@ class NavigationHelper {
   /// El orden importa: un gerente que además tenga cocinas asignadas sigue
   /// yendo a administración, porque su rol de entrada es la gestión de la
   /// tienda. Solo va al KDS quien entra *por* su rol de cocina.
+  ///
+  /// Durante una venta de mostrador el Home es `/categories`: el vendedor está
+  /// en una venta normal y sacarlo a `/mesas` le rompe el flujo.
   static Future<String> homeRoute() async {
     final prefs = UserPreferencesService();
 
@@ -31,8 +34,7 @@ class NavigationHelper {
 
     if (await prefs.isCocinaSession()) return '/kds';
 
-    final modoRestaurante = StoreConfigService.modoRestauranteSync;
-    return modoRestaurante ? '/mesas' : '/categories';
+    return SalesModeService.flujoMesaActivo ? '/mesas' : '/categories';
   }
 
   /// Navega al "Home" según el contexto:
@@ -55,7 +57,7 @@ class NavigationHelper {
   ///
   /// EN MODO NORMAL va a `/preorder`, el carrito local de siempre.
   ///
-  /// EN MODO RESTAURANTE la preorden local no se usa: el carrito vive en BD por
+  /// EN EL FLUJO DE MESA la preorden local no se usa: el carrito vive en BD por
   /// mesa (`app_dat_mesa_cuenta_item`), así que `/preorder` sale vacía y el
   /// mesero tiene que ir a Mesas → buscar la mesa → entrar a la cuenta. Se
   /// atajan esos tres toques:
@@ -67,10 +69,11 @@ class NavigationHelper {
   ///     preorden vacía no le sirve de nada.
   ///
   /// Ante cualquier fallo cae a `/mesas`: es el destino útil en restaurante.
+  ///
+  /// En una venta de mostrador se toma la rama normal (`/preorder`) aunque la
+  /// tienda sea de restaurante: no hay mesa que consultar.
   static Future<void> goCarrito(BuildContext context) async {
-    final modoRestaurante = StoreConfigService.modoRestauranteSync;
-
-    if (!modoRestaurante) {
+    if (!SalesModeService.flujoMesaActivo) {
       Navigator.popUntil(context, (route) => route.isFirst);
       await Navigator.pushNamed(context, '/preorder');
       return;
@@ -140,7 +143,7 @@ class NavigationHelper {
   /// `null` en modo normal o si no hay ninguna: quien llama deja el texto
   /// "Preorden" de siempre.
   static Future<UltimaCuentaAbierta?> cuentaParaBotonCarrito() async {
-    if (!StoreConfigService.modoRestauranteSync) return null;
+    if (!SalesModeService.flujoMesaActivo) return null;
     return MesaCuentaService().ultimaCuentaAbierta();
   }
 }

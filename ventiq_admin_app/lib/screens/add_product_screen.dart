@@ -20,6 +20,8 @@ import '../services/supplier_service.dart';
 
 import '../services/barcode_service.dart';
 
+import '../services/presentacion_editable_service.dart';
+
 import 'barcode_scanner_screen.dart';
 
 
@@ -247,6 +249,16 @@ class _AddProductScreenState extends State<AddProductScreen> {
   List<Map<String, dynamic>> _selectedPresentaciones =
 
       []; // Selected presentations list
+
+
+
+  /// FASE 2.0 presentaciones: que se puede editar y que no, por
+  /// `app_dat_producto_presentacion.id`. Lo llena `_loadPresentacionesEditables`
+  /// desde la RPC `fn_presentaciones_producto_editable`.
+  ///
+  /// Vacio = todavia no se sabe (producto nuevo, o la RPC fallo). En ese caso la
+  /// UI NO bloquea: el trigger de la base es la red de seguridad real.
+  Map<int, PresentacionEditable> _presentacionesEditables = {};
 
 
 
@@ -742,6 +754,19 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
       });
 
+
+
+      // FASE 2.0 presentaciones: saber que se puede editar ANTES de que el
+      // usuario escriba. El trigger trg_congelar_factor_presentacion rechaza en
+      // la base el cambio de factor de una presentacion con movimientos
+      // (SQLSTATE 23001); sin esto el usuario escribiria y recien al guardar
+      // veria un error de Postgres.
+      if (widget.product != null) {
+
+        await _loadPresentacionesEditables();
+
+      }
+
     } catch (e) {
 
       setState(() => _isLoadingData = false);
@@ -749,6 +774,126 @@ class _AddProductScreenState extends State<AddProductScreen> {
       _showErrorSnackBar('Error al cargar datos iniciales: $e');
 
     }
+
+  }
+
+
+
+  /// Carga las banderas de edicion de las presentaciones del producto.
+  ///
+  /// UNA sola llamada (`fn_presentaciones_producto_editable`) que devuelve la
+  /// cadena completa con `factorEditable`, `puedeBorrarse` y el motivo. Si la
+  /// RPC falla el mapa queda vacio: eso se interpreta como "no se pudo saber" y
+  /// la UI NO bloquea nada — el trigger sigue siendo la red de seguridad real.
+  Future<void> _loadPresentacionesEditables() async {
+
+    final id = int.tryParse(widget.product!.id);
+
+    if (id == null) return;
+
+    final mapa = await PresentacionEditableService.mapaPorId(id);
+
+    if (!mounted) return;
+
+    setState(() => _presentacionesEditables = mapa);
+
+  }
+
+
+
+  /// Banderas de la presentacion base actualmente seleccionada, si se conocen.
+  PresentacionEditable? get _basePresentacionEditable {
+
+    if (_presentacionesEditables.isEmpty) return null;
+
+    // El dropdown guarda el id del CATALOGO (app_nom_presentacion.id), no el del
+    // vinculo, asi que hay que buscar por ahi.
+    for (final p in _presentacionesEditables.values) {
+
+      if (p.esBase && p.idNomPresentacion == _selectedBasePresentationId) {
+
+        return p;
+
+      }
+
+    }
+
+    return null;
+
+  }
+
+
+
+  /// Banderas de una presentacion adicional por su id de catalogo.
+  PresentacionEditable? _editablePorIdNom(int? idNomPresentacion) {
+
+    if (idNomPresentacion == null || _presentacionesEditables.isEmpty) {
+
+      return null;
+
+    }
+
+    for (final p in _presentacionesEditables.values) {
+
+      if (!p.esBase && p.idNomPresentacion == idNomPresentacion) return p;
+
+    }
+
+    return null;
+
+  }
+
+
+
+  /// Explica por que el factor esta bloqueado. El texto lo escribe el SQL para
+  /// que coincida con lo que dice el trigger al rechazar.
+  void _mostrarMotivoBloqueo(PresentacionEditable p) {
+
+    showDialog<void>(
+
+      context: context,
+
+      builder: (ctx) => AlertDialog(
+
+        title: Row(
+
+          children: [
+
+            const Icon(Icons.lock_outline, color: AppColors.primary),
+
+            const SizedBox(width: 8),
+
+            Expanded(child: Text('${p.nombre}: factor bloqueado')),
+
+          ],
+
+        ),
+
+        content: Text(
+
+          p.motivoBloqueo ??
+
+              'Esta presentación ya tiene movimientos de inventario, '
+
+                  'el factor no se puede cambiar.',
+
+        ),
+
+        actions: [
+
+          TextButton(
+
+            onPressed: () => Navigator.of(ctx).pop(),
+
+            child: const Text('Entendido'),
+
+          ),
+
+        ],
+
+      ),
+
+    );
 
   }
 
@@ -3496,13 +3641,39 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
                       controller: _cantidadPresentacionController,
 
-                      decoration: const InputDecoration(
+                      // FASE 2.0: si la presentacion base ya tiene movimientos,
+                      // el factor esta congelado en la base por
+                      // trg_congelar_factor_presentacion. Se bloquea aca para
+                      // que el usuario no escriba en vano.
+                      readOnly: _basePresentacionEditable?.factorEditable == false,
+
+                      decoration: InputDecoration(
 
                         labelText: 'Cantidad *',
 
-                        border: OutlineInputBorder(),
+                        border: const OutlineInputBorder(),
 
-                        helperText: 'Unidades por presentación',
+                        helperText:
+                            _basePresentacionEditable?.factorEditable == false
+                                ? 'Bloqueado: ya tiene movimientos'
+                                : 'Unidades por presentación',
+
+                        helperMaxLines: 2,
+
+                        suffixIcon:
+                            _basePresentacionEditable?.factorEditable == false
+                                ? IconButton(
+                                    icon: const Icon(Icons.lock_outline,
+                                        size: 18),
+                                    tooltip: 'Por qué está bloqueado',
+                                    onPressed: () => _mostrarMotivoBloqueo(
+                                        _basePresentacionEditable!),
+                                  )
+                                : null,
+
+                        filled: _basePresentacionEditable?.factorEditable == false,
+
+                        fillColor: Colors.grey.shade100,
 
                       ),
 
@@ -3984,6 +4155,21 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
 
 
+                  // FASE 2.0: candados que vienen de la base.
+                  // `editable` null = todavia no se sabe (producto nuevo o la RPC
+                  // fallo): no se bloquea nada, el trigger es la red real.
+                  final editable = _editablePorIdNom(
+
+                    presentacion['id_presentacion'] as int?,
+
+                  );
+
+                  final factorCongelado = editable?.factorEditable == false;
+
+                  final noSePuedeBorrar = editable?.puedeBorrarse == false;
+
+
+
                   return Card(
 
                     margin: const EdgeInsets.only(bottom: 8),
@@ -4050,6 +4236,53 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
                             ),
 
+                          // FASE 2.0: decirlo en la fila, no recien al guardar.
+                          if (factorCongelado)
+
+                            Padding(
+
+                              padding: const EdgeInsets.only(top: 4),
+
+                              child: Row(
+
+                                children: [
+
+                                  const Icon(
+
+                                    Icons.lock_outline,
+
+                                    size: 14,
+
+                                    color: AppColors.textSecondary,
+
+                                  ),
+
+                                  const SizedBox(width: 4),
+
+                                  Expanded(
+
+                                    child: Text(
+
+                                      'Factor bloqueado: ya tiene movimientos',
+
+                                      style: TextStyle(
+
+                                        fontSize: 11,
+
+                                        color: Colors.orange.shade800,
+
+                                      ),
+
+                                    ),
+
+                                  ),
+
+                                ],
+
+                              ),
+
+                            ),
+
                         ],
 
                       ),
@@ -4062,31 +4295,58 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
                           IconButton(
 
-                            icon: const Icon(Icons.edit, size: 20),
+                            icon: Icon(
 
-                            onPressed: () => _editPresentacionAdicional(index),
-
-                            tooltip: 'Editar',
-
-                          ),
-
-                          IconButton(
-
-                            icon: const Icon(
-
-                              Icons.delete,
-
-                              color: Colors.red,
+                              factorCongelado ? Icons.lock_outline : Icons.edit,
 
                               size: 20,
 
                             ),
 
-                            onPressed:
+                            // El factor esta congelado en la base: abrir el
+                            // dialogo de edicion solo llevaria a un 23001 al
+                            // guardar. Se explica en vez de dejar intentar.
+                            onPressed: factorCongelado
 
-                                () => _removePresentacionAdicional(index),
+                                ? () => _mostrarMotivoBloqueo(editable!)
 
-                            tooltip: 'Eliminar',
+                                : () => _editPresentacionAdicional(index),
+
+                            tooltip: factorCongelado
+
+                                ? 'Por qué no se puede editar'
+
+                                : 'Editar',
+
+                          ),
+
+                          IconButton(
+
+                            icon: Icon(
+
+                              Icons.delete,
+
+                              color: noSePuedeBorrar
+
+                                  ? Colors.grey
+
+                                  : Colors.red,
+
+                              size: 20,
+
+                            ),
+
+                            onPressed: noSePuedeBorrar
+
+                                ? () => _mostrarMotivoBloqueo(editable!)
+
+                                : () => _removePresentacionAdicional(index),
+
+                            tooltip: noSePuedeBorrar
+
+                                ? 'No se puede eliminar'
+
+                                : 'Eliminar',
 
                           ),
 
@@ -6080,35 +6340,73 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
 
 
-        // Primero, quitar es_base=true de todas las presentaciones
+        // FASE 2.0 — CUIDADO: estos UPDATE tienen que tocar SOLO las filas que
+        // realmente cambian de valor.
+        //
+        // La version anterior hacia `update({'es_base': false})` sobre TODAS las
+        // presentaciones del producto y despues reafirmaba la base. Con el
+        // trigger trg_congelar_factor_presentacion aplicado eso rompe el
+        // guardado de cualquier producto cuya base tenga movimientos —medido:
+        // 7.454 de 8.779 productos— porque apagar es_base en la base es
+        // exactamente lo que el trigger prohibe, aunque el usuario no haya
+        // cambiado nada.
+        //
+        // Postgres dispara el trigger por FILA AFECTADA, asi que con estos
+        // WHERE extra las filas que no cambian no se tocan y no hay rechazo.
+        // Verificado contra produccion: el patron viejo daba 23001 y el nuevo
+        // afecta 0 filas cuando no hay cambio real, pero sigue rechazando
+        // (23001) cuando el cambio es genuino.
 
+        // 1. Apagar es_base SOLO en las que hoy son base y dejan de serlo.
         await _supabase
 
             .from('app_dat_producto_presentacion')
 
             .update({'es_base': false})
 
-            .eq('id_producto', productId);
+            .eq('id_producto', productId)
+
+            .eq('es_base', true)
+
+            .neq('id_presentacion', _selectedBasePresentationId!);
 
 
 
-        // Luego, establecer la nueva presentación base
+        // 2. Encender es_base SOLO si esa fila todavia no lo es.
+        await _supabase
+
+            .from('app_dat_producto_presentacion')
+
+            .update({'es_base': true})
+
+            .eq('id_producto', productId)
+
+            .eq('id_presentacion', _selectedBasePresentationId!)
+
+            .eq('es_base', false);
+
+
+
+        // 3. El factor, aparte y solo si el valor cambia.
+        //    Si la presentacion tiene movimientos el trigger lo va a rechazar, y
+        //    esta bien: la UI ya lo muestra en readOnly (ver
+        //    _basePresentacionEditable), asi que llegar aca con un valor
+        //    distinto significa que alguien lo forzo.
+        final nuevaCantidad = double.parse(
+          _cantidadPresentacionController.text,
+        );
 
         await _supabase
 
             .from('app_dat_producto_presentacion')
 
-            .update({
-
-              'es_base': true,
-
-              'cantidad': double.parse(_cantidadPresentacionController.text),
-
-            })
+            .update({'cantidad': nuevaCantidad})
 
             .eq('id_producto', productId)
 
-            .eq('id_presentacion', _selectedBasePresentationId!);
+            .eq('id_presentacion', _selectedBasePresentationId!)
+
+            .neq('cantidad', nuevaCantidad);
 
 
 
@@ -6459,12 +6757,36 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
 
       // 3. Eliminar presentaciones que ya no son necesarias
+      //
+      // FASE 2.0: una presentacion con movimientos NO se puede borrar (el
+      // trigger lo rechaza con 23001) y una con historial de precio de costo
+      // tampoco (la FK de app_dat_precio_costo, 23503). En vez de intentar y
+      // reventar todo el guardado, se saltan y se avisa al final: el resto de
+      // los cambios del producto si se guardan.
+
+      final noBorradas = <String>[];
 
       for (final existing in existingPresentations) {
 
         final idPresentacion = existing['id_presentacion'] as int;
 
         if (!desiredPresentationIds.contains(idPresentacion)) {
+
+          final flags = _editablePorIdNom(idPresentacion);
+
+          if (flags != null && !flags.puedeBorrarse) {
+
+            noBorradas.add(flags.nombre);
+
+            print(
+
+              '⏭️ Presentación NO eliminada (tiene historial): ID $idPresentacion',
+
+            );
+
+            continue;
+
+          }
 
           await _supabase
 
@@ -6510,7 +6832,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
         if (existingRecord.isNotEmpty) {
 
-          // Actualizar existente
+          // FASE 2.0: `.neq('cantidad', cantidad)` es lo que evita disparar el
+          // trigger cuando el usuario no cambio el factor. Sin ese filtro,
+          // guardar un producto sin tocar nada intentaba reescribir la misma
+          // cantidad, la fila contaba como afectada y el trigger la rechazaba.
 
           await _supabase
 
@@ -6522,7 +6847,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
               .eq('id_presentacion', idPresentacion)
 
-              .eq('es_base', false);
+              .eq('es_base', false)
+
+              .neq('cantidad', cantidad);
 
           print('✏️ Presentación actualizada: ID $idPresentacion, cantidad: $cantidad');
 
@@ -6552,13 +6879,29 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
       print('✅ Presentaciones adicionales actualizadas exitosamente');
 
+
+
+      if (noBorradas.isNotEmpty && mounted) {
+
+        _showErrorSnackBar(
+
+          'No se pudieron eliminar ${noBorradas.join(', ')}: ya tienen '
+
+          'movimientos o historial de costo. El resto de los cambios se guardó.',
+
+        );
+
+      }
+
     } catch (e, stackTrace) {
 
       print('❌ Error al actualizar presentaciones adicionales: $e');
 
       print('📍 StackTrace: $stackTrace');
 
-      throw Exception('Error al actualizar presentaciones adicionales: $e');
+      // Traduce 23001 (trigger del factor) y 23503 (FK de precio_costo) a algo
+      // legible; el resto pasa tal cual.
+      throw Exception(PresentacionEditableService.mensajeDeError(e));
 
     }
 

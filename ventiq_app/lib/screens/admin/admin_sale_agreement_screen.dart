@@ -5,6 +5,9 @@ import '../../services/admin_inventory_service.dart';
 import '../../services/admin_ticket_printer_service.dart';
 import '../../services/payment_method_service.dart';
 import '../../services/user_preferences_service.dart';
+import '../../utils/presentacion_cadena_local.dart';
+import '../../utils/presentation_selection.dart';
+import '../../widgets/captura_mixta_presentacion.dart';
 
 /// Venta por acuerdo simplificada (offline-first).
 class AdminSaleAgreementScreen extends StatefulWidget {
@@ -32,6 +35,11 @@ class _AdminSaleAgreementScreenState extends State<AdminSaleAgreementScreen> {
   List<Map<String, dynamic>> _searchResults = [];
   final List<Map<String, dynamic>> _lines = [];
   Map<String, dynamic>? _selected;
+  // FASE 4 presentaciones: lineas capturadas por presentacion en el widget mixto.
+  List<LineaPresentacion> _lineasMixtas = [];
+  // Se calcula al SELECCIONAR, no en el build: resolver() ordena y parte toda la
+  // cadena y el build corre en cada tecla.
+  bool _tieneCadena = false;
   bool _loading = true;
   bool _saving = false;
   bool _searching = false;
@@ -136,6 +144,49 @@ class _AdminSaleAgreementScreenState extends State<AdminSaleAgreementScreen> {
   void _addLine() {
     final p = _selected;
     if (p == null) return;
+
+    int? ubicacionId;
+    final detalles = p['detalles_completos'];
+    if (detalles is Map) {
+      final inv = detalles['inventario'];
+      if (inv is List && inv.isNotEmpty && inv.first is Map) {
+        ubicacionId = (inv.first['id_ubicacion'] as num?)?.toInt();
+      }
+    }
+
+    final price = _priceOf(p);
+
+    // ── FASE 4: una linea por presentacion, con su cantidad y su precio ──────
+    //
+    // El precio del catalogo es POR UNIDAD BASE, asi que para una Caja de 12 hay
+    // que multiplicarlo por el factor. Es la misma convencion que usa el TPV
+    // (`product_details_screen`): cantidad en la presentacion, precio x factor.
+    // Sin esto se venderia una Caja al precio de una Unidad.
+    if (_lineasMixtas.isNotEmpty) {
+      setState(() {
+        for (final linea in _lineasMixtas) {
+          _lines.add({
+            'id_producto': p['id'],
+            'id_variante': null,
+            'id_opcion_variante': null,
+            'id_ubicacion': ubicacionId,
+            'id_presentacion': linea.presentacion.idPresentacion,
+            'cantidad': linea.cantidad,
+            'precio_unitario': price * linea.presentacion.factorRel,
+            'sku_producto': p['sku']?.toString() ?? '${p['id']}',
+            'es_producto_venta': true,
+            'denominacion': p['denominacion'],
+            'presentacion_nombre': linea.presentacion.nombre,
+          });
+        }
+        _limpiarSeleccion();
+      });
+      return;
+    }
+
+    // Fallback: producto sin cadena en el cache. Se manda null y la RPC resuelve
+    // la base con fn_presentaciones_producto (cascada correcta, aguanta los 9
+    // productos sin fila es_base).
     final qty = double.tryParse(_qtyCtrl.text.replaceAll(',', '.')) ?? 0;
     if (qty <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -144,44 +195,45 @@ class _AdminSaleAgreementScreenState extends State<AdminSaleAgreementScreen> {
       return;
     }
 
-    int? presentationId;
-    int? ubicacionId;
-    final detalles = p['detalles_completos'];
-    if (detalles is Map) {
-      final presentaciones = detalles['presentaciones'];
-      if (presentaciones is List && presentaciones.isNotEmpty) {
-        final base = presentaciones.cast<Map>().firstWhere(
-              (x) => x['es_base'] == true,
-              orElse: () => presentaciones.first as Map,
-            );
-        presentationId = (base['id'] as num?)?.toInt() ??
-            (base['id_presentacion'] as num?)?.toInt();
-      }
-      final inv = detalles['inventario'];
-      if (inv is List && inv.isNotEmpty && inv.first is Map) {
-        ubicacionId = (inv.first['id_ubicacion'] as num?)?.toInt();
-      }
-    }
-
-    final price = _priceOf(p);
     setState(() {
       _lines.add({
         'id_producto': p['id'],
         'id_variante': null,
         'id_opcion_variante': null,
         'id_ubicacion': ubicacionId,
-        'id_presentacion': presentationId ?? 1,
+        // FASE 1 presentaciones: se manda null si no hay presentacion elegida,
+        // NO `?? 1`. Ese 1 era el id de la presentacion de OTRO producto y la
+        // validacion de la RPC ahora lo rechaza con un error explicito.
+        'id_presentacion': PresentationSelection.forInventoryPayload(),
         'cantidad': qty,
         'precio_unitario': price,
         'sku_producto': p['sku']?.toString() ?? '${p['id']}',
         'es_producto_venta': true,
         'denominacion': p['denominacion'],
       });
-      _selected = null;
-      _searchCtrl.clear();
-      _searchResults = [];
-      _qtyCtrl.text = '1';
+      _limpiarSeleccion();
     });
+  }
+
+  /// "2 Cajas" o "2" si no se conoce la presentación de la línea.
+  ///
+  /// FASE 4. No se inventa la palabra "unidades" cuando falta la presentación:
+  /// la línea no sabe en qué unidad está (misma regla que `FormatoPresentacion`).
+  String _cantidadConPresentacion(Map<String, dynamic> l) {
+    final cant = (l['cantidad'] as num?)?.toDouble() ?? 0;
+    final n = FormatoPresentacion.cantidad(cant);
+    final pres = l['presentacion_nombre']?.toString();
+    if (pres == null || pres.isEmpty) return n;
+    return '$n ${FormatoPresentacion.plural(pres, cant)}';
+  }
+
+  void _limpiarSeleccion() {
+    _selected = null;
+    _lineasMixtas = [];
+    _tieneCadena = false;
+    _searchCtrl.clear();
+    _searchResults = [];
+    _qtyCtrl.text = '1';
   }
 
   Future<void> _save() async {
@@ -388,6 +440,10 @@ class _AdminSaleAgreementScreenState extends State<AdminSaleAgreementScreen> {
                       ),
                       onTap: () => setState(() {
                         _selected = p;
+                        _lineasMixtas = [];
+                        // FASE 4: se resuelve aqui, no en el build.
+                        _tieneCadena =
+                            PresentacionCadenaLocal.resolver(p).isNotEmpty;
                         _searchCtrl.text =
                             p['denominacion']?.toString() ?? '';
                         _searchResults = [];
@@ -396,32 +452,54 @@ class _AdminSaleAgreementScreenState extends State<AdminSaleAgreementScreen> {
                   ),
                 if (_selected != null) ...[
                   const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _qtyCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Cantidad',
-                            border: OutlineInputBorder(),
-                          ),
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          inputFormatters: [
-                            FilteringTextInputFormatter.allow(
-                              RegExp(r'[0-9.,]'),
+                  // FASE 4: un campo por presentacion. Si el producto no tiene
+                  // cadena en el cache, el widget lo avisa y abajo queda el
+                  // campo unico de siempre.
+                  CapturaMixtaPresentacion(
+                    key: ValueKey('acuerdo_${_selected!['id']}'),
+                    producto: _selected!,
+                    avisarRebalanceo: true,
+                    onChanged: (lineas) =>
+                        setState(() => _lineasMixtas = lineas),
+                  ),
+                  if (!_tieneCadena) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _qtyCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'Cantidad',
+                              border: OutlineInputBorder(),
                             ),
-                          ],
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            inputFormatters: [
+                              FilteringTextInputFormatter.allow(
+                                RegExp(r'[0-9.,]'),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton(
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: _addLine,
+                          child: const Text('Agregar'),
+                        ),
+                      ],
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
                         onPressed: _addLine,
                         child: const Text('Agregar'),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ],
                 const SizedBox(height: 12),
                 ..._lines.asMap().entries.map((e) {
@@ -432,8 +510,11 @@ class _AdminSaleAgreementScreenState extends State<AdminSaleAgreementScreen> {
                           ((l['precio_unitario'] as num?)?.toDouble() ?? 0);
                   return ListTile(
                     title: Text(l['denominacion']?.toString() ?? 'Producto'),
+                    // FASE 4: "2 Cajas x $120.00" en vez de "2 x $120.00". Sin
+                    // la presentacion, dos lineas del mismo producto se ven
+                    // identicas aunque una sea Caja y la otra Unidad.
                     subtitle: Text(
-                      '${l['cantidad']} x '
+                      '${_cantidadConPresentacion(l)} x '
                       '\$${((l['precio_unitario'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)} '
                       '= \$${lineTotal.toStringAsFixed(2)}',
                     ),
