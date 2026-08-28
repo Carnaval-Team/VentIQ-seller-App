@@ -1,9 +1,63 @@
 {
-  "current_version": "2.8.3",
-  "build": 283,
+  "current_version": "2.8.5",
+  "build": 285,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.8.5",
+      "date": "2026-08-28",
+      "title": "Mejoras menores",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Mejoras menores",
+          "description": "Cambios meneres en usabilidad."
+        }
+      ]
+    },
+    {
+      "version": "2.8.4",
+      "date": "2026-08-27",
+      "title": "Auditoría de costos, reportes de ventas y filtros más precisos",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Historial cronológico de cada producto vendido",
+          "description": "El reporte de ventas permite abrir el historial de un producto y revisar en orden las ventas, cambios de precio y cambios de costo, con cantidades, ingresos, costos, ganancias y explicación del cálculo."
+        },
+        {
+          "type": "feature",
+          "title": "Exportación completa del reporte por productos",
+          "description": "El reporte de ventas por producto se puede exportar a PDF o Excel con precios, cantidades, ventas, costos, ganancias y totales. El historial individual también dispone de exportación desde su propio diálogo."
+        },
+        {
+          "type": "feature",
+          "title": "Auditoría de precios y costos desde el detalle del producto",
+          "description": "La sección de precios muestra sus cambios históricos y un historial de costos que empareja cada modificación con la recepción relacionada, incluyendo fecha, presentación, cantidad, precio introducido, costo real y diferencias detectadas."
+        },
+        {
+          "type": "fix",
+          "title": "Primer costo y recepciones de consignación calculados correctamente",
+          "description": "Si un producto no tenía costo anterior, su primer precio promedio queda igual al precio unitario recibido. Las transferencias y devoluciones no alteran el costo, y la consignación deja el cálculo para el momento en que se completa la recepción, evitando ponderarlo dos veces."
+        },
+        {
+          "type": "feature",
+          "title": "Filtra órdenes de Carnaval por llegada a un estado",
+          "description": "Además de la fecha de creación, ahora puedes consultar las órdenes por el día en que alcanzaron un estado concreto, por ejemplo las que fueron completadas en una fecha determinada."
+        },
+        {
+          "type": "improvement",
+          "title": "Las operaciones de inventario abren en el mes actual",
+          "description": "La lista de operaciones aplica por defecto el primer y último día del mes en curso, tanto desde la pantalla como dentro del RPC, reduciendo el tiempo de carga cuando no se seleccionan fechas."
+        },
+        {
+          "type": "improvement",
+          "title": "Costos históricos con precios vigentes más claros",
+          "description": "Los reportes incorporan funciones actualizadas para relacionar ventas, proveedores, precios actuales y variaciones de costo con mayor precisión."
+        }
+      ]
+    },
     {
       "version": "2.8.3",
       "date": "2026-08-26",

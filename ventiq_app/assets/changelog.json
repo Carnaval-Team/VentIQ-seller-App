@@ -1,8 +1,50 @@
 {
-  "current_version": "2.4.4",
-  "build": 846,
+  "current_version": "2.4.5",
+  "build": 847,
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.4.5",
+      "date": "2026-08-27",
+      "title": "Cierres, reportes y trabajo offline más confiables",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Busca productos aunque estés sin conexión",
+          "description": "La búsqueda global ahora consulta el catálogo guardado en el dispositivo cuando trabajas offline. Puedes encontrar productos de cualquier categoría por nombre o SKU y abrirlos directamente desde los resultados."
+        },
+        {
+          "type": "improvement",
+          "title": "Cada turno comienza con el efectivo que declara el vendedor",
+          "description": "El monto inicial ya no se completa ni se compara con el efectivo del turno anterior. El vendedor define con cuánto comienza y el cierre calcula el cuadre exclusivamente con ese monto, las ventas y los egresos del turno actual."
+        },
+        {
+          "type": "improvement",
+          "title": "El resumen impreso separa todas las formas de pago",
+          "description": "El resumen detallado de productos incluye efectivo, transferencias, pagos mixtos, otros medios y cuentas por cobrar. También corregimos el total egresado para que muestre únicamente los egresos reales del turno."
+        },
+        {
+          "type": "fix",
+          "title": "Efectivo por defecto y cuentas por cobrar visibles",
+          "description": "Las ventas sin un desglose explícito vuelven a aparecer como efectivo y las ventas pendientes se muestran como cuenta por cobrar, sin sumarse por error a transferencias ni al efectivo real."
+        },
+        {
+          "type": "improvement",
+          "title": "Sincronización de turnos más clara",
+          "description": "Los turnos completamente online se identifican como sincronizados y ya no aparecen como pendientes por conservar una copia de respaldo. Los turnos mixtos agrupan sus ventas offline, permiten cerrar o sincronizar desde Configuración y muestran un identificador corto."
+        },
+        {
+          "type": "fix",
+          "title": "Cerrar sesión online elimina toda la información local",
+          "description": "Al cerrar una sesión con conexión se eliminan preferencias, catálogos, inventario, órdenes, turnos, credenciales y demás cachés del dispositivo. El cambio local de usuario en modo completamente offline continúa conservando la información necesaria."
+        },
+        {
+          "type": "improvement",
+          "title": "El conteo de cierre coincide con el inventario del almacén",
+          "description": "El control de inventario del vendedor usa el almacén asociado a su TPV, excluye productos sin stock y aplica el mismo alcance del inventario administrativo. Las órdenes de Carnaval solo se descuentan cuando están en estado Entregando."
+        }
+      ]
+    },
     {
       "version": "2.4.4",
       "date": "2026-08-26",

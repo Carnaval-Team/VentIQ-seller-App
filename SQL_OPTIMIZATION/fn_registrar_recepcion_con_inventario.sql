@@ -1,18 +1,9 @@
 -- ============================================================================
 -- FUNCIÓN: fn_registrar_recepcion_con_inventario
--- Versión mejorada de fn_insertar_recepcion_completa_with_currency que además
--- registra el movimiento de inventario en app_dat_inventario_productos por
--- cada producto recibido.
---
--- Cambios respecto a la versión anterior:
---   1. Registra movimiento en app_dat_inventario_productos por cada producto
---      (cantidad_inicial = último saldo, cantidad_final = saldo + cantidad recibida)
---   2. Captura el id de cada app_dat_recepcion_productos para vincularlo al inventario
---   3. Validaciones retornan JSON de error en lugar de RAISE EXCEPTION
---   4. GET STACKED DIAGNOSTICS para capturar contexto completo en excepciones
---   5. SELECT id_tipo_operacion corregido (antes SELECT 1 → tipo siempre 1)
---   6. Campo 'etapa' en errores indica exactamente dónde falló
---   7. Campo 'id_operacion_parcial' informa si quedó registro huérfano
+-- Crea la recepción en estado Pendiente (1) SIN mover inventario.
+-- El stock se aplica al COMPLETAR (estado=2) en
+-- fn_registrar_cambio_estado_operacion_mejorado, usando el saldo REAL
+-- de ese momento (p.ej. 3 + pendiente 7 + venta 1 → al confirmar queda 9).
 -- ============================================================================
 
 DROP FUNCTION IF EXISTS public.fn_registrar_recepcion_con_inventario(
@@ -40,8 +31,7 @@ DECLARE
   v_cantidad_total        NUMERIC := 0;
   v_tienda_exists         BOOLEAN;
   v_moneda_factura        TEXT;
-  -- Por producto
-  v_id_recepcion_producto BIGINT;   -- id de app_dat_recepcion_productos
+  v_id_recepcion_producto BIGINT;
   v_id_producto           BIGINT;
   v_id_variante           BIGINT;
   v_id_opcion_variante    BIGINT;
@@ -50,16 +40,11 @@ DECLARE
   v_id_proveedor          BIGINT;
   v_cantidad              NUMERIC;
   v_precio_unitario       NUMERIC;
-  v_cantidad_inicial      NUMERIC;
-  v_cantidad_final        NUMERIC;
-  -- Captura de errores
   v_err_message           TEXT;
   v_err_detail            TEXT;
   v_err_hint              TEXT;
   v_err_context           TEXT;
 BEGIN
-
-  -- ── Validación: tienda existe ────────────────────────────────────────────
   SELECT EXISTS(SELECT 1 FROM app_dat_tienda WHERE id = p_id_tienda)
   INTO v_tienda_exists;
 
@@ -72,7 +57,6 @@ BEGIN
     );
   END IF;
 
-  -- ── Validación: al menos un producto ────────────────────────────────────
   IF p_productos IS NULL OR jsonb_array_length(p_productos) = 0 THEN
     RETURN jsonb_build_object(
       'status',   'error',
@@ -82,9 +66,7 @@ BEGIN
     );
   END IF;
 
-  -- ── Validación: moneda ───────────────────────────────────────────────────
   v_moneda_factura := COALESCE(NULLIF(TRIM(p_moneda_factura), ''), 'USD');
-
   IF v_moneda_factura NOT IN ('USD', 'EUR', 'CUP') THEN
     RETURN jsonb_build_object(
       'status',   'error',
@@ -94,7 +76,6 @@ BEGIN
     );
   END IF;
 
-  -- ── Validación: motivo → tipo de operación ───────────────────────────────
   SELECT id_tipo_operacion
   INTO v_id_tipo_operacion
   FROM app_nom_motivo_recepcion
@@ -109,47 +90,22 @@ BEGIN
     );
   END IF;
 
-  -- ── 1. Operación principal ───────────────────────────────────────────────
   INSERT INTO app_dat_operaciones (
-    id_tipo_operacion,
-    uuid,
-    id_tienda,
-    observaciones,
-    created_at
+    id_tipo_operacion, uuid, id_tienda, observaciones, created_at
   ) VALUES (
-    v_id_tipo_operacion,
-    p_uuid,
-    p_id_tienda,
-    p_observaciones,
-    NOW()
+    v_id_tipo_operacion, p_uuid, p_id_tienda, p_observaciones, NOW()
   ) RETURNING id INTO v_id_operacion;
 
-  -- ── 2. Detalles de recepción ─────────────────────────────────────────────
   INSERT INTO app_dat_operacion_recepcion (
-    id_operacion,
-    entregado_por,
-    recibido_por,
-    monto_total,
-    observaciones,
-    motivo,
-    created_at,
-    moneda_factura
+    id_operacion, entregado_por, recibido_por, monto_total,
+    observaciones, motivo, created_at, moneda_factura
   ) VALUES (
-    v_id_operacion,
-    p_entregado_por,
-    p_recibido_por,
-    p_monto_total,
-    p_observaciones,
-    p_motivo,
-    NOW(),
-    v_moneda_factura
+    v_id_operacion, p_entregado_por, p_recibido_por, p_monto_total,
+    p_observaciones, p_motivo, NOW(), v_moneda_factura
   );
 
-  -- ── 3. Productos + movimiento de inventario ──────────────────────────────
   FOR v_producto_record IN SELECT * FROM jsonb_array_elements(p_productos)
   LOOP
-
-    -- Validar campos mínimos del producto
     IF v_producto_record->>'id_producto' IS NULL
     OR v_producto_record->>'cantidad'    IS NULL THEN
       RETURN jsonb_build_object(
@@ -162,7 +118,6 @@ BEGIN
       );
     END IF;
 
-    -- Extraer campos del JSON a variables locales para reutilizar
     v_id_producto        := (v_producto_record->>'id_producto')::BIGINT;
     v_id_variante        := NULLIF(v_producto_record->>'id_variante',        '')::BIGINT;
     v_id_opcion_variante := NULLIF(v_producto_record->>'id_opcion_variante', '')::BIGINT;
@@ -172,117 +127,38 @@ BEGIN
     v_cantidad           := (v_producto_record->>'cantidad')::NUMERIC;
     v_precio_unitario    := NULLIF(v_producto_record->>'precio_unitario',    '')::NUMERIC;
 
-    -- 3a. Insertar en app_dat_recepcion_productos y capturar su id
     INSERT INTO app_dat_recepcion_productos (
-      id_operacion,
-      id_producto,
-      id_variante,
-      id_opcion_variante,
-      id_proveedor,
-      id_ubicacion,
-      id_presentacion,
-      cantidad,
-      precio_unitario,
-      sku_producto,
-      sku_ubicacion,
-      created_at
+      id_operacion, id_producto, id_variante, id_opcion_variante,
+      id_proveedor, id_ubicacion, id_presentacion, cantidad,
+      precio_unitario, sku_producto, sku_ubicacion, created_at
     ) VALUES (
-      v_id_operacion,
-      v_id_producto,
-      v_id_variante,
-      v_id_opcion_variante,
-      v_id_proveedor,
-      v_id_ubicacion,
-      v_id_presentacion,
-      v_cantidad,
+      v_id_operacion, v_id_producto, v_id_variante, v_id_opcion_variante,
+      v_id_proveedor, v_id_ubicacion, v_id_presentacion, v_cantidad,
       v_precio_unitario,
       v_producto_record->>'sku_producto',
       v_producto_record->>'sku_ubicacion',
       NOW()
     ) RETURNING id INTO v_id_recepcion_producto;
 
-    -- 3b. Obtener saldo actual del inventario para este producto/presentación/ubicación
-    --     Igual que fn_contabilizar_operacion: último cantidad_final DESC LIMIT 1
-    SELECT COALESCE(
-      (
-        SELECT cantidad_final
-        FROM app_dat_inventario_productos
-        WHERE id_producto = v_id_producto
-          AND (id_variante          IS NOT DISTINCT FROM v_id_variante)
-          AND (id_opcion_variante   IS NOT DISTINCT FROM v_id_opcion_variante)
-          AND (id_ubicacion         IS NOT DISTINCT FROM v_id_ubicacion)
-          AND (id_presentacion      IS NOT DISTINCT FROM v_id_presentacion)
-        ORDER BY created_at DESC
-        LIMIT 1
-      ), 0
-    ) INTO v_cantidad_inicial;
-
-    v_cantidad_final := v_cantidad_inicial + v_cantidad;
-
-    -- 3c. Registrar movimiento de inventario (origen_cambio = 1 → recepción)
-    INSERT INTO app_dat_inventario_productos (
-      id_producto,
-      id_variante,
-      id_opcion_variante,
-      id_ubicacion,
-      id_presentacion,
-      cantidad_inicial,
-      cantidad_final,
-      sku_producto,
-      sku_ubicacion,
-      origen_cambio,
-      id_recepcion,
-      id_proveedor,
-      created_at
-    ) VALUES (
-      v_id_producto,
-      v_id_variante,
-      v_id_opcion_variante,
-      v_id_ubicacion,
-      v_id_presentacion,
-      v_cantidad_inicial,
-      v_cantidad_final,
-      v_producto_record->>'sku_producto',
-      v_producto_record->>'sku_ubicacion',
-      1,                         -- 1 = recepción
-      v_id_recepcion_producto,   -- FK al producto de esta recepción
-      v_id_proveedor,
-      NOW()
-    );
-
-    -- Acumular monto total
     v_cantidad_total := v_cantidad_total + (v_cantidad * COALESCE(v_precio_unitario, 0));
-
   END LOOP;
 
-  -- ── 4. Estado inicial (1 = Pendiente) ───────────────────────────────────
-  INSERT INTO app_dat_estado_operacion (
-    id_operacion,
-    estado,
-    uuid,
-    created_at
-  ) VALUES (
-    v_id_operacion,
-    1,
-    p_uuid,
-    NOW()
-  );
+  INSERT INTO app_dat_estado_operacion (id_operacion, estado, uuid, created_at)
+  VALUES (v_id_operacion, 1, p_uuid, NOW());
 
-  -- ── 5. Actualizar monto total si no se proporcionó ───────────────────────
   IF p_monto_total IS NULL THEN
     UPDATE app_dat_operacion_recepcion
     SET monto_total = v_cantidad_total
     WHERE id_operacion = v_id_operacion;
   END IF;
 
-  -- ── Respuesta exitosa ────────────────────────────────────────────────────
   RETURN jsonb_build_object(
     'status',           'success',
     'id_operacion',     v_id_operacion,
     'total_productos',  jsonb_array_length(p_productos),
     'monto_total',      COALESCE(p_monto_total, v_cantidad_total),
     'moneda_utilizada', v_moneda_factura,
-    'mensaje',          'Recepción registrada correctamente con movimientos de inventario'
+    'mensaje',          'Recepción pendiente registrada. El inventario se aplicará al completar.'
   );
 
 EXCEPTION
@@ -299,9 +175,10 @@ EXCEPTION
       'detail',               COALESCE(v_err_detail,  ''),
       'hint',                 COALESCE(v_err_hint,    ''),
       'context',              COALESCE(v_err_context, ''),
-      'sqlstate',             SQLSTATE,
-      'etapa',                'excepcion_no_controlada',
       'id_operacion_parcial', v_id_operacion
     );
 END;
 $$;
+
+COMMENT ON FUNCTION public.fn_registrar_recepcion_con_inventario IS
+  'Crea recepción Pendiente SIN inventario. El stock se aplica al completar (estado=2).';

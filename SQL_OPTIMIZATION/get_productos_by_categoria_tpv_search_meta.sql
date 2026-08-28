@@ -1,47 +1,64 @@
+-- FUNCTION: public.get_productos_by_categoria_tpv_search_meta(bigint, bigint, bigint, text, boolean)
+
+-- DROP FUNCTION IF EXISTS public.get_productos_by_categoria_tpv_search_meta(bigint, bigint, bigint, text, boolean);
+
+CREATE OR REPLACE FUNCTION public.get_productos_by_categoria_tpv_search_meta(
+    id_categoria_param bigint,
+    id_tienda_param bigint,
+    id_tpv_param bigint,
+    text_search text,
+    solo_disponibles_param boolean DEFAULT false)
+    RETURNS TABLE(id_producto bigint, sku text, denominacion text, descripcion text, um text, es_refrigerado boolean, es_fragil boolean, es_vendible boolean, codigo_barras text, id_subcategoria bigint, subcategoria_nombre text, id_categoria bigint, categoria_nombre text, precio_venta numeric, imagen text, stock_disponible numeric, tiene_stock boolean, metadata jsonb)
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE SECURITY DEFINER PARALLEL UNSAFE
+    ROWS 1000
+
+AS $BODY$
 DECLARE
     tiene_suscripcion_activa BOOLEAN := FALSE;
     primer_producto RECORD;
     primera_subcategoria RECORD;
     primera_categoria RECORD;
-	v_text_search TEXT := NULLIF(trim(text_search), '');
+    v_text_search TEXT := NULLIF(trim(text_search), '');
 BEGIN
     -- Verificar que el usuario tenga acceso a la tienda
     PERFORM check_user_has_access_to_tienda(id_tienda_param);
-    
+
     -- Verificar si la tienda tiene suscripción activa
     SELECT EXISTS(
-        SELECT 1 
-        FROM app_suscripciones 
-        WHERE id_tienda = id_tienda_param 
-        AND estado = 1 
+        SELECT 1
+        FROM app_suscripciones
+        WHERE id_tienda = id_tienda_param
+        AND estado = 1
         AND (fecha_fin IS NULL OR fecha_fin > NOW())
-        ORDER BY created_at DESC 
+        ORDER BY created_at DESC
         LIMIT 1
     ) INTO tiene_suscripcion_activa;
-    
+
     -- Si no tiene suscripción activa, devolver producto de contacto
     IF NOT tiene_suscripcion_activa THEN
         -- Obtener el primer producto de la tienda para usar sus atributos
-        SELECT p.id, p.sku, p.um, p.es_refrigerado, p.es_fragil, p.es_vendible, 
+        SELECT p.id, p.sku, p.um, p.es_refrigerado, p.es_fragil, p.es_vendible,
                p.codigo_barras, p.imagen, p.es_elaborado, p.es_servicio
         INTO primer_producto
         FROM app_dat_producto p
         WHERE p.id_tienda = id_tienda_param
         LIMIT 1;
-        
+
         -- Obtener la primera subcategoría de la categoría solicitada
         SELECT sc.id, sc.denominacion
         INTO primera_subcategoria
         FROM app_dat_subcategorias sc
         WHERE sc.idcategoria = id_categoria_param
         LIMIT 1;
-        
+
         -- Obtener información de la categoría
         SELECT c.id, c.denominacion
         INTO primera_categoria
         FROM app_dat_categoria c
         WHERE c.id = id_categoria_param;
-        
+
         -- Si no hay datos, usar valores por defecto
         IF primer_producto IS NULL THEN
             primer_producto.id := 999999;
@@ -55,20 +72,20 @@ BEGIN
             primer_producto.es_elaborado := FALSE;
             primer_producto.es_servicio := TRUE;
         END IF;
-        
+
         IF primera_subcategoria IS NULL THEN
             primera_subcategoria.id := 999999;
             primera_subcategoria.denominacion := 'Administración';
         END IF;
-        
+
         IF primera_categoria IS NULL THEN
             primera_categoria.id := COALESCE(id_categoria_param, 999999);
             primera_categoria.denominacion := 'Administración';
         END IF;
-        
+
         -- Retornar producto de contacto
         RETURN QUERY
-        SELECT 
+        SELECT
             primer_producto.id::bigint AS id_producto,
             COALESCE(primer_producto.sku, 'CONTACT-ADMIN')::text AS sku,
             'CONTACTAR VIA WHATSAPP AL 53765120 O supportinvenntia@gmail.com'::text AS denominacion,
@@ -88,15 +105,16 @@ BEGIN
             FALSE::boolean AS tiene_stock,
             jsonb_build_object(
                 'es_elaborado', COALESCE(primer_producto.es_elaborado, FALSE),
-                'es_servicio', COALESCE(primer_producto.es_servicio, TRUE)
+                'es_servicio', COALESCE(primer_producto.es_servicio, TRUE),
+                'reservado_carnaval', 0
             ) AS metadata;
-        
+
         RETURN;
     END IF;
-    
+
     -- Devolver productos filtrados por tienda, categoría y TPV (almacén asociado) con metadatos
     RETURN QUERY
-    SELECT 
+    SELECT
         p.id::bigint AS id_producto,
         p.sku::text,
         p.denominacion::text,
@@ -114,18 +132,18 @@ BEGIN
         p.imagen::text,
         -- Calcular stock disponible solo del almacén asociado al TPV
         COALESCE(
-            (SELECT SUM(ip.cantidad_final) 
-             FROM app_dat_inventario_productos ip 
+            (SELECT SUM(ip.cantidad_final)
+             FROM app_dat_inventario_productos ip
              JOIN app_dat_layout_almacen la ON ip.id_ubicacion = la.id
              JOIN app_dat_tpv tpv ON la.id_almacen = tpv.id_almacen
-             WHERE ip.id_producto = p.id 
+             WHERE ip.id_producto = p.id
              AND tpv.id = id_tpv_param
              AND ip.cantidad_final > 0
              -- Filtrar solo los registros más recientes por combinación única
              AND ip.id = (
-                 SELECT MAX(ip2.id) 
-                 FROM app_dat_inventario_productos ip2 
-                 WHERE ip2.id_producto = ip.id_producto 
+                 SELECT MAX(ip2.id)
+                 FROM app_dat_inventario_productos ip2
+                 WHERE ip2.id_producto = ip.id_producto
                  AND COALESCE(ip2.id_variante, 0) = COALESCE(ip.id_variante, 0)
                  AND COALESCE(ip2.id_opcion_variante, 0) = COALESCE(ip.id_opcion_variante, 0)
                  AND COALESCE(ip2.id_presentacion, 0) = COALESCE(ip.id_presentacion, 0)
@@ -136,17 +154,17 @@ BEGIN
         -- Indicar si tiene stock disponible en el almacén del TPV
         COALESCE(
             (SELECT CASE WHEN SUM(ip.cantidad_final) > 0 THEN true ELSE false END
-             FROM app_dat_inventario_productos ip 
+             FROM app_dat_inventario_productos ip
              JOIN app_dat_layout_almacen la ON ip.id_ubicacion = la.id
              JOIN app_dat_tpv tpv ON la.id_almacen = tpv.id_almacen
-             WHERE ip.id_producto = p.id 
+             WHERE ip.id_producto = p.id
              AND tpv.id = id_tpv_param
              AND ip.cantidad_final > 0
              -- Filtrar solo los registros más recientes por combinación única
              AND ip.id = (
-                 SELECT MAX(ip2.id) 
-                 FROM app_dat_inventario_productos ip2 
-                 WHERE ip2.id_producto = ip.id_producto 
+                 SELECT MAX(ip2.id)
+                 FROM app_dat_inventario_productos ip2
+                 WHERE ip2.id_producto = ip.id_producto
                  AND COALESCE(ip2.id_variante, 0) = COALESCE(ip.id_variante, 0)
                  AND COALESCE(ip2.id_opcion_variante, 0) = COALESCE(ip.id_opcion_variante, 0)
                  AND COALESCE(ip2.id_presentacion, 0) = COALESCE(ip.id_presentacion, 0)
@@ -157,35 +175,41 @@ BEGIN
         -- ✅ NUEVO CAMPO: Metadatos adicionales en formato JSON
         jsonb_build_object(
             'es_elaborado', p.es_elaborado,
-            'es_servicio', p.es_servicio
+            'es_servicio', p.es_servicio,
+            'es_paquete', p.es_paquete,
+            'reservado_carnaval', COALESCE(
+                (SELECT SUM(cart.quantity)
+                 FROM public.relation_products_carnaval rpc
+                 JOIN carnavalapp."Carrito" cart ON cart.product_id = rpc.id_producto_carnaval
+                 WHERE rpc.id_producto = p.id
+                ), 0)
         ) AS metadata
-    FROM 
+    FROM
         app_dat_producto p
-    JOIN 
+    JOIN
         app_dat_productos_subcategorias ps ON p.id = ps.id_producto
-    JOIN 
+    JOIN
         app_dat_subcategorias sc ON ps.id_sub_categoria = sc.id
-    JOIN 
+    JOIN
         app_dat_categoria c ON sc.idcategoria = c.id
-    LEFT JOIN 
-        app_dat_producto_ingredientes as pri on pri.id_ingrediente = p.id
      LEFT JOIN LATERAL (
         SELECT precio_venta_cup
         FROM app_dat_precio_venta pv_inner
-        WHERE pv_inner.id_producto = p.id 
+        WHERE pv_inner.id_producto = p.id
         AND (pv_inner.id_variante IS NULL OR pv_inner.id_variante = 0)
         AND (pv_inner.fecha_hasta IS NULL OR pv_inner.fecha_hasta >= CURRENT_DATE)
         ORDER BY pv_inner.created_at DESC
         LIMIT 1
     ) pv ON TRUE
     -- JOIN con TPV para filtrar solo productos del almacén asociado al TPV
-    JOIN 
+    JOIN
         app_dat_tpv tpv ON tpv.id = id_tpv_param AND tpv.id_tienda = id_tienda_param
-    WHERE 
+    WHERE
         p.id_tienda = id_tienda_param AND
-        (pri.id is NULL or p.id in (5316)) AND
+        p.es_vendible = true AND
+        c.visible_vendedor = true AND
         (id_categoria_param IS NULL OR c.id = id_categoria_param) AND
-		(
+        (
       v_text_search IS NULL
       OR unaccent(p.denominacion) ILIKE unaccent('%' || v_text_search || '%')
       OR unaccent(p.descripcion)  ILIKE unaccent('%' || v_text_search || '%')
@@ -193,13 +217,41 @@ BEGIN
     ) and
         -- Filtro TPV: solo productos que tienen inventario en el almacén del TPV
         EXISTS (
-            SELECT 1 
-            FROM app_dat_inventario_productos ip 
+            SELECT 1
+            FROM app_dat_inventario_productos ip
             JOIN app_dat_layout_almacen la ON ip.id_ubicacion = la.id
-            WHERE ip.id_producto = p.id 
+            WHERE ip.id_producto = p.id
             AND la.id_almacen = tpv.id_almacen
-            AND (NOT solo_disponibles_param OR ip.cantidad_final > 0)
+            AND (
+              NOT solo_disponibles_param
+              OR (
+                ip.cantidad_final > 0
+                AND ip.id = (
+                  SELECT MAX(ip2.id)
+                  FROM app_dat_inventario_productos ip2
+                  WHERE ip2.id_producto = ip.id_producto
+                  AND COALESCE(ip2.id_variante, 0) = COALESCE(ip.id_variante, 0)
+                  AND COALESCE(ip2.id_opcion_variante, 0) = COALESCE(ip.id_opcion_variante, 0)
+                  AND COALESCE(ip2.id_presentacion, 0) = COALESCE(ip.id_presentacion, 0)
+                  AND COALESCE(ip2.id_ubicacion, 0) = COALESCE(ip.id_ubicacion, 0)
+                )
+              )
+            )
         )
-    ORDER BY 
+    ORDER BY
         p.denominacion;
 END;
+$BODY$;
+
+ALTER FUNCTION public.get_productos_by_categoria_tpv_search_meta(bigint, bigint, bigint, text, boolean)
+    OWNER TO postgres;
+
+GRANT EXECUTE ON FUNCTION public.get_productos_by_categoria_tpv_search_meta(bigint, bigint, bigint, text, boolean) TO PUBLIC;
+
+GRANT EXECUTE ON FUNCTION public.get_productos_by_categoria_tpv_search_meta(bigint, bigint, bigint, text, boolean) TO anon;
+
+GRANT EXECUTE ON FUNCTION public.get_productos_by_categoria_tpv_search_meta(bigint, bigint, bigint, text, boolean) TO authenticated;
+
+GRANT EXECUTE ON FUNCTION public.get_productos_by_categoria_tpv_search_meta(bigint, bigint, bigint, text, boolean) TO postgres;
+
+GRANT EXECUTE ON FUNCTION public.get_productos_by_categoria_tpv_search_meta(bigint, bigint, bigint, text, boolean) TO service_role;

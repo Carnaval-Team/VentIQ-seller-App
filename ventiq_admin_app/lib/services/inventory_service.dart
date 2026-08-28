@@ -2670,17 +2670,26 @@ class InventoryService {
             .maybeSingle();
 
         if (transferLink != null) {
+          final isReception = transferLink['id_recepcion'] == idOperacion;
           print(
             '🔄 Operación de transferencia detectada ($idOperacion) — '
-            'completando solo estado (inventario ya aplicado)',
+            '${isReception ? 'contabilizando recepción' : 'completando estado'}',
           );
           final response = await _supabase.rpc(
-            'fn_registrar_cambio_estado_operacion',
-            params: {
-              'p_id_operacion': idOperacion,
-              'p_nuevo_estado': 2,
-              'p_uuid_usuario': uuid,
-            },
+            isReception
+                ? 'fn_contabilizar_operacion'
+                : 'fn_registrar_cambio_estado_operacion',
+            params: isReception
+                ? {
+                    'p_id_operacion': idOperacion,
+                    'p_comentario': comentario,
+                    'p_uuid': uuid,
+                  }
+                : {
+                    'p_id_operacion': idOperacion,
+                    'p_nuevo_estado': 2,
+                    'p_uuid_usuario': uuid,
+                  },
           );
           if (response is Map && response['status'] == 'error') {
             return Map<String, dynamic>.from(response);

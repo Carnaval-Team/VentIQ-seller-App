@@ -222,7 +222,21 @@ BEGIN
             JOIN app_dat_layout_almacen la ON ip.id_ubicacion = la.id
             WHERE ip.id_producto = p.id
             AND la.id_almacen = tpv.id_almacen
-            AND (NOT solo_disponibles_param OR ip.cantidad_final > 0)
+            AND (
+              NOT solo_disponibles_param
+              OR (
+                ip.cantidad_final > 0
+                AND ip.id = (
+                  SELECT MAX(ip2.id)
+                  FROM app_dat_inventario_productos ip2
+                  WHERE ip2.id_producto = ip.id_producto
+                  AND COALESCE(ip2.id_variante, 0) = COALESCE(ip.id_variante, 0)
+                  AND COALESCE(ip2.id_opcion_variante, 0) = COALESCE(ip.id_opcion_variante, 0)
+                  AND COALESCE(ip2.id_presentacion, 0) = COALESCE(ip.id_presentacion, 0)
+                  AND COALESCE(ip2.id_ubicacion, 0) = COALESCE(ip.id_ubicacion, 0)
+                )
+              )
+            )
         )
     ORDER BY
         p.denominacion;
