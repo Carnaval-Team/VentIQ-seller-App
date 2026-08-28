@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/inventory.dart';
 import '../config/app_colors.dart';
+import '../utils/stock_mixto_formatter.dart';
 
 class InventorySummaryCard extends StatelessWidget {
   final InventorySummaryByUser summary;
@@ -203,14 +204,33 @@ class InventorySummaryCard extends StatelessWidget {
                         size: 20,
                       ),
                       const SizedBox(width: 8),
+                      // FASE 3: no se dice "unidades" en duro.
+                      //
+                      // `cantidadTotalEnAlmacen` es la suma de cantidades FISICAS
+                      // de todas las presentaciones del producto (4 Cajas + 4
+                      // Unidades = 8), asi que la palabra "unidades" era falsa en
+                      // cuanto el producto tiene mas de una presentacion.
+                      // El resumen no trae los nombres, asi que se muestra el
+                      // numero y, cuando hay varias presentaciones, el
+                      // equivalente en base al lado — que si es comparable.
                       Text(
-                        '${realStock.toStringAsFixed(0)} unidades',
+                        StockMixtoFormatter.cantidad(realStock),
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
                           color: stockStatus.color,
                         ),
                       ),
+                      if (summary.hasMultiplePresentations) ...[
+                        const SizedBox(width: 6),
+                        Text(
+                          '= ${StockMixtoFormatter.cantidad(summary.cantidadTotalEnUnidadesBase)} u. base',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
                       const Spacer(),
                       Text(
                         'ID: ${summary.idProducto}',

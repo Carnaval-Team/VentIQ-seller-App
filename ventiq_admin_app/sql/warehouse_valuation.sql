@@ -9,13 +9,30 @@
 --
 -- Pricing source:
 --   * precio_venta_cup  : latest row in app_dat_precio_venta for (producto, variante)
---   * precio_costo_usd  : latest app_dat_producto_presentacion.precio_promedio
+--   * precio_costo_usd  : app_dat_producto_presentacion.precio_promedio de LA FILA
+--                         de presentacion que el ledger guarda en id_presentacion
+--                         (ver la nota de latest_costo mas abajo)
 --   * tasa_usd_cup      : tasa_cambio_extraoficial (by tienda) -> fallback tasas_conversion
 --
 -- Current stock source:
 --   * app_dat_inventario_productos
 --     Latest row per (id_producto, id_variante, id_opcion_variante,
 --     id_presentacion, id_ubicacion) using ORDER BY id DESC (cantidad_final).
+--
+-- ----------------------------------------------------------------------------
+-- SINCRONIZADO CON PRODUCCION el 2026-08-28.
+--
+-- Este archivo estaba DESINCRONIZADO: tenia la version anterior al arreglo de
+-- `presentaciones_inventario/19_valoracion_costo_presentacion.sql`, en la que el
+-- JOIN de costo casaba contra `pp.id_presentacion` (la FK al nomenclador) en vez
+-- de `pp.id` (la fila). Reaplicarlo habria reintroducido el bug: 5.861 de 6.647
+-- filas con stock valoradas con el costo de OTRA presentacion.
+--
+-- Verificado por huella md5 del cuerpo normalizado: las 5 funciones de este
+-- archivo son ahora identicas a las vivas en produccion.
+--
+-- Si vuelves a tocar la valoracion, actualiza LOS DOS sitios: este archivo y
+-- `presentaciones_inventario/19_...sql`.
 -- ============================================================================
 
 
@@ -133,13 +150,18 @@ BEGIN
         ORDER BY pv.id_producto, COALESCE(pv.id_variante, 0), pv.created_at DESC
     ),
     latest_costo AS (
-        SELECT DISTINCT ON (pp.id_producto, pp.id_presentacion)
-            pp.id_producto,
-            pp.id_presentacion,
-            pp.precio_promedio
-        FROM app_dat_producto_presentacion pp
-        WHERE pp.precio_promedio IS NOT NULL AND pp.precio_promedio > 0
-        ORDER BY pp.id_producto, pp.id_presentacion, pp.created_at DESC
+        -- FASE 3 presentaciones: se indexa por pp.id (la FILA), que es
+        -- lo que el ledger guarda en id_presentacion.
+        --
+        -- Antes se casaba contra pp.id_presentacion, que es la FK al
+        -- nomenclador (1=Unidad, 3=Caja...). Dos espacios de ids con el
+        -- mismo nombre: el JOIN no casaba NUNCA (0 de 6.647 filas) y
+        -- todo caia al fallback "cualquier presentacion del producto".
+        SELECT pp.id AS id_producto_presentacion,
+               pp.id_producto,
+               pp.precio_promedio
+          FROM app_dat_producto_presentacion pp
+         WHERE pp.precio_promedio IS NOT NULL AND pp.precio_promedio > 0
     ),
     latest_costo_fallback AS (
         -- Fallback: any presentation (most recent) if the product's presentation has no price
@@ -185,8 +207,8 @@ BEGIN
            ON lp.id_producto = li.id_producto
           AND COALESCE(lp.id_variante, 0) = COALESCE(li.id_variante, 0)
     LEFT JOIN latest_costo lc
-           ON lc.id_producto = li.id_producto
-          AND lc.id_presentacion = li.id_presentacion
+           ON lc.id_producto_presentacion = li.id_presentacion
+          AND lc.id_producto              = li.id_producto
     LEFT JOIN latest_costo_fallback lcf
            ON lcf.id_producto = li.id_producto
     WHERE a.id_tienda = p_id_tienda

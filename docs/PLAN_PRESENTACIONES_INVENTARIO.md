@@ -299,9 +299,10 @@ UI: sin la red debajo, cada pantalla nueva es otra puerta al mismo daño.
 - [x] Precio de línea: en la presentación de esa línea; el promedio a base lo hace el servidor (`20_costo_promedio_en_base.sql`), no el cliente.
 - [x] **Extracción admin**: `inventory_extraction_screen.dart` usa `CantidadMixtaInput` (verificado).
 - [x] **Ajuste admin**: `inventory_adjustment_screen.dart` abre un diálogo **por presentación** con el desglose mixto de la zona a la vista (Fase 2) y manda `null` en vez de `?? 0` (Fase 5).
-- [ ] **Transferencia admin**: `transfer_product_quantity_dialog.dart` sigue con **un solo campo**. No aplana (respeta el `id_presentacion` que recibe y muestra `presentacion_nombre`), así que **no es un bug** — es la única de las cuatro operaciones admin sin captura mixta. Transferir 2 Cajas + 3 Bolsas exige hoy dos pases.
+- [x] **Transferencia admin**: ya está migrada, el pendiente apuntaba a **dos sitios muertos**. La pantalla real (`inventory_transfer_screen.dart`) **no usa diálogo de cantidad**: usa una lista con un campo por fila, y las filas ya son **una por presentación** — el `variant_key` incluye `id_presentacion` (L178), el dedupe agrupa por `id_producto + id_presentacion` (L187), la fila muestra `presentacion_nombre` (L1039) y el payload manda `id_presentacion` (L241). Transferir «2 Cajas + 3 Bolsas» se hace **en un solo pase**: son dos filas. Ya tiene el trabajo de Fase 2: el validador **no rechaza** pedir más de lo suelto (comentario «FASE 2» en L1089) y muestra un icono `auto_awesome` con el tooltip del rebalanceo.
+      **Código muerto detectado (no borrado, requiere tu OK):** `widgets/transfer_product_quantity_dialog.dart` (archivo entero, **0 usos en el repo**) y la clase privada `_ProductQuantityDialog` de `inventory_transfer_screen.dart` L1331 (**390 líneas, nunca instanciada**; `dart analyze` avisa «A value for optional parameter 'sourceLayoutId' isn't ever given»). Son de cuando la pantalla trabajaba con diálogos. Ninguno aplana, así que no hay bug.
 - [ ] Listas de operación: mostrar presentación por línea. **Confirmado que falta**: `fn_listar_operaciones_inventario_new` no menciona `id_presentacion` **ni una vez** en sus 32.828 caracteres. Arma su `detalles` jsonb por tipo de operación, así que hay que ampliar cada rama (venta, recepción, extracción, transferencia…). El detalle por presentación sí está disponible en el kardex y en el stock.
-- [ ] `inventory_summary_card.dart:207` (`'${realStock} unidades'`) y `warehouse_detail_screen.dart:1967` (`'Stock total: $totalStock unidades'`): siguen con la palabra en duro. Son **2 líneas**, el resto de la pantalla de stock ya se corrigió en Fase 3.
+- [x] `inventory_summary_card.dart` y `warehouse_detail_screen.dart`: la palabra en duro eliminada. **No se cambió por otra palabra**: el problema de fondo era que el número no significa nada — `cantidadTotalEnAlmacen` suma cantidades **físicas** de presentaciones distintas (4 Cajas + 4 Unidades = 8). Ahora la tarjeta muestra el número y, si el producto tiene varias presentaciones, el equivalente `= N u. base` al lado (comparable); y el diálogo de la zona agrupa por `presentacion` —que la RPC ya devolvía— y arma el desglose real «4 Cajas + 4 Unidades». `totalStock` queda solo como bandera «¿hay algo?» para permitir o no borrar la zona.
 - [x] **Formatter compartido de stock mixto**: `ventiq_admin_app/lib/utils/stock_mixto_formatter.dart` — `plural`, `cantidad`, `mixto`, `linea`, `mixtoConEquivalente`. Replica letra por letra `fn_plural_presentacion`, `fn_fmt_cantidad` y `fn_formatear_stock_mixto` (el SQL las declaró IMMUTABLE y sin tocar la base justamente para permitir esto). Cubierto por `test/stock_mixto_formatter_test.dart` — **32 tests verdes**. Las salidas **ya se compararon contra las funciones vivas**: `fn_plural_presentacion('Bolsa',1)='Bolsa'` / `(...,5)='Bolsas'`, `fn_fmt_cantidad(4.0)='4'` / `(4.5)='4.5'` / `(NULL)='0'`, y el texto mixto del producto 217 sale `'100 Bolsas'` con `texto_corto='100 BOL'`.
       `linea()` no inventa "unidades" cuando `id_presentacion` es nulo: el ledger no sabe en qué estaba expresada esa fila.
 
@@ -334,7 +335,7 @@ UI: sin la red debajo, cada pantalla nueva es otra puerta al mismo daño.
       No-regresión: tienda 174, 270 filas antes = 270 después, cambian solo las 2 celdas del 9635; `stock_disponible` y `zonas_count` intactos. El `DO` block aborta si no parchea **las dos ramas** (con-almacén / sin-almacén) — parchear una dejaría el bug vivo al filtrar.
 - [x] `fn_stock_mixto_almacen(producto, almacen)` (nueva, `18`): desglose + `equivalente_base` + `texto` («4 Cajas + 4 Unidades») + `texto_corto` («4 CAJ + 4 UNI»).
 - [x] [inventory_stock_screen.dart](../ventiq_admin_app/lib/screens/inventory_stock_screen.dart): `InventoryProduct.cantidadConPresentacion` / `cantidadEnPresentacion(v)`; 6 usos de `"N unidades"` eliminados.
-- [ ] `inventory_summary_card.dart:207` y `warehouse_detail_screen.dart:1967`: siguen con `"N unidades"` en duro (**2 líneas**). `admin_stock_screen.dart` **no existe** en el repo.
+- [x] `inventory_summary_card.dart` y `warehouse_detail_screen.dart`: corregidos (ver Fase 2). `admin_stock_screen.dart` **no existe** en el repo.
 - [ ] `fn_stock_producto_almacen`: sigue devolviendo el equivalente crudo (suma de `cantidad_final` sin factor). Es el helper que usa la cocina; cambiarlo toca el BOM.
 
 ### IPV y valoración
@@ -350,7 +351,9 @@ UI: sin la red debajo, cada pantalla nueva es otra puerta al mismo daño.
 - [x] Exportaciones (`obtener_reporte_inventario_completo*`): las 5 versiones **ya agrupan por presentación** igual que el IPV, y `export_service.dart` ya mapeaba `id_presentacion`/`presentacion` a `InventoryProduct`. Corregido el resumen, que decía «Stock total: N **unidades**» sumando presentaciones distintas — ahora dice «N en X línea(s) de presentación».
 - [ ] ⚠️ **Rotación y días de inventario no son interpretables en productos partidos.** Al agrupar por presentación, un producto comprado en Cajas y vendido en Unidades sale en dos filas: una con el stock y 0 ventas, otra con las ventas y 0 stock. `dias_inventario` y `rotacion_anual` se calculan dentro de la fila, así que en una el numerador es 0 y en la otra el denominador. Medido: **4 combinaciones producto+ubicación partidas, 3 con stock y ventas separados** (tienda 165: `CALDO SABOR CARNE (Paquete)` stock 0 / ventas 18 junto a `(Unidad)` stock 794 / ventas 52). Con `equivalente_base` la app ya puede sumar las filas del producto; se deja en la UI porque cambiarlo en SQL obliga a decidir si el IPV se reporta por presentación o por producto, y hoy sirve para las dos cosas.
 - [ ] ⚠️ **514 productos con stock y `costo_promedio_usd = 0`** (tiendas 45/165/174, de 1.183 filas). El CTE `costo_promedio` de `obtener_ipv` solo lee recepciones con precio > 0, así que el stock que entró por conteo inicial, ajuste o importación no tiene costo ahí — aunque sí lo tenga en `app_dat_producto_presentacion.precio_promedio`, que es lo que usa la valoración del `19`. Explica por qué IPV y valoración pueden discrepar.
-- [ ] ⚠️ **[warehouse_valuation.sql](../ventiq_admin_app/sql/warehouse_valuation.sql) está DESINCRONIZADO con producción.** La función viva ya tiene el arreglo del `19` (`LEFT JOIN latest_costo lc ON lc.id_producto_presentacion = li.id_presentacion`, con el comentario que explica el bug); el archivo del repo sigue con la versión rota (`DISTINCT ON (pp.id_producto, pp.id_presentacion)` casando contra la FK del nomenclador). **Si alguien reaplica ese archivo, reintroduce el bug del 88 %.** Hay que volcar `pg_get_functiondef` de producción encima del archivo.
+- [x] ✅ **[warehouse_valuation.sql](../ventiq_admin_app/sql/warehouse_valuation.sql) SINCRONIZADO** (2026-08-28). Estaba con la versión anterior al `19`: `latest_costo` hacía `DISTINCT ON (pp.id_producto, pp.id_presentacion)` y el JOIN casaba contra la FK del nomenclador — reaplicarlo reintroducía el bug del 88 %.
+      **Método:** comparación por **huella md5 del cuerpo normalizado** (sin espacios, minúsculas) de cada función contra `pg_get_functiondef`. Reveló que **solo 1 de las 5** difería (`fn_inventory_valuation_rows`, 3.693 vs 3.915 chars); `fn_get_usd_cup_rate`, `fn_warehouses_valuation_summary`, `fn_warehouse_valuation_zones` y `fn_zone_valuation_products` ya eran idénticas. Así se parchearon **2 regiones** en vez de volcar el archivo entero y perder la cabecera y el formato.
+      Verificado después: **5/5 huellas idénticas** a producción y pglast valida las 10 sentencias. La cabecera ahora avisa de que la valoración vive en **dos** sitios (`19` y este archivo).
 
 ### Costos
 
@@ -378,20 +381,15 @@ Cambios RPC:
 - [x] `fn_presentacion_item_json` ampliada con **`presentacion_factor_rel`** y **`equivalente_base`** (aplicada). Hacía falta para los totales: `factor` es lo que el usuario escribió y `factor_rel` es lo que sirve para equivalencias — en el producto 4380 la base tiene `factor 30` y `factor_rel 1`.
 - [x] Entrada/Salida como `{qty} {nombre}` en la tabla, el PDF y el Excel. Detalle al tap: `Presentación: Bulto (= 10 base)` y, si fue conversión, la etiqueta «Cambio de presentación (abrir/empaquetar)».
 - [x] Totales de pie del PDF/Excel = **equivalente base** etiquetado `u. base` (`sum(qty * factor_rel)`), no la suma de cantidades crudas: sumar 4 cajas + 4 unidades como «8» es un número sin significado.
-- [ ] Filtro Presentación (junto a almacén / tipo op.).
-- [ ] Chip **Conversión** en el resumen de la pantalla.
-- [ ] Saldo mixto post-movimiento (columna Saldo sigue en equivalente crudo).
-- [ ] Auditoría de huecos: agrupar por `(almacen_id, ubicacion, id_presentacion)`, no por producto global.
+- [x] **Filtro Presentación** (`_selectedPresentacionId`). Las opciones se **derivan de los movimientos cargados**, no de `fn_presentaciones_producto`: ofrecer la cadena completa dejaría elegir presentaciones sin un solo movimiento y la lista saldría vacía sin explicación. Cada opción lleva su conteo (`Bulto (12)`). Solo se muestra el dropdown si hay **más de una** presentación con movimientos. Es **filtro local**, no recarga: la v4 no tiene parámetro de presentación y añadírselo cambiaría la firma que usa la app vieja. Aplicado también en `_prepareMovementsForExport`, o el Excel traería filas que la pantalla oculta.
+- [x] **Chip Conversión** en el resumen. Cuenta por `es_conversion` (la bandera del `17`, que viene de `id_conversion IS NOT NULL`), no por el nombre del tipo. **Solo aparece si hay conversiones en el rango**: la mayoría de los productos no tiene ninguna y un chip permanente en 0 gasta ancho de pantalla. Índigo, igual que la fila.
+- [x] **Saldo con su presentación** en pantalla, PDF y Excel (`4` + `Caja` debajo; `4.00 (Caja)` en Excel). **Decisión: no se reconstruye el saldo mixto del almacén.** Haría falta el histórico completo de todas las presentaciones de esa ubicación, y el kardex está **paginado a 20 filas y filtrado por fecha**: si la otra presentación se movió fuera de la ventana cargada, el mixto saldría mal. Un saldo inventado es peor que un saldo parcial bien etiquetado — y etiquetarlo ya resuelve el problema real, que era leer «4» y «100» en dos filas seguidas como si fuera un error de datos.
+- [x] **Auditoría de huecos por `(ubicación, id_presentacion)`**. La cadena de saldos del ledger es por `(producto, variante, opción, ubicación, id_presentacion)`; agrupar solo por ubicación mezclaba las cadenas de Caja y Unidad en una secuencia, así que **cada alternancia entre dos presentaciones generaba un falso positivo**. La presentación entra también en la etiqueta del hallazgo (`Almacén · Zona · Bulto`) para que un hueco real diga en qué cadena está. Ojo: la clave pasó a `'id:N|pres:M|etiqueta'`, así que el parseo de la etiqueta busca el **segundo** `|`.
 
-> La lista de «Cambios UI» que estaba aquí duplicaba los puntos de arriba. Lo que
-> realmente queda en el kardex son los **4 pendientes** listados en «Cambios RPC»:
-> filtro por presentación, chip Conversión, saldo mixto en la columna Saldo y la
-> auditoría de huecos por `(almacen, ubicacion, id_presentacion)`.
->
-> Estado verificado en `product_movements_screen.dart`: el tipo «Conversión» ya tiene
-> color e icono (líneas 372 y 391) y el detalle lo muestra (línea 4045), pero los chips
-> del resumen siguen siendo **cuatro** — Total, Recepción, Extracción, Control (líneas
-> 496-546) — así que una conversión se cuenta en Total y en ninguno más.
+`dart analyze lib`: **0 errores**.
+
+> La lista de «Cambios UI» que estaba aquí duplicaba los puntos de arriba, que ya están
+> todos marcados. **El kardex queda cerrado.**
 
 ### Reporte de ventas general (admin)
 
@@ -569,7 +567,7 @@ que sí. Hay que manejar ese error igual que hoy, no asumir que el diálogo lo e
 - [ ] **`transfer_product_quantity_dialog.dart`** — la transferencia admin sigue con un campo único (no aplana, pero no permite mixto)
 - [ ] **`sales_screen.dart`** (tab productos y proveedores) + `ProductSalesReport` — **0 menciones** de desglose/equivalente: es el bloque más grande que queda
 - [ ] **`venta_total_screen.dart`** / `sales_monitor_fab.dart` / `cierre_screen.dart` — **0 menciones** de presentación
-- [ ] `inventory_summary_card.dart:207` y `warehouse_detail_screen.dart:1967` — «unidades» en duro (2 líneas)
+- [x] `inventory_summary_card.dart` y `warehouse_detail_screen.dart` — «unidades» en duro eliminada; la tarjeta muestra el equivalente base y el diálogo de zona el desglose por presentación
 - [ ] `mesa_cuenta_service.dart` — la línea de cuenta lleva `idPresentacion` pero sin nombre ni factor (la RPC de la cuenta no los devuelve)
 
 ---
@@ -584,8 +582,8 @@ que sí. Hay que manejar ese error igual que hoy, no asumir que el diálogo lo e
 - [x] IPV y exportación: desglose + totales en equivalente base
 - [x] Valoración de almacén (el bug del 88 % corregido)
 - [x] Kardex: Entrada/Salida con presentación, detalle con factor, totales en `u. base`
-- [ ] Transferencia: sigue con campo único (no aplana)
-- [ ] Kardex: saldo mixto por movimiento, filtro por presentación, chip Conversión, auditoría de huecos
+- [x] Transferencia: ya usa lista con una fila por presentación + aviso de rebalanceo
+- [x] Kardex: filtro por presentación, chip Conversión, saldo etiquetado, auditoría por (ubicación, presentación)
 - [ ] Ventas general: 1 fila/producto, mixto + Equiv. u, dinero × equiv
 - [ ] Ventas por proveedor: detalle/PDF con mixto + Equiv. u
 - [ ] Lista de Operaciones: presentación por línea
@@ -657,18 +655,25 @@ Los que dicen «pendiente de UI» necesitan ejecutar la app en un dispositivo.
 | 2 | **Resumen de cierre vendedor** (`venta_total_screen`, `sales_monitor_fab`, `fn_resumen_diario_cierre`) | grande | `productos_vendidos` suma cantidades crudas de presentaciones distintas. La RPC no menciona `id_presentacion`. |
 | 3 | **`fn_stock_producto_almacen` sin factor** | medio | 13 funciones de cocina la usan. Hoy inofensivo (1 combinación afectada); explota al configurar un empaque en un elaborado. |
 | 4 | **`fn_inventario_detallado_optimizado`** | medio | 37 menciones de `id_presentacion`, sin auditar. Puede estar bien o estar aplanando. |
-| 5 | **Kardex: filtro, chip Conversión, saldo mixto, auditoría de huecos** | medio | 4 puntos de UI. El tipo Conversión ya se muestra; falta contarlo en los chips y el saldo mixto por movimiento. |
-| 6 | **Transferencia admin con captura mixta** | pequeño | Único de los 4 movimientos admin sin mixto. No aplana; solo obliga a dos pases. |
+| ~~5~~ | ✅ **Kardex cerrado** | hecho | Filtro por presentación (local, con conteos), chip Conversión (solo si hay), saldo etiquetado con su presentación en pantalla/PDF/Excel, y auditoría por `(ubicación, presentación)` — que era un **generador de falsos positivos** con stock mixto. |
+| ~~6~~ | ✅ **Transferencia admin: ya estaba migrada** | hecho | El pendiente apuntaba a 2 clases **muertas**. La pantalla real usa lista con una fila por presentación y ya tiene el aviso de rebalanceo. |
 | 7 | **Lista de Operaciones con presentación** | medio | `fn_listar_operaciones_inventario_new` (32.828 chars) no la menciona; hay que ampliar cada rama del `detalles` jsonb. |
 | 8 | **Conteo mixto en apertura de turno** | medio | Documentado y postergado por decisión (2 productos afectados). |
 | 9 | **«unidades» en duro** en 2 widgets | trivial | `inventory_summary_card:207`, `warehouse_detail_screen:1967`. |
 | 10 | **Datos sucios**: 21 costos inconsistentes, 14 productos sin costo en su presentación, 514 con costo 0 en IPV | dato, no código | No se arreglan con código: hay que cargar el costo donde está el stock. |
-| 11 | ⚠️ **`ventiq_admin_app/sql/warehouse_valuation.sql` desincronizado** | trivial pero **peligroso** | El archivo del repo tiene la versión **rota** del JOIN de costo; la función viva tiene el arreglo. Reaplicarlo reintroduce el bug del 88 %. Volcar `pg_get_functiondef` encima. |
+| ~~11~~ | ✅ **`warehouse_valuation.sql` sincronizado** | hecho | Solo 1 de las 5 funciones difería (detectado por huella md5). 5/5 idénticas a producción, pglast 10/10. |
+| ~~9~~ | ✅ **«unidades» en duro** | hecho | `inventory_summary_card` muestra el número + `= N u. base` cuando hay varias presentaciones; `warehouse_detail_screen` agrupa por presentación y arma «4 Cajas + 4 Unidades». |
 
-**Sugerencia de orden:** el **11** primero (es un `pg_get_functiondef` y elimina un
-riesgo de regresión), luego el **9** y el **6** (triviales), y después decidir entre el
-**1** y el **2** — los dos son bloques grandes que cambian contratos de RPC que la app
-vieja consume, así que conviene hacerlos de uno en uno con su propia no-regresión.
+**Orden acordado (de menor a mayor).** Hechos: **11** ✅, **9** ✅, **6** ✅ (ya estaba),
+**5** ✅. Quedan: **4** (auditar `fn_inventario_detallado_optimizado`), **3**
+(`fn_stock_producto_almacen` con factor), **7** (lista de Operaciones), y al final el
+**1** y el **2** — los dos cambian contratos de RPC que la app vieja consume, así que van
+de uno en uno con su propia no-regresión.
+
+**Herramienta reutilizable:** para detectar archivos `.sql` desincronizados sin
+transportar el cuerpo entero, comparar `md5(lower(regexp_replace(prosrc,'\s','','g')))`
+de la función viva contra la misma normalización del archivo local. Aísla *qué* función
+difiere y permite parchear solo esa región.
 
 ---
 

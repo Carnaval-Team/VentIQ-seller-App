@@ -58,6 +58,13 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
   bool _isAuditing = false;
   bool _filtersExpanded = false;
   String? _selectedTipoMovimiento;
+
+  /// FASE 3 · filtro por presentación del kardex.
+  ///
+  /// Guarda `app_dat_producto_presentacion.id` (la FILA), que es lo que el
+  /// ledger escribe en `id_presentacion` — no el id del nomenclador.
+  /// `null` = todas.
+  int? _selectedPresentacionId;
   final UserPreferencesService _userPreferencesService = UserPreferencesService();
   final SupabaseClient _supabase = Supabase.instance.client;
 
@@ -252,9 +259,49 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
     setState(() {});
   }
 
+  /// Cuántas conversiones (abrir/empaquetar) hay en el rango cargado.
+  ///
+  /// Se cuenta por `es_conversion`, la bandera que el `17` añadió a la v4, y no
+  /// por el nombre del tipo: el `CASE` del servidor ya clasifica estas filas
+  /// como «Conversión», pero la bandera es el dato autoritativo (viene de
+  /// `id_conversion IS NOT NULL`).
+  int get _conteoConversiones =>
+      _filteredMovements.where((m) => m['es_conversion'] == true).length;
+
+  /// Presentaciones que realmente aparecen en los movimientos cargados.
+  ///
+  /// Se derivan de las filas, no de `fn_presentaciones_producto`: el filtro
+  /// solo debe ofrecer opciones que vayan a devolver algo. Ofrecer la cadena
+  /// completa dejaría elegir presentaciones sin un solo movimiento.
+  List<Map<String, dynamic>> get _presentacionesEnMovimientos {
+    final vistas = <int, String>{};
+    for (final m in _filteredMovements) {
+      final id = (m['id_presentacion'] as num?)?.toInt();
+      if (id == null) continue;
+      final nombre = (m['presentacion_nombre'] as String?)?.trim();
+      vistas[id] = (nombre == null || nombre.isEmpty) ? 'Presentación $id' : nombre;
+    }
+    final lista = vistas.entries
+        .map((e) => {'id': e.key, 'nombre': e.value})
+        .toList();
+    lista.sort((a, b) => (a['nombre'] as String).compareTo(b['nombre'] as String));
+    return lista;
+  }
+
   List<Map<String, dynamic>> get _displayMovements {
-    if (_selectedTipoMovimiento == null) return _filteredMovements;
-    return _filteredMovements
+    var base = _filteredMovements;
+
+    // FASE 3: filtro por presentación. Va antes del de tipo para que el chip
+    // "Total" cuente lo que el usuario está viendo de verdad.
+    if (_selectedPresentacionId != null) {
+      base = base
+          .where((m) =>
+              (m['id_presentacion'] as num?)?.toInt() == _selectedPresentacionId)
+          .toList();
+    }
+
+    if (_selectedTipoMovimiento == null) return base;
+    return base
         .where((m) => m['tipo_movimiento'] == _selectedTipoMovimiento)
         .toList();
   }
@@ -295,6 +342,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       _selectedWarehouseId = null;
       _selectedWarehouse = 'Todos';
       _selectedTipoMovimiento = null;
+      _selectedPresentacionId = null;
     });
     _loadData();
   }
@@ -544,6 +592,29 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                                     : 'Control';
                           }),
                         ),
+                        // FASE 3 · chip Conversión.
+                        //
+                        // Solo aparece si hay conversiones en el rango: la
+                        // mayoria de los productos no tiene ninguna y un chip
+                        // permanente en 0 solo gasta ancho en pantalla.
+                        // El color (indigo) y el icono son los mismos que la
+                        // fila usa para el tipo, para que se lean como lo mismo.
+                        if (_conteoConversiones > 0) ...[
+                          _buildSummaryDivider(),
+                          _buildSummaryTile(
+                            label: 'Conversión',
+                            count: _conteoConversiones,
+                            color: Colors.indigo,
+                            isSelected:
+                                _selectedTipoMovimiento == 'Conversión',
+                            onTap: () => setState(() {
+                              _selectedTipoMovimiento =
+                                  _selectedTipoMovimiento == 'Conversión'
+                                      ? null
+                                      : 'Conversión';
+                            }),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -574,7 +645,12 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                                       child: Padding(
                                         padding: const EdgeInsets.all(32),
                                         child: Text(
-                                          'Sin movimientos de tipo "$_selectedTipoMovimiento"',
+                                          _selectedPresentacionId != null &&
+                                                  _selectedTipoMovimiento != null
+                                              ? 'Sin movimientos de tipo "$_selectedTipoMovimiento" en esa presentación'
+                                              : _selectedPresentacionId != null
+                                                  ? 'Sin movimientos en esa presentación'
+                                                  : 'Sin movimientos de tipo "$_selectedTipoMovimiento"',
                                           style: TextStyle(color: Colors.grey.shade600),
                                           textAlign: TextAlign.center,
                                         ),
@@ -629,6 +705,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
     return _selectedOperationTypeId != null ||
         _selectedWarehouseId != null ||
         _selectedTipoMovimiento != null ||
+        _selectedPresentacionId != null ||
         !isDefaultDateFrom ||
         !isDefaultDateTo;
   }
@@ -645,11 +722,19 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
   }
 
   /// Aplica los mismos filtros de UI a una lista ya obtenida del RPC
-  /// (tipo de movimiento local + orden por id).
+  /// (tipo de movimiento + presentación local, y orden por id).
   List<Map<String, dynamic>> _prepareMovementsForExport(
     List<Map<String, dynamic>> source,
   ) {
     var list = List<Map<String, dynamic>>.from(source);
+    // FASE 3: el export tiene que respetar el filtro de presentación, o el
+    // Excel no coincide con lo que el usuario está viendo en pantalla.
+    if (_selectedPresentacionId != null) {
+      list = list
+          .where((m) =>
+              (m['id_presentacion'] as num?)?.toInt() == _selectedPresentacionId)
+          .toList();
+    }
     if (_selectedTipoMovimiento != null) {
       list = list
           .where((m) => m['tipo_movimiento'] == _selectedTipoMovimiento)
@@ -794,7 +879,17 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
         return;
       }
 
-      // Continuidad de stock por ubicación (y almacén si aplica).
+      // Continuidad de stock por ubicación + PRESENTACIÓN (y almacén si aplica).
+      //
+      // FASE 3: la cadena de saldos del ledger es por
+      // (producto, variante, opcion, ubicacion, id_presentacion) — es la clave
+      // con la que el SQL busca el `cantidad_final` anterior. Agrupar solo por
+      // ubicacion mezclaba las cadenas de Caja y Unidad en una sola secuencia:
+      // cada vez que se alternaban dos presentaciones en la misma zona, el
+      // `cantidad_inicial` de la siguiente fila no tenia por que seguir al
+      // `cantidad_final` de la anterior, y la auditoria reportaba un hueco
+      // que no existia. Con stock mixto eso seria un falso positivo por cada
+      // alternancia.
       final auditAllWarehouses = selectedWid == null;
       final byUbicacion = <String, List<Map<String, dynamic>>>{};
       for (final m in movements) {
@@ -812,10 +907,21 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                     ? m['almacen_nombre'] as String
                     : null)
             : null;
-        final label = almNombre != null && almNombre.isNotEmpty
-            ? '$almNombre · $ubiNombre'
+
+        // La presentación entra en la clave y en la etiqueta: si hay un hueco
+        // real, el usuario necesita saber en qué presentación está.
+        final presId = _asInt(m['id_presentacion']);
+        final presNombre = (m['presentacion_nombre'] as String?)?.trim();
+
+        final ubiConPres = (presNombre != null && presNombre.isNotEmpty)
+            ? '$ubiNombre · $presNombre'
             : ubiNombre;
-        final key = ubiId != null ? 'id:$ubiId|$label' : 'name:$label';
+        final label = almNombre != null && almNombre.isNotEmpty
+            ? '$almNombre · $ubiConPres'
+            : ubiConPres;
+
+        final claveUbi = ubiId != null ? 'id:$ubiId' : 'name:$ubiNombre';
+        final key = '$claveUbi|pres:${presId ?? 0}|$label';
         byUbicacion.putIfAbsent(key, () => []).add(m);
       }
 
@@ -834,8 +940,12 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
           return ((_asInt(a['id']) ?? 0).compareTo(_asInt(b['id']) ?? 0));
         });
 
-        final ubiLabel = key.contains('|')
-            ? key.substring(key.indexOf('|') + 1)
+        // La clave ahora es 'id:N|pres:M|etiqueta': la etiqueta es todo lo que
+        // va despues del SEGUNDO '|'. Con lastIndexOf se evita cortar por el
+        // separador de la presentacion.
+        final sep = key.indexOf('|', key.indexOf('|') + 1);
+        final ubiLabel = sep >= 0
+            ? key.substring(sep + 1)
             : key.replaceFirst('name:', '');
 
         Map<String, dynamic>? prev;
@@ -2923,7 +3033,17 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
           m['estado_operacion_nombre'] as String? ?? 'Completada',
           isEntrada ? qtyTexto : '',
           !isEntrada ? qtyTexto : '',
-          (m['cantidad_final'] as num?)?.toStringAsFixed(2) ?? '-',
+          // FASE 3: el saldo con su presentación, igual que en pantalla y PDF.
+          // En Excel va en la misma celda (no hay salto de línea util en una
+          // columna estrecha) con el formato "4 (Caja)".
+          (() {
+            final n = m['cantidad_final'] as num?;
+            if (n == null) return '-';
+            final p = (m['presentacion_nombre'] as String?)?.trim();
+            return (p != null && p.isNotEmpty)
+                ? '${n.toStringAsFixed(2)} ($p)'
+                : n.toStringAsFixed(2);
+          })(),
           (m['observaciones'] as String?)?.trim() ?? '',
         ];
 
@@ -3243,7 +3363,16 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                   final nOp = m['id_operacion']?.toString() ?? '-';
                   final tipoOpVal = m['tipo_operacion'] as String? ?? '-';
                   final estadoVal = m['estado_operacion_nombre'] as String? ?? 'Completada';
-                  final cantFinal = (m['cantidad_final'] as num?)?.toStringAsFixed(2) ?? '-';
+                  // FASE 3: el saldo del PDF tambien lleva su presentacion.
+                  // Sin ella, dos filas seguidas con "4" y "100" parecen un
+                  // error de datos en vez de dos cadenas distintas.
+                  final presSaldo =
+                      (m['presentacion_nombre'] as String?)?.trim();
+                  final cantFinal = (m['cantidad_final'] as num?) == null
+                      ? '-'
+                      : (presSaldo != null && presSaldo.isNotEmpty
+                          ? '${(m['cantidad_final'] as num).toStringAsFixed(2)}\n$presSaldo'
+                          : (m['cantidad_final'] as num).toStringAsFixed(2));
                   final observaciones = (m['observaciones'] as String?)?.trim() ?? '';
                   final fechaStr = m['fecha'] as String? ?? '';
                   String fechaFmt = '-';
@@ -3594,6 +3723,57 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
               },
             ),
           ),
+
+          // ─── FASE 3 · Filtro por presentación ──────────────────────────
+          //
+          // Solo se muestra si el producto tiene mas de una presentacion CON
+          // movimientos: con una sola, el dropdown seria una lista de un
+          // elemento que no filtra nada.
+          //
+          // El filtro es LOCAL (no recarga del servidor) porque la v4 no tiene
+          // parametro de presentacion — y anadirselo cambiaria la firma que la
+          // app vieja usa. Filtrar en cliente sobre la pagina cargada es
+          // suficiente y no rompe la compatibilidad.
+          if (_presentacionesEnMovimientos.length > 1) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(6),
+                color: Colors.white,
+              ),
+              child: DropdownButton<int?>(
+                value: _selectedPresentacionId,
+                isExpanded: true,
+                underline: const SizedBox(),
+                hint: const Text('Todas las presentaciones'),
+                items: [
+                  const DropdownMenuItem<int?>(
+                    value: null,
+                    child: Text('Todas las presentaciones'),
+                  ),
+                  ..._presentacionesEnMovimientos.map((p) {
+                    final id = p['id'] as int;
+                    final n = _filteredMovements
+                        .where((m) =>
+                            (m['id_presentacion'] as num?)?.toInt() == id)
+                        .length;
+                    return DropdownMenuItem<int?>(
+                      value: id,
+                      child: Text(
+                        '${p['nombre']}  ($n)',
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    );
+                  }),
+                ],
+                onChanged: (value) =>
+                    setState(() => _selectedPresentacionId = value),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -3713,8 +3893,24 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
     }
 
     final nOp = movement['id_operacion']?.toString() ?? '-';
+
+    // FASE 3 · el saldo es de ESA presentación, no del producto.
+    //
+    // `cantidad_final` es el saldo de la cadena
+    // (producto, variante, opcion, ubicacion, id_presentacion) — es lo que el
+    // SQL escribe y lee. Mostrarlo pelado hacia creer que era el saldo del
+    // producto: en un producto mixto, dos filas seguidas podian decir "4" y
+    // "100" sin que ninguna estuviera mal.
+    //
+    // NO se reconstruye aqui el saldo mixto del almacen. Haria falta el
+    // historico COMPLETO de todas las presentaciones de esa ubicacion, y este
+    // kardex esta paginado (20 filas) y filtrado por fecha: si la otra
+    // presentacion se movio fuera de la ventana cargada, el mixto saldria mal.
+    // Un saldo inventado es peor que un saldo parcial bien etiquetado.
     final cantFinal =
         (movement['cantidad_final'] as num?)?.toStringAsFixed(2) ?? '-';
+    final saldoPresNombre =
+        (movement['presentacion_nombre'] as String?)?.trim();
 
     final cantidadNum = (movement['cantidad'] as num?)?.toDouble() ?? 0;
     final isReajuste = tipoMovimiento == 'Reajuste' || tipoMovimiento == 'Ajuste';
@@ -3880,14 +4076,34 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 4, vertical: 8),
-                  child: Text(
-                    cantFinal,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey.shade800,
-                    ),
-                    textAlign: TextAlign.right,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        cantFinal,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey.shade800,
+                        ),
+                        textAlign: TextAlign.right,
+                      ),
+                      // La presentación del saldo, para que "4" y "100" en dos
+                      // filas seguidas se lean como lo que son: dos cadenas
+                      // distintas del mismo producto.
+                      if (saldoPresNombre != null && saldoPresNombre.isNotEmpty)
+                        Text(
+                          saldoPresNombre,
+                          style: TextStyle(
+                            fontSize: 8,
+                            color: Colors.grey.shade500,
+                          ),
+                          textAlign: TextAlign.right,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    ],
                   ),
                 ),
               ),
