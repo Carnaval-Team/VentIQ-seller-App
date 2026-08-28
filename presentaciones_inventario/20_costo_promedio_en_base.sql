@@ -6,7 +6,25 @@
 -- Objetivo del plan: «ponderar en unidades base; actualizar solo `es_base`».
 --
 -- ----------------------------------------------------------------------------
--- Hallazgo previo: la v2 está ROTA, no solo mal ponderada
+-- OJO · existe una v3 en producción que NO se usa (2026-08-28)
+-- ----------------------------------------------------------------------------
+-- Un pull posterior trajo `fn_actualizar_precio_promedio_recepcion_v3`
+-- (ventiq_admin_app/docs/migrations/12_fix_precio_promedio_recepciones_consignacion.sql)
+-- con la MISMA firma y el MISMO RETURNS TABLE que esta v2, y el Dart de ese pull
+-- apuntaba a ella. Se revirtió el llamador a la v2 a propósito: la v3 pondera
+-- cantidades CRUDAS y escribe en CADA presentación recibida, que es exactamente
+-- lo que este archivo corrige.
+--
+-- Lo bueno de ese pull (`configurar_precios_recepcion_consignacion_v2`, que ya
+-- no toca `precio_promedio` y evita la doble actualización en consignación)
+-- sigue vigente y es compatible con esta v2 — verificado contra producción con
+-- la recepción 116286.
+--
+-- Si alguien vuelve a cambiar el llamador a la v3, se revierte el arreglo de
+-- costos. La nota completa está en la cabecera del archivo `12`.
+--
+-- ----------------------------------------------------------------------------
+-- Hallazgo previo: la v2 estaba ROTA, no solo mal ponderada
 -- ----------------------------------------------------------------------------
 -- `fn_actualizar_precio_promedio_recepcion_v2` es la que llama la app
 -- (`inventory_service.dart:3721`). Ejecutada contra producción **falla siempre**
