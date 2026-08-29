@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/mesa_cuenta.dart';
 import '../services/mesa_cuenta_service.dart';
 import '../services/order_service.dart';
+import '../services/sales_mode_service.dart';
 import '../utils/price_utils.dart';
 import '../widgets/estado_servicio_chip.dart';
 
@@ -44,6 +45,8 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
   @override
   void initState() {
     super.initState();
+    // Entrar a una cuenta de mesa cancela el contexto de venta de mostrador.
+    SalesModeService.salirDeMostrador();
     _loadCuenta();
     // Poll suave: si otro vendedor agregó items, los vemos al volver al foreground.
     _pollTimer = Timer.periodic(const Duration(seconds: 20), (_) {

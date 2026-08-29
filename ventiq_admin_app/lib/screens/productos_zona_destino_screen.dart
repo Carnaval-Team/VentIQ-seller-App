@@ -293,7 +293,9 @@ class _ProductosZonaDestinoScreenState extends State<ProductosZonaDestinoScreen>
       final result = await InventoryService.insertInventoryAdjustment(
         idProducto: idProducto,
         idUbicacion: idUbicacion,
-        idPresentacion: idPresentacion ?? 0,
+        // FASE 5: null, no 0. Ver la nota en inventory_adjustment_screen:
+        // el 0 lo rechaza fn_validar_id_presentacion con 22023.
+        idPresentacion: idPresentacion,
         cantidadAnterior: stockActual,
         cantidadNueva: cantidadNueva,
         motivo: motivo,

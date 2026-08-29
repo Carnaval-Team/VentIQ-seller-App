@@ -5,6 +5,7 @@ import '../models/order.dart';
 import '../services/mesa_service.dart';
 import '../services/mesa_cuenta_service.dart';
 import '../services/order_service.dart';
+import '../services/sales_mode_service.dart';
 import '../utils/price_utils.dart';
 import '../widgets/mesa_form_dialog.dart';
 
@@ -108,6 +109,9 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
 
     setState(() => _busy = true);
     try {
+      // Abrir/atender una cuenta cierra el contexto de venta de mostrador: a
+      // partir de aquí los items vuelven a ir a la cuenta de la mesa.
+      SalesModeService.salirDeMostrador();
       // Limpiar carrito local previo y mesa activa por seguridad.
       _orderService.cancelCurrentOrder();
       _orderService.setActiveMesa(idMesa: _mesa!.id, numero: _mesa!.numero);
@@ -147,6 +151,7 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
   /// navegamos a su pantalla y marcamos active).
   Future<void> _abrirCuentaExistente(MesaCuenta cuenta) async {
     if (_mesa == null) return;
+    SalesModeService.salirDeMostrador();
     _orderService.setActiveMesa(idMesa: _mesa!.id, numero: _mesa!.numero);
     _cuentaService.setActive(
       idCuenta: cuenta.id,

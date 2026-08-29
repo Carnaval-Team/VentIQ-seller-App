@@ -1716,12 +1716,24 @@ class UserPreferencesService {
   /// Actualizar inventario de productos en cache (descontar cantidades).
   /// Con [quantityToSubtract] negativo se suma stock (p. ej. recepción offline).
   /// Soporta productos con y sin variantes usando ids de inventario/ubicación.
+  ///
+  /// FASE 5 presentaciones: [presentationId] es la fila de
+  /// `app_dat_producto_presentacion` sobre la que se aplica el delta. Es
+  /// **imprescindible** desde la Fase 4, porque `cantidad` ya viene EN LA
+  /// PRESENTACIÓN ELEGIDA: vender 2 Bultos mandaba `2` y, sin este filtro, el
+  /// delta se aplicaba a la primera fila de inventario que casara (normalmente
+  /// la base) → el caché local descontaba 2 **Bolsas** en vez de 2 Bultos, y el
+  /// vendedor veía un stock que no existía hasta la siguiente sincronización.
+  ///
+  /// [quantityToSubtract] es `num` y no `int`: truncar con `.toInt()` perdía las
+  /// ventas fraccionadas (0,5 kg → 0, o sea no descontaba nada).
   Future<void> updateProductInventoryInCache(
     int productId,
     int? variantId,
-    int quantityToSubtract, {
+    num quantityToSubtract, {
     int? inventoryId,
     int? locationId,
+    int? presentationId,
   }) async {
     final offlineData = await getOfflineData();
     if (offlineData == null || offlineData['products'] == null) return;
@@ -1778,6 +1790,20 @@ class UserPreferencesService {
                     ? Map<String, dynamic>.from(inv['variante'] as Map)
                     : null;
 
+            // FASE 5: la presentación manda. Si se pidió una concreta y la fila
+            // es de otra, NO es la fila a tocar — sin esto el delta de «2
+            // Bultos» caía sobre las Bolsas.
+            if (presentationId != null) {
+              final presData = inv['presentacion'] is Map
+                  ? Map<String, dynamic>.from(inv['presentacion'] as Map)
+                  : null;
+              final invPresId = (presData?['id'] as num?)?.toInt() ??
+                  (inv['id_presentacion'] as num?)?.toInt();
+              if (invPresId != null && invPresId != presentationId) {
+                return false;
+              }
+            }
+
             if (variantId != null) {
               return varianteData != null && varianteData['id'] == variantId;
             }
@@ -1794,7 +1820,9 @@ class UserPreferencesService {
               return ubicacion?['id'] == locationId;
             }
 
-            return varianteData == null;
+            // Con presentación pedida y sin variante/ubicación, llegar aquí ya
+            // significa que la presentación casó.
+            return presentationId != null || varianteData == null;
           }
 
           void applyDeltaToInv(Map<String, dynamic> inv) {
@@ -1824,13 +1852,24 @@ class UserPreferencesService {
 
           if (!inventoryUpdated &&
               variantId == null &&
+              presentationId == null &&
               inventarioList.isNotEmpty) {
+            // Fallback a la primera fila SOLO si no se pidió presentación: con
+            // presentación concreta, tocar otra fila es escribir un saldo falso.
             final inv = inventarioList.first;
             applyDeltaToInv(inv);
             inventarioList[0] = inv;
             print(
               '📦 Inventario actualizado (fallback) - Producto: $productId, '
               'Delta: ${-quantityToSubtract}',
+            );
+          } else if (!inventoryUpdated && presentationId != null) {
+            // No hay fila de esa presentación en el caché: el total del producto
+            // ya se ajustó arriba. Se avisa porque suele significar un caché
+            // desactualizado, no un error de la venta.
+            print(
+              '⚠️ Sin fila de inventario para la presentación $presentationId '
+              '(producto $productId): solo se ajustó el total del producto',
             );
           }
 
@@ -3022,7 +3061,9 @@ class UserPreferencesService {
     final efectivoReal = _asDouble(
       raw['efectivo_real'] ?? raw['efectivo_final'] ?? raw['efectivo_esperado'],
     );
-    final productos = _asInt(raw['productos_vendidos']);
+    // FASE 3: _asNum, no _asInt — las cantidades fraccionadas (0,5 kg) se
+    // perdian al truncar.
+    final productos = _asNum(raw['productos_vendidos']);
     final ticket = _asDouble(raw['ticket_promedio']);
 
     return {
@@ -3046,7 +3087,8 @@ class UserPreferencesService {
     final er = _asDouble(
       raw['efectivo_real'] ?? raw['efectivo_final'] ?? raw['efectivo_esperado'],
     );
-    final productos = _asInt(raw['productos_vendidos']);
+    // FASE 3: _asNum — un turno con solo 0,5 kg vendidos no debe parecer vacio.
+    final productos = _asNum(raw['productos_vendidos']);
     return ventas > 0 || ei > 0 || er > 0 || productos > 0;
   }
 
@@ -3062,6 +3104,20 @@ class UserPreferencesService {
     if (raw is int) return raw;
     if (raw is num) return raw.toInt();
     return int.tryParse(raw.toString()) ?? 0;
+  }
+
+  /// Igual que [_asInt] pero **sin truncar**.
+  ///
+  /// FASE 3 presentaciones: las cantidades vendidas pueden ser fraccionadas
+  /// (media libra, 0,5 kg) y meterlas en un `int` las deforma — media libra
+  /// pasaba a 0. Se usa para `productos_vendidos`, que la RPC
+  /// `fn_resumen_diario_cierre_v2` ya devuelve como numeric por el mismo
+  /// motivo: el cast a integer del SQL **redondeaba** (tres lineas de 0,5 kg
+  /// daban 2).
+  static num _asNum(dynamic raw) {
+    if (raw == null) return 0;
+    if (raw is num) return raw;
+    return num.tryParse(raw.toString().replaceAll(',', '.')) ?? 0;
   }
 
   /// Limpia resúmenes del turno anterior (llamar al abrir un turno nuevo).

@@ -8,6 +8,7 @@ import '../services/connectivity_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
 import '../services/comanda_service.dart';
+import '../services/sales_mode_service.dart';
 import '../utils/global_navigator.dart';
 
 class AppDrawer extends StatefulWidget {
@@ -485,6 +486,9 @@ class _AppDrawerState extends State<AppDrawer> {
                       subtitle: 'Gestionar mesas y cuentas abiertas',
                       onTap: () {
                         Navigator.pop(context);
+                        // Volver al flujo de mesas: si veníamos de una venta
+                        // de mostrador puntual, ese contexto termina aquí.
+                        SalesModeService.salirDeMostrador();
                         Navigator.pushNamedAndRemoveUntil(
                           context,
                           '/mesas',
@@ -533,6 +537,11 @@ class _AppDrawerState extends State<AppDrawer> {
                     subtitle: 'Ir al catálogo de productos',
                     onTap: () {
                       Navigator.pop(context);
+                      // Venta de mostrador = venta normal: no hay mesa ni
+                      // comensal, así que el flujo vuelve a ser preorden local
+                      // + checkout que pide cliente. No-op si la tienda no
+                      // está en modo restaurante.
+                      SalesModeService.activarMostrador();
                       Navigator.pushNamedAndRemoveUntil(
                         context,
                         '/categories',

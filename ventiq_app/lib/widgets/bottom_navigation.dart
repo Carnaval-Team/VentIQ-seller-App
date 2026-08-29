@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/mesa_cuenta_service.dart';
 import '../services/order_service.dart';
-import '../services/store_config_service.dart';
+import '../services/sales_mode_service.dart';
 
 class AppBottomNavigation extends StatelessWidget {
   final int currentIndex;
@@ -17,21 +17,25 @@ class AppBottomNavigation extends StatelessWidget {
   Widget build(BuildContext context) {
     final orderService = OrderService();
 
-    // En modo restaurante el carrito NO es la preorden local: es la cuenta
+    // En el flujo de mesa el carrito NO es la preorden local: es la cuenta
     // abierta de la mesa, que vive en BD. El botón lleva allí (ver
     // NavigationHelper.goCarrito), así que la etiqueta y el contador también
     // tienen que hablar de la mesa o el vendedor no entiende a dónde va.
-    final modoRestaurante = StoreConfigService.modoRestauranteSync;
+    //
+    // Se mira `flujoMesaActivo`, no el flag de tienda: en una venta de
+    // mostrador (drawer → "Venta de Mostrador") no hay mesa ni comensal, así
+    // que el tab vuelve a ser la "Preorden" de siempre con su contador.
+    final flujoMesa = SalesModeService.flujoMesaActivo;
     final cuentaService = MesaCuentaService();
-    final cuentaActiva = modoRestaurante ? cuentaService.activeCuentaId : null;
+    final cuentaActiva = flujoMesa ? cuentaService.activeCuentaId : null;
 
-    // El contador de la preorden local no aplica en restaurante: los items de
+    // El contador de la preorden local no aplica en el flujo de mesa: los items de
     // la cuenta están en BD y contarlos aquí obligaría a una consulta en cada
     // rebuild de la barra. Se usa el punto de "hay cuenta abierta" en su lugar.
     final currentOrderItemCount =
-        modoRestaurante ? 0 : orderService.currentOrderItemCount;
+        flujoMesa ? 0 : orderService.currentOrderItemCount;
 
-    final etiqueta = modoRestaurante
+    final etiqueta = flujoMesa
         ? (cuentaActiva != null
             ? (cuentaService.activeMesaNumero ?? 'Cuenta')
             : 'Mesas')
@@ -70,13 +74,13 @@ class AppBottomNavigation extends StatelessWidget {
           BottomNavigationBarItem(
             icon: _iconoCarrito(
               lleno: false,
-              modoRestaurante: modoRestaurante,
+              modoRestaurante: flujoMesa,
               cuentaAbierta: cuentaActiva != null,
               itemCount: currentOrderItemCount,
             ),
             activeIcon: _iconoCarrito(
               lleno: true,
-              modoRestaurante: modoRestaurante,
+              modoRestaurante: flujoMesa,
               cuentaAbierta: cuentaActiva != null,
               itemCount: currentOrderItemCount,
             ),

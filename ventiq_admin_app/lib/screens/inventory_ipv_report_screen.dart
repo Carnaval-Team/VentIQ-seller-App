@@ -232,16 +232,33 @@ class _InventoryIPVReportScreenState extends State<InventoryIPVReportScreen> {
       final extracciones = (item['cantidad_extracciones'] as num?)?.toDouble() ?? 0;
       final disponible = (item['cantidad_disponible'] as num?)?.toDouble() ?? 0;
 
-      totalInvInicialCostoCant += cantidadInicial;
+      // FASE 3 presentaciones: las cantidades se totalizan en EQUIVALENTE BASE.
+      //
+      // El IPV devuelve una fila por presentación, así que sumar las cantidades
+      // crudas mezcla unidades: en la tienda 165 el producto 4502 sale como
+      // 1667 Cajas + 0 Unidades y el 4485 como 0 Paquetes + 794 Unidades. Un
+      // total de "2461" no es ninguna cantidad real.
+      //
+      // `equivalente_base` lo calcula obtener_ipv2 con el factor_rel de cada
+      // fila (no con el de la base: 131 presentaciones es_base tienen factor
+      // 12/24/30 y usar ese daría equivalentes inflados — es el bug del `18`).
+      final factorRel = cantidadFinal != 0
+          ? ((item['equivalente_base'] as num?)?.toDouble() ?? cantidadFinal) /
+              cantidadFinal
+          : 1.0;
+      final equivFinal =
+          (item['equivalente_base'] as num?)?.toDouble() ?? cantidadFinal;
+
+      totalInvInicialCostoCant += cantidadInicial * factorRel;
       totalInvInicialCostoImporte += cantidadInicial * costoPromedioUsd;
-      totalInvInicialVentaCant += cantidadInicial;
+      totalInvInicialVentaCant += cantidadInicial * factorRel;
       totalInvInicialVentaImporte += cantidadInicial * precioVentaCup;
-      totalEntradas += cantidadEntradas;
-      totalReservados += reservado;
-      totalDisponible += disponible;
-      totalExtracciones += extracciones;
-      totalVendido += cantidadVendida;
-      totalInvFinalCant += cantidadFinal;
+      totalEntradas += cantidadEntradas * factorRel;
+      totalReservados += reservado * factorRel;
+      totalDisponible += disponible * factorRel;
+      totalExtracciones += extracciones * factorRel;
+      totalVendido += cantidadVendida * factorRel;
+      totalInvFinalCant += equivFinal;
       totalInvFinalImporte += cantidadFinal * costoPromedioUsd;
       totalVentaPrecio += precioVentaCup;
       totalVentaImporte += cantidadVendida * precioVentaCup;
@@ -780,6 +797,31 @@ class _InventoryIPVReportScreenState extends State<InventoryIPVReportScreen> {
     );
   }
 
+  /// Unidad de medida de la fila: la presentación si la hay, si no la UM del
+  /// producto.
+  ///
+  /// FASE 3 presentaciones. `presentacion_nombre` viene de `obtener_ipv2`
+  /// (presentaciones_inventario/21). Cuando el factor no es 1 se muestra
+  /// ("Caja ×12") porque la fila de al lado puede ser la Unidad del mismo
+  /// producto y hay que poder ver la relación sin abrir la ficha.
+  ///
+  /// Cuidado con las 131 presentaciones `es_base` con factor ≠ 1 (12/24/30): ahí
+  /// `presentacion_factor` es lo que escribió el usuario, no el equivalente
+  /// real. Para sumar equivalentes se usa `equivalente_base`, que ya viene
+  /// calculado con `factor_rel`.
+  String _umDeFila(Map<String, dynamic> item) {
+    final pres = item['presentacion_nombre'] as String?;
+    if (pres == null || pres.isEmpty) {
+      return (item['um'] as String?) ?? '';
+    }
+    final factor = (item['presentacion_factor'] as num?)?.toDouble() ?? 1;
+    if (factor == 1) return pres;
+    final f = factor == factor.roundToDouble()
+        ? factor.toStringAsFixed(0)
+        : factor.toString();
+    return '$pres ×$f';
+  }
+
   List<TableRow> _buildTableDataRows(Map<String, double> totales) {
     return _reportData.map((item) {
       final cantidadInicial =
@@ -821,7 +863,12 @@ class _InventoryIPVReportScreenState extends State<InventoryIPVReportScreen> {
       return TableRow(
         children: [
           _buildTableDataCell(item['nombre_producto'] ?? 'N/A'),
-          _buildTableDataCell(item['um'] ?? ''),
+          // FASE 3 presentaciones: la columna UM muestra la presentación en la
+          // que están las cantidades de la fila. El IPV agrupa por presentación
+          // (una fila por producto+presentación+ubicación), así que sin esto
+          // dos filas del mismo producto tienen columnas numéricas que parecen
+          // comparables y no lo son: 1667 Cajas y 292 Unidades no se suman.
+          _buildTableDataCell(_umDeFila(item)),
           _buildTableDataCell(cantidadInicial.toStringAsFixed(2)),
           _buildTableDataCell(invInicialCostoImporte.toStringAsFixed(2)),
           _buildTableDataCell(cantidadInicial.toStringAsFixed(2)),
@@ -1023,7 +1070,7 @@ class _InventoryIPVReportScreenState extends State<InventoryIPVReportScreen> {
                     return pw.TableRow(
                       children: [
                         _pdfDataCell(item['nombre_producto'] ?? 'N/A'),
-                        _pdfDataCell(item['um'] ?? ''),
+                        _pdfDataCell(_umDeFila(item)),
                         _pdfDataCell(cantidadInicial.toStringAsFixed(2)),
                         _pdfDataCell(invInicialCostoImporte.toStringAsFixed(2)),
                         _pdfDataCell(cantidadInicial.toStringAsFixed(2)),
@@ -1248,7 +1295,7 @@ class _InventoryIPVReportScreenState extends State<InventoryIPVReportScreen> {
 
         sheet.appendRow([
           TextCellValue(item['nombre_producto'] ?? 'N/A'),
-          TextCellValue(item['um'] ?? ''),
+          TextCellValue(_umDeFila(item)),
           TextCellValue(cantidadInicial.toStringAsFixed(2)),
           TextCellValue(invInicialCostoImporte.toStringAsFixed(2)),
           TextCellValue(cantidadInicial.toStringAsFixed(2)),

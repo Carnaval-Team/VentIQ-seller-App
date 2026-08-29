@@ -2,7 +2,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/mesa.dart';
 import '../services/mesa_service.dart';
+import '../services/sales_mode_service.dart';
 import '../services/store_config_service.dart';
+import '../utils/navigation_helper.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/mesa_form_dialog.dart';
@@ -34,6 +36,9 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    // Estar en la pantalla de mesas cierra cualquier venta de mostrador en
+    // curso: a partir de aquí el contexto vuelve a ser el de mesas.
+    SalesModeService.salirDeMostrador();
     WidgetsBinding.instance.addObserver(this);
     _searchController.addListener(() {
       if (_busqueda != _searchController.text) {
@@ -389,7 +394,9 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
         }
         break;
       case 1:
-        Navigator.pushNamed(context, '/preorder');
+        // Mismo criterio que el resto de pantallas: en flujo de mesa el
+        // carrito es la cuenta abierta, no la preorden local.
+        NavigationHelper.goCarrito(context);
         break;
       case 2:
         Navigator.pushNamed(context, '/orders');

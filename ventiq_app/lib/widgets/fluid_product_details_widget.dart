@@ -7,6 +7,7 @@ import '../services/product_detail_service.dart';
 import '../services/promotion_service.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/price_utils.dart';
+import '../utils/presentacion_cadena_local.dart';
 import '../utils/promotion_rules.dart';
 
 class FluidProductDetailsWidget extends StatefulWidget {
@@ -490,6 +491,40 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
     });
   }
 
+  /// Factor RELATIVO A LA BASE de la presentación seleccionada.
+  ///
+  /// FASE 4 presentaciones. No es `_selectedPresentation.cantidad` a secas: hay
+  /// 131 filas `es_base` con factor 12/24/30, y en esos productos `cantidad` no
+  /// es el equivalente real. `PresentacionCadenaLocal` replica la cascada de
+  /// `fn_presentaciones_producto` (`cantidad / cantidad_de_la_base`).
+  ///
+  /// Cae a 1.0 cuando no hay presentación o no está en la cadena, que es el
+  /// comportamiento anterior.
+  double _factorRelSeleccionado() {
+    final sel = _selectedPresentation;
+    if (sel == null) return 1.0;
+
+    final cadena = PresentacionCadenaLocal.resolverDesdeCrudas(
+      _productPresentations
+          .map((p) => {
+                'id': p.id,
+                'cantidad': p.cantidad,
+                'es_base': p.esBase,
+                'presentacion': {
+                  'id': p.idPresentacion,
+                  'denominacion': p.presentacion.denominacion,
+                  'sku_codigo': p.presentacion.skuCodigo,
+                },
+              })
+          .toList(),
+    );
+
+    for (final p in cadena) {
+      if (p.idPresentacion == sel.id) return p.factorRel;
+    }
+    return 1.0;
+  }
+
   List<OrderItem> _createOrderItems() {
     List<OrderItem> items = [];
 
@@ -499,10 +534,13 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
         if (entry.value > 0) {
           final variant = entry.key;
           final quantity = entry.value;
-          final conversionFactor = _selectedPresentation?.cantidad ?? 1.0;
-          final finalQuantity = quantity * conversionFactor;
-
-          // Calcular precios con promociones
+          // FASE 4 presentaciones: la cantidad queda EN LA PRESENTACION
+          // ELEGIDA y el precio se multiplica por el factor. Antes se guardaba
+          // `quantity * conversionFactor` (unidades base) con el precio por
+          // unidad, asi que el modo fluido perdia el empaque igual que la
+          // pantalla de detalle. El importe es el mismo producto de los dos
+          // numeros, asi que el total no cambia.
+          final factorRel = _factorRelSeleccionado();
           final prices = _calculatePromotionPrices(variant.precio);
           final activePromotion = _getActivePromotion();
 
@@ -510,13 +548,16 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
             OrderItem(
               id: 'item_${DateTime.now().millisecondsSinceEpoch}',
               producto: _currentProduct!,
-              cantidad: finalQuantity,
-              precioUnitario:
-                  prices['precio_oferta']!, // Usar precio con descuento
-              precioBase: prices['precio_venta'], // Precio base para cálculos
+              cantidad: quantity,
+              precioUnitario: prices['precio_oferta']! * factorRel,
+              precioBase: (prices['precio_venta'] ?? 0) * factorRel,
               ubicacionAlmacen: variant.descripcion ?? 'Almacén',
               variante: variant,
               promotionData: activePromotion, // Incluir datos de promoción
+              idPresentacion: _selectedPresentation?.id,
+              presentacionNombre:
+                  _selectedPresentation?.presentacion.denominacion,
+              presentacionFactor: _selectedPresentation == null ? null : factorRel,
             ),
           );
         }
@@ -524,10 +565,8 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
     } else {
       // Producto sin variantes
       if (_selectedQuantity > 0) {
-        final conversionFactor = _selectedPresentation?.cantidad ?? 1.0;
-        final finalQuantity = _selectedQuantity * conversionFactor;
-
-        // Calcular precios con promociones
+        // FASE 4: ver el comentario de la rama con variantes.
+        final factorRel = _factorRelSeleccionado();
         final prices = _calculatePromotionPrices(_currentProduct!.precio);
         final activePromotion = _getActivePromotion();
 
@@ -535,12 +574,14 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
           OrderItem(
             id: 'item_${DateTime.now().millisecondsSinceEpoch}',
             producto: _currentProduct!,
-            cantidad: finalQuantity,
-            precioUnitario:
-                prices['precio_oferta']!, // Usar precio con descuento
-            precioBase: prices['precio_venta'], // Precio base para cálculos
+            cantidad: _selectedQuantity,
+            precioUnitario: prices['precio_oferta']! * factorRel,
+            precioBase: (prices['precio_venta'] ?? 0) * factorRel,
             ubicacionAlmacen: 'Almacén Principal',
             promotionData: activePromotion, // Incluir datos de promoción
+            idPresentacion: _selectedPresentation?.id,
+            presentacionNombre: _selectedPresentation?.presentacion.denominacion,
+            presentacionFactor: _selectedPresentation == null ? null : factorRel,
           ),
         );
       }

@@ -1,3 +1,40 @@
+-- =============================================================================
+-- NOTA POSTERIOR (Fase 3 · presentaciones de inventario)
+--
+-- La `fn_actualizar_precio_promedio_recepcion_v3` que crea este archivo
+-- QUEDO SIN USAR. Ningun Dart ni ninguna funcion de la base la llama:
+-- `inventory_service.dart` volvio a apuntar a la **v2**
+-- (presentaciones_inventario/20_costo_promedio_en_base.sql).
+--
+-- Motivo: la v3 pondera CANTIDADES CRUDAS y escribe en CADA presentacion
+-- recibida. Con stock por presentacion eso da dos resultados incorrectos:
+--   1. 10 Bolsas a 1 USD + 2 Bultos (de 10) a 9,50 -> (10+19)/12 = 2,42, que no
+--      es el costo de nada. Hay que ponderar en unidades base con factor_rel.
+--   2. Un mismo producto acaba con un costo distinto por presentacion
+--      (medido: 21 de 40 productos multipresentacion inconsistentes, 11 con
+--      desvio > 2x). El costo vive en la fila `es_base` y el resto se deriva.
+--
+-- Lo que ESTE archivo aportaba de verdad sigue vigente y en uso:
+--   · `configurar_precios_recepcion_consignacion_v2` (mas abajo), que ya NO
+--     toca `precio_promedio` y asi elimina la doble actualizacion del costo en
+--     recepciones de consignacion. Su llamador es
+--     consignacion_envio_service.dart:485. La v2 del costo respeta ese caso:
+--     verificado contra produccion, recepcion 116286 (devolucion) devuelve
+--     "Operacion de devolucion - precio promedio no actualizado".
+--
+-- Dos detalles de la v3 que NO se portaron a la v2, a proposito:
+--   · `FOR UPDATE`: la v2 ya lo tiene, y sobre la fila correcta — bloquea la
+--     presentacion BASE, que es la unica que actualiza.
+--   · El INSERT en `app_dat_auditoria_precios`: **esa tabla no existe** en el
+--     esquema (`to_regclass` devuelve null). El INSERT esta envuelto en
+--     `EXCEPTION WHEN OTHERS THEN NULL`, asi que falla en silencio en cada
+--     llamada. Portarlo seria copiar codigo muerto.
+--
+-- No se borra la v3 de la base: no molesta y este archivo es el registro de la
+-- migracion. Pero antes de reactivarla hay que resolver los dos puntos de
+-- arriba, o se revierte el arreglo de costos de la Fase 3.
+-- =============================================================================
+
 BEGIN;
 
 CREATE OR REPLACE FUNCTION public.fn_actualizar_precio_promedio_recepcion_v3(

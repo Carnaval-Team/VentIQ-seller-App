@@ -7,6 +7,7 @@ import '../utils/promotion_rules.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
 import 'mesa_cuenta_service.dart';
+import 'sales_mode_service.dart';
 import 'store_config_service.dart';
 import 'turno_service.dart'; // Import TurnoService
 import 'connectivity_service.dart';
@@ -89,6 +90,39 @@ class OrderService {
   // `MesaCuentaService.agregarItem`. Esto evita duplicar la lógica de carrito
   // en cada pantalla — categorías, detalles, escáner, búsqueda llaman a este
   // mismo método y el redirect es transparente.
+  //
+  // EXCEPCIÓN: venta de mostrador (`SalesModeService.mostradorActivo`). Es una
+  // venta normal, sin mesa ni comensal, así que el item tiene que ir al
+  // carrito local aunque quede una cuenta de mesa activa en memoria — si no,
+  // los productos del mostrador terminaban cargados a la cuenta del último
+  // comensal atendido.
+  /// Datos de la presentación de una línea: `(id, nombre, factorRel)`.
+  ///
+  /// FASE 4 presentaciones. Los tres vienen en `inventoryData`, puestos por la
+  /// pantalla que sí tiene la cadena cargada
+  /// (`product_details_screen._buildInventoryData`).
+  ///
+  /// No se resuelve aquí desde `producto.toJson()`: **`Product` no lleva las
+  /// presentaciones** (ni el campo ni la clave en `toJson`), así que
+  /// `PresentacionCadenaLocal.resolver` sobre él devuelve lista vacía siempre.
+  /// La cadena vive en el payload del caché offline y en el estado de la
+  /// pantalla, no en el modelo.
+  ///
+  /// Devuelve `null` si no hay presentación: el item queda sin ella y
+  /// `equivalenteBase` cae a factor 1, o sea el comportamiento anterior a Fase 4.
+  (int, String, double)? _datosPresentacion(Map<String, dynamic>? inventoryData) {
+    final idPres = (inventoryData?['id_presentacion'] as num?)?.toInt();
+    if (idPres == null) return null;
+
+    final nombre = inventoryData?['presentacion_nombre'] as String?;
+    final factor = (inventoryData?['presentacion_factor_rel'] as num?)?.toDouble();
+
+    // Sin nombre ni factor el id solo sirve para el servidor; no se inventa
+    // factor 1 porque daría equivalentes falsos en el cierre.
+    if (nombre == null || nombre.isEmpty || factor == null) return null;
+    return (idPres, nombre, factor);
+  }
+
   Future<void> addItemToCurrentOrder({
     required Product producto,
     ProductVariant? variante,
@@ -102,9 +136,11 @@ class OrderService {
     final precio = precioUnitario ?? (variante?.precio ?? producto.precio);
     final precioOriginal = precioBase ?? (variante?.precio ?? producto.precio);
 
-    // Modo restaurante: redirigir a la cuenta abierta de la mesa.
+    // Flujo de mesa: redirigir a la cuenta abierta de la mesa.
     final cuentaService = MesaCuentaService();
-    final idCuentaActiva = cuentaService.activeCuentaId;
+    final idCuentaActiva = SalesModeService.mostradorActivo
+        ? null
+        : cuentaService.activeCuentaId;
     if (idCuentaActiva != null) {
       final inv = inventoryData ?? const {};
       final idOpcionVariante = inv['id_opcion_variante'] is num
@@ -195,6 +231,12 @@ class OrderService {
       order.items[existingItemIndex] = updatedItem;
     } else {
       // Crear nuevo item con datos completos de inventario
+      //
+      // FASE 4 presentaciones: `cantidad` viene EN LA PRESENTACIÓN ELEGIDA (no en
+      // unidades base), así que el item tiene que llevar cuál es. El nombre y el
+      // factor se congelan aquí porque el cierre de turno se arma offline y ya no
+      // puede consultar `app_dat_producto_presentacion`.
+      final presDatos = _datosPresentacion(inventoryData);
       final newItem = OrderItem(
         id: 'ITEM-${DateTime.now().millisecondsSinceEpoch}-${order.items.length}',
         producto: producto,
@@ -205,6 +247,9 @@ class OrderService {
         ubicacionAlmacen: ubicacionAlmacen,
         inventoryData: inventoryData,
         promotionData: promotionData,
+        idPresentacion: presDatos?.$1,
+        presentacionNombre: presDatos?.$2,
+        presentacionFactor: presDatos?.$3,
       );
       order.items.add(newItem);
     }
@@ -713,11 +758,16 @@ class OrderService {
         // Limpiar persistencia cuando se finaliza la orden
         clearPersistentPreorder();
 
-        // Modo restaurante: si esta venta provino de una cuenta abierta de
+        // Flujo de mesa: si esta venta provino de una cuenta abierta de
         // mesa, marcarla como cerrada en BD (estado=2) y vincularla a la
         // operación recién creada. No es bloqueante: si falla solo logueamos.
+        //
+        // En venta de mostrador se salta: la cuenta que quedó activa en memoria
+        // es de otra mesa y cerrarla aquí le borraría la nota al mesero.
         final cuentaService = MesaCuentaService();
-        final idCuentaActiva = cuentaService.activeCuentaId;
+        final idCuentaActiva = SalesModeService.mostradorActivo
+            ? null
+            : cuentaService.activeCuentaId;
         final opId = result['operationId'];
         if (idCuentaActiva != null && opId is int) {
           try {
@@ -757,11 +807,15 @@ class OrderService {
   // Cancelar orden actual
   void cancelCurrentOrder() {
     _currentOrder = null;
-    // Limpiar también la mesa activa para no arrastrar contexto entre cuentas.
-    clearActiveMesa();
-    // Y la cuenta activa (si se canceló desde preorder/checkout cargado desde
-    // una cuenta de mesa).
-    MesaCuentaService().clearActive();
+    // En venta de mostrador el contexto de mesa no es nuestro: cancelar el
+    // carrito local no debe borrarle al mesero la cuenta que tenía abierta.
+    if (!SalesModeService.mostradorActivo) {
+      // Limpiar también la mesa activa para no arrastrar contexto entre cuentas.
+      clearActiveMesa();
+      // Y la cuenta activa (si se canceló desde preorder/checkout cargado desde
+      // una cuenta de mesa).
+      MesaCuentaService().clearActive();
+    }
 
     // Limpiar persistencia cuando se cancela la orden
     clearPersistentPreorder();
@@ -838,6 +892,11 @@ class OrderService {
           ubicacionAlmacen: ci.ubicacionNombre ?? '',
           inventoryData: invData,
           promotionData: ci.promotionData,
+          // FASE 4: la cuenta de mesa ya guardaba `id_presentacion` por línea.
+          // El nombre y el factor no vienen de la RPC de la cuenta, así que
+          // quedan null: la línea se muestra sin etiqueta de presentación en vez
+          // de inventarse un factor 1 que daría equivalentes falsos.
+          idPresentacion: ci.idPresentacion,
         ),
       );
     }
@@ -2059,6 +2118,14 @@ class OrderService {
               entradasProducto: item['entradas_producto']?.toDouble(),
               // Mapear ingredientes consolidados
               ingredientes: ingredientes,
+              // FASE 4: la presentación de la línea, tal como la devuelve
+              // `listar_ordenes`. `presentacion_nombre` y `presentacion_factor`
+              // solo llegan si la RPC los expone; si no, quedan null y el ítem
+              // se comporta como antes de Fase 4.
+              idPresentacion: (item['id_presentacion'] as num?)?.toInt(),
+              presentacionNombre: item['presentacion_nombre'] as String?,
+              presentacionFactor:
+                  (item['presentacion_factor'] as num?)?.toDouble(),
             );
 
             orderItems.add(orderItem);
@@ -2223,6 +2290,14 @@ class OrderService {
                 ubicacionAlmacen: ubicacionAlmacen,
                 inventoryData: inventoryMetadata,
                 paymentMethod: null, // Se reconstruirá si es necesario
+                // FASE 4: reconstruir la presentación al releer la orden
+                // pendiente. Sin esto, `cantidadFormateada` y
+                // `equivalenteBase` mienten en el resumen de cierre de una
+                // orden que quedó guardada offline.
+                idPresentacion: (itemData['id_presentacion'] as num?)?.toInt(),
+                presentacionNombre: itemData['presentacion_nombre'] as String?,
+                presentacionFactor:
+                    (itemData['presentacion_factor'] as num?)?.toDouble(),
               );
             }).toList();
 

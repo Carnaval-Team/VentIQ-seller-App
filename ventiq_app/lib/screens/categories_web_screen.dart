@@ -9,13 +9,14 @@ import '../services/user_preferences_service.dart';
 import '../services/changelog_service.dart';
 import '../services/currency_service.dart';
 import '../services/product_service.dart';
-import '../services/store_config_service.dart';
 import '../services/mesa_cuenta_service.dart';
+import '../services/sales_mode_service.dart';
 import '../services/offline_database_service.dart';
 import '../models/product.dart';
 import '../widgets/changelog_dialog.dart';
 import '../widgets/sales_monitor_fab.dart';
 import '../services/smart_offline_manager.dart';
+import '../utils/navigation_helper.dart';
 import 'dart:async';
 
 class CategoriesWebScreen extends StatefulWidget {
@@ -898,7 +899,8 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
     switch (index) {
       case 0:
         // Home en restaurante → siempre /mesas (haya o no cuenta activa)
-        if (StoreConfigService.modoRestauranteSync) {
+        // Salvo en venta de mostrador: allí el Home es esta misma pantalla.
+        if (SalesModeService.flujoMesaActivo) {
           Navigator.pushNamedAndRemoveUntil(
             context,
             '/mesas',
@@ -909,8 +911,9 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
         }
         break;
       case 1:
-        Navigator.pushNamed(context, '/preorder').then((_) {
-          setState(() {});
+        // Carrito: preorden local, o la cuenta de mesa abierta en flujo de mesa.
+        NavigationHelper.goCarrito(context).then((_) {
+          if (mounted) setState(() {});
         });
         break;
       case 2:

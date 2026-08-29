@@ -24,6 +24,7 @@ import '../services/product_service.dart';
 import '../services/offline_database_service.dart';
 import '../services/store_config_service.dart';
 import '../services/mesa_cuenta_service.dart';
+import '../services/sales_mode_service.dart';
 import '../models/product.dart';
 import 'product_details_screen.dart';
 import 'dart:async';
@@ -1134,7 +1135,9 @@ class _CategoriesScreenState extends State<CategoriesScreen>
   void _onBottomNavTap(int index) {
     switch (index) {
       case 0: // Home — en modo restaurante saltar siempre a /mesas
-        if (StoreConfigService.modoRestauranteSync) {
+        // En venta de mostrador NO: el vendedor está en una venta normal y
+        // sacarlo a /mesas le rompe el flujo (ver SalesModeService).
+        if (SalesModeService.flujoMesaActivo) {
           Navigator.pushNamedAndRemoveUntil(
             context,
             '/mesas',

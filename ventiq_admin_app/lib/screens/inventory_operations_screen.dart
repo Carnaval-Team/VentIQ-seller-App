@@ -11,6 +11,7 @@ import '../services/wifi_printer_service.dart';
 import '../services/export_service.dart';
 import '../utils/ticket_text_utils.dart';
 import '../utils/operation_client_utils.dart';
+import '../utils/stock_mixto_formatter.dart';
 
 class InventoryOperationsScreen extends StatefulWidget {
   const InventoryOperationsScreen({super.key});
@@ -2328,8 +2329,53 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
   }
 
+  /// Cantidad de una linea de operacion, con su presentacion cuando se conoce.
+  ///
+  /// FASE 2 de presentaciones. `cantidad_formateada` la arma el SQL
+  /// (fn_presentacion_item_json + fn_plural_presentacion) para que el texto sea
+  /// el mismo en la app, los reportes y el kardex; ver
+  /// presentaciones_inventario/15_presentacion_item_json.sql.
+  ///
+  /// Fallback en dos escalones:
+  ///   1. las lineas de conteo (`cantidad_fisica`) no pasan por el helper;
+  ///   2. las operaciones viejas sin `id_presentacion` traen la cantidad sola —
+  ///      no se les pone "unidades" porque el ledger no sabe en que estaban
+  ///      expresadas.
+  String _getCantidadTexto(Map<String, dynamic> item) {
+    final formateada = item['cantidad_formateada']?.toString();
+    if (formateada != null && formateada.trim().isNotEmpty) {
+      return 'Cant: $formateada';
+    }
+
+    final cruda = item['cantidad_fisica'] ?? item['cantidad'];
+    if (cruda == null) return 'Cant: 0';
+
+    final n = cruda is num ? cruda : num.tryParse(cruda.toString());
+    if (n == null) return 'Cant: $cruda';
+
+    return 'Cant: ${StockMixtoFormatter.cantidad(n)}';
+  }
+
+  /// Etiqueta de la presentacion de una linea: "Caja (= 12 base)".
+  ///
+  /// El factor solo se muestra cuando NO es 1, porque en el 90 % de las lineas
+  /// es 1 y repetir "(= 1 base)" seria ruido. Ojo: hay 131 filas marcadas
+  /// `es_base` con factor 12/24/30 (anomalia documentada en el plan), y en esas
+  /// el factor visible es justamente lo que permite detectar el problema desde
+  /// la lista.
+  String _getPresentacionTexto(Map<String, dynamic> item) {
+    final nombre = item['presentacion_nombre']?.toString() ?? '';
+    final factorRaw = item['presentacion_factor'];
+    final factor = factorRaw is num
+        ? factorRaw
+        : num.tryParse(factorRaw?.toString() ?? '');
+
+    if (factor == null || factor == 1) return nombre;
+
+    return '$nombre (= ${StockMixtoFormatter.cantidad(factor)} base)';
+  }
+
   String _getProductName(Map<String, dynamic> item) {
-    // Intentar múltiples campos para obtener el nombre del producto
     final possibleNames = [
       item['denominacion'],
       item['nombre_producto'],
@@ -2603,108 +2649,134 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
               int index = entry.key;
               Map<String, dynamic> item = entry.value;
 
-              return Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  border: index > 0
-                      ? Border(top: BorderSide(color: Colors.grey[200]!))
-                      : null,
-                ),
-                child: Row(
-                  children: [
-                    // Product info
-                    Expanded(
-                      flex: 3,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _getProductName(item),
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF1F2937),
-                            ),
-                          ),
-                          if (item['variante'] != null ||
-                              item['opcion_variante'] != null) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              '${item['variante'] ?? ''}: ${item['opcion_variante'] ?? ''}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ],
-                          if (item['sku_producto'] != null) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              'SKU: ${item['sku_producto']}',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey[500],
-                                fontFamily: 'monospace',
-                              ),
-                            ),
-                          ],
-                          if (item['precio_unitario'] != null) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              'Precio: \$${_formatFieldValue(item['precio_unitario'])}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.grey[700],
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
+                  return Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border:
+                          index > 0
+                              ? Border(
+                                top: BorderSide(color: Colors.grey[200]!),
+                              )
+                              : null,
                     ),
-                    const SizedBox(width: 12),
-                    // Quantity and Subtotal
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
+                    child: Row(
                       children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF4A90E2).withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: const Color(0xFF4A90E2).withOpacity(0.3),
-                            ),
-                          ),
-                          child: Text(
-                            'Cant: ${item['cantidad_fisica'] ?? item['cantidad'] ?? 0}',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF4A90E2),
-                            ),
+                        // Product info
+                        Expanded(
+                          flex: 3,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _getProductName(item),
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1F2937),
+                                ),
+                              ),
+                              if (item['variante'] != null ||
+                                  item['opcion_variante'] != null) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${item['variante'] ?? ''}: ${item['opcion_variante'] ?? ''}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                              // FASE 2: la presentacion de la linea. Con
+                              // factor <> 1 se muestra la equivalencia, que es
+                              // el dato que faltaba para leer "2 Cajas" sin
+                              // tener que abrir la ficha del producto.
+                              if (item['presentacion_nombre'] != null) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  _getPresentacionTexto(item),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF4A90E2),
+                                  ),
+                                ),
+                              ],
+                              if (item['sku_producto'] != null) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  'SKU: ${item['sku_producto']}',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey[500],
+                                    fontFamily: 'monospace',
+                                  ),
+                                ),
+                              ],
+                              if (item['precio_unitario'] != null) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Precio: \$${_formatFieldValue(item['precio_unitario'])}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.grey[700],
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
-                        if (item['importe'] != null) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            '\$${_formatFieldValue(item['importe'])}',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF1F2937),
+                        const SizedBox(width: 12),
+                        // Quantity and Subtotal
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF4A90E2).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: const Color(
+                                    0xFF4A90E2,
+                                  ).withOpacity(0.3),
+                                ),
+                              ),
+                              // FASE 2/3: la RPC manda cantidad_formateada
+                              // ("4 Bultos"), armada en SQL con
+                              // fn_plural_presentacion (archivos 15 y 28). Se
+                              // prefiere sobre la cantidad cruda; el fallback
+                              // cubre las operaciones de conteo, que traen
+                              // cantidad_fisica y no pasan por el helper.
+                              child: Text(
+                                _getCantidadTexto(item),
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF4A90E2),
+                                ),
+                              ),
                             ),
-                          ),
-                        ],
+                            if (item['importe'] != null) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                '\$${_formatFieldValue(item['importe'])}',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF1F2937),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                       ],
                     ),
-                  ],
-                ),
-              );
-            }).toList(),
+                  );
+                }).toList(),
           ),
         ),
       ],

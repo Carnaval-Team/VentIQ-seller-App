@@ -2469,8 +2469,25 @@ class ProductService {
     }
   }
 
-  /// Convierte cantidad de cualquier presentación a presentación base
 
+
+  /// Convierte cantidad de cualquier presentación a presentación base.
+  ///
+  /// DEPRECADO en la Fase 1 de presentaciones
+  /// (docs/PLAN_PRESENTACIONES_INVENTARIO.md).
+  ///
+  /// NO usar en rutas de ESCRITURA: el inventario guarda la cantidad en la
+  /// presentación que eligió el usuario, y aplanar a base aquí es justamente el
+  /// bug que la Fase 1 elimina (4 cajas se guardaban como 48 unidades).
+  ///
+  /// Ya no tiene ningún llamador. Se conserva solo por si hace falta calcular
+  /// un equivalente para MOSTRAR; para eso es preferible el equivalente que
+  /// devuelve el SQL (fn_equivalente_base / fn_stock_mixto_json), que respeta la
+  /// cascada de resolución de la base y los productos sin fila es_base.
+  @Deprecated(
+    'Fase 1 presentaciones: no aplanar a base en escrituras. '
+    'Para mostrar equivalentes usa fn_equivalente_base o fn_stock_mixto_json.',
+  )
   static Future<double> convertToBasePresentacion({
     required int productId,
 

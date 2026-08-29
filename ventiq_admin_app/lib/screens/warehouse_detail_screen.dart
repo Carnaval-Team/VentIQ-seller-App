@@ -3,6 +3,7 @@ import '../config/app_colors.dart';
 import '../services/warehouse_service.dart';
 import '../models/warehouse.dart';
 import '../utils/navigation_guard.dart';
+import '../utils/stock_mixto_formatter.dart';
 
 class WarehouseDetailScreen extends StatefulWidget {
   final String warehouseId;
@@ -1828,11 +1829,27 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
     final products = _layoutProducts[layoutId] ?? [];
 
     // Calcular stock total en la zona
+    //
+    // FASE 3: `totalStock` suma cantidades FISICAS de presentaciones distintas
+    // (4 Cajas + 4 Unidades = 8), asi que no se puede etiquetar "unidades".
+    // Aqui solo se usa como bandera "¿hay algo?" para permitir o no el borrado
+    // de la zona, y el desglose por presentacion se muestra aparte.
     int totalStock = 0;
+    final Map<String, num> porPresentacion = {};
     for (final product in products) {
       final stock = (product['stock_actual'] ?? 0) as int;
       totalStock += stock;
+      if (stock != 0) {
+        final nombre = (product['presentacion'] as String?)?.trim();
+        final clave = (nombre == null || nombre.isEmpty) ? '' : nombre;
+        porPresentacion[clave] = (porPresentacion[clave] ?? 0) + stock;
+      }
     }
+
+    // "4 Cajas + 4 Unidades". Con una sola presentacion queda "8 Unidades".
+    final desgloseStock = porPresentacion.entries
+        .map((e) => StockMixtoFormatter.linea(e.value, e.key))
+        .join(' + ');
 
     if (!mounted) return;
 
@@ -1964,7 +1981,7 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
                           style: const TextStyle(fontSize: 12),
                         ),
                         Text(
-                          'Stock total: $totalStock unidades',
+                          'Stock total: ${desgloseStock.isEmpty ? '0' : desgloseStock}',
                           style: const TextStyle(fontSize: 12),
                         ),
                       ],

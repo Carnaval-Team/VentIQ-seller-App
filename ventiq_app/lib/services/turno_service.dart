@@ -205,10 +205,11 @@ class TurnoService {
       final idTpv = await userPrefs.getIdTpv();
       final userID = await userPrefs.getUserId();
       if (idTpv != null) {
-        print('🧪 Testing fn_resumen_diario_cierre with TPV: $idTpv');
+        print('🧪 Testing fn_resumen_diario_cierre_v2 with TPV: $idTpv');
 
+        // FASE 3 presentaciones: v2 (la original redondeaba productos_vendidos).
         final resumenCierre = await _supabase.rpc(
-          'fn_resumen_diario_cierre',
+          'fn_resumen_diario_cierre_v2',
           params: {'id_tpv_param': idTpv, 'id_usuario_param': userID},
         );
 

@@ -65,7 +65,10 @@ class _AperturaScreenState extends State<AperturaScreen>
   // Previous shift data
   double _previousShiftSales = 0.0;
   double _previousShiftCash = 0.0;
-  int _previousShiftProducts = 0;
+  // FASE 3 presentaciones: `num`, no `int`. Es la cantidad de productos del
+  // turno anterior y puede ser fraccionada (0,5 kg); truncarla hacia 0 haria
+  // que un turno con solo ventas al peso pareciera vacio.
+  num _previousShiftProducts = 0;
   double _previousShiftTicketAvg = 0.0;
 
   /// Si ya hay turno abierto: mostrar detalles en lugar del formulario.
@@ -617,7 +620,7 @@ class _AperturaScreenState extends State<AperturaScreen>
             (resumenTurno['efectivo_inicial'] as num?)?.toDouble() ??
             0.0;
         final products =
-            (resumenTurno['productos_vendidos'] as num?)?.toInt() ?? 0;
+            (resumenTurno['productos_vendidos'] as num?) ?? 0;
         final ticket =
             (resumenTurno['ticket_promedio'] as num?)?.toDouble() ?? 0.0;
 
