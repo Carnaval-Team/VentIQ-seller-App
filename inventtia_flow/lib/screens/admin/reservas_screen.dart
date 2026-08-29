@@ -133,9 +133,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Error: $e'),
-              backgroundColor: AppTheme.error),
+          SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.error),
         );
       }
     } finally {
@@ -158,8 +156,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
       lastDate: DateTime(2028),
     );
     if (picked != null) {
-      setState(
-          () => _fecha = DateTime(picked.year, picked.month, picked.day));
+      setState(() => _fecha = DateTime(picked.year, picked.month, picked.day));
       _load();
     }
   }
@@ -185,18 +182,20 @@ class _ReservasScreenState extends State<ReservasScreen> {
 
   Future<void> _cancelarReserva(ReservaListItem item) async {
     final reserva = item.principal;
+    final cancelaRegreso =
+        reserva.tipoTrayecto == 'ida' && reserva.idViaje?.isNotEmpty == true;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Cancelar reserva'),
         content: Text(
-          item.esIdaVueltaMismoDia
+          cancelaRegreso
               ? '¿Cancelar el viaje de ida y regreso de '
-                  '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
-                  '(se cancelan ambos tramos)?'
+                    '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
+                    '(se cancelan ambos tramos)?'
               : '¿Estás seguro de cancelar la reserva de '
-                  '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
-                  'para el servicio ${reserva.localServicio?.servicio?.nombre ?? ''}?',
+                    '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
+                    'para el servicio ${reserva.localServicio?.servicio?.nombre ?? ''}?',
         ),
         actions: [
           TextButton(
@@ -213,7 +212,32 @@ class _ReservasScreenState extends State<ReservasScreen> {
     );
 
     if (confirm != true || !mounted) return;
-    await _cambiarEstadoItems(item, 2, 'Reserva cancelada y cliente notificado');
+    setState(() => _loading = true);
+    try {
+      await AgendaAdminService.cancelarReserva(idAgenda: reserva.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Reserva cancelada y cliente notificado'),
+            backgroundColor: AppTheme.success,
+          ),
+        );
+        _load();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Error: ${e.toString().replaceFirst('Exception: ', '')}',
+            ),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   Future<void> _descancelarReserva(ReservaListItem item) async {
@@ -244,7 +268,11 @@ class _ReservasScreenState extends State<ReservasScreen> {
     );
 
     if (confirm != true || !mounted) return;
-    await _cambiarEstadoItems(item, 1, 'Reserva reactivada y cliente notificado');
+    await _cambiarEstadoItems(
+      item,
+      1,
+      'Reserva reactivada y cliente notificado',
+    );
   }
 
   Future<void> _completarReserva(ReservaListItem item) async {
@@ -309,7 +337,9 @@ class _ReservasScreenState extends State<ReservasScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: ${e.toString().replaceFirst('Exception: ', '')}'),
+            content: Text(
+              'Error: ${e.toString().replaceFirst('Exception: ', '')}',
+            ),
             backgroundColor: AppTheme.error,
           ),
         );
@@ -320,7 +350,8 @@ class _ReservasScreenState extends State<ReservasScreen> {
 
   Future<void> _editarReserva(Agenda reserva) async {
     final camposAdicionales =
-        reserva.localServicio?.servicio?.camposAdicionales ?? const <CampoAdicional>[];
+        reserva.localServicio?.servicio?.camposAdicionales ??
+        const <CampoAdicional>[];
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -369,8 +400,11 @@ class _ReservasScreenState extends State<ReservasScreen> {
     out.sort((a, b) {
       final fa = a.fechaHoraReserva;
       final fb = b.fechaHoraReserva;
-      final porFecha = DateTime(fa.year, fa.month, fa.day)
-          .compareTo(DateTime(fb.year, fb.month, fb.day));
+      final porFecha = DateTime(
+        fa.year,
+        fa.month,
+        fa.day,
+      ).compareTo(DateTime(fb.year, fb.month, fb.day));
       if (porFecha != 0) return porFecha;
       final sa = a.localServicio?.servicio?.nombre ?? '';
       final sb = b.localServicio?.servicio?.nombre ?? '';
@@ -421,14 +455,16 @@ class _ReservasScreenState extends State<ReservasScreen> {
               ),
               const SizedBox(height: 12),
               ListTile(
-                leading: const Icon(Icons.today_outlined, color: AppTheme.primary),
+                leading: const Icon(
+                  Icons.today_outlined,
+                  color: AppTheme.primary,
+                ),
                 title: Text('Día actual (${_fmt.format(_fecha)})'),
                 subtitle: Text(
                   '${_itemsListado.length} reserva(s) visibles',
                   style: const TextStyle(fontSize: 12),
                 ),
-                onTap: () =>
-                    Navigator.pop(ctx, _AlcanceExportacion.dia),
+                onTap: () => Navigator.pop(ctx, _AlcanceExportacion.dia),
               ),
               ListTile(
                 leading: const Icon(Icons.filter_list, color: AppTheme.primary),
@@ -437,8 +473,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
                   'Desde hoy en adelante (mantiene local/servicio)',
                   style: TextStyle(fontSize: 12),
                 ),
-                onTap: () =>
-                    Navigator.pop(ctx, _AlcanceExportacion.estado),
+                onTap: () => Navigator.pop(ctx, _AlcanceExportacion.estado),
               ),
             ],
           ),
@@ -558,8 +593,10 @@ class _ReservasScreenState extends State<ReservasScreen> {
     final doc = pw.Document(
       theme: pw.ThemeData.withFont(base: fontRegular, bold: fontBold),
     );
-    final filtroDesc =
-        _buildFiltroDescExport(lista: reservas, alcance: alcance);
+    final filtroDesc = _buildFiltroDescExport(
+      lista: reservas,
+      alcance: alcance,
+    );
     final esOmnibus = _listaEsOmnibus(reservas);
 
     doc.addPage(
@@ -568,14 +605,19 @@ class _ReservasScreenState extends State<ReservasScreen> {
         header: (_) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
-            pw.Text('Reservas - ${widget.entidad.denominacion}',
-                style: pw.TextStyle(
-                    font: fontBold,
-                    fontSize: 14,
-                    fontWeight: pw.FontWeight.bold)),
+            pw.Text(
+              'Reservas - ${widget.entidad.denominacion}',
+              style: pw.TextStyle(
+                font: fontBold,
+                fontSize: 14,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
             if (filtroDesc.isNotEmpty)
-              pw.Text(filtroDesc,
-                  style: pw.TextStyle(font: fontRegular, fontSize: 8)),
+              pw.Text(
+                filtroDesc,
+                style: pw.TextStyle(font: fontRegular, fontSize: 8),
+              ),
             pw.SizedBox(height: 6),
             pw.Divider(),
           ],
@@ -596,23 +638,29 @@ class _ReservasScreenState extends State<ReservasScreen> {
           final widgets = <pw.Widget>[];
 
           if (esOmnibus) {
-            widgets.addAll(_pdfTablaOmnibus(
-              reservas,
-              fontBold: fontBold,
-              fontRegular: fontRegular,
-            ));
+            widgets.addAll(
+              _pdfTablaOmnibus(
+                reservas,
+                fontBold: fontBold,
+                fontRegular: fontRegular,
+              ),
+            );
           } else {
-            widgets.addAll(_pdfTablaGeneral(
+            widgets.addAll(
+              _pdfTablaGeneral(
+                reservas,
+                fontBold: fontBold,
+                fontRegular: fontRegular,
+              ),
+            );
+          }
+          widgets.addAll(
+            _pdfFilaTotalCobrar(
               reservas,
               fontBold: fontBold,
               fontRegular: fontRegular,
-            ));
-          }
-          widgets.addAll(_pdfFilaTotalCobrar(
-            reservas,
-            fontBold: fontBold,
-            fontRegular: fontRegular,
-          ));
+            ),
+          );
           return widgets;
         },
       ),
@@ -623,8 +671,9 @@ class _ReservasScreenState extends State<ReservasScreen> {
         ? DateFormat('yyyyMMdd').format(_fecha)
         : '${_nombreEstadoFiltro.toLowerCase()}_${DateFormat('yyyyMMdd').format(DateTime.now())}';
     await Printing.sharePdf(
-        bytes: Uint8List.fromList(bytes),
-        filename: 'reservas_$sufijo.pdf');
+      bytes: Uint8List.fromList(bytes),
+      filename: 'reservas_$sufijo.pdf',
+    );
   }
 
   bool _listaEsOmnibus(List<Agenda> lista) {
@@ -635,8 +684,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
     // Heurística: reservas con trayecto ida/regreso (aunque falte tipo_actividad).
     return lista.any((r) {
       final t = r.tipoTrayecto?.toLowerCase();
-      final v =
-          r.datosAdicionales?['tipo_viaje']?.toString().toLowerCase();
+      final v = r.datosAdicionales?['tipo_viaje']?.toString().toLowerCase();
       return t == 'ida' ||
           t == 'vuelta' ||
           v == 'ida' ||
@@ -646,7 +694,8 @@ class _ReservasScreenState extends State<ReservasScreen> {
   }
 
   List<({String clave, String etiqueta})> _columnasDatosPdf(
-      List<Agenda> lista) {
+    List<Agenda> lista,
+  ) {
     const excluir = {
       'email',
       'correo',
@@ -656,9 +705,9 @@ class _ReservasScreenState extends State<ReservasScreen> {
       'recogida',
       'destino',
     };
-    return _columnasDatos(lista)
-        .where((c) => !excluir.contains(c.clave.toLowerCase()))
-        .toList();
+    return _columnasDatos(
+      lista,
+    ).where((c) => !excluir.contains(c.clave.toLowerCase())).toList();
   }
 
   /// Fila de total debajo del detalle: suma de precios a cobrar (sin canceladas).
@@ -688,13 +737,18 @@ class _ReservasScreenState extends State<ReservasScreen> {
         child: pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.end,
           children: [
-            pw.Text('Total a cobrar: ',
-                style: pw.TextStyle(font: fontRegular, fontSize: 11)),
-            pw.Text(texto,
-                style: pw.TextStyle(
-                    font: fontBold,
-                    fontSize: 11,
-                    fontWeight: pw.FontWeight.bold)),
+            pw.Text(
+              'Total a cobrar: ',
+              style: pw.TextStyle(font: fontRegular, fontSize: 11),
+            ),
+            pw.Text(
+              texto,
+              style: pw.TextStyle(
+                font: fontBold,
+                fontSize: 11,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
           ],
         ),
       ),
@@ -711,7 +765,9 @@ class _ReservasScreenState extends State<ReservasScreen> {
   String _recogidaPdf(ReservaListItem item) {
     final v = item.principal.datosAdicionales?['recogida']?.toString().trim();
     if (v != null && v.isNotEmpty) return v;
-    final vPareja = item.pareja?.datosAdicionales?['recogida']?.toString().trim();
+    final vPareja = item.pareja?.datosAdicionales?['recogida']
+        ?.toString()
+        .trim();
     if (vPareja != null && vPareja.isNotEmpty) return vPareja;
     return '-';
   }
@@ -719,7 +775,9 @@ class _ReservasScreenState extends State<ReservasScreen> {
   String _destinoPdf(ReservaListItem item) {
     final v = item.principal.datosAdicionales?['destino']?.toString().trim();
     if (v != null && v.isNotEmpty) return v;
-    final vPareja = item.pareja?.datosAdicionales?['destino']?.toString().trim();
+    final vPareja = item.pareja?.datosAdicionales?['destino']
+        ?.toString()
+        .trim();
     if (vPareja != null && vPareja.isNotEmpty) return vPareja;
     return '-';
   }
@@ -727,7 +785,8 @@ class _ReservasScreenState extends State<ReservasScreen> {
   String _tipoViajePdf(ReservaListItem item) {
     if (item.etiquetaTipo.isNotEmpty) return item.etiquetaTipo;
     final raw = etiquetaTrayectoUi(
-        item.principal.tipoTrayecto ?? item.principal.turnoNombre);
+      item.principal.tipoTrayecto ?? item.principal.turnoNombre,
+    );
     return raw.isEmpty ? '-' : raw;
   }
 
@@ -736,20 +795,31 @@ class _ReservasScreenState extends State<ReservasScreen> {
     required pw.Font fontBold,
     required pw.Font fontRegular,
   }) {
-    final items = agruparReservasParaListado(reservas)
-        .where((i) => !i.esCancelada)
-        .toList()
-      ..sort((a, b) => a.principal.fechaHoraReserva
-          .compareTo(b.principal.fechaHoraReserva));
+    final items =
+        agruparReservasParaListado(
+          reservas,
+        ).where((i) => !i.esCancelada).toList()..sort(
+          (a, b) => a.principal.fechaHoraReserva.compareTo(
+            b.principal.fechaHoraReserva,
+          ),
+        );
 
     return [
-      pw.Text('Detalle',
-          style: pw.TextStyle(
-              font: fontBold, fontSize: 12, fontWeight: pw.FontWeight.bold)),
+      pw.Text(
+        'Detalle',
+        style: pw.TextStyle(
+          font: fontBold,
+          fontSize: 12,
+          fontWeight: pw.FontWeight.bold,
+        ),
+      ),
       pw.SizedBox(height: 8),
       pw.TableHelper.fromTextArray(
         headerStyle: pw.TextStyle(
-            font: fontBold, fontSize: 9, fontWeight: pw.FontWeight.bold),
+          font: fontBold,
+          fontSize: 9,
+          fontWeight: pw.FontWeight.bold,
+        ),
         headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
         cellStyle: pw.TextStyle(font: fontRegular, fontSize: 8),
         cellAlignment: pw.Alignment.centerLeft,
@@ -792,20 +862,31 @@ class _ReservasScreenState extends State<ReservasScreen> {
     required pw.Font fontRegular,
   }) {
     final cols = _columnasDatosPdf(reservas);
-    final items = agruparReservasParaListado(reservas)
-        .where((i) => !i.esCancelada)
-        .toList()
-      ..sort((a, b) => a.principal.fechaHoraReserva
-          .compareTo(b.principal.fechaHoraReserva));
+    final items =
+        agruparReservasParaListado(
+          reservas,
+        ).where((i) => !i.esCancelada).toList()..sort(
+          (a, b) => a.principal.fechaHoraReserva.compareTo(
+            b.principal.fechaHoraReserva,
+          ),
+        );
 
     return [
-      pw.Text('Detalle',
-          style: pw.TextStyle(
-              font: fontBold, fontSize: 12, fontWeight: pw.FontWeight.bold)),
+      pw.Text(
+        'Detalle',
+        style: pw.TextStyle(
+          font: fontBold,
+          fontSize: 12,
+          fontWeight: pw.FontWeight.bold,
+        ),
+      ),
       pw.SizedBox(height: 8),
       pw.TableHelper.fromTextArray(
         headerStyle: pw.TextStyle(
-            font: fontBold, fontSize: 9, fontWeight: pw.FontWeight.bold),
+          font: fontBold,
+          fontSize: 9,
+          fontWeight: pw.FontWeight.bold,
+        ),
         headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
         cellStyle: pw.TextStyle(font: fontRegular, fontSize: 8),
         cellAlignment: pw.Alignment.centerLeft,
@@ -874,8 +955,9 @@ class _ReservasScreenState extends State<ReservasScreen> {
       ...cols.map((c) => c.etiqueta),
     ];
     for (var i = 0; i < headers.length; i++) {
-      final cell = sheet
-          .cell(xl.CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0));
+      final cell = sheet.cell(
+        xl.CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0),
+      );
       cell.value = xl.TextCellValue(headers[i]);
       cell.cellStyle = xl.CellStyle(bold: true);
     }
@@ -884,12 +966,12 @@ class _ReservasScreenState extends State<ReservasScreen> {
     int rowIdx = 1;
     grupos.forEach((localNombre, lista) {
       for (final ag in lista) {
-        final esTercero = ag.reservadoPor != null &&
+        final esTercero =
+            ag.reservadoPor != null &&
             ag.uuidUsuario != null &&
             ag.reservadoPor != ag.uuidUsuario;
-        final tipo = etiquetaTrayectoUi(
-              ag.tipoTrayecto ?? ag.turnoNombre,
-            ).isNotEmpty
+        final tipo =
+            etiquetaTrayectoUi(ag.tipoTrayecto ?? ag.turnoNombre).isNotEmpty
             ? etiquetaTrayectoUi(ag.tipoTrayecto ?? ag.turnoNombre)
             : (ag.turnoNombre ?? '');
         final row = [
@@ -910,9 +992,12 @@ class _ReservasScreenState extends State<ReservasScreen> {
         ];
         for (var c = 0; c < row.length; c++) {
           sheet
-              .cell(xl.CellIndex.indexByColumnRow(
-                  columnIndex: c, rowIndex: rowIdx))
-              .value = xl.TextCellValue(row[c]);
+              .cell(
+                xl.CellIndex.indexByColumnRow(columnIndex: c, rowIndex: rowIdx),
+              )
+              .value = xl.TextCellValue(
+            row[c],
+          );
         }
         rowIdx++;
       }
@@ -926,10 +1011,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
         : '${_nombreEstadoFiltro.toLowerCase()}_${DateFormat('yyyyMMdd').format(DateTime.now())}';
     final file = File('${dir.path}/reservas_$sufijo.xlsx');
     await file.writeAsBytes(bytes);
-    await Share.shareXFiles(
-      [XFile(file.path)],
-      text: 'Reservas exportadas',
-    );
+    await Share.shareXFiles([XFile(file.path)], text: 'Reservas exportadas');
   }
 
   /// Ítems de listado (ida+vuelta mismo día = 1) agrupados por local.
@@ -939,8 +1021,11 @@ class _ReservasScreenState extends State<ReservasScreen> {
     items.sort((a, b) {
       final fa = a.principal.fechaHoraReserva;
       final fb = b.principal.fechaHoraReserva;
-      final porFecha = DateTime(fa.year, fa.month, fa.day)
-          .compareTo(DateTime(fb.year, fb.month, fb.day));
+      final porFecha = DateTime(
+        fa.year,
+        fa.month,
+        fa.day,
+      ).compareTo(DateTime(fb.year, fb.month, fb.day));
       if (porFecha != 0) return porFecha;
       final sa = a.principal.localServicio?.servicio?.nombre ?? '';
       final sb = b.principal.localServicio?.servicio?.nombre ?? '';
@@ -949,8 +1034,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
       return fa.compareTo(fb);
     });
     for (final item in items) {
-      final key =
-          item.principal.localServicio?.local?.nombre ?? 'Sin local';
+      final key = item.principal.localServicio?.local?.nombre ?? 'Sin local';
       map.putIfAbsent(key, () => []).add(item);
     }
     final keys = map.keys.toList()..sort((a, b) => a.compareTo(b));
@@ -963,20 +1047,15 @@ class _ReservasScreenState extends State<ReservasScreen> {
   /// Columnas dinámicas con orden estable: primero las del servicio (en su
   /// orden de configuración), luego el resto por etiqueta.
   List<({String clave, String etiqueta})> _columnasDatos(List<Agenda> lista) {
-    const clavesFijas = {
-      'nombre',
-      'apellidos',
-      'ci',
-      'telefono',
-      'tipo_viaje',
-    };
+    const clavesFijas = {'nombre', 'apellidos', 'ci', 'telefono', 'tipo_viaje'};
     final etiquetas = <String, String>{};
     final ordenConfig = <String>[];
     final extras = <String>{};
 
     for (final r in lista) {
-      for (final c in r.localServicio?.servicio?.camposAdicionales ??
-          const <CampoAdicional>[]) {
+      for (final c
+          in r.localServicio?.servicio?.camposAdicionales ??
+              const <CampoAdicional>[]) {
         if (clavesFijas.contains(c.clave)) continue;
         etiquetas[c.clave] = c.etiqueta;
         if (!ordenConfig.contains(c.clave)) ordenConfig.add(c.clave);
@@ -991,10 +1070,11 @@ class _ReservasScreenState extends State<ReservasScreen> {
     }
 
     final extrasOrdenados = extras.toList()
-      ..sort((a, b) =>
-          (etiquetas[a] ?? a).toLowerCase().compareTo(
-                (etiquetas[b] ?? b).toLowerCase(),
-              ));
+      ..sort(
+        (a, b) => (etiquetas[a] ?? a).toLowerCase().compareTo(
+          (etiquetas[b] ?? b).toLowerCase(),
+        ),
+      );
 
     return [
       ...ordenConfig.map((k) => (clave: k, etiqueta: etiquetas[k] ?? k)),
@@ -1003,11 +1083,12 @@ class _ReservasScreenState extends State<ReservasScreen> {
   }
 
   /// ¿Alguna reserva de la lista fue hecha para un tercero?
-  bool _hayTerceros(List<Agenda> lista) =>
-      lista.any((r) =>
-          r.reservadoPor != null &&
-          r.uuidUsuario != null &&
-          r.reservadoPor != r.uuidUsuario);
+  bool _hayTerceros(List<Agenda> lista) => lista.any(
+    (r) =>
+        r.reservadoPor != null &&
+        r.uuidUsuario != null &&
+        r.reservadoPor != r.uuidUsuario,
+  );
 
   String _valorDato(Agenda r, String clave) {
     final v = r.datosAdicionales?[clave];
@@ -1055,9 +1136,13 @@ class _ReservasScreenState extends State<ReservasScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('Reservas'),
-              Text(widget.entidad.denominacion,
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w400)),
+              Text(
+                widget.entidad.denominacion,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
             ],
           ),
           actions: [
@@ -1097,11 +1182,11 @@ class _ReservasScreenState extends State<ReservasScreen> {
                     child: _loading
                         ? const Center(child: CircularProgressIndicator())
                         : _reservas.isEmpty
-                            ? _buildEmpty()
-                            : RefreshIndicator(
-                                onRefresh: _load,
-                                child: _buildTabla(),
-                              ),
+                        ? _buildEmpty()
+                        : RefreshIndicator(
+                            onRefresh: _load,
+                            child: _buildTabla(),
+                          ),
                   ),
                 ),
               ],
@@ -1114,8 +1199,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
 
   Widget _buildBarraFecha() {
     final diaSemana = _fmtDiaSemana.format(_fecha);
-    final diaCapitalizado =
-        diaSemana[0].toUpperCase() + diaSemana.substring(1);
+    final diaCapitalizado = diaSemana[0].toUpperCase() + diaSemana.substring(1);
 
     return Container(
       color: Colors.white,
@@ -1133,8 +1217,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
               onTap: _pickFecha,
               borderRadius: BorderRadius.circular(8),
               child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                 child: Column(
                   children: [
                     Text(
@@ -1154,13 +1237,17 @@ class _ReservasScreenState extends State<ReservasScreen> {
                         Text(
                           diaCapitalizado,
                           style: const TextStyle(
-                              fontSize: 12, color: AppTheme.textSecondary),
+                            fontSize: 12,
+                            color: AppTheme.textSecondary,
+                          ),
                         ),
                         if (_esHoy) ...[
                           const SizedBox(width: 6),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 1),
+                              horizontal: 6,
+                              vertical: 1,
+                            ),
                             decoration: BoxDecoration(
                               color: AppTheme.primary.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(6),
@@ -1168,9 +1255,10 @@ class _ReservasScreenState extends State<ReservasScreen> {
                             child: const Text(
                               'Hoy',
                               style: TextStyle(
-                                  fontSize: 10,
-                                  color: AppTheme.primary,
-                                  fontWeight: FontWeight.w600),
+                                fontSize: 10,
+                                color: AppTheme.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                         ],
@@ -1185,9 +1273,12 @@ class _ReservasScreenState extends State<ReservasScreen> {
             TextButton(
               onPressed: _loading ? null : _irHoy,
               style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 8)),
-              child: const Text('Hoy',
-                  style: TextStyle(fontSize: 12, color: AppTheme.primary)),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
+              child: const Text(
+                'Hoy',
+                style: TextStyle(fontSize: 12, color: AppTheme.primary),
+              ),
             ),
           IconButton(
             icon: const Icon(Icons.chevron_right),
@@ -1213,11 +1304,9 @@ class _ReservasScreenState extends State<ReservasScreen> {
           InkWell(
             onTap: _loading
                 ? null
-                : () =>
-                    setState(() => _filtrosExpanded = !_filtrosExpanded),
+                : () => setState(() => _filtrosExpanded = !_filtrosExpanded),
             child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               child: Row(
                 children: [
                   Icon(
@@ -1237,9 +1326,10 @@ class _ReservasScreenState extends State<ReservasScreen> {
                             _lsFiltro!.servicio?.nombre ?? '',
                           if (_idEstadoFiltro != null)
                             _estados
-                                .firstWhere((e) => e.id == _idEstadoFiltro,
-                                    orElse: () =>
-                                        EstadoAgenda(id: 0, nombre: ''))
+                                .firstWhere(
+                                  (e) => e.id == _idEstadoFiltro,
+                                  orElse: () => EstadoAgenda(id: 0, nombre: ''),
+                                )
                                 .nombre,
                         ].where((s) => s.isNotEmpty).join(' · ');
                         return parts.isNotEmpty ? parts : 'Filtros';
@@ -1259,20 +1349,23 @@ class _ReservasScreenState extends State<ReservasScreen> {
                     Text(
                       '${_itemsListado.length} reserva${_itemsListado.length == 1 ? '' : 's'}',
                       style: const TextStyle(
-                          fontSize: 11, color: AppTheme.textSecondary),
+                        fontSize: 11,
+                        color: AppTheme.textSecondary,
+                      ),
                     ),
                   const SizedBox(width: 6),
                   if (hayFiltrosActivos)
                     GestureDetector(
                       onTap: _loading ? null : _resetFiltros,
-                      child: const Icon(Icons.clear,
-                          size: 16, color: AppTheme.textSecondary),
+                      child: const Icon(
+                        Icons.clear,
+                        size: 16,
+                        color: AppTheme.textSecondary,
+                      ),
                     )
                   else
                     Icon(
-                      _filtrosExpanded
-                          ? Icons.expand_less
-                          : Icons.expand_more,
+                      _filtrosExpanded ? Icons.expand_less : Icons.expand_more,
                       size: 18,
                       color: AppTheme.textSecondary,
                     ),
@@ -1296,17 +1389,26 @@ class _ReservasScreenState extends State<ReservasScreen> {
                           decoration: const InputDecoration(
                             labelText: 'Local',
                             contentPadding: EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 8),
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
                             border: OutlineInputBorder(),
                             isDense: true,
                           ),
                           items: [
                             const DropdownMenuItem(
-                                value: null, child: Text('Todos')),
-                            ..._locales.map((l) => DropdownMenuItem(
+                              value: null,
+                              child: Text('Todos'),
+                            ),
+                            ..._locales.map(
+                              (l) => DropdownMenuItem(
                                 value: l,
-                                child: Text(l.nombre,
-                                    overflow: TextOverflow.ellipsis))),
+                                child: Text(
+                                  l.nombre,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
                           ],
                           onChanged: _loading ? null : _onLocalChange,
                         ),
@@ -1319,17 +1421,26 @@ class _ReservasScreenState extends State<ReservasScreen> {
                           decoration: const InputDecoration(
                             labelText: 'Servicio',
                             contentPadding: EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 8),
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
                             border: OutlineInputBorder(),
                             isDense: true,
                           ),
                           items: [
                             const DropdownMenuItem(
-                                value: null, child: Text('Todos')),
-                            ..._localServicios.map((ls) => DropdownMenuItem(
+                              value: null,
+                              child: Text('Todos'),
+                            ),
+                            ..._localServicios.map(
+                              (ls) => DropdownMenuItem(
                                 value: ls,
-                                child: Text(ls.servicio?.nombre ?? '',
-                                    overflow: TextOverflow.ellipsis))),
+                                child: Text(
+                                  ls.servicio?.nombre ?? '',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
                           ],
                           onChanged: _loading
                               ? null
@@ -1363,20 +1474,23 @@ class _ReservasScreenState extends State<ReservasScreen> {
                                   _load();
                                 },
                         ),
-                        ..._estados.map((e) => _EstadoChip(
-                              label: e.nombre[0].toUpperCase() +
-                                  e.nombre.substring(1),
-                              selected: _idEstadoFiltro == e.id,
-                              onTap: _loading
-                                  ? null
-                                  : () {
-                                      setState(() {
-                                        _idEstadoFiltro = e.id;
-                                        _filtrosExpanded = false;
-                                      });
-                                      _load();
-                                    },
-                            )),
+                        ..._estados.map(
+                          (e) => _EstadoChip(
+                            label:
+                                e.nombre[0].toUpperCase() +
+                                e.nombre.substring(1),
+                            selected: _idEstadoFiltro == e.id,
+                            onTap: _loading
+                                ? null
+                                : () {
+                                    setState(() {
+                                      _idEstadoFiltro = e.id;
+                                      _filtrosExpanded = false;
+                                    });
+                                    _load();
+                                  },
+                          ),
+                        ),
                       ],
                     ),
                   ],
@@ -1408,8 +1522,11 @@ class _ReservasScreenState extends State<ReservasScreen> {
     items.sort((a, b) {
       final fa = a.principal.fechaHoraReserva;
       final fb = b.principal.fechaHoraReserva;
-      final porFecha = DateTime(fa.year, fa.month, fa.day)
-          .compareTo(DateTime(fb.year, fb.month, fb.day));
+      final porFecha = DateTime(
+        fa.year,
+        fa.month,
+        fa.day,
+      ).compareTo(DateTime(fb.year, fb.month, fb.day));
       if (porFecha != 0) return porFecha;
       final sa = a.principal.localServicio?.servicio?.nombre ?? '';
       final sb = b.principal.localServicio?.servicio?.nombre ?? '';
@@ -1425,7 +1542,8 @@ class _ReservasScreenState extends State<ReservasScreen> {
     List<({String clave, String etiqueta})> cols,
   ) {
     final r = item.principal;
-    final esTercero = r.reservadoPor != null &&
+    final esTercero =
+        r.reservadoPor != null &&
         r.uuidUsuario != null &&
         r.reservadoPor != r.uuidUsuario;
     final esCancelada = item.esCancelada;
@@ -1447,8 +1565,8 @@ class _ReservasScreenState extends State<ReservasScreen> {
           color: esCompletada
               ? const Color(0xFFADEBB3).withValues(alpha: 0.30)
               : esCancelada
-                  ? AppTheme.error.withValues(alpha: 0.60)
-                  : Colors.grey.shade200,
+              ? AppTheme.error.withValues(alpha: 0.60)
+              : Colors.grey.shade200,
           width: (esCompletada || esCancelada) ? 1.2 : 1,
         ),
       ),
@@ -1463,14 +1581,18 @@ class _ReservasScreenState extends State<ReservasScreen> {
                   child: Text(
                     r.localServicio?.servicio?.nombre ?? '-',
                     style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                        color: AppTheme.textPrimary),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: AppTheme.textPrimary,
+                    ),
                   ),
                 ),
                 if (tipoLabel.isNotEmpty) ...[
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: AppTheme.primary.withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(8),
@@ -1488,30 +1610,44 @@ class _ReservasScreenState extends State<ReservasScreen> {
                 ],
                 Text(
                   _fmt.format(r.fechaHoraReserva),
-                  style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppTheme.textSecondary,
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: 6),
             const Divider(height: 1),
             const SizedBox(height: 6),
-            _infoRow('Nombre', '${_datoCliente(r, 'nombre')} ${_datoCliente(r, 'apellidos')}'),
+            _infoRow(
+              'Nombre',
+              '${_datoCliente(r, 'nombre')} ${_datoCliente(r, 'apellidos')}',
+            ),
             _infoRow('CI', _datoCliente(r, 'ci')),
             if (telefono != '-' && telefono.isNotEmpty)
               _infoRowWidget(
                 'Teléfono',
                 GestureDetector(
-                  onTap: () => TelefonoContacto.mostrarOpciones(context, telefono),
+                  onTap: () =>
+                      TelefonoContacto.mostrarOpciones(context, telefono),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.phone, size: 12, color: AppTheme.primary),
+                      const Icon(
+                        Icons.phone,
+                        size: 12,
+                        color: AppTheme.primary,
+                      ),
                       const SizedBox(width: 4),
-                      Text(telefono,
-                          style: const TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.primary,
-                              decoration: TextDecoration.underline)),
+                      Text(
+                        telefono,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.primary,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -1519,8 +1655,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
             else
               _infoRow('Teléfono', '-'),
             if (item.esIdaVueltaMismoDia) ...[
-              if (r.turnoNombre != null)
-                _infoRow('Ida', r.turnoNombre!),
+              if (r.turnoNombre != null) _infoRow('Ida', r.turnoNombre!),
               if (item.pareja?.turnoNombre != null)
                 _infoRow('Regreso', item.pareja!.turnoNombre!),
             ] else if (r.turnoNombre != null)
@@ -1550,7 +1685,10 @@ class _ReservasScreenState extends State<ReservasScreen> {
                     label: const Text('Editar'),
                     style: TextButton.styleFrom(
                       foregroundColor: AppTheme.primary,
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       textStyle: const TextStyle(fontSize: 12),
                     ),
                     onPressed: () => _editarReserva(r),
@@ -1561,7 +1699,10 @@ class _ReservasScreenState extends State<ReservasScreen> {
                     label: const Text('Confirmar consumido'),
                     style: TextButton.styleFrom(
                       foregroundColor: AppTheme.primary,
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       textStyle: const TextStyle(fontSize: 12),
                     ),
                     onPressed: () => _completarReserva(item),
@@ -1572,7 +1713,10 @@ class _ReservasScreenState extends State<ReservasScreen> {
                     label: const Text('Reactivar'),
                     style: TextButton.styleFrom(
                       foregroundColor: AppTheme.primary,
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       textStyle: const TextStyle(fontSize: 12),
                     ),
                     onPressed: () => _descancelarReserva(item),
@@ -1583,21 +1727,27 @@ class _ReservasScreenState extends State<ReservasScreen> {
                     label: const Text('Cancelar'),
                     style: TextButton.styleFrom(
                       foregroundColor: AppTheme.error,
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       textStyle: const TextStyle(fontSize: 12),
                     ),
                     onPressed: () => _cancelarReserva(item),
                   ),
-                if (!esActiva && !_puedeCompletar(item) && !_puedeDescancelar(item))
+                if (!esActiva &&
+                    !_puedeCompletar(item) &&
+                    !_puedeDescancelar(item))
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: Text(
                       esCompletada ? 'Completada' : 'Cancelada',
                       style: TextStyle(
-                          fontSize: 11,
-                          color: esCompletada ? AppTheme.primary : AppTheme.error,
-                          fontWeight: FontWeight.w600,
-                          fontStyle: FontStyle.italic),
+                        fontSize: 11,
+                        color: esCompletada ? AppTheme.primary : AppTheme.error,
+                        fontWeight: FontWeight.w600,
+                        fontStyle: FontStyle.italic,
+                      ),
                     ),
                   ),
               ],
@@ -1638,43 +1788,51 @@ class _ReservasScreenState extends State<ReservasScreen> {
   }
 
   Widget _infoRow(String label, String value) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 90,
-              child: Text(label,
-                  style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textSecondary)),
+    padding: const EdgeInsets.symmetric(vertical: 2),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 90,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textSecondary,
             ),
-            Expanded(
-              child: Text(value,
-                  style: const TextStyle(fontSize: 12, color: AppTheme.textPrimary)),
-            ),
-          ],
+          ),
         ),
-      );
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(fontSize: 12, color: AppTheme.textPrimary),
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget _infoRowWidget(String label, Widget widget) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            SizedBox(
-              width: 90,
-              child: Text(label,
-                  style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textSecondary)),
+    padding: const EdgeInsets.symmetric(vertical: 2),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        SizedBox(
+          width: 90,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textSecondary,
             ),
-            widget,
-          ],
+          ),
         ),
-      );
+        widget,
+      ],
+    ),
+  );
 
   Widget _buildEmpty() {
     return SizedBox.expand(
@@ -1687,9 +1845,11 @@ class _ReservasScreenState extends State<ReservasScreen> {
             Center(
               child: Column(
                 children: [
-                  Icon(Icons.event_busy_outlined,
-                      size: 64,
-                      color: AppTheme.textSecondary.withOpacity(0.35)),
+                  Icon(
+                    Icons.event_busy_outlined,
+                    size: 64,
+                    color: AppTheme.textSecondary.withOpacity(0.35),
+                  ),
                   const SizedBox(height: 12),
                   const Text(
                     'Sin reservas para los filtros aplicados',
@@ -1701,14 +1861,18 @@ class _ReservasScreenState extends State<ReservasScreen> {
                     _fmt.format(_fecha),
                     textAlign: TextAlign.center,
                     style: const TextStyle(
-                        fontSize: 12, color: AppTheme.textSecondary),
+                      fontSize: 12,
+                      color: AppTheme.textSecondary,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   const Text(
                     'Desliza para cambiar de día',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                        fontSize: 11, color: AppTheme.textSecondary),
+                      fontSize: 11,
+                      color: AppTheme.textSecondary,
+                    ),
                   ),
                 ],
               ),
@@ -1834,9 +1998,11 @@ class _EditarReservaSheetState extends State<_EditarReservaSheet> {
     _apellidosCtrl = TextEditingController(text: _dato('apellidos'));
     _telefonoCtrl = TextEditingController(text: _dato('telefono'));
     _emailCtrl = TextEditingController(
-        text: widget.reserva.datosAdicionales?['email']?.toString() ?? '');
+      text: widget.reserva.datosAdicionales?['email']?.toString() ?? '',
+    );
     _notasCtrl = TextEditingController(
-        text: widget.reserva.datosAdicionales?['notas']?.toString() ?? '');
+      text: widget.reserva.datosAdicionales?['notas']?.toString() ?? '',
+    );
     // Valores iniciales de campos adicionales (para pre-poblar el form)
     _datosAdicionalesValores = {
       for (final c in widget.camposAdicionales)
@@ -1860,7 +2026,8 @@ class _EditarReservaSheetState extends State<_EditarReservaSheet> {
     if (!_formKey.currentState!.validate()) return;
     if (widget.camposAdicionales.isNotEmpty &&
         _datosAdicionalesKey.currentState != null &&
-        !_datosAdicionalesKey.currentState!.validar()) return;
+        !_datosAdicionalesKey.currentState!.validar())
+      return;
 
     setState(() => _saving = true);
     try {
@@ -1889,15 +2056,11 @@ class _EditarReservaSheetState extends State<_EditarReservaSheet> {
             nuevoPrecio != null &&
             (precioAnterior == null ||
                 (nuevoPrecio - precioAnterior).abs() > 0.001);
-        final msg =
-            precioCambio
-                ? 'Datos actualizados · Precio: ${PrecioReserva.formatear(nuevoPrecio!, nuevaMoneda)}'
-                : 'Datos actualizados';
+        final msg = precioCambio
+            ? 'Datos actualizados · Precio: ${PrecioReserva.formatear(nuevoPrecio!, nuevaMoneda)}'
+            : 'Datos actualizados';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(msg),
-            backgroundColor: AppTheme.success,
-          ),
+          SnackBar(content: Text(msg), backgroundColor: AppTheme.success),
         );
       }
     } catch (e) {
@@ -1946,13 +2109,17 @@ class _EditarReservaSheetState extends State<_EditarReservaSheet> {
                         const Text(
                           'Editar datos del cliente',
                           style: TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.bold),
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                         Text(
                           'Reserva #${widget.reserva.id} · '
                           '${widget.reserva.localServicio?.servicio?.nombre ?? ''}',
                           style: const TextStyle(
-                              fontSize: 12, color: AppTheme.textSecondary),
+                            fontSize: 12,
+                            color: AppTheme.textSecondary,
+                          ),
                         ),
                       ],
                     ),
@@ -2120,9 +2287,14 @@ class _EditarReservaSheetState extends State<_EditarReservaSheet> {
                         height: 20,
                         width: 20,
                         child: CircularProgressIndicator(
-                            color: Colors.white, strokeWidth: 2))
-                    : const Text('Guardar cambios',
-                        style: TextStyle(fontSize: 16)),
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Text(
+                        'Guardar cambios',
+                        style: TextStyle(fontSize: 16),
+                      ),
               ),
             ],
           ),
@@ -2170,14 +2342,17 @@ class _ReservaCard extends StatelessWidget {
                   child: Text(
                     ls?.servicio?.nombre ?? '-',
                     style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
-                        color: AppTheme.textPrimary),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      color: AppTheme.textPrimary,
+                    ),
                   ),
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 3),
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: estadoColor.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
@@ -2185,9 +2360,10 @@ class _ReservaCard extends StatelessWidget {
                   child: Text(
                     estado?.nombre ?? '-',
                     style: TextStyle(
-                        color: estadoColor,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600),
+                      color: estadoColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],
@@ -2212,10 +2388,12 @@ class _ReservaCard extends StatelessWidget {
               const SizedBox(height: 6),
               const Divider(height: 1),
               const SizedBox(height: 6),
-              _InfoRow(Icons.person_outlined,
-                  cliente.nombreCompleto.isNotEmpty
-                      ? cliente.nombreCompleto
-                      : '-'),
+              _InfoRow(
+                Icons.person_outlined,
+                cliente.nombreCompleto.isNotEmpty
+                    ? cliente.nombreCompleto
+                    : '-',
+              ),
               if (cliente.ci != null && cliente.ci!.isNotEmpty)
                 _InfoRow(Icons.badge_outlined, 'CI: ${cliente.ci}'),
               if (cliente.telefono != null && cliente.telefono!.isNotEmpty)
@@ -2234,8 +2412,7 @@ class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String text;
   final Color color;
-  const _InfoRow(this.icon, this.text,
-      {this.color = AppTheme.textSecondary});
+  const _InfoRow(this.icon, this.text, {this.color = AppTheme.textSecondary});
 
   @override
   Widget build(BuildContext context) {
@@ -2246,8 +2423,7 @@ class _InfoRow extends StatelessWidget {
           Icon(icon, size: 13, color: color),
           const SizedBox(width: 4),
           Expanded(
-            child: Text(text,
-                style: TextStyle(fontSize: 12, color: color)),
+            child: Text(text, style: TextStyle(fontSize: 12, color: color)),
           ),
         ],
       ),

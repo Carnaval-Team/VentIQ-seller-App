@@ -36,7 +36,9 @@ class AgendaAdminService {
         out.add(Agenda.fromJson(Map<String, dynamic>.from(item)));
       } catch (e) {
         // No abortar todo el listado por un registro mal formado.
-        print('[flow] AgendaAdminService: omitiendo reserva id=${item['id']}: $e');
+        print(
+          '[flow] AgendaAdminService: omitiendo reserva id=${item['id']}: $e',
+        );
       }
     }
     return out;
@@ -62,15 +64,16 @@ class AgendaAdminService {
         if (hasta != null) 'p_hasta': _tsParam(hasta),
       };
       print('[flow] listarAgendas params=$params');
-      final res = await _supabase.schema(_schema).rpc(
-        'admin_listar_agendas',
-        params: params,
-      );
+      final res = await _supabase
+          .schema(_schema)
+          .rpc('admin_listar_agendas', params: params);
       final raw = _parseJsonbList(res);
       final mapped = _mapAgendas(raw);
       print('[flow] listarAgendas raw=${raw.length} parsed=${mapped.length}');
       if (raw.isNotEmpty && mapped.isEmpty) {
-        print('[flow] listarAgendas: la RPC devolvió datos pero ninguno parseó');
+        print(
+          '[flow] listarAgendas: la RPC devolvió datos pero ninguno parseó',
+        );
       }
       return mapped;
     } catch (e, st) {
@@ -96,10 +99,9 @@ class AgendaAdminService {
         if (idEstado != null) 'p_id_estado': idEstado,
       };
       print('[flow] listarAgendasPorEstado params=$params');
-      final res = await _supabase.schema(_schema).rpc(
-        'admin_listar_agendas_por_estado',
-        params: params,
-      );
+      final res = await _supabase
+          .schema(_schema)
+          .rpc('admin_listar_agendas_por_estado', params: params);
       final raw = _parseJsonbList(res);
       final mapped = _mapAgendas(raw);
       print(
@@ -129,24 +131,29 @@ class AgendaAdminService {
         throw Exception('No se pudo obtener el usuario autenticado');
       }
 
-      final res = await _supabase.schema(_schema).rpc(
-        'admin_reservar_pasaje_omnibus',
-        params: {
-          'p_uuid_admin': uuid,
-          'p_id_local_servicio': idLocalServicio,
-          'p_tipo_viaje': tipoViaje,
-          if (fechaIda != null)
-            'p_fecha_ida': fechaIda.toIso8601String().substring(0, 10),
-          if (idTurnoIda != null) 'p_id_turno_ida': idTurnoIda,
-          if (fechaVuelta != null)
-            'p_fecha_vuelta': fechaVuelta.toIso8601String().substring(0, 10),
-          if (idTurnoVuelta != null) 'p_id_turno_vuelta': idTurnoVuelta,
-          'p_cantidad': cantidad,
-          if (datosAdicionales != null)
-            'p_datos_adicionales': datosAdicionales,
-          if (moneda != null) 'p_moneda': moneda,
-        },
-      );
+      final res = await _supabase
+          .schema(_schema)
+          .rpc(
+            'admin_reservar_pasaje_omnibus',
+            params: {
+              'p_uuid_admin': uuid,
+              'p_id_local_servicio': idLocalServicio,
+              'p_tipo_viaje': tipoViaje,
+              if (fechaIda != null)
+                'p_fecha_ida': fechaIda.toIso8601String().substring(0, 10),
+              if (idTurnoIda != null) 'p_id_turno_ida': idTurnoIda,
+              if (fechaVuelta != null)
+                'p_fecha_vuelta': fechaVuelta.toIso8601String().substring(
+                  0,
+                  10,
+                ),
+              if (idTurnoVuelta != null) 'p_id_turno_vuelta': idTurnoVuelta,
+              'p_cantidad': cantidad,
+              if (datosAdicionales != null)
+                'p_datos_adicionales': datosAdicionales,
+              if (moneda != null) 'p_moneda': moneda,
+            },
+          );
       final json = Map<String, dynamic>.from(res as Map);
       if (json['ok'] != true) {
         throw Exception(json['error'] ?? 'No se pudo reservar el pasaje');
@@ -172,17 +179,20 @@ class AgendaAdminService {
         throw Exception('No se pudo obtener el usuario autenticado');
       }
 
-      final res = await _supabase.schema(_schema).rpc(
-        'admin_crear_reserva_directa',
-        params: {
-          'p_id_local_servicio': idLocalServicio,
-          'p_fecha': fecha.toIso8601String().substring(0, 10),
-          if (cantidad != null) 'p_cantidad': cantidad,
-          if (datosAdicionales != null) 'p_datos_adicionales': datosAdicionales,
-          'p_uuid_admin': uuid, // Siempre enviar el UUID
-          if (idTurno != null) 'p_id_turno': idTurno,
-        },
-      );
+      final res = await _supabase
+          .schema(_schema)
+          .rpc(
+            'admin_crear_reserva_directa',
+            params: {
+              'p_id_local_servicio': idLocalServicio,
+              'p_fecha': fecha.toIso8601String().substring(0, 10),
+              if (cantidad != null) 'p_cantidad': cantidad,
+              if (datosAdicionales != null)
+                'p_datos_adicionales': datosAdicionales,
+              'p_uuid_admin': uuid, // Siempre enviar el UUID
+              if (idTurno != null) 'p_id_turno': idTurno,
+            },
+          );
       final json = res as Map<String, dynamic>;
       if (json['ok'] != true) {
         throw Exception(json['error'] ?? 'No se pudo crear la reserva');
@@ -205,13 +215,15 @@ class AgendaAdminService {
     String? moneda,
   }) async {
     try {
-      final res = await _supabase.schema(_schema).rpc(
-        'admin_actualizar_datos_reserva',
-        params: {
-          'p_id_agenda': idAgenda,
-          'p_datos_adicionales': datosAdicionales,
-        },
-      );
+      final res = await _supabase
+          .schema(_schema)
+          .rpc(
+            'admin_actualizar_datos_reserva',
+            params: {
+              'p_id_agenda': idAgenda,
+              'p_datos_adicionales': datosAdicionales,
+            },
+          );
       final json = Map<String, dynamic>.from(res as Map);
       if (json['ok'] != true) {
         throw Exception(json['error'] ?? 'No se pudo actualizar la reserva');
@@ -250,26 +262,30 @@ class AgendaAdminService {
     final cant = cantidad < 1 ? 1 : cantidad;
     dynamic calcRes;
     if (idTurno != null) {
-      calcRes = await _supabase.schema(_schema).rpc(
-        'calcular_precio_turno',
-        params: {
-          'p_id_servicio': idServicio,
-          'p_id_turno': idTurno,
-          'p_datos': datosAdicionales,
-          'p_moneda': moneda,
-          'p_cantidad': cant,
-        },
-      );
+      calcRes = await _supabase
+          .schema(_schema)
+          .rpc(
+            'calcular_precio_turno',
+            params: {
+              'p_id_servicio': idServicio,
+              'p_id_turno': idTurno,
+              'p_datos': datosAdicionales,
+              'p_moneda': moneda,
+              'p_cantidad': cant,
+            },
+          );
     } else {
-      calcRes = await _supabase.schema(_schema).rpc(
-        'calcular_precio_reserva',
-        params: {
-          'p_id_servicio': idServicio,
-          'p_datos': datosAdicionales,
-          'p_moneda': moneda,
-          'p_cantidad': cant,
-        },
-      );
+      calcRes = await _supabase
+          .schema(_schema)
+          .rpc(
+            'calcular_precio_reserva',
+            params: {
+              'p_id_servicio': idServicio,
+              'p_datos': datosAdicionales,
+              'p_moneda': moneda,
+              'p_cantidad': cant,
+            },
+          );
     }
 
     Map<String, dynamic> precioRow;
@@ -284,11 +300,15 @@ class AgendaAdminService {
     final precioTotal = (precioRow['precio_total'] as num?)?.toDouble() ?? 0;
     final monedaCalc = precioRow['moneda']?.toString() ?? moneda ?? 'USD';
 
-    await _supabase.schema(_schema).from('agenda').update({
-      'datos_adicionales': datosAdicionales,
-      'precio_total': precioTotal,
-      'moneda': monedaCalc,
-    }).eq('id', idAgenda);
+    await _supabase
+        .schema(_schema)
+        .from('agenda')
+        .update({
+          'datos_adicionales': datosAdicionales,
+          'precio_total': precioTotal,
+          'moneda': monedaCalc,
+        })
+        .eq('id', idAgenda);
 
     return {
       'ok': true,
@@ -306,13 +326,19 @@ class AgendaAdminService {
     required int idAgenda,
     required int idEstado,
   }) async {
-    final res = await _supabase.schema(_schema).rpc(
-      'staff_marcar_estado_agenda',
-      params: {
-        'p_id_agenda': idAgenda,
-        'p_id_estado': idEstado,
-      },
-    );
+    final res = await _supabase
+        .schema(_schema)
+        .rpc(
+          'staff_marcar_estado_agenda',
+          params: {'p_id_agenda': idAgenda, 'p_id_estado': idEstado},
+        );
+    return Agenda.fromJson(res as Map<String, dynamic>);
+  }
+
+  static Future<Agenda> cancelarReserva({required int idAgenda}) async {
+    final res = await _supabase
+        .schema(_schema)
+        .rpc('staff_cancelar_reserva', params: {'p_id_agenda': idAgenda});
     return Agenda.fromJson(res as Map<String, dynamic>);
   }
 
@@ -336,11 +362,12 @@ class AgendaAdminService {
         if (hasta != null) 'p_hasta': _tsParam(hasta),
       };
       print('[vendedor] listarAgendasVendedor params=$params');
-      final res = await _supabase.schema(_schema).rpc(
-        'vendedor_listar_agendas',
-        params: params,
+      final res = await _supabase
+          .schema(_schema)
+          .rpc('vendedor_listar_agendas', params: params);
+      print(
+        '[vendedor] listarAgendasVendedor res=${res?.runtimeType} len=${res is List ? (res as List).length : res}',
       );
-      print('[vendedor] listarAgendasVendedor res=${res?.runtimeType} len=${res is List ? (res as List).length : res}');
       return _mapAgendas(_parseJsonbList(res));
     } catch (e, st) {
       print('[vendedor] listarAgendasVendedor ERROR: $e\n$st');
@@ -365,12 +392,13 @@ class AgendaAdminService {
         if (idEstado != null) 'p_id_estado': idEstado,
       };
       print('[vendedor] listarAgendasVendedorPorEstado params=$params');
-      final res = await _supabase.schema(_schema).rpc(
-        'vendedor_listar_agendas_por_estado',
-        params: params,
-      );
+      final res = await _supabase
+          .schema(_schema)
+          .rpc('vendedor_listar_agendas_por_estado', params: params);
       final mapped = _mapAgendas(_parseJsonbList(res));
-      print('[vendedor] listarAgendasVendedorPorEstado parsed=${mapped.length}');
+      print(
+        '[vendedor] listarAgendasVendedorPorEstado parsed=${mapped.length}',
+      );
       return mapped;
     } catch (e, st) {
       print('[vendedor] listarAgendasVendedorPorEstado ERROR: $e\n$st');

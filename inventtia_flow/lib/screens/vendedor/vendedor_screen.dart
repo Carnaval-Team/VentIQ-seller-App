@@ -141,17 +141,19 @@ class _VendedorScreenState extends State<VendedorScreen> {
 
   Future<void> _cancelarReserva(ReservaListItem item) async {
     final reserva = item.principal;
+    final cancelaRegreso =
+        reserva.tipoTrayecto == 'ida' && reserva.idViaje?.isNotEmpty == true;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Cancelar reserva'),
         content: Text(
-          item.esIdaVueltaMismoDia
+          cancelaRegreso
               ? '¿Cancelar el viaje de ida y vuelta de '
-                  '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
-                  '(se cancelan ambos tramos)?'
+                    '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
+                    '(se cancelan ambos tramos)?'
               : '¿Cancelar la reserva de '
-                  '${reserva.cliente?.nombreCompleto ?? 'este cliente'}?',
+                    '${reserva.cliente?.nombreCompleto ?? 'este cliente'}?',
         ),
         actions: [
           TextButton(
@@ -168,7 +170,32 @@ class _VendedorScreenState extends State<VendedorScreen> {
     );
 
     if (confirm != true || !mounted) return;
-    await _cambiarEstadoItems(item, 2, 'Reserva cancelada y cliente notificado');
+    setState(() => _loading = true);
+    try {
+      await AgendaAdminService.cancelarReserva(idAgenda: reserva.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Reserva cancelada y cliente notificado'),
+            backgroundColor: AppTheme.success,
+          ),
+        );
+        _load();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Error: ${e.toString().replaceFirst('Exception: ', '')}',
+            ),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   Future<void> _descancelarReserva(ReservaListItem item) async {
@@ -198,7 +225,11 @@ class _VendedorScreenState extends State<VendedorScreen> {
     );
 
     if (confirm != true || !mounted) return;
-    await _cambiarEstadoItems(item, 1, 'Reserva reactivada y cliente notificado');
+    await _cambiarEstadoItems(
+      item,
+      1,
+      'Reserva reactivada y cliente notificado',
+    );
   }
 
   Future<void> _completarReserva(ReservaListItem item) async {
@@ -261,7 +292,9 @@ class _VendedorScreenState extends State<VendedorScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: ${e.toString().replaceFirst('Exception: ', '')}'),
+            content: Text(
+              'Error: ${e.toString().replaceFirst('Exception: ', '')}',
+            ),
             backgroundColor: AppTheme.error,
           ),
         );
@@ -285,8 +318,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
       lastDate: DateTime(2028),
     );
     if (picked != null) {
-      setState(
-          () => _fecha = DateTime(picked.year, picked.month, picked.day));
+      setState(() => _fecha = DateTime(picked.year, picked.month, picked.day));
       _load();
     }
   }
@@ -341,8 +373,11 @@ class _VendedorScreenState extends State<VendedorScreen> {
     out.sort((a, b) {
       final fa = a.fechaHoraReserva;
       final fb = b.fechaHoraReserva;
-      final porFecha = DateTime(fa.year, fa.month, fa.day)
-          .compareTo(DateTime(fb.year, fb.month, fb.day));
+      final porFecha = DateTime(
+        fa.year,
+        fa.month,
+        fa.day,
+      ).compareTo(DateTime(fb.year, fb.month, fb.day));
       if (porFecha != 0) return porFecha;
       final sa = a.localServicio?.servicio?.nombre ?? '';
       final sb = b.localServicio?.servicio?.nombre ?? '';
@@ -359,8 +394,11 @@ class _VendedorScreenState extends State<VendedorScreen> {
     items.sort((a, b) {
       final fa = a.principal.fechaHoraReserva;
       final fb = b.principal.fechaHoraReserva;
-      final porFecha = DateTime(fa.year, fa.month, fa.day)
-          .compareTo(DateTime(fb.year, fb.month, fb.day));
+      final porFecha = DateTime(
+        fa.year,
+        fa.month,
+        fa.day,
+      ).compareTo(DateTime(fb.year, fb.month, fb.day));
       if (porFecha != 0) return porFecha;
       final sa = a.principal.localServicio?.servicio?.nombre ?? '';
       final sb = b.principal.localServicio?.servicio?.nombre ?? '';
@@ -369,8 +407,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
       return fa.compareTo(fb);
     });
     for (final item in items) {
-      final key =
-          item.principal.localServicio?.local?.nombre ?? 'Sin local';
+      final key = item.principal.localServicio?.local?.nombre ?? 'Sin local';
       map.putIfAbsent(key, () => []).add(item);
     }
     final keys = map.keys.toList()..sort((a, b) => a.compareTo(b));
@@ -381,20 +418,15 @@ class _VendedorScreenState extends State<VendedorScreen> {
       agruparReservasParaListado(_reservas);
 
   List<({String clave, String etiqueta})> _columnasDatos(List<Agenda> lista) {
-    const clavesFijas = {
-      'nombre',
-      'apellidos',
-      'ci',
-      'telefono',
-      'tipo_viaje',
-    };
+    const clavesFijas = {'nombre', 'apellidos', 'ci', 'telefono', 'tipo_viaje'};
     final etiquetas = <String, String>{};
     final ordenConfig = <String>[];
     final extras = <String>{};
 
     for (final r in lista) {
-      for (final c in r.localServicio?.servicio?.camposAdicionales ??
-          const <CampoAdicional>[]) {
+      for (final c
+          in r.localServicio?.servicio?.camposAdicionales ??
+              const <CampoAdicional>[]) {
         if (clavesFijas.contains(c.clave)) continue;
         etiquetas[c.clave] = c.etiqueta;
         if (!ordenConfig.contains(c.clave)) ordenConfig.add(c.clave);
@@ -409,10 +441,11 @@ class _VendedorScreenState extends State<VendedorScreen> {
     }
 
     final extrasOrdenados = extras.toList()
-      ..sort((a, b) =>
-          (etiquetas[a] ?? a).toLowerCase().compareTo(
-                (etiquetas[b] ?? b).toLowerCase(),
-              ));
+      ..sort(
+        (a, b) => (etiquetas[a] ?? a).toLowerCase().compareTo(
+          (etiquetas[b] ?? b).toLowerCase(),
+        ),
+      );
 
     return [
       ...ordenConfig.map((k) => (clave: k, etiqueta: etiquetas[k] ?? k)),
@@ -420,11 +453,12 @@ class _VendedorScreenState extends State<VendedorScreen> {
     ];
   }
 
-  bool _hayTerceros(List<Agenda> lista) =>
-      lista.any((r) =>
-          r.reservadoPor != null &&
-          r.uuidUsuario != null &&
-          r.reservadoPor != r.uuidUsuario);
+  bool _hayTerceros(List<Agenda> lista) => lista.any(
+    (r) =>
+        r.reservadoPor != null &&
+        r.uuidUsuario != null &&
+        r.reservadoPor != r.uuidUsuario,
+  );
 
   String _valorDato(Agenda r, String clave) {
     final v = r.datosAdicionales?[clave];
@@ -486,8 +520,10 @@ class _VendedorScreenState extends State<VendedorScreen> {
               ),
               const SizedBox(height: 12),
               ListTile(
-                leading:
-                    const Icon(Icons.today_outlined, color: AppTheme.primary),
+                leading: const Icon(
+                  Icons.today_outlined,
+                  color: AppTheme.primary,
+                ),
                 title: Text('Día actual (${_fmt.format(_fecha)})'),
                 subtitle: Text(
                   '${_itemsListado.length} reserva(s) visibles',
@@ -497,8 +533,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
                     Navigator.pop(ctx, _AlcanceExportacionVendedor.dia),
               ),
               ListTile(
-                leading:
-                    const Icon(Icons.filter_list, color: AppTheme.primary),
+                leading: const Icon(Icons.filter_list, color: AppTheme.primary),
                 title: Text('Todas · estado $_nombreEstadoFiltro'),
                 subtitle: const Text(
                   'Desde hoy en adelante (mantiene local/servicio)',
@@ -626,8 +661,10 @@ class _VendedorScreenState extends State<VendedorScreen> {
     final doc = pw.Document(
       theme: pw.ThemeData.withFont(base: fontRegular, bold: fontBold),
     );
-    final filtroDesc =
-        _buildFiltroDescExport(lista: reservas, alcance: alcance);
+    final filtroDesc = _buildFiltroDescExport(
+      lista: reservas,
+      alcance: alcance,
+    );
     final esOmnibus = _listaEsOmnibus(reservas);
 
     doc.addPage(
@@ -636,14 +673,19 @@ class _VendedorScreenState extends State<VendedorScreen> {
         header: (_) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
-            pw.Text('Reservas - ${entidad.denominacion}',
-                style: pw.TextStyle(
-                    font: fontBold,
-                    fontSize: 14,
-                    fontWeight: pw.FontWeight.bold)),
+            pw.Text(
+              'Reservas - ${entidad.denominacion}',
+              style: pw.TextStyle(
+                font: fontBold,
+                fontSize: 14,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
             if (filtroDesc.isNotEmpty)
-              pw.Text(filtroDesc,
-                  style: pw.TextStyle(font: fontRegular, fontSize: 8)),
+              pw.Text(
+                filtroDesc,
+                style: pw.TextStyle(font: fontRegular, fontSize: 8),
+              ),
             pw.SizedBox(height: 6),
             pw.Divider(),
           ],
@@ -664,23 +706,29 @@ class _VendedorScreenState extends State<VendedorScreen> {
           final widgets = <pw.Widget>[];
 
           if (esOmnibus) {
-            widgets.addAll(_pdfTablaOmnibus(
-              reservas,
-              fontBold: fontBold,
-              fontRegular: fontRegular,
-            ));
+            widgets.addAll(
+              _pdfTablaOmnibus(
+                reservas,
+                fontBold: fontBold,
+                fontRegular: fontRegular,
+              ),
+            );
           } else {
-            widgets.addAll(_pdfTablaGeneral(
+            widgets.addAll(
+              _pdfTablaGeneral(
+                reservas,
+                fontBold: fontBold,
+                fontRegular: fontRegular,
+              ),
+            );
+          }
+          widgets.addAll(
+            _pdfFilaTotalCobrar(
               reservas,
               fontBold: fontBold,
               fontRegular: fontRegular,
-            ));
-          }
-          widgets.addAll(_pdfFilaTotalCobrar(
-            reservas,
-            fontBold: fontBold,
-            fontRegular: fontRegular,
-          ));
+            ),
+          );
           return widgets;
         },
       ),
@@ -691,8 +739,9 @@ class _VendedorScreenState extends State<VendedorScreen> {
         ? DateFormat('yyyyMMdd').format(_fecha)
         : '${_nombreEstadoFiltro.toLowerCase()}_${DateFormat('yyyyMMdd').format(DateTime.now())}';
     await Printing.sharePdf(
-        bytes: Uint8List.fromList(bytes),
-        filename: 'reservas_$sufijo.pdf');
+      bytes: Uint8List.fromList(bytes),
+      filename: 'reservas_$sufijo.pdf',
+    );
   }
 
   bool _listaEsOmnibus(List<Agenda> lista) {
@@ -702,8 +751,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
     }
     return lista.any((r) {
       final t = r.tipoTrayecto?.toLowerCase();
-      final v =
-          r.datosAdicionales?['tipo_viaje']?.toString().toLowerCase();
+      final v = r.datosAdicionales?['tipo_viaje']?.toString().toLowerCase();
       return t == 'ida' ||
           t == 'vuelta' ||
           v == 'ida' ||
@@ -713,7 +761,8 @@ class _VendedorScreenState extends State<VendedorScreen> {
   }
 
   List<({String clave, String etiqueta})> _columnasDatosPdf(
-      List<Agenda> lista) {
+    List<Agenda> lista,
+  ) {
     const excluir = {
       'email',
       'correo',
@@ -723,9 +772,9 @@ class _VendedorScreenState extends State<VendedorScreen> {
       'recogida',
       'destino',
     };
-    return _columnasDatos(lista)
-        .where((c) => !excluir.contains(c.clave.toLowerCase()))
-        .toList();
+    return _columnasDatos(
+      lista,
+    ).where((c) => !excluir.contains(c.clave.toLowerCase())).toList();
   }
 
   String _datoClientePdf(Agenda r, String clave) {
@@ -779,13 +828,18 @@ class _VendedorScreenState extends State<VendedorScreen> {
         child: pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.end,
           children: [
-            pw.Text('Total a cobrar: ',
-                style: pw.TextStyle(font: fontRegular, fontSize: 11)),
-            pw.Text(texto,
-                style: pw.TextStyle(
-                    font: fontBold,
-                    fontSize: 11,
-                    fontWeight: pw.FontWeight.bold)),
+            pw.Text(
+              'Total a cobrar: ',
+              style: pw.TextStyle(font: fontRegular, fontSize: 11),
+            ),
+            pw.Text(
+              texto,
+              style: pw.TextStyle(
+                font: fontBold,
+                fontSize: 11,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
           ],
         ),
       ),
@@ -802,7 +856,9 @@ class _VendedorScreenState extends State<VendedorScreen> {
   String _recogidaPdf(ReservaListItem item) {
     final v = item.principal.datosAdicionales?['recogida']?.toString().trim();
     if (v != null && v.isNotEmpty) return v;
-    final vPareja = item.pareja?.datosAdicionales?['recogida']?.toString().trim();
+    final vPareja = item.pareja?.datosAdicionales?['recogida']
+        ?.toString()
+        .trim();
     if (vPareja != null && vPareja.isNotEmpty) return vPareja;
     return '-';
   }
@@ -810,7 +866,9 @@ class _VendedorScreenState extends State<VendedorScreen> {
   String _destinoPdf(ReservaListItem item) {
     final v = item.principal.datosAdicionales?['destino']?.toString().trim();
     if (v != null && v.isNotEmpty) return v;
-    final vPareja = item.pareja?.datosAdicionales?['destino']?.toString().trim();
+    final vPareja = item.pareja?.datosAdicionales?['destino']
+        ?.toString()
+        .trim();
     if (vPareja != null && vPareja.isNotEmpty) return vPareja;
     return '-';
   }
@@ -818,7 +876,8 @@ class _VendedorScreenState extends State<VendedorScreen> {
   String _tipoViajePdf(ReservaListItem item) {
     if (item.etiquetaTipo.isNotEmpty) return item.etiquetaTipo;
     final raw = etiquetaTrayectoUi(
-        item.principal.tipoTrayecto ?? item.principal.turnoNombre);
+      item.principal.tipoTrayecto ?? item.principal.turnoNombre,
+    );
     return raw.isEmpty ? '-' : raw;
   }
 
@@ -827,20 +886,31 @@ class _VendedorScreenState extends State<VendedorScreen> {
     required pw.Font fontBold,
     required pw.Font fontRegular,
   }) {
-    final items = agruparReservasParaListado(reservas)
-        .where((i) => !i.esCancelada)
-        .toList()
-      ..sort((a, b) => a.principal.fechaHoraReserva
-          .compareTo(b.principal.fechaHoraReserva));
+    final items =
+        agruparReservasParaListado(
+          reservas,
+        ).where((i) => !i.esCancelada).toList()..sort(
+          (a, b) => a.principal.fechaHoraReserva.compareTo(
+            b.principal.fechaHoraReserva,
+          ),
+        );
 
     return [
-      pw.Text('Detalle',
-          style: pw.TextStyle(
-              font: fontBold, fontSize: 12, fontWeight: pw.FontWeight.bold)),
+      pw.Text(
+        'Detalle',
+        style: pw.TextStyle(
+          font: fontBold,
+          fontSize: 12,
+          fontWeight: pw.FontWeight.bold,
+        ),
+      ),
       pw.SizedBox(height: 8),
       pw.TableHelper.fromTextArray(
         headerStyle: pw.TextStyle(
-            font: fontBold, fontSize: 9, fontWeight: pw.FontWeight.bold),
+          font: fontBold,
+          fontSize: 9,
+          fontWeight: pw.FontWeight.bold,
+        ),
         headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
         cellStyle: pw.TextStyle(font: fontRegular, fontSize: 8),
         cellAlignment: pw.Alignment.centerLeft,
@@ -883,20 +953,31 @@ class _VendedorScreenState extends State<VendedorScreen> {
     required pw.Font fontRegular,
   }) {
     final cols = _columnasDatosPdf(reservas);
-    final items = agruparReservasParaListado(reservas)
-        .where((i) => !i.esCancelada)
-        .toList()
-      ..sort((a, b) => a.principal.fechaHoraReserva
-          .compareTo(b.principal.fechaHoraReserva));
+    final items =
+        agruparReservasParaListado(
+          reservas,
+        ).where((i) => !i.esCancelada).toList()..sort(
+          (a, b) => a.principal.fechaHoraReserva.compareTo(
+            b.principal.fechaHoraReserva,
+          ),
+        );
 
     return [
-      pw.Text('Detalle',
-          style: pw.TextStyle(
-              font: fontBold, fontSize: 12, fontWeight: pw.FontWeight.bold)),
+      pw.Text(
+        'Detalle',
+        style: pw.TextStyle(
+          font: fontBold,
+          fontSize: 12,
+          fontWeight: pw.FontWeight.bold,
+        ),
+      ),
       pw.SizedBox(height: 8),
       pw.TableHelper.fromTextArray(
         headerStyle: pw.TextStyle(
-            font: fontBold, fontSize: 9, fontWeight: pw.FontWeight.bold),
+          font: fontBold,
+          fontSize: 9,
+          fontWeight: pw.FontWeight.bold,
+        ),
         headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
         cellStyle: pw.TextStyle(font: fontRegular, fontSize: 8),
         cellAlignment: pw.Alignment.centerLeft,
@@ -961,8 +1042,9 @@ class _VendedorScreenState extends State<VendedorScreen> {
       ...cols.map((c) => c.etiqueta),
     ];
     for (var i = 0; i < headers.length; i++) {
-      final cell = sheet
-          .cell(xl.CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0));
+      final cell = sheet.cell(
+        xl.CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0),
+      );
       cell.value = xl.TextCellValue(headers[i]);
       cell.cellStyle = xl.CellStyle(bold: true);
     }
@@ -972,12 +1054,12 @@ class _VendedorScreenState extends State<VendedorScreen> {
     grupos.forEach((localNombre, lista) {
       for (final ag in lista) {
         final cli = ag.cliente;
-        final esTercero = ag.reservadoPor != null &&
+        final esTercero =
+            ag.reservadoPor != null &&
             ag.uuidUsuario != null &&
             ag.reservadoPor != ag.uuidUsuario;
-        final tipo = etiquetaTrayectoUi(
-              ag.tipoTrayecto ?? ag.turnoNombre,
-            ).isNotEmpty
+        final tipo =
+            etiquetaTrayectoUi(ag.tipoTrayecto ?? ag.turnoNombre).isNotEmpty
             ? etiquetaTrayectoUi(ag.tipoTrayecto ?? ag.turnoNombre)
             : (ag.turnoNombre ?? '');
         final row = [
@@ -998,9 +1080,12 @@ class _VendedorScreenState extends State<VendedorScreen> {
         ];
         for (var c = 0; c < row.length; c++) {
           sheet
-              .cell(xl.CellIndex.indexByColumnRow(
-                  columnIndex: c, rowIndex: rowIdx))
-              .value = xl.TextCellValue(row[c]);
+              .cell(
+                xl.CellIndex.indexByColumnRow(columnIndex: c, rowIndex: rowIdx),
+              )
+              .value = xl.TextCellValue(
+            row[c],
+          );
         }
         rowIdx++;
       }
@@ -1014,10 +1099,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
         : '${_nombreEstadoFiltro.toLowerCase()}_${DateFormat('yyyyMMdd').format(DateTime.now())}';
     final file = File('${dir.path}/reservas_$sufijo.xlsx');
     await file.writeAsBytes(bytes);
-    await Share.shareXFiles(
-      [XFile(file.path)],
-      text: 'Reservas exportadas',
-    );
+    await Share.shareXFiles([XFile(file.path)], text: 'Reservas exportadas');
   }
 
   // ── Build ─────────────────────────────────────────────────────
@@ -1034,8 +1116,10 @@ class _VendedorScreenState extends State<VendedorScreen> {
     if (entidad == null) {
       return const Scaffold(
         body: Center(
-          child: Text('Sin entidades asignadas',
-              style: TextStyle(color: AppTheme.textSecondary)),
+          child: Text(
+            'Sin entidades asignadas',
+            style: TextStyle(color: AppTheme.textSecondary),
+          ),
         ),
       );
     }
@@ -1050,27 +1134,36 @@ class _VendedorScreenState extends State<VendedorScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text('Reservas'),
-                    Text(entidad.denominacion,
-                        style: const TextStyle(
-                            fontSize: 12, fontWeight: FontWeight.w400)),
+                    Text(
+                      entidad.denominacion,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
                   ],
                 )
               : DropdownButtonHideUnderline(
                   child: DropdownButton<int>(
                     value: entidad.id,
-                    icon: const Icon(Icons.expand_more,
-                        color: AppTheme.textPrimary),
+                    icon: const Icon(
+                      Icons.expand_more,
+                      color: AppTheme.textPrimary,
+                    ),
                     style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textPrimary),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textPrimary,
+                    ),
                     onChanged: _loading
                         ? null
                         : (id) {
                             if (id == null) return;
                             entidadProv.seleccionarEntidadVendedor(
-                                entidadProv.misEntidadesComoVendedor
-                                    .firstWhere((e) => e.id == id));
+                              entidadProv.misEntidadesComoVendedor.firstWhere(
+                                (e) => e.id == id,
+                              ),
+                            );
                             setState(() {
                               _localFiltro = null;
                               _lsFiltro = null;
@@ -1081,11 +1174,15 @@ class _VendedorScreenState extends State<VendedorScreen> {
                             _loadFiltros();
                           },
                     items: entidadProv.misEntidadesComoVendedor
-                        .map((e) => DropdownMenuItem(
-                              value: e.id,
-                              child: Text(e.denominacion,
-                                  overflow: TextOverflow.ellipsis),
-                            ))
+                        .map(
+                          (e) => DropdownMenuItem(
+                            value: e.id,
+                            child: Text(
+                              e.denominacion,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
                         .toList(),
                   ),
                 ),
@@ -1126,11 +1223,11 @@ class _VendedorScreenState extends State<VendedorScreen> {
                     child: _loading
                         ? const Center(child: CircularProgressIndicator())
                         : _reservas.isEmpty
-                            ? _buildEmpty()
-                            : RefreshIndicator(
-                                onRefresh: _load,
-                                child: _buildTabla(),
-                              ),
+                        ? _buildEmpty()
+                        : RefreshIndicator(
+                            onRefresh: _load,
+                            child: _buildTabla(),
+                          ),
                   ),
                 ),
               ],
@@ -1143,8 +1240,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
 
   Widget _buildBarraFecha() {
     final diaSemana = _fmtDiaSemana.format(_fecha);
-    final diaCapitalizado =
-        diaSemana[0].toUpperCase() + diaSemana.substring(1);
+    final diaCapitalizado = diaSemana[0].toUpperCase() + diaSemana.substring(1);
 
     return Container(
       color: Colors.white,
@@ -1162,8 +1258,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
               onTap: _pickFecha,
               borderRadius: BorderRadius.circular(8),
               child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                 child: Column(
                   children: [
                     Text(
@@ -1183,13 +1278,17 @@ class _VendedorScreenState extends State<VendedorScreen> {
                         Text(
                           diaCapitalizado,
                           style: const TextStyle(
-                              fontSize: 12, color: AppTheme.textSecondary),
+                            fontSize: 12,
+                            color: AppTheme.textSecondary,
+                          ),
                         ),
                         if (_esHoy) ...[
                           const SizedBox(width: 6),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 1),
+                              horizontal: 6,
+                              vertical: 1,
+                            ),
                             decoration: BoxDecoration(
                               color: AppTheme.primary.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(6),
@@ -1197,9 +1296,10 @@ class _VendedorScreenState extends State<VendedorScreen> {
                             child: const Text(
                               'Hoy',
                               style: TextStyle(
-                                  fontSize: 10,
-                                  color: AppTheme.primary,
-                                  fontWeight: FontWeight.w600),
+                                fontSize: 10,
+                                color: AppTheme.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                         ],
@@ -1214,9 +1314,12 @@ class _VendedorScreenState extends State<VendedorScreen> {
             TextButton(
               onPressed: _loading ? null : _irHoy,
               style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 8)),
-              child: const Text('Hoy',
-                  style: TextStyle(fontSize: 12, color: AppTheme.primary)),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
+              child: const Text(
+                'Hoy',
+                style: TextStyle(fontSize: 12, color: AppTheme.primary),
+              ),
             ),
           IconButton(
             icon: const Icon(Icons.chevron_right),
@@ -1230,7 +1333,8 @@ class _VendedorScreenState extends State<VendedorScreen> {
   }
 
   Widget _buildFiltrosColapsables() {
-    final hayFiltrosActivos = _localFiltro != null || _lsFiltro != null || _idEstadoFiltro != null;
+    final hayFiltrosActivos =
+        _localFiltro != null || _lsFiltro != null || _idEstadoFiltro != null;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
@@ -1241,11 +1345,9 @@ class _VendedorScreenState extends State<VendedorScreen> {
           InkWell(
             onTap: _loading
                 ? null
-                : () =>
-                    setState(() => _filtrosExpanded = !_filtrosExpanded),
+                : () => setState(() => _filtrosExpanded = !_filtrosExpanded),
             child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               child: Row(
                 children: [
                   Icon(
@@ -1261,11 +1363,14 @@ class _VendedorScreenState extends State<VendedorScreen> {
                       () {
                         final parts = [
                           if (_localFiltro != null) _localFiltro!.nombre,
-                          if (_lsFiltro != null) _lsFiltro!.servicio?.nombre ?? '',
+                          if (_lsFiltro != null)
+                            _lsFiltro!.servicio?.nombre ?? '',
                           if (_idEstadoFiltro != null)
                             _estados
-                                .firstWhere((e) => e.id == _idEstadoFiltro,
-                                    orElse: () => EstadoAgenda(id: 0, nombre: ''))
+                                .firstWhere(
+                                  (e) => e.id == _idEstadoFiltro,
+                                  orElse: () => EstadoAgenda(id: 0, nombre: ''),
+                                )
                                 .nombre,
                         ].where((s) => s.isNotEmpty).join(' · ');
                         return parts.isNotEmpty ? parts : 'Filtros';
@@ -1285,20 +1390,23 @@ class _VendedorScreenState extends State<VendedorScreen> {
                     Text(
                       '${_itemsListado.length} reserva${_itemsListado.length == 1 ? '' : 's'}',
                       style: const TextStyle(
-                          fontSize: 11, color: AppTheme.textSecondary),
+                        fontSize: 11,
+                        color: AppTheme.textSecondary,
+                      ),
                     ),
                   const SizedBox(width: 6),
                   if (hayFiltrosActivos)
                     GestureDetector(
                       onTap: _loading ? null : _resetFiltros,
-                      child: const Icon(Icons.clear,
-                          size: 16, color: AppTheme.textSecondary),
+                      child: const Icon(
+                        Icons.clear,
+                        size: 16,
+                        color: AppTheme.textSecondary,
+                      ),
                     )
                   else
                     Icon(
-                      _filtrosExpanded
-                          ? Icons.expand_less
-                          : Icons.expand_more,
+                      _filtrosExpanded ? Icons.expand_less : Icons.expand_more,
                       size: 18,
                       color: AppTheme.textSecondary,
                     ),
@@ -1322,17 +1430,26 @@ class _VendedorScreenState extends State<VendedorScreen> {
                           decoration: const InputDecoration(
                             labelText: 'Local',
                             contentPadding: EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 8),
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
                             border: OutlineInputBorder(),
                             isDense: true,
                           ),
                           items: [
                             const DropdownMenuItem(
-                                value: null, child: Text('Todos')),
-                            ..._locales.map((l) => DropdownMenuItem(
+                              value: null,
+                              child: Text('Todos'),
+                            ),
+                            ..._locales.map(
+                              (l) => DropdownMenuItem(
                                 value: l,
-                                child: Text(l.nombre,
-                                    overflow: TextOverflow.ellipsis))),
+                                child: Text(
+                                  l.nombre,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
                           ],
                           onChanged: _loading ? null : _onLocalChange,
                         ),
@@ -1345,17 +1462,26 @@ class _VendedorScreenState extends State<VendedorScreen> {
                           decoration: const InputDecoration(
                             labelText: 'Servicio',
                             contentPadding: EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 8),
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
                             border: OutlineInputBorder(),
                             isDense: true,
                           ),
                           items: [
                             const DropdownMenuItem(
-                                value: null, child: Text('Todos')),
-                            ..._localServicios.map((ls) => DropdownMenuItem(
+                              value: null,
+                              child: Text('Todos'),
+                            ),
+                            ..._localServicios.map(
+                              (ls) => DropdownMenuItem(
                                 value: ls,
-                                child: Text(ls.servicio?.nombre ?? '',
-                                    overflow: TextOverflow.ellipsis))),
+                                child: Text(
+                                  ls.servicio?.nombre ?? '',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
                           ],
                           onChanged: _loading
                               ? null
@@ -1389,20 +1515,23 @@ class _VendedorScreenState extends State<VendedorScreen> {
                                   _load();
                                 },
                         ),
-                        ..._estados.map((e) => _EstadoChip(
-                              label: e.nombre[0].toUpperCase() +
-                                  e.nombre.substring(1),
-                              selected: _idEstadoFiltro == e.id,
-                              onTap: _loading
-                                  ? null
-                                  : () {
-                                      setState(() {
-                                        _idEstadoFiltro = e.id;
-                                        _filtrosExpanded = false;
-                                      });
-                                      _load();
-                                    },
-                            )),
+                        ..._estados.map(
+                          (e) => _EstadoChip(
+                            label:
+                                e.nombre[0].toUpperCase() +
+                                e.nombre.substring(1),
+                            selected: _idEstadoFiltro == e.id,
+                            onTap: _loading
+                                ? null
+                                : () {
+                                    setState(() {
+                                      _idEstadoFiltro = e.id;
+                                      _filtrosExpanded = false;
+                                    });
+                                    _load();
+                                  },
+                          ),
+                        ),
                       ],
                     ),
                   ],
@@ -1432,8 +1561,11 @@ class _VendedorScreenState extends State<VendedorScreen> {
     items.sort((a, b) {
       final fa = a.principal.fechaHoraReserva;
       final fb = b.principal.fechaHoraReserva;
-      final porFecha = DateTime(fa.year, fa.month, fa.day)
-          .compareTo(DateTime(fb.year, fb.month, fb.day));
+      final porFecha = DateTime(
+        fa.year,
+        fa.month,
+        fa.day,
+      ).compareTo(DateTime(fb.year, fb.month, fb.day));
       if (porFecha != 0) return porFecha;
       final sa = a.principal.localServicio?.servicio?.nombre ?? '';
       final sb = b.principal.localServicio?.servicio?.nombre ?? '';
@@ -1450,7 +1582,8 @@ class _VendedorScreenState extends State<VendedorScreen> {
   ) {
     final r = item.principal;
     final cli = r.cliente;
-    final esTercero = r.reservadoPor != null &&
+    final esTercero =
+        r.reservadoPor != null &&
         r.uuidUsuario != null &&
         r.reservadoPor != r.uuidUsuario;
     final esCancelada = item.esCancelada;
@@ -1472,8 +1605,8 @@ class _VendedorScreenState extends State<VendedorScreen> {
           color: esCompletada
               ? const Color(0xFFADEBB3).withValues(alpha: 0.30)
               : esCancelada
-                  ? AppTheme.error.withValues(alpha: 0.60)
-                  : Colors.grey.shade200,
+              ? AppTheme.error.withValues(alpha: 0.60)
+              : Colors.grey.shade200,
           width: (esCompletada || esCancelada) ? 1.2 : 1,
         ),
       ),
@@ -1488,14 +1621,18 @@ class _VendedorScreenState extends State<VendedorScreen> {
                   child: Text(
                     r.localServicio?.servicio?.nombre ?? '-',
                     style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                        color: AppTheme.textPrimary),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: AppTheme.textPrimary,
+                    ),
                   ),
                 ),
                 if (tipoLabel.isNotEmpty) ...[
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: AppTheme.primary.withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(8),
@@ -1513,7 +1650,10 @@ class _VendedorScreenState extends State<VendedorScreen> {
                 ],
                 Text(
                   _fmt.format(r.fechaHoraReserva),
-                  style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppTheme.textSecondary,
+                  ),
                 ),
               ],
             ),
@@ -1537,17 +1677,25 @@ class _VendedorScreenState extends State<VendedorScreen> {
               _infoRowWidget(
                 'Teléfono',
                 GestureDetector(
-                  onTap: () => TelefonoContacto.mostrarOpciones(context, telefono),
+                  onTap: () =>
+                      TelefonoContacto.mostrarOpciones(context, telefono),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.phone, size: 12, color: AppTheme.primary),
+                      const Icon(
+                        Icons.phone,
+                        size: 12,
+                        color: AppTheme.primary,
+                      ),
                       const SizedBox(width: 4),
-                      Text(telefono,
-                          style: const TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.primary,
-                              decoration: TextDecoration.underline)),
+                      Text(
+                        telefono,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.primary,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -1574,8 +1722,10 @@ class _VendedorScreenState extends State<VendedorScreen> {
                     label: const Text('Confirmar consumido'),
                     style: TextButton.styleFrom(
                       foregroundColor: AppTheme.primary,
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       textStyle: const TextStyle(fontSize: 12),
                     ),
                     onPressed: () => _completarReserva(item),
@@ -1586,8 +1736,10 @@ class _VendedorScreenState extends State<VendedorScreen> {
                     label: const Text('Reactivar'),
                     style: TextButton.styleFrom(
                       foregroundColor: AppTheme.primary,
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       textStyle: const TextStyle(fontSize: 12),
                     ),
                     onPressed: () => _descancelarReserva(item),
@@ -1598,22 +1750,27 @@ class _VendedorScreenState extends State<VendedorScreen> {
                     label: const Text('Cancelar'),
                     style: TextButton.styleFrom(
                       foregroundColor: AppTheme.error,
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       textStyle: const TextStyle(fontSize: 12),
                     ),
                     onPressed: () => _cancelarReserva(item),
                   ),
-                if (!esActiva && !_puedeCompletar(item) && !_puedeDescancelar(item))
+                if (!esActiva &&
+                    !_puedeCompletar(item) &&
+                    !_puedeDescancelar(item))
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: Text(
                       esCompletada ? 'Completada' : 'Cancelada',
                       style: TextStyle(
-                          fontSize: 11,
-                          color: esCompletada ? AppTheme.primary : AppTheme.error,
-                          fontWeight: FontWeight.w600,
-                          fontStyle: FontStyle.italic),
+                        fontSize: 11,
+                        color: esCompletada ? AppTheme.primary : AppTheme.error,
+                        fontWeight: FontWeight.w600,
+                        fontStyle: FontStyle.italic,
+                      ),
                     ),
                   ),
               ],
@@ -1652,43 +1809,51 @@ class _VendedorScreenState extends State<VendedorScreen> {
   }
 
   Widget _infoRow(String label, String value) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 90,
-              child: Text(label,
-                  style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textSecondary)),
+    padding: const EdgeInsets.symmetric(vertical: 2),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 90,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textSecondary,
             ),
-            Expanded(
-              child: Text(value,
-                  style: const TextStyle(fontSize: 12, color: AppTheme.textPrimary)),
-            ),
-          ],
+          ),
         ),
-      );
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(fontSize: 12, color: AppTheme.textPrimary),
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget _infoRowWidget(String label, Widget widget) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            SizedBox(
-              width: 90,
-              child: Text(label,
-                  style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textSecondary)),
+    padding: const EdgeInsets.symmetric(vertical: 2),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        SizedBox(
+          width: 90,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textSecondary,
             ),
-            widget,
-          ],
+          ),
         ),
-      );
+        widget,
+      ],
+    ),
+  );
 
   Widget _buildEmpty() {
     return SizedBox.expand(
@@ -1701,9 +1866,11 @@ class _VendedorScreenState extends State<VendedorScreen> {
             Center(
               child: Column(
                 children: [
-                  Icon(Icons.event_busy_outlined,
-                      size: 64,
-                      color: AppTheme.textSecondary.withOpacity(0.35)),
+                  Icon(
+                    Icons.event_busy_outlined,
+                    size: 64,
+                    color: AppTheme.textSecondary.withOpacity(0.35),
+                  ),
                   const SizedBox(height: 12),
                   const Text(
                     'Sin reservas para los filtros aplicados',
@@ -1715,7 +1882,9 @@ class _VendedorScreenState extends State<VendedorScreen> {
                     'Desliza para cambiar de día',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                        fontSize: 11, color: AppTheme.textSecondary),
+                      fontSize: 11,
+                      color: AppTheme.textSecondary,
+                    ),
                   ),
                 ],
               ),

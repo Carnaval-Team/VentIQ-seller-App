@@ -1,4 +1,13 @@
 allprojects {
+    buildscript {
+        configurations.getByName("classpath") {
+            resolutionStrategy.eachDependency {
+                if (requested.group == "com.android.tools.build" && requested.name == "gradle") {
+                    useVersion("8.9.1")
+                }
+            }
+        }
+    }
     repositories {
         google()
         mavenCentral()
