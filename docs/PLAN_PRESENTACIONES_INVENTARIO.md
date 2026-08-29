@@ -442,7 +442,13 @@ Tres superficies (el conteo físico “debe haber / real” es Fase 5, no este r
 - [ ] **Vend.** = mixto. **Inicial / Entra. / Final** = mixto del almacén del TPV. **Equiv.** en Vend. (columna o letra chica): `29 u`. **Total $** = importe, no precio × qty cruda.
 - [ ] Agrupar por `id_producto`; acumular por presentación y formatear.
 - [ ] FAB / header de cierre: `productos_vendidos` = equivalente base; etiqueta `u. base` (el mixto no cabe).
-- [ ] `fn_resumen_diario_cierre` y ticket impreso: `sum(qty * factor)`.
+- [x] `fn_resumen_diario_cierre` — **hecho en `presentaciones_inventario/30_cierre_vendedor_v2.sql`, aplicado.** Como cambiaba el tipo de una columna del `RETURNS TABLE`, se hizo con el patrón `_vX`: **`fn_resumen_diario_cierre_v2`** y **`fn_productos_vendidos_por_turno_v2`**; las originales quedan intactas para las apps sin actualizar (la primera la llaman **6 sitios** del vendedor).
+      **Aparecieron tres bugs y solo uno era de presentaciones.**
+      1. **`SUM(ep.cantidad)::INTEGER` REDONDEA**, no trunca: `(0.5)::integer = 1`, y tres líneas de 0,5 kg dan **2**. Medido: 133 líneas fraccionadas en 30 días en 2 tiendas. Verificado en el turno 1225 (248 líneas fraccionadas): `productos_vendidos` **55512 → 55511.89**, con ventas y operaciones idénticas.
+      2. **Fan-out por medio de pago** en `fn_productos_vendidos_por_turno` — el peor, porque infla cantidad **y** dinero. El `LEFT JOIN app_dat_pago_venta` multiplica cada línea de producto por cada pago de la operación. Contrastado contra el ledger en el turno 2948: producto 5683 real **1,0 / 24.480,00**, la original reportaba **2,0 / 48.960,00**; el turno entero pasaba de 44.880,00 a **89.760,00**. Medido: 93 operaciones en 30 días, hasta 3 pagos en una. La v2 agrupa los medios antes del join y muestra «Efectivo + Transferencia» en una sola línea.
+      3. **JOIN de presentación por la columna equivocada** (trampa `pp.id <> pp.id_presentacion`): `LEFT JOIN app_nom_presentacion np ON rp.v_id_presentacion = np.id` casa el id de la **fila** contra el id del **nomenclador**, no encuentra nada y el `COALESCE(np.denominacion, 'Unidad')` etiqueta **todo como «Unidad»**. Con `pp.id = 337` el nombre correcto es «Bulto» y el JOIN da `NULL`. Y **0 presentaciones no-base tienen colisión de ids**, así que ninguna salía bien. Es el mismo error que el `19` arregló en la valoración.
+      4. El factor de presentación (el único que **sí** era de presentaciones) no estaba expuesto: de **77 turnos abiertos, 0** tienen ventas con factor ≠ 1. Preventivo.
+      Columnas nuevas: `productos_vendidos_base`, `productos_vendidos_desglose`, `factor_rel`, `cantidad_base`, `cantidad_formateada`.
 - [x] Offline: **hecho en Fase 5**. `updateProductInventoryInCache` recibe `presentationId` y la firma pasó de `int` a `num`, así que ya no se trunca `item.cantidad`. Los 5 llamadores migrados.
 
 Hasta que Fase 4 mande cantidad en la presentación vendida, el RPC puede reconstruir mixto desde `app_dat_extraccion_productos.id_presentacion`; si el cliente sigue mandando base, todo saldrá como unidades.
@@ -565,8 +571,8 @@ que sí. Hay que manejar ese error igual que hoy, no asumir que el diálogo lo e
       **Trampa que encontré arreglándolo:** mapear el `id_presentacion` nulo a `0` **pierde** el reservado en vez de duplicarlo (el `0` no casa con ninguna presentación real). El `null` es la presentación **base** (contrato de Fase 1) y se resuelve con `fn_presentaciones_producto`. Verificado en el 217/ubicación 37, que tiene el reservado partido 192,15 (pres. 336) + 191,15 (pres. nula) = **383,30**.
       **Deuda dejada a propósito:** los otros 3 CTE tienen el mismo `COALESCE(…, 0)`, pero solo afecta a datos **congelados** — los nulos dejaron de entrar al cerrar la Fase 1 (**0 nulos nuevos en mayo, junio, julio y agosto**; 96 % de los 2.854 pendientes con nulo son de sep-oct 2025).
 - [x] **`fn_stock_producto_almacen`** — corregido en el `27`: ahora aplica `factor_rel`. 6.659 de 6.661 combos sin cambio; el detalle sigue devolviendo cantidad física porque escribe el ledger
-- [ ] **`fn_reporte_ventas_con_proveedor4`** — menciona `id_presentacion` 15 veces (agrupa por ella) pero **no la expone**: el cliente puede ver dos filas del mismo producto. Falta compactar a 1 fila + `jsonb` de desglose + equivalente
-- [ ] **`fn_resumen_diario_cierre`** — **0 menciones** de `id_presentacion`: `productos_vendidos` suma cantidades crudas de presentaciones distintas
+- [x] **`fn_reporte_ventas_con_proveedor4`** — resuelto en el `29` con `fn_reporte_ventas_con_proveedor5` (la v4 no se toca). Compacta a 1 fila/producto con precio ponderado + `jsonb` de desglose + `equiv_unidades_base`. El Dart ya migrado
+- [x] **`fn_resumen_diario_cierre`** — resuelto en el `30` con `fn_resumen_diario_cierre_v2` (la original no se toca). Además del factor, arregla que `productos_vendidos` era `integer` y **redondeaba** las ventas fraccionadas
 
 ### Apps
 
@@ -613,7 +619,7 @@ que sí. Hay que manejar ese error igual que hoy, no asumir que el diálogo lo e
 - [ ] Catálogo y ficha: mostrar el stock mixto (hoy muestra un número)
 - [ ] Cuenta mesa: la línea lleva `idPresentacion` pero sin nombre ni factor (la RPC de la cuenta no los devuelve)
 - [ ] Resumen del cierre (`VentaTotalScreen`): Inicial/Entra/Vend/Final mixtos + equiv
-- [ ] FAB / `fn_resumen_diario_cierre`: `u. base`, no suma cruda
+- [ ] FAB / `fn_resumen_diario_cierre`: `u. base`, no suma cruda — **el SQL ya está** (`fn_resumen_diario_cierre_v2` devuelve `productos_vendidos_base` y `productos_vendidos_desglose`); falta que el Dart lo lea
 - [ ] Conteo mixto en apertura de turno (postergado por decisión)
 
 ---
@@ -668,7 +674,7 @@ Los que dicen «pendiente de UI» necesitan ejecutar la app en un dispositivo.
 | # | Qué | Tamaño | Por qué importa |
 |---|-----|--------|-----------------|
 | 1 | **Reportes de ventas admin** — SQL ✅ (`29`, `fn_reporte_ventas_con_proveedor5`), **falta migrar el Dart** | medio | La v4 devolvía **1.377 filas para 671 productos** (420 partidos, todos por precio distinto, 0 por presentación). La v5 compacta a 1 fila/producto con precio ponderado + `cantidades_por_presentacion`, `equiv_unidades_base`, `cantidad_formateada`, `n_precios_distintos`. **La v4 no se tocó**, así que producción no corre riesgo. Queda: `ProductSalesReport` (5 campos nuevos), `sales_screen.dart` (tabs Productos y Proveedores, PDF/Excel) y cambiar el nombre de la RPC en `sales_service.dart:344`. |
-| 2 | **Resumen de cierre vendedor** (`venta_total_screen`, `sales_monitor_fab`, `fn_resumen_diario_cierre`) | grande | `productos_vendidos` suma cantidades crudas de presentaciones distintas. La RPC no menciona `id_presentacion`. |
+| 2 | **Resumen de cierre vendedor** — SQL ✅ (`30`: `fn_resumen_diario_cierre_v2` + `fn_productos_vendidos_por_turno_v2`), **falta migrar el Dart** | medio | Aparecieron 3 bugs, solo 1 de presentaciones: `productos_vendidos` era `integer` y **redondeaba** (3×0,5 kg → 2); el `LEFT JOIN` a `app_dat_pago_venta` **duplicaba cantidad e importe** por cada pago (turno 2948: 44.880 real vs 89.760 reportado); y el JOIN a `app_nom_presentacion` etiquetaba **todo como «Unidad»**. Las originales no se tocaron. Queda migrar los 6 llamadores del vendedor. |
 | ~~3~~ | ✅ **`fn_stock_producto_almacen` en unidades base** (`27`) | hecho | 13 funciones de cocina la usan. **6.659 de 6.661 combos sin cambio**; solo 4545 (533 → 12.792) y 4558 (15 → 360), tienda 25 con cocina apagada. El detalle no se tocó: escribe el ledger. |
 | ~~4~~ | ✅ **`fn_inventario_detallado_optimizado` auditada y corregida** (`26`) | hecho | No aplanaba. Dos bugs: reservado **duplicado** (15.460,30 → 30.920,60) y **fan-out del precio** (18 filas donde hay 3; 2.198 productos con >1 precio activo). Sin riesgo: la función no la llama nadie. |
 | ~~5~~ | ✅ **Kardex cerrado** | hecho | Filtro por presentación (local, con conteos), chip Conversión (solo si hay), saldo etiquetado con su presentación en pantalla/PDF/Excel, y auditoría por `(ubicación, presentación)` — que era un **generador de falsos positivos** con stock mixto. |

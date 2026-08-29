@@ -85,10 +85,15 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
       final userID = await userPrefs.getUserId();
 
       if (idTpv != null) {
-        print('🧪 Loading sales data with fn_resumen_diario_cierre - TPV: $idTpv');
+        print('🧪 Loading sales data with fn_resumen_diario_cierre_v2 - TPV: $idTpv');
         
+        // FASE 3 presentaciones: v2. La original devolvia productos_vendidos
+        // como integer y REDONDEABA (tres lineas de 0,5 kg daban 2). La v2 lo
+        // devuelve numeric y agrega productos_vendidos_base (equivalente en
+        // unidades base) y productos_vendidos_desglose ("2 Cajas + 5 Unidades").
+        // La original sigue viva para las apps sin actualizar.
         final resumenCierreResponse = await Supabase.instance.client.rpc(
-          'fn_resumen_diario_cierre',
+          'fn_resumen_diario_cierre_v2',
           params: {'id_tpv_param': idTpv, 'id_usuario_param': userID},
         );
         
@@ -312,6 +317,33 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
     );
   }
 
+  /// Texto de "Productos vendidos" para el panel del FAB.
+  ///
+  /// FASE 3 presentaciones. Prioridad:
+  ///   1. `productos_vendidos_desglose` — ya formateado por el SQL con el mismo
+  ///      `fn_plural_presentacion` que usa el resto de la app, asi que el texto
+  ///      es identico en el FAB, el kardex y los reportes.
+  ///   2. `productos_vendidos_base` — el equivalente en unidades base, que es
+  ///      el numero comparable entre turnos, etiquetado `u. base`.
+  ///   3. `productos_vendidos` — lo que devolvia la RPC vieja.
+  ///
+  /// Se formatea sin decimales cuando el valor es entero, para no mostrar
+  /// "12.0 uds" donde antes decia "12 uds".
+  String _textoProductosVendidos() {
+    final desglose = _currentSales?['productos_vendidos_desglose'];
+    if (desglose is String && desglose.trim().isNotEmpty) return desglose;
+
+    final base = _currentSales?['productos_vendidos_base'];
+    if (base is num) return '${_fmtCantidad(base)} u. base';
+
+    final crudo = _currentSales?['productos_vendidos'];
+    if (crudo is num) return '${_fmtCantidad(crudo)} uds';
+    return '0 uds';
+  }
+
+  String _fmtCantidad(num v) =>
+      v == v.roundToDouble() ? v.round().toString() : v.toString();
+
   Widget _buildSalesPanel() {
     return Container(
       margin: const EdgeInsets.only(right: 16, bottom: 80),
@@ -480,8 +512,12 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text('Productos:', style: TextStyle(fontSize: 13)),
+                    // FASE 3 presentaciones: se muestra el desglose que ya
+                    // formatea el SQL ("2 Cajas + 5 Unidades"); si no viene,
+                    // el equivalente en unidades base etiquetado como tal. El
+                    // FAB es estrecho, asi que no cabe el mixto Y el equiv.
                     Text(
-                      '${(_currentSales!['productos_vendidos'] ?? 0)} uds',
+                      _textoProductosVendidos(),
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w500,

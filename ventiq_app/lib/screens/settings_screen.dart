@@ -3789,8 +3789,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                     (cuadre['egresos_totales'] as num? ??
                             egresosEfectivo + egresosDigitales)
                         .toDouble();
+                // FASE 3: sin .toInt() — las cantidades fraccionadas (0,5 kg)
+                // se perdian al truncar.
                 final productosVendidos =
-                    (cuadre['productos_vendidos'] as num? ?? 0).toInt();
+                    (cuadre['productos_vendidos'] as num? ?? 0);
                 final operacionesTotales =
                     (cuadre['operaciones_totales'] as num? ?? 0).toInt();
                 final ticketPromedio =
@@ -4386,17 +4388,19 @@ class _SyncDialogState extends State<_SyncDialog> {
 
       if (idTpv != null && userID != null) {
         print(
-          '📋 Llamando fn_resumen_diario_cierre - TPV: $idTpv, Usuario: $userID',
+          '📋 Llamando fn_resumen_diario_cierre_v2 - TPV: $idTpv, Usuario: $userID',
         );
 
-        // Llamar a la función RPC fn_resumen_diario_cierre
+        // Llamar a la función RPC fn_resumen_diario_cierre_v2
+        //
+        // FASE 3 presentaciones: v2 (la original redondeaba productos_vendidos).
         final resumenCierreResponse = await Supabase.instance.client.rpc(
-          'fn_resumen_diario_cierre',
+          'fn_resumen_diario_cierre_v2',
           params: {'id_tpv_param': idTpv, 'id_usuario_param': userID},
         );
 
         print(
-          '📋 Respuesta de fn_resumen_diario_cierre: $resumenCierreResponse',
+          '📋 Respuesta de fn_resumen_diario_cierre_v2: $resumenCierreResponse',
         );
         print('📋 Tipo de respuesta: ${resumenCierreResponse.runtimeType}');
 

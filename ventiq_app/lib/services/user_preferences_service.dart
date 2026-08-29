@@ -3061,7 +3061,9 @@ class UserPreferencesService {
     final efectivoReal = _asDouble(
       raw['efectivo_real'] ?? raw['efectivo_final'] ?? raw['efectivo_esperado'],
     );
-    final productos = _asInt(raw['productos_vendidos']);
+    // FASE 3: _asNum, no _asInt — las cantidades fraccionadas (0,5 kg) se
+    // perdian al truncar.
+    final productos = _asNum(raw['productos_vendidos']);
     final ticket = _asDouble(raw['ticket_promedio']);
 
     return {
@@ -3085,7 +3087,8 @@ class UserPreferencesService {
     final er = _asDouble(
       raw['efectivo_real'] ?? raw['efectivo_final'] ?? raw['efectivo_esperado'],
     );
-    final productos = _asInt(raw['productos_vendidos']);
+    // FASE 3: _asNum — un turno con solo 0,5 kg vendidos no debe parecer vacio.
+    final productos = _asNum(raw['productos_vendidos']);
     return ventas > 0 || ei > 0 || er > 0 || productos > 0;
   }
 
@@ -3101,6 +3104,20 @@ class UserPreferencesService {
     if (raw is int) return raw;
     if (raw is num) return raw.toInt();
     return int.tryParse(raw.toString()) ?? 0;
+  }
+
+  /// Igual que [_asInt] pero **sin truncar**.
+  ///
+  /// FASE 3 presentaciones: las cantidades vendidas pueden ser fraccionadas
+  /// (media libra, 0,5 kg) y meterlas en un `int` las deforma — media libra
+  /// pasaba a 0. Se usa para `productos_vendidos`, que la RPC
+  /// `fn_resumen_diario_cierre_v2` ya devuelve como numeric por el mismo
+  /// motivo: el cast a integer del SQL **redondeaba** (tres lineas de 0,5 kg
+  /// daban 2).
+  static num _asNum(dynamic raw) {
+    if (raw == null) return 0;
+    if (raw is num) return raw;
+    return num.tryParse(raw.toString().replaceAll(',', '.')) ?? 0;
   }
 
   /// Limpia resúmenes del turno anterior (llamar al abrir un turno nuevo).

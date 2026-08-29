@@ -258,8 +258,12 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
       if (idTpv != null) {
         // Llamar a la función de resumen diario
+        //
+        // FASE 3 presentaciones: v2. La original devolvia productos_vendidos
+        // como integer y REDONDEABA las ventas fraccionadas; la v2 lo devuelve
+        // numeric y agrega el equivalente en base y el desglose por presentacion.
         final resumenCierreResponse = await Supabase.instance.client.rpc(
-          'fn_resumen_diario_cierre',
+          'fn_resumen_diario_cierre_v2',
           params: {'id_tpv_param': idTpv, 'id_usuario_param': userID},
         );
 

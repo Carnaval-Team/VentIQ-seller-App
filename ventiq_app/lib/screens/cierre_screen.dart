@@ -71,7 +71,18 @@ class _CierreScreenState extends State<CierreScreen> {
   double _totalEfectivo = 0.0;
   double _totalTransferencias = 0.0;
   double _efectivoEsperado = 0.0;
-  int _productosVendidos = 0;
+  // FASE 3 presentaciones: `num`, no `int`. La RPC v2 devuelve
+  // `productos_vendidos` como numeric porque la original lo casteaba a integer
+  // y REDONDEABA (tres lineas de 0,5 kg daban 2). Si el Dart lo volviera a
+  // meter en un int, el redondeo se moveria del SQL al cliente y el arreglo no
+  // serviria de nada.
+  num _productosVendidos = 0;
+
+  /// Equivalente en unidades base (`SUM(cantidad * factor_rel)`), de la v2.
+  num? _productosVendidosBase;
+
+  /// Desglose ya formateado por el SQL: "2 Cajas + 5 Unidades", de la v2.
+  String? _productosVendidosDesglose;
   double _ticketPromedio = 0.0;
   double _porcentajeEfectivo = 0.0;
   double _porcentajeOtros = 0.0;
@@ -315,14 +326,19 @@ class _CierreScreenState extends State<CierreScreen> {
     double ventas,
     double efectivo,
     double transferencia,
-    int productos,
+    num productos,
     int operaciones,
   })
   _calculateClosureTotalsFromOrders(List<Order> orders) {
     double ventas = 0.0;
     double efectivo = 0.0;
     double transferencia = 0.0;
-    int productos = 0;
+    // FASE 3 presentaciones: `num`, no `int`. Antes se acumulaba con
+    // `item.cantidad.toInt()`, que TRUNCA cada linea por separado: media
+    // libra (0,5) sumaba 0, y tres lineas de 0,5 kg daban 0 en vez de 1,5.
+    // El cierre offline tiene que dar lo mismo que el online, que ya no
+    // redondea desde fn_resumen_diario_cierre_v2.
+    num productos = 0;
     int operaciones = 0;
 
     for (final order in orders) {
@@ -336,9 +352,9 @@ class _CierreScreenState extends State<CierreScreen> {
 
       operaciones++;
       ventas += order.total;
-      productos += order.items.fold<int>(
+      productos += order.items.fold<num>(
         0,
-        (sum, item) => sum + item.cantidad.toInt(),
+        (sum, item) => sum + item.cantidad,
       );
 
       double efectivoOrden = 0.0;
@@ -476,10 +492,11 @@ class _CierreScreenState extends State<CierreScreen> {
         final userID = await _userPrefs.getUserId();
         if (idTpv != null) {
           print(
-            '⚠️ Fallback fn_resumen_diario_cierre - TPV: $idTpv (puede mezclar turnos)',
+            '⚠️ Fallback fn_resumen_diario_cierre_v2 - TPV: $idTpv (puede mezclar turnos)',
           );
+          // FASE 3 presentaciones: v2 (la original redondeaba productos_vendidos).
           final resumenCierreResponse = await Supabase.instance.client.rpc(
-            'fn_resumen_diario_cierre',
+            'fn_resumen_diario_cierre_v2',
             params: {'id_tpv_param': idTpv, 'id_usuario_param': userID},
           );
           if (resumenCierreResponse is List &&
@@ -501,7 +518,10 @@ class _CierreScreenState extends State<CierreScreen> {
       setState(() {
         _montoInicialCaja = (data!['efectivo_inicial'] ?? 0.0).toDouble();
         _ventasTotales = (data['ventas_totales'] ?? 0.0).toDouble();
-        _productosVendidos = (data['productos_vendidos'] ?? 0).toInt();
+        _productosVendidos = (data['productos_vendidos'] as num?) ?? 0;
+        _productosVendidosBase = data['productos_vendidos_base'] as num?;
+        _productosVendidosDesglose =
+            data['productos_vendidos_desglose'] as String?;
         _ticketPromedio = (data['ticket_promedio'] ?? 0.0).toDouble();
         _operacionesTotales = (data['operaciones_totales'] ?? 0).toInt();
         _operacionesPorHora = (data['operaciones_por_hora'] ?? 0.0).toDouble();
@@ -555,7 +575,11 @@ class _CierreScreenState extends State<CierreScreen> {
                       0.0)
                   .toDouble();
           _productosVendidos =
-              (resumenCierre['productos_vendidos'] ?? 0).toInt();
+              (resumenCierre['productos_vendidos'] as num?) ?? 0;
+          _productosVendidosBase =
+              resumenCierre['productos_vendidos_base'] as num?;
+          _productosVendidosDesglose =
+              resumenCierre['productos_vendidos_desglose'] as String?;
           _ticketPromedio =
               (resumenCierre['ticket_promedio'] ?? 0.0).toDouble();
 
@@ -620,7 +644,11 @@ class _CierreScreenState extends State<CierreScreen> {
                 (resumenTurno['efectivo_inicial'] ?? 0.0).toDouble();
             _ventasTotales = (resumenTurno['ventas_totales'] ?? 0.0).toDouble();
             _productosVendidos =
-                (resumenTurno['productos_vendidos'] ?? 0).toInt();
+                (resumenTurno['productos_vendidos'] as num?) ?? 0;
+            _productosVendidosBase =
+                resumenTurno['productos_vendidos_base'] as num?;
+            _productosVendidosDesglose =
+                resumenTurno['productos_vendidos_desglose'] as String?;
             _ticketPromedio =
                 (resumenTurno['ticket_promedio'] ?? 0.0).toDouble();
 
@@ -1627,7 +1655,7 @@ class _CierreScreenState extends State<CierreScreen> {
                       ),
                       _buildInfoRow(
                         'Productos vendidos:',
-                        '$_productosVendidos unidades',
+                        _textoProductosVendidos(),
                       ),
                       _buildInfoRow(
                         'Ticket promedio:',
@@ -2127,6 +2155,33 @@ class _CierreScreenState extends State<CierreScreen> {
       ),
     );
   }
+
+  /// Texto de "Productos vendidos" para el resumen del cierre.
+  ///
+  /// FASE 3 presentaciones. Prioriza el desglose que ya formatea el SQL
+  /// ("2 Cajas + 5 Unidades") y, cuando hay mas de una presentacion, agrega el
+  /// equivalente en unidades base entre parentesis — ese es el numero
+  /// comparable, porque sumar cajas con unidades no significa nada.
+  ///
+  /// Sin desglose (RPC vieja o una sola presentacion) cae al numero de siempre,
+  /// pero sin `.toInt()`: 0,5 kg debe leerse "0.5 unidades", no "1 unidades".
+  String _textoProductosVendidos() {
+    final desglose = _productosVendidosDesglose;
+    final base = _productosVendidosBase;
+
+    if (desglose != null && desglose.trim().isNotEmpty) {
+      // Solo se agrega el equivalente si aporta algo (mas de una presentacion,
+      // es decir cuando el desglose lleva un " + ").
+      if (base != null && desglose.contains(' + ')) {
+        return '$desglose  (= ${_fmtCantidad(base)} u. base)';
+      }
+      return desglose;
+    }
+    return '${_fmtCantidad(_productosVendidos)} unidades';
+  }
+
+  String _fmtCantidad(num v) =>
+      v == v.roundToDouble() ? v.round().toString() : v.toString();
 
   Widget _buildInfoRow(String label, String value, {bool isNegative = false}) {
     return Padding(
