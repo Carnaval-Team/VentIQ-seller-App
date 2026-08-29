@@ -183,7 +183,8 @@ $mig$;
 -- ============================================================================
 
 -- V1 · Las 7 inserciones estan y las claves viejas siguen intactas.
---      Esperado: total 7 | ep 4 | rp 2 | cp 1 | sku 8 | nombre 8 | importe 4
+--      VERIFICADO 2026-08-28: total 7 | ep 4 | rp 2 | cp 1 | sku 8 | nombre 8 |
+--      importe 4 | 1 sobrecarga | prosecdef t (sigue SECURITY DEFINER)
 -- SELECT
 --   (SELECT count(*) FROM regexp_matches(p.prosrc,'fn_presentacion_item_json','g')) AS total,
 --   (SELECT count(*) FROM regexp_matches(p.prosrc,'fn_presentacion_item_json\(ep\.','g')) AS ep,
@@ -211,8 +212,17 @@ $mig$;
 --        LATERAL jsonb_array_elements(r.detalles->'items') item
 --  LIMIT 10;
 
--- V3 · Compatibilidad: NINGUN item perdio las 6 claves viejas.
---      Esperado: 0 filas.
+-- V3 · Compatibilidad: NINGUN item perdio las claves viejas.
+--      VERIFICADO 2026-08-28 sobre 305 items de la tienda 45:
+--         sin id_producto 0 | sin producto_nombre 0 | sin sku_producto 0
+--         con presentacion_nombre 297 | con cantidad_formateada 297
+--      Los 8 items sin 'cantidad' son de **Ajuste Negativo**, que nunca la
+--      tuvo: usa cantidad_anterior/cantidad_nueva porque un ajuste es un seteo.
+--      Son el bloque `ai` que se salta a proposito (la tabla no tiene
+--      id_presentacion). Desglose por tipo:
+--         Ajuste Negativo   8 items | sin cantidad 8 | con cant_anterior 8 | pres 0
+--         Recepcion        16 items | sin cantidad 0 | pres 16
+--         Venta           281 items | sin cantidad 0 | pres 281
 -- SELECT r.id, item
 --   FROM (SELECT set_config('request.jwt.claims',
 --            json_build_object('sub','7e3507ec-1b29-4901-bf88-e5d77be72100',
@@ -224,8 +234,18 @@ $mig$;
 --     OR NOT (item ? 'sku_producto')
 --     OR NOT (item ? 'cantidad');
 
--- V4 · Las operaciones sin presentacion (historicas) no inventan nombre:
---      cantidad_formateada debe ser solo el numero y presentacion_nombre null.
+-- V4 · Las operaciones sin presentacion (historicas) no inventan nombre.
+--      VERIFICADO 2026-08-28 con el helper directo:
+--         fn_presentacion_item_json(NULL, 7) -> cantidad_formateada "7",
+--         presentacion_nombre null, equivalente_base null.
+--      Y el `||` sobre un item completo conserva importe/cantidad/id_producto/
+--      sku_producto/precio_unitario/producto_nombre intactos.
+--
+--      Plural y factor verificados con presentaciones reales:
+--         (337 Bulto x10,  4) -> "4 Bultos"   equivalente_base    40
+--         (337 Bulto x10,  1) -> "1 Bulto"    (singular correcto)
+--         (336 Bolsa x1, 100) -> "100 Bolsas"
+--         (4626 Caja x24, 533)-> "533 Cajas"  equivalente_base 12.792
 -- SELECT item->>'cantidad' AS cant,
 --        item->>'cantidad_formateada' AS formateada,
 --        item->>'presentacion_nombre' AS pres

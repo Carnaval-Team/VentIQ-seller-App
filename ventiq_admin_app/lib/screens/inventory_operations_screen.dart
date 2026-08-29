@@ -2745,11 +2745,11 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                                   ).withOpacity(0.3),
                                 ),
                               ),
-                              // FASE 2: la RPC ahora manda cantidad_formateada
+                              // FASE 2/3: la RPC manda cantidad_formateada
                               // ("4 Bultos"), armada en SQL con
-                              // fn_plural_presentacion. Se prefiere sobre la
-                              // cantidad cruda; el fallback cubre las
-                              // operaciones de conteo, que traen
+                              // fn_plural_presentacion (archivos 15 y 28). Se
+                              // prefiere sobre la cantidad cruda; el fallback
+                              // cubre las operaciones de conteo, que traen
                               // cantidad_fisica y no pasan por el helper.
                               child: Text(
                                 _getCantidadTexto(item),
@@ -2760,75 +2760,23 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                                 ),
                               ),
                             ),
-                          ],
-                          if (item['sku_producto'] != null) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              'SKU: ${item['sku_producto']}',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey[500],
-                                fontFamily: 'monospace',
+                            if (item['importe'] != null) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                '\$${_formatFieldValue(item['importe'])}',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF1F2937),
+                                ),
                               ),
-                            ),
+                            ],
                           ],
-                          if (item['precio_unitario'] != null) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              'Precio: \$${_formatFieldValue(item['precio_unitario'])}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.grey[700],
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    // Quantity and Subtotal
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF4A90E2).withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: const Color(0xFF4A90E2).withOpacity(0.3),
-                            ),
-                          ),
-                          child: Text(
-                            'Cant: ${item['cantidad_fisica'] ?? item['cantidad'] ?? 0}',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF4A90E2),
-                            ),
-                          ),
                         ),
-                        if (item['importe'] != null) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            '\$${_formatFieldValue(item['importe'])}',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF1F2937),
-                            ),
-                          ),
-                        ],
                       ],
                     ),
-                  ],
-                ),
-              );
-            }).toList(),
+                  );
+                }).toList(),
           ),
         ),
       ],
