@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/carnaval_service.dart';
+import '../services/export_service.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/whatsapp_helper.dart';
 import '../widgets/admin_drawer.dart';
@@ -32,6 +33,7 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
 
   bool _isLoading = true;
   bool _isLoadingMore = false;
+  bool _isExporting = false;
   bool _hasMore = true;
   int _currentPage = 0;
   int? _carnavalStoreId;
@@ -313,11 +315,128 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     );
   }
 
+  String _exportDeliveryType(dynamic value) {
+    final delivery = value?.toString().trim().toLowerCase() ?? '';
+    if (delivery.contains('domicilio') || delivery.contains('delivery')) {
+      return 'Domicilio';
+    }
+    if (CarnavalService.isMetodoRecogida(value?.toString()) ||
+        delivery.contains('recoger')) {
+      return 'Recogida';
+    }
+    return value?.toString().trim().isNotEmpty == true ? value.toString() : '-';
+  }
+
+  String _exportResponsible(Map<String, dynamic> order) {
+    if (CarnavalService.isMetodoRecogida(order['metodo_entrega']?.toString())) {
+      final admin = order['completado_por']?.toString().trim();
+      return admin?.isNotEmpty == true ? admin! : '-';
+    }
+    final rawId = order['repartidor'];
+    final id = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+    final driver = id == null
+        ? null
+        : _repartidores[id]?['nombre']?.toString().trim();
+    return driver?.isNotEmpty == true ? driver! : '-';
+  }
+
+  Future<void> _showExportDialog() async {
+    if (_orders.isEmpty || _isExporting) return;
+    final format = await showModalBottomSheet<ExportFormat>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+              title: Text(
+                'Exportar órdenes mostradas',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              subtitle: Text('Selecciona el formato del reporte'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.picture_as_pdf, color: Colors.red),
+              title: const Text('PDF'),
+              onTap: () => Navigator.pop(context, ExportFormat.pdf),
+            ),
+            ListTile(
+              leading: const Icon(Icons.table_chart, color: Colors.green),
+              title: const Text('Excel'),
+              onTap: () => Navigator.pop(context, ExportFormat.excel),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (format == null || !mounted) return;
+    await _exportOrders(format);
+  }
+
+  Future<void> _exportOrders(ExportFormat format) async {
+    setState(() => _isExporting = true);
+    try {
+      await Future.wait([
+        _loadVentiqOps(_orders),
+        _ensureRepartidores(_orders),
+      ]);
+      final exportOrders = _orders
+          .map(
+            (order) => {
+              'numero_orden': order['id'],
+              'id_operacion_inventtia': _ventiqOps[order['id']],
+              'tipo_entrega': _exportDeliveryType(order['metodo_entrega']),
+              'responsable': _exportResponsible(order),
+              'estado': order['status'] ?? 'Desconocido',
+              'monto':
+                  '\$${((order['total'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)} CUP',
+            },
+          )
+          .toList();
+      if (!mounted) return;
+      await ExportService().exportCarnavalOrders(
+        context: context,
+        orders: exportOrders,
+        format: format,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al exportar las órdenes: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isExporting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Órdenes Carnaval')),
       endDrawer: const AdminDrawer(),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: _orders.isEmpty || _carnavalStoreId == null
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: _isExporting ? null : _showExportDialog,
+              icon: _isExporting
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.file_download_outlined),
+              label: Text(_isExporting ? 'Exportando...' : 'Exportar'),
+            ),
       body: _isLoading && _orders.isEmpty
           ? const Center(child: CircularProgressIndicator())
           : _carnavalStoreId == null
@@ -501,7 +620,12 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                                 )
                               : ListView.builder(
                                   controller: _scrollController,
-                                  padding: const EdgeInsets.all(12),
+                                  padding: const EdgeInsets.fromLTRB(
+                                    12,
+                                    12,
+                                    12,
+                                    88,
+                                  ),
                                   itemCount:
                                       _orders.length + (_hasMore ? 1 : 0),
                                   itemBuilder: (context, index) {

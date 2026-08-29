@@ -87,8 +87,8 @@ class ExportService {
                 duration: const Duration(seconds: 5),
                 action: SnackBarAction(
                   label: 'Reintentar',
-                  onPressed:
-                      () => _downloadFileWeb(fileBytes, fileName, mimeType),
+                  onPressed: () =>
+                      _downloadFileWeb(fileBytes, fileName, mimeType),
                 ),
               ),
             );
@@ -138,7 +138,8 @@ class ExportService {
   }) async {
     try {
       final operationId = operation['id']?.toString() ?? 'N/A';
-      final fileName = 'Operacion_${operationId}_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.pdf';
+      final fileName =
+          'Operacion_${operationId}_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.pdf';
 
       final fileBytes = await _generateInventoryOperationPdf(
         operation: operation,
@@ -175,7 +176,8 @@ class ExportService {
         await Share.shareXFiles(
           [XFile(file.path, mimeType: mimeType)],
           subject: 'Operación de Inventario - $operationId',
-          text: 'Comprobante de operación de inventario generado el ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
+          text:
+              'Comprobante de operación de inventario generado el ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
         );
       }
 
@@ -244,8 +246,8 @@ class ExportService {
                 duration: const Duration(seconds: 5),
                 action: SnackBarAction(
                   label: 'Reintentar',
-                  onPressed:
-                      () => _downloadFileWeb(fileBytes, fileName, mimeType),
+                  onPressed: () =>
+                      _downloadFileWeb(fileBytes, fileName, mimeType),
                 ),
               ),
             );
@@ -269,10 +271,9 @@ class ExportService {
 
       // Mostrar mensaje de éxito
       if (context.mounted) {
-        final message =
-            kIsWeb
-                ? 'Archivo ${format.displayName} descargado exitosamente'
-                : 'Archivo ${format.displayName} generado y compartido exitosamente';
+        final message = kIsWeb
+            ? 'Archivo ${format.displayName} descargado exitosamente'
+            : 'Archivo ${format.displayName} generado y compartido exitosamente';
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -416,10 +417,9 @@ class ExportService {
                       0.0; // Por ahora 0, se puede calcular si hay datos de movimientos
                   final extracciones =
                       0.0; // Por ahora 0, se puede calcular si hay datos de movimientos
-                  final ventas =
-                      product.cantidadInicial > product.cantidadFinal
-                          ? product.cantidadInicial - product.cantidadFinal
-                          : 0.0; // Diferencia como aproximación de ventas
+                  final ventas = product.cantidadInicial > product.cantidadFinal
+                      ? product.cantidadInicial - product.cantidadFinal
+                      : 0.0; // Diferencia como aproximación de ventas
 
                   return pw.TableRow(
                     children: [
@@ -651,10 +651,10 @@ class ExportService {
             final sku = (p['sku_producto'] ?? '').toString();
             final description =
                 (p['descripcion']?.toString().isNotEmpty == true)
-                    ? p['descripcion'].toString()
-                    : (p['descripcion_corta']?.toString().isNotEmpty == true)
-                    ? p['descripcion_corta'].toString()
-                    : '';
+                ? p['descripcion'].toString()
+                : (p['descripcion_corta']?.toString().isNotEmpty == true)
+                ? p['descripcion_corta'].toString()
+                : '';
             final qty = (p['cantidad'] as num?)?.toDouble() ?? 0.0;
             final unitPrice = (p['precio_unitario'] as num?)?.toDouble() ?? 0.0;
             final lineTotal = qty * unitPrice;
@@ -877,10 +877,9 @@ class ExportService {
           0.0; // Por ahora 0, se puede calcular si hay datos de movimientos
       final extracciones =
           0.0; // Por ahora 0, se puede calcular si hay datos de movimientos
-      final ventas =
-          product.cantidadInicial > product.cantidadFinal
-              ? product.cantidadInicial - product.cantidadFinal
-              : 0.0; // Diferencia como aproximación de ventas
+      final ventas = product.cantidadInicial > product.cantidadFinal
+          ? product.cantidadInicial - product.cantidadFinal
+          : 0.0; // Diferencia como aproximación de ventas
 
       final rowData = [
         product.nombreProducto,
@@ -965,8 +964,8 @@ class ExportService {
       alignment: align == pw.TextAlign.left
           ? pw.Alignment.centerLeft
           : align == pw.TextAlign.right
-              ? pw.Alignment.centerRight
-              : pw.Alignment.center,
+          ? pw.Alignment.centerRight
+          : pw.Alignment.center,
       child: pw.Text(
         text,
         style: pw.TextStyle(fontSize: 9, font: font),
@@ -1020,10 +1019,9 @@ class ExportService {
       final dateCell = sheet.cell(
         CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
       );
-      final dateStr =
-          filterDate != null
-              ? 'Fecha: ${DateFormat('dd/MM/yyyy').format(filterDate)}'
-              : 'Período: Histórico';
+      final dateStr = filterDate != null
+          ? 'Fecha: ${DateFormat('dd/MM/yyyy').format(filterDate)}'
+          : 'Período: Histórico';
       dateCell.value = TextCellValue(dateStr);
       dateCell.cellStyle = CellStyle(bold: true, fontSize: 12);
       currentRow += 2;
@@ -1571,8 +1569,8 @@ class ExportService {
                 duration: const Duration(seconds: 5),
                 action: SnackBarAction(
                   label: 'Reintentar',
-                  onPressed:
-                      () => _downloadFileWeb(fileBytes, fileName, mimeType),
+                  onPressed: () =>
+                      _downloadFileWeb(fileBytes, fileName, mimeType),
                 ),
               ),
             );
@@ -1596,10 +1594,9 @@ class ExportService {
 
       // Mostrar mensaje de éxito
       if (context.mounted) {
-        final message =
-            kIsWeb
-                ? 'Archivo ${format.toUpperCase()} descargado exitosamente'
-                : 'Archivo ${format.toUpperCase()} generado y compartido exitosamente';
+        final message = kIsWeb
+            ? 'Archivo ${format.toUpperCase()} descargado exitosamente'
+            : 'Archivo ${format.toUpperCase()} generado y compartido exitosamente';
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1667,8 +1664,7 @@ class ExportService {
     List<Map<String, dynamic>> inventoryData,
   ) {
     // almacen -> ubicacion -> id_producto -> item (acumulado)
-    final grouped =
-        <String, Map<String, Map<String, Map<String, dynamic>>>>{};
+    final grouped = <String, Map<String, Map<String, Map<String, dynamic>>>>{};
 
     for (final item in inventoryData) {
       final almacen = item['almacen']?.toString() ?? 'Sin almacén';
@@ -1677,7 +1673,8 @@ class ExportService {
 
       if (ubicacion == 'Sin ubicación' ||
           ubicacion == 'SIN UBICACIÓN' ||
-          idUbicacion == null) continue;
+          idUbicacion == null)
+        continue;
 
       // Clave de deduplicación: producto + presentación + variante
       final idProducto = item['id_producto']?.toString() ?? '';
@@ -1690,7 +1687,9 @@ class ExportService {
 
       // Si ya existe, ignorar el duplicado (conservar la primera ocurrencia)
       if (!grouped[almacen]![ubicacion]!.containsKey(dedupKey)) {
-        grouped[almacen]![ubicacion]![dedupKey] = Map<String, dynamic>.from(item);
+        grouped[almacen]![ubicacion]![dedupKey] = Map<String, dynamic>.from(
+          item,
+        );
       }
     }
 
@@ -1699,8 +1698,10 @@ class ExportService {
     for (final almacenEntry in grouped.entries) {
       result[almacenEntry.key] = {};
       for (final ubicacionEntry in almacenEntry.value.entries) {
-        result[almacenEntry.key]![ubicacionEntry.key] =
-            ubicacionEntry.value.values.toList();
+        result[almacenEntry.key]![ubicacionEntry.key] = ubicacionEntry
+            .value
+            .values
+            .toList();
       }
     }
     return result;
@@ -1934,8 +1935,9 @@ class ExportService {
     currentRow += 2;
     final totalProducts = inventoryData.length;
     final convertedProducts = _convertMapDataToInventoryProducts(inventoryData);
-    final productsWithStock =
-        convertedProducts.where((p) => p.cantidadFinal > 0).length;
+    final productsWithStock = convertedProducts
+        .where((p) => p.cantidadFinal > 0)
+        .length;
 
     final totalCell = sheet.cell(
       CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
@@ -1980,14 +1982,12 @@ class ExportService {
     final maxAlmacenLength = 15;
     final maxUbicacionLength = 15;
 
-    final truncatedAlmacen =
-        almacen.length > maxAlmacenLength
-            ? almacen.substring(0, maxAlmacenLength)
-            : almacen;
-    final truncatedUbicacion =
-        ubicacion.length > maxUbicacionLength
-            ? ubicacion.substring(0, maxUbicacionLength)
-            : ubicacion;
+    final truncatedAlmacen = almacen.length > maxAlmacenLength
+        ? almacen.substring(0, maxAlmacenLength)
+        : almacen;
+    final truncatedUbicacion = ubicacion.length > maxUbicacionLength
+        ? ubicacion.substring(0, maxUbicacionLength)
+        : ubicacion;
 
     return '${truncatedAlmacen}_$truncatedUbicacion';
   }
@@ -2310,10 +2310,9 @@ class ExportService {
         // Encabezados
         pw.TableRow(
           decoration: const pw.BoxDecoration(color: PdfColors.grey200),
-          children:
-              headers
-                  .map((header) => _buildTableHeader(header, font: boldFont))
-                  .toList(),
+          children: headers
+              .map((header) => _buildTableHeader(header, font: boldFont))
+              .toList(),
         ),
         // Datos de productos
         ...productos.map((producto) {
@@ -2380,10 +2379,9 @@ class ExportService {
           }
 
           return pw.TableRow(
-            children:
-                rowData
-                    .map((data) => _buildTableCell(data, font: regularFont))
-                    .toList(),
+            children: rowData
+                .map((data) => _buildTableCell(data, font: regularFont))
+                .toList(),
           );
         }),
       ],
@@ -2406,10 +2404,9 @@ class ExportService {
     // Construir filas de la tabla (sin encabezado)
     final tableRows = items.map((item) {
       final cantidad = item['cantidad_contada'] ?? item['cantidad'] ?? 0;
-      final productName = (item['producto_nombre'] ??
-              item['nombre_producto'] ??
-              'Producto')
-          .toString();
+      final productName =
+          (item['producto_nombre'] ?? item['nombre_producto'] ?? 'Producto')
+              .toString();
       return pw.TableRow(
         verticalAlignment: pw.TableCellVerticalAlignment.top,
         children: [
@@ -2451,34 +2448,86 @@ class ExportService {
                 pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
-                    _buildPdfInfoRow('ID Operación:', '#${operation['id']}', boldFont, regularFont),
-                    _buildPdfInfoRow('Tipo:', '${operation['tipo_operacion_nombre'] ?? 'N/A'}', boldFont, regularFont),
-                    _buildPdfInfoRow('Estado:', '${operation['estado_nombre'] ?? 'N/A'}', boldFont, regularFont),
-                    if (clienteNombre != null && clienteNombre.trim().isNotEmpty)
-                      _buildPdfInfoRow('Cliente:', clienteNombre.trim(), boldFont, regularFont),
+                    _buildPdfInfoRow(
+                      'ID Operación:',
+                      '#${operation['id']}',
+                      boldFont,
+                      regularFont,
+                    ),
+                    _buildPdfInfoRow(
+                      'Tipo:',
+                      '${operation['tipo_operacion_nombre'] ?? 'N/A'}',
+                      boldFont,
+                      regularFont,
+                    ),
+                    _buildPdfInfoRow(
+                      'Estado:',
+                      '${operation['estado_nombre'] ?? 'N/A'}',
+                      boldFont,
+                      regularFont,
+                    ),
+                    if (clienteNombre != null &&
+                        clienteNombre.trim().isNotEmpty)
+                      _buildPdfInfoRow(
+                        'Cliente:',
+                        clienteNombre.trim(),
+                        boldFont,
+                        regularFont,
+                      ),
                     if (almacenNombre != 'N/A')
-                      _buildPdfInfoRow('Almacén:', almacenNombre, boldFont, regularFont),
+                      _buildPdfInfoRow(
+                        'Almacén:',
+                        almacenNombre,
+                        boldFont,
+                        regularFont,
+                      ),
                   ],
                 ),
                 pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
-                    _buildPdfInfoRow('Fecha:', dateFormatter.format(DateTime.parse(operation['created_at'])), boldFont, regularFont),
+                    _buildPdfInfoRow(
+                      'Fecha:',
+                      dateFormatter.format(
+                        DateTime.parse(operation['created_at']),
+                      ),
+                      boldFont,
+                      regularFont,
+                    ),
                     if (operation['usuario_nombre'] != null)
-                      _buildPdfInfoRow('Usuario:', '${operation['usuario_nombre']}', boldFont, regularFont),
+                      _buildPdfInfoRow(
+                        'Usuario:',
+                        '${operation['usuario_nombre']}',
+                        boldFont,
+                        regularFont,
+                      ),
                     if (operation['usuario_email'] != null)
-                      _buildPdfInfoRow('Email:', '${operation['usuario_email']}', boldFont, regularFont),
+                      _buildPdfInfoRow(
+                        'Email:',
+                        '${operation['usuario_email']}',
+                        boldFont,
+                        regularFont,
+                      ),
                   ],
                 ),
               ],
             ),
             if (operation['observaciones']?.isNotEmpty == true) ...[
               pw.SizedBox(height: 8),
-              pw.Text('Observaciones:', style: pw.TextStyle(font: boldFont, fontSize: 10)),
-              pw.Text('${operation['observaciones']}', style: pw.TextStyle(font: regularFont, fontSize: 10)),
+              pw.Text(
+                'Observaciones:',
+                style: pw.TextStyle(font: boldFont, fontSize: 10),
+              ),
+              pw.Text(
+                '${operation['observaciones']}',
+                style: pw.TextStyle(font: regularFont, fontSize: 10),
+              ),
             ],
             pw.SizedBox(height: 12),
-            pw.Text('DETALLE DE PRODUCTOS', style: pw.TextStyle(fontSize: 14, font: boldFont)),
+            pw.Text(
+              'DETALLE DE PRODUCTOS',
+              style: pw.TextStyle(fontSize: 14, font: boldFont),
+            ),
             pw.SizedBox(height: 6),
             // Encabezado de la tabla (se repite en cada página)
             pw.Table(
@@ -2508,11 +2557,19 @@ class ExportService {
               children: [
                 pw.Text(
                   'Comprobante generado por Inventtia - ${dateFormatter.format(now)}',
-                  style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600, font: regularFont),
+                  style: pw.TextStyle(
+                    fontSize: 8,
+                    color: PdfColors.grey600,
+                    font: regularFont,
+                  ),
                 ),
                 pw.Text(
                   'Página ${context.pageNumber} de ${context.pagesCount}',
-                  style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600, font: regularFont),
+                  style: pw.TextStyle(
+                    fontSize: 8,
+                    color: PdfColors.grey600,
+                    font: regularFont,
+                  ),
                 ),
               ],
             ),
@@ -2539,15 +2596,27 @@ class ExportService {
                 children: [
                   pw.Row(
                     children: [
-                      pw.Text('Total Items: ', style: pw.TextStyle(font: boldFont, fontSize: 10)),
-                      pw.Text('${items.length}', style: pw.TextStyle(font: regularFont, fontSize: 10)),
+                      pw.Text(
+                        'Total Items: ',
+                        style: pw.TextStyle(font: boldFont, fontSize: 10),
+                      ),
+                      pw.Text(
+                        '${items.length}',
+                        style: pw.TextStyle(font: regularFont, fontSize: 10),
+                      ),
                     ],
                   ),
                   pw.SizedBox(height: 4),
                   pw.Row(
                     children: [
-                      pw.Text('Total: ', style: pw.TextStyle(fontSize: 14, font: boldFont)),
-                      pw.Text('\$${(operation['total']?.toDouble() ?? 0.0).toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 14, font: boldFont)),
+                      pw.Text(
+                        'Total: ',
+                        style: pw.TextStyle(fontSize: 14, font: boldFont),
+                      ),
+                      pw.Text(
+                        '\$${(operation['total']?.toDouble() ?? 0.0).toStringAsFixed(2)}',
+                        style: pw.TextStyle(fontSize: 14, font: boldFont),
+                      ),
                     ],
                   ),
                 ],
@@ -2645,7 +2714,9 @@ class ExportService {
     final numFormatter = NumberFormat('#,##0.00');
 
     String _fmt(dynamic v, {int decimals = 2}) {
-      final n = (v is num) ? v.toDouble() : double.tryParse(v?.toString() ?? '') ?? 0.0;
+      final n = (v is num)
+          ? v.toDouble()
+          : double.tryParse(v?.toString() ?? '') ?? 0.0;
       return numFormatter.format(n);
     }
 
@@ -2673,7 +2744,8 @@ class ExportService {
 
     // ── Filas de la tabla de productos ───────────────────────────────────────
     final tableRows = productos.map((p) {
-      final nombre = p['producto_denominacion'] as String? ??
+      final nombre =
+          p['producto_denominacion'] as String? ??
           p['denominacion'] as String? ??
           'N/A';
       final sku = p['producto_sku'] as String? ?? p['sku'] as String? ?? '';
@@ -2681,21 +2753,37 @@ class ExportService {
       final costo = (p['precio_costo_usd'] as num?)?.toDouble() ?? 0;
       final venta = (p['precio_venta_cup'] as num?)?.toDouble();
 
-      return pw.TableRow(children: [
-        _buildTableCell(nombre, font: regularFont),
-        _buildTableCell(sku, font: regularFont, align: pw.TextAlign.center),
-        _buildTableCell('\$${_fmt(costo)} USD', font: regularFont, align: pw.TextAlign.right),
-        _buildTableCell(
-          venta != null && venta > 0 ? '\$${_fmt(venta)} CUP' : '-',
-          font: regularFont,
-          align: pw.TextAlign.right,
-        ),
-        _buildTableCell(qty.toStringAsFixed(0), font: regularFont, align: pw.TextAlign.center),
-      ]);
+      return pw.TableRow(
+        children: [
+          _buildTableCell(nombre, font: regularFont),
+          _buildTableCell(sku, font: regularFont, align: pw.TextAlign.center),
+          _buildTableCell(
+            '\$${_fmt(costo)} USD',
+            font: regularFont,
+            align: pw.TextAlign.right,
+          ),
+          _buildTableCell(
+            venta != null && venta > 0 ? '\$${_fmt(venta)} CUP' : '-',
+            font: regularFont,
+            align: pw.TextAlign.right,
+          ),
+          _buildTableCell(
+            qty.toStringAsFixed(0),
+            font: regularFont,
+            align: pw.TextAlign.center,
+          ),
+        ],
+      );
     }).toList();
 
     // ── Sección de tienda (origen / destino) ─────────────────────────────────
-    pw.Widget _buildStoreSection(String title, String store, String warehouse, pw.Font bold, pw.Font regular) {
+    pw.Widget _buildStoreSection(
+      String title,
+      String store,
+      String warehouse,
+      pw.Font bold,
+      pw.Font regular,
+    ) {
       return pw.Container(
         padding: const pw.EdgeInsets.all(8),
         decoration: pw.BoxDecoration(
@@ -2728,17 +2816,27 @@ class ExportService {
                 pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
-                    pw.Text('INVENTTIA',
-                        style: pw.TextStyle(font: boldFont, fontSize: 20)),
-                    pw.Text('ENVÍO DE CONSIGNACIÓN',
-                        style: pw.TextStyle(font: boldFont, fontSize: 14, color: PdfColors.blueGrey700)),
+                    pw.Text(
+                      'INVENTTIA',
+                      style: pw.TextStyle(font: boldFont, fontSize: 20),
+                    ),
+                    pw.Text(
+                      'ENVÍO DE CONSIGNACIÓN',
+                      style: pw.TextStyle(
+                        font: boldFont,
+                        fontSize: 14,
+                        color: PdfColors.blueGrey700,
+                      ),
+                    ),
                   ],
                 ),
                 pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.end,
                   children: [
-                    pw.Text('#${detalles['numero_envio'] ?? 'N/A'}',
-                        style: pw.TextStyle(font: boldFont, fontSize: 16)),
+                    pw.Text(
+                      '#${detalles['numero_envio'] ?? 'N/A'}',
+                      style: pw.TextStyle(font: boldFont, fontSize: 16),
+                    ),
                     pw.Text(
                       'Estado: ${detalles['estado_envio_texto'] ?? 'N/A'}',
                       style: pw.TextStyle(font: regularFont, fontSize: 10),
@@ -2759,7 +2857,8 @@ class ExportService {
                     'TIENDA ORIGEN',
                     detalles['tienda_consignadora']?.toString() ?? 'N/A',
                     detalles['almacen_origen']?.toString() ?? 'N/A',
-                    boldFont, regularFont,
+                    boldFont,
+                    regularFont,
                   ),
                 ),
                 pw.SizedBox(width: 12),
@@ -2768,7 +2867,8 @@ class ExportService {
                     'TIENDA DESTINO',
                     detalles['tienda_consignataria']?.toString() ?? 'N/A',
                     detalles['almacen_destino']?.toString() ?? 'N/A',
-                    boldFont, regularFont,
+                    boldFont,
+                    regularFont,
                   ),
                 ),
               ],
@@ -2782,25 +2882,52 @@ class ExportService {
                 pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
-                    _buildPdfInfoRow('Fecha propuesta:', _fmtFecha(detalles['fecha_propuesta']), boldFont, regularFont),
+                    _buildPdfInfoRow(
+                      'Fecha propuesta:',
+                      _fmtFecha(detalles['fecha_propuesta']),
+                      boldFont,
+                      regularFont,
+                    ),
                     if (detalles['fecha_aceptacion'] != null)
-                      _buildPdfInfoRow('Fecha aceptación:', _fmtFecha(detalles['fecha_aceptacion']), boldFont, regularFont),
+                      _buildPdfInfoRow(
+                        'Fecha aceptación:',
+                        _fmtFecha(detalles['fecha_aceptacion']),
+                        boldFont,
+                        regularFont,
+                      ),
                   ],
                 ),
                 pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.end,
                   children: [
-                    _buildPdfInfoRow('Total unidades:', '${(detalles['cantidad_total_unidades'] as num?)?.toStringAsFixed(0) ?? '0'} u.', boldFont, regularFont),
-                    _buildPdfInfoRow('Valor total costo:', '\$${_fmt(detalles['valor_total_costo'])} USD', boldFont, regularFont),
+                    _buildPdfInfoRow(
+                      'Total unidades:',
+                      '${(detalles['cantidad_total_unidades'] as num?)?.toStringAsFixed(0) ?? '0'} u.',
+                      boldFont,
+                      regularFont,
+                    ),
+                    _buildPdfInfoRow(
+                      'Valor total costo:',
+                      '\$${_fmt(detalles['valor_total_costo'])} USD',
+                      boldFont,
+                      regularFont,
+                    ),
                     if (((detalles['valor_total_venta'] as num?) ?? 0) > 0)
-                      _buildPdfInfoRow('Valor total venta:', '\$${_fmt(detalles['valor_total_venta'])} CUP', boldFont, regularFont),
+                      _buildPdfInfoRow(
+                        'Valor total venta:',
+                        '\$${_fmt(detalles['valor_total_venta'])} CUP',
+                        boldFont,
+                        regularFont,
+                      ),
                   ],
                 ),
               ],
             ),
             pw.SizedBox(height: 10),
-            pw.Text('LISTADO DE PRODUCTOS',
-                style: pw.TextStyle(font: boldFont, fontSize: 12)),
+            pw.Text(
+              'LISTADO DE PRODUCTOS',
+              style: pw.TextStyle(font: boldFont, fontSize: 12),
+            ),
             pw.SizedBox(height: 4),
             // Encabezado de tabla (se repite en cada página)
             pw.Table(
@@ -2814,7 +2941,9 @@ class ExportService {
               },
               children: [
                 pw.TableRow(
-                  decoration: const pw.BoxDecoration(color: PdfColors.blueGrey100),
+                  decoration: const pw.BoxDecoration(
+                    color: PdfColors.blueGrey100,
+                  ),
                   children: [
                     _buildTableHeader('Producto', font: boldFont),
                     _buildTableHeader('SKU', font: boldFont),
@@ -2836,11 +2965,19 @@ class ExportService {
               children: [
                 pw.Text(
                   'Generado por Inventtia — ${dateFormatter.format(now)}',
-                  style: pw.TextStyle(font: regularFont, fontSize: 7, color: PdfColors.grey600),
+                  style: pw.TextStyle(
+                    font: regularFont,
+                    fontSize: 7,
+                    color: PdfColors.grey600,
+                  ),
                 ),
                 pw.Text(
                   'Pág. ${ctx.pageNumber} / ${ctx.pagesCount}',
-                  style: pw.TextStyle(font: regularFont, fontSize: 7, color: PdfColors.grey600),
+                  style: pw.TextStyle(
+                    font: regularFont,
+                    fontSize: 7,
+                    color: PdfColors.grey600,
+                  ),
                 ),
               ],
             ),
@@ -2873,23 +3010,55 @@ class ExportService {
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.end,
                 children: [
-                  pw.Row(children: [
-                    pw.Text('Total productos: ', style: pw.TextStyle(font: boldFont, fontSize: 10)),
-                    pw.Text('${productos.length}', style: pw.TextStyle(font: regularFont, fontSize: 10)),
-                  ]),
-                  pw.Row(children: [
-                    pw.Text('Total unidades: ', style: pw.TextStyle(font: boldFont, fontSize: 10)),
-                    pw.Text(totalCantidad.toStringAsFixed(0), style: pw.TextStyle(font: regularFont, fontSize: 10)),
-                  ]),
-                  pw.Row(children: [
-                    pw.Text('Valor total costo: ', style: pw.TextStyle(font: boldFont, fontSize: 11)),
-                    pw.Text('\$${_fmt(totalCostoUsd)} USD', style: pw.TextStyle(font: boldFont, fontSize: 11)),
-                  ]),
+                  pw.Row(
+                    children: [
+                      pw.Text(
+                        'Total productos: ',
+                        style: pw.TextStyle(font: boldFont, fontSize: 10),
+                      ),
+                      pw.Text(
+                        '${productos.length}',
+                        style: pw.TextStyle(font: regularFont, fontSize: 10),
+                      ),
+                    ],
+                  ),
+                  pw.Row(
+                    children: [
+                      pw.Text(
+                        'Total unidades: ',
+                        style: pw.TextStyle(font: boldFont, fontSize: 10),
+                      ),
+                      pw.Text(
+                        totalCantidad.toStringAsFixed(0),
+                        style: pw.TextStyle(font: regularFont, fontSize: 10),
+                      ),
+                    ],
+                  ),
+                  pw.Row(
+                    children: [
+                      pw.Text(
+                        'Valor total costo: ',
+                        style: pw.TextStyle(font: boldFont, fontSize: 11),
+                      ),
+                      pw.Text(
+                        '\$${_fmt(totalCostoUsd)} USD',
+                        style: pw.TextStyle(font: boldFont, fontSize: 11),
+                      ),
+                    ],
+                  ),
                   if (totalVentaCup > 0)
-                    pw.Row(children: [
-                      pw.Text('Valor total venta: ', style: pw.TextStyle(font: boldFont, fontSize: 11)),
-                      pw.Text('\$${_fmt(totalVentaCup)} CUP', style: pw.TextStyle(font: boldFont, fontSize: 11)),
-                    ]),
+                    pw.Row(
+                      children: [
+                        pw.Text(
+                          'Valor total venta: ',
+                          style: pw.TextStyle(font: boldFont, fontSize: 11),
+                        ),
+                        pw.Text(
+                          '\$${_fmt(totalVentaCup)} CUP',
+                          style: pw.TextStyle(font: boldFont, fontSize: 11),
+                        ),
+                      ],
+                    ),
                 ],
               ),
             ),
@@ -2901,8 +3070,184 @@ class ExportService {
     return pdf.save();
   }
 
+  Future<void> exportCarnavalOrders({
+    required BuildContext context,
+    required List<Map<String, dynamic>> orders,
+    required ExportFormat format,
+  }) async {
+    final now = DateTime.now();
+    final stamp = DateFormat('yyyyMMdd_HHmmss').format(now);
+    final fileName = 'Ordenes_Carnaval_$stamp.${format.extension}';
+    final bytes = format == ExportFormat.pdf
+        ? await _generateCarnavalOrdersPdf(orders, now)
+        : _generateCarnavalOrdersExcel(orders, now);
+    final mimeType = format == ExportFormat.pdf
+        ? 'application/pdf'
+        : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+    if (kIsWeb) {
+      _downloadFileWeb(bytes, fileName, mimeType);
+    } else {
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}/$fileName');
+      await file.writeAsBytes(bytes);
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: mimeType)],
+        subject: 'Órdenes Carnaval',
+        text:
+            'Órdenes Carnaval exportadas el ${DateFormat('dd/MM/yyyy HH:mm').format(now)}',
+      );
+    }
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${format.displayName} generado exitosamente'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    }
+  }
+
+  Future<Uint8List> _generateCarnavalOrdersPdf(
+    List<Map<String, dynamic>> orders,
+    DateTime generatedAt,
+  ) async {
+    final regularFont = await _getRegularFont();
+    final boldFont = await _getBoldFont();
+    final pdf = pw.Document();
+    final headers = [
+      'No. Orden',
+      'Id Operación Inventtia',
+      'Tipo de entrega',
+      'Responsable',
+      'Estado',
+      'Monto',
+    ];
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4.landscape,
+        margin: const pw.EdgeInsets.all(28),
+        theme: pw.ThemeData.withFont(base: regularFont, bold: boldFont),
+        header: (_) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(
+              'Órdenes Carnaval',
+              style: pw.TextStyle(font: boldFont, fontSize: 18),
+            ),
+            pw.Text(
+              '${orders.length} órdenes mostradas · ${DateFormat('dd/MM/yyyy HH:mm').format(generatedAt)}',
+              style: pw.TextStyle(
+                font: regularFont,
+                fontSize: 9,
+                color: PdfColors.grey700,
+              ),
+            ),
+            pw.SizedBox(height: 12),
+          ],
+        ),
+        footer: (context) => pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(
+            'Página ${context.pageNumber} de ${context.pagesCount}',
+            style: pw.TextStyle(font: regularFont, fontSize: 8),
+          ),
+        ),
+        build: (_) => [
+          pw.TableHelper.fromTextArray(
+            headers: headers,
+            data: orders
+                .map(
+                  (order) => [
+                    order['numero_orden']?.toString() ?? '-',
+                    order['id_operacion_inventtia']?.toString() ?? '-',
+                    order['tipo_entrega']?.toString() ?? '-',
+                    order['responsable']?.toString() ?? '-',
+                    order['estado']?.toString() ?? '-',
+                    order['monto']?.toString() ?? '-',
+                  ],
+                )
+                .toList(),
+            headerStyle: pw.TextStyle(
+              font: boldFont,
+              fontSize: 9,
+              color: PdfColors.white,
+            ),
+            cellStyle: pw.TextStyle(font: regularFont, fontSize: 9),
+            headerDecoration: const pw.BoxDecoration(
+              color: PdfColors.indigo700,
+            ),
+            cellAlignment: pw.Alignment.centerLeft,
+            cellAlignments: {
+              0: pw.Alignment.center,
+              1: pw.Alignment.center,
+              5: pw.Alignment.centerRight,
+            },
+            border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+          ),
+        ],
+      ),
+    );
+    return pdf.save();
+  }
+
+  Uint8List _generateCarnavalOrdersExcel(
+    List<Map<String, dynamic>> orders,
+    DateTime generatedAt,
+  ) {
+    final book = Excel.createExcel();
+    final defaultSheet = book.getDefaultSheet();
+    if (defaultSheet != null) book.rename(defaultSheet, 'Órdenes Carnaval');
+    final sheet = book['Órdenes Carnaval'];
+    sheet.setColumnWidth(0, 14);
+    sheet.setColumnWidth(1, 24);
+    sheet.setColumnWidth(2, 22);
+    sheet.setColumnWidth(3, 24);
+    sheet.setColumnWidth(4, 18);
+    sheet.setColumnWidth(5, 18);
+
+    sheet.appendRow([
+      TextCellValue('Órdenes Carnaval'),
+      TextCellValue(
+        'Generado: ${DateFormat('dd/MM/yyyy HH:mm').format(generatedAt)}',
+      ),
+    ]);
+    sheet.appendRow([TextCellValue('Órdenes mostradas: ${orders.length}')]);
+    sheet.appendRow([]);
+    sheet.appendRow([
+      TextCellValue('No. Orden'),
+      TextCellValue('Id Operación Inventtia'),
+      TextCellValue('Tipo de entrega'),
+      TextCellValue('Responsable'),
+      TextCellValue('Estado'),
+      TextCellValue('Monto'),
+    ]);
+
+    for (final order in orders) {
+      sheet.appendRow([
+        TextCellValue(order['numero_orden']?.toString() ?? '-'),
+        TextCellValue(order['id_operacion_inventtia']?.toString() ?? '-'),
+        TextCellValue(order['tipo_entrega']?.toString() ?? '-'),
+        TextCellValue(order['responsable']?.toString() ?? '-'),
+        TextCellValue(order['estado']?.toString() ?? '-'),
+        TextCellValue(order['monto']?.toString() ?? '-'),
+      ]);
+    }
+
+    final encoded = book.encode();
+    if (encoded == null) throw Exception('No se pudo generar el archivo Excel');
+    return Uint8List.fromList(encoded);
+  }
+
   /// Helper para construir una fila de información en PDF
-  pw.Widget _buildPdfInfoRow(String label, String value, pw.Font bold, pw.Font regular) {
+  pw.Widget _buildPdfInfoRow(
+    String label,
+    String value,
+    pw.Font bold,
+    pw.Font regular,
+  ) {
     return pw.Padding(
       padding: const pw.EdgeInsets.only(bottom: 4),
       child: pw.Row(
