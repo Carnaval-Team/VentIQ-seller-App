@@ -432,16 +432,23 @@ class _SalesScreenState extends State<SalesScreen>
       }
 
       // Calcular en CUP puro con fallback: si precioCostoCup == 0 usar precioCosto * valorUsd
+      //
+      // FASE 3 presentaciones: se multiplica por `equivUnidadesBase`, no por
+      // `totalVendido`. El precio y el costo unitarios estan en unidades base,
+      // asi que multiplicarlos por la suma de cantidades fisicas (que mezcla
+      // cajas con unidades) daria un total mal. Con la v4, o cuando todo se
+      // vendio en la presentacion base, `equivUnidadesBase == totalVendido` y
+      // el resultado no cambia.
       final costoTotal = productReports.fold<double>(0.0, (sum, p) {
         final cu = p.precioCostoCup > 0
             ? p.precioCostoCup
             : p.precioCosto * p.valorUsd;
-        return sum + cu * p.totalVendido;
+        return sum + cu * p.equivUnidadesBase;
       });
-      // Ingresos CUP = precioVentaCup * totalVendido (para consistencia con la tabla)
+      // Ingresos CUP = precio unitario * equivalente en unidades base
       final ventaTotalCup = productReports.fold<double>(
         0.0,
-        (sum, p) => sum + p.precioVentaCup * p.totalVendido,
+        (sum, p) => sum + p.precioVentaCup * p.equivUnidadesBase,
       );
       final gananciaTotal = ventaTotalCup - costoTotal;
       final gananciasReales = (ventaTotal - descuentoTotal) - costoTotal;
@@ -1487,11 +1494,12 @@ class _SalesScreenState extends State<SalesScreen>
       );
 
     // Ganancia en CUP puro con fallback: si precioCostoCup == 0 usar precioCosto * valorUsd
+    // FASE 3: por equivUnidadesBase, no por totalVendido (ver PDF de resumen).
     final totalGanancia = sorted.fold<double>(0.0, (sum, p) {
       final cu = p.precioCostoCup > 0
           ? p.precioCostoCup
           : p.precioCosto * p.valorUsd;
-      return sum + (p.precioVentaCup - cu) * p.totalVendido;
+      return sum + (p.precioVentaCup - cu) * p.equivUnidadesBase;
     });
     final totalGananciaColor = totalGanancia < 0
         ? PdfColor.fromHex('#DC2626')
@@ -1524,7 +1532,7 @@ class _SalesScreenState extends State<SalesScreen>
               ? p.precioCostoCup
               : p.precioCosto * p.valorUsd;
           final gananciaLinea =
-              (p.precioVentaCup - costoUnitPdf) * p.totalVendido;
+              (p.precioVentaCup - costoUnitPdf) * p.equivUnidadesBase;
           final gananciaColor = gananciaLinea < 0
               ? PdfColor.fromHex('#DC2626')
               : gananciaLinea > 0
@@ -1533,7 +1541,13 @@ class _SalesScreenState extends State<SalesScreen>
           return pw.TableRow(
             children: [
               _pdfBodyCell(p.nombreProducto),
-              _pdfBodyCell(p.totalVendido.toStringAsFixed(0)),
+              // FASE 3: la cantidad con su presentacion cuando el SQL la manda
+              // ("2 Cajas + 5 Unidades"); si no, el numero de siempre.
+              _pdfBodyCell(
+                p.cantidadFormateada.isNotEmpty
+                    ? p.cantidadFormateada
+                    : p.totalVendido.toStringAsFixed(0),
+              ),
               _pdfBodyCell('\$${p.precioVentaCup.toStringAsFixed(2)}'),
               _pdfBodyCell('\$${p.precioCostoCup.toStringAsFixed(2)}'),
               _pdfBodyCell(
@@ -1549,9 +1563,11 @@ class _SalesScreenState extends State<SalesScreen>
           decoration: pw.BoxDecoration(color: PdfColor.fromHex('#EEF2FF')),
           children: [
             _pdfBodyCell('TOTAL', isBold: true),
+            // El total de cantidad se suma en unidades BASE: sumar cantidades
+            // fisicas de presentaciones distintas no da un numero con sentido.
             _pdfBodyCell(
               sorted
-                  .fold<double>(0, (s, p) => s + p.totalVendido)
+                  .fold<double>(0, (s, p) => s + p.equivUnidadesBase)
                   .toStringAsFixed(0),
               isBold: true,
             ),
@@ -1895,10 +1911,14 @@ class _SalesScreenState extends State<SalesScreen>
           (sum, report) => sum + report.ingresosTotales,
         );
         // Calculate total products sold from product sales reports
-        _totalProductsSold = productSales.fold<int>(
-          0,
-          (sum, report) => sum + report.totalVendido.toInt(),
-        );
+        //
+        // FASE 3 presentaciones: se totaliza en unidades BASE. Sumar cantidades
+        // fisicas de presentaciones distintas (2 cajas + 5 unidades = 7) no da
+        // un numero con sentido. El `.round()` en vez de `.toInt()` evita que
+        // las ventas fraccionadas (0,5 kg) se trunquen a 0.
+        _totalProductsSold = productSales
+            .fold<double>(0.0, (sum, report) => sum + report.equivUnidadesBase)
+            .round();
         _isLoadingProducts = false;
         _isLoadingMetrics = false;
       });
@@ -2018,12 +2038,16 @@ class _SalesScreenState extends State<SalesScreen>
       final Map<int, SupplierSalesReport> groupedReports = {};
 
       for (final report in _productSalesReports) {
-        final ingresos = (report.precioVentaCup.round() * report.totalVendido)
-            .roundToDouble();
-        final costo = (report.precioCostoCup.round() * report.totalVendido)
+        // FASE 3 presentaciones: el dinero y la cantidad agregada del proveedor
+        // van en unidades BASE (`equivUnidadesBase`), no con la suma de
+        // cantidades fisicas. Sumar 2 cajas + 5 unidades = 7 no significa nada.
+        final ingresos =
+            (report.precioVentaCup.round() * report.equivUnidadesBase)
+                .roundToDouble();
+        final costo = (report.precioCostoCup.round() * report.equivUnidadesBase)
             .roundToDouble();
         final ganancia = ingresos - costo;
-        final cantidad = report.totalVendido;
+        final cantidad = report.equivUnidadesBase;
 
         final idProv = report.idProveedor;
         final nomProv = report.nombreProveedor;
@@ -4515,15 +4539,22 @@ class _SalesScreenState extends State<SalesScreen>
     setState(() => _isExportingProductHistory = true);
     try {
       final pdf = pw.Document();
+      // FASE 3 presentaciones: el dinero se calcula con `equivUnidadesBase` y
+      // la columna Cantidad muestra el desglose ("2 Cajas + 5 Unidades") con el
+      // equivalente en una columna aparte. Con la v4 (o cuando todo se vendio
+      // en la base) equiv == totalVendido y el PDF sale igual que antes.
       final rows = _sortedProductSalesReports.map((report) {
         final salePrice = report.precioVentaCup.roundToDouble();
         final unitCost = report.precioCostoCup.roundToDouble();
-        final revenue = salePrice * report.totalVendido;
-        final totalCost = unitCost * report.totalVendido;
+        final revenue = salePrice * report.equivUnidadesBase;
+        final totalCost = unitCost * report.equivUnidadesBase;
         return [
           report.nombreProducto,
           salePrice.toStringAsFixed(0),
-          report.totalVendido.toStringAsFixed(2),
+          report.cantidadFormateada.isNotEmpty
+              ? report.cantidadFormateada
+              : report.totalVendido.toStringAsFixed(2),
+          report.equivUnidadesBase.toStringAsFixed(2),
           revenue.toStringAsFixed(2),
           unitCost.toStringAsFixed(0),
           totalCost.toStringAsFixed(2),
@@ -4532,20 +4563,21 @@ class _SalesScreenState extends State<SalesScreen>
       }).toList();
       final totalQuantity = _productSalesReports.fold<double>(
         0,
-        (sum, report) => sum + report.totalVendido,
+        (sum, report) => sum + report.equivUnidadesBase,
       );
       final totalRevenue = _productSalesReports.fold<double>(
         0,
         (sum, report) =>
-            sum + report.precioVentaCup.round() * report.totalVendido,
+            sum + report.precioVentaCup.round() * report.equivUnidadesBase,
       );
       final totalCost = _productSalesReports.fold<double>(
         0,
         (sum, report) =>
-            sum + report.precioCostoCup.round() * report.totalVendido,
+            sum + report.precioCostoCup.round() * report.equivUnidadesBase,
       );
       rows.add([
         'TOTALES',
+        '-',
         '-',
         totalQuantity.toStringAsFixed(2),
         totalRevenue.toStringAsFixed(2),
@@ -4572,7 +4604,8 @@ class _SalesScreenState extends State<SalesScreen>
               headers: const [
                 'Producto',
                 'Precio (u)',
-                'Cantidad',
+                'Cant. vendidos',
+                'Equiv. u. base',
                 'Total venta',
                 'Costo (u)',
                 'Total costo',
@@ -4638,7 +4671,11 @@ class _SalesScreenState extends State<SalesScreen>
       sheet.appendRow([
         excel.TextCellValue('Producto'),
         excel.TextCellValue('Precio unitario'),
-        excel.TextCellValue('Cantidad vendida'),
+        // FASE 3: dos columnas de cantidad. El desglose es texto ("2 Cajas +
+        // 5 Unidades") y el equivalente es el numero con el que cuadra el
+        // dinero; en Excel hacen falta separadas para poder sumar.
+        excel.TextCellValue('Cant. vendidos'),
+        excel.TextCellValue('Equiv. u. base'),
         excel.TextCellValue('Total venta'),
         excel.TextCellValue('Costo unitario'),
         excel.TextCellValue('Total costo'),
@@ -4650,15 +4687,20 @@ class _SalesScreenState extends State<SalesScreen>
       for (final report in _sortedProductSalesReports) {
         final salePrice = report.precioVentaCup.roundToDouble();
         final unitCost = report.precioCostoCup.roundToDouble();
-        final revenue = salePrice * report.totalVendido;
-        final cost = unitCost * report.totalVendido;
-        totalQuantity += report.totalVendido;
+        final revenue = salePrice * report.equivUnidadesBase;
+        final cost = unitCost * report.equivUnidadesBase;
+        totalQuantity += report.equivUnidadesBase;
         totalRevenue += revenue;
         totalCost += cost;
         sheet.appendRow([
           excel.TextCellValue(report.nombreProducto),
           excel.DoubleCellValue(salePrice),
-          excel.DoubleCellValue(report.totalVendido),
+          excel.TextCellValue(
+            report.cantidadFormateada.isNotEmpty
+                ? report.cantidadFormateada
+                : report.totalVendido.toString(),
+          ),
+          excel.DoubleCellValue(report.equivUnidadesBase),
           excel.DoubleCellValue(revenue),
           excel.DoubleCellValue(unitCost),
           excel.DoubleCellValue(cost),
@@ -4668,6 +4710,9 @@ class _SalesScreenState extends State<SalesScreen>
       sheet.appendRow([]);
       sheet.appendRow([
         excel.TextCellValue('TOTALES'),
+        excel.TextCellValue(''),
+        // La columna de desglose no se puede totalizar (es texto): el total
+        // cuadra en la de equivalentes.
         excel.TextCellValue(''),
         excel.DoubleCellValue(totalQuantity),
         excel.DoubleCellValue(totalRevenue),
@@ -5337,10 +5382,13 @@ class _SalesScreenState extends State<SalesScreen>
                       .map((report) {
                         final precioVentaInt = report.precioVentaCup.round();
                         final costoUnitarioCup = report.precioCostoCup.round();
+                        // FASE 3 presentaciones: el dinero se calcula con el
+                        // equivalente en unidades base, no con la suma de
+                        // cantidades fisicas.
                         final ingresosCup =
-                            precioVentaInt * report.totalVendido;
+                            precioVentaInt * report.equivUnidadesBase;
                         final totalCostoCup =
-                            costoUnitarioCup * report.totalVendido;
+                            costoUnitarioCup * report.equivUnidadesBase;
                         final ganancias = ingresosCup - totalCostoCup;
 
                         return DataRow(
@@ -5369,11 +5417,35 @@ class _SalesScreenState extends State<SalesScreen>
                               ),
                             ),
                             DataCell(
-                              Text(
-                                _formatCantidadDecimal(report.totalVendido),
-                                style: const TextStyle(
-                                  color: AppColors.primary,
-                                ),
+                              // FASE 3: la cantidad con su presentacion
+                              // ("2 Cajas + 5 Unidades") y el equivalente
+                              // debajo cuando difiere, que es el numero con el
+                              // que cuadra el dinero de la fila.
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    report.cantidadFormateada.isNotEmpty
+                                        ? report.cantidadFormateada
+                                        : _formatCantidadDecimal(
+                                            report.totalVendido,
+                                          ),
+                                    style: const TextStyle(
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                  if (report.nPresentaciones > 1)
+                                    Text(
+                                      '= ${_formatCantidadDecimal(report.equivUnidadesBase)} u. base',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.primary.withValues(
+                                          alpha: 0.7,
+                                        ),
+                                      ),
+                                    ),
+                                ],
                               ),
                             ),
                             DataCell(
@@ -5435,17 +5507,36 @@ class _SalesScreenState extends State<SalesScreen>
                         ),
                         const DataCell(Text('-')), // No average price
                         DataCell(
-                          Text(
-                            _formatCantidadDecimal(
-                              _productSalesReports.fold(
-                                0.0,
-                                (sum, report) => sum + report.totalVendido,
+                          // El pie totaliza en unidades BASE y lo dice: sumar
+                          // cantidades fisicas de presentaciones distintas no
+                          // da un numero comparable.
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                _formatCantidadDecimal(
+                                  _productSalesReports.fold(
+                                    0.0,
+                                    (sum, report) =>
+                                        sum + report.equivUnidadesBase,
+                                  ),
+                                ),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.primary,
+                                ),
                               ),
-                            ),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.primary,
-                            ),
+                              Text(
+                                'u. base',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: AppColors.primary.withValues(
+                                    alpha: 0.7,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         DataCell(

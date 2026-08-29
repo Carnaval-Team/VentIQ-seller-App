@@ -409,12 +409,19 @@ Fila objetivo (caja=12, vendido 2 cajas + 5 u, precio base $10, costo base $4):
 
 `equiv = sum(qty_presentacion * factor)`; `total venta = precio_base * equiv`; `total costo = costo_base * equiv`. Pie “Cant Vendidos” = **suma de equivalentes**, etiqueta “u. base”.
 
-- [ ] Compactar RPC a **una fila por producto**. Devolver `cantidades_por_presentacion jsonb` + `equiv_unidades_base`. Ingresos/costo = `SUM` de líneas, no `precio * sum(qty crudas)`.
+- [x] Compactar RPC a **una fila por producto** — **`presentaciones_inventario/29_reporte_ventas_v5.sql`, aplicado**. Se hizo como **función nueva `fn_reporte_ventas_con_proveedor5`**, no modificando la v4: decisión del usuario («crear nuevas funciones basadas en las anteriores ponerles un `_vx`… para no romper las app en produccion»). La v4 queda **intacta** (16 columnas, 17.314 caracteres) y sigue sirviendo a producción; la v5 **no la llama nadie todavía**, el Dart se migra aparte.
+      **El bug que se ve HOY no era el de presentaciones.** La v4 agrupa por `id_presentacion` **y por `precio_venta_cup_op`** y no expone ninguno de los dos: en la tienda 45 devuelve **1.377 filas para 671 productos**, con **420 productos partidos en varias filas indistinguibles** — y los 420 son por **precio distinto**, cero por presentación. El usuario ve dos «CARGA DE GAS» seguidos (14 filas en realidad) sin saber por qué.
+      **Ventas del mismo producto en más de una presentación en 30 días: 0 combinaciones** de 1.261. Así que el desglose por presentación es **preventivo**; la compactación es lo que arregla algo real.
+      **Envuelve a la v4 en vez de reimplementarla:** los 17.314 caracteres de la v4 son lógica de costos históricos (costo de receta al momento de la venta, tasa USD/CUP vigente ese día, precio vigente con fallback a `importe/cantidad`, tres niveles de fallback de costo). Reimplementar eso es pedir un bug. `ingresos_totales`, `costo_total_vendido` y `total_vendido` son totales por fila, así que `SUM()` no pierde nada — verificado al céntimo.
+      **Precio y costo unitarios ponderados**, no el de una fila arbitraria: `ingresos/cantidad` y `costo/cantidad`. Con 420 productos de varios precios, quedarse con uno sería falsear el dato.
+      Columnas nuevas: `cantidades_por_presentacion` (jsonb), `equiv_unidades_base`, `cantidad_formateada` («2 Cajas + 5 Unidades»), `n_presentaciones` y `n_precios_distintos` (esta última explica por qué la v4 partía la fila, sirve para auditar).
+      Cuadre: **1.377 → 671 filas**, ingresos 160.672.118,68 · costo 143.436.891,59 · cantidad 64.744,59 **idénticos**, 0 productos repetidos. Con 30 días y con `completado`: 331 → 318, ingresos iguales. ~129 ms (la v4 anidada ~78 ms).
+      **Trampa que cometí y corregí en caliente:** agrupar el desglose por `id_presentacion` a secas hace que las líneas históricas sin presentación salgan como una **presentación fantasma sin nombre** («149 Unidades + 131», `n_presentaciones` 2). El nulo es la presentación **base** y hay que resolverlo antes de agrupar → ahora «280 Unidades», `n_presentaciones` 1. **Es el mismo error del `26`**: cualquier agregado nuevo por presentación tiene que resolver el nulo a la base, nunca tratarlo como dimensión aparte.
 - [ ] `ProductSalesReport`: `desglosePresentaciones`, `equivUnidadesBase`; UI usa `equiv` para dinero. Dejar de hacer `precio * totalVendido` con qty cruda.
 - [ ] Detalle de operación (ya muestra `Presentación: …` ~línea 7549): cantidad `2 Cajas`, no solo el número.
 - [ ] PDF/Excel del tab productos: mismas dos columnas de cantidad.
 
-Riesgo: compactar `fn_reporte_ventas_con_proveedor4` cambia el contrato del cliente.
+Riesgo: ~~compactar `fn_reporte_ventas_con_proveedor4` cambia el contrato del cliente~~ → **resuelto creando la v5 como función nueva**. La v4 no se toca, así que el riesgo para producción es **cero**. Lo que queda es migrar el Dart (`ProductSalesReport` + `sales_screen.dart`) a la v5, que es un cambio reversible de una línea en `sales_service.dart:344`.
 
 ### Reporte por proveedor (admin)
 
@@ -660,7 +667,7 @@ Los que dicen «pendiente de UI» necesitan ejecutar la app en un dispositivo.
 
 | # | Qué | Tamaño | Por qué importa |
 |---|-----|--------|-----------------|
-| 1 | **Reportes de ventas admin** (`sales_screen` + `fn_reporte_ventas_con_proveedor4`) | grande | La RPC agrupa por presentación y **no la expone**: el cliente puede ver 2 filas del mismo producto o fusionar mal 2 cajas + 5 u = 7. Requiere compactar el contrato a 1 fila/producto + `jsonb` de desglose. |
+| 1 | **Reportes de ventas admin** — SQL ✅ (`29`, `fn_reporte_ventas_con_proveedor5`), **falta migrar el Dart** | medio | La v4 devolvía **1.377 filas para 671 productos** (420 partidos, todos por precio distinto, 0 por presentación). La v5 compacta a 1 fila/producto con precio ponderado + `cantidades_por_presentacion`, `equiv_unidades_base`, `cantidad_formateada`, `n_precios_distintos`. **La v4 no se tocó**, así que producción no corre riesgo. Queda: `ProductSalesReport` (5 campos nuevos), `sales_screen.dart` (tabs Productos y Proveedores, PDF/Excel) y cambiar el nombre de la RPC en `sales_service.dart:344`. |
 | 2 | **Resumen de cierre vendedor** (`venta_total_screen`, `sales_monitor_fab`, `fn_resumen_diario_cierre`) | grande | `productos_vendidos` suma cantidades crudas de presentaciones distintas. La RPC no menciona `id_presentacion`. |
 | ~~3~~ | ✅ **`fn_stock_producto_almacen` en unidades base** (`27`) | hecho | 13 funciones de cocina la usan. **6.659 de 6.661 combos sin cambio**; solo 4545 (533 → 12.792) y 4558 (15 → 360), tienda 25 con cocina apagada. El detalle no se tocó: escribe el ledger. |
 | ~~4~~ | ✅ **`fn_inventario_detallado_optimizado` auditada y corregida** (`26`) | hecho | No aplanaba. Dos bugs: reservado **duplicado** (15.460,30 → 30.920,60) y **fan-out del precio** (18 filas donde hay 3; 2.198 productos con >1 precio activo). Sin riesgo: la función no la llama nadie. |
@@ -674,10 +681,14 @@ Los que dicen «pendiente de UI» necesitan ejecutar la app en un dispositivo.
 | ~~9~~ | ✅ **«unidades» en duro** | hecho | `inventory_summary_card` muestra el número + `= N u. base` cuando hay varias presentaciones; `warehouse_detail_screen` agrupa por presentación y arma «4 Cajas + 4 Unidades». |
 
 **Orden acordado (de menor a mayor).** Hechos: **11** ✅, **9** ✅, **6** ✅ (ya estaba),
-**5** ✅, **4** ✅, **3** ✅. Quedan: **7** (lista de Operaciones con presentación), y al final
-el **1** (reporte de ventas admin) y el **2** (resumen de cierre vendedor) — los dos cambian
-contratos de RPC que la app vieja consume, así que van de uno en uno con su propia
-no-regresión.
+**5** ✅, **4** ✅, **3** ✅, **7** ✅, **1 SQL** ✅. Queda el **2** (resumen de cierre vendedor)
+y la **migración del Dart del reporte de ventas** a la v5.
+
+**Patrón adoptado para el resto (decisión del usuario):** cuando haya que cambiar el
+contrato de una RPC que producción consume, **no se modifica**: se crea una nueva con
+sufijo `_vX` sucesivo y el Dart se migra aparte, en un cambio reversible. Así la app
+vieja nunca se rompe y el SQL se puede aplicar sin coordinar despliegues. Es lo que se
+hizo con la `v5` del reporte de ventas.
 
 **Herramienta reutilizable:** para detectar archivos `.sql` desincronizados sin
 transportar el cuerpo entero, comparar `md5(lower(regexp_replace(prosrc,'\s','','g')))`

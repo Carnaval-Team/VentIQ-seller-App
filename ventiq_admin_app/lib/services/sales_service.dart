@@ -73,6 +73,46 @@ class ProductSalesReport {
   final bool esElaborado;
   final bool esServicio;
 
+  // ─── FASE 3 · presentaciones (solo los devuelve la v5) ──────────────────
+  //
+  // La v4 sigue existiendo y no manda estos campos: los valores por defecto
+  // dejan el modelo funcionando igual con las dos RPC.
+
+  /// Desglose fisico por presentacion, tal como lo arma el SQL:
+  /// `[{id_presentacion, presentacion_nombre, factor_rel, cantidad,
+  ///    cantidad_formateada}, ...]`, ordenado de mayor a menor factor.
+  final List<Map<String, dynamic>> desglosePresentaciones;
+
+  /// Cantidad vendida convertida a unidades base (`SUM(cantidad * factor_rel)`).
+  ///
+  /// **Es esta la que hay que usar para el dinero**, no [totalVendido], que es
+  /// la suma de cantidades fisicas y mezcla cajas con unidades. Cuando todo el
+  /// producto se vendio en su presentacion base las dos coinciden, que es el
+  /// caso de todas las tiendas hoy.
+  final double equivUnidadesBase;
+
+  /// Texto ya formateado por el SQL: "2 Cajas + 5 Unidades".
+  ///
+  /// Se prefiere sobre formatear en Dart para que el texto sea identico en la
+  /// app, el kardex, los reportes y el PDF (mismo `fn_plural_presentacion`).
+  final String cantidadFormateada;
+
+  /// Cuantas presentaciones distintas se vendieron. 0 con la v4.
+  final int nPresentaciones;
+
+  /// Cuantos precios distintos se agregaron en esta fila.
+  ///
+  /// Es el dato que explica por que la v4 partia el producto en varias filas
+  /// indistinguibles: >1 significa que hubo cambios de precio en el periodo y
+  /// que [precioVentaCup] es el **promedio ponderado**, no un precio de lista.
+  final int nPreciosDistintos;
+
+  /// La fila trae desglose por presentacion (v5) o no (v4).
+  bool get tieneDesglose => desglosePresentaciones.isNotEmpty;
+
+  /// El precio unitario es un promedio de varios precios del periodo.
+  bool get precioEsPromedio => nPreciosDistintos > 1;
+
   ProductSalesReport({
     required this.idTienda,
     required this.idProducto,
@@ -90,9 +130,26 @@ class ProductSalesReport {
     required this.gananciaTotal,
     this.esElaborado = false,
     this.esServicio = false,
-  });
+    this.desglosePresentaciones = const [],
+    double? equivUnidadesBase,
+    String? cantidadFormateada,
+    this.nPresentaciones = 0,
+    this.nPreciosDistintos = 1,
+  })  : equivUnidadesBase = equivUnidadesBase ?? totalVendido,
+        cantidadFormateada = cantidadFormateada ?? '';
 
   factory ProductSalesReport.fromJson(Map<String, dynamic> json) {
+    // El jsonb llega como List<dynamic> de Map; con la v4 la clave no viene.
+    final desglose = <Map<String, dynamic>>[];
+    final rawDesglose = json['cantidades_por_presentacion'];
+    if (rawDesglose is List) {
+      for (final e in rawDesglose) {
+        if (e is Map) desglose.add(Map<String, dynamic>.from(e));
+      }
+    }
+
+    final totalVendido = (json['total_vendido'] ?? 0).toDouble();
+
     return ProductSalesReport(
       idTienda: json['id_tienda'] ?? 0,
       idProducto: json['id_producto'] ?? 0,
@@ -103,13 +160,21 @@ class ProductSalesReport {
       precioCosto: (json['precio_costo'] ?? 0).toDouble(),
       valorUsd: (json['valor_usd'] ?? 1).toDouble(),
       precioCostoCup: (json['precio_costo_cup'] ?? 0).toDouble(),
-      totalVendido: (json['total_vendido'] ?? 0).toDouble(),
+      totalVendido: totalVendido,
       ingresosTotales: (json['ingresos_totales'] ?? 0).toDouble(),
       costoTotalVendido: (json['costo_total_vendido'] ?? 0).toDouble(),
       gananciaUnitaria: (json['ganancia_unitaria'] ?? 0).toDouble(),
       gananciaTotal: (json['ganancia_total'] ?? 0).toDouble(),
       esElaborado: (json['es_elaborado'] ?? false) as bool,
       esServicio: (json['es_servicio'] ?? false) as bool,
+      // FASE 3: con la v4 estas claves no existen y se cae a los defaults
+      // (equiv = total_vendido, sin desglose, 1 precio).
+      desglosePresentaciones: desglose,
+      equivUnidadesBase:
+          (json['equiv_unidades_base'] as num?)?.toDouble() ?? totalVendido,
+      cantidadFormateada: json['cantidad_formateada'] as String?,
+      nPresentaciones: (json['n_presentaciones'] as num?)?.toInt() ?? 0,
+      nPreciosDistintos: (json['n_precios_distintos'] as num?)?.toInt() ?? 1,
     );
   }
 }
@@ -339,9 +404,19 @@ class SalesService {
       final String? desde = fechaDesde?.toIso8601String().split('T')[0];
       final String? hasta = fechaHasta?.toIso8601String().split('T')[0];
       final filtro = filtroFecha == 'completado' ? 'completado' : 'creacion';
+      // FASE 3 presentaciones: la v5 devuelve UNA fila por producto.
+      //
+      // La v4 agrupa por presentacion Y por precio pero no expone ninguno de
+      // los dos, asi que partia el mismo producto en varias filas
+      // indistinguibles en la UI (medido: 1.377 filas para 671 productos, 420
+      // productos partidos, todos por cambios de precio en el periodo).
+      //
+      // La v5 la envuelve, compacta, y agrega el desglose por presentacion mas
+      // `equiv_unidades_base`. La v4 sigue viva y sin tocar para las apps que
+      // no se han actualizado; ver presentaciones_inventario/29_reporte_ventas_v5.sql.
       final rpcName = useCurrentPrices
           ? 'fn_reporte_ventas_con_proveedor_precios_actuales'
-          : 'fn_reporte_ventas_con_proveedor4';
+          : 'fn_reporte_ventas_con_proveedor5';
       print('   RPC : $rpcName');
       print('   Tienda : $idTienda');
       print('   Desde  : ${desde ?? "(sin filtro)"}');
