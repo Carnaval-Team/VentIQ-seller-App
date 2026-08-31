@@ -65,7 +65,11 @@
     rec record;
     base_price numeric;
     new_price numeric;
+    new_usd numeric;
+    v_rate numeric;
   begin
+    v_rate := public.fn_get_usd_cup_rate(p_store_id);
+
     -- Upsert de configuración global
     insert into app_dat_precio_general_tienda(
       id_tienda, precio_regular, precio_venta_carnaval, precio_venta_carnaval_transferencia
@@ -96,9 +100,10 @@
       where p.id = rec.id;
 
       new_price := base_price + (base_price * p_precio_regular / 100);
+      new_usd := case when v_rate > 0 then round((new_price / v_rate)::numeric, 2) else null end;
 
-      insert into app_dat_precio_venta (id_producto, precio_venta_cup, fecha_desde, created_at)
-      values (rec.id, new_price, now(), now());
+      insert into app_dat_precio_venta (id_producto, precio_venta_cup, precio_venta_usd, fecha_desde, created_at)
+      values (rec.id, new_price, new_usd, now(), now());
 
       -- Sincronizar carnavalapp si existe id_vendedor_app
       if rec.id_vendedor_app is not null then
@@ -128,7 +133,11 @@
     rec record;
     base_price numeric;
     new_price numeric;
+    new_usd numeric;
+    v_rate numeric;
   begin
+    v_rate := public.fn_get_usd_cup_rate(p_store_id);
+
     if p_change_type not in ('percent','fixed') then
       raise exception 'p_change_type inválido';
     end if;
@@ -156,9 +165,10 @@
       else
         new_price := base_price + p_change_value;
       end if;
+      new_usd := case when v_rate > 0 then round((new_price / v_rate)::numeric, 2) else null end;
 
-      insert into app_dat_precio_venta (id_producto, precio_venta_cup, fecha_desde, created_at)
-      values (rec.id, new_price, now(), now());
+      insert into app_dat_precio_venta (id_producto, precio_venta_cup, precio_venta_usd, fecha_desde, created_at)
+      values (rec.id, new_price, new_usd, now(), now());
 
       if rec.id_vendedor_app is not null then
         update carnavalapp."Productos"

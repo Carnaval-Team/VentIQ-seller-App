@@ -16,6 +16,10 @@ import 'store_selector_service.dart';
 
 import 'restaurant_service.dart';
 
+import 'currency_service.dart';
+
+import 'sales_service.dart';
+
 class ProductService {
   static final SupabaseClient _supabase = Supabase.instance.client;
 
@@ -1140,6 +1144,147 @@ class ProductService {
 
       print('📍 StackTrace: $stackTrace');
 
+      return [];
+    }
+  }
+
+  /// Historial de cambios de precio de venta con USD, tasa vigente y validación.
+  static Future<List<Map<String, dynamic>>> getProductSalePriceHistoryDetail(
+    String productId,
+  ) async {
+    try {
+      final productIdInt = int.tryParse(productId);
+      if (productIdInt == null) return [];
+
+      final results = await Future.wait([
+        SalesService.getProductChronologicalReport(productId: productIdInt),
+        _supabase
+            .from('app_dat_precio_venta')
+            .select(
+              'precio_venta_cup, precio_venta_usd, created_at, fecha_desde',
+            )
+            .eq('id_producto', productIdInt)
+            .order('created_at', ascending: false),
+        CurrencyService.loadUsdToCupRateTimelines(),
+        CurrencyService.getEffectiveUsdToCupRate(),
+      ]);
+
+      final events = (results[0] as List<Map<String, dynamic>>)
+          .where((e) => e['tipo_evento']?.toString() == 'cambio_precio_venta')
+          .toList();
+      final priceRows = List<Map<String, dynamic>>.from(results[1] as List);
+      final timelines = results[2] as ({
+        List<Map<String, dynamic>> storeRates,
+        List<Map<String, dynamic>> globalRates,
+      });
+      final fallbackRate = results[3] as double;
+
+      List<Map<String, dynamic>> rawEvents;
+      if (events.isNotEmpty) {
+        rawEvents = events;
+      } else {
+        rawEvents = priceRows.asMap().entries.map((entry) {
+          final row = entry.value;
+          final next = entry.key + 1 < priceRows.length
+              ? priceRows[entry.key + 1]
+              : null;
+          return {
+            'evento_fecha': row['created_at'] ?? row['fecha_desde'],
+            'valor_anterior': next?['precio_venta_cup'],
+            'valor_nuevo': row['precio_venta_cup'],
+            'precio_venta_usd': row['precio_venta_usd'],
+            'precio_venta_usd_anterior': next?['precio_venta_usd'],
+          };
+        }).toList();
+      }
+
+      Map<String, dynamic>? _matchPriceRow(DateTime? eventDate) {
+        if (eventDate == null || priceRows.isEmpty) return null;
+        Map<String, dynamic>? best;
+        Duration? bestDistance;
+        for (final row in priceRows) {
+          final rowDate = DateTime.tryParse(
+            (row['created_at'] ?? row['fecha_desde'])?.toString() ?? '',
+          );
+          if (rowDate == null) continue;
+          final distance = eventDate.difference(rowDate).abs();
+          if (distance > const Duration(hours: 24)) continue;
+          if (bestDistance == null || distance < bestDistance) {
+            bestDistance = distance;
+            best = row;
+          }
+        }
+        return best;
+      }
+
+      double? _usdFromRow(Map<String, dynamic>? row, String key) {
+        final value = (row?[key] as num?)?.toDouble();
+        if (value == null || value <= 0) return null;
+        return value;
+      }
+
+      return rawEvents.map((event) {
+        final date = DateTime.tryParse(event['evento_fecha']?.toString() ?? '');
+        final cupAnterior = (event['valor_anterior'] as num?)?.toDouble();
+        final cupNuevo = (event['valor_nuevo'] as num?)?.toDouble();
+        final matchedRow = _matchPriceRow(date);
+
+        final rate =
+            (date != null
+                ? CurrencyService.resolveUsdToCupRateAt(date, timelines)
+                : null) ??
+            fallbackRate;
+
+        final storedUsdNuevo =
+            _usdFromRow(event, 'precio_venta_usd') ??
+            _usdFromRow(matchedRow, 'precio_venta_usd');
+        final storedUsdAnterior =
+            _usdFromRow(event, 'precio_venta_usd_anterior') ??
+            (cupAnterior != null && rate > 0
+                ? cupAnterior / rate
+                : null);
+
+        final calculatedUsdNuevo =
+            cupNuevo != null && rate > 0 ? cupNuevo / rate : null;
+        final calculatedUsdAnterior =
+            cupAnterior != null && rate > 0 ? cupAnterior / rate : null;
+
+        final usdNuevo = storedUsdNuevo ?? calculatedUsdNuevo;
+        final usdAnterior = storedUsdAnterior ?? calculatedUsdAnterior;
+
+        final conversionOk =
+            cupNuevo != null &&
+            usdNuevo != null &&
+            rate > 0 &&
+            CurrencyService.salePricesMatchAtRate(
+              cup: cupNuevo,
+              usd: usdNuevo,
+              rate: rate,
+            );
+
+        return {
+          'fecha': date,
+          'cup_anterior': cupAnterior,
+          'cup_nuevo': cupNuevo,
+          'usd_anterior': usdAnterior,
+          'usd_nuevo': usdNuevo,
+          'usd_guardado': storedUsdNuevo,
+          'usd_calculado': calculatedUsdNuevo,
+          'tasa_cambio': rate,
+          'conversion_ok': conversionOk,
+        };
+      }).toList()
+        ..sort((a, b) {
+          final da = a['fecha'] as DateTime?;
+          final db = b['fecha'] as DateTime?;
+          if (da == null && db == null) return 0;
+          if (da == null) return 1;
+          if (db == null) return -1;
+          return db.compareTo(da);
+        });
+    } catch (e, stackTrace) {
+      print('❌ Error al obtener historial de precio de venta: $e');
+      print('📍 StackTrace: $stackTrace');
       return [];
     }
   }
@@ -3684,7 +3829,9 @@ class ProductService {
 
   /// Actualiza el precio base de venta de un producto.
 
-  /// Acepta precio en CUP (newPriceCup) y/o USD (newPriceUsd).
+  /// Acepta precio en CUP (newPrice) y opcionalmente USD (newPriceUsd).
+
+  /// Si no se pasa USD, se calcula automáticamente usando la tasa vigente.
 
   /// Si no existe registro en app_dat_precio_venta, lo crea.
 
@@ -3700,7 +3847,18 @@ class ProductService {
         '💰 Actualizando precio base de venta para producto: $productId',
       );
 
-      debugPrint('📝 Nuevo precio CUP: $newPrice | USD: $newPriceUsd');
+      final today = DateTime.now().toIso8601String().substring(0, 10);
+
+      double? effectiveUsd = newPriceUsd;
+
+      if (effectiveUsd == null && newPrice > 0) {
+        final rate = await CurrencyService.getEffectiveUsdToCupRate();
+        if (rate > 0) {
+          effectiveUsd = (newPrice / rate).roundToDouble();
+        }
+      }
+
+      debugPrint('📝 Nuevo precio CUP: $newPrice | USD: $effectiveUsd');
 
       // Verificar si ya existe un registro para este producto
 
@@ -3712,15 +3870,15 @@ class ProductService {
           .limit(1)
           .maybeSingle();
 
-      final today = DateTime.now().toIso8601String().substring(0, 10);
-
       final updateData = <String, dynamic>{
         'precio_venta_cup': newPrice,
 
         'fecha_desde': today,
       };
 
-      if (newPriceUsd != null) updateData['precio_venta_usd'] = newPriceUsd;
+      if (effectiveUsd != null && effectiveUsd > 0) {
+        updateData['precio_venta_usd'] = effectiveUsd;
+      }
 
       if (existing != null) {
         await _supabase

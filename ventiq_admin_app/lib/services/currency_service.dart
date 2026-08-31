@@ -100,6 +100,97 @@ class CurrencyService {
     return fallbackRates.usd.value;
   }
 
+  /// Líneas temporales de tasas USD→CUP para resolver tasas históricas.
+  static Future<
+      ({
+        List<Map<String, dynamic>> storeRates,
+        List<Map<String, dynamic>> globalRates,
+      })> loadUsdToCupRateTimelines() async {
+    try {
+      final storeId = await StoreService.getCurrentStoreId();
+      List<Map<String, dynamic>> storeRates = [];
+      if (storeId != null) {
+        final response = await _supabase
+            .from('tasa_cambio_extraoficial')
+            .select('valor_cambio, usar_precio_toque, created_at')
+            .eq('id_tienda', storeId)
+            .eq('id_moneda_origen', _usdId)
+            .eq('id_moneda_destino', _cupId)
+            .order('created_at', ascending: true);
+        storeRates = List<Map<String, dynamic>>.from(response);
+      }
+
+      final globalResponse = await _supabase
+          .from('tasas_conversion')
+          .select('tasa, fecha_actualizacion')
+          .eq('moneda_origen', 'USD')
+          .eq('moneda_destino', 'CUP')
+          .order('fecha_actualizacion', ascending: true);
+      final globalRates = List<Map<String, dynamic>>.from(globalResponse);
+
+      return (storeRates: storeRates, globalRates: globalRates);
+    } catch (e) {
+      print('❌ Error loading USD→CUP rate timelines: $e');
+      return (
+        storeRates: <Map<String, dynamic>>[],
+        globalRates: <Map<String, dynamic>>[],
+      );
+    }
+  }
+
+  /// Resuelve la tasa USD→CUP vigente en [at] usando historial de tienda o global.
+  static double? resolveUsdToCupRateAt(
+    DateTime at,
+    ({
+      List<Map<String, dynamic>> storeRates,
+      List<Map<String, dynamic>> globalRates,
+    }) timelines,
+  ) {
+    final target = at.toUtc();
+
+    Map<String, dynamic>? latestStore;
+    for (final row in timelines.storeRates) {
+      final createdAt = DateTime.tryParse(row['created_at']?.toString() ?? '');
+      if (createdAt == null || createdAt.isAfter(target)) continue;
+      if (row['usar_precio_toque'] == true) continue;
+      final rate = (row['valor_cambio'] as num?)?.toDouble();
+      if (rate == null || rate <= 0) continue;
+      latestStore = row;
+    }
+    if (latestStore != null) {
+      return (latestStore['valor_cambio'] as num).toDouble();
+    }
+
+    Map<String, dynamic>? latestGlobal;
+    for (final row in timelines.globalRates) {
+      final fecha = DateTime.tryParse(
+        row['fecha_actualizacion']?.toString() ?? '',
+      );
+      if (fecha == null || fecha.isAfter(target)) continue;
+      final rate = (row['tasa'] as num?)?.toDouble();
+      if (rate == null || rate <= 0) continue;
+      latestGlobal = row;
+    }
+    if (latestGlobal != null) {
+      return (latestGlobal['tasa'] as num).toDouble();
+    }
+
+    return null;
+  }
+
+  /// Verifica si CUP y USD coinciden con la tasa (tolerancia relativa 2%).
+  static bool salePricesMatchAtRate({
+    required double cup,
+    required double usd,
+    required double rate,
+    double tolerance = 0.02,
+  }) {
+    if (rate <= 0 || usd <= 0) return false;
+    final expectedCup = usd * rate;
+    if (expectedCup <= 0) return false;
+    return ((cup - expectedCup).abs() / expectedCup) <= tolerance;
+  }
+
   static Future<List<Map<String, dynamic>>>
   getEffectiveRatesFromDatabase() async {
     final rates = await getCurrentRatesFromDatabase();

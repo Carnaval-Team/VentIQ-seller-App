@@ -1472,10 +1472,21 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
               ),
             ),
-            OutlinedButton.icon(
-              onPressed: _showCostHistoryDialog,
-              icon: const Icon(Icons.history, size: 18),
-              label: const Text('Historial de costos'),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _showSalePriceHistoryDialog,
+                  icon: const Icon(Icons.sell_outlined, size: 18),
+                  label: const Text('Historial de venta'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _showCostHistoryDialog,
+                  icon: const Icon(Icons.history, size: 18),
+                  label: const Text('Historial de costos'),
+                ),
+              ],
             ),
           ],
         ),
@@ -1515,6 +1526,227 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             );
           }),
       ],
+    );
+  }
+
+  Future<void> _showSalePriceHistoryDialog() async {
+    final future = ProductService.getProductSalePriceHistoryDetail(_product.id);
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 900, maxHeight: 700),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    const Icon(Icons.sell_outlined, color: AppColors.primary),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Historial de precios de venta',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            _product.denominacion,
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: FutureBuilder<List<Map<String, dynamic>>>(
+                  future: future,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState != ConnectionState.done) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Text(
+                          'Error cargando historial: ${snapshot.error}',
+                        ),
+                      );
+                    }
+
+                    final events = snapshot.data ?? [];
+                    if (events.isEmpty) {
+                      return const Center(
+                        child: Text(
+                          'No hay cambios de precio de venta registrados',
+                        ),
+                      );
+                    }
+
+                    return ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        const Text(
+                          'Cambios de precio de venta (CUP y USD)',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Se usa la tasa USD→CUP vigente en la fecha de cada cambio para validar la conversión.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        ...events.map((event) {
+                          final date = event['fecha'] as DateTime?;
+                          final cupAnterior =
+                              (event['cup_anterior'] as num?)?.toDouble();
+                          final cupNuevo =
+                              (event['cup_nuevo'] as num?)?.toDouble();
+                          final usdAnterior =
+                              (event['usd_anterior'] as num?)?.toDouble();
+                          final usdNuevo =
+                              (event['usd_nuevo'] as num?)?.toDouble();
+                          final storedUsd =
+                              (event['usd_guardado'] as num?)?.toDouble();
+                          final calculatedUsd =
+                              (event['usd_calculado'] as num?)?.toDouble();
+                          final rate =
+                              (event['tasa_cambio'] as num?)?.toDouble();
+                          final conversionOk = event['conversion_ok'] == true;
+
+                          String moneyCup(double? value) => value == null
+                              ? '-'
+                              : '₱${NumberFormat('#,###.00').format(value)}';
+                          String moneyUsd(double? value) => value == null
+                              ? '-'
+                              : '\$${NumberFormat('#,###.00').format(value)}';
+
+                          return Card(
+                            color: Colors.blue.shade50,
+                            child: ListTile(
+                              leading: Icon(
+                                Icons.price_change,
+                                color: Colors.blue.shade800,
+                              ),
+                              title: Text(
+                                cupAnterior == null
+                                    ? 'CUP: ${moneyCup(cupNuevo)}'
+                                    : 'CUP: ${moneyCup(cupAnterior)} → ${moneyCup(cupNuevo)}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    usdAnterior == null
+                                        ? 'USD: ${moneyUsd(usdNuevo)}'
+                                        : 'USD: ${moneyUsd(usdAnterior)} → ${moneyUsd(usdNuevo)}',
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    date == null
+                                        ? 'Fecha no disponible'
+                                        : DateFormat(
+                                            'dd/MM/yyyy HH:mm',
+                                          ).format(date.toLocal()),
+                                  ),
+                                  if (rate != null && rate > 0) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Tasa vigente: ${NumberFormat('#,###.00').format(rate)} CUP/USD',
+                                    ),
+                                  ],
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: conversionOk
+                                          ? Colors.green.shade50
+                                          : Colors.orange.shade50,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: conversionOk
+                                            ? Colors.green.shade300
+                                            : Colors.orange.shade300,
+                                      ),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          conversionOk
+                                              ? 'Conversión CUP ↔ USD coherente con la tasa vigente'
+                                              : 'La conversión CUP ↔ USD no coincide con la tasa vigente',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: conversionOk
+                                                ? Colors.green.shade800
+                                                : Colors.orange.shade800,
+                                          ),
+                                        ),
+                                        if (storedUsd != null &&
+                                            calculatedUsd != null &&
+                                            rate != null &&
+                                            rate > 0) ...[
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            'USD guardado: ${moneyUsd(storedUsd)} · '
+                                            'USD calculado (CUP÷tasa): ${moneyUsd(calculatedUsd)}',
+                                          ),
+                                          Text(
+                                            'CUP esperado (USD×tasa): ${moneyCup(storedUsd * rate)} · '
+                                            'CUP registrado: ${moneyCup(cupNuevo)}',
+                                          ),
+                                        ] else if (calculatedUsd != null &&
+                                            rate != null &&
+                                            rate > 0) ...[
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            'USD estimado por tasa: ${moneyUsd(calculatedUsd)}',
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 

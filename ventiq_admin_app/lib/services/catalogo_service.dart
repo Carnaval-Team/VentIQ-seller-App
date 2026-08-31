@@ -1,6 +1,8 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:io';
 
+import 'currency_service.dart';
+
 class CatalogoService {
   static final CatalogoService _instance = CatalogoService._internal();
   factory CatalogoService() => _instance;
@@ -214,17 +216,28 @@ class CatalogoService {
   Future<bool> actualizarPrecio(int idProducto, double nuevoPrecio) async {
     try {
       print('💰 Actualizando precio del producto: $idProducto');
-      
-      // Insertar nuevo registro de precio con fecha_desde actual
-      await _supabase
-          .from('app_dat_precio_venta')
-          .insert({
-            'id_producto': idProducto,
-            'precio_venta_cup': nuevoPrecio,
-            'fecha_desde': DateTime.now().toString().split(' ')[0], // Formato YYYY-MM-DD
-          });
 
-      print('✅ Precio actualizado');
+      double? precioUsd;
+      if (nuevoPrecio > 0) {
+        final rate = await CurrencyService.getEffectiveUsdToCupRate();
+        if (rate > 0) {
+          precioUsd = (nuevoPrecio / rate).roundToDouble();
+        }
+      }
+
+      final precioData = {
+        'id_producto': idProducto,
+        'precio_venta_cup': nuevoPrecio,
+        if (precioUsd != null && precioUsd > 0)
+          'precio_venta_usd': precioUsd,
+        'fecha_desde':
+            DateTime.now().toString().split(' ')[0], // Formato YYYY-MM-DD
+      };
+
+      // Insertar nuevo registro de precio con fecha_desde actual
+      await _supabase.from('app_dat_precio_venta').insert(precioData);
+
+      print('✅ Precio actualizado (CUP: $nuevoPrecio, USD: $precioUsd)');
       return true;
     } catch (e) {
       print('❌ Error actualizando precio: $e');

@@ -5434,15 +5434,39 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
       for (final variante in _selectedVariantes) {
 
-        preciosData.add({
+        final precioVariante = (variante['precio'] as num?)?.toDouble() ?? 0;
 
-          'precio_venta_cup': variante['precio'],
+        double? precioVarianteUsd;
+
+        if (precioVariante > 0) {
+
+          final rate = await CurrencyService.getEffectiveUsdToCupRate();
+
+          if (rate > 0) {
+
+            precioVarianteUsd = (precioVariante / rate).roundToDouble();
+
+          }
+
+        }
+
+        final priceEntry = {
+
+          'precio_venta_cup': precioVariante,
 
           'fecha_desde': DateTime.now().toIso8601String().substring(0, 10),
 
           'id_atributo': variante['id_atributo'],
 
-        });
+        };
+
+        if (precioVarianteUsd != null && precioVarianteUsd > 0) {
+
+          priceEntry['precio_venta_usd'] = precioVarianteUsd;
+
+        }
+
+        preciosData.add(priceEntry);
 
       }
 

@@ -158,7 +158,7 @@ class AiProductGenerationService {
         final productoData = draft.buildProductoData(idTienda: idTienda);
         final subcategoriasData = draft.buildSubcategoriasData();
         final presentacionesData = draft.buildPresentacionesData();
-        final preciosData = draft.buildPreciosData();
+        final preciosData = await draft.buildPreciosData();
 
         final result = await ProductService.insertProductoCompleto(
           productoData: productoData,

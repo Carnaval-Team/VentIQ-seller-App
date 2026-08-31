@@ -3326,14 +3326,24 @@ class InventoryService {
             '      - Precio redondeado ($metodoRedondeo): $precioRedondeado CUP',
           );
 
-          // 8. Actualizar precio de venta
+          // 8. Actualizar precio de venta (CUP y USD)
+          final updateData = <String, dynamic>{
+            'precio_venta_cup': precioRedondeado,
+          };
+
+          final rate = await CurrencyService.getEffectiveUsdToCupRate();
+          if (rate > 0) {
+            updateData['precio_venta_usd'] =
+                (precioRedondeado / rate).roundToDouble();
+          }
+
           await _supabase
               .from('app_dat_precio_venta')
-              .update({'precio_venta_cup': precioRedondeado})
+              .update(updateData)
               .eq('id', precioVentaData['id']);
 
           print(
-            '      ✅ Precio de venta actualizado: $precioVentaActual → $precioRedondeado CUP',
+            '      ✅ Precio de venta actualizado: $precioVentaActual → $precioRedondeado CUP | USD: ${updateData['precio_venta_usd']}',
           );
         } catch (e) {
           print('   ❌ Error verificando margen para producto $idProducto: $e');

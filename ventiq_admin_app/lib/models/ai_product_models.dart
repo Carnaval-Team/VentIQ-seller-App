@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import '../services/currency_service.dart';
+
 class ProductAiReferenceData {
   final List<Map<String, dynamic>> categories;
   final List<Map<String, dynamic>> subcategories;
@@ -303,17 +305,30 @@ class AiProductDraft {
     ];
   }
 
-  List<Map<String, dynamic>> buildPreciosData() {
+  Future<List<Map<String, dynamic>>> buildPreciosData() async {
     if (precioVenta == null) {
       return [];
     }
-    return [
-      {
-        'precio_venta_cup': precioVenta,
-        'fecha_desde': DateTime.now().toIso8601String().substring(0, 10),
-        'id_variante': null,
-      },
-    ];
+
+    double? precioVentaUsd;
+    if (precioVenta! > 0) {
+      final rate = await CurrencyService.getEffectiveUsdToCupRate();
+      if (rate > 0) {
+        precioVentaUsd = (precioVenta! / rate).roundToDouble();
+      }
+    }
+
+    final priceEntry = {
+      'precio_venta_cup': precioVenta,
+      'fecha_desde': DateTime.now().toIso8601String().substring(0, 10),
+      'id_variante': null,
+    };
+
+    if (precioVentaUsd != null && precioVentaUsd > 0) {
+      priceEntry['precio_venta_usd'] = precioVentaUsd;
+    }
+
+    return [priceEntry];
   }
 
   List<Map<String, dynamic>> buildPresentacionUnidadMedidaData() {
