@@ -541,6 +541,7 @@ CREATE TABLE public.app_dat_inventario_productos (
   id_extraccion bigint,
   id_control bigint,
   id_proveedor bigint,
+  id_conversion bigint,
   CONSTRAINT app_dat_inventario_productos_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_inventario_productos_id_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
   CONSTRAINT app_dat_inventario_productos_id_variante_fkey FOREIGN KEY (id_variante) REFERENCES public.app_dat_variantes(id),
@@ -549,7 +550,8 @@ CREATE TABLE public.app_dat_inventario_productos (
   CONSTRAINT app_dat_inventario_productos_id_control_fkey FOREIGN KEY (id_control) REFERENCES public.app_dat_control_productos(id),
   CONSTRAINT app_dat_inventario_productos_id_recepcion_fkey FOREIGN KEY (id_recepcion) REFERENCES public.app_dat_recepcion_productos(id),
   CONSTRAINT app_dat_inventario_productos_id_ubicacion_fkey FOREIGN KEY (id_ubicacion) REFERENCES public.app_dat_layout_almacen(id),
-  CONSTRAINT app_dat_inventario_productos_id_extraccion_fkey FOREIGN KEY (id_extraccion) REFERENCES public.app_dat_extraccion_productos(id)
+  CONSTRAINT app_dat_inventario_productos_id_extraccion_fkey FOREIGN KEY (id_extraccion) REFERENCES public.app_dat_extraccion_productos(id),
+  CONSTRAINT app_dat_inventario_productos_id_conversion_fkey FOREIGN KEY (id_conversion) REFERENCES public.app_dat_conversion_presentacion(id)
 );
 CREATE TABLE public.app_nom_categoria_gasto (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -1383,6 +1385,7 @@ CREATE TABLE public.app_dat_configuracion_tienda (
   autocompletar_cantidad_real_conteo boolean NOT NULL DEFAULT false,
   vendedores_pueden_crear_cxc boolean NOT NULL DEFAULT false,
   cocina_activa boolean NOT NULL DEFAULT false,
+  mostrar_metodo_pago_ticket boolean NOT NULL DEFAULT true,
   CONSTRAINT app_dat_configuracion_tienda_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_configuracion_tienda_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id)
 );

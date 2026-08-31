@@ -1459,72 +1459,26 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Widget _buildPriceChangeHistorySection() {
-    final history = _priceHistory.take(8).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Divider(height: 32),
-        Row(
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
           children: [
-            const Expanded(
-              child: Text(
-                'Historial de cambios de precio',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-              ),
+            OutlinedButton.icon(
+              onPressed: _showSalePriceHistoryDialog,
+              icon: const Icon(Icons.sell_outlined, size: 18),
+              label: const Text('Historial de venta'),
             ),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: _showSalePriceHistoryDialog,
-                  icon: const Icon(Icons.sell_outlined, size: 18),
-                  label: const Text('Historial de venta'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _showCostHistoryDialog,
-                  icon: const Icon(Icons.history, size: 18),
-                  label: const Text('Historial de costos'),
-                ),
-              ],
+            OutlinedButton.icon(
+              onPressed: _showCostHistoryDialog,
+              icon: const Icon(Icons.history, size: 18),
+              label: const Text('Historial de costos'),
             ),
           ],
         ),
-        const SizedBox(height: 10),
-        if (_isLoadingCharts)
-          const Center(child: CircularProgressIndicator())
-        else if (history.isEmpty)
-          Text(
-            'No hay cambios de precio registrados',
-            style: TextStyle(color: Colors.grey[600]),
-          )
-        else
-          ...history.asMap().entries.map((entry) {
-            final item = entry.value;
-            final date = item['fecha'] as DateTime?;
-            final price = (item['precio'] as num?)?.toDouble() ?? 0;
-            final previous = entry.key + 1 < history.length
-                ? (history[entry.key + 1]['precio'] as num?)?.toDouble()
-                : null;
-            return ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(
-                Icons.sell_outlined,
-                color: AppColors.primary,
-              ),
-              title: Text(
-                previous == null
-                    ? 'Precio registrado: ₱${NumberFormat('#,###.00').format(price)} CUP'
-                    : '₱${NumberFormat('#,###.00').format(previous)} → ₱${NumberFormat('#,###.00').format(price)} CUP',
-              ),
-              subtitle: Text(
-                date == null
-                    ? 'Fecha no disponible'
-                    : DateFormat('dd/MM/yyyy HH:mm').format(date.toLocal()),
-              ),
-            );
-          }),
       ],
     );
   }
