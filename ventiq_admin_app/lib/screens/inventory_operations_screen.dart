@@ -1396,6 +1396,16 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     return tipo.contains('venta') || accion.contains('venta');
   }
 
+  bool _isReceptionOperation(Map<String, dynamic> operation) {
+    final tipo = (operation['tipo_operacion_nombre'] ?? '')
+        .toString()
+        .toLowerCase();
+    final accion = (operation['tipo_operacion_accion'] ?? '')
+        .toString()
+        .toLowerCase();
+    return tipo.contains('recepci') || accion.contains('recepcion');
+  }
+
   /// Obtiene el detalle completo de los pagos de una operación de venta
   Future<List<Map<String, dynamic>>> _getPaymentDetails(int operationId) async {
     try {
@@ -1814,6 +1824,11 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                         canRegisterMissingPayment: _canRegisterMissingPayment,
                         registerMissingPayment: _registerMissingPayment,
                       ),
+                    ],
+
+                    if (_isReceptionOperation(operation)) ...[
+                      const SizedBox(height: 12),
+                      _buildReceptionAuditButton(operation),
                     ],
 
                     // Show print button for all operations
@@ -3480,6 +3495,9 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
             response['message'] ??
                 'Stock insuficiente para completar la operación',
           );
+        } else if (errorCode == 'INVENTORY_PARTIAL_FAILURE' ||
+            errorCode == 'INVENTORY_REGISTRATION_FAILED') {
+          _showInventoryContabilizacionErrorDialog(response);
         } else {
           // Mostrar SnackBar para otros errores
           ScaffoldMessenger.of(context).showSnackBar(
@@ -4210,6 +4228,386 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     );
   }
 
+  /// Audita recepción vs movimientos de inventario para la operación actual.
+  Widget _buildReceptionAuditButton(Map<String, dynamic> operation) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: () => _runReceptionInventoryAudit(operation),
+        icon: const Icon(Icons.fact_check_outlined),
+        label: const Text('Auditar inventario'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: const Color(0xFF7C3AED),
+          side: const BorderSide(color: Color(0xFF7C3AED)),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _runReceptionInventoryAudit(
+    Map<String, dynamic> operation,
+  ) async {
+    final idOperacion = (operation['id'] as num?)?.toInt();
+    if (idOperacion == null) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Expanded(child: Text('Auditando recepción...')),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final result = await InventoryService.auditReceptionInventory(idOperacion);
+      if (!mounted) return;
+      Navigator.pop(context);
+      _showReceptionAuditResults(
+        result,
+        idOperacion: idOperacion,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error en auditoría: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _showReceptionAuditResults(
+    Map<String, dynamic> result, {
+    required int idOperacion,
+  }) {
+    if (result['success'] != true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result['message']?.toString() ?? 'Auditoría fallida'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final items = (result['items'] as List?)
+            ?.map((e) => Map<String, dynamic>.from(e as Map))
+            .toList() ??
+        <Map<String, dynamic>>[];
+    final lineasOk = (result['lineas_ok'] as num?)?.toInt() ?? 0;
+    final lineasProblema = (result['lineas_con_problema'] as num?)?.toInt() ?? 0;
+    final totalLineas = (result['total_lineas'] as num?)?.toInt() ?? items.length;
+    final estadoNombre = result['estado_nombre']?.toString() ?? 'N/A';
+    final idOperacionStr = result['id_operacion']?.toString() ?? '';
+    final diagnostico = result['diagnostico_operacion'] is Map
+        ? Map<String, dynamic>.from(result['diagnostico_operacion'] as Map)
+        : null;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Auditoría recepción #$idOperacionStr'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Estado: $estadoNombre'),
+              const SizedBox(height: 8),
+              Text('Total líneas: $totalLineas'),
+              Text(
+                'OK: $lineasOk  ·  Con problema: $lineasProblema',
+                style: TextStyle(
+                  color: lineasProblema > 0 ? Colors.red : Colors.green,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (diagnostico?['resumen'] != null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.withOpacity(0.35)),
+                  ),
+                  child: Text(
+                    diagnostico!['resumen'].toString(),
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              if (items.isEmpty)
+                const Text('Sin líneas de recepción.')
+              else
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: items.length,
+                    separatorBuilder: (_, __) => const Divider(height: 12),
+                    itemBuilder: (context, index) {
+                      final item = items[index];
+                      final resultado =
+                          item['resultado_auditoria']?.toString() ?? '';
+                      final isOk = resultado == 'OK';
+                      final color = isOk ? Colors.green : Colors.red;
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item['producto_nombre']?.toString() ?? 'Producto',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          Text(
+                            'Recibido: ${item['cantidad_recepcion']} · '
+                            'Delta inv.: ${item['delta_inventario'] ?? '—'}',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          Text(
+                            _auditResultLabel(resultado),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: color,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          if (!isOk &&
+                              item['causa_descripcion'] != null &&
+                              item['causa_descripcion'].toString().isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                item['causa_descripcion'].toString(),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey[700],
+                                ),
+                              ),
+                            ),
+                          if (item['causas_adicionales'] is List &&
+                              (item['causas_adicionales'] as List)
+                                  .isNotEmpty)
+                            ...((item['causas_adicionales'] as List).map(
+                              (extra) => Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  '• $extra',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ),
+                            )),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          if (lineasProblema > 0)
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pop(context);
+                _runReceptionInventoryRepair(idOperacion);
+              },
+              icon: const Icon(Icons.build_circle_outlined),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF059669),
+                foregroundColor: Colors.white,
+              ),
+              label: const Text('Corregir faltantes'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _runReceptionInventoryRepair(int idOperacion) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Expanded(child: Text('Corrigiendo inventario faltante...')),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final result =
+          await InventoryService.repairReceptionInventoryMissing(idOperacion);
+      if (!mounted) return;
+      Navigator.pop(context);
+      _showReceptionRepairResults(result, idOperacion: idOperacion);
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al corregir: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _showReceptionRepairResults(
+    Map<String, dynamic> result, {
+    required int idOperacion,
+  }) {
+    final detalle = (result['detalle'] as List?)
+            ?.map((e) => Map<String, dynamic>.from(e as Map))
+            .toList() ??
+        <Map<String, dynamic>>[];
+    final exitosas = (result['exitosas'] as num?)?.toInt() ?? 0;
+    final fallidas = (result['fallidas'] as num?)?.toInt() ?? 0;
+    final omitidas = (result['omitidas'] as num?)?.toInt() ?? 0;
+    final success = result['success'] == true;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Reparación recepción #$idOperacion'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                result['message']?.toString() ?? 'Reparación finalizada',
+                style: TextStyle(
+                  color: success ? Colors.green : Colors.orange,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text('Corregidas: $exitosas · Omitidas: $omitidas · Fallidas: $fallidas'),
+              const SizedBox(height: 12),
+              if (detalle.isEmpty)
+                const Text('Sin líneas procesadas.')
+              else
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: detalle.length,
+                    separatorBuilder: (_, __) => const Divider(height: 10),
+                    itemBuilder: (context, index) {
+                      final item = detalle[index];
+                      final estado = item['estado']?.toString() ?? '';
+                      final isOk = estado == 'OK';
+                      final isOmit = estado == 'OMITIDO';
+                      final color = isOk
+                          ? Colors.green
+                          : isOmit
+                          ? Colors.grey
+                          : Colors.red;
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item['producto_nombre']?.toString() ??
+                                'Línea ${item['id_recepcion_producto']}',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          Text(
+                            _repairEstadoLabel(estado),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: color,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          if (item['mensaje'] != null)
+                            Text(
+                              item['mensaje'].toString(),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          if (fallidas > 0 || exitosas > 0)
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _runReceptionInventoryAudit({'id': idOperacion});
+              },
+              child: const Text('Volver a auditar'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _repairEstadoLabel(String estado) {
+    switch (estado) {
+      case 'OK':
+        return 'Corregido';
+      case 'OMITIDO':
+        return 'Ya estaba contabilizado';
+      case 'ERROR':
+        return 'No se pudo corregir';
+      default:
+        return estado;
+    }
+  }
+
+  String _auditResultLabel(String code) {
+    switch (code) {
+      case 'OK':
+        return 'OK — inventario contabilizado';
+      case 'SIN_MOVIMIENTO_INVENTARIO':
+        return 'Sin movimiento de inventario';
+      case 'CANTIDAD_NO_COINCIDE':
+        return 'Cantidad en inventario no coincide';
+      case 'MOVIMIENTO_DUPLICADO':
+        return 'Movimiento duplicado';
+      case 'OPERACION_NO_COMPLETADA':
+        return 'Operación no completada';
+      default:
+        return code;
+    }
+  }
+
   /// 🖨️ Construir botones de impresión y exportación
   Widget _buildPrintButton(Map<String, dynamic> operation) {
     // Obtener el estado de la operación
@@ -4914,6 +5312,62 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
               foregroundColor: Colors.white,
             ),
             child: const Text('¡Genial!'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showInventoryContabilizacionErrorDialog(Map<String, dynamic> response) {
+    final detalle = response['detalle_contabilizacion'];
+    final items = detalle is List
+        ? detalle
+            .map((e) => e is Map ? Map<String, dynamic>.from(e) : {'mensaje': e.toString()})
+            .toList()
+        : <Map<String, dynamic>>[];
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Inventario incompleto'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                response['message']?.toString() ??
+                    'No se pudo contabilizar todo el inventario.',
+              ),
+              const SizedBox(height: 12),
+              if (items.isNotEmpty)
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: items.length,
+                    separatorBuilder: (_, __) => const Divider(height: 8),
+                    itemBuilder: (context, index) {
+                      final item = items[index];
+                      final estado = item['estado']?.toString() ?? 'ERROR';
+                      if (estado == 'OK' || estado == 'OMITIDO') {
+                        return const SizedBox.shrink();
+                      }
+                      return Text(
+                        '${item['producto_nombre'] ?? 'Línea ${item['id_recepcion_producto'] ?? ''}'}: '
+                        '${item['mensaje'] ?? estado}',
+                        style: const TextStyle(fontSize: 12),
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cerrar'),
           ),
         ],
       ),

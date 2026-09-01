@@ -2799,150 +2799,157 @@ class InventoryService {
 
       // =====================================================
       // REGISTRAR MOVIMIENTO DE INVENTARIO
-      // Se ejecuta para recepciones y extracciones que aún
-      // no tengan su movimiento registrado en app_dat_inventario_productos.
-      // (Es idempotente: si ya existe el registro, lo omite.)
+      // Recepción: RPC servidor (línea a línea, idempotente).
+      // Si falla alguna línea, NO se marca la operación como completada.
+      // Extracción: registro local con validación estricta.
       // =====================================================
       print(
         '\n📦 Registrando movimientos de inventario para operación $idOperacion...',
       );
-      try {
-        // ── CASO RECEPCIÓN ───────────────────────────────────────────────────
-        final productosRecepcion = await _supabase
-            .from('app_dat_recepcion_productos')
-            .select(
-              'id, id_producto, id_variante, id_opcion_variante, id_ubicacion, id_presentacion, cantidad, sku_producto, sku_ubicacion, id_proveedor',
-            )
-            .eq('id_operacion', idOperacion);
 
-        for (final rp in productosRecepcion as List) {
-          final idRP = rp['id'] as int;
+      final esRecepcion = await _supabase
+          .from('app_dat_operacion_recepcion')
+          .select('id_operacion')
+          .eq('id_operacion', idOperacion)
+          .maybeSingle();
 
-          // Verificar si ya existe un movimiento vinculado a este id_recepcion
-          final yaExiste = await _supabase
-              .from('app_dat_inventario_productos')
-              .select('id')
-              .eq('id_recepcion', idRP)
-              .limit(1);
+      if (esRecepcion != null) {
+        final contabResult = await contabilizarRecepcionInventario(
+          idOperacion,
+          soloFaltantes: false,
+        );
+        final fallidas = _asInt(contabResult['fallidas']) ?? 0;
+        final totalLineas = _asInt(contabResult['total_lineas']) ?? 0;
+        final exitosas = _asInt(contabResult['exitosas']) ?? 0;
+        final omitidas = _asInt(contabResult['omitidas']) ?? 0;
 
-          if ((yaExiste as List).isNotEmpty) {
-            print(
-              '   ⏭️ Inventario ya registrado para recepcion_producto $idRP',
-            );
-            continue;
+        if (fallidas > 0 || (exitosas + omitidas) < totalLineas) {
+          print(
+            '❌ Contabilización incompleta: $exitosas ok, $omitidas omitidas, '
+            '$fallidas fallidas de $totalLineas',
+          );
+          return {
+            'success': false,
+            'status': 'error',
+            'message':
+                contabResult['message']?.toString() ??
+                'No se pudo contabilizar todo el inventario de la recepción. '
+                    'La operación NO fue marcada como completada.',
+            'error': 'INVENTORY_PARTIAL_FAILURE',
+            'detalle_contabilizacion': contabResult['detalle'],
+            'exitosas': exitosas,
+            'omitidas': omitidas,
+            'fallidas': fallidas,
+            'total_lineas': totalLineas,
+          };
+        }
+        print(
+          '✅ Recepción contabilizada: $exitosas nuevas, $omitidas ya existían',
+        );
+      } else {
+        try {
+          final erroresExtraccion = <String>[];
+
+          final productosExtraccion = await _supabase
+              .from('app_dat_extraccion_productos')
+              .select(
+                'id, id_producto, id_variante, id_opcion_variante, id_ubicacion, id_presentacion, cantidad, sku_producto, sku_ubicacion',
+              )
+              .eq('id_operacion', idOperacion);
+
+          for (final ep in productosExtraccion as List) {
+            try {
+              final idEP = ep['id'] as int;
+
+              final yaExiste = await _supabase
+                  .from('app_dat_inventario_productos')
+                  .select('id')
+                  .eq('id_extraccion', idEP)
+                  .limit(1);
+
+              if ((yaExiste as List).isNotEmpty) {
+                print(
+                  '   ⏭️ Inventario ya registrado para extraccion_producto $idEP',
+                );
+                continue;
+              }
+
+              final idProducto = ep['id_producto'] as int?;
+              final idUbicacion = ep['id_ubicacion'] as int?;
+              final idPresentacion = ep['id_presentacion'] as int?;
+              final cantidad = (ep['cantidad'] as num?)?.toDouble() ?? 0.0;
+
+              if (idProducto == null) {
+                erroresExtraccion.add(
+                  'Extracción línea $idEP: producto nulo',
+                );
+                continue;
+              }
+
+              var stockQuery = _supabase
+                  .from('app_dat_inventario_productos')
+                  .select('cantidad_final')
+                  .eq('id_producto', idProducto);
+              if (idUbicacion != null) {
+                stockQuery = stockQuery.eq('id_ubicacion', idUbicacion);
+              }
+              if (idPresentacion != null) {
+                stockQuery = stockQuery.eq('id_presentacion', idPresentacion);
+              }
+              final stockRows = await stockQuery
+                  .order('id', ascending: false)
+                  .limit(1);
+
+              final cantidadInicial = (stockRows as List).isNotEmpty
+                  ? ((stockRows.first['cantidad_final'] as num?)?.toDouble() ??
+                        0.0)
+                  : 0.0;
+
+              await _supabase.from('app_dat_inventario_productos').insert({
+                'id_producto': idProducto,
+                'id_variante': ep['id_variante'],
+                'id_opcion_variante': ep['id_opcion_variante'],
+                'id_ubicacion': idUbicacion,
+                'id_presentacion': idPresentacion,
+                'cantidad_inicial': cantidadInicial,
+                'cantidad_final': cantidadInicial - cantidad,
+                'sku_producto': ep['sku_producto'],
+                'sku_ubicacion': ep['sku_ubicacion'],
+                'origen_cambio': 2,
+                'id_extraccion': idEP,
+              });
+              print(
+                '   ✅ Extracción: producto $idProducto  -$cantidad  '
+                '($cantidadInicial → ${cantidadInicial - cantidad})',
+              );
+            } catch (e) {
+              final idEP = ep['id'];
+              erroresExtraccion.add('Extracción línea $idEP: $e');
+            }
           }
 
-          final idProducto = rp['id_producto'] as int?;
-          final idUbicacion = rp['id_ubicacion'] as int?;
-          final idPresentacion = rp['id_presentacion'] as int?;
-          final cantidad = (rp['cantidad'] as num?)?.toDouble() ?? 0.0;
-
-          if (idProducto == null) continue;
-
-          // Obtener último saldo: filtrar por producto, ubicación y presentación
-          var stockQuery = _supabase
-              .from('app_dat_inventario_productos')
-              .select('cantidad_final')
-              .eq('id_producto', idProducto);
-          if (idUbicacion != null)
-            stockQuery = stockQuery.eq('id_ubicacion', idUbicacion);
-          if (idPresentacion != null)
-            stockQuery = stockQuery.eq('id_presentacion', idPresentacion);
-          final stockRows = await stockQuery
-              .order('id', ascending: false)
-              .limit(1);
-
-          final cantidadInicial = (stockRows as List).isNotEmpty
-              ? ((stockRows.first['cantidad_final'] as num?)?.toDouble() ?? 0.0)
-              : 0.0;
-
-          await _supabase.from('app_dat_inventario_productos').insert({
-            'id_producto': idProducto,
-            'id_variante': rp['id_variante'],
-            'id_opcion_variante': rp['id_opcion_variante'],
-            'id_ubicacion': idUbicacion,
-            'id_presentacion': idPresentacion,
-            'cantidad_inicial': cantidadInicial,
-            'cantidad_final': cantidadInicial + cantidad,
-            'sku_producto': rp['sku_producto'],
-            'sku_ubicacion': rp['sku_ubicacion'],
-            'origen_cambio': 1, // 1 = recepción
-            'id_recepcion': idRP,
-            'id_proveedor': rp['id_proveedor'],
-          });
-          print(
-            '   ✅ Recepción: producto $idProducto  +$cantidad  (${cantidadInicial} → ${cantidadInicial + cantidad})',
-          );
-        }
-
-        // ── CASO EXTRACCIÓN ──────────────────────────────────────────────────
-        final productosExtraccion = await _supabase
-            .from('app_dat_extraccion_productos')
-            .select(
-              'id, id_producto, id_variante, id_opcion_variante, id_ubicacion, id_presentacion, cantidad, sku_producto, sku_ubicacion',
-            )
-            .eq('id_operacion', idOperacion);
-
-        for (final ep in productosExtraccion as List) {
-          final idEP = ep['id'] as int;
-
-          // Verificar si ya existe un movimiento vinculado a este id_extraccion
-          final yaExiste = await _supabase
-              .from('app_dat_inventario_productos')
-              .select('id')
-              .eq('id_extraccion', idEP)
-              .limit(1);
-
-          if ((yaExiste as List).isNotEmpty) {
-            print(
-              '   ⏭️ Inventario ya registrado para extraccion_producto $idEP',
-            );
-            continue;
+          if (erroresExtraccion.isNotEmpty) {
+            return {
+              'success': false,
+              'status': 'error',
+              'message':
+                  'No se pudo contabilizar todo el inventario de la extracción. '
+                  'La operación NO fue marcada como completada.',
+              'error': 'INVENTORY_PARTIAL_FAILURE',
+              'detalle_contabilizacion': erroresExtraccion,
+            };
           }
-
-          final idProducto = ep['id_producto'] as int?;
-          final idUbicacion = ep['id_ubicacion'] as int?;
-          final idPresentacion = ep['id_presentacion'] as int?;
-          final cantidad = (ep['cantidad'] as num?)?.toDouble() ?? 0.0;
-
-          if (idProducto == null) continue;
-
-          var stockQuery = _supabase
-              .from('app_dat_inventario_productos')
-              .select('cantidad_final')
-              .eq('id_producto', idProducto);
-          if (idUbicacion != null)
-            stockQuery = stockQuery.eq('id_ubicacion', idUbicacion);
-          if (idPresentacion != null)
-            stockQuery = stockQuery.eq('id_presentacion', idPresentacion);
-          final stockRows = await stockQuery
-              .order('id', ascending: false)
-              .limit(1);
-
-          final cantidadInicial = (stockRows as List).isNotEmpty
-              ? ((stockRows.first['cantidad_final'] as num?)?.toDouble() ?? 0.0)
-              : 0.0;
-
-          await _supabase.from('app_dat_inventario_productos').insert({
-            'id_producto': idProducto,
-            'id_variante': ep['id_variante'],
-            'id_opcion_variante': ep['id_opcion_variante'],
-            'id_ubicacion': idUbicacion,
-            'id_presentacion': idPresentacion,
-            'cantidad_inicial': cantidadInicial,
-            'cantidad_final': cantidadInicial - cantidad,
-            'sku_producto': ep['sku_producto'],
-            'sku_ubicacion': ep['sku_ubicacion'],
-            'origen_cambio': 2, // 2 = extracción
-            'id_extraccion': idEP,
-          });
-          print(
-            '   ✅ Extracción: producto $idProducto  -$cantidad  (${cantidadInicial} → ${cantidadInicial - cantidad})',
-          );
+        } catch (e) {
+          print('❌ Error registrando movimientos de extracción: $e');
+          return {
+            'success': false,
+            'status': 'error',
+            'message':
+                'Error al registrar inventario de extracción: $e. '
+                'La operación NO fue marcada como completada.',
+            'error': 'INVENTORY_REGISTRATION_FAILED',
+          };
         }
-      } catch (e) {
-        print('⚠️ Error registrando movimientos de inventario: $e');
-        print('   - Continuando con cambio de estado de operación');
       }
 
       final response = await _supabase.rpc(
@@ -4114,5 +4121,733 @@ class InventoryService {
 
   static String _locationKey(int productId, int ubicacionId) {
     return '${productId}_$ubicacionId';
+  }
+
+  /// Audita una recepción: compara cada línea contra su movimiento en inventario.
+  static Future<Map<String, dynamic>> contabilizarRecepcionInventario(
+    int idOperacion, {
+    bool soloFaltantes = true,
+  }) async {
+    try {
+      final response = await _supabase.rpc(
+        'fn_contabilizar_recepcion_inventario',
+        params: {
+          'p_id_operacion': idOperacion,
+          'p_solo_faltantes': soloFaltantes,
+        },
+      );
+      if (response is Map) {
+        return Map<String, dynamic>.from(response);
+      }
+    } catch (e) {
+      print(
+        '⚠️ RPC fn_contabilizar_recepcion_inventario no disponible, '
+        'usando contabilización local: $e',
+      );
+    }
+    return _contabilizarRecepcionInventarioClient(
+      idOperacion,
+      soloFaltantes: soloFaltantes,
+    );
+  }
+
+  /// Repara líneas de recepción sin movimiento de inventario.
+  static Future<Map<String, dynamic>> repairReceptionInventoryMissing(
+    int idOperacion,
+  ) async {
+    try {
+      final response = await _supabase.rpc(
+        'fn_reparar_recepcion_inventario_faltante',
+        params: {'p_id_operacion': idOperacion},
+      );
+      if (response is Map) {
+        return Map<String, dynamic>.from(response);
+      }
+    } catch (e) {
+      print(
+        '⚠️ RPC fn_reparar_recepcion_inventario_faltante no disponible, '
+        'usando reparación local: $e',
+      );
+    }
+    return contabilizarRecepcionInventario(idOperacion, soloFaltantes: true);
+  }
+
+  static Future<Map<String, dynamic>> _contabilizarRecepcionInventarioClient(
+    int idOperacion, {
+    required bool soloFaltantes,
+  }) async {
+    final lineasResp = await _supabase
+        .from('app_dat_recepcion_productos')
+        .select('''
+          id,
+          id_producto,
+          id_variante,
+          id_opcion_variante,
+          id_ubicacion,
+          id_presentacion,
+          cantidad,
+          sku_producto,
+          sku_ubicacion,
+          id_proveedor,
+          app_dat_producto(denominacion)
+        ''')
+        .eq('id_operacion', idOperacion)
+        .order('id');
+
+    final lineas = (lineasResp as List).cast<Map<String, dynamic>>();
+    if (lineas.isEmpty) {
+      return {
+        'success': false,
+        'message': 'La operación no tiene líneas de recepción',
+        'id_operacion': idOperacion,
+      };
+    }
+
+    final detalle = <Map<String, dynamic>>[];
+    var exitosas = 0;
+    var omitidas = 0;
+    var fallidas = 0;
+
+    for (final linea in lineas) {
+      final idRP = _asInt(linea['id']);
+      if (idRP == null) continue;
+
+      final yaExiste = await _supabase
+          .from('app_dat_inventario_productos')
+          .select('id')
+          .eq('id_recepcion', idRP)
+          .limit(1);
+
+      if ((yaExiste as List).isNotEmpty) {
+        if (soloFaltantes) {
+          omitidas++;
+          detalle.add({
+            'estado': 'OMITIDO',
+            'id_recepcion_producto': idRP,
+            'mensaje': 'Ya contabilizado en inventario',
+          });
+          continue;
+        }
+        omitidas++;
+        detalle.add({
+          'estado': 'OMITIDO',
+          'id_recepcion_producto': idRP,
+          'mensaje': 'Ya contabilizado en inventario',
+        });
+        continue;
+      }
+
+      final producto = linea['app_dat_producto'];
+      final productoNombre = producto is Map
+          ? producto['denominacion']?.toString() ?? 'Producto'
+          : 'Producto';
+      final idProducto = _asInt(linea['id_producto']);
+
+      try {
+        if (idProducto == null) {
+          fallidas++;
+          detalle.add({
+            'estado': 'ERROR',
+            'id_recepcion_producto': idRP,
+            'mensaje': 'La línea no tiene producto asociado (id_producto nulo)',
+          });
+          continue;
+        }
+
+        final idUbicacion = _asInt(linea['id_ubicacion']);
+        if (idUbicacion == null) {
+          fallidas++;
+          detalle.add({
+            'estado': 'ERROR',
+            'id_recepcion_producto': idRP,
+            'id_producto': idProducto,
+            'producto_nombre': productoNombre,
+            'mensaje': 'La línea no tiene ubicación asignada',
+          });
+          continue;
+        }
+
+        var idPresentacion = _asInt(linea['id_presentacion']);
+        if (idPresentacion == null) {
+          final basePres = await _supabase
+              .from('app_dat_producto_presentacion')
+              .select('id')
+              .eq('id_producto', idProducto)
+              .eq('es_base', true)
+              .limit(1);
+          if ((basePres as List).isNotEmpty) {
+            idPresentacion = _asInt(basePres.first['id']);
+          } else {
+            final anyPres = await _supabase
+                .from('app_dat_producto_presentacion')
+                .select('id')
+                .eq('id_producto', idProducto)
+                .limit(1);
+            if ((anyPres as List).isNotEmpty) {
+              idPresentacion = _asInt(anyPres.first['id']);
+            }
+          }
+
+          if (idPresentacion != null) {
+            await _supabase
+                .from('app_dat_recepcion_productos')
+                .update({'id_presentacion': idPresentacion})
+                .eq('id', idRP);
+          } else {
+            fallidas++;
+            detalle.add({
+              'estado': 'ERROR',
+              'id_recepcion_producto': idRP,
+              'id_producto': idProducto,
+              'producto_nombre': productoNombre,
+              'mensaje': 'El producto no tiene presentaciones en catálogo',
+            });
+            continue;
+          }
+        }
+
+        final cantidad = _asDouble(linea['cantidad']);
+        var stockQuery = _supabase
+            .from('app_dat_inventario_productos')
+            .select('cantidad_final')
+            .eq('id_producto', idProducto)
+            .eq('id_ubicacion', idUbicacion)
+            .eq('id_presentacion', idPresentacion);
+        final stockRows = await stockQuery.order('id', ascending: false).limit(1);
+        final cantidadInicial = (stockRows as List).isNotEmpty
+            ? _asDouble(stockRows.first['cantidad_final'])
+            : 0.0;
+
+        final insertResp = await _supabase
+            .from('app_dat_inventario_productos')
+            .insert({
+              'id_producto': idProducto,
+              'id_variante': linea['id_variante'],
+              'id_opcion_variante': linea['id_opcion_variante'],
+              'id_ubicacion': idUbicacion,
+              'id_presentacion': idPresentacion,
+              'cantidad_inicial': cantidadInicial,
+              'cantidad_final': cantidadInicial + cantidad,
+              'sku_producto': linea['sku_producto'],
+              'sku_ubicacion': linea['sku_ubicacion'],
+              'origen_cambio': 1,
+              'id_recepcion': idRP,
+              'id_proveedor': linea['id_proveedor'],
+            })
+            .select('id')
+            .single();
+
+        exitosas++;
+        detalle.add({
+          'estado': 'OK',
+          'id_recepcion_producto': idRP,
+          'id_producto': idProducto,
+          'producto_nombre': productoNombre,
+          'cantidad_recepcion': cantidad,
+          'cantidad_inicial': cantidadInicial,
+          'cantidad_final': cantidadInicial + cantidad,
+          'id_movimiento': insertResp['id'],
+          'mensaje': 'Movimiento de inventario registrado',
+        });
+      } catch (e) {
+        fallidas++;
+        detalle.add({
+          'estado': 'ERROR',
+          'id_recepcion_producto': idRP,
+          'id_producto': idProducto,
+          'producto_nombre': productoNombre,
+          'mensaje': e.toString(),
+        });
+      }
+    }
+
+    return {
+      'success': fallidas == 0,
+      'id_operacion': idOperacion,
+      'solo_faltantes': soloFaltantes,
+      'total_lineas': lineas.length,
+      'exitosas': exitosas,
+      'omitidas': omitidas,
+      'fallidas': fallidas,
+      'message': fallidas == 0
+          ? 'Contabilización completada: $exitosas nuevas, $omitidas omitidas'
+          : 'Contabilización con errores: $exitosas exitosas, $fallidas fallidas',
+      'detalle': detalle,
+    };
+  }
+
+  /// Audita una recepción: compara cada línea contra su movimiento en inventario.
+  static Future<Map<String, dynamic>> auditReceptionInventory(
+    int idOperacion,
+  ) async {
+    try {
+      final response = await _supabase.rpc(
+        'fn_auditar_recepcion_inventario',
+        params: {'p_id_operacion': idOperacion},
+      );
+      if (response is Map) {
+        final result = Map<String, dynamic>.from(response);
+        final items = result['items'];
+        final hasCausa = items is List &&
+            items.isNotEmpty &&
+            items.first is Map &&
+            (items.first as Map).containsKey('causa_codigo');
+        if (hasCausa) return result;
+      }
+    } catch (e) {
+      print(
+        '⚠️ RPC fn_auditar_recepcion_inventario no disponible, '
+        'usando auditoría local: $e',
+      );
+    }
+    return _auditReceptionInventoryClient(idOperacion);
+  }
+
+  static Future<Map<String, dynamic>> _auditReceptionInventoryClient(
+    int idOperacion,
+  ) async {
+    final estadoResp = await _supabase
+        .from('app_dat_estado_operacion')
+        .select('estado, app_nom_estado_operacion(denominacion)')
+        .eq('id_operacion', idOperacion)
+        .order('id', ascending: false)
+        .limit(1)
+        .maybeSingle();
+
+    if (estadoResp == null) {
+      return {
+        'success': false,
+        'message': 'Operación no encontrada',
+        'id_operacion': idOperacion,
+      };
+    }
+
+    final estado = _asInt(estadoResp['estado']) ?? 0;
+    final estadoMap = estadoResp['app_nom_estado_operacion'];
+    final estadoNombre = estadoMap is Map
+        ? estadoMap['denominacion']?.toString() ?? 'N/A'
+        : 'N/A';
+
+    final lineasResp = await _supabase
+        .from('app_dat_recepcion_productos')
+        .select('''
+          id,
+          id_producto,
+          id_ubicacion,
+          id_presentacion,
+          cantidad,
+          app_dat_producto(denominacion),
+          app_dat_layout_almacen(
+            denominacion,
+            app_dat_almacen(denominacion)
+          )
+        ''')
+        .eq('id_operacion', idOperacion);
+
+    final lineas = (lineasResp as List).cast<Map<String, dynamic>>();
+    if (lineas.isEmpty) {
+      return {
+        'success': false,
+        'message': 'La operación no tiene líneas de recepción',
+        'id_operacion': idOperacion,
+        'estado': estado,
+        'estado_nombre': estadoNombre,
+      };
+    }
+
+    final recepcionIds = lineas
+        .map((l) => _asInt(l['id']))
+        .whereType<int>()
+        .toList();
+
+    final movimientosPorRecepcion =
+        <int, List<Map<String, dynamic>>>{};
+    if (recepcionIds.isNotEmpty) {
+      final movsResp = await _supabase
+          .from('app_dat_inventario_productos')
+          .select('id, id_recepcion, cantidad_inicial, cantidad_final')
+          .inFilter('id_recepcion', recepcionIds);
+
+      for (final raw in movsResp as List) {
+        final mov = Map<String, dynamic>.from(raw as Map);
+        final idRec = _asInt(mov['id_recepcion']);
+        if (idRec == null) continue;
+        movimientosPorRecepcion.putIfAbsent(idRec, () => []).add(mov);
+      }
+    }
+
+    final lineasConMovimiento = lineas
+        .where((l) => movimientosPorRecepcion.containsKey(_asInt(l['id'])))
+        .length;
+    int? ultimoIdConMovimiento;
+    for (final linea in lineas) {
+      final idLinea = _asInt(linea['id']);
+      if (idLinea != null &&
+          movimientosPorRecepcion.containsKey(idLinea) &&
+          (ultimoIdConMovimiento == null || idLinea > ultimoIdConMovimiento)) {
+        ultimoIdConMovimiento = idLinea;
+      }
+    }
+
+    final productIds = lineas
+        .map((l) => _asInt(l['id_producto']))
+        .whereType<int>()
+        .toSet()
+        .toList();
+
+    final presentacionesPorProducto = <int, List<Map<String, dynamic>>>{};
+    final presentacionesValidas = <int>{};
+    if (productIds.isNotEmpty) {
+      final presResp = await _supabase
+          .from('app_dat_producto_presentacion')
+          .select('id, id_producto, es_base')
+          .inFilter('id_producto', productIds);
+
+      for (final raw in presResp as List) {
+        final pres = Map<String, dynamic>.from(raw as Map);
+        final idPres = _asInt(pres['id']);
+        final idProd = _asInt(pres['id_producto']);
+        if (idPres != null) presentacionesValidas.add(idPres);
+        if (idProd != null) {
+          presentacionesPorProducto.putIfAbsent(idProd, () => []).add(pres);
+        }
+      }
+    }
+
+    final items = <Map<String, dynamic>>[];
+    var lineasOk = 0;
+    var lineasProblema = 0;
+
+    for (final linea in lineas) {
+      final idRecepcionProducto = _asInt(linea['id'])!;
+      final cantidadRecepcion = _asDouble(linea['cantidad']);
+      final movs = movimientosPorRecepcion[idRecepcionProducto] ?? [];
+
+      double deltaInventario = 0;
+      int? idMovimiento;
+      double? cantidadInicial;
+      double? cantidadFinal;
+
+      if (movs.isNotEmpty) {
+        for (final mov in movs) {
+          final ini = _asDouble(mov['cantidad_inicial']);
+          final fin = _asDouble(mov['cantidad_final']);
+          deltaInventario += fin - ini;
+        }
+        final first = movs.first;
+        idMovimiento = _asInt(first['id']);
+        cantidadInicial = _asDouble(first['cantidad_inicial']);
+        cantidadFinal = _asDouble(first['cantidad_final']);
+      }
+
+      String resultado;
+      if (estado != 2) {
+        resultado = 'OPERACION_NO_COMPLETADA';
+      } else if (movs.isEmpty) {
+        resultado = 'SIN_MOVIMIENTO_INVENTARIO';
+      } else if (movs.length > 1) {
+        resultado = 'MOVIMIENTO_DUPLICADO';
+      } else if ((deltaInventario - cantidadRecepcion).abs() > 0.0001) {
+        resultado = 'CANTIDAD_NO_COINCIDE';
+      } else {
+        resultado = 'OK';
+      }
+
+      if (resultado == 'OK') {
+        lineasOk++;
+      } else {
+        lineasProblema++;
+      }
+
+      final producto = linea['app_dat_producto'];
+      final layout = linea['app_dat_layout_almacen'];
+      final almacen = layout is Map ? layout['app_dat_almacen'] : null;
+      final idProducto = _asInt(linea['id_producto']);
+      final idPresentacion = _asInt(linea['id_presentacion']);
+      final presentacionesProducto = idProducto == null
+          ? <Map<String, dynamic>>[]
+          : (presentacionesPorProducto[idProducto] ?? []);
+      final tienePresentacionBase = presentacionesProducto.any(
+        (p) => p['es_base'] == true,
+      );
+
+      final causa = _diagnoseReceptionAuditCause(
+        resultado: resultado,
+        estado: estado,
+        idProducto: idProducto,
+        idUbicacion: _asInt(linea['id_ubicacion']),
+        idPresentacion: idPresentacion,
+        productoExiste: producto is Map,
+        ubicacionExiste: layout is Map,
+        presentacionValida:
+            idPresentacion == null || presentacionesValidas.contains(idPresentacion),
+        presentacionesProducto: presentacionesProducto.length,
+        tienePresentacionBase: tienePresentacionBase,
+        numMovimientos: movs.length,
+        cantidadRecepcion: cantidadRecepcion,
+        deltaInventario: deltaInventario,
+        lineasConMovimiento: lineasConMovimiento,
+        totalLineas: lineas.length,
+        ultimoIdConMovimiento: ultimoIdConMovimiento,
+        idRecepcionProducto: idRecepcionProducto,
+      );
+
+      items.add({
+        'id_recepcion_producto': idRecepcionProducto,
+        'id_producto': idProducto,
+        'producto_nombre': producto is Map
+            ? producto['denominacion']?.toString() ?? 'Producto'
+            : 'Producto',
+        'almacen': almacen is Map
+            ? almacen['denominacion']?.toString() ?? 'N/A'
+            : 'N/A',
+        'ubicacion': layout is Map
+            ? layout['denominacion']?.toString() ?? 'N/A'
+            : 'N/A',
+        'id_presentacion': idPresentacion,
+        'cantidad_recepcion': cantidadRecepcion,
+        'num_movimientos': movs.length,
+        'id_movimiento': idMovimiento,
+        'cantidad_inicial': cantidadInicial,
+        'cantidad_final': cantidadFinal,
+        'delta_inventario': movs.isEmpty ? null : deltaInventario,
+        'resultado_auditoria': resultado,
+        'causa_codigo': causa['causa_codigo'],
+        'causa_descripcion': causa['causa_descripcion'],
+        'causas_adicionales': causa['causas_adicionales'],
+      });
+    }
+
+    items.sort((a, b) {
+      final rank = (String r) => r == 'OK' ? 1 : 0;
+      final cmp = rank(b['resultado_auditoria'] as String)
+          .compareTo(rank(a['resultado_auditoria'] as String));
+      if (cmp != 0) return cmp;
+      return (a['producto_nombre'] as String).compareTo(
+        b['producto_nombre'] as String,
+      );
+    });
+
+    final diagnosticoOperacion = _buildReceptionOperationDiagnosis(
+      estado: estado,
+      totalLineas: items.length,
+      lineasConMovimiento: lineasConMovimiento,
+      lineasOk: lineasOk,
+      lineasProblema: lineasProblema,
+      ultimoIdConMovimiento: ultimoIdConMovimiento,
+      items: items,
+    );
+
+    return {
+      'success': true,
+      'id_operacion': idOperacion,
+      'estado': estado,
+      'estado_nombre': estadoNombre,
+      'total_lineas': items.length,
+      'lineas_ok': lineasOk,
+      'lineas_con_problema': lineasProblema,
+      'diagnostico_operacion': diagnosticoOperacion,
+      'items': items,
+    };
+  }
+
+  static Map<String, dynamic> _diagnoseReceptionAuditCause({
+    required String resultado,
+    required int estado,
+    required int? idProducto,
+    required int? idUbicacion,
+    required int? idPresentacion,
+    required bool productoExiste,
+    required bool ubicacionExiste,
+    required bool presentacionValida,
+    required int presentacionesProducto,
+    required bool tienePresentacionBase,
+    required int numMovimientos,
+    required double cantidadRecepcion,
+    required double deltaInventario,
+    required int lineasConMovimiento,
+    required int totalLineas,
+    required int? ultimoIdConMovimiento,
+    required int idRecepcionProducto,
+  }) {
+    final causasAdicionales = <String>[];
+
+    if (resultado == 'OK') {
+      return {
+        'causa_codigo': 'OK',
+        'causa_descripcion': 'Inventario contabilizado correctamente.',
+        'causas_adicionales': causasAdicionales,
+      };
+    }
+
+    if (resultado == 'OPERACION_NO_COMPLETADA') {
+      final descripcion = switch (estado) {
+        1 =>
+          'La operación sigue pendiente; el kardex no se genera hasta marcarla como completada.',
+        3 => 'La operación fue devuelta; no debe contabilizar inventario.',
+        4 => 'La operación fue cancelada; no debe contabilizar inventario.',
+        _ =>
+          'La operación no está en estado Completada (2); el inventario no debería haberse aplicado.',
+      };
+      return {
+        'causa_codigo': 'ESTADO_NO_COMPLETADA',
+        'causa_descripcion': descripcion,
+        'causas_adicionales': causasAdicionales,
+      };
+    }
+
+    if (resultado == 'MOVIMIENTO_DUPLICADO') {
+      return {
+        'causa_codigo': 'DOBLE_CONTABILIZACION',
+        'causa_descripcion':
+            'Existen $numMovimientos movimientos de inventario para la misma línea de recepción.',
+        'causas_adicionales': causasAdicionales,
+      };
+    }
+
+    if (resultado == 'CANTIDAD_NO_COINCIDE') {
+      return {
+        'causa_codigo': 'DELTA_INCORRECTO',
+        'causa_descripcion':
+            'Se recibieron ${cantidadRecepcion.toStringAsFixed(1)} unidades, '
+            'pero el kardex registró un delta de ${deltaInventario.toStringAsFixed(1)}.',
+        'causas_adicionales': causasAdicionales,
+      };
+    }
+
+    // SIN_MOVIMIENTO_INVENTARIO
+    String codigo;
+    String descripcion;
+
+    if (idProducto == null) {
+      codigo = 'PRODUCTO_NULO';
+      descripcion =
+          'La línea no tiene producto asociado (id_producto nulo); no se puede generar movimiento.';
+    } else if (!productoExiste) {
+      codigo = 'PRODUCTO_INEXISTENTE';
+      descripcion =
+          'El producto #$idProducto no existe en catálogo o fue eliminado.';
+    } else if (idUbicacion == null) {
+      codigo = 'UBICACION_NULA';
+      descripcion =
+          'La línea no tiene ubicación asignada; el stock no sabe dónde registrarse.';
+    } else if (!ubicacionExiste) {
+      codigo = 'UBICACION_INEXISTENTE';
+      descripcion =
+          'La ubicación #$idUbicacion no existe en el layout del almacén.';
+    } else if (idPresentacion == null) {
+      if (presentacionesProducto == 0) {
+        codigo = 'PRODUCTO_SIN_PRESENTACION';
+        descripcion =
+            'El producto no tiene presentaciones en catálogo; el sistema no puede contabilizar stock por presentación.';
+      } else if (tienePresentacionBase) {
+        codigo = 'PRESENTACION_NO_ASIGNADA';
+        descripcion =
+            'La línea quedó sin presentación aunque el producto tiene presentación base disponible. '
+            'Al completar, debió asignarse automáticamente.';
+      } else {
+        codigo = 'PRESENTACION_NO_ASIGNADA';
+        descripcion =
+            'La línea no tiene presentación y el producto no tiene presentación base definida.';
+      }
+    } else if (!presentacionValida) {
+      codigo = 'PRESENTACION_INVALIDA';
+      descripcion =
+          'La presentación #$idPresentacion no existe en catálogo o no pertenece al producto.';
+    } else if (lineasConMovimiento > 0 && lineasConMovimiento < totalLineas) {
+      if (ultimoIdConMovimiento != null &&
+          idRecepcionProducto > ultimoIdConMovimiento) {
+        codigo = 'REGISTRO_PARCIAL_INTERRUMPIDO';
+        descripcion =
+            'Completación parcial del kardex: se contabilizaron $lineasConMovimiento de '
+            '$totalLineas líneas. Esta línea quedó después del último movimiento registrado '
+            '(id línea $ultimoIdConMovimiento). Suele deberse a timeout, error de red o '
+            'interrupción al completar desde la app.';
+      } else {
+        codigo = 'REGISTRO_PARCIAL_KARDEX';
+        descripcion =
+            'La operación está completada pero solo $lineasConMovimiento de $totalLineas '
+            'líneas tienen movimiento de inventario.';
+      }
+    } else {
+      codigo = 'MOVIMIENTO_NO_GENERADO';
+      descripcion =
+          'La operación está completada y los datos de la línea parecen válidos, '
+          'pero no se generó movimiento de inventario.';
+    }
+
+    if (idPresentacion == null &&
+        presentacionesProducto == 0 &&
+        codigo != 'PRODUCTO_SIN_PRESENTACION') {
+      causasAdicionales.add(
+        'Además, el producto no tiene presentaciones en catálogo.',
+      );
+    }
+
+    return {
+      'causa_codigo': codigo,
+      'causa_descripcion': descripcion,
+      'causas_adicionales': causasAdicionales,
+    };
+  }
+
+  static Map<String, dynamic> _buildReceptionOperationDiagnosis({
+    required int estado,
+    required int totalLineas,
+    required int lineasConMovimiento,
+    required int lineasOk,
+    required int lineasProblema,
+    required int? ultimoIdConMovimiento,
+    required List<Map<String, dynamic>> items,
+  }) {
+    final conteoCausas = <String, int>{};
+    for (final item in items) {
+      if (item['resultado_auditoria'] == 'OK') continue;
+      final codigo = item['causa_codigo']?.toString() ?? 'DESCONOCIDA';
+      conteoCausas[codigo] = (conteoCausas[codigo] ?? 0) + 1;
+    }
+
+    String? causaPrincipal;
+    String? resumen;
+    final esRegistroParcial =
+        estado == 2 &&
+        lineasConMovimiento > 0 &&
+        lineasConMovimiento < totalLineas;
+
+    if (lineasProblema == 0) {
+      resumen = 'Todas las líneas están contabilizadas en inventario.';
+    } else if (esRegistroParcial) {
+      causaPrincipal = 'REGISTRO_PARCIAL_INTERRUMPIDO';
+      resumen =
+          'La operación se marcó completada pero solo $lineasConMovimiento de '
+          '$totalLineas líneas generaron kardex. '
+          '${totalLineas - lineasConMovimiento} líneas quedaron sin stock. '
+          'Causa probable: interrupción o error al completar desde la app '
+          '(el proceso inserta línea por línea).';
+    } else if (estado != 2) {
+      causaPrincipal = 'ESTADO_NO_COMPLETADA';
+      resumen =
+          'Hay $lineasProblema línea(s) sin inventario porque la operación no está completada.';
+    } else {
+      final topCausa = conteoCausas.entries.isEmpty
+          ? null
+          : conteoCausas.entries.reduce(
+              (a, b) => a.value >= b.value ? a : b,
+            );
+      causaPrincipal = topCausa?.key;
+      resumen =
+          'Hay $lineasProblema línea(s) con problemas de contabilización. '
+          'Causa más frecuente: ${topCausa?.key ?? 'variada'} (${topCausa?.value ?? 0} casos).';
+    }
+
+    return {
+      'es_registro_parcial': esRegistroParcial,
+      'lineas_contabilizadas': lineasConMovimiento,
+      'lineas_sin_movimiento': totalLineas - lineasConMovimiento,
+      'ultimo_id_linea_con_movimiento': ultimoIdConMovimiento,
+      'causa_principal': causaPrincipal,
+      'resumen': resumen,
+      'conteo_por_causa': conteoCausas,
+    };
   }
 }
