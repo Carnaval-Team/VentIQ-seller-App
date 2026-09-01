@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
@@ -20,7 +21,9 @@ import 'screens/notificaciones_screen.dart';
 
 Future<void> main() async {
   final binding = WidgetsFlutterBinding.ensureInitialized();
-  FlutterNativeSplash.preserve(widgetsBinding: binding);
+  if (!kIsWeb) {
+    FlutterNativeSplash.preserve(widgetsBinding: binding);
+  }
 
   await Supabase.initialize(
     url: SupabaseConfig.supabaseUrl,

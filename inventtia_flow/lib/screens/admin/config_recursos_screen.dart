@@ -5,15 +5,11 @@ import '../../models/servicio.dart';
 import '../../services/auth_service.dart';
 import '../../services/recurso_service.dart';
 
-/// Configuración de RECURSOS, TRAMOS y TURNOS de un local_servicio.
+/// Pantalla que envuelve el panel de configuración de recursos de un
+/// local_servicio.
 ///
-/// Jerarquía editable:
-///   Recurso (Carro 1) → Tramos (Ida, Vuelta) → Turnos (Ida y vuelta, Solo ida)
-/// Un turno consume 1 plaza de cada tramo marcado. La disponibilidad de un
-/// turno = mínimo de los tramos que ocupa (capacidad compartida).
-///
-/// Es OPCIONAL: si un servicio no define recursos, sigue funcionando con el
-/// cupo por día de siempre (plan_servicios).
+/// Mantiene el AppBar y Scaffold; toda la lógica y UI vive en
+/// [ConfigRecursosPanel].
 class ConfigRecursosScreen extends StatefulWidget {
   final LocalServicio localServicio;
   const ConfigRecursosScreen({super.key, required this.localServicio});
@@ -23,6 +19,46 @@ class ConfigRecursosScreen extends StatefulWidget {
 }
 
 class _ConfigRecursosScreenState extends State<ConfigRecursosScreen> {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Recursos y turnos')),
+      body: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: ConfigRecursosPanel(
+          localServicio: widget.localServicio,
+        ),
+      ),
+    );
+  }
+}
+
+/// Configuración de RECURSOS, TRAMOS y TURNOS de un local_servicio.
+///
+/// Jerarquía editable:
+///   Recurso (Carro 1) → Tramos (Ida, Vuelta) → Turnos (Ida y vuelta, Solo ida)
+/// Un turno consume 1 plaza de cada tramo marcado. La disponibilidad de un
+/// turno = mínimo de los tramos que ocupa (capacidad compartida).
+///
+/// Es OPCIONAL: si un servicio no define recursos, sigue funcionando con el
+/// cupo por día de siempre (plan_servicios).
+class ConfigRecursosPanel extends StatefulWidget {
+  final LocalServicio localServicio;
+  final VoidCallback? onUpdated;
+  final bool showHeader;
+
+  const ConfigRecursosPanel({
+    super.key,
+    required this.localServicio,
+    this.onUpdated,
+    this.showHeader = true,
+  });
+
+  @override
+  State<ConfigRecursosPanel> createState() => _ConfigRecursosPanelState();
+}
+
+class _ConfigRecursosPanelState extends State<ConfigRecursosPanel> {
   List<Recurso> _recursos = [];
   bool _loading = true;
 
@@ -77,7 +113,10 @@ class _ConfigRecursosScreenState extends State<ConfigRecursosScreen> {
         uuidUsuario: _uuid,
         idLocalServicio: widget.localServicio.id,
       );
-      if (mounted) setState(() => _recursos = recursos);
+      if (mounted) {
+        setState(() => _recursos = recursos);
+        widget.onUpdated?.call();
+      }
     } catch (e) {
       _snack('Error al cargar: $e', AppTheme.error);
     } finally {
@@ -241,74 +280,77 @@ class _ConfigRecursosScreenState extends State<ConfigRecursosScreen> {
   Widget build(BuildContext context) {
     final servicio = widget.localServicio.servicio?.nombre ?? 'Servicio';
     final local = widget.localServicio.local?.nombre ?? '';
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          widget.localServicio.esTransporteOmnibus
-              ? 'Vehículos y trayectos'
-              : 'Recursos y turnos',
-        ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _editarRecurso(),
-        icon: const Icon(Icons.add),
-        label: const Text('Recurso'),
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _cargar,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+    final content = ListView(
+      shrinkWrap: true,
+      physics: const ClampingScrollPhysics(),
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      children: [
+        if (widget.showHeader) _Header(servicio: servicio, local: local),
+        if (_avisoTurnosMinimos != null) ...[
+          const SizedBox(height: 12),
+          Material(
+            color: AppTheme.warning.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _Header(servicio: servicio, local: local),
-                  if (_avisoTurnosMinimos != null) ...[
-                    const SizedBox(height: 12),
-                    Material(
-                      color: AppTheme.warning.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(12),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Icon(
-                              Icons.warning_amber_rounded,
-                              color: AppTheme.warning,
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                _avisoTurnosMinimos!,
-                                style: const TextStyle(fontSize: 13),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                  const Icon(
+                    Icons.warning_amber_rounded,
+                    color: AppTheme.warning,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _avisoTurnosMinimos!,
+                      style: const TextStyle(fontSize: 13),
                     ),
-                  ],
-                  const SizedBox(height: 16),
-                  if (_recursos.isEmpty)
-                    _EmptyState(onCrear: () => _editarRecurso())
-                  else
-                    ..._recursos.map(
-                      (r) => _RecursoCard(
-                        recurso: r,
-                        onEditRecurso: () => _editarRecurso(recurso: r),
-                        onDeleteRecurso: () => _eliminarRecurso(r),
-                        onAddTramo: () => _editarTramo(r),
-                        onEditTramo: (t) => _editarTramo(r, tramo: t),
-                        onDeleteTramo: _eliminarTramo,
-                        onAddTurno: () => _editarTurno(r),
-                        onEditTurno: (t) => _editarTurno(r, turno: t),
-                        onDeleteTurno: (t) => _eliminarTurno(r, t),
-                      ),
-                    ),
+                  ),
                 ],
               ),
             ),
+          ),
+        ],
+        const SizedBox(height: 16),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: ElevatedButton.icon(
+            onPressed: () => _editarRecurso(),
+            icon: const Icon(Icons.add),
+            label: const Text('Recurso'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        if (_recursos.isEmpty)
+          _EmptyState(onCrear: () => _editarRecurso())
+        else
+          ..._recursos.map(
+            (r) => _RecursoCard(
+              recurso: r,
+              onEditRecurso: () => _editarRecurso(recurso: r),
+              onDeleteRecurso: () => _eliminarRecurso(r),
+              onAddTramo: () => _editarTramo(r),
+              onEditTramo: (t) => _editarTramo(r, tramo: t),
+              onDeleteTramo: _eliminarTramo,
+              onAddTurno: () => _editarTurno(r),
+              onEditTurno: (t) => _editarTurno(r, turno: t),
+              onDeleteTurno: (t) => _eliminarTurno(r, t),
+            ),
+          ),
+      ],
     );
+
+    return _loading
+        ? const Center(child: CircularProgressIndicator())
+        : RefreshIndicator(
+            onRefresh: _cargar,
+            child: content,
+          );
   }
 }
 
@@ -949,11 +991,11 @@ class _TurnoFormSheetState extends State<_TurnoFormSheet> {
         tramos: widget.recurso.tramos,
         turnos: restantes,
       );
-      final falta = _ConfigRecursosScreenState._faltantesTurnosMinimos(prueba);
+      final falta = _ConfigRecursosPanelState._faltantesTurnosMinimos(prueba);
       // Solo bloquear si ya había configuración completa y esta edición la rompe,
       // o si desactiva/cambia el último turno mínimo. Al crear turnos uno a uno
       // se permite quedar incompleto (el aviso de la pantalla lo indica).
-      final antes = _ConfigRecursosScreenState._faltantesTurnosMinimos(
+      final antes = _ConfigRecursosPanelState._faltantesTurnosMinimos(
         widget.recurso,
       );
       if (antes.isEmpty && falta.isNotEmpty) {

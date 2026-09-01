@@ -15,6 +15,7 @@ import '../../services/catalogo_service.dart';
 import '../../services/imagen_service.dart';
 import '../../widgets/net_image.dart';
 import '../../widgets/opciones_list_editor.dart';
+import 'servicio_detail_screen.dart';
 
 class GestionServiciosScreen extends StatefulWidget {
   final Entidad entidad;
@@ -54,53 +55,8 @@ class _GestionServiciosScreenState extends State<GestionServiciosScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => _ServicioFormSheet(idEntidad: widget.entidad.id),
+      builder: (_) => ServicioFormSheet(idEntidad: widget.entidad.id),
     ).then((_) => _cargar());
-  }
-
-  void _editarServicio(Servicio servicio) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      enableDrag: false,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) =>
-          _ServicioFormSheet(idEntidad: widget.entidad.id, servicio: servicio),
-    ).then((_) => _cargar());
-  }
-
-  Future<void> _eliminarServicio(Servicio servicio) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Eliminar Servicio'),
-        content: Text('¿Eliminar "${servicio.nombre}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
-    );
-    if (confirm == true) {
-      try {
-        await CatalogoService.deleteServicio(servicio.id);
-        await _cargar();
-      } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.error),
-        );
-      }
-    }
   }
 
   @override
@@ -162,27 +118,15 @@ class _GestionServiciosScreenState extends State<GestionServiciosScreen> {
                               style: const TextStyle(fontSize: 12),
                             )
                           : null,
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(
-                              Icons.edit_outlined,
-                              size: 20,
-                              color: AppTheme.primary,
-                            ),
-                            onPressed: () => _editarServicio(s),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ServicioDetailScreen(
+                            servicio: s,
+                            idEntidad: widget.entidad.id,
                           ),
-                          IconButton(
-                            icon: const Icon(
-                              Icons.delete_outline,
-                              size: 20,
-                              color: AppTheme.error,
-                            ),
-                            onPressed: () => _eliminarServicio(s),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ).then((_) => _cargar()),
                     ),
                   );
                 },
@@ -192,16 +136,16 @@ class _GestionServiciosScreenState extends State<GestionServiciosScreen> {
   }
 }
 
-class _ServicioFormSheet extends StatefulWidget {
+class ServicioFormSheet extends StatefulWidget {
   final int idEntidad;
   final Servicio? servicio;
-  const _ServicioFormSheet({required this.idEntidad, this.servicio});
+  const ServicioFormSheet({required this.idEntidad, this.servicio});
 
   @override
-  State<_ServicioFormSheet> createState() => _ServicioFormSheetState();
+  State<ServicioFormSheet> createState() => ServicioFormSheetState();
 }
 
-class _ServicioFormSheetState extends State<_ServicioFormSheet> {
+class ServicioFormSheetState extends State<ServicioFormSheet> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nombreCtrl;
   late final TextEditingController _descCtrl;
