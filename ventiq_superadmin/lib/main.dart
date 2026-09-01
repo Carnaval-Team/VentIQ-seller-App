@@ -30,6 +30,7 @@ import 'screens/muevete/muevete_drivers_screen.dart';
 import 'screens/muevete/muevete_trips_screen.dart';
 import 'screens/muevete/muevete_requests_screen.dart';
 import 'screens/muevete/muevete_map_screen.dart';
+import 'screens/muevete/muevete_map_upload_screen.dart';
 import 'screens/muevete/muevete_ratings_screen.dart';
 import 'screens/muevete/muevete_wallets_screen.dart';
 import 'screens/muevete/muevete_kyc_screen.dart';
@@ -102,6 +103,7 @@ class VentIQSuperAdminApp extends StatelessWidget {
         '/muevete/viajes': (context) => const MueveteTripsScreen(),
         '/muevete/solicitudes': (context) => const MueveteRequestsScreen(),
         '/muevete/mapa': (context) => const MueveteMapScreen(),
+        '/muevete/mapa-offline': (context) => const MueveteMapUploadScreen(),
         '/muevete/valoraciones': (context) => const MueveteRatingsScreen(),
         '/muevete/billeteras': (context) => const MueveteWalletsScreen(),
         '/muevete/kyc': (context) => const MueveteKycScreen(),

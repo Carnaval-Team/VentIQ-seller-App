@@ -176,6 +176,11 @@ class AppDrawer extends StatelessWidget {
                       route: '/muevete/mapa',
                     ),
                     _DrawerItem(
+                      icon: Icons.upload,
+                      title: 'Subir Mapa Offline',
+                      route: '/muevete/mapa-offline',
+                    ),
+                    _DrawerItem(
                       icon: Icons.star,
                       title: 'Valoraciones',
                       route: '/muevete/valoraciones',
