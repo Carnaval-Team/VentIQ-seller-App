@@ -306,11 +306,19 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
   }
 
   Future<void> _cancelOrder() async {
+    final status = (_order['status'] as String? ?? '').trim();
+    final needsReturn = const ['Procesando', 'Asignado', 'Entregando']
+        .contains(status);
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Cancelar Orden'),
-        content: const Text('¿Estás seguro de cancelar esta orden?'),
+        content: Text(
+          needsReturn
+              ? '¿Estás seguro de cancelar esta orden? Se devolverá el inventario correspondiente.'
+              : '¿Estás seguro de cancelar esta orden?',
+        ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -321,8 +329,15 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
         ],
       ),
     );
-    if (confirmed == true) {
-      final by = await _currentAdminName();
+    if (confirmed != true) return;
+
+    final by = await _currentAdminName();
+    if (needsReturn) {
+      await _doAction(() => CarnavalService.cancelOrder(
+            _order['id'],
+            changedBy: by,
+          ));
+    } else {
       await _doAction(() => CarnavalService.updateOrderStatus(
             _order['id'],
             'Cancelado',
@@ -2107,6 +2122,13 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
           Icons.swap_horiz,
           Colors.purple,
           _reassignDelivery,
+        ));
+        actions.add(_actionButton(
+          'Cancelar Orden',
+          'Se cancelará y devolverá el inventario correspondiente',
+          Icons.cancel_outlined,
+          Colors.red,
+          _cancelOrder,
         ));
         break;
     }

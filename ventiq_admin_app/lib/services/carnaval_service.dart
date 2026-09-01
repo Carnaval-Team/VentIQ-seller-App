@@ -1459,6 +1459,38 @@ class CarnavalService {
     }
   }
 
+  /// Cancela una orden que ya fue entregada al repartidor, devolviendo stock.
+  static Future<bool> cancelOrder(
+    int orderId, {
+    String? changedBy,
+  }) async {
+    try {
+      final response = await _supabase.rpc(
+        'fn_cancelar_orden_carnaval',
+        params: {
+          'p_order_id': orderId,
+          if (changedBy != null && changedBy.trim().isNotEmpty)
+            'p_changed_by': changedBy.trim(),
+        },
+      );
+
+      final result = response is Map
+          ? Map<String, dynamic>.from(response)
+          : <String, dynamic>{};
+
+      if (result['success'] == true) {
+        print('✅ Orden #$orderId cancelada con devolución de stock');
+        return true;
+      }
+
+      print('❌ Error al cancelar orden: ${result['message']}');
+      return false;
+    } catch (e) {
+      print('❌ Error al cancelar orden: $e');
+      return false;
+    }
+  }
+
   /// True si el método de entrega es recogida en tienda (no requiere repartidor).
   static bool isMetodoRecogida(String? metodoEntrega) {
     final m = (metodoEntrega ?? '').trim().toLowerCase();

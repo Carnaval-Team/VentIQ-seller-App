@@ -110,6 +110,9 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
       return;
     }
 
+    final includeValorInventarioCosto = await _confirmIncludeInventoryCostValue();
+    if (!mounted || includeValorInventarioCosto == null) return;
+
     setState(() {
       _isExporting = true;
     });
@@ -145,10 +148,20 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
         throw Exception('No se encontraron datos de inventario para exportar');
       }
 
-      // Si se pidieron precios, consultarlos y mergear en cada fila
+      // Si se pidió valor a costo o precios completos, enriquecer filas
       List<Map<String, dynamic>> enrichedData = inventoryData;
-      if (_includePrecios) {
+      if (_includePrecios || includeValorInventarioCosto) {
         enrichedData = await _enrichWithPrices(inventoryData, storeId);
+        if (includeValorInventarioCosto) {
+          enrichedData = _addInventoryCostTotals(enrichedData);
+          enrichedData = _filterZeroFinalQuantity(enrichedData);
+        }
+      }
+
+      if (enrichedData.isEmpty) {
+        throw Exception(
+          'No hay productos con stock para exportar el reporte de costos',
+        );
       }
 
       // Generar y compartir el archivo según el método seleccionado
@@ -165,6 +178,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
         includeDescripcionCorta: _includeDescripcionCorta,
         includeDescripcion: _includeDescripcion,
         includePrecios: _includePrecios,
+        includeValorInventarioCosto: includeValorInventarioCosto,
       );
 
       // Cerrar el diálogo después de la exportación exitosa
@@ -291,6 +305,73 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
         'ganancia_pct': gananciaPorc,
       };
     }).toList();
+  }
+
+  /// Calcula valor total a precio costo (costo × cantidad final) por fila.
+  List<Map<String, dynamic>> _addInventoryCostTotals(
+    List<Map<String, dynamic>> rows,
+  ) {
+    return rows.map((row) {
+      final costoUsd =
+          (row['precio_costo_usd'] as num?)?.toDouble() ??
+          (double.tryParse(row['precio_costo_usd']?.toString() ?? '') ?? 0);
+      final costoCup =
+          (row['precio_costo_cup'] as num?)?.toDouble() ??
+          (double.tryParse(row['precio_costo_cup']?.toString() ?? '') ?? 0);
+      final cantidadFinal =
+          (row['cantidad_final'] as num?)?.toDouble() ??
+          (double.tryParse(row['cantidad_final']?.toString() ?? '') ??
+              double.tryParse(row['stock_disponible']?.toString() ?? '') ??
+              0);
+      return {
+        ...row,
+        'valor_total_costo_usd': costoUsd * cantidadFinal,
+        'valor_total_costo_cup': costoCup * cantidadFinal,
+      };
+    }).toList();
+  }
+
+  double _cantidadFinalFromRow(Map<String, dynamic> row) {
+    return (row['cantidad_final'] as num?)?.toDouble() ??
+        double.tryParse(row['cantidad_final']?.toString() ?? '') ??
+        double.tryParse(row['stock_disponible']?.toString() ?? '') ??
+        0;
+  }
+
+  /// Excluye productos sin stock del reporte de valor a costo.
+  List<Map<String, dynamic>> _filterZeroFinalQuantity(
+    List<Map<String, dynamic>> rows,
+  ) {
+    return rows.where((row) => _cantidadFinalFromRow(row) > 0).toList();
+  }
+
+  Future<bool?> _confirmIncludeInventoryCostValue() async {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Valor del inventario'),
+        content: const Text(
+          '¿Desea incluir en el reporte el precio costo y el valor total '
+          'del inventario (precio costo × cantidad final) en USD y CUP '
+          'de cada producto?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('No incluir'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Sí, incluir'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

@@ -1376,6 +1376,7 @@ class ExportService {
     bool includeDescripcion = false,
     bool includePrecios = false,
     bool includeReservado = false,
+    bool includeValorInventarioCosto = false,
   }) async {
     try {
       final now = DateTime.now();
@@ -1398,6 +1399,7 @@ class ExportService {
           includeDescripcion: includeDescripcion,
           includePrecios: includePrecios,
           includeReservado: includeReservado,
+          includeValorInventarioCosto: includeValorInventarioCosto,
         );
         mimeType =
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -1512,6 +1514,7 @@ class ExportService {
                       includeDescripcion: includeDescripcion,
                       includePrecios: includePrecios,
                       includeReservado: includeReservado,
+                      includeValorInventarioCosto: includeValorInventarioCosto,
                     ),
                   );
 
@@ -1803,6 +1806,7 @@ class ExportService {
     bool includeDescripcion = false,
     bool includePrecios = false,
     bool includeReservado = false,
+    bool includeValorInventarioCosto = false,
   }) async {
     final excel = Excel.createExcel();
 
@@ -1845,6 +1849,7 @@ class ExportService {
           includeDescripcion: includeDescripcion,
           includePrecios: includePrecios,
           includeReservado: includeReservado,
+          includeValorInventarioCosto: includeValorInventarioCosto,
         );
       }
     }
@@ -1997,6 +2002,36 @@ class ExportService {
     return '${truncatedAlmacen}_$truncatedUbicacion';
   }
 
+  double _inventoryValorTotalCostoUsd(
+    Map<String, dynamic> producto, {
+    double? cantidadFinal,
+  }) {
+    final qty = cantidadFinal ??
+        (double.tryParse(producto['cantidad_final']?.toString() ?? '0') ?? 0);
+    final costoUsd =
+        (producto['precio_costo_usd'] as num?)?.toDouble() ??
+        double.tryParse(producto['precio_costo_usd']?.toString() ?? '') ??
+        0;
+    return (producto['valor_total_costo_usd'] as num?)?.toDouble() ??
+        double.tryParse(producto['valor_total_costo_usd']?.toString() ?? '') ??
+        (costoUsd * qty);
+  }
+
+  double _inventoryValorTotalCostoCup(
+    Map<String, dynamic> producto, {
+    double? cantidadFinal,
+  }) {
+    final qty = cantidadFinal ??
+        (double.tryParse(producto['cantidad_final']?.toString() ?? '0') ?? 0);
+    final costoCup =
+        (producto['precio_costo_cup'] as num?)?.toDouble() ??
+        double.tryParse(producto['precio_costo_cup']?.toString() ?? '') ??
+        0;
+    return (producto['valor_total_costo_cup'] as num?)?.toDouble() ??
+        double.tryParse(producto['valor_total_costo_cup']?.toString() ?? '') ??
+        (costoCup * qty);
+  }
+
   /// Puebla una hoja con datos de inventario
   void _populateSheet(
     Sheet sheet,
@@ -2011,6 +2046,7 @@ class ExportService {
     bool includeDescripcion = false,
     bool includePrecios = false,
     bool includeReservado = false,
+    bool includeValorInventarioCosto = false,
   }) {
     // Crear lista de encabezados dinámicamente
     final headers = <String>['Nombre'];
@@ -2021,14 +2057,19 @@ class ExportService {
     if (includeDescripcionCorta) headers.add('Descripción Corta');
     if (includeDescripcion) headers.add('Descripción');
 
-    headers.addAll([
-      'Cant. Inicial',
-      'Entradas',
-      'Extracciones',
-      'Ventas',
-      'Reservados Pend.',
-      'Cant. Final',
-    ]);
+    final qtyColCount = includeValorInventarioCosto ? 1 : 6;
+    if (includeValorInventarioCosto) {
+      headers.add('Cant. Final');
+    } else {
+      headers.addAll([
+        'Cant. Inicial',
+        'Entradas',
+        'Extracciones',
+        'Ventas',
+        'Reservados Pend.',
+        'Cant. Final',
+      ]);
+    }
     if (includePrecios) {
       headers.addAll([
         'Costo USD',
@@ -2038,6 +2079,14 @@ class ExportService {
         'Ganancia USD',
         'Ganancia CUP',
         '%Ganancia',
+      ]);
+    }
+    if (includeValorInventarioCosto) {
+      headers.addAll([
+        'Precio Costo (USD)',
+        'Valor Total Costo (USD)',
+        'Precio Costo (CUP)',
+        'Valor Total Costo (CUP)',
       ]);
     }
 
@@ -2067,12 +2116,18 @@ class ExportService {
     }
 
     // Columnas numéricas de cantidades
-    for (int i = 0; i < 6; i++) {
+    for (int i = 0; i < qtyColCount; i++) {
       sheet.setColumnWidth(currentCol + i, 12);
     }
     if (includePrecios) {
       for (int i = 0; i < 7; i++) {
-        sheet.setColumnWidth(currentCol + 6 + i, 13);
+        sheet.setColumnWidth(currentCol + qtyColCount + i, 13);
+      }
+    }
+    if (includeValorInventarioCosto) {
+      final base = currentCol + qtyColCount + (includePrecios ? 7 : 0);
+      for (int i = 0; i < 4; i++) {
+        sheet.setColumnWidth(base + i, i.isEven ? 16 : 18);
       }
     }
 
@@ -2124,6 +2179,8 @@ class ExportService {
     currentRow++;
 
     // Datos de los productos
+    double sumValorTotalUsd = 0;
+    double sumValorTotalCup = 0;
     for (final product in products) {
       final rowData = <String>[product.nombreProducto];
 
@@ -2145,26 +2202,30 @@ class ExportService {
       }
 
       // Agregar columnas numéricas
-      // Reservados siempre desde rawData
-      String reservadoStr = '0.0';
-      if (rawData != null) {
-        final raw = rawData.firstWhere(
-          (r) => r['id_producto'] == product.idProducto,
-          orElse: () => {},
-        );
-        reservadoStr =
-            (double.tryParse(raw['cantidad_reservada']?.toString() ?? '0') ?? 0)
-                .toStringAsFixed(1);
-      }
+      if (includeValorInventarioCosto) {
+        rowData.add(product.cantidadFinal.toStringAsFixed(1));
+      } else {
+        String reservadoStr = '0.0';
+        if (rawData != null) {
+          final raw = rawData.firstWhere(
+            (r) => r['id_producto'] == product.idProducto,
+            orElse: () => {},
+          );
+          reservadoStr =
+              (double.tryParse(raw['cantidad_reservada']?.toString() ?? '0') ??
+                      0)
+                  .toStringAsFixed(1);
+        }
 
-      rowData.addAll([
-        product.cantidadInicial.toStringAsFixed(1),
-        (product.entradasPeriodo ?? 0).toStringAsFixed(1),
-        (product.extraccionesPeriodo ?? 0).toStringAsFixed(1),
-        (product.ventasPeriodo ?? 0).toStringAsFixed(1),
-        reservadoStr,
-        product.cantidadFinal.toStringAsFixed(1),
-      ]);
+        rowData.addAll([
+          product.cantidadInicial.toStringAsFixed(1),
+          (product.entradasPeriodo ?? 0).toStringAsFixed(1),
+          (product.extraccionesPeriodo ?? 0).toStringAsFixed(1),
+          (product.ventasPeriodo ?? 0).toStringAsFixed(1),
+          reservadoStr,
+          product.cantidadFinal.toStringAsFixed(1),
+        ]);
+      }
 
       if (includePrecios && rawData != null) {
         final raw = rawData.firstWhere(
@@ -2186,11 +2247,63 @@ class ExportService {
         ]);
       }
 
+      if (includeValorInventarioCosto && rawData != null) {
+        final raw = rawData.firstWhere(
+          (r) => r['id_producto'] == product.idProducto,
+          orElse: () => {},
+        );
+        final costoUsd =
+            (raw['precio_costo_usd'] as num?)?.toDouble() ??
+            double.tryParse(raw['precio_costo_usd']?.toString() ?? '') ??
+            0;
+        final costoCup =
+            (raw['precio_costo_cup'] as num?)?.toDouble() ??
+            double.tryParse(raw['precio_costo_cup']?.toString() ?? '') ??
+            0;
+        final valorTotalUsd =
+            (raw['valor_total_costo_usd'] as num?)?.toDouble() ??
+            double.tryParse(raw['valor_total_costo_usd']?.toString() ?? '') ??
+            (costoUsd * product.cantidadFinal);
+        final valorTotalCup =
+            (raw['valor_total_costo_cup'] as num?)?.toDouble() ??
+            double.tryParse(raw['valor_total_costo_cup']?.toString() ?? '') ??
+            (costoCup * product.cantidadFinal);
+        sumValorTotalUsd += valorTotalUsd;
+        sumValorTotalCup += valorTotalCup;
+        rowData.addAll([
+          costoUsd.toStringAsFixed(2),
+          valorTotalUsd.toStringAsFixed(2),
+          costoCup.toStringAsFixed(2),
+          valorTotalCup.toStringAsFixed(2),
+        ]);
+      }
+
       for (int i = 0; i < rowData.length; i++) {
         final cell = sheet.cell(
           CellIndex.indexByColumnRow(columnIndex: i, rowIndex: currentRow),
         );
         cell.value = TextCellValue(rowData[i]);
+      }
+      currentRow++;
+    }
+
+    if (includeValorInventarioCosto) {
+      final totalsRow = List<String>.filled(headers.length, '');
+      totalsRow[0] = 'TOTAL';
+      totalsRow[headers.length - 3] = sumValorTotalUsd.toStringAsFixed(2);
+      totalsRow[headers.length - 1] = sumValorTotalCup.toStringAsFixed(2);
+
+      for (int i = 0; i < totalsRow.length; i++) {
+        final cell = sheet.cell(
+          CellIndex.indexByColumnRow(columnIndex: i, rowIndex: currentRow),
+        );
+        cell.value = TextCellValue(totalsRow[i]);
+        if (totalsRow[i].isNotEmpty) {
+          cell.cellStyle = CellStyle(
+            bold: true,
+            backgroundColorHex: ExcelColor.grey50,
+          );
+        }
       }
       currentRow++;
     }
@@ -2246,6 +2359,7 @@ class ExportService {
     bool includeDescripcion = false,
     bool includePrecios = false,
     bool includeReservado = false,
+    bool includeValorInventarioCosto = false,
   }) {
     // Crear lista de encabezados dinámicamente
     final headers = <String>['Nombre'];
@@ -2282,15 +2396,20 @@ class ExportService {
     }
 
     // Agregar columnas numéricas
-    headers.addAll([
-      'Cant. Ini',
-      'Entradas',
-      'Extracc.',
-      'Ventas',
-      'Reservado',
-      'Cant. Fin',
-    ]);
-    for (int i = 0; i < 6; i++) {
+    final qtyColCount = includeValorInventarioCosto ? 1 : 6;
+    if (includeValorInventarioCosto) {
+      headers.add('Cant. Fin');
+    } else {
+      headers.addAll([
+        'Cant. Ini',
+        'Entradas',
+        'Extracc.',
+        'Ventas',
+        'Reservado',
+        'Cant. Fin',
+      ]);
+    }
+    for (int i = 0; i < qtyColCount; i++) {
       columnWidths[columnIndex + i] = const pw.FlexColumnWidth(1);
     }
     if (includePrecios) {
@@ -2304,23 +2423,33 @@ class ExportService {
         '%Gan.',
       ]);
       for (int i = 0; i < 7; i++) {
-        columnWidths[columnIndex + 5 + i] = const pw.FlexColumnWidth(1.1);
+        columnWidths[columnIndex + qtyColCount + i] =
+            const pw.FlexColumnWidth(1.1);
+      }
+    }
+    if (includeValorInventarioCosto) {
+      headers.addAll([
+        'P.Costo USD',
+        'Val.Total USD',
+        'P.Costo CUP',
+        'Val.Total CUP',
+      ]);
+      final base = columnIndex + qtyColCount + (includePrecios ? 7 : 0);
+      for (int i = 0; i < 4; i++) {
+        columnWidths[base + i] = const pw.FlexColumnWidth(1.2);
       }
     }
 
-    return pw.Table(
-      border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
-      columnWidths: columnWidths,
-      children: [
-        // Encabezados
-        pw.TableRow(
-          decoration: const pw.BoxDecoration(color: PdfColors.grey200),
-          children: headers
-              .map((header) => _buildTableHeader(header, font: boldFont))
-              .toList(),
-        ),
-        // Datos de productos
-        ...productos.map((producto) {
+    double sumValorTotalUsd = 0;
+    double sumValorTotalCup = 0;
+    if (includeValorInventarioCosto) {
+      for (final producto in productos) {
+        sumValorTotalUsd += _inventoryValorTotalCostoUsd(producto);
+        sumValorTotalCup += _inventoryValorTotalCostoCup(producto);
+      }
+    }
+
+    final productRows = productos.map((producto) {
           final rowData = <String>[
             producto['nombre_producto']?.toString() ?? 'Sin nombre',
           ];
@@ -2343,30 +2472,42 @@ class ExportService {
           }
 
           // Agregar columnas numéricas
-          rowData.addAll([
-            (double.tryParse(producto['cantidad_inicial']?.toString() ?? '0') ??
-                    0)
-                .toStringAsFixed(1),
-            (double.tryParse(producto['entradas_periodo']?.toString() ?? '0') ??
-                    0)
-                .toStringAsFixed(1),
-            (double.tryParse(
-                      producto['extracciones_periodo']?.toString() ?? '0',
-                    ) ??
-                    0)
-                .toStringAsFixed(1),
-            (double.tryParse(producto['ventas_periodo']?.toString() ?? '0') ??
-                    0)
-                .toStringAsFixed(1),
-            (double.tryParse(
-                      producto['cantidad_reservada']?.toString() ?? '0',
-                    ) ??
-                    0)
-                .toStringAsFixed(1),
-            (double.tryParse(producto['cantidad_final']?.toString() ?? '0') ??
-                    0)
-                .toStringAsFixed(1),
-          ]);
+          if (includeValorInventarioCosto) {
+            rowData.add(
+              (double.tryParse(producto['cantidad_final']?.toString() ?? '0') ??
+                      0)
+                  .toStringAsFixed(1),
+            );
+          } else {
+            rowData.addAll([
+              (double.tryParse(
+                        producto['cantidad_inicial']?.toString() ?? '0',
+                      ) ??
+                      0)
+                  .toStringAsFixed(1),
+              (double.tryParse(
+                        producto['entradas_periodo']?.toString() ?? '0',
+                      ) ??
+                      0)
+                  .toStringAsFixed(1),
+              (double.tryParse(
+                        producto['extracciones_periodo']?.toString() ?? '0',
+                      ) ??
+                      0)
+                  .toStringAsFixed(1),
+              (double.tryParse(producto['ventas_periodo']?.toString() ?? '0') ??
+                      0)
+                  .toStringAsFixed(1),
+              (double.tryParse(
+                        producto['cantidad_reservada']?.toString() ?? '0',
+                      ) ??
+                      0)
+                  .toStringAsFixed(1),
+              (double.tryParse(producto['cantidad_final']?.toString() ?? '0') ??
+                      0)
+                  .toStringAsFixed(1),
+            ]);
+          }
 
           if (includePrecios) {
             final _f2 = (String k) =>
@@ -2383,13 +2524,77 @@ class ExportService {
             ]);
           }
 
+          if (includeValorInventarioCosto) {
+            final cantidadFinal = double.tryParse(
+                  producto['cantidad_final']?.toString() ?? '0',
+                ) ??
+                0;
+            final costoUsd = double.tryParse(
+                  producto['precio_costo_usd']?.toString() ?? '0',
+                ) ??
+                0;
+            final costoCup = double.tryParse(
+                  producto['precio_costo_cup']?.toString() ?? '0',
+                ) ??
+                0;
+            final valorTotalUsd = double.tryParse(
+                  producto['valor_total_costo_usd']?.toString() ?? '',
+                ) ??
+                (costoUsd * cantidadFinal);
+            final valorTotalCup = double.tryParse(
+                  producto['valor_total_costo_cup']?.toString() ?? '',
+                ) ??
+                (costoCup * cantidadFinal);
+            rowData.addAll([
+              costoUsd.toStringAsFixed(2),
+              valorTotalUsd.toStringAsFixed(2),
+              costoCup.toStringAsFixed(2),
+              valorTotalCup.toStringAsFixed(2),
+            ]);
+          }
+
           return pw.TableRow(
             children: rowData
                 .map((data) => _buildTableCell(data, font: regularFont))
                 .toList(),
           );
-        }),
-      ],
+        }).toList();
+
+    final tableChildren = <pw.TableRow>[
+      pw.TableRow(
+        decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+        children: headers
+            .map((header) => _buildTableHeader(header, font: boldFont))
+            .toList(),
+      ),
+      ...productRows,
+    ];
+
+    if (includeValorInventarioCosto) {
+      final totalsRow = List<String>.filled(headers.length, '');
+      totalsRow[0] = 'TOTAL';
+      totalsRow[headers.length - 3] = sumValorTotalUsd.toStringAsFixed(2);
+      totalsRow[headers.length - 1] = sumValorTotalCup.toStringAsFixed(2);
+
+      tableChildren.add(
+        pw.TableRow(
+          decoration: const pw.BoxDecoration(color: PdfColors.grey100),
+          children: totalsRow
+              .map(
+                (data) => _buildTableCell(
+                  data,
+                  font: data.isNotEmpty ? boldFont : regularFont,
+                ),
+              )
+              .toList(),
+        ),
+      );
+    }
+
+    return pw.Table(
+      border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+      columnWidths: columnWidths,
+      children: tableChildren,
     );
   }
 
