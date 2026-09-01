@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_theme.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
+import '../utils/app_error.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -122,7 +123,7 @@ class _LoginScreenState extends State<LoginScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            authProvider.error ?? 'Error al iniciar sesion',
+            authProvider.error ?? AppError.message(null, action: 'iniciar sesión'),
             style: const TextStyle(color: Colors.white),
           ),
           backgroundColor: AppTheme.error,

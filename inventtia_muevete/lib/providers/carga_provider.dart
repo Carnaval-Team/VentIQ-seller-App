@@ -5,6 +5,7 @@ import '../models/estado_carga_model.dart';
 import '../models/oferta_carga_model.dart';
 import '../services/carga_service.dart';
 import '../services/oferta_carga_service.dart';
+import '../utils/app_error.dart';
 
 class CargaProvider extends ChangeNotifier {
   final _cargaService = CargaService();
@@ -65,7 +66,7 @@ class CargaProvider extends ChangeNotifier {
     try {
       _misCargas = await _cargaService.getCargasShipper(shipperUuid);
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
     } finally {
       _loadingMisCargas = false;
       notifyListeners();
@@ -83,7 +84,7 @@ class CargaProvider extends ChangeNotifier {
       }
       return true;
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       return false;
     } finally {
       _actionLoading = false;
@@ -98,7 +99,7 @@ class CargaProvider extends ChangeNotifier {
     try {
       _ofertasCarga = await _ofertaService.getOfertasCarga(cargaId);
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
     } finally {
       _loadingOfertas = false;
       notifyListeners();
@@ -127,7 +128,7 @@ class CargaProvider extends ChangeNotifier {
           .toList();
       return true;
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       return false;
     } finally {
       _actionLoading = false;
@@ -144,7 +145,7 @@ class CargaProvider extends ChangeNotifier {
       _refreshCargaEstado(cargaId, 'cancelada');
       return true;
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       return false;
     } finally {
       _actionLoading = false;
@@ -165,7 +166,7 @@ class CargaProvider extends ChangeNotifier {
         ciudadDestino: filtroCiudadDestino,
       );
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
     } finally {
       _loadingDisponibles = false;
       notifyListeners();
@@ -179,7 +180,7 @@ class CargaProvider extends ChangeNotifier {
     try {
       _cargasActivas = await _cargaService.getCargasCarrier(driverId);
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
     } finally {
       _loadingMisCargas = false;
       notifyListeners();
@@ -193,7 +194,7 @@ class CargaProvider extends ChangeNotifier {
     try {
       _misOfertas = await _ofertaService.getOfertasCarrier(driverId);
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
     } finally {
       _loadingOfertas = false;
       notifyListeners();
@@ -211,7 +212,7 @@ class CargaProvider extends ChangeNotifier {
       }
       return true;
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       return false;
     } finally {
       _actionLoading = false;
@@ -233,7 +234,7 @@ class CargaProvider extends ChangeNotifier {
           .toList();
       return true;
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       return false;
     } finally {
       _actionLoading = false;
@@ -250,7 +251,7 @@ class CargaProvider extends ChangeNotifier {
       _refreshCargaEstado(cargaId, 'en_transito');
       return true;
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       return false;
     } finally {
       _actionLoading = false;
@@ -267,7 +268,7 @@ class CargaProvider extends ChangeNotifier {
       _refreshCargaEstado(cargaId, 'completada_carrier');
       return true;
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       return false;
     } finally {
       _actionLoading = false;
@@ -297,7 +298,7 @@ class CargaProvider extends ChangeNotifier {
           _cargasDisponibles.where((c) => c.id != cargaId).toList();
       return true;
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       return false;
     } finally {
       _actionLoading = false;
@@ -314,7 +315,7 @@ class CargaProvider extends ChangeNotifier {
       _refreshCargaEstado(cargaId, 'completada_carrier');
       return true;
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       return false;
     } finally {
       _actionLoading = false;
@@ -332,7 +333,7 @@ class CargaProvider extends ChangeNotifier {
       _refreshCargaEstado(cargaId, 'completada');
       return true;
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       return false;
     } finally {
       _actionLoading = false;
@@ -348,7 +349,7 @@ class CargaProvider extends ChangeNotifier {
       _cargasActivas =
           await _cargaService.getCargasCarrierByUuid(carrierUuid);
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
     } finally {
       _loadingMisCargas = false;
       notifyListeners();
@@ -365,7 +366,7 @@ class CargaProvider extends ChangeNotifier {
       _cargasActivas =
           await _cargaService.getCargasDispatcher(carrierIds);
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
     } finally {
       _loadingMisCargas = false;
       notifyListeners();
@@ -385,7 +386,7 @@ class CargaProvider extends ChangeNotifier {
       _refreshCargaEstado(cargaId, 'aceptada');
       return true;
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       return false;
     } finally {
       _actionLoading = false;
@@ -406,7 +407,7 @@ class CargaProvider extends ChangeNotifier {
         _nomEstados = await _cargaService.getNomEstados();
       }
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
     } finally {
       _loadingHistorial = false;
       notifyListeners();
@@ -421,7 +422,7 @@ class CargaProvider extends ChangeNotifier {
     try {
       _cargaDetalle = await _cargaService.getCargaById(id);
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
     }
     notifyListeners();
   }

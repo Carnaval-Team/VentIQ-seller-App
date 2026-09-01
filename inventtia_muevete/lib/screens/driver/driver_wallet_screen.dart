@@ -13,7 +13,7 @@ import '../../utils/helpers.dart';
 import '../../widgets/wallet_balance_card.dart';
 import '../../widgets/transaction_list_item.dart';
 import 'incoming_requests_screen.dart';
-import '../common/unified_profile_screen.dart';
+
 
 class DriverWalletScreen extends StatefulWidget {
   const DriverWalletScreen({super.key});
@@ -559,11 +559,7 @@ class _DriverWalletScreenState extends State<DriverWalletScreen> {
         );
         break;
       case 3:
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => const UnifiedProfileScreen(),
-          ),
-        );
+        Navigator.of(context).pushNamed('/profile');
         break;
     }
   }

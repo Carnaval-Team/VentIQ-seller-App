@@ -5,6 +5,7 @@ import '../models/plan_model.dart';
 import '../models/solicitud_plan_model.dart';
 import '../services/suscripcion_service.dart';
 import '../services/plan_service.dart';
+import '../utils/app_error.dart';
 
 class SuscripcionProvider extends ChangeNotifier {
   final _suscripcionService = SuscripcionService();
@@ -58,7 +59,7 @@ class SuscripcionProvider extends ChangeNotifier {
             await _planService.getPlanPorCodigo(_suscripcion!.planCodigo);
       }
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       debugPrint('[SuscripcionProvider] Error cargarSuscripcion: $e');
     } finally {
       _loading = false;
@@ -87,7 +88,7 @@ class SuscripcionProvider extends ChangeNotifier {
       }
       return ok;
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       return false;
     } finally {
       _actionLoading = false;
@@ -118,7 +119,7 @@ class SuscripcionProvider extends ChangeNotifier {
       }
       return false;
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       return false;
     } finally {
       _actionLoading = false;

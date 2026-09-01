@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/wallet_transaction_model.dart';
 import '../services/wallet_service.dart';
+import '../utils/app_error.dart';
 
 class WalletProvider extends ChangeNotifier {
   final WalletService _walletService = WalletService();
@@ -23,7 +24,7 @@ class WalletProvider extends ChangeNotifier {
       _balance = await _walletService.getClientBalance(uuid);
       _error = null;
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
     }
 
     _isLoading = false;
@@ -38,7 +39,7 @@ class WalletProvider extends ChangeNotifier {
       _balance = await _walletService.getDriverBalance(driverId);
       _error = null;
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
     }
 
     _isLoading = false;
@@ -54,7 +55,7 @@ class WalletProvider extends ChangeNotifier {
       _error = null;
       notifyListeners();
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       notifyListeners();
     }
   }
@@ -73,7 +74,7 @@ class WalletProvider extends ChangeNotifier {
       notifyListeners();
       return transactionId;
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       _isLoading = false;
       notifyListeners();
       return null;
@@ -89,7 +90,7 @@ class WalletProvider extends ChangeNotifier {
       _error = null;
       notifyListeners();
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       notifyListeners();
     }
   }
@@ -109,7 +110,7 @@ class WalletProvider extends ChangeNotifier {
       notifyListeners();
       return transactionId;
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       _isLoading = false;
       notifyListeners();
       return null;
@@ -130,7 +131,7 @@ class WalletProvider extends ChangeNotifier {
       );
       return true;
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       notifyListeners();
       return false;
     }

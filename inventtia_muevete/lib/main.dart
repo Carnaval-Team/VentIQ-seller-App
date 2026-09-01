@@ -44,6 +44,7 @@ import 'screens/dispatcher/dispatcher_home_screen.dart';
 import 'screens/common/planes_screen.dart';
 import 'screens/common/unified_profile_screen.dart';
 import 'widgets/notification_overlay.dart';
+import 'widgets/update_checker.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -124,7 +125,9 @@ class MueveteApp extends StatelessWidget {
             initialRoute: '/',
             builder: (context, child) {
               return NotificationOverlay(
-                child: child ?? const SizedBox.shrink(),
+                child: UpdateChecker(
+                  child: child ?? const SizedBox.shrink(),
+                ),
               );
             },
             routes: {

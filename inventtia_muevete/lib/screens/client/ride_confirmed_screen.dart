@@ -22,6 +22,7 @@ import '../../services/driver_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/routing_service.dart';
 import '../../utils/helpers.dart';
+import '../../utils/app_error.dart';
 import '../../services/completion_sync_service.dart';
 import '../../services/offline_queue_service.dart';
 import '../../widgets/map_widget.dart';
@@ -609,7 +610,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
         );
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.error),
+          SnackBar(content: Text(AppError.message(e)), backgroundColor: AppTheme.error),
         );
       }
     } finally {

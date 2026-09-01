@@ -11,7 +11,8 @@ import '../../providers/theme_provider.dart';
 import '../../services/dispatcher_service.dart';
 import '../../services/document_upload_service.dart';
 import '../carrier/carrier_home_screen.dart';
-import '../common/unified_profile_screen.dart';
+import '../../utils/app_error.dart';
+
 
 class DispatcherHomeScreen extends StatefulWidget {
   const DispatcherHomeScreen({super.key});
@@ -131,12 +132,7 @@ class _DispatcherHomeScreenState extends State<DispatcherHomeScreen>
           IconButton(
             icon: Icon(Icons.person_outline, color: textPrimary),
             tooltip: 'Mi Perfil',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const UnifiedProfileScreen(),
-              ),
-            ),
+            onPressed: () => Navigator.pushNamed(context, '/profile'),
           ),
           IconButton(
             icon: Icon(Icons.refresh_outlined, color: textPrimary),
@@ -657,7 +653,7 @@ class _DispatcherHomeScreenState extends State<DispatcherHomeScreen>
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al agregar chofer: $e'),
+            content: Text(AppError.message(e, action: 'agregar el chofer')),
             backgroundColor: AppTheme.error,
           ),
         );
@@ -1270,7 +1266,7 @@ class _DispatcherHomeScreenState extends State<DispatcherHomeScreen>
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al actualizar chofer: $e'),
+            content: Text(AppError.message(e, action: 'actualizar el chofer')),
             backgroundColor: AppTheme.error,
           ),
         );
@@ -1310,7 +1306,7 @@ class _DispatcherHomeScreenState extends State<DispatcherHomeScreen>
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error al eliminar chofer: $e'),
+          content: Text(AppError.message(e, action: 'eliminar el chofer')),
           backgroundColor: AppTheme.error,
         ),
       );

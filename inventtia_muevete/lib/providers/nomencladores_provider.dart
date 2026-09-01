@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../services/nomencladores_service.dart';
+import '../utils/app_error.dart';
 
 class NomencladoresProvider extends ChangeNotifier {
   final _service = NomencladoresService();
@@ -55,7 +56,7 @@ class NomencladoresProvider extends ChangeNotifier {
       );
       _cargado = true;
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       debugPrint('[NomencladoresProvider] error: $e');
     } finally {
       _loading = false;

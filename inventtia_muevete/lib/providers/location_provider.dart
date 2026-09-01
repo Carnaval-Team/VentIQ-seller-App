@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart';
 import '../services/location_service.dart';
 import '../services/background_service.dart';
 import '../utils/constants.dart';
+import '../utils/app_error.dart';
 
 class LocationProvider extends ChangeNotifier {
   final LocationService _locationService = LocationService();
@@ -102,7 +103,7 @@ class LocationProvider extends ChangeNotifier {
       return gotFix;
     } catch (e, st) {
       debugPrint('[LocationProvider] initLocation error: $e\n$st');
-      _error = e.toString();
+      _error = AppError.message(e);
       _isLoading = false;
       notifyListeners();
       // Still start stream + listeners so we recover when GPS becomes available

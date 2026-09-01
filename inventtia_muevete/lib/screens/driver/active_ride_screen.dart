@@ -21,7 +21,9 @@ import '../../services/driver_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/routing_service.dart';
 import '../../services/stop_service.dart';
+import '../../services/background_service.dart';
 import '../../utils/helpers.dart';
+import '../../utils/app_error.dart';
 import '../../widgets/map_widget.dart';
 import '../../widgets/qr_scanner_dialog.dart';
 
@@ -156,6 +158,10 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
       _subscribeSolicitudChanges();
       _subscribeViajeChanges();
       _checkIfAlreadyCompleted();
+      BackgroundService.updateStatus(
+        title: 'Muevete - Conductor',
+        content: _getPhaseLabel(),
+      );
     });
   }
 
@@ -446,6 +452,10 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
     switch (_currentPhase) {
       case _RidePhase.goingToPickup:
         setState(() => _currentPhase = _RidePhase.waitingAtPickup);
+        BackgroundService.updateStatus(
+          title: 'Muevete - Conductor',
+          content: 'Esperando al pasajero',
+        );
         if (_clientUuid != null) {
           NotificationService().createNotification(
             userUuid: _clientUuid!,
@@ -474,6 +484,10 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
               _nextManeuverIcon = 'straight';
               _nextStepDistanceM = 0;
             });
+            BackgroundService.updateStatus(
+              title: 'Muevete - Conductor',
+              content: 'Viaje en curso',
+            );
             // Immediately recalculate distance to new target (dropoff)
             final loc = context.read<LocationProvider>().locationOrDefault;
             _updateDistanceAndBearing(loc);
@@ -492,7 +506,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
           if (mounted) {
             setState(() => _isCompletingAction = false);
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Error: $e')),
+              SnackBar(content: Text(AppError.message(e))),
             );
           }
         }
@@ -665,7 +679,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
           if (mounted) {
             setState(() => _isCompletingAction = false);
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Error: $e')),
+              SnackBar(content: Text(AppError.message(e))),
             );
           }
         }
@@ -1028,7 +1042,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Error al salir de parada: $e'),
+              content: Text(AppError.message(e, action: 'salir de la parada')),
               backgroundColor: AppTheme.error,
             ),
           );
@@ -1088,7 +1102,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Error al agregar parada: $e'),
+              content: Text(AppError.message(e, action: 'agregar la parada')),
               backgroundColor: AppTheme.error,
             ),
           );

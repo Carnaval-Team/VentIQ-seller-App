@@ -12,6 +12,8 @@ import '../services/driver_service.dart';
 import '../services/routing_service.dart';
 import '../services/vehicle_type_service.dart';
 import '../services/wallet_service.dart';
+import '../services/background_service.dart';
+import '../utils/app_error.dart';
 
 class TransportProvider extends ChangeNotifier {
   final TransportRequestService _requestService = TransportRequestService();
@@ -84,7 +86,8 @@ class TransportProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final prevId = _selectedVehicleType?.id;
-      _vehicleTypes = await _vehicleTypeService.getActiveTypes();
+      _vehicleTypes =
+          await _vehicleTypeService.getActiveTypesByCategoria('pasajero');
       if (prevId != null) {
         final match = _vehicleTypes.where((vt) => vt.id == prevId);
         _selectedVehicleType = match.isNotEmpty
@@ -97,7 +100,7 @@ class TransportProvider extends ChangeNotifier {
       }
       _calculatePrice();
     } catch (e) {
-      _error = 'Error cargando tipos de vehículo: $e';
+      _error = AppError.message(e, action: 'cargar los tipos de vehículo');
     } finally {
       _loadingVehicleTypes = false;
       notifyListeners();
@@ -201,7 +204,7 @@ class TransportProvider extends ChangeNotifier {
       _calculatePrice();
       _state = TransportState.routeReady;
     } catch (e) {
-      _error = 'Error calculando ruta: $e';
+      _error = AppError.message(e, action: 'calcular la ruta');
       _state = TransportState.error;
     }
     notifyListeners();
@@ -260,8 +263,12 @@ class TransportProvider extends ChangeNotifier {
 
       _state = TransportState.waitingOffers;
       notifyListeners();
+      BackgroundService.updateStatus(
+        title: 'Muevete',
+        content: 'Esperando por choferes',
+      );
     } catch (e) {
-      _error = 'Error enviando solicitud: $e';
+      _error = AppError.message(e, action: 'enviar la solicitud');
       _state = TransportState.error;
       notifyListeners();
     }
@@ -309,6 +316,10 @@ class TransportProvider extends ChangeNotifier {
       _acceptedOffer = existing.copyWith(estado: EstadoOferta.aceptada);
       _state = TransportState.rideConfirmed;
       notifyListeners();
+      BackgroundService.updateStatus(
+        title: 'Muevete',
+        content: 'Viaje confirmado · Conductor en camino',
+      );
     }
   }
 
@@ -358,8 +369,12 @@ class TransportProvider extends ChangeNotifier {
 
       _state = TransportState.rideConfirmed;
       notifyListeners();
+      BackgroundService.updateStatus(
+        title: 'Muevete',
+        content: 'Viaje confirmado · Conductor en camino',
+      );
     } catch (e) {
-      _error = 'Error aceptando oferta: $e';
+      _error = AppError.message(e, action: 'aceptar la oferta');
       notifyListeners();
     }
   }
@@ -388,6 +403,10 @@ class TransportProvider extends ChangeNotifier {
       _requestService.subscribeToSolicitudChanges(rid, _onSolicitudEstadoChange);
     }
     notifyListeners();
+    BackgroundService.updateStatus(
+      title: 'Muevete',
+      content: 'Esperando por choferes',
+    );
   }
 
   /// Restores an accepted (in-progress) ride from history.
@@ -459,7 +478,7 @@ class TransportProvider extends ChangeNotifier {
       _requestService.unsubscribe();
       resetTrip();
     } catch (e) {
-      _error = 'Error cancelando solicitud: $e';
+      _error = AppError.message(e, action: 'cancelar la solicitud');
       notifyListeners();
     }
   }
@@ -510,6 +529,10 @@ class TransportProvider extends ChangeNotifier {
     }
     _requestService.unsubscribe();
     notifyListeners();
+    BackgroundService.updateStatus(
+      title: 'Muevete activo',
+      content: 'Ubicación compartida en segundo plano',
+    );
   }
 
   /// Polls for new offers on the active request (realtime backup).

@@ -25,12 +25,14 @@ import '../../models/notification_model.dart';
 import '../../services/completion_sync_service.dart';
 import '../../services/driver_service.dart';
 import '../../services/notification_service.dart';
+import '../../services/background_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
+import '../../utils/app_error.dart';
 import 'active_ride_screen.dart';
 import 'incoming_requests_screen.dart';
 import 'driver_wallet_screen.dart';
-import '../common/unified_profile_screen.dart';
+
 
 class DriverHomeScreen extends StatefulWidget {
   const DriverHomeScreen({super.key});
@@ -49,6 +51,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   bool _isOnline = false;
   bool _isTogglingStatus = false;
+  bool _driverInitialized = false;
   int _currentNavIndex = 0;
 
   // Periodic location tracker while online
@@ -73,7 +76,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   void initState() {
     super.initState();
     _initializeDriver();
-    
+
     _slideController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
@@ -88,9 +91,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     WidgetsBinding.instance.addObserver(this);
     MbTilesService.instance.addListener(_onOfflineMapChanged);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initializeDriver();
-    });
   }
 
   void _onOfflineMapChanged() {
@@ -98,6 +98,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   Future<void> _initializeDriver() async {
+    if (_driverInitialized) return;
+    _driverInitialized = true;
+
     final permission = await Geolocator.checkPermission();
     if (permission != LocationPermission.always &&
         permission != LocationPermission.whileInUse) {
@@ -129,6 +132,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final driverProfile = authProvider.driverProfile;
     if (driverProfile != null) {
       final estado = driverProfile['estado'] as bool? ?? false;
+      // Only seed from profile once — never overwrite a live toggle with stale cache
       setState(() => _isOnline = estado);
       if (_isOnline) {
         _subscribeToRequests();
@@ -136,6 +140,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         _startLocationTracking();
         await _loadNearbyRequests();
         _startRequestsPolling();
+        BackgroundService.updateStatus(
+          title: 'Muevete - Conductor',
+          content: 'En línea · Esperando solicitudes',
+        );
       }
       // Always subscribe to offer acceptances (even offline, to catch late accepts)
       _subscribeToOfferAcceptances();
@@ -145,7 +153,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   void _startLocationTracking() {
     _locationTimer?.cancel();
     _locationTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
-      if (!mounted) return;
+      if (!mounted || !_isOnline) return;
       // Read all context-dependent values synchronously before any await
       final authProvider = context.read<AuthProvider>();
       final driverProfile = authProvider.driverProfile;
@@ -156,12 +164,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       final loc = context.read<LocationProvider>().locationOrDefault;
       // No more context access after this point
       try {
-        await _driverService.upsertDriverLocation(
-          driverId: driverId,
-          vehicleId: vehicleId,
-          lat: loc.latitude,
-          lon: loc.longitude,
-          online: true,
+        // Only update coordinates — never flip place.estado while tracking
+        await _driverService.updateDriverLocation(
+          driverId,
+          loc.latitude,
+          loc.longitude,
         );
       } catch (e) {
         dev.log(
@@ -451,8 +458,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         content: Text('Debes registrar un vehículo desde tu perfil antes de ponerte en línea'),
         behavior: SnackBarBehavior.floating,
       ));
-      Navigator.push(context,
-          MaterialPageRoute(builder: (_) => const UnifiedProfileScreen()));
+      Navigator.pushNamed(context, '/profile');
       return;
     }
 
@@ -475,9 +481,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         );
         // Persist online status in drivers table so it survives app restart
         await _driverService.toggleOnlineStatus(driverId, true);
+        authProvider.setDriverOnlineStatus(true);
       } else {
         // Go offline — update estado only
         await _driverService.toggleOnlineStatus(driverId, false);
+        authProvider.setDriverOnlineStatus(false);
       }
 
       setState(() => _isOnline = newStatus);
@@ -488,6 +496,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         _startLocationTracking();
         _startRequestsPolling();
         await _loadNearbyRequests();
+        BackgroundService.updateStatus(
+          title: 'Muevete - Conductor',
+          content: 'En línea · Esperando solicitudes',
+        );
       } else {
         await _driverService.unsubscribe();
         _stopLocationTracking();
@@ -497,12 +509,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           _nearbyRequests.clear();
         });
         _slideController?.reverse();
+        BackgroundService.updateStatus(
+          title: 'Muevete - Conductor',
+          content: 'Desconectado',
+        );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error al cambiar estado: $e')));
+        ).showSnackBar(SnackBar(content: Text(AppError.message(e, action: 'cambiar el estado'))));
       }
     } finally {
       if (mounted) setState(() => _isTogglingStatus = false);
@@ -820,7 +836,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al enviar oferta: $e'),
+            content: Text(AppError.message(e, action: 'enviar la oferta')),
             backgroundColor: AppTheme.error,
           ),
         );
@@ -922,9 +938,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         return;
       case 3:
         Navigator.of(context)
-            .push(
-              MaterialPageRoute(builder: (_) => const UnifiedProfileScreen()),
-            )
+            .pushNamed('/profile')
             .then((_) {
               if (mounted && _isOnline) _loadNearbyRequests();
             });
@@ -1209,10 +1223,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                           // Vehicle chip
                           vehiculo != null
                               ? GestureDetector(
-                                  onTap: () => Navigator.push(context,
-                                      MaterialPageRoute(
-                                          builder: (_) =>
-                                              const UnifiedProfileScreen())),
+                                  onTap: () =>
+                                      Navigator.pushNamed(context, '/profile'),
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 8,
@@ -1264,10 +1276,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                   ),
                                 )
                               : GestureDetector(
-                                  onTap: () => Navigator.push(context,
-                                      MaterialPageRoute(
-                                          builder: (_) =>
-                                              const UnifiedProfileScreen())),
+                                  onTap: () =>
+                                      Navigator.pushNamed(context, '/profile'),
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 8,
@@ -1318,9 +1328,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                               color: AppTheme.primaryColor,
                             ),
                           )
-                        : Switch(
+                        : Switch.adaptive(
                             value: _isOnline,
-                            onChanged: (_) => _toggleOnlineStatus(),
+                            onChanged: _isTogglingStatus
+                                ? null
+                                : (_) => _toggleOnlineStatus(),
                             activeColor: AppTheme.success,
                             activeTrackColor: AppTheme.success.withValues(
                               alpha: 0.3,

@@ -11,6 +11,7 @@ import '../../services/document_upload_service.dart';
 import '../../services/vehicle_service.dart';
 import '../../widgets/license_photo_row.dart';
 import '../../widgets/plan_suscripcion_widget.dart';
+import '../../utils/app_error.dart';
 
 class CarrierCargaProfileScreen extends StatefulWidget {
   const CarrierCargaProfileScreen({super.key});
@@ -212,7 +213,7 @@ class _CarrierCargaProfileScreenState
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error al subir imagen: $e'),
+          content: Text(AppError.message(e, action: 'subir la imagen')),
           backgroundColor: AppTheme.error,
           behavior: SnackBarBehavior.floating,
         ));
@@ -403,7 +404,7 @@ class _CarrierCargaProfileScreenState
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e'),
+          content: Text(AppError.message(e)),
           backgroundColor: AppTheme.error,
         ));
       }
@@ -616,7 +617,7 @@ class _CarrierCargaProfileScreenState
                           if (mounted) {
                             ScaffoldMessenger.of(context)
                                 .showSnackBar(SnackBar(
-                              content: Text('Error: $e'),
+                              content: Text(AppError.message(e)),
                               backgroundColor: AppTheme.error,
                             ));
                           }
@@ -811,7 +812,7 @@ class _CarrierCargaProfileScreenState
                                 if (ctx.mounted) {
                                   ScaffoldMessenger.of(ctx).showSnackBar(
                                     SnackBar(
-                                      content: Text('Error: $e'),
+                                      content: Text(AppError.message(e)),
                                       backgroundColor: AppTheme.error,
                                     ),
                                   );

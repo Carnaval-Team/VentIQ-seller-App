@@ -6,6 +6,8 @@ import '../config/app_theme.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/wallet_provider.dart';
+import '../services/update_service.dart';
+import 'update_dialog_helper.dart';
 
 class ClientDrawer extends StatefulWidget {
   const ClientDrawer({super.key});
@@ -25,6 +27,40 @@ class _ClientDrawerState extends State<ClientDrawer> {
         context.read<WalletProvider>().loadClientBalance(userId);
       }
     });
+  }
+
+  Future<void> _checkForUpdates() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Text('Verificando actualizaciones...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final updateInfo = await UpdateService.checkForUpdates(force: true);
+
+      if (!mounted) return;
+      Navigator.of(context).pop();
+
+      if (updateInfo['hay_actualizacion'] == true) {
+        UpdateDialogHelper.showUpdateAvailableDialog(context, updateInfo);
+      } else {
+        UpdateDialogHelper.showNoUpdateDialog(context, updateInfo);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      UpdateDialogHelper.showUpdateErrorDialog(context, e.toString());
+    }
   }
 
   @override
@@ -269,6 +305,17 @@ class _ClientDrawerState extends State<ClientDrawer> {
                     isDark: isDark,
                     cardColor: cardColor,
                     onTap: () => Navigator.pop(context),
+                  ),
+                  _DrawerItem(
+                    icon: Icons.system_update_outlined,
+                    label: 'Buscar Actualizaciones',
+                    subtitle: 'Verificar si hay nuevas versiones',
+                    isDark: isDark,
+                    cardColor: cardColor,
+                    onTap: () {
+                      Navigator.pop(context);
+                      _checkForUpdates();
+                    },
                   ),
                 ],
               ),

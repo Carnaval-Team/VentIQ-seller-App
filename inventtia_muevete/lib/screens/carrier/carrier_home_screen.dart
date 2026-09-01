@@ -12,7 +12,7 @@ import '../../widgets/carga_fechas_section.dart';
 import '../../widgets/carga_mercancia_equipo_section.dart';
 import '../../widgets/route_map_widget.dart';
 import '../../widgets/shared_filter_widgets.dart';
-import '../common/unified_profile_screen.dart';
+
 
 class CarrierHomeScreen extends StatefulWidget {
   const CarrierHomeScreen({super.key});
@@ -64,11 +64,7 @@ class _CarrierHomeScreenState extends State<CarrierHomeScreen> {
           IconButton(
             icon: Icon(Icons.person_outline, color: textPrimary),
             tooltip: 'Mi Perfil',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (_) => const UnifiedProfileScreen()),
-            ),
+            onPressed: () => Navigator.pushNamed(context, '/profile'),
           ),
           IconButton(
             icon: Icon(Icons.refresh_outlined, color: textPrimary),

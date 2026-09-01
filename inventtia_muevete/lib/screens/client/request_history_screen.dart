@@ -8,6 +8,7 @@ import '../../models/transport_request_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/transport_provider.dart';
+import '../../utils/app_error.dart';
 import 'ride_confirmed_screen.dart';
 
 class RequestHistoryScreen extends StatefulWidget {
@@ -51,7 +52,7 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
             .toList();
       });
     } catch (e) {
-      setState(() => _error = e.toString());
+      setState(() => _error = AppError.message(e));
     } finally {
       setState(() => _isLoading = false);
     }
@@ -170,7 +171,7 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.error),
+          SnackBar(content: Text(AppError.message(e)), backgroundColor: AppTheme.error),
         );
       }
     }

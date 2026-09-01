@@ -16,6 +16,7 @@ import '../../services/driver_service.dart';
 import '../../services/wallet_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
+import '../../utils/app_error.dart';
 import 'active_ride_screen.dart';
 
 class IncomingRequestsScreen extends StatefulWidget {
@@ -176,7 +177,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
         _loadAccepted(),
       ]);
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = AppError.message(e));
     } finally {
       _isFirstLoad = false;
       if (mounted) setState(() => _isLoading = false);
@@ -565,7 +566,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al enviar oferta: $e'),
+            content: Text(AppError.message(e, action: 'enviar la oferta')),
             backgroundColor: AppTheme.error,
           ),
         );
@@ -662,7 +663,7 @@ class _IncomingRequestsScreenState extends State<IncomingRequestsScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: Text(AppError.message(e)),
             backgroundColor: AppTheme.error,
           ),
         );

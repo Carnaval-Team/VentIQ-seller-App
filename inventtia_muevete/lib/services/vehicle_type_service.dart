@@ -7,16 +7,28 @@ class VehicleTypeService {
 
   /// Fetches all active vehicle types from muevete.vehicle_type.
   Future<List<VehicleTypeModel>> getActiveTypes() async {
-    final response = await _supabase
+    return getActiveTypesByCategoria();
+  }
+
+  /// Fetches active vehicle types optionally filtered by categoria.
+  /// [categoria] can be 'pasajero', 'carga' or null for all.
+  Future<List<VehicleTypeModel>> getActiveTypesByCategoria(
+      [String? categoria]) async {
+    var query = _supabase
         .schema('muevete')
         .from('vehicle_type')
         .select()
         .eq('status', true)
         .order('id');
 
-    return (response as List)
+    final response = await query;
+
+    final list = (response as List)
         .map((e) => VehicleTypeModel.fromJson(e as Map<String, dynamic>))
         .toList();
+
+    if (categoria == null) return list;
+    return list.where((vt) => vt.categoria == categoria).toList();
   }
 
   /// Subscribes to any change on muevete.vehicle_type and invokes [onChange]

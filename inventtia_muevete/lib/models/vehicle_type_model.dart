@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 class VehicleTypeModel {
   final int id;
   final String tipo;
+  final String categoria;
   final double precioKmDefault;
   final double tiempoMinPorKm;
   final bool status;
@@ -12,6 +13,7 @@ class VehicleTypeModel {
   const VehicleTypeModel({
     required this.id,
     required this.tipo,
+    this.categoria = 'pasajero',
     required this.precioKmDefault,
     required this.tiempoMinPorKm,
     required this.status,
@@ -20,9 +22,16 @@ class VehicleTypeModel {
   });
 
   factory VehicleTypeModel.fromJson(Map<String, dynamic> json) {
+    final tipo = (json['tipo'] as String).toLowerCase();
+    // Fallback para DBs sin la columna categoria: 'camion' es carga,
+    // el resto se considera pasajero.
+    final categoria = (json['categoria'] as String?) ??
+        (tipo == 'camion' ? 'carga' : 'pasajero');
+
     return VehicleTypeModel(
       id: (json['id'] as num).toInt(),
       tipo: json['tipo'] as String,
+      categoria: categoria,
       precioKmDefault: (json['precio_km_default'] as num).toDouble(),
       tiempoMinPorKm: json['tiempo_min_por_km'] != null
           ? (json['tiempo_min_por_km'] as num).toDouble()
@@ -36,6 +45,10 @@ class VehicleTypeModel {
           : 0,
     );
   }
+
+  bool get isPasajero => categoria == 'pasajero';
+  bool get isCarga => categoria == 'carga';
+
 
   /// Estimated travel time in minutes for a given distance in km.
   double estimatedMinutes(double distanceKm) => tiempoMinPorKm * distanceKm;

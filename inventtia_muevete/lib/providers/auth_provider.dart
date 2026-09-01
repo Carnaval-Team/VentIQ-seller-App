@@ -8,6 +8,7 @@ import '../services/background_service.dart';
 import '../services/pushy_service.dart';
 import '../services/suscripcion_service.dart';
 import '../utils/battery_optimizer.dart';
+import '../utils/app_error.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AuthService _authService = AuthService();
@@ -177,7 +178,7 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       return _user != null;
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       _isLoading = false;
       notifyListeners();
       return false;
@@ -392,7 +393,7 @@ class AuthProvider extends ChangeNotifier {
       return _user != null;
     } catch (e, st) {
       debugPrint('[signUp][ERROR] $e\n$st');
-      _error = e.toString();
+      _error = AppError.message(e);
       _isLoading = false;
       notifyListeners();
       return false;
@@ -424,7 +425,7 @@ class AuthProvider extends ChangeNotifier {
       }
       notifyListeners();
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       notifyListeners();
     }
   }
@@ -432,6 +433,13 @@ class AuthProvider extends ChangeNotifier {
   /// Reloads the driver profile (e.g. after creating a vehicle).
   Future<void> refreshDriverProfile() async {
     _driverProfile = await _authService.getDriverProfile();
+    notifyListeners();
+  }
+
+  /// Keeps the in-memory driver profile `estado` in sync after online toggle.
+  void setDriverOnlineStatus(bool online) {
+    if (_driverProfile == null) return;
+    _driverProfile = {..._driverProfile!, 'estado': online};
     notifyListeners();
   }
 

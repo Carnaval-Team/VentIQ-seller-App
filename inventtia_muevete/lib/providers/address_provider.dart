@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/saved_address_model.dart';
 import '../services/saved_address_service.dart';
+import '../utils/app_error.dart';
 
 class AddressProvider extends ChangeNotifier {
   final SavedAddressService _service = SavedAddressService();
@@ -20,7 +21,7 @@ class AddressProvider extends ChangeNotifier {
     try {
       _addresses = await _service.getAddresses(userId);
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -47,7 +48,7 @@ class AddressProvider extends ChangeNotifier {
       _addresses.add(newAddr);
       notifyListeners();
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       notifyListeners();
     }
   }
@@ -58,7 +59,7 @@ class AddressProvider extends ChangeNotifier {
       _addresses.removeWhere((a) => a.id == id);
       notifyListeners();
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       notifyListeners();
     }
   }
@@ -91,7 +92,7 @@ class AddressProvider extends ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       notifyListeners();
     }
   }

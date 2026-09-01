@@ -2,11 +2,11 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart' hide Theme;
 import 'package:flutter_map/flutter_map.dart' hide TileLayer;
 import 'package:flutter_map/flutter_map.dart' as fm show TileLayer;
-import 'package:flutter_map_tile_caching/flutter_map_tile_caching.dart' as fmtc;
 import 'package:latlong2/latlong.dart';
 import 'package:vector_map_tiles/vector_map_tiles.dart';
 
 import '../config/app_theme.dart';
+import '../services/map_tile_provider_cache.dart';
 import '../services/mbtiles_service.dart';
 
 class MapWidget extends StatelessWidget {
@@ -74,9 +74,7 @@ class MapWidget extends StatelessWidget {
             userAgentPackageName: 'com.inventtia.muevete',
             tileProvider: kIsWeb
                 ? null
-                : fmtc.FMTCTileProvider(
-                    stores: const {'mapTiles': fmtc.BrowseStoreStrategy.readUpdate},
-                  ),
+                : MapTileProviderCache.instance.onlineProvider,
           ),
         if (polylines.isNotEmpty)
           PolylineLayer(

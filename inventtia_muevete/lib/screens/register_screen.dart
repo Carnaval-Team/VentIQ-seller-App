@@ -18,6 +18,7 @@ import '../services/geonames_service.dart';
 import '../services/vehicle_type_service.dart';
 import '../services/plan_service.dart';
 import '../models/plan_model.dart';
+import '../utils/app_error.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Data class for each carrocería (vehicle platform) in the carrier form
@@ -477,7 +478,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('Error al subir imagen: $e'),
+              content: Text(AppError.message(e, action: 'subir la imagen')),
               backgroundColor: AppTheme.error),
         );
       }
@@ -550,7 +551,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Error al subir imagen: $e'),
+            content: Text(AppError.message(e, action: 'subir la imagen')),
             backgroundColor: AppTheme.error));
       }
     } finally {
@@ -786,7 +787,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (!mounted) return;
       Navigator.pushReplacementNamed(context, authProvider.homeRoute);
     } else {
-      _showError(authProvider.error ?? 'Error al crear la cuenta');
+      _showError(authProvider.error ?? AppError.message(null, action: 'crear la cuenta'));
     }
   }
 
@@ -1774,7 +1775,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             : Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: _dbVehicleTypes.map((vt) {
+                children: _dbVehicleTypes.where((vt) => vt.isPasajero).map((vt) {
                   final selected = _vIdTipo == vt.id;
                   return ChoiceChip(
                     label: Row(

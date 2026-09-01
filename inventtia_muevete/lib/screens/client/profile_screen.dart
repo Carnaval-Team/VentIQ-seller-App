@@ -10,6 +10,7 @@ import '../../providers/theme_provider.dart';
 import '../../services/profile_photo_service.dart';
 import '../../services/mbtiles_service.dart';
 import '../../services/saved_address_service.dart';
+import '../../utils/app_error.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -137,7 +138,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error subiendo foto: $e'),
+            content: Text(AppError.message(e, action: 'subir la foto')),
             backgroundColor: AppTheme.error,
             behavior: SnackBarBehavior.floating,
           ),

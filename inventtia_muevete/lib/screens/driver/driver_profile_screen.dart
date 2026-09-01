@@ -10,6 +10,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/mbtiles_service.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/profile_photo_service.dart';
+import '../../utils/app_error.dart';
 import 'driver_ratings_screen.dart';
 
 class DriverProfileScreen extends StatefulWidget {
@@ -124,7 +125,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error subiendo foto: $e'),
+            content: Text(AppError.message(e, action: 'subir la foto')),
             backgroundColor: AppTheme.error,
             behavior: SnackBarBehavior.floating,
           ),

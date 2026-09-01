@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/plan_model.dart';
 import '../services/plan_service.dart';
+import '../utils/app_error.dart';
 
 class PlanProvider extends ChangeNotifier {
   final _service = PlanService();
@@ -31,7 +32,7 @@ class PlanProvider extends ChangeNotifier {
         ...result,
       ];
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       debugPrint('[PlanProvider] Error cargarPlanes: $e');
     } finally {
       _loading = false;
@@ -46,7 +47,7 @@ class PlanProvider extends ChangeNotifier {
     try {
       _planes = await _service.getTodosLosPlanes();
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.message(e);
       debugPrint('[PlanProvider] Error cargarTodosLosPlanes: $e');
     } finally {
       _loading = false;

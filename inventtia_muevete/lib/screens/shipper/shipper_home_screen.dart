@@ -18,7 +18,7 @@ import '../../widgets/route_map_widget.dart';
 import '../../widgets/shared_filter_widgets.dart';
 import 'cargo_location_picker_screen.dart';
 import 'carrier_directory_screen.dart';
-import '../common/unified_profile_screen.dart';
+
 
 class ShipperHomeScreen extends StatefulWidget {
   const ShipperHomeScreen({super.key});
@@ -76,11 +76,7 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen>
           IconButton(
             icon: Icon(Icons.person_outline, color: textPrimary),
             tooltip: 'Mi Perfil',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (_) => const UnifiedProfileScreen()),
-            ),
+            onPressed: () => Navigator.pushNamed(context, '/profile'),
           ),
           IconButton(
             icon: Icon(Icons.logout, color: textPrimary),

@@ -11,6 +11,7 @@ import '../providers/auth_provider.dart';
 import '../providers/suscripcion_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/document_upload_service.dart';
+import '../utils/app_error.dart';
 
 /// Tile compacto que muestra el plan activo del usuario y un botón para gestionarlo.
 /// Incluye el flujo de evidencia de pago al contratar un plan de pago.
@@ -522,7 +523,7 @@ class _PlanEvidenciaDialogState extends State<PlanEvidenciaDialog> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error al subir imagen: $e'),
+          content: Text(AppError.message(e, action: 'subir la imagen')),
           backgroundColor: AppTheme.error,
         ));
       }

@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import '../config/app_theme.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
+import '../services/update_service.dart';
+import '../widgets/update_dialog_helper.dart';
 
 class LandingScreen extends StatefulWidget {
   const LandingScreen({super.key});
@@ -381,6 +383,40 @@ class _UserAvatarMenu extends StatelessWidget {
     return (parts[0].characters.first + parts[1].characters.first).toUpperCase();
   }
 
+  Future<void> _checkForUpdates(BuildContext context) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Text('Verificando actualizaciones...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final updateInfo = await UpdateService.checkForUpdates(force: true);
+
+      if (!context.mounted) return;
+      Navigator.of(context).pop();
+
+      if (updateInfo['hay_actualizacion'] == true) {
+        UpdateDialogHelper.showUpdateAvailableDialog(context, updateInfo);
+      } else {
+        UpdateDialogHelper.showNoUpdateDialog(context, updateInfo);
+      }
+    } catch (e) {
+      if (!context.mounted) return;
+      Navigator.of(context).pop();
+      UpdateDialogHelper.showUpdateErrorDialog(context, e.toString());
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
@@ -399,6 +435,8 @@ class _UserAvatarMenu extends StatelessWidget {
           Navigator.pushNamedAndRemoveUntil(context, auth.homeRoute, (_) => false);
         } else if (value == 'perfil') {
           Navigator.pushNamed(context, auth.profileRoute);
+        } else if (value == 'actualizar') {
+          _checkForUpdates(context);
         } else if (value == 'logout') {
           await auth.signOut();
           if (context.mounted) {
@@ -458,6 +496,35 @@ class _UserAvatarMenu extends StatelessWidget {
               ],
             ),
           ),
+        PopupMenuItem(
+          value: 'actualizar',
+          child: Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: LandingScreen.kAccent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.system_update_outlined,
+                  size: 18,
+                  color: LandingScreen.kAccent,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Buscar Actualizaciones',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textPrimary(isDark),
+                ),
+              ),
+            ],
+          ),
+        ),
         const PopupMenuDivider(),
         PopupMenuItem(
           value: 'logout',

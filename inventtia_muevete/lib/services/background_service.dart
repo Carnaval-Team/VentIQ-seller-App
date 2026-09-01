@@ -121,6 +121,15 @@ class BackgroundService {
     if (kIsWeb) return const Stream.empty();
     return _service.on('notification');
   }
+
+  /// Update the Android foreground notification title/body (e.g. ride phase).
+  static void updateStatus({required String title, required String content}) {
+    if (kIsWeb) return;
+    _service.invoke('updateStatus', {
+      'title': title,
+      'content': content,
+    });
+  }
 }
 
 // ─── Isolate entry points ───
@@ -166,6 +175,8 @@ Future<void> _onStart(ServiceInstance service) async {
   int? driverId;
   double currentLat = 0;
   double currentLon = 0;
+  String notifTitle = 'Muevete activo';
+  String notifContent = 'Conectado y recibiendo solicitudes';
 
   RealtimeChannel? requestsChannel;
   RealtimeChannel? requestsUpdateChannel;
@@ -175,6 +186,17 @@ Future<void> _onStart(ServiceInstance service) async {
   Timer? radiusExpansionTimer;
   Timer? heartbeatTimer;
   Timer? pollingTimer;
+
+  void applyForegroundNotification({String? title, String? content}) {
+    if (title != null) notifTitle = title;
+    if (content != null) notifContent = content;
+    if (service is AndroidServiceInstance) {
+      service.setForegroundNotificationInfo(
+        title: notifTitle,
+        content: notifContent,
+      );
+    }
+  }
 
   // Pending requests for expanding radius (driver only)
   final List<Map<String, dynamic>> pendingRequests = [];
@@ -204,6 +226,15 @@ Future<void> _onStart(ServiceInstance service) async {
     }
   });
 
+  // ── Status updates from UI (ride / request phase) ──
+  service.on('updateStatus').listen((data) {
+    if (data == null) return;
+    applyForegroundNotification(
+      title: data['title']?.toString(),
+      content: data['content']?.toString(),
+    );
+  });
+
   // ── Configure handler — receives user data and sets up subscriptions ──
   service.on('configure').listen((data) async {
     if (data == null) return;
@@ -217,18 +248,16 @@ Future<void> _onStart(ServiceInstance service) async {
     if (userUuid == null || role == null) return;
 
     // ── Update foreground notification with role info ──
-    if (service is AndroidServiceInstance) {
-      if (role == 'driver') {
-        service.setForegroundNotificationInfo(
-          title: 'Muevete - Conductor',
-          content: 'Ubicación activa · Esperando solicitudes',
-        );
-      } else {
-        service.setForegroundNotificationInfo(
-          title: 'Muevete - Pasajero',
-          content: 'Conectado · Esperando ofertas',
-        );
-      }
+    if (role == 'driver') {
+      applyForegroundNotification(
+        title: 'Muevete - Conductor',
+        content: 'Ubicación activa · Esperando solicitudes',
+      );
+    } else {
+      applyForegroundNotification(
+        title: 'Muevete activo',
+        content: 'Ubicación compartida en segundo plano',
+      );
     }
 
     // ── Subscribe to notificaciones ──
@@ -399,6 +428,13 @@ Future<void> _onStart(ServiceInstance service) async {
           currentLat = lat;
           currentLon = lon;
         },
+        onNotificationTick: (time) {
+          // Keep the current phase status; only append last GPS timestamp.
+          final base = notifContent.contains(' · Última:')
+              ? notifContent.split(' · Última:').first
+              : notifContent;
+          applyForegroundNotification(content: '$base · Última: $time');
+        },
         gpsSubscriptionSetter: (sub) => gpsSubscription = sub,
       );
     }
@@ -529,6 +565,7 @@ void _startGpsTracking({
   required int? driverId,
   required OfflineQueueService queue,
   required void Function(double lat, double lon) onPosition,
+  required void Function(String time) onNotificationTick,
   required void Function(StreamSubscription<Position>) gpsSubscriptionSetter,
 }) {
   const notifConfig = ForegroundNotificationConfig(
@@ -546,16 +583,11 @@ void _startGpsTracking({
       // Send to UI
       service.invoke('locationUpdate', {'lat': lat, 'lon': lon});
 
-      // Update foreground notification with timestamp
-      if (service is AndroidServiceInstance) {
-        final now = DateTime.now();
-        final time =
-            '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-        service.setForegroundNotificationInfo(
-          title: 'Muevete - Conductor',
-          content: 'Rastreando ubicación · Última: $time',
-        );
-      }
+      // Refresh foreground notification timestamp without wiping ride status
+      final now = DateTime.now();
+      final time =
+          '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+      onNotificationTick(time);
 
       // Update driver location in Supabase + track history
       if (driverId != null) {
@@ -566,7 +598,7 @@ void _startGpsTracking({
             // Flush offline queue first
             await _flushQueue(queue: queue, supabase: supabase);
 
-            // Write current position to place + track_place_history
+            // Write current position only — never touch place.estado here
             await supabase
                 .schema('muevete')
                 .from('place')

@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../config/app_theme.dart';
 import '../../providers/theme_provider.dart';
 import 'package:provider/provider.dart';
+import '../../utils/app_error.dart';
 
 class CarrierDirectoryScreen extends StatefulWidget {
   /// Set to true when embedded inside a TabBarView to suppress the
@@ -122,7 +123,7 @@ class _CarrierDirectoryScreenState extends State<CarrierDirectoryScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = e.toString();
+          _error = AppError.message(e);
           _loading = false;
         });
       }
