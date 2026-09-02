@@ -233,6 +233,11 @@ class AppDrawer extends StatelessWidget {
                       route: '/configuracion',
                     ),
                     _DrawerItem(
+                      icon: Icons.shield_outlined,
+                      title: 'Roles y Permisos',
+                      route: '/roles',
+                    ),
+                    _DrawerItem(
                       icon: Icons.help_outline,
                       title: 'Soporte',
                       route: '/soporte',
@@ -262,7 +267,7 @@ class AppDrawer extends StatelessWidget {
                 width: 50,
                 height: 50,
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
+                  color: Colors.white.withValues(alpha: 0.2),
                   shape: BoxShape.circle,
                 ),
                 child: Image.asset(
@@ -289,12 +294,13 @@ class AppDrawer extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
+                  color: Colors.white.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Text(
-                  'Super Administrador',
-                  style: TextStyle(
+                child: Text(
+                  AuthService.currentSuperAdmin?.rol?.nombre ??
+                      'Super Administrador',
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 9,
                     fontWeight: FontWeight.w500,
@@ -313,6 +319,11 @@ class AppDrawer extends StatelessWidget {
     required String title,
     required List<_DrawerItem> items,
   }) {
+    final visibleItems =
+        items.where((item) => AuthService.canAccessRoute(item.route)).toList();
+
+    if (visibleItems.isEmpty) return const SizedBox.shrink();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -327,7 +338,7 @@ class AppDrawer extends StatelessWidget {
             ),
           ),
         ),
-        ...items.map((item) => _buildDrawerItem(context, item)),
+        ...visibleItems.map((item) => _buildDrawerItem(context, item)),
         const SizedBox(height: 8),
       ],
     );
@@ -354,7 +365,7 @@ class AppDrawer extends StatelessWidget {
           ),
         ),
         selected: isSelected,
-        selectedTileColor: AppColors.primary.withOpacity(0.1),
+        selectedTileColor: AppColors.primary.withValues(alpha: 0.1),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         onTap: () {
           Navigator.of(context).pop(); // Cerrar drawer
@@ -379,7 +390,8 @@ class AppDrawer extends StatelessWidget {
                 item.route.startsWith('/muevete/') ||
                 item.route == '/agentes' ||
                 item.route == '/ingresos-distribucion' ||
-                item.route == '/carnaval-dashboard') {
+                item.route == '/carnaval-dashboard' ||
+                item.route == '/roles') {
               Navigator.of(context).pushReplacementNamed(item.route);
             } else {
               // Para rutas que aún no están implementadas
@@ -436,14 +448,14 @@ class AppDrawer extends StatelessWidget {
             ),
             ElevatedButton(
               onPressed: () async {
-                Navigator.of(context).pop(); // Cerrar diálogo
-                Navigator.of(context).pop(); // Cerrar drawer
-
                 final authService = AuthService();
                 await authService.logout();
 
                 if (context.mounted) {
-                  Navigator.of(context).pushReplacementNamed('/login');
+                  Navigator.of(context).pushNamedAndRemoveUntil(
+                    '/login',
+                    (route) => false,
+                  );
                 }
               },
               style: ElevatedButton.styleFrom(

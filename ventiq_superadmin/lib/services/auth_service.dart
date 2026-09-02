@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/superadmin.dart';
+import '../config/app_routes.dart';
 
 class AuthService {
   static const String _isLoggedInKey = 'is_logged_in';
@@ -11,6 +12,8 @@ class AuthService {
   static const String _userRoleKey = 'user_role';
   static const String _userUuidKey = 'user_uuid';
   static const String _userNivelAccesoKey = 'user_nivel_acceso';
+  static const String _userRoleIdKey = 'user_role_id';
+  static const String _userRolePermissionsKey = 'user_role_permissions';
   
   static final _supabase = Supabase.instance.client;
   static SuperAdmin? _currentSuperAdmin;
@@ -37,10 +40,10 @@ class AuthService {
       final user = response.user!;
       debugPrint('✅ Usuario autenticado: ${user.id}');
 
-      // Verificar si es superadmin
+      // Verificar si es superadmin y cargar rol con permisos
       final superadminResponse = await _supabase
           .from('app_dat_superadmin')
-          .select()
+          .select('*, app_dat_superadmin_roles(*)')
           .eq('uuid', user.id)
           .eq('activo', true)
           .maybeSingle();
@@ -73,6 +76,8 @@ class AuthService {
         name: _currentSuperAdmin!.nombreCompleto,
         role: 'super_admin',
         nivelAcceso: _currentSuperAdmin!.nivelAcceso,
+        roleId: _currentSuperAdmin!.idRol,
+        rolePermissions: _currentSuperAdmin!.permisosRutas,
       );
 
       debugPrint('✅ Login exitoso - Nivel de acceso: ${_currentSuperAdmin!.nivelAccesoTexto}');
@@ -104,6 +109,8 @@ class AuthService {
     required String name,
     required String role,
     required int nivelAcceso,
+    int? roleId,
+    List<String> rolePermissions = const [],
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_isLoggedInKey, true);
@@ -113,6 +120,12 @@ class AuthService {
     await prefs.setString(_userNameKey, name);
     await prefs.setString(_userRoleKey, role);
     await prefs.setInt(_userNivelAccesoKey, nivelAcceso);
+    if (roleId != null) {
+      await prefs.setInt(_userRoleIdKey, roleId);
+    } else {
+      await prefs.remove(_userRoleIdKey);
+    }
+    await prefs.setStringList(_userRolePermissionsKey, rolePermissions);
   }
 
   Future<bool> isLoggedIn() async {
@@ -136,13 +149,15 @@ class AuthService {
       'name': prefs.getString(_userNameKey),
       'role': prefs.getString(_userRoleKey),
       'nivel_acceso': prefs.getInt(_userNivelAccesoKey),
+      'id_rol': prefs.getInt(_userRoleIdKey),
+      'permisos_rutas': prefs.getStringList(_userRolePermissionsKey) ?? [],
     };
   }
 
   Future<void> logout() async {
     try {
       debugPrint('🔐 Cerrando sesión...');
-      
+
       // Limpiar SharedPreferences
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_isLoggedInKey);
@@ -152,16 +167,18 @@ class AuthService {
       await prefs.remove(_userNameKey);
       await prefs.remove(_userRoleKey);
       await prefs.remove(_userNivelAccesoKey);
-      
+      await prefs.remove(_userRoleIdKey);
+      await prefs.remove(_userRolePermissionsKey);
+
       // Cerrar sesión en Supabase
       await _supabase.auth.signOut();
-      
-      // Limpiar datos en memoria
-      _currentSuperAdmin = null;
-      
+
       debugPrint('✅ Sesión cerrada exitosamente');
     } catch (e) {
       debugPrint('❌ Error al cerrar sesión: $e');
+    } finally {
+      // Siempre limpiar datos en memoria
+      _currentSuperAdmin = null;
     }
   }
 
@@ -189,7 +206,7 @@ class AuthService {
       // Intentar recuperar de la base de datos
       final superadminResponse = await _supabase
           .from('app_dat_superadmin')
-          .select()
+          .select('*, app_dat_superadmin_roles(*)')
           .eq('uuid', user.id)
           .eq('activo', true)
           .maybeSingle();
@@ -216,5 +233,23 @@ class AuthService {
 
   static bool canRead() {
     return _currentSuperAdmin != null && _currentSuperAdmin!.nivelAcceso <= 3;
+  }
+
+  /// Determina si el superadmin actual puede acceder a una ruta protegida.
+  /// Las rutas publicas (/, /login, /dashboard) siempre estan permitidas.
+  /// Si no tiene rol asignado y su nivel es 1, tiene acceso total legacy.
+  static bool canAccessRoute(String route) {
+    if (AppRoutes.alwaysAllowed.contains(route)) return true;
+
+    final admin = _currentSuperAdmin;
+    if (admin == null) return false;
+
+    // Legacy fallback: acceso total
+    if (admin.rol == null && admin.nivelAcceso == 1) return true;
+
+    final permisos = admin.permisosRutas;
+    if (permisos.isEmpty && admin.nivelAcceso == 1) return true;
+
+    return permisos.contains(route);
   }
 }
