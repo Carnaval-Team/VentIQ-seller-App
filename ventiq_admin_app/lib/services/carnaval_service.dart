@@ -2187,22 +2187,49 @@ class CarnavalService {
     }
   }
 
-  /// Obtiene provincia y municipio de una dirección por su texto.
+  /// Obtiene provincia y municipio de una dirección por su texto o id.
   /// Solo devuelve nombres de ubicación (nunca `id`), para no pisar
   /// campos de `Orders` al enriquecer la lista.
+  ///
+  /// [direccionText] puede ser el texto de la dirección o el id de la fila
+  /// en `carnavalapp.Direcciones`. Si se proporciona [userId] se filtra por
+  /// usuario para evitar cruzar direcciones de distintos perfiles.
   static Future<Map<String, dynamic>?> getOrderDireccion(
-    String direccionText,
-  ) async {
+    String direccionText, {
+    int? userId,
+  }) async {
     try {
-      final dirResponse = await _supabase
-          .schema('carnavalapp')
-          .from('Direcciones')
-          .select('address, provincia, municipio')
-          .eq('address', direccionText)
+      final trimmed = direccionText.trim();
+      if (trimmed.isEmpty) return null;
+
+      var query = _supabase.schema('carnavalapp').from('Direcciones').select(
+            'id, address, provincia, municipio, user_id',
+          );
+
+      // Primero intentamos resolver por id si el campo es numérico.
+      final idDir = int.tryParse(trimmed);
+      if (idDir != null) {
+        query = query.eq('id', idDir);
+      } else {
+        query = query.ilike('address', trimmed);
+      }
+
+      if (userId != null) {
+        query = query.eq('user_id', userId);
+      }
+
+      final dirResponse = await query
+          .order('created_at', ascending: false)
           .limit(1)
           .maybeSingle();
 
-      if (dirResponse == null) return null;
+      if (dirResponse == null) {
+        // Fallback: si el texto de la dirección ya incluye provincia/municipio
+        // (formato "calle, municipio, provincia" usado p. ej. en paquetería),
+        // extraerlos directamente sin consultar la tabla.
+        final parsed = _parseDireccionConcatenada(trimmed);
+        return parsed;
+      }
 
       final result = <String, dynamic>{'address': dirResponse['address']};
       final provinciaId = dirResponse['provincia'];
@@ -2233,6 +2260,28 @@ class CarnavalService {
       print('❌ Error al obtener dirección: $e');
       return null;
     }
+  }
+
+  /// Extrae provincia/municipio de un string con formato
+  /// "<calle>, <municipio>, <provincia>" o "<municipio>, <provincia>".
+  /// Devuelve `null` si no tiene al menos dos partes separadas por coma.
+  static Map<String, dynamic>? _parseDireccionConcatenada(String direccion) {
+    final parts = direccion
+        .split(',')
+        .map((p) => p.trim())
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (parts.length < 2) return null;
+
+    final provincia = parts.last;
+    final municipio = parts[parts.length - 2];
+    final calle = parts.sublist(0, parts.length - 2).join(', ');
+
+    return {
+      'address': calle.isEmpty ? null : calle,
+      'municipio_nombre': municipio,
+      'provincia_nombre': provincia,
+    };
   }
 
   /// Obtiene el ID de operación VentIQ asociada a una orden de Carnaval

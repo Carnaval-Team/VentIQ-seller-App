@@ -2006,7 +2006,8 @@ class ExportService {
     Map<String, dynamic> producto, {
     double? cantidadFinal,
   }) {
-    final qty = cantidadFinal ??
+    final qty =
+        cantidadFinal ??
         (double.tryParse(producto['cantidad_final']?.toString() ?? '0') ?? 0);
     final costoUsd =
         (producto['precio_costo_usd'] as num?)?.toDouble() ??
@@ -2021,7 +2022,8 @@ class ExportService {
     Map<String, dynamic> producto, {
     double? cantidadFinal,
   }) {
-    final qty = cantidadFinal ??
+    final qty =
+        cantidadFinal ??
         (double.tryParse(producto['cantidad_final']?.toString() ?? '0') ?? 0);
     final costoCup =
         (producto['precio_costo_cup'] as num?)?.toDouble() ??
@@ -2423,8 +2425,9 @@ class ExportService {
         '%Gan.',
       ]);
       for (int i = 0; i < 7; i++) {
-        columnWidths[columnIndex + qtyColCount + i] =
-            const pw.FlexColumnWidth(1.1);
+        columnWidths[columnIndex + qtyColCount + i] = const pw.FlexColumnWidth(
+          1.1,
+        );
       }
     }
     if (includeValorInventarioCosto) {
@@ -2450,115 +2453,104 @@ class ExportService {
     }
 
     final productRows = productos.map((producto) {
-          final rowData = <String>[
-            producto['nombre_producto']?.toString() ?? 'Sin nombre',
-          ];
+      final rowData = <String>[
+        producto['nombre_producto']?.toString() ?? 'Sin nombre',
+      ];
 
-          // Agregar columnas adicionales si están habilitadas
-          if (includeSku) {
-            rowData.add(producto['sku_producto']?.toString() ?? '');
-          }
-          if (includeNombreCorto) {
-            rowData.add(producto['denominacion_corta']?.toString() ?? '');
-          }
-          if (includeMarca) {
-            rowData.add(producto['nombre_comercial']?.toString() ?? '');
-          }
-          if (includeDescripcionCorta) {
-            rowData.add(producto['descripcion_corta']?.toString() ?? '');
-          }
-          if (includeDescripcion) {
-            rowData.add(producto['descripcion']?.toString() ?? '');
-          }
+      // Agregar columnas adicionales si están habilitadas
+      if (includeSku) {
+        rowData.add(producto['sku_producto']?.toString() ?? '');
+      }
+      if (includeNombreCorto) {
+        rowData.add(producto['denominacion_corta']?.toString() ?? '');
+      }
+      if (includeMarca) {
+        rowData.add(producto['nombre_comercial']?.toString() ?? '');
+      }
+      if (includeDescripcionCorta) {
+        rowData.add(producto['descripcion_corta']?.toString() ?? '');
+      }
+      if (includeDescripcion) {
+        rowData.add(producto['descripcion']?.toString() ?? '');
+      }
 
-          // Agregar columnas numéricas
-          if (includeValorInventarioCosto) {
-            rowData.add(
-              (double.tryParse(producto['cantidad_final']?.toString() ?? '0') ??
-                      0)
-                  .toStringAsFixed(1),
-            );
-          } else {
-            rowData.addAll([
-              (double.tryParse(
-                        producto['cantidad_inicial']?.toString() ?? '0',
-                      ) ??
-                      0)
-                  .toStringAsFixed(1),
-              (double.tryParse(
-                        producto['entradas_periodo']?.toString() ?? '0',
-                      ) ??
-                      0)
-                  .toStringAsFixed(1),
-              (double.tryParse(
-                        producto['extracciones_periodo']?.toString() ?? '0',
-                      ) ??
-                      0)
-                  .toStringAsFixed(1),
-              (double.tryParse(producto['ventas_periodo']?.toString() ?? '0') ??
-                      0)
-                  .toStringAsFixed(1),
-              (double.tryParse(
-                        producto['cantidad_reservada']?.toString() ?? '0',
-                      ) ??
-                      0)
-                  .toStringAsFixed(1),
-              (double.tryParse(producto['cantidad_final']?.toString() ?? '0') ??
-                      0)
-                  .toStringAsFixed(1),
-            ]);
-          }
+      // Agregar columnas numéricas
+      if (includeValorInventarioCosto) {
+        rowData.add(
+          (double.tryParse(producto['cantidad_final']?.toString() ?? '0') ?? 0)
+              .toStringAsFixed(1),
+        );
+      } else {
+        rowData.addAll([
+          (double.tryParse(producto['cantidad_inicial']?.toString() ?? '0') ??
+                  0)
+              .toStringAsFixed(1),
+          (double.tryParse(producto['entradas_periodo']?.toString() ?? '0') ??
+                  0)
+              .toStringAsFixed(1),
+          (double.tryParse(
+                    producto['extracciones_periodo']?.toString() ?? '0',
+                  ) ??
+                  0)
+              .toStringAsFixed(1),
+          (double.tryParse(producto['ventas_periodo']?.toString() ?? '0') ?? 0)
+              .toStringAsFixed(1),
+          (double.tryParse(producto['cantidad_reservada']?.toString() ?? '0') ??
+                  0)
+              .toStringAsFixed(1),
+          (double.tryParse(producto['cantidad_final']?.toString() ?? '0') ?? 0)
+              .toStringAsFixed(1),
+        ]);
+      }
 
-          if (includePrecios) {
-            final _f2 = (String k) =>
-                (double.tryParse(producto[k]?.toString() ?? '0') ?? 0)
-                    .toStringAsFixed(2);
-            rowData.addAll([
-              _f2('precio_costo_usd'),
-              _f2('precio_costo_cup'),
-              _f2('precio_venta_usd_calc'),
-              _f2('precio_venta_cup_actual'),
-              _f2('ganancia_usd'),
-              _f2('ganancia_cup'),
-              '${(double.tryParse(producto['ganancia_pct']?.toString() ?? '0') ?? 0).toStringAsFixed(1)}%',
-            ]);
-          }
+      if (includePrecios) {
+        final _f2 = (String k) =>
+            (double.tryParse(producto[k]?.toString() ?? '0') ?? 0)
+                .toStringAsFixed(2);
+        rowData.addAll([
+          _f2('precio_costo_usd'),
+          _f2('precio_costo_cup'),
+          _f2('precio_venta_usd_calc'),
+          _f2('precio_venta_cup_actual'),
+          _f2('ganancia_usd'),
+          _f2('ganancia_cup'),
+          '${(double.tryParse(producto['ganancia_pct']?.toString() ?? '0') ?? 0).toStringAsFixed(1)}%',
+        ]);
+      }
 
-          if (includeValorInventarioCosto) {
-            final cantidadFinal = double.tryParse(
-                  producto['cantidad_final']?.toString() ?? '0',
-                ) ??
-                0;
-            final costoUsd = double.tryParse(
-                  producto['precio_costo_usd']?.toString() ?? '0',
-                ) ??
-                0;
-            final costoCup = double.tryParse(
-                  producto['precio_costo_cup']?.toString() ?? '0',
-                ) ??
-                0;
-            final valorTotalUsd = double.tryParse(
-                  producto['valor_total_costo_usd']?.toString() ?? '',
-                ) ??
-                (costoUsd * cantidadFinal);
-            final valorTotalCup = double.tryParse(
-                  producto['valor_total_costo_cup']?.toString() ?? '',
-                ) ??
-                (costoCup * cantidadFinal);
-            rowData.addAll([
-              costoUsd.toStringAsFixed(2),
-              valorTotalUsd.toStringAsFixed(2),
-              costoCup.toStringAsFixed(2),
-              valorTotalCup.toStringAsFixed(2),
-            ]);
-          }
+      if (includeValorInventarioCosto) {
+        final cantidadFinal =
+            double.tryParse(producto['cantidad_final']?.toString() ?? '0') ?? 0;
+        final costoUsd =
+            double.tryParse(producto['precio_costo_usd']?.toString() ?? '0') ??
+            0;
+        final costoCup =
+            double.tryParse(producto['precio_costo_cup']?.toString() ?? '0') ??
+            0;
+        final valorTotalUsd =
+            double.tryParse(
+              producto['valor_total_costo_usd']?.toString() ?? '',
+            ) ??
+            (costoUsd * cantidadFinal);
+        final valorTotalCup =
+            double.tryParse(
+              producto['valor_total_costo_cup']?.toString() ?? '',
+            ) ??
+            (costoCup * cantidadFinal);
+        rowData.addAll([
+          costoUsd.toStringAsFixed(2),
+          valorTotalUsd.toStringAsFixed(2),
+          costoCup.toStringAsFixed(2),
+          valorTotalCup.toStringAsFixed(2),
+        ]);
+      }
 
-          return pw.TableRow(
-            children: rowData
-                .map((data) => _buildTableCell(data, font: regularFont))
-                .toList(),
-          );
-        }).toList();
+      return pw.TableRow(
+        children: rowData
+            .map((data) => _buildTableCell(data, font: regularFont))
+            .toList(),
+      );
+    }).toList();
 
     final tableChildren = <pw.TableRow>[
       pw.TableRow(
@@ -3319,6 +3311,21 @@ class ExportService {
     }
   }
 
+  Map<String, double> _carnavalTotalsByPaymentMethod(
+    List<Map<String, dynamic>> orders,
+  ) {
+    final totals = <String, double>{};
+    for (final order in orders) {
+      final rawMethod = order['tipo_pago']?.toString().trim();
+      final method = rawMethod == null || rawMethod.isEmpty ? '-' : rawMethod;
+      final amount = (order['monto_valor'] as num?)?.toDouble() ?? 0;
+      totals[method] = (totals[method] ?? 0) + amount;
+    }
+    return Map.fromEntries(
+      totals.entries.toList()..sort((a, b) => a.key.compareTo(b.key)),
+    );
+  }
+
   Future<Uint8List> _generateCarnavalOrdersPdf(
     List<Map<String, dynamic>> orders,
     DateTime generatedAt,
@@ -3326,9 +3333,10 @@ class ExportService {
     final regularFont = await _getRegularFont();
     final boldFont = await _getBoldFont();
     final pdf = pw.Document();
+    final paymentTotals = _carnavalTotalsByPaymentMethod(orders);
     final headers = [
       'No. Orden',
-      'Id Operación Inventtia',
+      'Tipo de pago',
       'Tipo de entrega',
       'Responsable',
       'Estado',
@@ -3372,7 +3380,7 @@ class ExportService {
                 .map(
                   (order) => [
                     order['numero_orden']?.toString() ?? '-',
-                    order['id_operacion_inventtia']?.toString() ?? '-',
+                    order['tipo_pago']?.toString() ?? '-',
                     order['tipo_entrega']?.toString() ?? '-',
                     order['responsable']?.toString() ?? '-',
                     order['estado']?.toString() ?? '-',
@@ -3397,6 +3405,38 @@ class ExportService {
             },
             border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
           ),
+          pw.SizedBox(height: 20),
+          pw.Text(
+            'Totales por medio de pago',
+            style: pw.TextStyle(font: boldFont, fontSize: 12),
+          ),
+          pw.SizedBox(height: 8),
+          pw.TableHelper.fromTextArray(
+            headers: const ['Medio de pago', 'Total'],
+            data: [
+              ...paymentTotals.entries.map(
+                (entry) => [
+                  entry.key,
+                  '\$${entry.value.toStringAsFixed(2)} CUP',
+                ],
+              ),
+              [
+                'Total general',
+                '\$${paymentTotals.values.fold<double>(0, (sum, value) => sum + value).toStringAsFixed(2)} CUP',
+              ],
+            ],
+            headerStyle: pw.TextStyle(
+              font: boldFont,
+              fontSize: 9,
+              color: PdfColors.white,
+            ),
+            cellStyle: pw.TextStyle(font: regularFont, fontSize: 9),
+            headerDecoration: const pw.BoxDecoration(
+              color: PdfColors.indigo700,
+            ),
+            cellAlignments: {1: pw.Alignment.centerRight},
+            border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+          ),
         ],
       ),
     );
@@ -3407,6 +3447,7 @@ class ExportService {
     List<Map<String, dynamic>> orders,
     DateTime generatedAt,
   ) {
+    final paymentTotals = _carnavalTotalsByPaymentMethod(orders);
     final book = Excel.createExcel();
     final defaultSheet = book.getDefaultSheet();
     if (defaultSheet != null) book.rename(defaultSheet, 'Órdenes Carnaval');
@@ -3428,7 +3469,7 @@ class ExportService {
     sheet.appendRow([]);
     sheet.appendRow([
       TextCellValue('No. Orden'),
-      TextCellValue('Id Operación Inventtia'),
+      TextCellValue('Tipo de pago'),
       TextCellValue('Tipo de entrega'),
       TextCellValue('Responsable'),
       TextCellValue('Estado'),
@@ -3438,13 +3479,29 @@ class ExportService {
     for (final order in orders) {
       sheet.appendRow([
         TextCellValue(order['numero_orden']?.toString() ?? '-'),
-        TextCellValue(order['id_operacion_inventtia']?.toString() ?? '-'),
+        TextCellValue(order['tipo_pago']?.toString() ?? '-'),
         TextCellValue(order['tipo_entrega']?.toString() ?? '-'),
         TextCellValue(order['responsable']?.toString() ?? '-'),
         TextCellValue(order['estado']?.toString() ?? '-'),
         TextCellValue(order['monto']?.toString() ?? '-'),
       ]);
     }
+
+    sheet.appendRow([]);
+    sheet.appendRow([TextCellValue('Totales por medio de pago')]);
+    sheet.appendRow([TextCellValue('Medio de pago'), TextCellValue('Total')]);
+    for (final entry in paymentTotals.entries) {
+      sheet.appendRow([
+        TextCellValue(entry.key),
+        TextCellValue('\$${entry.value.toStringAsFixed(2)} CUP'),
+      ]);
+    }
+    sheet.appendRow([
+      TextCellValue('Total general'),
+      TextCellValue(
+        '\$${paymentTotals.values.fold<double>(0, (sum, value) => sum + value).toStringAsFixed(2)} CUP',
+      ),
+    ]);
 
     final encoded = book.encode();
     if (encoded == null) throw Exception('No se pudo generar el archivo Excel');

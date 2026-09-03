@@ -202,8 +202,10 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
         final direccion = result['direccion'] as String?;
         if (direccion == null || direccion.isEmpty) return result;
 
+        final userId = result['user_id'] as int?;
         final direccionInfo = await CarnavalService.getOrderDireccion(
           direccion,
+          userId: userId,
         );
         // Solo nombres de ubicación. NUNCA addAll: Direcciones.id pisa
         // Orders.id y hace que el estado parezca de otra orden al cruzar con BD.
@@ -378,20 +380,21 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
   Future<void> _exportOrders(ExportFormat format) async {
     setState(() => _isExporting = true);
     try {
-      await Future.wait([
-        _loadVentiqOps(_orders),
-        _ensureRepartidores(_orders),
-      ]);
+      await _ensureRepartidores(_orders);
       final exportOrders = _orders
           .map(
             (order) => {
               'numero_orden': order['id'],
-              'id_operacion_inventtia': _ventiqOps[order['id']],
+              'tipo_pago':
+                  order['metodo_pago']?.toString().trim().isNotEmpty == true
+                  ? order['metodo_pago'].toString()
+                  : '-',
               'tipo_entrega': _exportDeliveryType(order['metodo_entrega']),
               'responsable': _exportResponsible(order),
               'estado': order['status'] ?? 'Desconocido',
               'monto':
                   '\$${((order['total'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)} CUP',
+              'monto_valor': (order['total'] as num?)?.toDouble() ?? 0,
             },
           )
           .toList();

@@ -5322,9 +5322,24 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     final detalle = response['detalle_contabilizacion'];
     final items = detalle is List
         ? detalle
-            .map((e) => e is Map ? Map<String, dynamic>.from(e) : {'mensaje': e.toString()})
+            .map((e) => e is Map
+                ? Map<String, dynamic>.from(e)
+                : {'mensaje': e.toString()})
             .toList()
         : <Map<String, dynamic>>[];
+
+    final errores = items
+        .where((item) {
+          final estado = item['estado']?.toString() ?? 'ERROR';
+          return estado != 'OK' && estado != 'OMITIDO';
+        })
+        .toList();
+
+    final exitosas = response['exitosas'];
+    final omitidas = response['omitidas'];
+    final fallidas = response['fallidas'];
+    final totalLineas = response['total_lineas'];
+    final detalleError = response['detalle_error']?.toString();
 
     showDialog(
       context: context,
@@ -5340,27 +5355,51 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                 response['message']?.toString() ??
                     'No se pudo contabilizar todo el inventario.',
               ),
-              const SizedBox(height: 12),
-              if (items.isNotEmpty)
+              if (totalLineas != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Resumen: $exitosas contabilizadas, $omitidas omitidas, '
+                  '$fallidas con error de $totalLineas líneas.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade700,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+              if (detalleError != null && detalleError.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  detalleError,
+                  style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+                ),
+              ],
+              if (errores.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                const Text(
+                  'Detalle por línea:',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+                const SizedBox(height: 8),
                 Flexible(
                   child: ListView.separated(
                     shrinkWrap: true,
-                    itemCount: items.length,
+                    itemCount: errores.length,
                     separatorBuilder: (_, __) => const Divider(height: 8),
                     itemBuilder: (context, index) {
-                      final item = items[index];
-                      final estado = item['estado']?.toString() ?? 'ERROR';
-                      if (estado == 'OK' || estado == 'OMITIDO') {
-                        return const SizedBox.shrink();
-                      }
+                      final item = errores[index];
+                      final idLinea = item['id_recepcion_producto'];
+                      final nombre =
+                          item['producto_nombre']?.toString() ??
+                          (idLinea != null ? 'Línea $idLinea' : 'Línea');
                       return Text(
-                        '${item['producto_nombre'] ?? 'Línea ${item['id_recepcion_producto'] ?? ''}'}: '
-                        '${item['mensaje'] ?? estado}',
+                        '$nombre: ${item['mensaje'] ?? item['estado'] ?? 'Error'}',
                         style: const TextStyle(fontSize: 12),
                       );
                     },
                   ),
                 ),
+              ],
             ],
           ),
         ),

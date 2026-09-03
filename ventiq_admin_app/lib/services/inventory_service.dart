@@ -2813,40 +2813,7 @@ class InventoryService {
           .eq('id_operacion', idOperacion)
           .maybeSingle();
 
-      if (esRecepcion != null) {
-        final contabResult = await contabilizarRecepcionInventario(
-          idOperacion,
-          soloFaltantes: false,
-        );
-        final fallidas = _asInt(contabResult['fallidas']) ?? 0;
-        final totalLineas = _asInt(contabResult['total_lineas']) ?? 0;
-        final exitosas = _asInt(contabResult['exitosas']) ?? 0;
-        final omitidas = _asInt(contabResult['omitidas']) ?? 0;
-
-        if (fallidas > 0 || (exitosas + omitidas) < totalLineas) {
-          print(
-            '❌ Contabilización incompleta: $exitosas ok, $omitidas omitidas, '
-            '$fallidas fallidas de $totalLineas',
-          );
-          return {
-            'success': false,
-            'status': 'error',
-            'message':
-                contabResult['message']?.toString() ??
-                'No se pudo contabilizar todo el inventario de la recepción. '
-                    'La operación NO fue marcada como completada.',
-            'error': 'INVENTORY_PARTIAL_FAILURE',
-            'detalle_contabilizacion': contabResult['detalle'],
-            'exitosas': exitosas,
-            'omitidas': omitidas,
-            'fallidas': fallidas,
-            'total_lineas': totalLineas,
-          };
-        }
-        print(
-          '✅ Recepción contabilizada: $exitosas nuevas, $omitidas ya existían',
-        );
-      } else {
+      if (esRecepcion == null) {
         try {
           final erroresExtraccion = <String>[];
 
@@ -2952,21 +2919,41 @@ class InventoryService {
         }
       }
 
-      final response = await _supabase.rpc(
-        'fn_registrar_cambio_estado_operacion',
-        params: {
-          'p_id_operacion': idOperacion,
-          'p_nuevo_estado': 2,
-          'p_uuid_usuario': uuid,
-        },
-      );
+      dynamic response;
+      if (esRecepcion != null) {
+        response = await completeReceptionOperationViaRpc(
+          idOperacion: idOperacion,
+          comentario: comentario,
+          uuid: uuid,
+        );
+        if (response['success'] != true) {
+          return Map<String, dynamic>.from(response as Map);
+        }
+        print(
+          '✅ Recepción completada vía RPC: '
+          '${response['exitosas'] ?? 0} nuevas, '
+          '${response['omitidas'] ?? 0} omitidas',
+        );
+      } else {
+        response = await _supabase.rpc(
+          'fn_registrar_cambio_estado_operacion',
+          params: {
+            'p_id_operacion': idOperacion,
+            'p_nuevo_estado': 2,
+            'p_uuid_usuario': uuid,
+          },
+        );
+      }
 
-      print('📦 Respuesta RPC: $response');
+      // Recepción ya fue completada por fn_completar_recepcion_operacion arriba.
+      // Extracción u otras ops usan fn_registrar_cambio_estado_operacion.
+      if (esRecepcion == null) {
+        print('📦 Respuesta RPC cambio estado: $response');
 
-      // Si la RPC retornó un error, devolverlo inmediatamente sin continuar
-      if (response is Map && response['status'] == 'error') {
-        print('❌ Error en fn_contabilizar_operacion: ${response['message']}');
-        return Map<String, dynamic>.from(response);
+        if (response is Map && response['status'] == 'error') {
+          print('❌ Error en cambio de estado: ${response['message']}');
+          return Map<String, dynamic>.from(response);
+        }
       }
 
       print('✅ Operación $idOperacion completada exitosamente');
@@ -4123,10 +4110,120 @@ class InventoryService {
     return '${productId}_$ubicacionId';
   }
 
+  /// Completa una recepción: contabiliza inventario (atómico) y marca estado=2.
+  static Future<Map<String, dynamic>> completeReceptionOperationViaRpc({
+    required int idOperacion,
+    required String comentario,
+    required String uuid,
+  }) async {
+    try {
+      final response = await _supabase.rpc(
+        'fn_completar_recepcion_operacion',
+        params: {
+          'p_id_operacion': idOperacion,
+          'p_uuid_usuario': uuid,
+          'p_comentario': comentario.isEmpty ? null : comentario,
+        },
+      );
+      if (response is Map) {
+        final map = Map<String, dynamic>.from(response);
+        final ok = map['success'] == true || map['status'] == 'success';
+        map['success'] = ok;
+        map['status'] = ok ? 'success' : (map['status'] ?? 'error');
+        return map;
+      }
+    } catch (e) {
+      print(
+        '⚠️ RPC fn_completar_recepcion_operacion no disponible, '
+        'usando completación local: $e',
+      );
+    }
+    return _completeReceptionOperationClientFallback(
+      idOperacion: idOperacion,
+      comentario: comentario,
+      uuid: uuid,
+    );
+  }
+
+  static Future<Map<String, dynamic>> _completeReceptionOperationClientFallback({
+    required int idOperacion,
+    required String comentario,
+    required String uuid,
+  }) async {
+    final contabResult = await contabilizarRecepcionInventario(
+      idOperacion,
+      soloFaltantes: false,
+      atomico: true,
+    );
+    final fallidas = _asInt(contabResult['fallidas']) ?? 0;
+    final totalLineas = _asInt(contabResult['total_lineas']) ?? 0;
+    final exitosas = _asInt(contabResult['exitosas']) ?? 0;
+    final omitidas = _asInt(contabResult['omitidas']) ?? 0;
+
+    if (contabResult['success'] != true ||
+        fallidas > 0 ||
+        (exitosas + omitidas) < totalLineas) {
+      return {
+        'success': false,
+        'status': 'error',
+        'error': 'INVENTORY_PARTIAL_FAILURE',
+        'message':
+            contabResult['message']?.toString() ??
+            'No se pudo contabilizar todo el inventario de la recepción. '
+                'La operación NO fue marcada como completada.',
+        'id_operacion': idOperacion,
+        'detalle_contabilizacion': contabResult['detalle'],
+        'exitosas': exitosas,
+        'omitidas': omitidas,
+        'fallidas': fallidas,
+        'total_lineas': totalLineas,
+      };
+    }
+
+    final stateResponse = await _supabase.rpc(
+      'fn_registrar_cambio_estado_operacion',
+      params: {
+        'p_id_operacion': idOperacion,
+        'p_nuevo_estado': 2,
+        'p_uuid_usuario': uuid,
+      },
+    );
+
+    if (stateResponse is Map && stateResponse['status'] == 'error') {
+      return {
+        'success': false,
+        'status': 'error',
+        'error': 'STATE_CHANGE_FAILED',
+        'message': stateResponse['message']?.toString() ??
+            'Inventario contabilizado pero falló el cambio de estado.',
+        'id_operacion': idOperacion,
+        'detalle_contabilizacion': contabResult['detalle'],
+        'exitosas': exitosas,
+        'omitidas': omitidas,
+        'fallidas': 0,
+        'total_lineas': totalLineas,
+      };
+    }
+
+    return {
+      'success': true,
+      'status': 'success',
+      'message': contabResult['message']?.toString() ??
+          'Recepción completada e inventario contabilizado',
+      'id_operacion': idOperacion,
+      'detalle_contabilizacion': contabResult['detalle'],
+      'exitosas': exitosas,
+      'omitidas': omitidas,
+      'fallidas': 0,
+      'total_lineas': totalLineas,
+    };
+  }
+
   /// Audita una recepción: compara cada línea contra su movimiento en inventario.
   static Future<Map<String, dynamic>> contabilizarRecepcionInventario(
     int idOperacion, {
     bool soloFaltantes = true,
+    bool atomico = false,
   }) async {
     try {
       final response = await _supabase.rpc(
@@ -4134,6 +4231,7 @@ class InventoryService {
         params: {
           'p_id_operacion': idOperacion,
           'p_solo_faltantes': soloFaltantes,
+          'p_atomico': atomico,
         },
       );
       if (response is Map) {
@@ -4148,6 +4246,7 @@ class InventoryService {
     return _contabilizarRecepcionInventarioClient(
       idOperacion,
       soloFaltantes: soloFaltantes,
+      atomico: atomico,
     );
   }
 
@@ -4175,7 +4274,19 @@ class InventoryService {
   static Future<Map<String, dynamic>> _contabilizarRecepcionInventarioClient(
     int idOperacion, {
     required bool soloFaltantes,
+    bool atomico = false,
+    bool validateOnly = false,
   }) async {
+    if (atomico && !validateOnly) {
+      final validation = await _contabilizarRecepcionInventarioClient(
+        idOperacion,
+        soloFaltantes: soloFaltantes,
+        validateOnly: true,
+      );
+      if (validation['success'] != true) {
+        return validation;
+      }
+    }
     final lineasResp = await _supabase
         .from('app_dat_recepcion_productos')
         .select('''
@@ -4317,6 +4428,21 @@ class InventoryService {
         final cantidadInicial = (stockRows as List).isNotEmpty
             ? _asDouble(stockRows.first['cantidad_final'])
             : 0.0;
+
+        if (validateOnly) {
+          exitosas++;
+          detalle.add({
+            'estado': 'OK',
+            'id_recepcion_producto': idRP,
+            'id_producto': idProducto,
+            'producto_nombre': productoNombre,
+            'cantidad_recepcion': cantidad,
+            'cantidad_inicial': cantidadInicial,
+            'cantidad_final': cantidadInicial + cantidad,
+            'mensaje': 'Validación OK (sin insertar)',
+          });
+          continue;
+        }
 
         final insertResp = await _supabase
             .from('app_dat_inventario_productos')

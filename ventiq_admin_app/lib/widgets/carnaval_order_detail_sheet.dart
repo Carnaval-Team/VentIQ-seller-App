@@ -92,7 +92,7 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
       detailsFuture,
       if (userId != null) CarnavalService.getOrderUserInfo(userId),
       if (direccion != null && direccion.isNotEmpty)
-        CarnavalService.getOrderDireccion(direccion),
+        CarnavalService.getOrderDireccion(direccion, userId: userId),
       if (resolvedOrderId != null)
         CarnavalService.getVentiqOperationId(resolvedOrderId),
       if (resolvedOrderId != null)
