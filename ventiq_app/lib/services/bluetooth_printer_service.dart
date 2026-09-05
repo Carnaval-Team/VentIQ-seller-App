@@ -205,6 +205,7 @@ class BluetoothPrinterService {
       final storeInfo = await _getStorePrintInfo();
       final usdRate = await _getUsdRateForPrint();
       final showPaymentMethod = await _shouldShowPaymentMethodOnTicket();
+      final vendorName = await _getLoggedInUserName();
 
       // Cabecera del lote
       List<int> header = [];
@@ -247,6 +248,7 @@ class BluetoothPrinterService {
             includeHeader: false,
             usdRate: usdRate,
             showPaymentMethod: showPaymentMethod,
+            vendorName: vendorName,
           );
           if (globalIndex < orders.length - 1) {
             chunk += _addDottedLineSeparator(generator);
@@ -729,6 +731,7 @@ class BluetoothPrinterService {
         usdRate: usdRate,
         title: title,
         showPaymentMethod: showPaymentMethod,
+        vendorName: await _getLoggedInUserName(),
       );
       bytes += generator.emptyLines(1);
       bytes += generator.cut();
@@ -914,6 +917,19 @@ class BluetoothPrinterService {
     return usdRate;
   }
 
+  Future<String?> _getLoggedInUserName() async {
+    try {
+      final profile = await _userPreferencesService.getWorkerProfile();
+      final nombres = (profile['nombres'] as String?)?.trim() ?? '';
+      final apellidos = (profile['apellidos'] as String?)?.trim() ?? '';
+      final fullName = '$nombres $apellidos'.trim();
+      if (fullName.isNotEmpty) return fullName;
+      return await _userPreferencesService.getUserEmail();
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<_StorePrintInfo> _loadStorePrintInfo() async {
     try {
       final storeId = await _userPreferencesService.getIdTienda();
@@ -1038,6 +1054,7 @@ class BluetoothPrinterService {
     double? usdRate,
     String title = 'FACTURA',
     bool showPaymentMethod = true,
+    String? vendorName,
   }) {
     List<int> bytes = [];
 
@@ -1060,12 +1077,14 @@ class BluetoothPrinterService {
       styles: PosStyles(align: PosAlign.left, bold: true),
     );
 
-    final sellerName = order.sellerName;
-    if (sellerName != null && sellerName.isNotEmpty) {
+    final displayVendor = (vendorName != null && vendorName.isNotEmpty)
+        ? vendorName
+        : order.sellerName;
+    if (displayVendor != null && displayVendor.isNotEmpty) {
       final displayName =
-          sellerName.length > 26
-              ? '${sellerName.substring(0, 23)}...'
-              : sellerName;
+          displayVendor.length > 26
+              ? '${displayVendor.substring(0, 23)}...'
+              : displayVendor;
       bytes += generator.text(
         'VEND: $displayName',
         styles: PosStyles(align: PosAlign.left),
@@ -1163,17 +1182,17 @@ class BluetoothPrinterService {
       bytes += _addPaymentMethodSummary(generator, order);
     }
 
-    // Footer compacto
-    bytes += generator.text(
-      'Gracias por su compra',
-      styles: PosStyles(align: PosAlign.center),
-    );
-
-    if (order.notas != null && order.notas!.isNotEmpty) {
-      bytes += generator.text(
-        'Nota: ${order.notas}',
-        styles: PosStyles(align: PosAlign.left),
-      );
+    // Footer: solo en la factura del cliente.
+    // `row()` (forma de pago) deja un área de impresión estrecha y el
+    // siguiente texto se parte a mitad de palabra. ESC @ restaura el ancho.
+    if (title == 'FACTURA') {
+      bytes += generator.reset();
+      // Centrado + texto + LF, sin ESC $ (posición absoluta). Ese comando
+      // hereda el área estrecha de `row()` y parte "Gracias por su compra".
+      bytes += const <int>[0x1B, 0x61, 0x01];
+      bytes += <int>[...'Gracias por su compra'.codeUnits, 0x0A];
+      bytes += <int>[...'Con la tecnologia de'.codeUnits, 0x0A];
+      bytes += <int>[...'Inventtia S.R.L.'.codeUnits, 0x0A];
     }
 
     bytes += generator.emptyLines(1);

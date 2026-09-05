@@ -199,14 +199,10 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     final enriched = await Future.wait(
       orders.map((order) async {
         final result = Map<String, dynamic>.from(order);
-        final direccion = result['direccion'] as String?;
-        if (direccion == null || direccion.isEmpty) return result;
-
         final userId = result['user_id'] as int?;
-        final direccionInfo = await CarnavalService.getOrderDireccion(
-          direccion,
-          userId: userId,
-        );
+        if (userId == null) return result;
+
+        final direccionInfo = await CarnavalService.getLastUserDireccion(userId);
         // Solo nombres de ubicación. NUNCA addAll: Direcciones.id pisa
         // Orders.id y hace que el estado parezca de otra orden al cruzar con BD.
         if (direccionInfo != null) {

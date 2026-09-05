@@ -108,10 +108,18 @@ class _FluidPaymentMethodsWidgetState extends State<FluidPaymentMethodsWidget> {
   }
 
   void _removePaymentMethod(int index) {
+    final paymentData = _selectedPaymentMethods[index];
+    final controller = paymentData['controller'] as TextEditingController;
+
     setState(() {
-      final paymentData = _selectedPaymentMethods[index];
-      (paymentData['controller'] as TextEditingController).dispose();
       _selectedPaymentMethods.removeAt(index);
+    });
+
+    // Posponer el dispose hasta después del frame para asegurar que el
+    // TextField asociado ya haya sido desmontado y liberado su listener.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      controller.dispose();
     });
 
     _updateRemainingAmount();
@@ -146,7 +154,15 @@ class _FluidPaymentMethodsWidgetState extends State<FluidPaymentMethodsWidget> {
     setState(() {
       for (int i = 0; i < _selectedPaymentMethods.length; i++) {
         _selectedPaymentMethods[i]['amount'] = amountPerMethod;
-        (_selectedPaymentMethods[i]['controller'] as TextEditingController)
+      }
+    });
+
+    // Actualizar los controladores fuera del setState para evitar notificar
+    // a los TextField durante la reconstrucción del widget.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      for (final payment in _selectedPaymentMethods) {
+        (payment['controller'] as TextEditingController)
             .text = amountPerMethod.toStringAsFixed(2);
       }
     });
@@ -156,6 +172,14 @@ class _FluidPaymentMethodsWidgetState extends State<FluidPaymentMethodsWidget> {
 
   void _payRemainingWithCash() {
     if (_remainingAmount <= 0) return;
+    if (_availablePaymentMethods.isEmpty) {
+      AppSnackBar.showPersistent(
+        context,
+        message: 'No hay métodos de pago disponibles',
+        backgroundColor: Colors.orange,
+      );
+      return;
+    }
 
     final cashMethod = _availablePaymentMethods.firstWhere(
       (method) => method.denominacion.toLowerCase().contains('efectivo'),

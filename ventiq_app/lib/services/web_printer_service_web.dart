@@ -59,6 +59,19 @@ class WebPrinterServiceImpl {
     }
   }
 
+  Future<String?> _getLoggedInUserName() async {
+    try {
+      final profile = await _userPreferencesService.getWorkerProfile();
+      final nombres = (profile['nombres'] as String?)?.trim() ?? '';
+      final apellidos = (profile['apellidos'] as String?)?.trim() ?? '';
+      final fullName = '$nombres $apellidos'.trim();
+      if (fullName.isNotEmpty) return fullName;
+      return await _userPreferencesService.getUserEmail();
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<_StorePrintInfo> _loadStorePrintInfo() async {
     try {
       final storeId = await _userPreferencesService.getIdTienda();
@@ -446,6 +459,27 @@ class WebPrinterServiceImpl {
       }
     }
 
+    final isFactura = copyLabel == null || copyLabel.isEmpty;
+    final vendorName =
+        await _getLoggedInUserName() ?? order.sellerName ?? '';
+    final vendorHtml =
+        vendorName.isNotEmpty
+            ? '<div class="info-line">VENDEDOR: $vendorName</div>'
+            : '';
+    final notesHtml =
+        isFactura
+            ? '<div class="notes">Con la tecnología de Inventtia S.R.L.</div>'
+            : '';
+    final thanksHtml =
+        isFactura
+            ? '''
+    <div class="footer">
+        <div>Gracias por su compra</div>
+        <div>$storeName</div>
+    </div>
+'''
+            : '';
+
     return '''
 <!DOCTYPE html>
 <html>
@@ -577,7 +611,7 @@ class WebPrinterServiceImpl {
 
     <div class="info-section">
         <div class="info-line">ORDEN: ${order.id}</div>
-        ${order.sellerName != null && order.sellerName!.isNotEmpty ? '<div class="info-line">VENDEDOR: ${order.sellerName}</div>' : ''}
+        $vendorHtml
         ${order.tpvName != null && order.tpvName!.isNotEmpty ? '<div class="info-line">TPV: ${order.tpvName}</div>' : ''}
         ${order.buyerName != null && order.buyerName!.isNotEmpty ? '<div class="info-line">CLIENTE: ${order.buyerName}</div>' : ''}
         ${order.buyerPhone != null && order.buyerPhone!.isNotEmpty ? '<div class="info-line">TELEFONO: ${order.buyerPhone}</div>' : ''}
@@ -597,12 +631,9 @@ class WebPrinterServiceImpl {
         $usdTotalLine
     </div>
 
-    <div class="footer">
-        <div>¡Gracias por su compra!</div>
-        <div>$storeName</div>
-    </div>
+    $thanksHtml
 
-    ${order.notas != null && order.notas!.isNotEmpty ? '<div class="notes">Notas: ${order.notas}</div>' : ''}
+    $notesHtml
 
     <script>
         // Auto-imprimir cuando se carga la página
@@ -633,6 +664,7 @@ class WebPrinterServiceImpl {
     final storeInfo = await _getStorePrintInfo();
     final usdRate = await _getUsdRateForPrint();
     final showPaymentMethod = await _shouldShowPaymentMethodOnTicket();
+    final loggedInUserName = await _getLoggedInUserName();
     final storeName = storeInfo.name;
     final headerLogoHtml =
         storeInfo.logoDataUrl != null
@@ -658,9 +690,15 @@ class WebPrinterServiceImpl {
               })
               .join('');
 
-          final notesHtml =
-              order.notas != null && order.notas!.isNotEmpty
-                  ? '<div class="notes">Notas: ${order.notas}</div>'
+          const notesHtml =
+              '<div class="notes">Con la tecnología de Inventtia S.R.L.</div>';
+          final displayVendor = (loggedInUserName != null &&
+                  loggedInUserName.isNotEmpty)
+              ? loggedInUserName
+              : (order.sellerName ?? '');
+          final vendorHtml =
+              displayVendor.isNotEmpty
+                  ? '<div class="info-line">VENDEDOR: $displayVendor</div>'
                   : '';
 
           final usdTotalLine =
@@ -690,7 +728,7 @@ class WebPrinterServiceImpl {
 
       <div class="info-section">
         <div class="info-line">ORDEN: ${order.id}</div>
-        ${order.sellerName != null && order.sellerName!.isNotEmpty ? '<div class="info-line">VENDEDOR: ${order.sellerName}</div>' : ''}
+        $vendorHtml
         ${order.tpvName != null && order.tpvName!.isNotEmpty ? '<div class="info-line">TPV: ${order.tpvName}</div>' : ''}
         ${order.buyerName != null && order.buyerName!.isNotEmpty ? '<div class="info-line">CLIENTE: ${order.buyerName}</div>' : ''}
         ${order.buyerPhone != null && order.buyerPhone!.isNotEmpty ? '<div class="info-line">TELEFONO: ${order.buyerPhone}</div>' : ''}
@@ -711,7 +749,7 @@ class WebPrinterServiceImpl {
       </div>
 
       <div class="footer">
-        <div>¡Gracias por su compra!</div>
+        <div>Gracias por su compra</div>
         <div>$storeName</div>
       </div>
 

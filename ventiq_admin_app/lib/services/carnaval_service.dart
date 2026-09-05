@@ -2262,6 +2262,52 @@ class CarnavalService {
     }
   }
 
+  /// Obtiene la última dirección registrada de un usuario en
+  /// `carnavalapp.Direcciones`.
+  static Future<Map<String, dynamic>?> getLastUserDireccion(int userId) async {
+    try {
+      final dirResponse = await _supabase
+          .schema('carnavalapp')
+          .from('Direcciones')
+          .select('id, address, provincia, municipio')
+          .eq('user_id', userId)
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      if (dirResponse == null) return null;
+
+      final result = <String, dynamic>{'address': dirResponse['address']};
+      final provinciaId = dirResponse['provincia'];
+      final municipioId = dirResponse['municipio'];
+
+      if (provinciaId != null) {
+        final prov = await _supabase
+            .schema('carnavalapp')
+            .from('Provincias')
+            .select('nombre')
+            .eq('id', provinciaId)
+            .maybeSingle();
+        result['provincia_nombre'] = prov?['nombre'];
+      }
+
+      if (municipioId != null) {
+        final mun = await _supabase
+            .schema('carnavalapp')
+            .from('municipios')
+            .select('municipio')
+            .eq('id', municipioId)
+            .maybeSingle();
+        result['municipio_nombre'] = mun?['municipio'];
+      }
+
+      return result;
+    } catch (e) {
+      print('❌ Error al obtener última dirección de usuario: $e');
+      return null;
+    }
+  }
+
   /// Extrae provincia/municipio de un string con formato
   /// "<calle>, <municipio>, <provincia>" o "<municipio>, <provincia>".
   /// Devuelve `null` si no tiene al menos dos partes separadas por coma.

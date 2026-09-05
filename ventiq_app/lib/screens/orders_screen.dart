@@ -640,8 +640,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
     try {
       // Offline / full-offline: cache local. Online: servidor.
-      final useLocalData =
-          await _userPreferencesService.shouldUseLocalData();
+      final useLocalData = await _userPreferencesService.shouldUseLocalData();
       _isOfflineMode = useLocalData;
 
       // Sin turno abierto el vendedor no debe ver órdenes (online u offline).
@@ -708,9 +707,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
       // depender de que corra el auto-sync periódico primero.
       if (!useLocalData) {
         unawaited(
-          AutoSyncService().pullServerOrdersForCurrentShift().catchError((
-            e,
-          ) {
+          AutoSyncService().pullServerOrdersForCurrentShift().catchError((e) {
             print('⚠️ No se pudo cachear órdenes para uso offline: $e');
             return 0;
           }),
@@ -1551,8 +1548,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
             (context) => StatefulBuilder(
               builder: (context, setDetailState) {
                 order = currentOrder;
-                isCuentaPorCobrarFuture ??=
-                    _orderService.isVentaPendienteDePago(order);
+                isCuentaPorCobrarFuture ??= _orderService
+                    .isVentaPendienteDePago(order);
 
                 void refreshPaymentBreakdown() {
                   setDetailState(() {
@@ -1572,8 +1569,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   setDetailState(() {
                     if (updated.isNotEmpty) {
                       currentOrder = updated.first;
-                      isCuentaPorCobrarFuture =
-                          _orderService.isVentaPendienteDePago(currentOrder);
+                      isCuentaPorCobrarFuture = _orderService
+                          .isVentaPendienteDePago(currentOrder);
                     }
                   });
                 }
@@ -1909,7 +1906,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                 child: _buildPaymentBreakdown(
                                   order,
                                   refreshKey: paymentBreakdownRefreshKey,
-                                  onPaymentUpdated: refreshPaymentBreakdown,
+                                  onPaymentUpdated: () {
+                                    // Offline: recargar la orden local con
+                                    // los pagos actualizados. Online: forzar
+                                    // refetch del desglose desde servidor.
+                                    refreshOrderData();
+                                    refreshPaymentBreakdown();
+                                  },
                                 ),
                               ),
                             ],
@@ -3017,9 +3020,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
               final esPagoPendiente = snapshot.data?[1] ?? false;
               final confirmLabel =
                   esPagoPendiente ? 'Confirmar Orden' : 'Confirmar Pago';
-              final confirmMessage = esPagoPendiente
-                  ? '¿Confirmas esta orden? Queda registrada como cuenta por cobrar pendiente de cobro.'
-                  : '¿Confirmas que el pago de esta orden ha sido recibido?';
+              final confirmMessage =
+                  esPagoPendiente
+                      ? '¿Confirmas esta orden? Queda registrada como cuenta por cobrar pendiente de cobro.'
+                      : '¿Confirmas que el pago de esta orden ha sido recibido?';
               final confirmIcon =
                   esPagoPendiente ? Icons.check_circle_outline : Icons.payment;
 
@@ -3168,11 +3172,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 child: const Text('Cancelar'),
               ),
               ElevatedButton(
-                onPressed: () {
-                  _updateOrderStatus(order, newStatus);
-                  Navigator.pop(context); // Cerrar diálogo
-                  if (detailContext != null)
-                    Navigator.pop(detailContext); // Cerrar pantalla de detalles
+                onPressed: () async {
+                  Navigator.pop(context);
+                  await _updateOrderStatus(order, newStatus);
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: color,
@@ -3230,17 +3232,42 @@ class _OrdersScreenState extends State<OrdersScreen> {
         String statusMessage = '';
         switch (newStatus) {
           case OrderStatus.cancelada:
-            statusMessage = 'Orden cancelada exitosamente';
-            break;
+            // Al cancelar, volver al listado de órdenes y recargar la info.
+            Navigator.pushNamedAndRemoveUntil(
+              context,
+              '/orders',
+              (route) => false,
+            );
+            return;
           case OrderStatus.devuelta:
             statusMessage = 'Orden marcada como devuelta';
             break;
           case OrderStatus.completada:
           case OrderStatus.pagoConfirmado:
-            statusMessage = 'Pago confirmado exitosamente';
-            // Verificar si la impresión está habilitada antes de mostrar el diálogo
-            _checkAndShowPrintDialog(updatedOrder);
-            break;
+            // Abrir directo el selector de tipo de impresión (o imprimir
+            // con la impresora guardada). Cancelar ahí cancela la impresión.
+            final isPrintEnabled =
+                await _userPreferencesService.isPrintEnabled();
+            if (isPrintEnabled && mounted) {
+              final printResult = await _printerManager.printInvoice(
+                context,
+                updatedOrder,
+              );
+              final wasCancelled = printResult.message
+                  .toLowerCase()
+                  .contains('cancelada');
+              if (!printResult.success && !wasCancelled) {
+                _showErrorDialog('Error de impresión', printResult.message);
+                return;
+              }
+            }
+            if (!mounted) return;
+            Navigator.pushNamedAndRemoveUntil(
+              context,
+              '/orders',
+              (route) => false,
+            );
+            return;
           default:
             statusMessage = 'Estado actualizado correctamente';
         }
@@ -3289,7 +3316,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
       return _buildPaymentBreakdownContent(
         order,
         localPayments,
-        canEdit: false,
+        canEdit:
+            localPayments.isNotEmpty &&
+            _getCarnavalOrderId(order.notas) == null &&
+            _canEditPaymentBreakdown(order),
         onPaymentUpdated: onPaymentUpdated,
       );
     }
@@ -3660,17 +3690,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
     VoidCallback? onUpdated,
   }) async {
     final operationId = order.operationId;
-    if (operationId == null) return;
-
-    final isOfflineModeEnabled =
-        await _userPreferencesService.isOfflineModeEnabled();
-    if (isOfflineModeEnabled) {
-      _showErrorDialog(
-        'Modo offline',
-        'Para editar el desglose de pagos necesitas conexión.',
-      );
-      return;
-    }
 
     final amountController = TextEditingController();
     Map<String, dynamic>? selectedSource;
@@ -4276,6 +4295,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                                   });
                                                   final result = await _orderService
                                                       .moveSalePaymentAmount(
+                                                        orderId: order.id,
                                                         operationId:
                                                             operationId,
                                                         fromPaymentMethodId:
@@ -4287,6 +4307,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                                         amount: amountToMove,
                                                       );
                                                   if (!mounted) return;
+                                                  if (!context.mounted) return;
+
                                                   if (result['success'] ==
                                                       true) {
                                                     Navigator.pop(context);
@@ -4351,9 +4373,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
           },
         );
       },
-    ).whenComplete(() {
-      amountController.dispose();
-    });
+    );
   }
 
   void _showEditCustomerSheet(Order order, {VoidCallback? onCustomerUpdated}) {
@@ -6284,9 +6304,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
         // Producto ya existe → sumar cantidad localmente
         final existing = _items[existIdx];
         final newQty =
-            existing.cantidad > 0
-                ? existing.cantidad + cantidad
-                : cantidad;
+            existing.cantidad > 0 ? existing.cantidad + cantidad : cantidad;
         _items[existIdx] = existing.copyWith(cantidad: newQty);
 
         // Actualizar / agregar op

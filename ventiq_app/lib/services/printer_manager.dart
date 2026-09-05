@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/order.dart';
 import '../utils/platform_utils.dart';
 import '../services/bluetooth_printer_service.dart';
@@ -37,13 +39,26 @@ class PrinterManager {
   dynamic _savedBluetoothDevice;       // BluetoothInfo
   Map<String, dynamic>? _savedWifiPrinter; // {'ip': ..., 'port': ...}
   bool _rememberPrinterForShift = false;
+  bool _savedPrinterPrefsLoaded = false;
 
-  /// Devuelve true si ya hay una selección guardada para la sesión y la
-  /// configuración de tienda permite recordar impresoras.
-  bool get hasSavedPrinter =>
-      _allowRememberPrinter &&
-      _rememberPrinterForShift &&
-      _savedPrinterType != null;
+  static const String _kShiftPrinterType = 'shift_saved_printer_type';
+  static const String _kShiftPrinterBtName = 'shift_saved_printer_bt_name';
+  static const String _kShiftPrinterBtMac = 'shift_saved_printer_bt_mac';
+  static const String _kShiftPrinterWifiIp = 'shift_saved_printer_wifi_ip';
+  static const String _kShiftPrinterWifiPort = 'shift_saved_printer_wifi_port';
+
+  /// Devuelve true si ya hay una impresora guardada para el turno.
+  /// No depende del permiso de tienda: si ya se guardó, se reutiliza.
+  bool get hasSavedPrinter {
+    if (!_rememberPrinterForShift || _savedPrinterType == null) return false;
+    if (_savedPrinterType == 'bluetooth') {
+      return _savedBluetoothDevice != null;
+    }
+    if (_savedPrinterType == 'wifi') {
+      return _savedWifiPrinter != null;
+    }
+    return false;
+  }
 
   /// Nombre descriptivo de la impresora guardada (para mostrar en UI)
   String get savedPrinterDescription {
@@ -62,6 +77,103 @@ class PrinterManager {
     _savedBluetoothDevice = null;
     _savedWifiPrinter = null;
     _rememberPrinterForShift = false;
+    _savedPrinterPrefsLoaded = true;
+    _clearSavedPrinterFromPrefs();
+  }
+
+  void _rememberBluetoothForShift(dynamic device) {
+    _savedPrinterType = 'bluetooth';
+    _savedBluetoothDevice = device;
+    _rememberPrinterForShift = true;
+    _persistSavedPrinter();
+  }
+
+  void _rememberWifiForShift(Map<String, dynamic> printer) {
+    _savedPrinterType = 'wifi';
+    _savedWifiPrinter = Map<String, dynamic>.from(printer);
+    _rememberPrinterForShift = true;
+    _persistSavedPrinter();
+  }
+
+  Future<void> _ensureSavedPrinterLoaded() async {
+    if (hasSavedPrinter) {
+      _savedPrinterPrefsLoaded = true;
+      return;
+    }
+    if (_savedPrinterPrefsLoaded) return;
+    _savedPrinterPrefsLoaded = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final type = prefs.getString(_kShiftPrinterType);
+      if (type == 'bluetooth') {
+        final mac = prefs.getString(_kShiftPrinterBtMac);
+        if (mac == null || mac.isEmpty) return;
+        _savedBluetoothDevice = BluetoothInfo(
+          name: prefs.getString(_kShiftPrinterBtName) ?? 'Bluetooth',
+          macAdress: mac,
+        );
+        _savedPrinterType = 'bluetooth';
+        _rememberPrinterForShift = true;
+        print('🖨️ Impresora del turno restaurada: $savedPrinterDescription');
+      } else if (type == 'wifi') {
+        final ip = prefs.getString(_kShiftPrinterWifiIp);
+        if (ip == null || ip.isEmpty) return;
+        _savedWifiPrinter = {
+          'ip': ip,
+          'port': prefs.getInt(_kShiftPrinterWifiPort) ?? 9100,
+        };
+        _savedPrinterType = 'wifi';
+        _rememberPrinterForShift = true;
+        print('🖨️ Impresora del turno restaurada: $savedPrinterDescription');
+      }
+    } catch (e) {
+      print('⚠️ No se pudo restaurar impresora del turno: $e');
+    }
+  }
+
+  Future<void> _persistSavedPrinter() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!hasSavedPrinter) {
+        await _clearSavedPrinterFromPrefs();
+        return;
+      }
+      await prefs.setString(_kShiftPrinterType, _savedPrinterType!);
+      if (_savedPrinterType == 'bluetooth' && _savedBluetoothDevice != null) {
+        await prefs.setString(
+          _kShiftPrinterBtName,
+          _savedBluetoothDevice.name as String? ?? '',
+        );
+        await prefs.setString(
+          _kShiftPrinterBtMac,
+          _savedBluetoothDevice.macAdress as String? ?? '',
+        );
+      } else if (_savedPrinterType == 'wifi' && _savedWifiPrinter != null) {
+        await prefs.setString(
+          _kShiftPrinterWifiIp,
+          _savedWifiPrinter!['ip']?.toString() ?? '',
+        );
+        await prefs.setInt(
+          _kShiftPrinterWifiPort,
+          (_savedWifiPrinter!['port'] as num?)?.toInt() ?? 9100,
+        );
+      }
+    } catch (e) {
+      print('⚠️ No se pudo guardar impresora del turno: $e');
+    }
+  }
+
+  Future<void> _clearSavedPrinterFromPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_kShiftPrinterType);
+      await prefs.remove(_kShiftPrinterBtName);
+      await prefs.remove(_kShiftPrinterBtMac);
+      await prefs.remove(_kShiftPrinterWifiIp);
+      await prefs.remove(_kShiftPrinterWifiPort);
+    } catch (e) {
+      print('⚠️ No se pudo limpiar impresora del turno: $e');
+    }
   }
 
   /// Muestra el diálogo de confirmación de impresión apropiado para la plataforma
@@ -257,6 +369,7 @@ class PrinterManager {
     List<Order> orders,
   ) async {
     try {
+      await _ensureSavedPrinterLoaded();
       // Si ya se guardó una impresora para el turno, imprimir automáticamente
       if (hasSavedPrinter) {
         if (_savedPrinterType == 'bluetooth') {
@@ -327,9 +440,7 @@ class PrinterManager {
         );
       }
       if (remember) {
-        _savedPrinterType = 'bluetooth';
-        _savedBluetoothDevice = selectedDevice;
-        _rememberPrinterForShift = true;
+        _rememberBluetoothForShift(selectedDevice);
       }
 
       return await _printCustomerReceiptsViaBluetoothMobileWithDevice(context, orders, selectedDevice);
@@ -456,9 +567,7 @@ class PrinterManager {
         );
       }
       if (remember) {
-        _savedPrinterType = 'wifi';
-        _savedWifiPrinter = Map<String, dynamic>.from(selectedPrinter);
-        _rememberPrinterForShift = true;
+        _rememberWifiForShift(selectedPrinter);
       }
 
       return await _printCustomerReceiptsViaWiFiMobileWithPrinter(
@@ -623,6 +732,7 @@ class PrinterManager {
     Order order,
   ) async {
     try {
+      await _ensureSavedPrinterLoaded();
       // Si ya se guardó una impresora para el turno, imprimir automáticamente
       if (hasSavedPrinter) {
         if (_savedPrinterType == 'bluetooth') {
@@ -903,9 +1013,7 @@ class PrinterManager {
         );
       }
       if (remember) {
-        _savedPrinterType = 'bluetooth';
-        _savedBluetoothDevice = selectedDevice;
-        _rememberPrinterForShift = true;
+        _rememberBluetoothForShift(selectedDevice);
       }
 
       return await _printViaBluetoothMobileWithDevice(context, order, selectedDevice);
@@ -1036,9 +1144,7 @@ class PrinterManager {
         );
       }
       if (remember) {
-        _savedPrinterType = 'wifi';
-        _savedWifiPrinter = Map<String, dynamic>.from(selectedPrinter);
-        _rememberPrinterForShift = true;
+        _rememberWifiForShift(selectedPrinter);
       }
 
       debugPrint(

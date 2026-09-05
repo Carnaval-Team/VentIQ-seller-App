@@ -520,7 +520,63 @@ class SalesService {
       params: params,
     );
     if (response == null) return [];
-    return List<Map<String, dynamic>>.from(response as List);
+    final events = List<Map<String, dynamic>>.from(response as List);
+
+    // Enriquecer los eventos de venta con los métodos de pago de la operación.
+    final saleOperationIds = events
+        .where((e) => e['tipo_evento']?.toString() == 'venta')
+        .map((e) => e['id_operacion'])
+        .whereType<int>()
+        .toSet()
+        .toList();
+
+    if (saleOperationIds.isNotEmpty) {
+      try {
+        final paymentsResponse = await _supabase
+            .from('app_dat_operacion_venta')
+            .select(
+              'id_operacion, app_dat_pago_venta(monto, app_nom_medio_pago(denominacion, es_efectivo, es_digital))',
+            )
+            .inFilter('id_operacion', saleOperationIds);
+
+        final paymentsByOperation = <int, List<Map<String, dynamic>>>{};
+        for (final row in List<Map<String, dynamic>>.from(paymentsResponse)) {
+          final opId = row['id_operacion'] as int?;
+          if (opId == null) continue;
+          final payments = row['app_dat_pago_venta'];
+          if (payments is List) {
+            final parsed = payments
+                .map((p) => Map<String, dynamic>.from(p as Map))
+                .toList();
+            paymentsByOperation[opId] = parsed;
+          }
+        }
+
+        for (final event in events) {
+          if (event['tipo_evento']?.toString() != 'venta') continue;
+          final opId = event['id_operacion'] as int?;
+          if (opId == null) continue;
+          final payments = paymentsByOperation[opId] ?? [];
+          final labels = payments
+              .map((p) {
+                final medio = p['app_nom_medio_pago'];
+                if (medio is Map) {
+                  return medio['denominacion']?.toString() ?? 'Desconocido';
+                }
+                return 'Desconocido';
+              })
+              .where((l) => l.isNotEmpty)
+              .toSet()
+              .toList();
+          event['metodo_pago'] = labels.isEmpty ? '-' : labels.join(', ');
+          event['pagos_detalle'] = payments;
+        }
+      } catch (e) {
+        print('⚠️ No se pudieron cargar métodos de pago: $e');
+      }
+    }
+
+    return events;
   }
 
   // Get date ranges for filters

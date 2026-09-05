@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/promotion_rules.dart';
 import '../utils/uuid_generator.dart';
+import 'admin_access_service.dart';
 import 'order_service.dart';
 import 'offline_database_service.dart';
 
@@ -1361,6 +1362,85 @@ class UserPreferencesService {
     }
   }
 
+  /// Restaura la sesión de un usuario offline validado con email/password.
+  /// Devuelve los datos del usuario restaurado si tuvo éxito, o null.
+  /// Es útil para el auto-login offline desde el splash sin volver a pedir
+  /// credenciales al usuario.
+  Future<Map<String, dynamic>?> restoreOfflineUserSession(
+    String email,
+    String password,
+  ) async {
+    final offlineUser = await validateOfflineUser(
+      email: email,
+      password: password,
+    );
+    if (offlineUser == null) return null;
+
+    final offlineData = await getOfflineData();
+    if (offlineData == null) {
+      print('❌ No hay datos offline guardados');
+      return null;
+    }
+
+    // Restaurar datos de sesión del usuario
+    await saveUserData(
+      userId: offlineUser['userId'],
+      email: offlineUser['email'],
+      accessToken: 'offline_mode',
+    );
+
+    // Restaurar datos del vendedor
+    if (offlineUser['idTpv'] != null && offlineUser['idTrabajador'] != null) {
+      await saveSellerData(
+        idTpv: offlineUser['idTpv'],
+        idTrabajador: offlineUser['idTrabajador'],
+        permitirCustomizarPrecioVenta:
+            offlineUser['permitir_customizar_precio_venta'] == true,
+      );
+    }
+
+    if (offlineUser['idSeller'] != null) {
+      await saveIdSeller(offlineUser['idSeller']);
+    }
+
+    // Restaurar perfil del trabajador
+    if (offlineUser['nombres'] != null &&
+        offlineUser['apellidos'] != null &&
+        offlineUser['idTienda'] != null &&
+        offlineUser['idRoll'] != null) {
+      await saveWorkerProfile(
+        nombres: offlineUser['nombres'],
+        apellidos: offlineUser['apellidos'],
+        idTienda: offlineUser['idTienda'],
+        idRoll: offlineUser['idRoll'],
+      );
+      final storeId = offlineUser['idTienda'];
+      if (storeId is int) {
+        await ensureOfflineStoreScope(storeId);
+      } else if (storeId is num) {
+        await ensureOfflineStoreScope(storeId.toInt());
+      }
+    }
+
+    final entryRole = offlineUser['entryRole']?.toString();
+    if (entryRole != null && entryRole.isNotEmpty) {
+      await setCajaEntryRole(entryRole);
+      final storeId = offlineUser['idTienda'];
+      if (storeId != null) {
+        final sid = storeId is int ? storeId : (storeId as num).toInt();
+        final adminRole =
+            (entryRole == 'gerente' || entryRole == 'supervisor')
+                ? entryRole
+                : 'none';
+        await setCachedAdminRoleRaw(sid, adminRole);
+      }
+      AdminAccessService().clearMemoryCache();
+    }
+
+    await setOfflineMode(true);
+    return offlineUser;
+  }
+
   /// Obtener todos los usuarios offline guardados
   Future<List<Map<String, dynamic>>> getOfflineUsers() async {
     final prefs = await SharedPreferences.getInstance();
@@ -1434,6 +1514,28 @@ class UserPreferencesService {
     print(
       '💾 Orden pendiente guardada. Total pendientes: ${pendingOrders.length}',
     );
+  }
+
+  Future<bool> updatePendingOrderPayments(
+    String orderId,
+    List<Map<String, dynamic>> payments,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final pendingOrders = await getPendingOrders();
+    var changed = false;
+
+    for (final order in pendingOrders) {
+      if (order['id']?.toString() != orderId) continue;
+      order['desglose_pagos'] = payments;
+      order['last_modified'] = DateTime.now().toIso8601String();
+      changed = true;
+      break;
+    }
+
+    if (changed) {
+      await prefs.setString(_pendingOrdersKey, jsonEncode(pendingOrders));
+    }
+    return changed;
   }
 
   /// Obtener todas las órdenes pendientes de sincronización
@@ -1794,10 +1896,12 @@ class UserPreferencesService {
             // es de otra, NO es la fila a tocar — sin esto el delta de «2
             // Bultos» caía sobre las Bolsas.
             if (presentationId != null) {
-              final presData = inv['presentacion'] is Map
-                  ? Map<String, dynamic>.from(inv['presentacion'] as Map)
-                  : null;
-              final invPresId = (presData?['id'] as num?)?.toInt() ??
+              final presData =
+                  inv['presentacion'] is Map
+                      ? Map<String, dynamic>.from(inv['presentacion'] as Map)
+                      : null;
+              final invPresId =
+                  (presData?['id'] as num?)?.toInt() ??
                   (inv['id_presentacion'] as num?)?.toInt();
               if (invPresId != null && invPresId != presentationId) {
                 return false;

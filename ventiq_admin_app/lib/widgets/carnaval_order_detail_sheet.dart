@@ -75,7 +75,6 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
 
     // Load extra data in parallel
     final userId = _order['user_id'] as int?;
-    final direccion = _order['direccion'] as String?;
     final resolvedOrderId = _order['id'] as int?;
 
     // Bitácora de capitán: quién cambió cantidades o borró líneas. Se acota al
@@ -91,8 +90,7 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
     final futures = await Future.wait([
       detailsFuture,
       if (userId != null) CarnavalService.getOrderUserInfo(userId),
-      if (direccion != null && direccion.isNotEmpty)
-        CarnavalService.getOrderDireccion(direccion, userId: userId),
+      if (userId != null) CarnavalService.getLastUserDireccion(userId),
       if (resolvedOrderId != null)
         CarnavalService.getVentiqOperationId(resolvedOrderId),
       if (resolvedOrderId != null)
@@ -109,8 +107,6 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
     if (userId != null) {
       _userInfo = futures[idx] as Map<String, dynamic>?;
       idx++;
-    }
-    if (direccion != null && direccion.isNotEmpty) {
       _direccionInfo = futures[idx] as Map<String, dynamic>?;
       idx++;
     }
@@ -1142,7 +1138,7 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
   Widget _buildDireccionInfo() {
     final provincia = _direccionInfo?['provincia_nombre'] ?? '-';
     final municipio = _direccionInfo?['municipio_nombre'] ?? '-';
-    final direccion = _order['direccion'] ?? '-';
+    final direccion = _direccionInfo?['address'] ?? _order['direccion'] ?? '-';
 
     return Column(
       children: [

@@ -288,15 +288,20 @@ class _LoginScreenState extends State<LoginScreen> {
               print('⚠️ No se pudo cachear rol admin: $e');
             }
 
-            // Guardar credenciales si el usuario marcó "Recordarme"
-            if (_rememberMe) {
-              await _userPreferencesService.saveCredentials(
-                _emailController.text.trim(),
-                _passwordController.text,
-              );
-            } else {
-              await _userPreferencesService.clearSavedCredentials();
-            }
+            // Guardar credenciales para permitir auto-login offline sin
+            // volver a pedir usuario/contraseña al reabrir la app sin red.
+            await _userPreferencesService.saveCredentials(
+              _emailController.text.trim(),
+              _passwordController.text,
+            );
+
+            // Guardar/actualizar el usuario en el array offline para login
+            // completamente offline (sin conexión) en futuras aperturas.
+            await _userPreferencesService.saveOfflineUser(
+              email: _emailController.text.trim(),
+              password: _passwordController.text,
+              userId: response.user!.id,
+            );
 
             print('✅ Perfil de acceso a Caja guardado ($entryRole)');
 

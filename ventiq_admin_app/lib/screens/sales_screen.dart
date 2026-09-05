@@ -4784,6 +4784,12 @@ class _SalesScreenState extends State<SalesScreen>
         '${next?.toStringAsFixed(decimals) ?? '-'} ${isSalePrice ? 'CUP' : 'USD'}';
   }
 
+  String _productHistoryPaymentMethod(Map<String, dynamic> event) {
+    if (event['tipo_evento']?.toString() != 'venta') return '-';
+    final method = event['metodo_pago']?.toString();
+    return method == null || method.isEmpty ? '-' : method;
+  }
+
   String _productHistoryFileName(String productName, String extension) {
     final safeName = productName
         .toLowerCase()
@@ -4803,6 +4809,7 @@ class _SalesScreenState extends State<SalesScreen>
         'Fecha',
         'Evento',
         'Operación',
+        'Método de pago',
         'Cant.',
         'Venta u.',
         'Costo u.',
@@ -4823,6 +4830,7 @@ class _SalesScreenState extends State<SalesScreen>
           date == null ? '-' : dateFormat.format(date.toLocal()),
           _productHistoryEventName(event),
           event['id_operacion']?.toString() ?? '-',
+          _productHistoryPaymentMethod(event),
           number('cantidad'),
           number('precio_venta_cup'),
           number('precio_costo_cup'),
@@ -4910,6 +4918,7 @@ class _SalesScreenState extends State<SalesScreen>
         excel.TextCellValue('Fecha'),
         excel.TextCellValue('Evento'),
         excel.TextCellValue('Operación'),
+        excel.TextCellValue('Método de pago'),
         excel.TextCellValue('Cantidad'),
         excel.TextCellValue('Venta unitario CUP'),
         excel.TextCellValue('Costo unitario CUP'),
@@ -4938,6 +4947,7 @@ class _SalesScreenState extends State<SalesScreen>
           event['id_operacion'] == null
               ? excel.TextCellValue('')
               : excel.IntCellValue((event['id_operacion'] as num).toInt()),
+          excel.TextCellValue(_productHistoryPaymentMethod(event)),
           number('cantidad'),
           number('precio_venta_cup'),
           number('precio_costo_cup'),
@@ -5110,6 +5120,7 @@ class _SalesScreenState extends State<SalesScreen>
                                     DataColumn(label: Text('Fecha')),
                                     DataColumn(label: Text('Evento')),
                                     DataColumn(label: Text('Operación')),
+                                    DataColumn(label: Text('Método de pago')),
                                     DataColumn(label: Text('Cantidad')),
                                     DataColumn(label: Text('Venta (u)')),
                                     DataColumn(label: Text('Costo CUP (u)')),
@@ -5197,6 +5208,11 @@ class _SalesScreenState extends State<SalesScreen>
                                           Text(
                                             event['id_operacion']?.toString() ??
                                                 '-',
+                                          ),
+                                        ),
+                                        DataCell(
+                                          Text(
+                                            _productHistoryPaymentMethod(event),
                                           ),
                                         ),
                                         DataCell(

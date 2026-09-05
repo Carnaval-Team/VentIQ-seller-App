@@ -507,7 +507,15 @@ class _CategoriesScreenState extends State<CategoriesScreen>
                     esPorLotes: p['es_por_lotes'] as bool? ?? false,
                     esElaborado: p['es_elaborado'] as bool? ?? false,
                     esServicio: p['es_servicio'] as bool? ?? false,
-                    variantes: p['variantes'] as List<dynamic>? ?? [],
+                    variantes:
+                        (p['variantes'] as List<dynamic>? ?? const []).map((
+                          variant,
+                        ) {
+                          if (variant is ProductVariant) return variant;
+                          return ProductVariant.fromJson(
+                            Map<String, dynamic>.from(variant as Map),
+                          );
+                        }).toList(),
                   ),
                 )
                 .where((product) => product.id > 0)

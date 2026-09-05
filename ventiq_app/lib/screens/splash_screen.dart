@@ -6,6 +6,9 @@ import '../services/settings_integration_service.dart';
 import '../services/auto_sync_service.dart';
 import '../services/update_service.dart';
 import '../services/subscription_guard_service.dart';
+import '../services/connectivity_service.dart';
+import '../services/smart_offline_manager.dart';
+import '../utils/navigation_helper.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -93,8 +96,17 @@ class _SplashScreenState extends State<SplashScreen> {
               password != null &&
               email.isNotEmpty &&
               password.isNotEmpty) {
-            // Attempt automatic login
-            await _attemptAutoLogin(email, password);
+            // Si no hay conexión, intentar login offline automático con las
+            // credenciales guardadas para que el usuario pueda seguir
+            // trabajando sin volver a pedir usuario/contraseña.
+            final hasInternet =
+                await ConnectivityService().checkConnectivity();
+            if (hasInternet) {
+              await _attemptAutoLogin(email, password);
+            } else {
+              print('📵 Splash sin conexión - intentando auto-login offline');
+              await _attemptOfflineAutoLogin(email, password);
+            }
             return;
           }
         }
@@ -160,7 +172,68 @@ class _SplashScreenState extends State<SplashScreen> {
       }
     } catch (e) {
       print('Auto-login failed: $e');
-      // Auto-login failed, go to login screen
+      // Si falló por falta de conexión, intentar login offline automático
+      // con las credenciales guardadas antes de mandar al login manual.
+      final hasInternet = await ConnectivityService().checkConnectivity();
+      if (!hasInternet) {
+        print('📵 Auto-login falló por conexión - intentando offline');
+        await _attemptOfflineAutoLogin(email, password);
+        return;
+      }
+      if (mounted) {
+        await SettingsIntegrationService().stop();
+        await AutoSyncService().stopAutoSync();
+        Navigator.of(context).pushReplacementNamed('/login');
+      }
+    }
+  }
+
+  /// Auto-login offline con credenciales guardadas. Útil cuando se reabre
+  /// la app sin conexión y no hay sesión online vigente.
+  Future<void> _attemptOfflineAutoLogin(String email, String password) async {
+    try {
+      final offlineUser = await _userPreferencesService.restoreOfflineUserSession(
+        email,
+        password,
+      );
+
+      if (offlineUser == null) {
+        print('❌ Auto-login offline fallido: credenciales inválidas');
+        if (mounted) {
+          await SettingsIntegrationService().stop();
+          await AutoSyncService().stopAutoSync();
+          Navigator.of(context).pushReplacementNamed('/login');
+        }
+        return;
+      }
+
+      print('✅ Auto-login offline exitoso - Restaurando sesión...');
+
+      // En full offline no inicializar auto-sync; en offline temporal sí
+      // (initialize respeta el flag offline y no arranca sync).
+      if (!await _userPreferencesService.isDeviceFullOfflineReady()) {
+        _initializeSmartServices();
+      } else {
+        try {
+          await SmartOfflineManager().onOfflineModeManuallyEnabled();
+        } catch (_) {}
+      }
+
+      await _userPreferencesService.updateLastSeenTimestamp();
+      final hasLicense =
+          await SubscriptionGuardService().hasActiveSubscription();
+
+      if (mounted) {
+        if (hasLicense) {
+          final destino = await NavigationHelper.homeRoute();
+          if (!mounted) return;
+          Navigator.of(context).pushReplacementNamed(destino);
+        } else {
+          Navigator.of(context).pushReplacementNamed('/subscription-detail');
+        }
+      }
+    } catch (e) {
+      print('❌ Error en auto-login offline: $e');
       if (mounted) {
         await SettingsIntegrationService().stop();
         await AutoSyncService().stopAutoSync();

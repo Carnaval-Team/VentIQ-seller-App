@@ -110,12 +110,15 @@ class OrderService {
   ///
   /// Devuelve `null` si no hay presentación: el item queda sin ella y
   /// `equivalenteBase` cae a factor 1, o sea el comportamiento anterior a Fase 4.
-  (int, String, double)? _datosPresentacion(Map<String, dynamic>? inventoryData) {
+  (int, String, double)? _datosPresentacion(
+    Map<String, dynamic>? inventoryData,
+  ) {
     final idPres = (inventoryData?['id_presentacion'] as num?)?.toInt();
     if (idPres == null) return null;
 
     final nombre = inventoryData?['presentacion_nombre'] as String?;
-    final factor = (inventoryData?['presentacion_factor_rel'] as num?)?.toDouble();
+    final factor =
+        (inventoryData?['presentacion_factor_rel'] as num?)?.toDouble();
 
     // Sin nombre ni factor el id solo sirve para el servidor; no se inventa
     // factor 1 porque daría equivalentes falsos en el cierre.
@@ -138,20 +141,22 @@ class OrderService {
 
     // Flujo de mesa: redirigir a la cuenta abierta de la mesa.
     final cuentaService = MesaCuentaService();
-    final idCuentaActiva = SalesModeService.mostradorActivo
-        ? null
-        : cuentaService.activeCuentaId;
+    final idCuentaActiva =
+        SalesModeService.mostradorActivo ? null : cuentaService.activeCuentaId;
     if (idCuentaActiva != null) {
       final inv = inventoryData ?? const {};
-      final idOpcionVariante = inv['id_opcion_variante'] is num
-          ? (inv['id_opcion_variante'] as num).toInt()
-          : null;
-      final idPresentacion = inv['id_presentacion'] is num
-          ? (inv['id_presentacion'] as num).toInt()
-          : null;
-      final idUbicacion = inv['id_ubicacion'] is num
-          ? (inv['id_ubicacion'] as num).toInt()
-          : null;
+      final idOpcionVariante =
+          inv['id_opcion_variante'] is num
+              ? (inv['id_opcion_variante'] as num).toInt()
+              : null;
+      final idPresentacion =
+          inv['id_presentacion'] is num
+              ? (inv['id_presentacion'] as num).toInt()
+              : null;
+      final idUbicacion =
+          inv['id_ubicacion'] is num
+              ? (inv['id_ubicacion'] as num).toInt()
+              : null;
 
       try {
         // ══════════════════════════════════════════════════════════════════
@@ -512,10 +517,7 @@ class OrderService {
         updateData['telefono'] = buyerPhone.isEmpty ? null : buyerPhone;
       }
       if (updateData.isEmpty) {
-        return {
-          'success': false,
-          'error': 'No hay datos para actualizar',
-        };
+        return {'success': false, 'error': 'No hay datos para actualizar'};
       }
 
       // Las ventas a "Pago Pendiente" usan la tabla independiente
@@ -552,7 +554,8 @@ class OrderService {
   }
 
   Future<Map<String, dynamic>> moveSalePaymentAmount({
-    required int operationId,
+    required String orderId,
+    int? operationId,
     required int fromPaymentMethodId,
     required int toPaymentMethodId,
     required double amount,
@@ -561,10 +564,19 @@ class OrderService {
       final userPrefs = UserPreferencesService();
       final isOfflineModeEnabled = await userPrefs.isOfflineModeEnabled();
       if (isOfflineModeEnabled) {
+        return _moveSalePaymentAmountOffline(
+          orderId: orderId,
+          fromPaymentMethodId: fromPaymentMethodId,
+          toPaymentMethodId: toPaymentMethodId,
+          amount: amount,
+          userPrefs: userPrefs,
+        );
+      }
+
+      if (operationId == null) {
         return {
           'success': false,
-          'error':
-              'No se puede ajustar el desglose en modo offline. Conéctate para continuar.',
+          'error': 'La orden aún no está sincronizada.',
         };
       }
 
@@ -677,6 +689,106 @@ class OrderService {
     }
   }
 
+  Future<Map<String, dynamic>> _moveSalePaymentAmountOffline({
+    required String orderId,
+    required int fromPaymentMethodId,
+    required int toPaymentMethodId,
+    required double amount,
+    required UserPreferencesService userPrefs,
+  }) async {
+    if (fromPaymentMethodId == toPaymentMethodId) {
+      return {
+        'success': false,
+        'error': 'Selecciona un método de pago diferente para mover el monto.',
+      };
+    }
+    if (amount <= 0) {
+      return {
+        'success': false,
+        'error': 'El monto a mover debe ser mayor que 0.',
+      };
+    }
+
+    final orderIndex = _orders.indexWhere((order) => order.id == orderId);
+    if (orderIndex == -1) {
+      return {'success': false, 'error': 'La orden no fue encontrada.'};
+    }
+
+    final payments =
+        (_orders[orderIndex].pagos ?? const <dynamic>[])
+            .whereType<Map>()
+            .map((payment) => Map<String, dynamic>.from(payment))
+            .toList();
+    final sourceIndex = payments.indexWhere((payment) {
+      final rawId = payment['medio_pago_id'] ?? payment['id_medio_pago'];
+      return (rawId is num ? rawId.toInt() : int.tryParse('$rawId')) ==
+          fromPaymentMethodId;
+    });
+    if (sourceIndex == -1) {
+      return {'success': false, 'error': 'El pago origen no fue encontrado.'};
+    }
+
+    final sourceAmount =
+        (payments[sourceIndex]['monto'] as num?)?.toDouble() ?? 0;
+    if (amount > sourceAmount) {
+      return {
+        'success': false,
+        'error':
+            'El monto a mover no puede ser mayor al saldo del método origen.',
+      };
+    }
+
+    final newSourceAmount = sourceAmount - amount;
+    if (newSourceAmount <= 0.0001) {
+      payments.removeAt(sourceIndex);
+    } else {
+      payments[sourceIndex]['monto'] = newSourceAmount;
+    }
+
+    final targetIndex = payments.indexWhere((payment) {
+      final rawId = payment['medio_pago_id'] ?? payment['id_medio_pago'];
+      return (rawId is num ? rawId.toInt() : int.tryParse('$rawId')) ==
+          toPaymentMethodId;
+    });
+    if (targetIndex != -1) {
+      final targetAmount =
+          (payments[targetIndex]['monto'] as num?)?.toDouble() ?? 0;
+      payments[targetIndex]['monto'] = targetAmount + amount;
+    } else {
+      final methods = await userPrefs.getPaymentMethodsOffline();
+      final target = methods.cast<Map<String, dynamic>?>().firstWhere(
+        (method) => (method?['id'] as num?)?.toInt() == toPaymentMethodId,
+        orElse: () => null,
+      );
+      payments.add({
+        'id_medio_pago': toPaymentMethodId,
+        'denominacion': target?['denominacion'] ?? 'Método $toPaymentMethodId',
+        'monto': amount,
+        'es_digital': target?['es_digital'] ?? false,
+        'es_efectivo': target?['es_efectivo'] ?? false,
+      });
+    }
+
+    final persisted = await userPrefs.updatePendingOrderPayments(
+      orderId,
+      payments,
+    );
+    if (!persisted) {
+      return {
+        'success': false,
+        'error':
+            'Solo se puede editar offline una orden creada en este dispositivo.',
+      };
+    }
+    _orders[orderIndex] = _orders[orderIndex].copyWith(pagos: payments);
+    return {
+      'success': true,
+      'sourceAmount': sourceAmount,
+      'newSourceAmount': newSourceAmount.clamp(0, double.maxFinite),
+      'movedAmount': amount,
+    };
+  }
+
   // Actualizar método de pago de un item
   void updateItemPaymentMethod(String itemId, PaymentMethod? paymentMethod) {
     if (_currentOrder == null) return;
@@ -765,9 +877,10 @@ class OrderService {
         // En venta de mostrador se salta: la cuenta que quedó activa en memoria
         // es de otra mesa y cerrarla aquí le borraría la nota al mesero.
         final cuentaService = MesaCuentaService();
-        final idCuentaActiva = SalesModeService.mostradorActivo
-            ? null
-            : cuentaService.activeCuentaId;
+        final idCuentaActiva =
+            SalesModeService.mostradorActivo
+                ? null
+                : cuentaService.activeCuentaId;
         final opId = result['operationId'];
         if (idCuentaActiva != null && opId is int) {
           try {
@@ -1101,16 +1214,19 @@ class OrderService {
 
     if (operationId != null && !useLocal) {
       try {
-        final response = await Supabase.instance.client
-            .from('app_dat_operacion_venta')
-            .select('es_pagada')
-            .eq('id_operacion', operationId)
-            .maybeSingle();
+        final response =
+            await Supabase.instance.client
+                .from('app_dat_operacion_venta')
+                .select('es_pagada')
+                .eq('id_operacion', operationId)
+                .maybeSingle();
         if (response != null) {
           return response['es_pagada'] == false;
         }
       } catch (e) {
-        print('⚠️ Error verificando es_pagada de la operación $operationId: $e');
+        print(
+          '⚠️ Error verificando es_pagada de la operación $operationId: $e',
+        );
       }
     }
 
@@ -1615,13 +1731,9 @@ class OrderService {
       final idTpv = await userPrefs.getIdTpv();
       final userId = userData['userId'];
 
-      final fechaApertura = _parseOrderDateTime(
-        turnoAbierto['fecha_apertura'],
-      );
+      final fechaApertura = _parseOrderDateTime(turnoAbierto['fecha_apertura']);
       final fechaDesdeParam =
-          fechaApertura != null
-              ? _toDateParam(fechaApertura)
-              : null;
+          fechaApertura != null ? _toDateParam(fechaApertura) : null;
 
       print('=== DEBUG PARAMETROS LISTAR ORDENES ===');
       print('idTienda: $idTienda');
@@ -1739,7 +1851,9 @@ class OrderService {
       final rowTurnoId =
           rowTurno is int
               ? rowTurno
-              : (rowTurno is num ? rowTurno.toInt() : int.tryParse('$rowTurno'));
+              : (rowTurno is num
+                  ? rowTurno.toInt()
+                  : int.tryParse('$rowTurno'));
       if (rowTurnoId != null && openServerId != null) {
         // Si el id parece UUID local (no int server), no comparar aquí.
         if (rowTurno is! String || int.tryParse(rowTurno) != null) {
@@ -2323,9 +2437,10 @@ class OrderService {
         // Crear orden respetando el estado guardado.
         // Tras sync, mostrar ORD-{id_operacion} como en el flujo online.
         final rawOpId = orderData['id_operacion'];
-        final int? opId = rawOpId is int
-            ? rawOpId
-            : (rawOpId is num ? rawOpId.toInt() : null);
+        final int? opId =
+            rawOpId is int
+                ? rawOpId
+                : (rawOpId is num ? rawOpId.toInt() : null);
         final localId = orderData['id']?.toString() ?? '';
         final displayId = opId != null ? 'ORD-$opId' : localId;
 
@@ -2358,6 +2473,26 @@ class OrderService {
     }
   }
 
+  Future<void> _restoreOrderInventoryOffline(
+    Order order,
+    UserPreferencesService userPrefs,
+  ) async {
+    for (final item in order.items) {
+      if (item.producto.esElaborado || item.producto.esServicio) continue;
+      final metadata = item.inventoryData;
+      await userPrefs.updateProductInventoryInCache(
+        item.producto.id,
+        (metadata?['id_variante'] as num?)?.toInt(),
+        -item.cantidad,
+        inventoryId: (metadata?['id_inventario'] as num?)?.toInt(),
+        locationId: (metadata?['id_ubicacion'] as num?)?.toInt(),
+        presentationId:
+            item.idPresentacion ??
+            (metadata?['id_presentacion'] as num?)?.toInt(),
+      );
+    }
+  }
+
   /// Actualizar estado de orden en modo offline
   Future<Map<String, dynamic>> _updateOrderStatusOffline(
     String orderId,
@@ -2369,7 +2504,17 @@ class OrderService {
       // 1. Actualizar estado local inmediatamente
       final orderIndex = _orders.indexWhere((order) => order.id == orderId);
       if (orderIndex != -1) {
-        final updatedOrder = _orders[orderIndex].copyWith(status: newStatus);
+        final currentOrder = _orders[orderIndex];
+        final restoresInventory =
+            newStatus == OrderStatus.cancelada ||
+            newStatus == OrderStatus.devuelta;
+        final inventoryAlreadyRestored =
+            currentOrder.status == OrderStatus.cancelada ||
+            currentOrder.status == OrderStatus.devuelta;
+        if (restoresInventory && !inventoryAlreadyRestored) {
+          await _restoreOrderInventoryOffline(currentOrder, userPrefs);
+        }
+        final updatedOrder = currentOrder.copyWith(status: newStatus);
         _orders[orderIndex] = updatedOrder;
         print(
           '✅ Estado local actualizado: $orderId -> ${newStatus.toString()}',
