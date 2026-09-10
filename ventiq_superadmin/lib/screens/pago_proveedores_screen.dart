@@ -16,8 +16,17 @@ class PagoProveedoresScreen extends StatefulWidget {
 }
 
 class _PagoProveedoresScreenState extends State<PagoProveedoresScreen> {
-  DateTime _fechaInicio = DateTime.now().subtract(const Duration(days: 30));
-  DateTime _fechaFin = DateTime.now();
+  static DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  static DateTime _startOfDay(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  static DateTime _endOfDay(DateTime d) =>
+      DateTime(d.year, d.month, d.day, 23, 59, 59);
+
+  DateTime _fechaInicio = _startOfDay(
+    DateTime.now(),
+  ).subtract(const Duration(days: 30));
+  DateTime _fechaFin = _endOfDay(DateTime.now());
 
   List<SupplierPaymentSummary> _suppliers = [];
   PaymentStats? _stats;
@@ -188,24 +197,42 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen> {
   }
 
   void _setDateRange(String range) {
-    final now = DateTime.now();
+    final today = _dateOnly(DateTime.now());
     setState(() {
       switch (range) {
         case 'week':
-          _fechaInicio = now.subtract(const Duration(days: 7));
-          _fechaFin = now;
+          _fechaInicio = _startOfDay(today.subtract(const Duration(days: 7)));
+          _fechaFin = _endOfDay(today);
           break;
         case 'month':
-          _fechaInicio = now.subtract(const Duration(days: 30));
-          _fechaFin = now;
+          _fechaInicio = _startOfDay(today.subtract(const Duration(days: 30)));
+          _fechaFin = _endOfDay(today);
           break;
         case '3months':
-          _fechaInicio = now.subtract(const Duration(days: 90));
-          _fechaFin = now;
+          _fechaInicio = _startOfDay(today.subtract(const Duration(days: 90)));
+          _fechaFin = _endOfDay(today);
           break;
       }
     });
     _loadReport();
+  }
+
+  Future<DateTime?> _pickDate({
+    required DateTime initial,
+    required DateTime first,
+    required DateTime last,
+  }) {
+    final firstDate = _dateOnly(first);
+    final lastDate = _dateOnly(last);
+    var initialDate = _dateOnly(initial);
+    if (initialDate.isBefore(firstDate)) initialDate = firstDate;
+    if (initialDate.isAfter(lastDate)) initialDate = lastDate;
+    return showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: firstDate,
+      lastDate: lastDate,
+    );
   }
 
   @override
@@ -324,7 +351,7 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Filtros de Fecha',
+              'Filtros por fecha de creación',
               style: Theme.of(
                 context,
               ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
@@ -357,14 +384,18 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen> {
                 Expanded(
                   child: InkWell(
                     onTap: () async {
-                      final date = await showDatePicker(
-                        context: context,
-                        initialDate: _fechaInicio,
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime.now(),
+                      final date = await _pickDate(
+                        initial: _fechaInicio,
+                        first: DateTime(2020),
+                        last: DateTime.now(),
                       );
                       if (date != null) {
-                        setState(() => _fechaInicio = date);
+                        setState(() {
+                          _fechaInicio = _startOfDay(date);
+                          if (_dateOnly(_fechaFin).isBefore(_fechaInicio)) {
+                            _fechaFin = _endOfDay(_fechaInicio);
+                          }
+                        });
                       }
                     },
                     child: InputDecorator(
@@ -381,14 +412,13 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen> {
                 Expanded(
                   child: InkWell(
                     onTap: () async {
-                      final date = await showDatePicker(
-                        context: context,
-                        initialDate: _fechaFin,
-                        firstDate: _fechaInicio,
-                        lastDate: DateTime.now(),
+                      final date = await _pickDate(
+                        initial: _fechaFin,
+                        first: _fechaInicio,
+                        last: DateTime.now(),
                       );
                       if (date != null) {
-                        setState(() => _fechaFin = date);
+                        setState(() => _fechaFin = _endOfDay(date));
                       }
                     },
                     child: InputDecorator(
