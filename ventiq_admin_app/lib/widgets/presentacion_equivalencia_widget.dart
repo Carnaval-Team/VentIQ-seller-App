@@ -1,28 +1,18 @@
 import 'package:flutter/material.dart';
-import '../config/app_colors.dart';
-import '../services/product_service.dart';
 
-/// Utilidades para mostrar equivalencias de presentación de un producto.
+import '../config/app_colors.dart';
+import '../services/presentacion_cadena_service.dart';
+
 class PresentacionEquivalenciaHelper {
   PresentacionEquivalenciaHelper._();
 
-  static String resolveBaseName(
-    List<Map<String, dynamic>>? presentaciones, {
-    String? unidadMedida,
-  }) {
-    if (presentaciones != null) {
-      for (final pres in presentaciones) {
-        if (pres['es_base'] == true) {
-          return pres['presentacion']?.toString() ?? 'unidad base';
-        }
-      }
-      if (presentaciones.isNotEmpty) {
-        return presentaciones.first['presentacion']?.toString() ??
-            'unidad base';
-      }
+  static PresentacionCadena? presentacionBase(
+    List<PresentacionCadena> presentaciones,
+  ) {
+    for (final presentacion in presentaciones) {
+      if (presentacion.esBase) return presentacion;
     }
-    if (unidadMedida != null && unidadMedida.isNotEmpty) return unidadMedida;
-    return 'unidad base';
+    return presentaciones.isEmpty ? null : presentaciones.first;
   }
 
   static Future<void> showEquivalenciasDialog({
@@ -32,23 +22,16 @@ class PresentacionEquivalenciaHelper {
     List<Map<String, dynamic>>? productPresentaciones,
     String? unidadMedida,
   }) async {
-    final baseName = resolveBaseName(
-      productPresentaciones,
-      unidadMedida: unidadMedida,
-    );
-
-    await showDialog(
+    await showDialog<void>(
       context: context,
       builder: (ctx) => _EquivalenciasDialogContent(
         productId: productId,
         productName: productName,
-        unidadBaseNombre: baseName,
       ),
     );
   }
 }
 
-/// Botón de información que abre el diálogo de equivalencias.
 class PresentacionEquivalenciaIconButton extends StatelessWidget {
   final int productId;
   final String? productName;
@@ -72,7 +55,7 @@ class PresentacionEquivalenciaIconButton extends StatelessWidget {
     return IconButton(
       padding: padding ?? EdgeInsets.zero,
       constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-      tooltip: 'Ver equivalencias de cantidades',
+      tooltip: 'Ver factores de empaque',
       icon: Icon(Icons.info_outline, size: iconSize, color: AppColors.primary),
       onPressed: () => PresentacionEquivalenciaHelper.showEquivalenciasDialog(
         context: context,
@@ -85,7 +68,6 @@ class PresentacionEquivalenciaIconButton extends StatelessWidget {
   }
 }
 
-/// Banner compacto con equivalencias cargadas (para diálogos de cantidad).
 class PresentacionEquivalenciaBanner extends StatefulWidget {
   final int productId;
   final List<Map<String, dynamic>>? productPresentaciones;
@@ -105,9 +87,9 @@ class PresentacionEquivalenciaBanner extends StatefulWidget {
 
 class _PresentacionEquivalenciaBannerState
     extends State<PresentacionEquivalenciaBanner> {
-  List<Map<String, dynamic>> _equivalencias = [];
+  List<PresentacionCadena> _presentaciones = const [];
   bool _isLoading = true;
-  bool _loadFailed = false;
+  Object? _error;
 
   @override
   void initState() {
@@ -115,103 +97,69 @@ class _PresentacionEquivalenciaBannerState
     _load();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool forzarRecarga = false}) async {
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    }
     try {
-      final list = await ProductService.getEquivalenciasPresentacion(
+      final list = await PresentacionCadenaService.cadena(
         widget.productId,
+        forzarRecarga: forzarRecarga,
       );
-      if (mounted) {
-        setState(() {
-          _equivalencias = list;
-          _isLoading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _loadFailed = true;
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _presentaciones = list);
+    } catch (error) {
+      if (mounted) setState(() => _error = error);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: AppColors.primary,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              'Cargando equivalencias...',
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-            ),
-          ],
-        ),
+      return const Padding(
+        padding: EdgeInsets.only(bottom: 12),
+        child: LinearProgressIndicator(minHeight: 2),
       );
     }
-
-    if (_loadFailed || _equivalencias.isEmpty) {
-      return const SizedBox.shrink();
+    if (_error != null) {
+      return _ErrorEquivalencias(onRetry: () => _load(forzarRecarga: true));
     }
+    if (_presentaciones.isEmpty) return const SizedBox.shrink();
 
-    final baseName = PresentacionEquivalenciaHelper.resolveBaseName(
-      widget.productPresentaciones,
-      unidadMedida: widget.unidadMedida,
+    final base = PresentacionEquivalenciaHelper.presentacionBase(
+      _presentaciones,
     );
-
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: AppColors.primary.withOpacity(0.05),
+        color: AppColors.primary.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(Icons.swap_horiz, size: 16, color: AppColors.primary),
-              const SizedBox(width: 6),
-              Text(
-                'Equivalencias (ref. $baseName)',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.primary,
-                ),
-              ),
-            ],
+          Text(
+            'Presentaciones y factores de empaque',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.primary,
+            ),
           ),
           const SizedBox(height: 6),
-          ..._equivalencias.map((eq) {
-            final linea = ProductService.formatEquivalenciaLine(
-              presentacionNombre:
-                  eq['presentacion'] as String? ?? 'Presentación',
-              cantidad: (eq['cantidad'] as num?)?.toDouble() ?? 0,
-              unidadBaseNombre: baseName,
-            );
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 2),
-              child: Text(
-                '• $linea',
-                style: TextStyle(fontSize: 12, color: Colors.grey[800]),
-              ),
-            );
-          }),
+          ..._presentaciones.map(
+            (presentacion) => Text(
+              '• ${_factorLine(presentacion, base)}',
+              style: TextStyle(fontSize: 12, color: Colors.grey[800]),
+            ),
+          ),
         ],
       ),
     );
@@ -221,12 +169,10 @@ class _PresentacionEquivalenciaBannerState
 class _EquivalenciasDialogContent extends StatefulWidget {
   final int productId;
   final String? productName;
-  final String unidadBaseNombre;
 
   const _EquivalenciasDialogContent({
     required this.productId,
     this.productName,
-    required this.unidadBaseNombre,
   });
 
   @override
@@ -236,9 +182,9 @@ class _EquivalenciasDialogContent extends StatefulWidget {
 
 class _EquivalenciasDialogContentState
     extends State<_EquivalenciasDialogContent> {
-  List<Map<String, dynamic>> _equivalencias = [];
+  List<PresentacionCadena> _presentaciones = const [];
   bool _isLoading = true;
-  String? _error;
+  Object? _error;
 
   @override
   void initState() {
@@ -246,140 +192,63 @@ class _EquivalenciasDialogContentState
     _load();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool forzarRecarga = false}) async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
     try {
-      final list = await ProductService.getEquivalenciasPresentacion(
+      final data = await PresentacionCadenaService.cadena(
         widget.productId,
+        forzarRecarga: forzarRecarga,
       );
-      if (mounted) {
-        setState(() {
-          _equivalencias = list;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString();
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _presentaciones = data);
+    } catch (error) {
+      if (mounted) setState(() => _error = error);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final base = PresentacionEquivalenciaHelper.presentacionBase(
+      _presentaciones,
+    );
     return AlertDialog(
-      title: Row(
-        children: [
-          Icon(Icons.swap_horiz, color: AppColors.primary, size: 22),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              widget.productName != null
-                  ? 'Equivalencias — ${widget.productName}'
-                  : 'Equivalencias de cantidades',
-              style: const TextStyle(fontSize: 16),
-            ),
-          ),
-        ],
+      title: Text(
+        widget.productName == null
+            ? 'Presentaciones y factores de empaque'
+            : 'Presentaciones — ${widget.productName}',
+        style: const TextStyle(fontSize: 16),
       ),
       content: SizedBox(
-        width: 360,
+        width: 380,
         child: _isLoading
-            ? const Padding(
-                padding: EdgeInsets.all(24),
-                child: Center(child: CircularProgressIndicator()),
-              )
+            ? const Center(child: CircularProgressIndicator())
             : _error != null
-                ? Text('Error: $_error', style: const TextStyle(color: Colors.red))
-                : _equivalencias.isEmpty
-                    ? Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.info_outline,
-                              size: 40, color: Colors.grey[400]),
-                          const SizedBox(height: 12),
-                          Text(
-                            'No hay equivalencias configuradas para este producto.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.grey[600]),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Configúralas en el detalle del producto.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[500],
-                            ),
-                          ),
-                        ],
-                      )
-                    : SingleChildScrollView(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'Unidad base: ${widget.unidadBaseNombre}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey[600],
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            ..._equivalencias.map((eq) {
-                              final linea =
-                                  ProductService.formatEquivalenciaLine(
-                                presentacionNombre: eq['presentacion']
-                                        as String? ??
-                                    'Presentación',
-                                cantidad:
-                                    (eq['cantidad'] as num?)?.toDouble() ?? 0,
-                                unidadBaseNombre: widget.unidadBaseNombre,
-                              );
-                              return Container(
-                                width: double.infinity,
-                                margin: const EdgeInsets.only(bottom: 8),
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: Colors.grey[50],
-                                  borderRadius: BorderRadius.circular(8),
-                                  border:
-                                      Border.all(color: Colors.grey[300]!),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      linea,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                    if ((eq['observaciones'] as String?)
-                                            ?.isNotEmpty ==
-                                        true)
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 4),
-                                        child: Text(
-                                          eq['observaciones'] as String,
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.grey[600],
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              );
-                            }),
-                          ],
-                        ),
-                      ),
+            ? _ErrorEquivalencias(onRetry: () => _load(forzarRecarga: true))
+            : _presentaciones.isEmpty
+            ? const Text(
+                'Este producto no tiene presentaciones configuradas.',
+                textAlign: TextAlign.center,
+              )
+            : ListView.separated(
+                shrinkWrap: true,
+                itemCount: _presentaciones.length,
+                separatorBuilder: (_, __) => const Divider(),
+                itemBuilder: (_, index) {
+                  final presentacion = _presentaciones[index];
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(presentacion.nombre),
+                    subtitle: Text(_factorLine(presentacion, base)),
+                    trailing: presentacion.esFraccionable
+                        ? const Chip(label: Text('Fraccionable'))
+                        : null,
+                  );
+                },
+              ),
       ),
       actions: [
         TextButton(
@@ -389,4 +258,36 @@ class _EquivalenciasDialogContentState
       ],
     );
   }
+}
+
+class _ErrorEquivalencias extends StatelessWidget {
+  final VoidCallback onRetry;
+
+  const _ErrorEquivalencias({required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const Expanded(child: Text('No se pudieron cargar los factores.')),
+        TextButton(onPressed: onRetry, child: const Text('Reintentar')),
+      ],
+    );
+  }
+}
+
+String _factorLine(PresentacionCadena presentacion, PresentacionCadena? base) {
+  if (presentacion.esBase) return 'Presentación base';
+  final factor = _formatFactor(presentacion.factorRel);
+  final baseName = base?.nombre ?? 'unidad base';
+  final fraccionable = presentacion.esFraccionable ? ' · Fraccionable' : '';
+  return '1 ${presentacion.nombre} = $factor $baseName$fraccionable';
+}
+
+String _formatFactor(double value) {
+  if (value == value.roundToDouble()) return value.toInt().toString();
+  return value
+      .toStringAsFixed(4)
+      .replaceFirst(RegExp(r'0+$'), '')
+      .replaceFirst(RegExp(r'\.$'), '');
 }

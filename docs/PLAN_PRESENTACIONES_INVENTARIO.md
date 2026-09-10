@@ -703,6 +703,20 @@ difiere y permite parchear solo esa región.
 
 ---
 
+## Visualización de stock mixto (extensión local, 2026-09-09)
+
+La parte SQL del plan de visualización del admin quedó preparada, sin aplicar remotamente:
+
+- [x] `presentaciones_inventario/31_inventario_resumen_stock_mixto_v3.sql`: función nueva `fn_inventario_resumen_por_usuario_almacen3`, wrapper de la v2 viva. Conserva sus 14 columnas y agrega `stock_desglose`, `stock_texto`, `stock_texto_corto` y `stock_equivalente_base`. La v2/v3 no incluyen descripción.
+- [x] `presentaciones_inventario/32_stock_mixto_producto_por_ubicacion.sql`: función batch por ubicación para la ficha del producto, sin N+1.
+- [x] `presentaciones_inventario/34_tests_visualizacion_stock.sql`: tests transaccionales del caso `49 Cajas + 2.8 Bultos = 1190 base`, paginación, contrato y seguridad.
+- [x] Contrato remoto y baseline de Advisors documentados en `presentaciones_inventario/contracts/README.md`.
+- [ ] Aplicar 31/32 y ejecutar 34 con un UUID autenticado de la tienda 223. No se hizo en esta implementación.
+
+Las dos funciones nuevas usan `SECURITY INVOKER`, `SET search_path = ''`, objetos calificados, `check_user_has_access_to_tienda`, `REVOKE` de `PUBLIC`/`anon` y `GRANT` exclusivo a `authenticated`. Esto evita repetir los lints remotos `0011`, `0028` y `0029` de la v2 y de helpers históricos.
+
+---
+
 ## Referencias
 
 - Schema: [VentiQ.sql](../VentiQ.sql)

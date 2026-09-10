@@ -1749,7 +1749,6 @@ class InventoryService {
     return resultado;
   }
 
-
   /// Descompone un producto elaborado recursivamente
   static Future<void> _decomposeRecursively(
     int productId,
@@ -2010,94 +2009,51 @@ class InventoryService {
     return productosFinales;
   }
 
-  /// Get inventory summary by user using fn_inventario_resumen_por_usuario RPC
-  /// Returns aggregated inventory data with product names, variants, and location/presentation counts
+  /// Get inventory summary by user using the mixed-stock v3 RPC.
   static Future<List<InventorySummaryByUser>> getInventorySummaryByUser(
     int? idAlmacen,
     String? busqueda,
     String? filtroStock,
   ) async {
-    try {
-      final userData = await _prefsService.getUserData();
-      final idTiendaRaw = userData['idTienda'];
-      final idTienda = idTiendaRaw is int
-          ? idTiendaRaw
-          : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
-
-      if (idTienda == null) {
-        throw Exception('No se encontró el ID de tienda en las preferencias');
-      }
-
-      print('🔍 InventoryService: Getting inventory summary by user...');
-
-      final response = await _supabase.rpc(
-        'fn_inventario_resumen_por_usuario_almacen',
-        params: {
-          'p_id_tienda': idTienda,
-          'p_id_almacen': idAlmacen,
-          'p_busqueda': busqueda,
-          'p_mostrar_sin_stock': true,
-          'p_filtro_stock': filtroStock ?? 'Todos',
-          'p_limite': 9999,
-          'p_pagina': 1,
-        },
-      );
-
-      print('📦 Raw response type: ${response.runtimeType}');
-      print('📦 Response length: ${response?.length ?? 0}');
-      print('📦 Raw response data: $response');
-
-      if (response == null) {
-        print('❌ Response is null');
-        return [];
-      }
-
-      if (response is! List) {
-        print('❌ Response is not a List, got: ${response.runtimeType}');
-        return [];
-      }
-
-      final List<dynamic> responseList = response as List<dynamic>;
-      print('📋 Processing ${responseList.length} items from response');
-
-      final List<InventorySummaryByUser> summaries = [];
-
-      for (int i = 0; i < responseList.length; i++) {
-        final item = responseList[i];
-        /*  print('🔍 Processing item $i: $item');
-        print('🔍 Item type: ${item.runtimeType}');*/
-
-        if (item is Map<String, dynamic>) {
-          /*    print('🔍 Item keys: ${item.keys.toList()}');
-          print('🔍 Item values: ${item.values.toList()}');*/
-
-          try {
-            final summary = InventorySummaryByUser.fromJson(item);
-            summaries.add(summary);
-          } catch (e, stackTrace) {
-            print('❌ Error creating InventorySummaryByUser from item $i: $e');
-            print('❌ Stack trace: $stackTrace');
-            print('❌ Failed item data: $item');
-          }
-        } else {
-          print('❌ Item $i is not a Map, got: ${item.runtimeType}');
-        }
-      }
-
-      print('✅ Successfully processed ${summaries.length} inventory summaries');
-      for (int i = 0; i < summaries.length; i++) {
-        final summary = summaries[i];
-        print(
-          '📋 Summary $i: ${summary.productoNombre} (ID: ${summary.idProducto}) - ${summary.cantidadTotalEnAlmacen} units, ${summary.zonasDiferentes} zones, ${summary.presentacionesDiferentes} presentations',
-        );
-      }
-
-      return summaries;
-    } catch (e, stackTrace) {
-      print('❌ Error in getInventorySummaryByUser: $e');
-      print('❌ Stack trace: $stackTrace');
-      rethrow;
+    final userData = await _prefsService.getUserData();
+    final idTienda = _asInt(userData['idTienda']);
+    if (idTienda == null) {
+      throw StateError('No se encontró el ID de tienda en las preferencias');
     }
+
+    final response = await _supabase.rpc(
+      'fn_inventario_resumen_por_usuario_almacen3',
+      params: {
+        'p_id_tienda': idTienda,
+        'p_id_almacen': idAlmacen,
+        'p_busqueda': busqueda,
+        'p_mostrar_sin_stock': true,
+        'p_filtro_stock': filtroStock ?? 'Todos',
+        'p_limite': 9999,
+        'p_pagina': 1,
+      },
+    );
+
+    if (response == null) return const [];
+    if (response is! List) {
+      throw StateError(
+        'Respuesta inválida de fn_inventario_resumen_por_usuario_almacen3: '
+        '${response.runtimeType}',
+      );
+    }
+
+    return response
+        .map((raw) {
+          if (raw is! Map) {
+            throw FormatException(
+              'Fila inválida en resumen de inventario: ${raw.runtimeType}',
+            );
+          }
+          return InventorySummaryByUser.fromJson(
+            Map<String, dynamic>.from(raw),
+          );
+        })
+        .toList(growable: false);
   }
 
   /// Insert inventory adjustment using fn_insertar_ajuste_inventario2 RPC
@@ -2847,9 +2803,7 @@ class InventoryService {
               final cantidad = (ep['cantidad'] as num?)?.toDouble() ?? 0.0;
 
               if (idProducto == null) {
-                erroresExtraccion.add(
-                  'Extracción línea $idEP: producto nulo',
-                );
+                erroresExtraccion.add('Extracción línea $idEP: producto nulo');
                 continue;
               }
 
@@ -3327,8 +3281,8 @@ class InventoryService {
 
           final rate = await CurrencyService.getEffectiveUsdToCupRate();
           if (rate > 0) {
-            updateData['precio_venta_usd'] =
-                (precioRedondeado / rate).roundToDouble();
+            updateData['precio_venta_usd'] = (precioRedondeado / rate)
+                .roundToDouble();
           }
 
           await _supabase
@@ -4037,7 +3991,7 @@ class InventoryService {
         final enPedidos = _asDouble(row['en_pedidos']);
         final entregando = _asDouble(row['entregando']);
         result[prodId] = StockBreakdown(
-          enAlmacen: baseByProduct[prodId]! + enPedidos,
+          enAlmacen: baseByProduct[prodId]!,
           enPedidos: enPedidos,
           entregando: entregando,
         );
@@ -4145,7 +4099,8 @@ class InventoryService {
     );
   }
 
-  static Future<Map<String, dynamic>> _completeReceptionOperationClientFallback({
+  static Future<Map<String, dynamic>>
+  _completeReceptionOperationClientFallback({
     required int idOperacion,
     required String comentario,
     required String uuid,
@@ -4194,7 +4149,8 @@ class InventoryService {
         'success': false,
         'status': 'error',
         'error': 'STATE_CHANGE_FAILED',
-        'message': stateResponse['message']?.toString() ??
+        'message':
+            stateResponse['message']?.toString() ??
             'Inventario contabilizado pero falló el cambio de estado.',
         'id_operacion': idOperacion,
         'detalle_contabilizacion': contabResult['detalle'],
@@ -4208,7 +4164,8 @@ class InventoryService {
     return {
       'success': true,
       'status': 'success',
-      'message': contabResult['message']?.toString() ??
+      'message':
+          contabResult['message']?.toString() ??
           'Recepción completada e inventario contabilizado',
       'id_operacion': idOperacion,
       'detalle_contabilizacion': contabResult['detalle'],
@@ -4424,7 +4381,9 @@ class InventoryService {
             .eq('id_producto', idProducto)
             .eq('id_ubicacion', idUbicacion)
             .eq('id_presentacion', idPresentacion);
-        final stockRows = await stockQuery.order('id', ascending: false).limit(1);
+        final stockRows = await stockQuery
+            .order('id', ascending: false)
+            .limit(1);
         final cantidadInicial = (stockRows as List).isNotEmpty
             ? _asDouble(stockRows.first['cantidad_final'])
             : 0.0;
@@ -4514,7 +4473,8 @@ class InventoryService {
       if (response is Map) {
         final result = Map<String, dynamic>.from(response);
         final items = result['items'];
-        final hasCausa = items is List &&
+        final hasCausa =
+            items is List &&
             items.isNotEmpty &&
             items.first is Map &&
             (items.first as Map).containsKey('causa_codigo');
@@ -4586,8 +4546,7 @@ class InventoryService {
         .whereType<int>()
         .toList();
 
-    final movimientosPorRecepcion =
-        <int, List<Map<String, dynamic>>>{};
+    final movimientosPorRecepcion = <int, List<Map<String, dynamic>>>{};
     if (recepcionIds.isNotEmpty) {
       final movsResp = await _supabase
           .from('app_dat_inventario_productos')
@@ -4706,7 +4665,8 @@ class InventoryService {
         productoExiste: producto is Map,
         ubicacionExiste: layout is Map,
         presentacionValida:
-            idPresentacion == null || presentacionesValidas.contains(idPresentacion),
+            idPresentacion == null ||
+            presentacionesValidas.contains(idPresentacion),
         presentacionesProducto: presentacionesProducto.length,
         tienePresentacionBase: tienePresentacionBase,
         numMovimientos: movs.length,
@@ -4746,8 +4706,9 @@ class InventoryService {
 
     items.sort((a, b) {
       final rank = (String r) => r == 'OK' ? 1 : 0;
-      final cmp = rank(b['resultado_auditoria'] as String)
-          .compareTo(rank(a['resultado_auditoria'] as String));
+      final cmp = rank(
+        b['resultado_auditoria'] as String,
+      ).compareTo(rank(a['resultado_auditoria'] as String));
       if (cmp != 0) return cmp;
       return (a['producto_nombre'] as String).compareTo(
         b['producto_nombre'] as String,
@@ -4957,9 +4918,7 @@ class InventoryService {
     } else {
       final topCausa = conteoCausas.entries.isEmpty
           ? null
-          : conteoCausas.entries.reduce(
-              (a, b) => a.value >= b.value ? a : b,
-            );
+          : conteoCausas.entries.reduce((a, b) => a.value >= b.value ? a : b);
       causaPrincipal = topCausa?.key;
       resumen =
           'Hay $lineasProblema línea(s) con problemas de contabilización. '

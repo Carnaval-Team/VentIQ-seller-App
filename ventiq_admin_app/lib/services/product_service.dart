@@ -9,6 +9,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../models/product.dart';
+import '../models/stock_mixto.dart';
 
 import 'user_preferences_service.dart';
 
@@ -19,6 +20,103 @@ import 'restaurant_service.dart';
 import 'currency_service.dart';
 
 import 'sales_service.dart';
+
+class ProductStockLocationSnapshot {
+  final int idUbicacion;
+  final int? idAlmacen;
+  final String ubicacion;
+  final String almacen;
+  final StockMixto stock;
+
+  const ProductStockLocationSnapshot({
+    required this.idUbicacion,
+    this.idAlmacen,
+    required this.ubicacion,
+    required this.almacen,
+    required this.stock,
+  });
+
+  factory ProductStockLocationSnapshot.fromJson(Map<dynamic, dynamic> json) {
+    int? parseInt(dynamic value) {
+      if (value is num) return value.toInt();
+      return int.tryParse(value?.toString() ?? '');
+    }
+
+    final stockJson = json['stock'];
+    return ProductStockLocationSnapshot(
+      idUbicacion: parseInt(json['id_ubicacion']) ?? 0,
+      idAlmacen: parseInt(json['id_almacen']),
+      ubicacion: json['ubicacion']?.toString() ?? 'Sin ubicación',
+      almacen: json['almacen']?.toString() ?? 'Sin almacén',
+      stock: StockMixto.fromJson(stockJson is Map ? stockJson : json),
+    );
+  }
+
+  Map<String, dynamic> toLegacyMap() => {
+    'id_ubicacion': idUbicacion,
+    'id_almacen': idAlmacen,
+    'ubicacion': ubicacion,
+    'almacen': almacen,
+    'cantidad': stock.equivalenteBase,
+    'cantidad_final': stock.equivalenteBase,
+    'stock_mixto': stock,
+    'stock_texto': stock.texto,
+    'stock_texto_corto': stock.textoCorto,
+    'stock_equivalente_base': stock.equivalenteBase,
+  };
+}
+
+class ProductStockSnapshot {
+  final List<ProductStockLocationSnapshot> ubicaciones;
+
+  const ProductStockSnapshot({required this.ubicaciones});
+
+  StockMixto get total {
+    final saldos = <int, SaldoPresentacion>{};
+    for (final ubicacion in ubicaciones) {
+      for (final saldo in ubicacion.stock.desglose) {
+        final anterior = saldos[saldo.idPresentacion];
+        saldos[saldo.idPresentacion] = SaldoPresentacion(
+          idPresentacion: saldo.idPresentacion,
+          nombre: saldo.nombre,
+          skuCodigo: saldo.skuCodigo,
+          cantidadFisica:
+              (anterior?.cantidadFisica ?? 0) + saldo.cantidadFisica,
+          factorRel: saldo.factorRel,
+          equivalenteBase:
+              (anterior?.equivalenteBase ?? 0) + saldo.equivalenteBase,
+          esBase: saldo.esBase,
+          nivel: saldo.nivel,
+        );
+      }
+    }
+
+    final desglose = saldos.values.toList()
+      ..sort((a, b) => (a.nivel ?? 999).compareTo(b.nivel ?? 999));
+    return StockMixto.fromJson({
+      'desglose': desglose
+          .map(
+            (saldo) => {
+              'id_presentacion': saldo.idPresentacion,
+              'nombre': saldo.nombre,
+              'sku_codigo': saldo.skuCodigo,
+              'cantidad': saldo.cantidadFisica,
+              'factor_rel': saldo.factorRel,
+              'equivalente_base': saldo.equivalenteBase,
+              'es_base': saldo.esBase,
+              'nivel': saldo.nivel,
+            },
+          )
+          .toList(),
+      'equivalente_base': ubicaciones.fold<double>(
+        0,
+        (total, ubicacion) => total + ubicacion.stock.equivalenteBase,
+      ),
+    });
+  }
+
+  bool get tieneStock => total.equivalenteBase.abs() > 0.000001;
+}
 
 class ProductService {
   static final SupabaseClient _supabase = Supabase.instance.client;
@@ -734,6 +832,15 @@ class ProductService {
     int productId,
   ) async {
     try {
+      if (!await canDeleteProductConservatively(productId.toString())) {
+        return {
+          'success': false,
+          'message':
+              'No se puede eliminar: el producto tiene stock o se usa como ingrediente.',
+          'producto_id': productId,
+        };
+      }
+
       print('🗑️ Eliminando producto completo ID: $productId');
 
       final response = await _supabase.rpc(
@@ -780,125 +887,57 @@ class ProductService {
     }
   }
 
-  /// Obtiene las ubicaciones de stock para un producto específico
+  /// Obtiene una foto tipada del stock mixto por ubicación.
+  ///
+  /// La RPC conserva cada presentación física y proporciona su equivalente base;
+  /// por tanto nunca se suman directamente Cajas, Bultos y Unidades.
+  static Future<ProductStockSnapshot> getProductStockSnapshot(
+    String productId, {
+    int? storeId,
+    int? warehouseId,
+  }) async {
+    final idProducto = int.tryParse(productId);
+    if (idProducto == null) {
+      throw const StockMixtoException(
+        'consultar el stock',
+        'Producto inválido',
+      );
+    }
 
+    try {
+      final response = await _supabase.rpc(
+        'fn_stock_mixto_producto_por_ubicacion',
+        params: {'p_id_producto': idProducto, 'p_id_almacen': warehouseId},
+      );
+      if (response == null) {
+        return const ProductStockSnapshot(ubicaciones: []);
+      }
+      if (response is! List) {
+        throw const FormatException('Respuesta de stock inesperada');
+      }
+
+      final ubicaciones = response
+          .whereType<Map>()
+          .map(ProductStockLocationSnapshot.fromJson)
+          .where((location) => location.idUbicacion != 0)
+          .toList();
+      return ProductStockSnapshot(ubicaciones: List.unmodifiable(ubicaciones));
+    } catch (error) {
+      throw StockMixtoException('consultar el stock por ubicación', error);
+    }
+  }
+
+  /// Wrapper compatible para llamadores históricos.
+  ///
+  /// `cantidad` y `cantidad_final` son equivalentes base, no una suma física.
   static Future<List<Map<String, dynamic>>> getProductStockLocations(
     String productId, {
-
-    /// Tienda a consultar; null = tienda activa. Necesario para los Home
-    /// Screen Widgets, que pueden apuntar a otra tienda.
     int? storeId,
   }) async {
-    try {
-      print('🔍 Obteniendo ubicaciones de stock para producto: $productId');
-
-      final userPrefs = UserPreferencesService();
-
-      final idTienda = storeId ?? await userPrefs.getIdTienda();
-
-      if (idTienda == null) {
-        throw Exception(
-          'No se encontró ID de tienda en las preferencias del usuario',
-        );
-      }
-
-      final response = await _supabase.rpc(
-        'fn_listar_inventario_productos_paged2',
-
-        params: {
-          'p_id_tienda': idTienda,
-
-          'p_id_producto': int.tryParse(productId),
-
-          'p_mostrar_sin_stock': true,
-
-          'p_limite': 50,
-
-          'p_pagina': 1,
-        },
-      );
-
-      if (response == null) return [];
-
-      final List<dynamic> data = response as List<dynamic>;
-
-      print('📊 Total registros recibidos    : ${data.length}');
-
-      // El RPC ya trae DISTINCT ON por (producto, variante, opción,
-      // presentación, ubicación). Aquí:
-      // 1) Deduplicamos por esa misma clave de línea (por si hay ruido).
-      // 2) Sumamos por ubicación — igual que la auditoría de movimientos,
-      //    que trabaja con saldos de inventario por línea y luego agrega.
-      final Map<String, Map<String, dynamic>> lineasUnicas = {};
-
-      for (var item in data) {
-        print('📊 Registros recibidos   qw: $item');
-
-        final idUbicacion =
-            item['id_ubicacion']?.toString() ??
-            item['id_almacen']?.toString() ??
-            '0';
-        final idVariante = item['id_variante']?.toString() ?? '0';
-        final idOpcion = item['id_opcion_variante']?.toString() ?? '0';
-        final idPresentacion = item['id_presentacion']?.toString() ?? '0';
-        final lineKey = '$idUbicacion|$idVariante|$idOpcion|$idPresentacion';
-
-        // Preferir cantidad_final; si viniera 0 y hay delta inicial/final,
-        // usar el mismo criterio que la auditoría de movimientos.
-        final cantidad = _resolveInventoryQty(item);
-        final reservado = (item['stock_reservado'] ?? 0).toDouble();
-
-        if (!lineasUnicas.containsKey(lineKey)) {
-          lineasUnicas[lineKey] = {
-            'id_ubicacion': idUbicacion,
-            'ubicacion':
-                item['ubicacion']?.toString() ??
-                item['almacen']?.toString() ??
-                'Sin ubicación',
-            'almacen': item['almacen']?.toString() ?? 'Sin ubicación',
-            'cantidad': cantidad,
-            'reservado': reservado,
-          };
-        }
-      }
-
-      final Map<String, Map<String, dynamic>> ubicacionesAgrupadas = {};
-      for (final line in lineasUnicas.values) {
-        final idUbicacion = line['id_ubicacion'] as String;
-        if (ubicacionesAgrupadas.containsKey(idUbicacion)) {
-          ubicacionesAgrupadas[idUbicacion]!['cantidad'] =
-              (ubicacionesAgrupadas[idUbicacion]!['cantidad'] as double) +
-              (line['cantidad'] as double);
-          ubicacionesAgrupadas[idUbicacion]!['reservado'] =
-              (ubicacionesAgrupadas[idUbicacion]!['reservado'] as double) +
-              (line['reservado'] as double);
-        } else {
-          ubicacionesAgrupadas[idUbicacion] = Map<String, dynamic>.from(line);
-        }
-      }
-
-      final ubicacionesUnicas = ubicacionesAgrupadas.values.toList();
-
-      print(
-        '📦 Ubicaciones únicas después de agrupar: ${ubicacionesUnicas.length}',
-      );
-
-      print('🔍 Ubicaciones encontradas:');
-
-      for (var ub in ubicacionesUnicas) {
-        print(
-          '   - ${ub['almacen']} - ${ub['ubicacion']}: ${ub['cantidad']} unidades (${ub['reservado']} reservadas)',
-        );
-      }
-
-      return ubicacionesUnicas;
-    } catch (e, stackTrace) {
-      print('❌ Error al obtener ubicaciones de stock: $e');
-
-      print('📍 StackTrace: $stackTrace');
-
-      return [];
-    }
+    final snapshot = await getProductStockSnapshot(productId, storeId: storeId);
+    return snapshot.ubicaciones
+        .map((location) => location.toLegacyMap())
+        .toList(growable: false);
   }
 
   /// Obtiene las operaciones de recepción para un producto específico con paginación
@@ -1173,10 +1212,12 @@ class ProductService {
           .where((e) => e['tipo_evento']?.toString() == 'cambio_precio_venta')
           .toList();
       final priceRows = List<Map<String, dynamic>>.from(results[1] as List);
-      final timelines = results[2] as ({
-        List<Map<String, dynamic>> storeRates,
-        List<Map<String, dynamic>> globalRates,
-      });
+      final timelines =
+          results[2]
+              as ({
+                List<Map<String, dynamic>> storeRates,
+                List<Map<String, dynamic>> globalRates,
+              });
       final fallbackRate = results[3] as double;
 
       List<Map<String, dynamic>> rawEvents;
@@ -1240,14 +1281,14 @@ class ProductService {
             _usdFromRow(matchedRow, 'precio_venta_usd');
         final storedUsdAnterior =
             _usdFromRow(event, 'precio_venta_usd_anterior') ??
-            (cupAnterior != null && rate > 0
-                ? cupAnterior / rate
-                : null);
+            (cupAnterior != null && rate > 0 ? cupAnterior / rate : null);
 
-        final calculatedUsdNuevo =
-            cupNuevo != null && rate > 0 ? cupNuevo / rate : null;
-        final calculatedUsdAnterior =
-            cupAnterior != null && rate > 0 ? cupAnterior / rate : null;
+        final calculatedUsdNuevo = cupNuevo != null && rate > 0
+            ? cupNuevo / rate
+            : null;
+        final calculatedUsdAnterior = cupAnterior != null && rate > 0
+            ? cupAnterior / rate
+            : null;
 
         final usdNuevo = storedUsdNuevo ?? calculatedUsdNuevo;
         final usdAnterior = storedUsdAnterior ?? calculatedUsdAnterior;
@@ -1273,15 +1314,14 @@ class ProductService {
           'tasa_cambio': rate,
           'conversion_ok': conversionOk,
         };
-      }).toList()
-        ..sort((a, b) {
-          final da = a['fecha'] as DateTime?;
-          final db = b['fecha'] as DateTime?;
-          if (da == null && db == null) return 0;
-          if (da == null) return 1;
-          if (db == null) return -1;
-          return db.compareTo(da);
-        });
+      }).toList()..sort((a, b) {
+        final da = a['fecha'] as DateTime?;
+        final db = b['fecha'] as DateTime?;
+        if (da == null && db == null) return 0;
+        if (da == null) return 1;
+        if (db == null) return -1;
+        return db.compareTo(da);
+      });
     } catch (e, stackTrace) {
       print('❌ Error al obtener historial de precio de venta: $e');
       print('📍 StackTrace: $stackTrace');
@@ -1687,10 +1727,19 @@ class ProductService {
     }
   }
 
-  /// Elimina un producto
+  static Future<bool> canDeleteProductConservatively(String productId) async {
+    final snapshot = await getProductStockSnapshot(productId);
+    if (snapshot.tieneStock) return false;
+    return (await getProductsUsingThisIngredient(productId)).isEmpty;
+  }
 
+  /// Elimina un producto solo después de comprobar stock mixto y recetas.
   static Future<bool> deleteProduct(String productId) async {
     try {
+      if (!await canDeleteProductConservatively(productId)) {
+        return false;
+      }
+
       print('🔍 Eliminando producto: $productId');
 
       final response = await _supabase.rpc(
@@ -2613,8 +2662,6 @@ class ProductService {
       return null;
     }
   }
-
-
 
   /// Convierte cantidad de cualquier presentación a presentación base.
   ///
@@ -3909,62 +3956,41 @@ class ProductService {
 
   // ── Equivalencia informativa de presentaciones (app_inf_presentacion_producto) ──
 
+  /// Lectura compatible de datos históricos. No usar como factor operativo.
+  @Deprecated('Use PresentacionCadenaService.cadena para factores canónicos')
   static Future<List<Map<String, dynamic>>> getEquivalenciasPresentacion(
     int productId,
   ) async {
-    try {
-      final response = await _supabase
-          .from('app_inf_presentacion_producto')
-          .select('''
+    final response = await _supabase
+        .from('app_inf_presentacion_producto')
+        .select('''
+          id,
+          id_producto,
+          id_presentacion,
+          observaciones,
+          created_at,
+          updated_at,
+          app_nom_presentacion!inner(id, denominacion, descripcion)
+        ''')
+        .eq('id_producto', productId)
+        .order('created_at', ascending: true);
 
-            id,
-
-            id_producto,
-
-            id_presentacion,
-
-            cantidad,
-
-            observaciones,
-
-            created_at,
-
-            updated_at,
-
-            app_nom_presentacion!inner(id, denominacion, descripcion)
-
-          ''')
-          .eq('id_producto', productId)
-          .order('cantidad', ascending: true);
-
-      return (response as List).map((item) {
-        final map = Map<String, dynamic>.from(item as Map);
-
-        final nom = map['app_nom_presentacion'] as Map<String, dynamic>?;
-
-        return {
-          'id': map['id'],
-
-          'id_producto': map['id_producto'],
-
-          'id_presentacion': map['id_presentacion'],
-
-          'cantidad': (map['cantidad'] as num?)?.toDouble() ?? 0,
-
-          'observaciones': map['observaciones'] as String?,
-
-          'presentacion': nom?['denominacion'] ?? 'Presentación',
-
-          'presentacion_descripcion': nom?['descripcion'],
-        };
-      }).toList();
-    } catch (e) {
-      print('❌ Error obteniendo equivalencias de presentación: $e');
-
-      return [];
-    }
+    return (response as List).map((item) {
+      final map = Map<String, dynamic>.from(item as Map);
+      final nom = map['app_nom_presentacion'] as Map<String, dynamic>?;
+      return {
+        'id': map['id'],
+        'id_producto': map['id_producto'],
+        'id_presentacion': map['id_presentacion'],
+        'observaciones': map['observaciones'] as String?,
+        'presentacion': nom?['denominacion'] ?? 'Presentación',
+        'presentacion_descripcion': nom?['descripcion'],
+        'es_historica': true,
+      };
+    }).toList();
   }
 
+  @Deprecated('El CRUD histórico fue retirado; edite la presentación operativa')
   static Future<Map<String, dynamic>?> upsertEquivalenciaPresentacion({
     required int idProducto,
 
