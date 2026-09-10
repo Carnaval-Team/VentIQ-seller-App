@@ -3170,6 +3170,7 @@ class AutoSyncService {
         '  📝 No hay ventas offline pendientes de subir'
         '${forTurno != null ? ' para turno ${forTurno['local_id']}' : ''}',
       );
+      await _repairMissingSalePayments(pendingOrders, forTurno: forTurno);
       return 0;
     }
 
@@ -3205,6 +3206,7 @@ class AutoSyncService {
       } catch (e) {
         print('    ❌ Error sincronizando venta offline ${orderData['id']}: $e');
         if (orderId != null && orderId.isNotEmpty) {
+          await _persistPendingOrderSyncKeys(orderData);
           await _userPreferencesService.markPendingOrderSyncFailure(
             orderId,
             e.toString(),
@@ -3223,7 +3225,63 @@ class AutoSyncService {
       );
     }
 
+    await _repairMissingSalePayments(pendingOrders, forTurno: forTurno);
+
     return syncedCount;
+  }
+
+  /// Repara ventas ya marcadas `synced` que quedaron sin app_dat_pago_venta.
+  Future<void> _repairMissingSalePayments(
+    List<Map<String, dynamic>> pendingOrders, {
+    Map<String, dynamic>? forTurno,
+  }) async {
+    final userData = await _userPreferencesService.getUserData();
+    final userId = userData['userId'];
+
+    for (final orderData in pendingOrders) {
+      if (orderData['synced'] != true) continue;
+      if (orderData['pagos_registrados'] == true) continue;
+      if (forTurno != null && !_orderBelongsToTurno(orderData, forTurno)) {
+        continue;
+      }
+
+      final pagos = _pagosParaSincronizar(orderData);
+      if (pagos.isEmpty) {
+        if (!_ventaRequierePagoVenta(orderData)) {
+          orderData['pagos_registrados'] = true;
+          await _persistPendingOrderSyncKeys(orderData);
+        }
+        continue;
+      }
+
+      final operationId = _asInt(
+        orderData['id_operacion'] ?? orderData['_operation_id'],
+      );
+      if (operationId == null) continue;
+
+      try {
+        if (await _operacionTienePagos(operationId)) {
+          orderData['pagos_registrados'] = true;
+          await _persistPendingOrderSyncKeys(orderData);
+          continue;
+        }
+        print(
+          '    🔧 Reparando app_dat_pago_venta faltante de op $operationId',
+        );
+        await _registerPaymentBreakdownFromOfflineData(
+          operationId,
+          pagos,
+          orderData,
+          userId,
+        );
+        if (await _operacionTienePagos(operationId)) {
+          orderData['pagos_registrados'] = true;
+          await _persistPendingOrderSyncKeys(orderData);
+        }
+      } catch (e) {
+        print('    ⚠️ No se pudo reparar pagos de op $operationId: $e');
+      }
+    }
   }
 
   /// Sube cambios de estado hechos offline sobre órdenes ya existentes en el
@@ -3308,6 +3366,7 @@ class AutoSyncService {
   /// Sincronizar una sola orden pendiente (para reintentos manuales desde la UI)
   /// Retorna true si la sincronización fue exitosa
   Future<bool> syncSinglePendingOrder(String orderId) async {
+    Map<String, dynamic> orderData = {};
     try {
       // Verificar autenticación antes de intentar
       final isAuthenticated = await _reauthService.ensureAuthenticated();
@@ -3316,7 +3375,7 @@ class AutoSyncService {
       }
 
       final pendingOrders = await _userPreferencesService.getPendingOrders();
-      final orderData = pendingOrders.firstWhere(
+      orderData = pendingOrders.firstWhere(
         (o) => o['id']?.toString() == orderId,
         orElse: () => <String, dynamic>{},
       );
@@ -3351,6 +3410,9 @@ class AutoSyncService {
       return true;
     } catch (e) {
       print('❌ Reintento manual falló para $orderId: $e');
+      if (orderData.isNotEmpty) {
+        await _persistPendingOrderSyncKeys(orderData);
+      }
       await _userPreferencesService.markPendingOrderSyncFailure(
         orderId,
         e.toString(),
@@ -3403,7 +3465,186 @@ class AutoSyncService {
     }
   }
 
-  /// Registrar venta en Supabase usando RPC directamente
+  bool _isRpcUnavailable(Object error, {String? functionName}) {
+    final text = error.toString().toLowerCase();
+    final fn = (functionName ?? 'fn_registrar_venta_offline').toLowerCase();
+    return text.contains('pgrst202') ||
+        text.contains('could not find the function') ||
+        text.contains('schema cache') ||
+        (text.contains('does not exist') && text.contains(fn));
+  }
+
+  int? _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse('$value');
+  }
+
+  /// Pagos reales a persistir en app_dat_pago_venta.
+  /// Excluye CxC (998). El pseudo-método 999 se guarda como efectivo (1).
+  List<Map<String, dynamic>> _pagosParaSincronizar(
+    Map<String, dynamic> orderData,
+  ) {
+    final aggregated = <int, Map<String, dynamic>>{};
+
+    void addPago(int? rawId, num? montoRaw, {int? tipoPago}) {
+      if (rawId == null || rawId == pm.PaymentMethod.pagoPendienteId) return;
+      final monto = montoRaw?.toDouble() ?? 0;
+      if (monto <= 0) return;
+
+      var id = rawId;
+      var tipo = tipoPago ?? 1;
+      if (id == 999) {
+        id = 1;
+        tipo = 2;
+      } else if (id != 1) {
+        tipo = tipoPago ?? 2;
+      }
+
+      final existing = aggregated[id];
+      if (existing == null) {
+        aggregated[id] = {
+          'id_medio_pago': id,
+          'monto': monto,
+          'tipo_pago': tipo,
+        };
+      } else {
+        existing['monto'] = (existing['monto'] as double) + monto;
+        if (tipo == 2) existing['tipo_pago'] = 2;
+      }
+    }
+
+    final desglose = orderData['desglose_pagos'];
+    if (desglose is List && desglose.isNotEmpty) {
+      for (final raw in desglose) {
+        if (raw is! Map) continue;
+        final p = Map<String, dynamic>.from(raw);
+        addPago(
+          _asInt(p['id_medio_pago']),
+          p['monto'] as num?,
+          tipoPago: _asInt(p['tipo_pago']),
+        );
+      }
+    }
+
+    if (aggregated.isEmpty) {
+      final items = orderData['items'] as List<dynamic>? ?? [];
+      for (final raw in items) {
+        if (raw is! Map) continue;
+        final item = Map<String, dynamic>.from(raw);
+        final subtotal =
+            (item['subtotal'] as num?)?.toDouble() ??
+            ((item['precio_unitario'] as num?)?.toDouble() ?? 0) *
+                ((item['cantidad'] as num?)?.toDouble() ?? 0);
+        addPago(_asInt(item['id_medio_pago']), subtotal);
+      }
+    }
+
+    final refBase = orderData['client_uuid'] ?? orderData['id'];
+    return aggregated.values
+        .map(
+          (p) => {
+            ...p,
+            'referencia_pago': 'Pago Offline - $refBase',
+          },
+        )
+        .toList();
+  }
+
+  bool _ventaRequierePagoVenta(Map<String, dynamic> orderData) {
+    bool itemRequierePago(Map<String, dynamic> item) {
+      if (_asInt(item['id_medio_pago']) == pm.PaymentMethod.pagoPendienteId) {
+        return false;
+      }
+      final subtotal =
+          (item['subtotal'] as num?)?.toDouble() ??
+          ((item['precio_unitario'] as num?)?.toDouble() ?? 0) *
+              ((item['cantidad'] as num?)?.toDouble() ?? 0);
+      return subtotal > 0;
+    }
+
+    final items = orderData['items'] as List<dynamic>? ?? [];
+    for (final raw in items) {
+      if (raw is Map && itemRequierePago(Map<String, dynamic>.from(raw))) {
+        return true;
+      }
+    }
+
+    final desglose = orderData['desglose_pagos'];
+    if (desglose is List) {
+      for (final raw in desglose) {
+        if (raw is! Map) continue;
+        final p = Map<String, dynamic>.from(raw);
+        if (_asInt(p['id_medio_pago']) == pm.PaymentMethod.pagoPendienteId) {
+          continue;
+        }
+        if (((p['monto'] as num?)?.toDouble() ?? 0) > 0) return true;
+      }
+    }
+    return false;
+  }
+
+  bool _ordenTieneCxC(Map<String, dynamic> orderData) {
+    final desglose = orderData['desglose_pagos'];
+    if (desglose is List) {
+      for (final raw in desglose) {
+        if (raw is Map &&
+            _asInt(raw['id_medio_pago']) == pm.PaymentMethod.pagoPendienteId &&
+            ((raw['monto'] as num?)?.toDouble() ?? 0) > 0) {
+          return true;
+        }
+      }
+    }
+    final items = orderData['items'] as List<dynamic>? ?? [];
+    for (final raw in items) {
+      if (raw is Map &&
+          _asInt(raw['id_medio_pago']) == pm.PaymentMethod.pagoPendienteId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<bool> _operacionTienePagos(int operationId) async {
+    try {
+      final existing = await Supabase.instance.client
+          .from('app_dat_pago_venta')
+          .select('id')
+          .eq('id_operacion_venta', operationId)
+          .limit(1);
+      return existing is List && existing.isNotEmpty;
+    } catch (e) {
+      print(
+        '    ⚠️ No se pudo verificar app_dat_pago_venta de op $operationId: $e',
+      );
+      return false;
+    }
+  }
+
+  Future<void> _persistPendingOrderSyncKeys(
+    Map<String, dynamic> orderData,
+  ) async {
+    final orderId = orderData['id']?.toString();
+    if (orderId == null || orderId.isEmpty) return;
+
+    final fields = <String, dynamic>{};
+    for (final entry in orderData.entries) {
+      final key = entry.key.toString();
+      if (key == 'client_uuid' ||
+          key == 'client_uuid_pago' ||
+          key == '_operation_id' ||
+          key == 'pagos_registrados' ||
+          key.startsWith('client_uuid_estado_')) {
+        fields[key] = entry.value;
+      }
+    }
+    if (fields.isEmpty) return;
+    await _userPreferencesService.patchPendingOrder(orderId, fields);
+  }
+
+  /// Registrar venta en Supabase usando RPC directamente.
+  /// La operación NO se considera sincronizada si falta app_dat_pago_venta
+  /// (salvo CxC / total 0, que no generan ese desglose).
   Future<void> _registerSaleInSupabase(Map<String, dynamic> orderData) async {
     // Obtener datos del usuario
     final userData = await _userPreferencesService.getUserData();
@@ -3460,58 +3701,93 @@ class AutoSyncService {
     }
 
     // 🔑 IDEMPOTENCIA: usar client_uuid para que reintentos no dupliquen.
-    // Si la orden no tiene client_uuid (creada antes de esta mejora), se genera
-    // uno y se persiste para futuros reintentos.
     String? clientUuid = orderData['client_uuid']?.toString();
     if (clientUuid == null || clientUuid.isEmpty) {
       clientUuid = UuidGenerator.v4();
       orderData['client_uuid'] = clientUuid;
     }
+    var pagoUuid = orderData['client_uuid_pago']?.toString();
+    if (pagoUuid == null || pagoUuid.isEmpty) {
+      pagoUuid = UuidGenerator.v4();
+      orderData['client_uuid_pago'] = pagoUuid;
+    }
+    await _persistPendingOrderSyncKeys(orderData);
+
+    final pagos = _pagosParaSincronizar(orderData);
+    final requierePago = pagos.isNotEmpty || _ventaRequierePagoVenta(orderData);
+    if (requierePago && pagos.isEmpty) {
+      throw Exception(
+        'La orden ${orderData['id']} no tiene desglose de pagos válido para sincronizar',
+      );
+    }
+
+    final ventaParams = <String, dynamic>{
+      'p_client_uuid': clientUuid,
+      'p_codigo_promocion': orderData['promo_code'] ?? orderData['promoCode'],
+      'p_denominacion': 'Venta Offline - ${orderData['id']}',
+      'p_estado_inicial': 1,
+      'p_id_tpv': idTpv,
+      'p_observaciones':
+          orderData['notas'] ?? 'Sincronización de venta offline',
+      'p_productos': productos,
+      'p_uuid': userId,
+      'p_id_cliente': orderData['idCliente'],
+      'p_fecha_creacion':
+          orderData['fecha_creacion'] ?? orderData['created_offline_at'],
+      'p_pagos': pagos,
+    };
 
     dynamic response;
+    var usedAtomicPagos = false;
     try {
-      // Preferir el wrapper idempotente fn_registrar_venta_offline.
       response = await Supabase.instance.client.rpc(
         'fn_registrar_venta_offline',
-        params: {
-          'p_client_uuid': clientUuid,
-          'p_codigo_promocion':
-              orderData['promo_code'] ?? orderData['promoCode'],
-          'p_denominacion': 'Venta Offline - ${orderData['id']}',
-          'p_estado_inicial': 1, // Estado enviada
-          'p_id_tpv': idTpv,
-          'p_observaciones':
-              orderData['notas'] ?? 'Sincronización de venta offline',
-          'p_productos': productos,
-          'p_uuid': userId,
-          'p_id_cliente': orderData['idCliente'],
-          'p_fecha_creacion':
-              orderData['fecha_creacion'] ?? orderData['created_offline_at'],
-        },
+        params: ventaParams,
       );
+      usedAtomicPagos = pagos.isNotEmpty;
     } catch (e) {
-      // Fallback: si el RPC idempotente no existe aún (no se subió el .sql),
-      // usar el RPC original. NOTA: sin idempotencia del servidor, el control
-      // de duplicados depende del marcado local de órdenes sincronizadas.
-      print(
-        '⚠️ fn_registrar_venta_offline no disponible ($e). Usando fn_registrar_venta.',
-      );
-      response = await Supabase.instance.client.rpc(
-        'fn_registrar_venta',
-        params: {
-          'p_codigo_promocion':
-              orderData['promo_code'] ?? orderData['promoCode'],
-          'p_denominacion': 'Venta Auto Sync - ${orderData['id']}',
-          'p_estado_inicial': 1,
-          'p_id_tpv': idTpv,
-          'p_observaciones':
-              orderData['notas'] ??
-              'Sincronización automática de venta offline',
-          'p_productos': productos,
-          'p_uuid': userId,
-          'p_id_cliente': orderData['idCliente'],
-        },
-      );
+      if (!_isRpcUnavailable(e)) rethrow;
+      // RPC desplegado sin p_pagos (07) o sin p_fecha_creacion (04).
+      try {
+        final withoutPagos = Map<String, dynamic>.from(ventaParams)
+          ..remove('p_pagos');
+        response = await Supabase.instance.client.rpc(
+          'fn_registrar_venta_offline',
+          params: withoutPagos,
+        );
+      } catch (e2) {
+        if (!_isRpcUnavailable(e2)) rethrow;
+        try {
+          final classicOffline = Map<String, dynamic>.from(ventaParams)
+            ..remove('p_pagos')
+            ..remove('p_fecha_creacion');
+          response = await Supabase.instance.client.rpc(
+            'fn_registrar_venta_offline',
+            params: classicOffline,
+          );
+        } catch (e3) {
+          if (!_isRpcUnavailable(e3)) rethrow;
+          print(
+            '⚠️ fn_registrar_venta_offline no disponible ($e3). Usando fn_registrar_venta.',
+          );
+          response = await Supabase.instance.client.rpc(
+            'fn_registrar_venta',
+            params: {
+              'p_codigo_promocion':
+                  orderData['promo_code'] ?? orderData['promoCode'],
+              'p_denominacion': 'Venta Auto Sync - ${orderData['id']}',
+              'p_estado_inicial': 1,
+              'p_id_tpv': idTpv,
+              'p_observaciones':
+                  orderData['notas'] ??
+                  'Sincronización automática de venta offline',
+              'p_productos': productos,
+              'p_uuid': userId,
+              'p_id_cliente': orderData['idCliente'],
+            },
+          );
+        }
+      }
     }
 
     if (response != null && response['status'] == 'success') {
@@ -3522,6 +3798,7 @@ class AutoSyncService {
       if (operationId != null) {
         // Guardar el ID de operación para usarlo en la actualización de estado
         orderData['_operation_id'] = operationId;
+        await _persistPendingOrderSyncKeys(orderData);
 
         if (yaExistia) {
           print(
@@ -3529,30 +3806,11 @@ class AutoSyncService {
           );
         }
 
-        // ⚠️ Pagos y cambio de estado se ejecutan SIEMPRE (también si la venta
-        // ya existía), porque la conexión pudo cortarse ENTRE la creación de la
-        // operación y estos pasos. Son idempotentes (client_uuid propio por
-        // propósito), así que reintentarlos no duplica.
-
-        // Registrar desgloses de pago si existen (idempotente).
-        // El desglose de "Pago Pendiente" (CxC, id sentinel 998) se excluye:
-        // no genera fila en app_dat_pago_venta y deja la venta con
-        // es_pagada = false (cuenta por cobrar).
-        final paymentBreakdown = orderData['desglose_pagos'] as List<dynamic>?;
-        final montoPendienteCxc = (paymentBreakdown ?? [])
-            .cast<Map<String, dynamic>>()
-            .where((p) => p['id_medio_pago'] == pm.PaymentMethod.pagoPendienteId)
-            .fold<double>(0.0, (sum, p) => sum + ((p['monto'] as num?)?.toDouble() ?? 0.0));
-        if (montoPendienteCxc > 0) {
+        if (_ordenTieneCxC(orderData)) {
           try {
             final idClienteCxcRaw =
                 orderData['id_cliente_cxc'] ?? orderData['idClienteCxc'];
-            final idClienteCxc =
-                idClienteCxcRaw is int
-                    ? idClienteCxcRaw
-                    : (idClienteCxcRaw is num
-                        ? idClienteCxcRaw.toInt()
-                        : int.tryParse('$idClienteCxcRaw'));
+            final idClienteCxc = _asInt(idClienteCxcRaw);
             await Supabase.instance.client
                 .from('app_dat_operacion_venta')
                 .update({
@@ -3570,17 +3828,26 @@ class AutoSyncService {
             print('    ⚠️ No se pudo marcar es_pagada=false en $operationId: $e');
           }
         }
-        final pagosSinCxc = (paymentBreakdown ?? [])
-            .cast<Map<String, dynamic>>()
-            .where((p) => p['id_medio_pago'] != pm.PaymentMethod.pagoPendienteId)
-            .toList();
-        if (pagosSinCxc.isNotEmpty) {
-          await _registerPaymentBreakdownFromOfflineData(
-            operationId,
-            pagosSinCxc,
-            orderData,
-            userId,
-          );
+
+        if (pagos.isNotEmpty) {
+          var tienePagos = response['pagos_registrados'] == true ||
+              await _operacionTienePagos(operationId);
+          if (!tienePagos && !usedAtomicPagos) {
+            await _registerPaymentBreakdownFromOfflineData(
+              operationId,
+              pagos,
+              orderData,
+              userId,
+            );
+            tienePagos = await _operacionTienePagos(operationId);
+          }
+          if (!tienePagos) {
+            throw Exception(
+              'La operación $operationId se creó sin app_dat_pago_venta',
+            );
+          }
+          orderData['pagos_registrados'] = true;
+          await _persistPendingOrderSyncKeys(orderData);
         }
 
         // Cambio de estado final según el estado de NEGOCIO de la orden.
@@ -3607,6 +3874,7 @@ class AutoSyncService {
             userId: userId,
             orderData: orderData,
           );
+          await _persistPendingOrderSyncKeys(orderData);
         }
 
         // Subir foto de operación pendiente (si se capturó offline)
@@ -3692,6 +3960,7 @@ class AutoSyncService {
       estadoUuid = UuidGenerator.v4();
       orderData[key] = estadoUuid;
     }
+    await _persistPendingOrderSyncKeys(orderData);
 
     try {
       await Supabase.instance.client.rpc(
@@ -3723,79 +3992,107 @@ class AutoSyncService {
 
   /// Registrar desgloses de pago desde datos offline (idempotente).
   ///
-  /// Usa fn_registrar_pago_venta_offline con un client_uuid propio por orden
-  /// (persistido en orderData), de modo que un reintento NO duplique los pagos.
-  /// Fallback a fn_registrar_pago_venta si el wrapper no está desplegado.
+  /// Falla con excepción si el pago no queda en app_dat_pago_venta: la orden
+  /// NO debe marcarse sincronizada.
   Future<void> _registerPaymentBreakdownFromOfflineData(
     int operationId,
     List<dynamic> paymentBreakdown,
     Map<String, dynamic> orderData,
     dynamic userId,
   ) async {
+    if (await _operacionTienePagos(operationId)) {
+      print(
+        '    ♻️ Pagos ya registrados en app_dat_pago_venta para op $operationId',
+      );
+      return;
+    }
+
+    final refBase = orderData['client_uuid'] ?? orderData['id'] ?? operationId;
+    final pagos = <Map<String, dynamic>>[];
+
+    for (final payment in paymentBreakdown) {
+      if (payment is! Map) continue;
+      final paymentData = Map<String, dynamic>.from(payment);
+      final idMedio = _asInt(paymentData['id_medio_pago']);
+      if (idMedio == null || idMedio == pm.PaymentMethod.pagoPendienteId) {
+        continue;
+      }
+      var id = idMedio;
+      var tipo = _asInt(paymentData['tipo_pago']) ?? 1;
+      if (id == 999) {
+        id = 1;
+        tipo = 2;
+      } else if (id != 1 && paymentData['tipo_pago'] == null) {
+        tipo = 2;
+      }
+      pagos.add({
+        'id_medio_pago': id,
+        'monto': paymentData['monto'],
+        'tipo_pago': tipo,
+        'referencia_pago':
+            paymentData['referencia_pago'] ?? 'Pago Offline - $refBase',
+      });
+    }
+
+    if (pagos.isEmpty) {
+      throw Exception(
+        'No hay pagos válidos para registrar en la operación $operationId',
+      );
+    }
+
+    var pagoUuid = orderData['client_uuid_pago']?.toString();
+    if (pagoUuid == null || pagoUuid.isEmpty) {
+      pagoUuid = UuidGenerator.v4();
+      orderData['client_uuid_pago'] = pagoUuid;
+    }
+    await _persistPendingOrderSyncKeys(orderData);
+
+    bool ok = false;
     try {
-      // Referencia determinista (basada en la orden) para que el fallback NO
-      // genere referencias distintas en cada reintento.
-      final refBase = orderData['client_uuid'] ?? orderData['id'] ?? operationId;
-
-      // Preparar array de pagos para la función RPC
-      List<Map<String, dynamic>> pagos = [];
-
-      for (final payment in paymentBreakdown) {
-        final paymentData = payment as Map<String, dynamic>;
-        pagos.add({
-          'id_medio_pago': paymentData['id_medio_pago'],
-          'monto': paymentData['monto'],
-          'referencia_pago': 'Pago Offline - $refBase',
-        });
-      }
-
-      // client_uuid estable para el registro de pagos de esta operación.
-      var pagoUuid = orderData['client_uuid_pago']?.toString();
-      if (pagoUuid == null || pagoUuid.isEmpty) {
-        pagoUuid = UuidGenerator.v4();
-        orderData['client_uuid_pago'] = pagoUuid;
-      }
-
-      bool ok = false;
-      try {
-        // Preferir el wrapper idempotente.
-        final resp = await Supabase.instance.client.rpc(
-          'fn_registrar_pago_venta_offline',
-          params: {
-            'p_client_uuid': pagoUuid,
-            'p_id_operacion_venta': operationId,
-            'p_pagos': pagos,
-            'p_uuid_usuario': userId,
-          },
-        );
-        ok = resp is Map && resp['success'] == true;
-        if (ok && resp['idempotent'] == true) {
-          print('    ♻️ Pagos ya registrados (idempotente) para op $operationId');
-        }
-      } catch (e) {
-        // Fallback: wrapper no disponible. NOTA: sin idempotencia del servidor,
-        // un reintento podría duplicar los pagos.
+      final resp = await Supabase.instance.client.rpc(
+        'fn_registrar_pago_venta_offline',
+        params: {
+          'p_client_uuid': pagoUuid,
+          'p_id_operacion_venta': operationId,
+          'p_pagos': pagos,
+          'p_uuid_usuario': userId,
+        },
+      );
+      ok = resp is Map && resp['success'] == true;
+      if (ok && resp['idempotent'] == true) {
         print(
-          '    ⚠️ fn_registrar_pago_venta_offline no disponible ($e). Usando RPC original.',
+          '    ♻️ Pagos ya registrados (idempotente) para op $operationId',
         );
-        final response = await Supabase.instance.client.rpc(
-          'fn_registrar_pago_venta',
-          params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
-        );
-        ok = response == true;
-      }
-
-      if (ok) {
-        print(
-          '    ✅ Desgloses de pago registrados para operación: $operationId',
-        );
-      } else {
-        throw Exception('Error en el registro de pagos');
       }
     } catch (e) {
-      print('    ❌ Error registrando desgloses de pago: $e');
-      // No lanzamos excepción para no interrumpir el flujo principal
+      if (!_isRpcUnavailable(
+        e,
+        functionName: 'fn_registrar_pago_venta_offline',
+      )) {
+        rethrow;
+      }
+      print(
+        '    ⚠️ fn_registrar_pago_venta_offline no disponible ($e). Usando RPC original.',
+      );
+      if (await _operacionTienePagos(operationId)) {
+        return;
+      }
+      final response = await Supabase.instance.client.rpc(
+        'fn_registrar_pago_venta',
+        params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
+      );
+      ok = response == true;
     }
+
+    if (ok) {
+      print(
+        '    ✅ Desgloses de pago registrados para operación: $operationId',
+      );
+      return;
+    }
+    throw Exception(
+      'Error en el registro de pagos de la operación $operationId',
+    );
   }
 
   /// Completar orden con estado específico

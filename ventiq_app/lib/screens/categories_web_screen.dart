@@ -17,6 +17,7 @@ import '../widgets/changelog_dialog.dart';
 import '../widgets/sales_monitor_fab.dart';
 import '../services/smart_offline_manager.dart';
 import '../utils/navigation_helper.dart';
+import '../utils/price_utils.dart';
 import 'dart:async';
 
 class CategoriesWebScreen extends StatefulWidget {
@@ -519,7 +520,11 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  if ((_isShowSkuEnabled || _preferencesService.isShowSkuEnabledSync) && product.sku != null && product.sku!.isNotEmpty)
+                                  if ((_isShowSkuEnabled ||
+                                          _preferencesService
+                                              .isShowSkuEnabledSync) &&
+                                      product.sku != null &&
+                                      product.sku!.isNotEmpty)
                                     Text(
                                       'SKU: ${product.sku}',
                                       maxLines: 1,
@@ -546,7 +551,7 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
                                 crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
                                   Text(
-                                    '\$${product.precio.toStringAsFixed(2)}',
+                                    '\$${PriceUtils.formatDiscountPrice(product.precio)}',
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       color: Color(0xFF4A90E2),
@@ -888,6 +893,9 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
               name: category.name,
               imageUrl: category.imageUrl,
               color: category.color,
+              onReturn: () {
+                if (mounted) setState(() {});
+              },
             );
           },
         ),
@@ -937,12 +945,14 @@ class _CategoryWebCard extends StatefulWidget {
   final String name;
   final String? imageUrl;
   final Color color;
+  final VoidCallback? onReturn;
 
   const _CategoryWebCard({
     required this.id,
     required this.name,
     this.imageUrl,
     required this.color,
+    this.onReturn,
   });
 
   @override
@@ -997,7 +1007,7 @@ class _CategoryWebCardState extends State<_CategoryWebCard>
               categoryColor: widget.color,
             ),
       ),
-    );
+    ).then((_) => widget.onReturn?.call());
   }
 
   @override

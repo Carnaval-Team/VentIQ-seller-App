@@ -30,7 +30,6 @@ import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/sales_monitor_fab.dart';
 // import '../widgets/offline_status_badge.dart';
-import '../widgets/pending_orders_fab.dart';
 import '../widgets/notification_widget.dart';
 import '../widgets/sync_status_chip.dart';
 import '../widgets/bill_count_dialog.dart';
@@ -817,7 +816,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   int _getStatusPriority(OrderStatus status) {
     switch (status) {
       case OrderStatus.pendienteDeSincronizacion:
-        return 0; // Órdenes offline - prioridad máxima
+        return 2; // Agrupadas con Órdenes Pendientes
       case OrderStatus.borrador:
         return 1; // Borradores - prioridad muy alta
       case OrderStatus.enviada:
@@ -922,15 +921,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         currentIndex: 2, // Órdenes tab
         onTap: _onBottomNavTap,
       ),
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          PendingOrdersFAB(onSyncCompleted: _refreshOrders),
-          const SizedBox(height: 12),
-          const SalesMonitorFAB(),
-        ],
-      ),
+      floatingActionButton: const SalesMonitorFAB(),
     );
   }
 
@@ -1013,10 +1004,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
     if (orders.isEmpty) return _buildEmptyState();
 
     // Agrupar órdenes por prioridad actualizada
-    final offlineOrders =
-        orders
-            .where((o) => _getStatusPriority(o.status) == 0)
-            .toList(); // Pendientes de sincronización
     final draftOrders =
         orders
             .where((o) => _getStatusPriority(o.status) == 1)
@@ -1037,16 +1024,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // Órdenes offline pendientes de sincronización
-        if (offlineOrders.isNotEmpty) ...[
-          _buildSectionHeader(
-            '⏳ Pendientes de Sincronización',
-            offlineOrders.length,
-          ),
-          ...offlineOrders.map((order) => _buildOrderCard(order)),
-          const SizedBox(height: 16),
-        ],
-
         // Órdenes borrador
         if (draftOrders.isNotEmpty) ...[
           _buildSectionHeader('📝 Borradores', draftOrders.length),
@@ -2937,76 +2914,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
             ),
             const SizedBox(height: 8),
           ],
-          if (_allowDiscountOnVendedor && _isPendingForDiscount(order)) ...[
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed:
-                    () => _showDiscountSheet(
-                      order,
-                      detailContext: detailContext,
-                      onDiscountApplied: onDiscountApplied,
-                    ),
-                icon: const Icon(Icons.percent),
-                label: const Text('Realizar descuento'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF6B4EFF),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
-          Row(
-            children: [
-              // Botón Cancelar
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed:
-                      () => _showConfirmationDialog(
-                        order,
-                        OrderStatus.cancelada,
-                        'Cancelar Orden',
-                        '¿Estás seguro de que quieres cancelar esta orden?',
-                        Colors.red,
-                        detailContext: detailContext,
-                      ),
-                  icon: const Icon(Icons.cancel_outlined),
-                  label: const Text('Cancelar'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Colors.red),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              // Botón Devolver
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed:
-                      () => _showConfirmationDialog(
-                        order,
-                        OrderStatus.devuelta,
-                        'Devolver Orden',
-                        '¿Estás seguro de que quieres marcar esta orden como devuelta?',
-                        const Color(0xFFFF6B35),
-                        detailContext: detailContext,
-                      ),
-                  icon: const Icon(Icons.keyboard_return),
-                  label: const Text('Devolver'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFFFF6B35),
-                    side: const BorderSide(color: Color(0xFFFF6B35)),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          // Botones de pago - Contar Billetes y Confirmar Pago/Orden
+          // Botones: descuento + contar billetes, cancelar, confirmar pago
           FutureBuilder<List<bool>>(
             future: Future.wait([
               _hasEffectivoPayment(order),
@@ -3027,81 +2935,102 @@ class _OrdersScreenState extends State<OrdersScreen> {
               final confirmIcon =
                   esPagoPendiente ? Icons.check_circle_outline : Icons.payment;
 
-              if (hasEfectivo) {
-                // Si tiene efectivo, mostrar ambos botones
-                return Column(
-                  children: [
-                    // Fila con Contar Billetes y Confirmar Pago/Orden
-                    Row(
-                      children: [
-                        // Botón Contar Billetes
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () {
-                              Navigator.pop(
-                                detailContext ?? context,
-                              ); // Cerrar pantalla de detalles
-                              _showBillCountDialog(order);
-                            },
-                            icon: const Icon(Icons.calculate_outlined),
-                            label: const Text('Contar Billetes'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFF4A90E2),
-                              side: const BorderSide(color: Color(0xFF4A90E2)),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                            ),
+              final showDiscount =
+                  _allowDiscountOnVendedor && _isPendingForDiscount(order);
+
+              final topRowChildren = <Widget>[
+                if (showDiscount)
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed:
+                          () => _showDiscountSheet(
+                            order,
+                            detailContext: detailContext,
+                            onDiscountApplied: onDiscountApplied,
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        // Botón Confirmar Pago / Confirmar Orden
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed:
-                                () => _showConfirmationDialog(
-                                  order,
-                                  OrderStatus.completada,
-                                  confirmLabel,
-                                  confirmMessage,
-                                  const Color(0xFF10B981),
-                                  detailContext: detailContext,
-                                ),
-                            icon: Icon(confirmIcon),
-                            label: Text(confirmLabel),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF10B981),
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                );
-              } else {
-                // Si no tiene efectivo, solo mostrar Confirmar Pago / Orden
-                return SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed:
-                        () => _showConfirmationDialog(
-                          order,
-                          OrderStatus.completada,
-                          confirmLabel,
-                          confirmMessage,
-                          const Color(0xFF10B981),
-                          detailContext: detailContext,
-                        ),
-                    icon: Icon(confirmIcon),
-                    label: Text(confirmLabel),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF10B981),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      icon: const Icon(Icons.percent),
+                      label: const Text('Realizar descuento'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF6B4EFF),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
                     ),
                   ),
-                );
-              }
+                if (showDiscount && hasEfectivo) const SizedBox(width: 8),
+                if (hasEfectivo)
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(
+                          detailContext ?? context,
+                        ); // Cerrar pantalla de detalles
+                        _showBillCountDialog(order);
+                      },
+                      icon: const Icon(Icons.calculate_outlined),
+                      label: const Text('Contar Billetes'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF4A90E2),
+                        side: const BorderSide(color: Color(0xFF4A90E2)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+              ];
+
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (topRowChildren.isNotEmpty) Row(children: topRowChildren),
+                  if (topRowChildren.isNotEmpty) const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed:
+                              () => _showConfirmationDialog(
+                                order,
+                                OrderStatus.cancelada,
+                                'Cancelar Orden',
+                                '¿Estás seguro de que quieres cancelar esta orden?',
+                                Colors.red,
+                                detailContext: detailContext,
+                              ),
+                          icon: const Icon(Icons.cancel_outlined),
+                          label: const Text('Cancelar'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red,
+                            side: const BorderSide(color: Colors.red),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed:
+                          () => _showConfirmationDialog(
+                            order,
+                            OrderStatus.completada,
+                            confirmLabel,
+                            confirmMessage,
+                            const Color(0xFF10B981),
+                            detailContext: detailContext,
+                          ),
+                      icon: Icon(confirmIcon),
+                      label: Text(confirmLabel),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF10B981),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                ],
+              );
             },
           ),
         ],

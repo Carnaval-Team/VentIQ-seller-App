@@ -73,6 +73,18 @@ class WebPrinterServiceImpl {
   }
 
   Future<_StorePrintInfo> _loadStorePrintInfo() async {
+    // Usar cache persistente primero para evitar consultas a Supabase
+    // en cada impresión.
+    final cached = await _userPreferencesService.getStorePrintInfo();
+    if (cached != null) {
+      final logoBytes = cached['logoBytes'] as Uint8List?;
+      final logoUrl = cached['logoUrl'] as String?;
+      return _StorePrintInfo(
+        name: cached['name'] as String,
+        logoDataUrl: _bytesToDataUrl(logoBytes, logoUrl),
+      );
+    }
+
     try {
       final storeId = await _userPreferencesService.getIdTienda();
       Map<String, dynamic>? storeData;
@@ -86,26 +98,34 @@ class WebPrinterServiceImpl {
                 .maybeSingle();
       }
 
-      final storeName = storeData?['denominacion'] as String? ?? 'Inventtia';
-      final storeLogoUrl = storeData?['imagen_url'] as String?;
-      final logoDataUrl = await _loadLogoDataUrl(storeLogoUrl);
+      if (storeData != null) {
+        final storeName = storeData['denominacion'] as String? ?? 'Inventtia';
+        final storeLogoUrl = storeData['imagen_url'] as String?;
+        final logoBytes = await _downloadImageBytes(storeLogoUrl);
+        final logoDataUrl = _bytesToDataUrl(logoBytes, storeLogoUrl);
 
-      return _StorePrintInfo(name: storeName, logoDataUrl: logoDataUrl);
+        await _userPreferencesService.saveStorePrintInfo(
+          storeName,
+          storeLogoUrl,
+          logoBytes,
+        );
+
+        return _StorePrintInfo(name: storeName, logoDataUrl: logoDataUrl);
+      }
     } catch (e) {
       print('⚠️ No se pudo cargar datos de tienda para impresión web: $e');
-      return const _StorePrintInfo(name: 'Inventtia');
     }
+
+    return const _StorePrintInfo(name: 'Inventtia');
   }
 
-  Future<String?> _loadLogoDataUrl(String? logoUrl) async {
-    final bytes = await _downloadImageBytes(logoUrl);
-    if (bytes == null) {
+  String? _bytesToDataUrl(Uint8List? bytes, String? logoUrl) {
+    if (bytes == null || bytes.isEmpty) {
       return null;
     }
 
     final mimeType = _resolveLogoMimeType(logoUrl);
-    final base64Logo = base64Encode(bytes);
-    return 'data:$mimeType;base64,$base64Logo';
+    return 'data:$mimeType;base64,${base64Encode(bytes)}';
   }
 
   String _resolveLogoMimeType(String? logoUrl) {
@@ -468,7 +488,7 @@ class WebPrinterServiceImpl {
             : '';
     final notesHtml =
         isFactura
-            ? '<div class="notes">Con la tecnología de Inventtia S.R.L.</div>'
+            ? '<div class="notes">Con la tecnología de<br/>Inventtia S.R.L.</div>'
             : '';
     final thanksHtml =
         isFactura
@@ -691,7 +711,7 @@ class WebPrinterServiceImpl {
               .join('');
 
           const notesHtml =
-              '<div class="notes">Con la tecnología de Inventtia S.R.L.</div>';
+              '<div class="notes">Con la tecnología de<br/>Inventtia S.R.L.</div>';
           final displayVendor = (loggedInUserName != null &&
                   loggedInUserName.isNotEmpty)
               ? loggedInUserName

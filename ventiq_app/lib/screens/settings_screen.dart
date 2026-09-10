@@ -2088,6 +2088,15 @@ class _SettingsScreenState extends State<SettingsScreen>
             : 'Turno actual';
 
     return ListTile(
+      onTap: status == UserPreferencesService.offlineTurnoStatusClosedPending
+          ? () {
+              Navigator.pushNamed(
+                context,
+                '/cierre-pendiente',
+                arguments: (localId != null && localId.isNotEmpty) ? localId : null,
+              );
+            }
+          : null,
       leading: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
@@ -2139,21 +2148,28 @@ class _SettingsScreenState extends State<SettingsScreen>
             ),
         ],
       ),
-      trailing: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: sourceColor.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: sourceColor.withOpacity(0.3)),
-        ),
-        child: Text(
-          source,
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.bold,
-            color: sourceColor,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: sourceColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: sourceColor.withOpacity(0.3)),
+            ),
+            child: Text(
+              source,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                color: sourceColor,
+              ),
+            ),
           ),
-        ),
+          if (status == UserPreferencesService.offlineTurnoStatusClosedPending)
+            Icon(Icons.chevron_right, color: Colors.grey[500]),
+        ],
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     );
@@ -2749,7 +2765,19 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+  void _openCierrePendienteDetalle({String? localId}) {
+    Navigator.pushNamed(
+      context,
+      '/cierre-pendiente',
+      arguments: (localId != null && localId.isNotEmpty && localId != 'N/A')
+          ? localId
+          : null,
+    );
+  }
+
   void _showStorageOptions() {
+    final closedPending =
+        _dataSyncSummary?['closed_turnos_pending_count'] as int? ?? 0;
     showDialog(
       context: context,
       builder:
@@ -2801,6 +2829,28 @@ class _SettingsScreenState extends State<SettingsScreen>
                           }
                           : null,
                 ),
+                if (closedPending > 0) ...[
+                  const Divider(),
+                  ListTile(
+                    leading: const Icon(
+                      Icons.visibility_outlined,
+                      color: Color(0xFF4A90E2),
+                    ),
+                    title: Text(
+                      closedPending == 1
+                          ? 'Ver cierre guardado'
+                          : 'Ver cierres guardados ($closedPending)',
+                    ),
+                    subtitle: const Text(
+                      'Detalle de lo guardado para sincronizar',
+                    ),
+                    trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _openCierrePendienteDetalle();
+                    },
+                  ),
+                ],
               ],
             ),
             actions: [
@@ -3673,6 +3723,20 @@ class _SettingsScreenState extends State<SettingsScreen>
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
+                              if (status != 'open')
+                                IconButton(
+                                  tooltip: 'Ver cierre guardado',
+                                  icon: const Icon(
+                                    Icons.visibility_outlined,
+                                    color: Color(0xFF4A90E2),
+                                  ),
+                                  onPressed: () {
+                                    Navigator.pop(context);
+                                    _openCierrePendienteDetalle(
+                                      localId: localId,
+                                    );
+                                  },
+                                ),
                               if (status == 'open')
                                 IconButton(
                                   tooltip: 'Cerrar turno',
@@ -3698,12 +3762,18 @@ class _SettingsScreenState extends State<SettingsScreen>
                               ),
                             ],
                           ),
-                          onTap:
-                              () => _showTurnoDetailDialog(
-                                t,
-                                onSync:
-                                    () => setDialogState(() => refreshKey++),
-                              ),
+                          onTap: () {
+                            if (status != 'open') {
+                              Navigator.pop(context);
+                              _openCierrePendienteDetalle(localId: localId);
+                              return;
+                            }
+                            _showTurnoDetailDialog(
+                              t,
+                              onSync:
+                                  () => setDialogState(() => refreshKey++),
+                            );
+                          },
                         );
                       },
                     ),
@@ -3872,6 +3942,19 @@ class _SettingsScreenState extends State<SettingsScreen>
                 onPressed: () => Navigator.pop(context),
                 child: const Text('Cerrar'),
               ),
+              if ((turno['status']?.toString() ?? '') ==
+                  UserPreferencesService.offlineTurnoStatusClosedPending)
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(
+                      context,
+                      '/cierre-pendiente',
+                      arguments: localId == 'N/A' ? null : localId,
+                    );
+                  },
+                  child: const Text('Ver todo'),
+                ),
               ElevatedButton(
                 onPressed: () async {
                   Navigator.pop(context);
@@ -4748,19 +4831,15 @@ class _SyncDialogState extends State<_SyncDialog> {
       print('🔄 Procesando ${pendingOrders.length} órdenes pendientes...');
 
       for (var orderData in pendingOrders) {
-        print('  - Sincronizando orden: ${orderData['id']}');
-
-        // 1. Registrar la venta en Supabase
-        await _registerSaleInSupabase(orderData);
-
-        // 2. Si hay cambios de estado posteriores, aplicarlos
-        final estado = orderData['estado'];
-        if (estado != null && estado != 'enviada') {
-          await _updateOrderStatusInSupabase(
-            orderData['id'],
-            estado,
-            orderData,
-          );
+        if (orderData['synced'] == true) continue;
+        final orderId = orderData['id']?.toString();
+        if (orderId == null || orderId.isEmpty) {
+          throw Exception('Orden offline sin ID');
+        }
+        print('  - Sincronizando orden: $orderId');
+        final ok = await AutoSyncService().syncSinglePendingOrder(orderId);
+        if (!ok) {
+          throw Exception('No se pudo sincronizar la orden $orderId');
         }
       }
 
@@ -5552,13 +5631,16 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
     print('🔄 Procesando ${pendingOrders.length} órdenes offline...');
 
     for (var orderData in pendingOrders) {
-      print('  - Procesando orden: ${orderData['id']}');
-
-      // 1. Registrar la venta (como en preorder_screen)
-      await _registerSaleInSupabase(orderData);
-      // 2. Completar la orden según su estado (como en orders_screen)
-      final estado = orderData['estado'] ?? 'completada';
-      await _completeOrderWithStatus(orderData['id'], estado);
+      if (orderData['synced'] == true) continue;
+      final orderId = orderData['id']?.toString();
+      if (orderId == null || orderId.isEmpty) {
+        throw Exception('Orden offline sin ID');
+      }
+      print('  - Procesando orden: $orderId');
+      final ok = await AutoSyncService().syncSinglePendingOrder(orderId);
+      if (!ok) {
+        throw Exception('No se pudo sincronizar la orden $orderId');
+      }
     }
 
     print('✅ Órdenes offline procesadas');

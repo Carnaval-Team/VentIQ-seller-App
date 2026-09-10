@@ -1,4 +1,6 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import '../services/auth_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/seller_service.dart';
@@ -368,6 +370,13 @@ class _LoginScreenState extends State<LoginScreen> {
               print('❌ Error cargando configuración de tienda: $e');
             }
 
+            // Cachear nombre/logo de tienda para impresión offline
+            try {
+              await _cacheStorePrintInfo(idTienda);
+            } catch (e) {
+              print('⚠️ No se pudo cachear datos de impresión de tienda: $e');
+            }
+
             // Cargar denominaciones de moneda
             try {
               print('💰 Cargando denominaciones de moneda...');
@@ -644,6 +653,52 @@ class _LoginScreenState extends State<LoginScreen> {
       return 'Error de conexión. Verifica tu internet.';
     }
     return 'Error de autenticación. Intenta de nuevo.';
+  }
+
+  /// Cachear nombre/logo de tienda para impresión offline.
+  Future<void> _cacheStorePrintInfo(int storeId) async {
+    try {
+      final storeData = await Supabase.instance.client
+          .from('app_dat_tienda')
+          .select('denominacion, imagen_url')
+          .eq('id', storeId)
+          .maybeSingle();
+
+      if (storeData == null) return;
+
+      final storeName = storeData['denominacion'] as String? ?? 'Inventtia';
+      final storeLogoUrl = storeData['imagen_url'] as String?;
+      Uint8List? logoBytes;
+
+      if (storeLogoUrl != null && storeLogoUrl.isNotEmpty) {
+        try {
+          const objectPrefix =
+              'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/images_back/';
+          const renderPrefix =
+              'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/render/image/public/images_back/';
+
+          final renderUrl = storeLogoUrl.contains(objectPrefix)
+              ? '${storeLogoUrl.replaceFirst(objectPrefix, renderPrefix)}?width=32&height=32'
+              : storeLogoUrl;
+
+          final response = await http.get(Uri.parse(renderUrl));
+          if (response.statusCode == 200) {
+            logoBytes = response.bodyBytes;
+          }
+        } catch (e) {
+          print('⚠️ No se pudo descargar logo de tienda en login: $e');
+        }
+      }
+
+      await _userPreferencesService.saveStorePrintInfo(
+        storeName,
+        storeLogoUrl,
+        logoBytes,
+      );
+      print('💾 Datos de tienda cacheados para impresión offline');
+    } catch (e) {
+      print('⚠️ No se pudo cachear datos de tienda en login: $e');
+    }
   }
 
   /// Cargar denominaciones de moneda desde Supabase

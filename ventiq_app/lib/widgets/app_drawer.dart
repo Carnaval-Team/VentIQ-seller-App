@@ -188,6 +188,7 @@ class _AppDrawerState extends State<AppDrawer> {
   bool _isSuperAdmin = false;
   bool _canManageInventory = false;
   bool _inventoryOnly = false;
+  int _closedPendingCount = 0;
 
   @override
   void initState() {
@@ -197,6 +198,20 @@ class _AppDrawerState extends State<AppDrawer> {
     _loadModoRestaurante();
     _loadSuperAdminFlag();
     _loadAdminAccess();
+    _loadClosedPendingCount();
+  }
+
+  Future<void> _loadClosedPendingCount() async {
+    try {
+      final closed =
+          await UserPreferencesService().getClosedPendingOfflineTurnos();
+      if (!mounted) return;
+      if (closed.length != _closedPendingCount) {
+        setState(() => _closedPendingCount = closed.length);
+      }
+    } catch (e) {
+      print('❌ Error cargando cierres pendientes en drawer: $e');
+    }
   }
 
   /// Carga el flag de superadmin (cacheado en login). Controla la visibilidad
@@ -474,7 +489,21 @@ class _AppDrawerState extends State<AppDrawer> {
                     },
                   ),
                   const Divider(height: 1),
-                ] else ...[
+                  if (_closedPendingCount > 0) ...[
+                    _buildDrawerItem(
+                      context,
+                      icon: Icons.cloud_upload_outlined,
+                      title: _closedPendingCount == 1
+                          ? 'Cierre pendiente'
+                          : 'Cierres pendientes ($_closedPendingCount)',
+                      subtitle: 'Ver lo guardado para sincronizar',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.pushNamed(context, '/cierre-pendiente');
+                      },
+                    ),
+                    const Divider(height: 1),
+                  ],
                   // Modo restaurante: el item de mesas va primero como entrada
                   // principal de la operación. La "Venta de Productos" se
                   // mantiene debajo (útil para venta de mostrador puntual).
@@ -598,6 +627,21 @@ class _AppDrawerState extends State<AppDrawer> {
                     },
                   ),
                   const Divider(height: 1),
+                  if (_closedPendingCount > 0) ...[
+                    _buildDrawerItem(
+                      context,
+                      icon: Icons.cloud_upload_outlined,
+                      title: _closedPendingCount == 1
+                          ? 'Cierre pendiente'
+                          : 'Cierres pendientes ($_closedPendingCount)',
+                      subtitle: 'Ver lo guardado para sincronizar',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.pushNamed(context, '/cierre-pendiente');
+                      },
+                    ),
+                    const Divider(height: 1),
+                  ],
 
                   _buildDrawerItem(
                     context,
