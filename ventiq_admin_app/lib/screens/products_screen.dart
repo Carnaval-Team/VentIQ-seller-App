@@ -278,21 +278,19 @@ class _ProductsScreenState extends State<ProductsScreen> {
             ),
           if (_canCreateProduct)
             IconButton(
-              onPressed:
-                  () => NavigationGuard.navigateWithPermission(
-                    context,
-                    '/excel-import',
-                  ),
+              onPressed: () => NavigationGuard.navigateWithPermission(
+                context,
+                '/excel-import',
+              ),
               icon: const Icon(Icons.upload_file),
               tooltip: 'Importar desde Excel',
             ),
           Builder(
-            builder:
-                (context) => IconButton(
-                  icon: const Icon(Icons.menu, color: Colors.white),
-                  onPressed: () => Scaffold.of(context).openEndDrawer(),
-                  tooltip: 'Menú',
-                ),
+            builder: (context) => IconButton(
+              icon: const Icon(Icons.menu, color: Colors.white),
+              onPressed: () => Scaffold.of(context).openEndDrawer(),
+              tooltip: 'Menú',
+            ),
           ),
         ],
       ),
@@ -309,14 +307,13 @@ class _ProductsScreenState extends State<ProductsScreen> {
         currentIndex: 1,
         onTap: _onBottomNavTap,
       ),
-      floatingActionButton:
-          _canCreateProduct
-              ? FloatingActionButton(
-                onPressed: _showAddProductDialog,
-                backgroundColor: AppColors.primary,
-                child: const Icon(Icons.add, color: Colors.white),
-              )
-              : null,
+      floatingActionButton: _canCreateProduct
+          ? FloatingActionButton(
+              onPressed: _showAddProductDialog,
+              backgroundColor: AppColors.primary,
+              child: const Icon(Icons.add, color: Colors.white),
+            )
+          : null,
     );
   }
 
@@ -344,12 +341,11 @@ class _ProductsScreenState extends State<ProductsScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder:
-          (context) => AiProductGeneratorSheet(
-            onProductsCreated: () {
-              _loadProducts();
-            },
-          ),
+      builder: (context) => AiProductGeneratorSheet(
+        onProductsCreated: () {
+          _loadProducts();
+        },
+      ),
     );
 
     if (!mounted || result == null) {
@@ -518,18 +514,17 @@ class _ProductsScreenState extends State<ProductsScreen> {
         decoration: InputDecoration(
           hintText: 'Buscar por nombre, SKU, descripción o nombre comercial...',
           prefixIcon: const Icon(Icons.search, color: AppColors.primary),
-          suffixIcon:
-              _searchQuery.isNotEmpty
-                  ? IconButton(
-                    icon: const Icon(Icons.clear),
-                    onPressed: () {
-                      _searchController.clear();
-                      setState(() {
-                        _searchQuery = '';
-                      });
-                    },
-                  )
-                  : null,
+          suffixIcon: _searchQuery.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() {
+                      _searchQuery = '';
+                    });
+                  },
+                )
+              : null,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(color: Colors.grey[300]!),
@@ -561,27 +556,26 @@ class _ProductsScreenState extends State<ProductsScreen> {
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
-                children:
-                    _categories.map((category) {
-                      final categoryName = category['denominacion'] as String;
-                      final isSelected = _selectedCategory == categoryName;
-                      return Container(
-                        margin: const EdgeInsets.only(right: 8),
-                        child: FilterChip(
-                          label: Text(categoryName),
-                          selected: isSelected,
-                          onSelected: (selected) {
-                            setState(() {
-                              _selectedCategory = categoryName;
-                              _selectedCategoryId = category['id'] as int?;
-                            });
-                            _loadProducts(); // Recargar productos con filtro
-                          },
-                          selectedColor: AppColors.primary.withOpacity(0.2),
-                          checkmarkColor: AppColors.primary,
-                        ),
-                      );
-                    }).toList(),
+                children: _categories.map((category) {
+                  final categoryName = category['denominacion'] as String;
+                  final isSelected = _selectedCategory == categoryName;
+                  return Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    child: FilterChip(
+                      label: Text(categoryName),
+                      selected: isSelected,
+                      onSelected: (selected) {
+                        setState(() {
+                          _selectedCategory = categoryName;
+                          _selectedCategoryId = category['id'] as int?;
+                        });
+                        _loadProducts(); // Recargar productos con filtro
+                      },
+                      selectedColor: AppColors.primary.withOpacity(0.2),
+                      checkmarkColor: AppColors.primary,
+                    ),
+                  );
+                }).toList(),
               ),
             ),
           ),
@@ -592,21 +586,20 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 _sortBy = value;
               });
             },
-            itemBuilder:
-                (context) => [
-                  const PopupMenuItem(
-                    value: 'name',
-                    child: Text('Ordenar por Nombre'),
-                  ),
-                  const PopupMenuItem(
-                    value: 'price',
-                    child: Text('Ordenar por Precio'),
-                  ),
-                  const PopupMenuItem(
-                    value: 'category',
-                    child: Text('Ordenar por Categoría'),
-                  ),
-                ],
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'name',
+                child: Text('Ordenar por Nombre'),
+              ),
+              const PopupMenuItem(
+                value: 'price',
+                child: Text('Ordenar por Precio'),
+              ),
+              const PopupMenuItem(
+                value: 'category',
+                child: Text('Ordenar por Categoría'),
+              ),
+            ],
           ),
         ],
       ),
@@ -614,32 +607,29 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   Widget _buildProductsList() {
-    List<Product> filteredProducts =
-        _products.where((product) {
-          final matchesSearch =
-              product.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-              product.categoryName.toLowerCase().contains(
+    List<Product> filteredProducts = _products.where((product) {
+      final matchesSearch =
+          product.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+          product.categoryName.toLowerCase().contains(
+            _searchQuery.toLowerCase(),
+          ) ||
+          product.brand.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+          product.sku.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+          product.description.toLowerCase().contains(
+            _searchQuery.toLowerCase(),
+          ) ||
+          (product.descripcionCorta?.toLowerCase().contains(
                 _searchQuery.toLowerCase(),
-              ) ||
-              product.brand.toLowerCase().contains(
+              ) ??
+              false) ||
+          (product.nombreComercial?.toLowerCase().contains(
                 _searchQuery.toLowerCase(),
-              ) ||
-              product.sku.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-              product.description.toLowerCase().contains(
-                _searchQuery.toLowerCase(),
-              ) ||
-              (product.descripcionCorta?.toLowerCase().contains(
-                    _searchQuery.toLowerCase(),
-                  ) ??
-                  false) ||
-              (product.nombreComercial?.toLowerCase().contains(
-                    _searchQuery.toLowerCase(),
-                  ) ??
-                  false);
+              ) ??
+              false);
 
-          // El filtro de categoría ya se aplica en la carga de datos
-          return matchesSearch;
-        }).toList();
+      // El filtro de categoría ya se aplica en la carga de datos
+      return matchesSearch;
+    }).toList();
 
     // Aplicar ordenamiento
     filteredProducts.sort((a, b) {
@@ -649,7 +639,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
         case 'price':
           return a.basePrice.compareTo(b.basePrice);
         case 'category':
-          return a.categoryName.toLowerCase().compareTo(b.categoryName.toLowerCase());
+          return a.categoryName.toLowerCase().compareTo(
+            b.categoryName.toLowerCase(),
+          );
         default:
           return 0;
       }
@@ -755,20 +747,19 @@ class _ProductsScreenState extends State<ProductsScreen> {
                             onError: (exception, stackTrace) {},
                           ),
                         ),
-                        child:
-                            product.imageUrl.isEmpty
-                                ? Container(
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Icon(
-                                    Icons.inventory_2,
-                                    color: AppColors.primary,
-                                    size: 30,
-                                  ),
-                                )
-                                : null,
+                        child: product.imageUrl.isEmpty
+                            ? Container(
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(
+                                  Icons.inventory_2,
+                                  color: AppColors.primary,
+                                  size: 30,
+                                ),
+                              )
+                            : null,
                       ),
                       // Insignia de producto elaborado
                       if (product.esElaborado)
@@ -868,10 +859,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
                                 vertical: 2,
                               ),
                               decoration: BoxDecoration(
-                                color:
-                                    product.tieneStock
-                                        ? AppColors.success.withOpacity(0.1)
-                                        : AppColors.error.withOpacity(0.1),
+                                color: product.tieneStock
+                                    ? AppColors.success.withOpacity(0.1)
+                                    : AppColors.error.withOpacity(0.1),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Text(
@@ -879,10 +869,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
                                 style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w500,
-                                  color:
-                                      product.tieneStock
-                                          ? AppColors.success
-                                          : AppColors.error,
+                                  color: product.tieneStock
+                                      ? AppColors.success
+                                      : AppColors.error,
                                 ),
                               ),
                             ),
@@ -893,10 +882,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
                               vertical: 2,
                             ),
                             decoration: BoxDecoration(
-                              color:
-                                  product.isActive
-                                      ? AppColors.primary.withOpacity(0.1)
-                                      : AppColors.textLight.withOpacity(0.1),
+                              color: product.isActive
+                                  ? AppColors.primary.withOpacity(0.1)
+                                  : AppColors.textLight.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
@@ -904,10 +892,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
                               style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w500,
-                                color:
-                                    product.isActive
-                                        ? AppColors.primary
-                                        : AppColors.textLight,
+                                color: product.isActive
+                                    ? AppColors.primary
+                                    : AppColors.textLight,
                               ),
                             ),
                           ),
@@ -981,7 +968,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
                           icon: Icon(
                             Icons.qr_code,
                             size: 20,
-                            color: (product.barcode.isNotEmpty || (product.codigoBarras ?? '').isNotEmpty)
+                            color:
+                                (product.barcode.isNotEmpty ||
+                                    (product.codigoBarras ?? '').isNotEmpty)
                                 ? AppColors.primary
                                 : Colors.grey,
                           ),
@@ -1050,9 +1039,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 ),
               ),
             Text(
-              cup > 0
-                  ? '₱${cup.toStringAsFixed(2)} CUP'
-                  : 'Sin precio',
+              cup > 0 ? '₱${cup.toStringAsFixed(2)} CUP' : 'Sin precio',
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.bold,
@@ -1157,20 +1144,19 @@ class _ProductsScreenState extends State<ProductsScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder:
-            (context) => AddProductScreen(
-              onProductSaved: () {
-                // Recargar la lista de productos después de crear
-                print('🔄 Producto creado, recargando lista...');
-                _loadProducts();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Producto creado exitosamente'),
-                    backgroundColor: AppColors.success,
-                  ),
-                );
-              },
-            ),
+        builder: (context) => AddProductScreen(
+          onProductSaved: () {
+            // Recargar la lista de productos después de crear
+            print('🔄 Producto creado, recargando lista...');
+            _loadProducts();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Producto creado exitosamente'),
+                backgroundColor: AppColors.success,
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -1261,10 +1247,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
       }
     } else {
       // Fallback to old structure
-      variantWidgets =
-          product.variants
-              .map((variant) => _buildVariantCard(variant))
-              .toList();
+      variantWidgets = product.variants
+          .map((variant) => _buildVariantCard(variant))
+          .toList();
     }
 
     if (variantWidgets.isEmpty) {
@@ -1376,21 +1361,20 @@ class _ProductsScreenState extends State<ProductsScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder:
-            (context) => AddProductScreen(
-              product: product,
-              onProductSaved: () {
-                // Recargar la lista de productos después de editar
-                print('🔄 Producto editado, recargando lista...');
-                _loadProducts();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Producto actualizado exitosamente'),
-                    backgroundColor: AppColors.success,
-                  ),
-                );
-              },
-            ),
+        builder: (context) => AddProductScreen(
+          product: product,
+          onProductSaved: () {
+            // Recargar la lista de productos después de editar
+            print('🔄 Producto editado, recargando lista...');
+            _loadProducts();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Producto actualizado exitosamente'),
+                backgroundColor: AppColors.success,
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -1446,244 +1430,230 @@ class _ProductsScreenState extends State<ProductsScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder:
-          (context) => StatefulBuilder(
-            builder:
-                (context, setState) => AlertDialog(
-                  title: Row(
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.warning, color: AppColors.error, size: 28),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Eliminar Producto Completo',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.error,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.error.withOpacity(0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.warning, color: AppColors.error, size: 28),
+                      Text(
+                        '⚠️ OPERACIÓN IRREVERSIBLE',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.error,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Se eliminará permanentemente:',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '"${product.name}"',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppColors.warning.withOpacity(0.3),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '⚠️ ES NECESARIO',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.warning,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Para poder eliminar el producto no debe tener inventario disponible o ser parte de un producto elaborado o un servicio.',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Esta acción eliminará TODOS los datos relacionados a:',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _buildDeletionCategory('📊 Inventario y Movimientos', [
+                  'Registros de inventario',
+                  'Extracciones de productos',
+                  'Recepciones de productos',
+                  'Control de productos',
+                  'Ajustes de inventario',
+                  'Pre-asignaciones',
+                ]),
+                _buildDeletionCategory('💰 Precios y Ventas', [
+                  'Precios de venta',
+                  'Clasificación ABC',
+                  'Márgenes comerciales',
+                ]),
+                _buildDeletionCategory('🏪 Almacén y Ubicaciones', [
+                  'Límites de almacén',
+                  'Códigos de barras',
+                ]),
+                _buildDeletionCategory('📋 Información del Producto', [
+                  'Etiquetas',
+                  'Multimedias (imágenes)',
+                  'Presentaciones',
+                  'Subcategorías',
+                  'Garantías',
+                ]),
+                _buildDeletionCategory('🎯 Marketing', [
+                  'Promociones aplicadas',
+                ]),
+                _buildDeletionCategory('🍽️ Restaurante (si aplica)', [
+                  'Recetas',
+                  'Modificaciones',
+                ]),
+                _buildDeletionCategory('💼 Contabilidad', [
+                  'Asignación de costos',
+                ]),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppColors.warning.withOpacity(0.3),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: AppColors.warning,
+                        size: 20,
+                      ),
                       const SizedBox(width: 8),
                       const Expanded(
                         child: Text(
-                          'Eliminar Producto Completo',
+                          'Esta operación no se puede deshacer. Asegúrate de tener un respaldo si es necesario.',
                           style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.error,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ),
                     ],
                   ),
-                  content: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: AppColors.error.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: AppColors.error.withOpacity(0.3),
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '⚠️ OPERACIÓN IRREVERSIBLE',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.error,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Se eliminará permanentemente:',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.textPrimary,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '"${product.name}"',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: AppColors.warning.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: AppColors.warning.withOpacity(0.3),
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '⚠️ ES NECESARIO',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.warning,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Para poder eliminar el producto no debe tener inventario disponible o ser parte de un producto elaborado o un servicio.',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.textPrimary,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Esta acción eliminará TODOS los datos relacionados a:',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        _buildDeletionCategory('📊 Inventario y Movimientos', [
-                          'Registros de inventario',
-                          'Extracciones de productos',
-                          'Recepciones de productos',
-                          'Control de productos',
-                          'Ajustes de inventario',
-                          'Pre-asignaciones',
-                        ]),
-                        _buildDeletionCategory('💰 Precios y Ventas', [
-                          'Precios de venta',
-                          'Clasificación ABC',
-                          'Márgenes comerciales',
-                        ]),
-                        _buildDeletionCategory('🏪 Almacén y Ubicaciones', [
-                          'Límites de almacén',
-                          'Códigos de barras',
-                        ]),
-                        _buildDeletionCategory('📋 Información del Producto', [
-                          'Etiquetas',
-                          'Multimedias (imágenes)',
-                          'Presentaciones',
-                          'Subcategorías',
-                          'Garantías',
-                        ]),
-                        _buildDeletionCategory('🎯 Marketing', [
-                          'Promociones aplicadas',
-                        ]),
-                        _buildDeletionCategory('🍽️ Restaurante (si aplica)', [
-                          'Recetas',
-                          'Modificaciones',
-                        ]),
-                        _buildDeletionCategory('💼 Contabilidad', [
-                          'Asignación de costos',
-                        ]),
-                        const SizedBox(height: 16),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: AppColors.warning.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: AppColors.warning.withOpacity(0.3),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.info_outline,
-                                color: AppColors.warning,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              const Expanded(
-                                child: Text(
-                                  'Esta operación no se puede deshacer. Asegúrate de tener un respaldo si es necesario.',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed:
-                          isDeleting ? null : () => Navigator.pop(context),
-                      child: const Text('Cancelar'),
-                    ),
-                    ElevatedButton(
-                      onPressed:
-                          isDeleting
-                              ? null
-                              : () async {
-                                setState(() {
-                                  isDeleting = true;
-                                });
-
-                                try {
-                                  final result =
-                                      await ProductService.deleteProductComplete(
-                                        int.parse(product.id),
-                                      );
-
-                                  if (mounted) {
-                                    Navigator.pop(context);
-
-                                    if (result['success'] == true) {
-                                      _showDeletionSuccessDialog(result);
-                                      _loadProducts(); // Refresh the products list
-                                    } else {
-                                      _showErrorMessage(
-                                        result['message'] ??
-                                            'Error desconocido',
-                                      );
-                                    }
-                                  }
-                                } catch (e) {
-                                  setState(() {
-                                    isDeleting = false;
-                                  });
-
-                                  if (mounted) {
-                                    _showErrorMessage(
-                                      'Error al eliminar producto: $e',
-                                    );
-                                  }
-                                }
-                              },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.error,
-                      ),
-                      child:
-                          isDeleting
-                              ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.white,
-                                  ),
-                                ),
-                              )
-                              : const Text('Eliminar Definitivamente'),
-                    ),
-                  ],
                 ),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: isDeleting ? null : () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: isDeleting
+                  ? null
+                  : () async {
+                      setState(() {
+                        isDeleting = true;
+                      });
+
+                      try {
+                        final result =
+                            await ProductService.deleteProductComplete(
+                              int.parse(product.id),
+                            );
+
+                        if (mounted) {
+                          Navigator.pop(context);
+
+                          if (result['success'] == true) {
+                            _showDeletionSuccessDialog(result);
+                            _loadProducts(); // Refresh the products list
+                          } else {
+                            _showErrorMessage(
+                              result['message'] ?? 'Error desconocido',
+                            );
+                          }
+                        }
+                      } catch (e) {
+                        setState(() {
+                          isDeleting = false;
+                        });
+
+                        if (mounted) {
+                          _showErrorMessage('Error al eliminar producto: $e');
+                        }
+                      }
+                    },
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+              child: isDeleting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : const Text('Eliminar Definitivamente'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1745,88 +1715,82 @@ class _ProductsScreenState extends State<ProductsScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder:
-          (context) => AlertDialog(
-            title: Row(
-              children: [
-                Icon(Icons.check_circle, color: AppColors.success, size: 28),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Text(
-                    'Producto Eliminado',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.success,
-                    ),
-                  ),
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.check_circle, color: AppColors.success, size: 28),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'Producto Eliminado',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.success,
                 ),
-              ],
-            ),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    result['message'] ?? 'Producto eliminado exitosamente',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppColors.success.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: AppColors.success.withOpacity(0.3),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Resumen de eliminación:',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.success,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Producto: ${result['nombre_producto']}',
-                          style: const TextStyle(fontWeight: FontWeight.w500),
-                        ),
-                        Text(
-                          'Total registros eliminados: ${result['total_registros_eliminados']}',
-                          style: const TextStyle(fontWeight: FontWeight.w500),
-                        ),
-                        if (result['tablas_afectadas'] != null &&
-                            (result['tablas_afectadas'] as List)
-                                .isNotEmpty) ...[
-                          Text(
-                            'Configuraciones afectadas: ${(result['tablas_afectadas'] as List).length}',
-                            style: const TextStyle(fontWeight: FontWeight.w500),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
               ),
             ),
-            actions: [
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.success,
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                result['message'] ?? 'Producto eliminado exitosamente',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
                 ),
-                child: const Text('Continuar'),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.success.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.success.withOpacity(0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Resumen de eliminación:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.success,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Producto: ${result['nombre_producto']}',
+                      style: const TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    Text(
+                      'Total registros eliminados: ${result['total_registros_eliminados']}',
+                      style: const TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    if (result['tablas_afectadas'] != null &&
+                        (result['tablas_afectadas'] as List).isNotEmpty) ...[
+                      Text(
+                        'Configuraciones afectadas: ${(result['tablas_afectadas'] as List).length}',
+                        style: const TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ],
           ),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.success),
+            child: const Text('Continuar'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1856,37 +1820,13 @@ class _ProductsScreenState extends State<ProductsScreen> {
     }
   }
 
-  /// Verificar si el producto tiene stock disponible
+  /// Verificar stock mixto y dependencias de receta antes de eliminar.
   Future<bool> _hasStock(Product product) async {
     try {
-      // Verificar primero el stock disponible del producto
-      if (product.stockDisponible > 0) {
-        print(
-          '🔍 Producto ${product.denominacion} tiene stock: ${product.stockDisponible}',
-        );
-        return true;
-      }
-
-      // Verificar también las ubicaciones de stock para mayor precisión
-      final stockLocations = await ProductService.getProductStockLocations(
-        product.id.toString(),
-      );
-
-      for (var location in stockLocations) {
-        final cantidad = (location['cantidad_final'] ?? 0).toDouble();
-        if (cantidad > 0) {
-          print(
-            '🔍 Producto ${product.denominacion} tiene stock en ubicación: $cantidad',
-          );
-          return true;
-        }
-      }
-
-      print('✅ Producto ${product.denominacion} no tiene stock disponible');
-      return false;
+      return !await ProductService.canDeleteProductConservatively(product.id);
     } catch (e) {
-      print('❌ Error verificando stock del producto: $e');
-      // En caso de error, asumir que tiene stock para prevenir eliminaciones accidentales
+      print('❌ Error verificando si el producto puede eliminarse: $e');
+      // Ante cualquier error se bloquea la eliminación.
       return true;
     }
   }
@@ -1896,122 +1836,114 @@ class _ProductsScreenState extends State<ProductsScreen> {
     showDialog(
       context: context,
       barrierDismissible: true,
-      builder:
-          (context) => AlertDialog(
-            title: Row(
-              children: [
-                Icon(Icons.warning, color: AppColors.warning, size: 28),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Text(
-                    'No se puede eliminar',
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning, color: AppColors.warning, size: 28),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'No se puede eliminar',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.warning,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.warning.withOpacity(0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '📦 PRODUCTO CON STOCK',
                     style: TextStyle(
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.bold,
                       color: AppColors.warning,
+                      fontSize: 14,
                     ),
                   ),
-                ),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.warning.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: AppColors.warning.withOpacity(0.3),
+                  const SizedBox(height: 8),
+                  Text(
+                    'El producto "${product.denominacion}" tiene stock disponible (${product.stockDisponible.toStringAsFixed(0)} unidades).',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
                     ),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '📦 PRODUCTO CON STOCK',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.warning,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'El producto "${product.denominacion}" tiene stock disponible (${product.stockDisponible.toStringAsFixed(0)} unidades).',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Para poder eliminar este producto, primero debes:',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _buildRequirementItem('📤 Realizar extracciones de inventario'),
-                _buildRequirementItem(
-                  '🔄 Transferir el stock a otros productos',
-                ),
-                _buildRequirementItem('📊 Ajustar el inventario a cero'),
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.info.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.info.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.info_outline, color: AppColors.info, size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Puedes gestionar el inventario desde la sección "Inventario" del menú principal.',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: AppColors.info,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Entendido'),
+            const SizedBox(height: 16),
+            const Text(
+              'Para poder eliminar este producto, primero debes:',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
               ),
-              ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  NavigationGuard.navigateWithPermission(context, '/inventory');
-                },
-                icon: const Icon(Icons.inventory_2, size: 18),
-                label: const Text('Ir a Inventario'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
+            ),
+            const SizedBox(height: 12),
+            _buildRequirementItem('📤 Realizar extracciones de inventario'),
+            _buildRequirementItem('🔄 Transferir el stock a otros productos'),
+            _buildRequirementItem('📊 Ajustar el inventario a cero'),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.info.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.info.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: AppColors.info, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Puedes gestionar el inventario desde la sección "Inventario" del menú principal.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.info,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Entendido'),
           ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.of(context).pop();
+              NavigationGuard.navigateWithPermission(context, '/inventory');
+            },
+            icon: const Icon(Icons.inventory_2, size: 18),
+            label: const Text('Ir a Inventario'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2062,16 +1994,17 @@ class _ProductsScreenState extends State<ProductsScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder:
-          (_) => const Center(
-            child: CircularProgressIndicator(color: AppColors.primary),
-          ),
+      builder: (_) => const Center(
+        child: CircularProgressIndicator(color: AppColors.primary),
+      ),
     );
 
     try {
       await ProductImageDownloadService.downloadProductImage(
         imageUrl: product.imageUrl,
-        productName: product.name.isNotEmpty ? product.name : product.denominacion,
+        productName: product.name.isNotEmpty
+            ? product.name
+            : product.denominacion,
         sku: product.sku,
       );
       if (!mounted) return;
@@ -2111,13 +2044,12 @@ class _ProductsScreenState extends State<ProductsScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder:
-          (context) => _AddImageDialog(
-            product: product,
-            onImageUpdated: () {
-              _loadProducts(); // Recargar productos para mostrar la nueva imagen
-            },
-          ),
+      builder: (context) => _AddImageDialog(
+        product: product,
+        onImageUpdated: () {
+          _loadProducts(); // Recargar productos para mostrar la nueva imagen
+        },
+      ),
     );
   }
 
@@ -2144,7 +2076,8 @@ class _ProductsScreenState extends State<ProductsScreen> {
               _loadBarcodeData(productId, codigoActual).then((data) {
                 setDialogState(() {
                   desglose = data['desglose'] as Map<String, String?>?;
-                  codigosExtra = data['codigos'] as List<Map<String, dynamic>>? ?? [];
+                  codigosExtra =
+                      data['codigos'] as List<Map<String, dynamic>>? ?? [];
                 });
               });
             }
@@ -2170,8 +2103,13 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   children: [
                     // Producto
                     Text(
-                      product.name.isNotEmpty ? product.name : product.denominacion,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      product.name.isNotEmpty
+                          ? product.name
+                          : product.denominacion,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
                     ),
                     const SizedBox(height: 12),
 
@@ -2190,21 +2128,35 @@ class _ProductsScreenState extends State<ProductsScreen> {
                         ),
                         const SizedBox(width: 8),
                         IconButton(
-                          icon: const Icon(Icons.qr_code_scanner, color: AppColors.primary),
+                          icon: const Icon(
+                            Icons.qr_code_scanner,
+                            color: AppColors.primary,
+                          ),
                           tooltip: 'Escanear',
                           onPressed: () async {
                             final result = await Navigator.push(
                               context,
-                              MaterialPageRoute(builder: (_) => const BarcodeScannerScreen()),
+                              MaterialPageRoute(
+                                builder: (_) => const BarcodeScannerScreen(),
+                              ),
                             );
-                            if (result != null && result is Map<String, dynamic>) {
-                              final barcode = result['barcode'] as String? ?? '';
-                              final format = result['format'] as String? ?? 'unknown';
+                            if (result != null &&
+                                result is Map<String, dynamic>) {
+                              final barcode =
+                                  result['barcode'] as String? ?? '';
+                              final format =
+                                  result['format'] as String? ?? 'unknown';
                               barcodeController.text = barcode;
                               // Recalcular desglose
                               if (barcode.isNotEmpty) {
-                                final tipo = BarcodeService.formatToHumanReadable(format);
-                                final parsed = BarcodeService.parseBarcode(barcode, tipo);
+                                final tipo =
+                                    BarcodeService.formatToHumanReadable(
+                                      format,
+                                    );
+                                final parsed = BarcodeService.parseBarcode(
+                                  barcode,
+                                  tipo,
+                                );
                                 setDialogState(() {
                                   desglose = parsed;
                                 });
@@ -2216,20 +2168,39 @@ class _ProductsScreenState extends State<ProductsScreen> {
                     ),
 
                     // Desglose del código
-                    if (desglose != null && desglose!['prefijo_pais'] != null) ...[
+                    if (desglose != null &&
+                        desglose!['prefijo_pais'] != null) ...[
                       const SizedBox(height: 16),
                       const Divider(),
                       const Text(
                         'Desglose del código',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
                       ),
                       const SizedBox(height: 8),
-                      _buildDesgloseRow('País', '${desglose!['prefijo_pais'] ?? '—'}${desglose!['pais_origen'] != null ? ' (${desglose!['pais_origen']})' : ''}'),
-                      _buildDesgloseRow('Fabricante', desglose!['codigo_fabricante'] ?? '—'),
-                      _buildDesgloseRow('Producto', desglose!['codigo_producto'] ?? '—'),
-                      _buildDesgloseRow('Dígito control', desglose!['digito_control'] ?? '—'),
+                      _buildDesgloseRow(
+                        'País',
+                        '${desglose!['prefijo_pais'] ?? '—'}${desglose!['pais_origen'] != null ? ' (${desglose!['pais_origen']})' : ''}',
+                      ),
+                      _buildDesgloseRow(
+                        'Fabricante',
+                        desglose!['codigo_fabricante'] ?? '—',
+                      ),
+                      _buildDesgloseRow(
+                        'Producto',
+                        desglose!['codigo_producto'] ?? '—',
+                      ),
+                      _buildDesgloseRow(
+                        'Dígito control',
+                        desglose!['digito_control'] ?? '—',
+                      ),
                       if (desglose!['numero_sistema'] != null)
-                        _buildDesgloseRow('Sistema', desglose!['numero_sistema']!),
+                        _buildDesgloseRow(
+                          'Sistema',
+                          desglose!['numero_sistema']!,
+                        ),
                     ],
 
                     // Códigos extra de la tabla codigo_producto
@@ -2238,24 +2209,33 @@ class _ProductsScreenState extends State<ProductsScreen> {
                       const Divider(),
                       Text(
                         'Registros en BD (${codigosExtra.length})',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
                       ),
                       const SizedBox(height: 4),
-                      ...codigosExtra.map((c) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.label_outline, size: 14, color: Colors.grey),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                '${c['codigo_barras']} (${c['tipo_codigo'] ?? '—'})',
-                                style: const TextStyle(fontSize: 12),
+                      ...codigosExtra.map(
+                        (c) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.label_outline,
+                                size: 14,
+                                color: Colors.grey,
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  '${c['codigo_barras']} (${c['tipo_codigo'] ?? '—'})',
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      )),
+                      ),
                     ],
                   ],
                 ),
@@ -2291,7 +2271,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
                         idProducto: productId,
                         codigoBarras: newBarcode,
                         tipoCodigoBarras: tipo,
-                        fabricante: product.brand.isNotEmpty ? product.brand : null,
+                        fabricante: product.brand.isNotEmpty
+                            ? product.brand
+                            : null,
                       );
 
                       Navigator.pop(context);
@@ -2327,17 +2309,26 @@ class _ProductsScreenState extends State<ProductsScreen> {
         children: [
           SizedBox(
             width: 100,
-            child: Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
           ),
           Expanded(
-            child: Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Future<Map<String, dynamic>> _loadBarcodeData(int productId, String codigoActual) async {
+  Future<Map<String, dynamic>> _loadBarcodeData(
+    int productId,
+    String codigoActual,
+  ) async {
     Map<String, String?>? desglose;
     List<Map<String, dynamic>> codigos = [];
 
@@ -2361,11 +2352,15 @@ class _ProductsScreenState extends State<ProductsScreen> {
     try {
       final response = await Supabase.instance.client
           .from('codigo_producto')
-          .select('codigo_barras, tipo_codigo, codigo_fabricante, prefijo_pais, pais_origen')
+          .select(
+            'codigo_barras, tipo_codigo, codigo_fabricante, prefijo_pais, pais_origen',
+          )
           .eq('id_producto', productId);
 
       if (response != null && response is List) {
-        codigos = response.map((r) => Map<String, dynamic>.from(r as Map)).toList();
+        codigos = response
+            .map((r) => Map<String, dynamic>.from(r as Map))
+            .toList();
 
         // Si hay desglose guardado en BD, usarlo (más completo)
         if (codigos.isNotEmpty && desglose?['prefijo_pais'] == null) {
@@ -2766,7 +2761,9 @@ class _AddImageDialogState extends State<_AddImageDialog> {
                   child: const Icon(Icons.download, color: Colors.teal),
                 ),
                 title: const Text('Descargar imagen'),
-                subtitle: const Text('Guardar la imagen actual en tu dispositivo'),
+                subtitle: const Text(
+                  'Guardar la imagen actual en tu dispositivo',
+                ),
                 onTap: _downloadCurrentImage,
               ),
               const Divider(height: 1),
@@ -2808,5 +2805,4 @@ class _AddImageDialogState extends State<_AddImageDialog> {
       ),
     );
   }
-
 }

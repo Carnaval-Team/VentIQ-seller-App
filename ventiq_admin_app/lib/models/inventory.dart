@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'stock_mixto.dart';
 import '../utils/stock_mixto_formatter.dart';
 
 // Models for JSON fields from RPC function
@@ -232,13 +233,19 @@ class InventoryProduct {
       presentacion: map['presentacion'] ?? 'Unidad',
       cantidadInicial: (map['cantidad_inicial'] ?? 0).toDouble(),
       cantidadFinal: (map['cantidad_final'] ?? 0).toDouble(),
-      entradasPeriodo: map['entradas_periodo'] != null ? (map['entradas_periodo']).toDouble() : null,
-      extraccionesPeriodo: map['extracciones_periodo'] != null ? (map['extracciones_periodo']).toDouble() : null,
-      ventasPeriodo: map['ventas_periodo'] != null ? (map['ventas_periodo']).toDouble() : null,
+      entradasPeriodo: map['entradas_periodo'] != null
+          ? (map['entradas_periodo']).toDouble()
+          : null,
+      extraccionesPeriodo: map['extracciones_periodo'] != null
+          ? (map['extracciones_periodo']).toDouble()
+          : null,
+      ventasPeriodo: map['ventas_periodo'] != null
+          ? (map['ventas_periodo']).toDouble()
+          : null,
       stockDisponible: (map['stock_disponible'] ?? 0).toDouble(),
       stockReservado: (map['stock_reservado'] ?? 0).toDouble(),
-      stockDisponibleAjustado:
-          (map['stock_disponible_ajustado'] ?? 0).toDouble(),
+      stockDisponibleAjustado: (map['stock_disponible_ajustado'] ?? 0)
+          .toDouble(),
       esVendible: map['es_vendible'] ?? false,
       esInventariable: map['es_inventariable'] ?? false,
       esElaborado: map['es_elaborado'] ?? false,
@@ -247,10 +254,9 @@ class InventoryProduct {
       margenActual: map['margen_actual']?.toDouble(),
       clasificacionAbc: map['clasificacion_abc'] ?? 3,
       abcDescripcion: map['abc_descripcion'] ?? 'No clasificado',
-      fechaUltimaActualizacion:
-          map['fecha_ultima_actualizacion'] != null
-              ? DateTime.parse(map['fecha_ultima_actualizacion'])
-              : DateTime.now(),
+      fechaUltimaActualizacion: map['fecha_ultima_actualizacion'] != null
+          ? DateTime.parse(map['fecha_ultima_actualizacion'])
+          : DateTime.now(),
       totalCount: map['total_count'] ?? 0,
       resumenInventario: summary,
       infoPaginacion: pagination,
@@ -303,14 +309,12 @@ class InventoryProduct {
         row[47] ?? DateTime.now().toIso8601String(),
       ),
       totalCount: row[48] ?? 0,
-      resumenInventario:
-          row.length > 37 && row[37] != null
-              ? InventorySummary.fromJson(Map<String, dynamic>.from(row[37]))
-              : null,
-      infoPaginacion:
-          row.length > 38 && row[38] != null
-              ? PaginationInfo.fromJson(Map<String, dynamic>.from(row[38]))
-              : null,
+      resumenInventario: row.length > 37 && row[37] != null
+          ? InventorySummary.fromJson(Map<String, dynamic>.from(row[37]))
+          : null,
+      infoPaginacion: row.length > 38 && row[38] != null
+          ? PaginationInfo.fromJson(Map<String, dynamic>.from(row[38]))
+          : null,
     );
   }
 
@@ -350,12 +354,11 @@ class InventoryProduct {
       minStock: 10, // Virtual minimum stock
       maxStock: 100, // Virtual maximum stock
       unitCost: costoPromedio ?? 0.0,
-      abcClassification:
-          clasificacionAbc == 1
-              ? 'A'
-              : clasificacionAbc == 2
-              ? 'B'
-              : 'C',
+      abcClassification: clasificacionAbc == 1
+          ? 'A'
+          : clasificacionAbc == 2
+          ? 'B'
+          : 'C',
       lastMovement: fechaUltimaActualizacion,
       needsRestock: cantidadFinal <= 10,
     );
@@ -533,6 +536,7 @@ class InventorySummaryByUser {
   final double cantidadTotalEnAlmacen;
   final int zonasDiferentes;
   final int presentacionesDiferentes;
+  final StockMixto stock;
 
   InventorySummaryByUser({
     required this.idProducto,
@@ -547,7 +551,19 @@ class InventorySummaryByUser {
     required this.cantidadTotalEnAlmacen,
     required this.zonasDiferentes,
     required this.presentacionesDiferentes,
-  });
+    StockMixto? stock,
+  }) : stock =
+           stock ??
+           StockMixto(
+             desglose: const [],
+             texto: cantidadTotalEnAlmacen == 0
+                 ? 'Sin stock'
+                 : StockMixtoFormatter.cantidad(cantidadTotalEnAlmacen),
+             textoCorto: cantidadTotalEnAlmacen == 0
+                 ? '—'
+                 : StockMixtoFormatter.cantidad(cantidadTotalEnAlmacen),
+             equivalenteBase: cantidadTotalEnUnidadesBase,
+           );
 
   // Helper methods for UI display
   bool get hasVariant => idVariante != null && varianteValor != 'N/A';
@@ -568,8 +584,8 @@ class InventorySummaryByUser {
 
   // Virtual fields for stock level calculation
   String get stockLevel {
-    if (cantidadTotalEnAlmacen <= 0) return 'Sin Stock';
-    if (cantidadTotalEnAlmacen <= 10) return 'Stock Bajo';
+    if (stock.equivalenteBase <= 0) return 'Sin Stock';
+    if (stock.equivalenteBase <= 10) return 'Stock Bajo';
     return 'Stock OK';
   }
 
@@ -594,12 +610,13 @@ class InventorySummaryByUser {
       varianteValor: map['variante_valor'] ?? 'N/A',
       idOpcionVariante: map['id_opcion_variante'],
       opcionVarianteValor: map['opcion_variante_valor'] ?? 'N/A',
-      cantidadTotalEnUnidadesBase:
-          (map['cantidad_total_en_unidades_base'] ?? 0).toDouble(),
-      cantidadTotalEnAlmacen:
-          (map['cantidad_total_en_almacen'] ?? 0).toDouble(),
+      cantidadTotalEnUnidadesBase: (map['cantidad_total_en_unidades_base'] ?? 0)
+          .toDouble(),
+      cantidadTotalEnAlmacen: (map['cantidad_total_en_almacen'] ?? 0)
+          .toDouble(),
       zonasDiferentes: map['zonas_diferentes'] ?? 0,
       presentacionesDiferentes: map['presentaciones_diferentes'] ?? 0,
+      stock: StockMixto.fromJson(map),
     );
   }
 
@@ -616,7 +633,11 @@ class InventorySummaryByUser {
       cantidadTotalEnUnidadesBase: (json['cant_unidades_base'] ?? 0).toDouble(),
       cantidadTotalEnAlmacen: (json['cant_almacen_total'] ?? 0).toDouble(),
       zonasDiferentes: (json['zonas_count'] ?? 0).toInt(),
-      presentacionesDiferentes: (json['presentaciones_count'] ?? 1).toInt(),
+      presentacionesDiferentes: _inventoryInt(
+        json['presentaciones_count'],
+        fallback: 1,
+      ),
+      stock: StockMixto.fromJson(json),
     );
   }
 
@@ -634,8 +655,45 @@ class InventorySummaryByUser {
       'cantidad_total_en_almacen': cantidadTotalEnAlmacen,
       'zonas_diferentes': zonasDiferentes,
       'presentaciones_diferentes': presentacionesDiferentes,
+      'stock_desglose': stock.desglose
+          .map(
+            (saldo) => {
+              'id_presentacion': saldo.idPresentacion,
+              'nombre': saldo.nombre,
+              'cantidad': saldo.cantidadFisica,
+              'factor_rel': saldo.factorRel,
+              'equivalente_base': saldo.equivalenteBase,
+              'es_base': saldo.esBase,
+              'nivel': saldo.nivel,
+            },
+          )
+          .toList(),
+      'stock_texto': stock.texto,
+      'stock_texto_corto': stock.textoCorto,
+      'stock_equivalente_base': stock.equivalenteBase,
+      'nombre_presentacion_base': stock.nombrePresentacionBase,
     };
   }
+}
+
+int _inventoryInt(dynamic value, {int fallback = 0}) {
+  if (value is num) return value.toInt();
+  return int.tryParse(value?.toString() ?? '') ?? fallback;
+}
+
+/// Estado logístico agregado. Sus cantidades nunca deben sumarse al stock físico.
+class StockLogisticsStatus {
+  final bool tienePedidos;
+  final bool tieneEntregas;
+
+  const StockLogisticsStatus({
+    required this.tienePedidos,
+    required this.tieneEntregas,
+  });
+
+  const StockLogisticsStatus.sinActividad()
+    : tienePedidos = false,
+      tieneEntregas = false;
 }
 
 /// Desglose del stock real de un producto considerando operaciones pendientes.
@@ -658,10 +716,11 @@ class StockBreakdown {
     required this.entregando,
   });
 
+  StockLogisticsStatus get logisticsStatus => StockLogisticsStatus(
+    tienePedidos: enPedidos > 0,
+    tieneEntregas: entregando > 0,
+  );
+
   StockBreakdown.empty(double baseStock)
-      : this(
-          enAlmacen: baseStock,
-          enPedidos: 0,
-          entregando: 0,
-        );
+    : this(enAlmacen: baseStock, enPedidos: 0, entregando: 0);
 }

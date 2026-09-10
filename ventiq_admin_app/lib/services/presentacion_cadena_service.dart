@@ -1,5 +1,9 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/stock_mixto.dart';
+
+export '../models/stock_mixto.dart';
+
 /// Un eslabon de la cadena de presentaciones de un producto.
 ///
 /// Viene de la RPC `fn_presentaciones_producto`, que es la unica fuente
@@ -60,66 +64,12 @@ class PresentacionCadena {
   /// Mapa con la forma que esperan `PresentationConverter` y los payloads de las
   /// RPC de recepcion/extraccion.
   Map<String, dynamic> toPresentationMap() => {
-        'id': idPresentacion,
-        'id_presentacion': idNomPresentacion,
-        'denominacion': nombre,
-        'cantidad': factor,
-        'es_base': esBase,
-      };
-}
-
-/// Saldo de un producto expresado por presentacion.
-///
-/// Viene de `fn_stock_mixto_json`. El texto lo arma el SQL (`fn_formatear_stock_mixto`)
-/// para que diga lo mismo en la app, en los reportes y en el kardex.
-class StockMixto {
-  /// '4 Cajas + 4 Unidades'. Vacio si no hay stock.
-  final String texto;
-
-  /// '4 CJ + 4 U', para celdas angostas.
-  final String textoCorto;
-
-  /// Total en unidades de la presentacion base.
-  final double equivalenteBase;
-
-  /// Una entrada por presentacion con saldo.
-  final List<Map<String, dynamic>> desglose;
-
-  const StockMixto({
-    required this.texto,
-    required this.textoCorto,
-    required this.equivalenteBase,
-    required this.desglose,
-  });
-
-  static const vacio = StockMixto(
-    texto: 'Sin stock',
-    textoCorto: '—',
-    equivalenteBase: 0,
-    desglose: [],
-  );
-
-  factory StockMixto.fromJson(Map<String, dynamic> json) {
-    return StockMixto(
-      texto: json['texto']?.toString() ?? 'Sin stock',
-      textoCorto: json['texto_corto']?.toString() ?? '—',
-      equivalenteBase: (json['equivalente_base'] as num?)?.toDouble() ?? 0.0,
-      desglose: (json['desglose'] as List?)
-              ?.whereType<Map<String, dynamic>>()
-              .toList() ??
-          const [],
-    );
-  }
-
-  /// Saldo propio de una presentacion concreta (sin convertir nada).
-  double saldoDe(int idPresentacion) {
-    for (final d in desglose) {
-      if ((d['id_presentacion'] as num?)?.toInt() == idPresentacion) {
-        return (d['cantidad'] as num?)?.toDouble() ?? 0.0;
-      }
-    }
-    return 0.0;
-  }
+    'id': idPresentacion,
+    'id_presentacion': idNomPresentacion,
+    'denominacion': nombre,
+    'cantidad': factor,
+    'es_base': esBase,
+  };
 }
 
 /// Lee la cadena de presentaciones y el stock mixto de un producto.
@@ -190,13 +140,20 @@ class PresentacionCadenaService {
         },
       );
 
-      if (response is Map<String, dynamic>) {
+      if (response is Map) {
         return StockMixto.fromJson(response);
       }
-      return StockMixto.vacio;
+      if (response == null) return StockMixto.vacio;
+      throw StockMixtoException(
+        'interpretar el stock mixto del producto $idProducto',
+        'Respuesta ${response.runtimeType}',
+      );
     } catch (e) {
-      print('❌ fn_stock_mixto_json($idProducto): $e');
-      return StockMixto.vacio;
+      if (e is StockMixtoException) rethrow;
+      throw StockMixtoException(
+        'consultar el stock mixto del producto $idProducto',
+        e,
+      );
     }
   }
 

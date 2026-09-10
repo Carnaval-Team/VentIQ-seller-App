@@ -1843,6 +1843,32 @@ presentación. Anota el motivo «pruebas de presentaciones» para que quede en e
 
 ---
 
+## § 15 · Visualización de stock mixto (SQL local pendiente de aplicar)
+
+Los archivos `31_inventario_resumen_stock_mixto_v3.sql` y `32_stock_mixto_producto_por_ubicacion.sql` no se aplicaron remotamente durante su implementación. Después de revisarlos y aplicarlos manualmente, ejecutar `34_tests_visualizacion_stock.sql` completo.
+
+Antes de ejecutarlo, sustituir `<UUID_CON_ACCESO_TIENDA_223>` por un usuario autenticado con acceso a la tienda 223. El archivo abre `BEGIN`, crea un producto sintético y termina con `ROLLBACK`; no deja saldos ni productos, aunque las secuencias pueden avanzar.
+
+Debe terminar con:
+
+```text
+NOTICE: 34_tests_visualizacion_stock: 6 bloques OK
+ROLLBACK
+```
+
+Los bloques validan:
+
+1. `49 Cajas + 2.8 Bultos`, texto corto `49 CAJ + 2.8 BLT` y equivalente `1190`; nunca `51.8`.
+2. Presentaciones con saldo cero omitidas y dos ubicaciones devueltas por separado.
+3. La v3 agrega las ubicaciones por presentación y conserva `total_count`.
+4. Contratos: v2 con 14 columnas y v3 con 18 (14 heredadas + 4 `stock_*`).
+5. Ambas funciones nuevas son `SECURITY INVOKER`, tienen `search_path=''`, niegan `PUBLIC`/`anon` y conceden a `authenticated`.
+6. Un UUID sin acceso no puede consultar el producto.
+
+No ejecutar el 34 antes de aplicar 31 y 32: sus referencias a las funciones nuevas fallarán. No hace falta ni está permitido modificar la v2 para esta prueba.
+
+---
+
 ## Resumen de archivos
 
 **SQL** (`presentaciones_inventario/`, **25 archivos, todos aplicados**):
