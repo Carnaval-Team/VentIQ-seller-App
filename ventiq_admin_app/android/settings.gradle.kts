@@ -25,3 +25,17 @@ plugins {
 }
 
 include(":app")
+
+// ── home_widget plugin project (required by app/build.gradle.kts) ─────────────
+// The Flutter plugin loader includes the plugin classpath, but the app module
+// references :home_widget directly so it must be declared as a subproject.
+val flutterPluginsFile = file("../.flutter-plugins-dependencies")
+if (flutterPluginsFile.exists()) {
+    val pluginsText = flutterPluginsFile.readText()
+    val match = Regex("\"name\":\"home_widget\",\"path\":\"([^\"]+)\"").find(pluginsText)
+    if (match != null) {
+        val homeWidgetRoot = match.groupValues[1].replace("\\\\", "\\")
+        include(":home_widget")
+        project(":home_widget").projectDir = file("$homeWidgetRoot/android")
+    }
+}

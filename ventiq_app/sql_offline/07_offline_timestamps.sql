@@ -106,6 +106,9 @@ $function$;
 
 -- ----------------------------------------------------------------------------
 -- Venta offline: añade p_fecha_creacion (opcional)
+-- NOTA: 13_fn_registrar_venta_offline_con_pagos.sql reemplaza esta función
+-- y añade p_pagos. Si aplicas 07 después de 13, perderías el registro atómico
+-- de app_dat_pago_venta. Preferir 13 como versión vigente.
 -- ----------------------------------------------------------------------------
 DROP FUNCTION IF EXISTS public.fn_registrar_venta_offline(
   uuid, bigint, uuid, jsonb, text, text, text, smallint, bigint

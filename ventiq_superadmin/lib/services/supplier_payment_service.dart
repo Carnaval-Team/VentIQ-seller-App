@@ -2,11 +2,53 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/supplier_payment_model.dart';
 
+class _ExcludedInventtiaLine {
+  final int orderId;
+  final int? proveedorId;
+
+  const _ExcludedInventtiaLine({
+    required this.orderId,
+    required this.proveedorId,
+  });
+}
+
 class SupplierPaymentService {
   static final _supabase = Supabase.instance.client;
 
+  /// Inventtia: 3 Devuelta, 4 Cancelada, 5 Anulada
+  static const _estadosExcluidosInventtia = [3, 4, 5];
+
+  static DateTime _startOfDay(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  /// `Orders.created_at` es DATE: filtrar por yyyy-MM-dd evita el desfase UTC.
+  static String _toDateIso(DateTime d) {
+    final day = _startOfDay(d);
+    final y = day.year.toString().padLeft(4, '0');
+    final m = day.month.toString().padLeft(2, '0');
+    final dd = day.day.toString().padLeft(2, '0');
+    return '$y-$m-$dd';
+  }
+
+  static int? _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '');
+  }
+
+  static DateTime? _asDate(dynamic value) {
+    if (value is DateTime) return value;
+    if (value is String && value.isNotEmpty) return DateTime.tryParse(value);
+    return null;
+  }
+
+  static Map<String, dynamic>? _asMap(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    if (value is List && value.isNotEmpty) return _asMap(value.first);
+    return null;
+  }
+
   /// Obtener resumen de pagos por proveedor en un rango de fechas
-  /// Usa JOINs eficientes para evitar N+1 queries
   static Future<List<SupplierPaymentSummary>> getSupplierPayments(
     DateTime fechaInicio,
     DateTime fechaFin,
@@ -17,7 +59,6 @@ class SupplierPaymentService {
         '📅 Rango: ${fechaInicio.toIso8601String()} - ${fechaFin.toIso8601String()}',
       );
 
-      // Usar método manual directamente
       return await _getSupplierPaymentsManual(fechaInicio, fechaFin);
     } catch (e) {
       debugPrint('❌ Error obteniendo pagos: $e');
@@ -25,58 +66,42 @@ class SupplierPaymentService {
     }
   }
 
-  /// Método manual para obtener pagos si el RPC no existe
   static Future<List<SupplierPaymentSummary>> _getSupplierPaymentsManual(
     DateTime fechaInicio,
     DateTime fechaFin,
   ) async {
     try {
-      debugPrint('📊 Usando método manual para obtener pagos...');
+      debugPrint(
+        '📊 Filtrando órdenes creadas en el periodo, sin canceladas ni devueltas...',
+      );
 
-      // Obtener OrderDetails con joins
-      final ordersResponse = await _supabase
-          .schema('carnavalapp')
-          .from('OrderDetails')
-          .select('''
-            proveedor,
-            price,
-            quantity,
-            precio_usd,
-            precio_euro,
-            transferencia,
-            Orders!inner(status)
-          ''')
-          .eq('Orders.status', 'Completado')
-          .gte('created_at', fechaInicio.toIso8601String())
-          .lte('created_at', fechaFin.toIso8601String());
+      final lines = await _fetchPaymentLines(
+        fechaInicio: fechaInicio,
+        fechaFin: fechaFin,
+      );
 
-      // Agrupar por proveedor
       final Map<int, Map<String, dynamic>> supplierTotals = {};
 
-      for (var order in ordersResponse) {
-        final proveedorId = order['proveedor'] as int? ?? 3;
+      for (final order in lines) {
+        final proveedorId = _asInt(order['proveedor']) ?? 3;
         final price = (order['price'] as num?)?.toDouble() ?? 0.0;
-        final quantity = order['quantity'] as int? ?? 0;
+        final quantity = _asInt(order['quantity']) ?? 0;
         final precioUsd = (order['precio_usd'] as num?)?.toDouble() ?? 1.0;
         final precioEuro = (order['precio_euro'] as num?)?.toDouble() ?? 1.0;
         final isTransfer = order['transferencia'] as bool? ?? false;
 
         final totalRow = price * quantity;
 
-        if (!supplierTotals.containsKey(proveedorId)) {
-          supplierTotals[proveedorId] = {
+        supplierTotals.putIfAbsent(proveedorId, () {
+          return {
             'total_cup': 0.0,
             'total_usd': 0.0,
             'total_euro': 0.0,
             'total_cash': 0.0,
             'total_transfer': 0.0,
-            'total_orders':
-                0, // This is technically total items/lines processed here, distinct orders need better count but user asked for grouping later.
-            // For summary stats, simple increments might be enough or we maintain a Set of order IDs if available.
-            // In the initial fetching `OrderDetails` we don't select `order_id` in this block, but we probably should if we want accurate order count.
-            // Let's add order_id to query if we want accurate order count.
+            'total_orders': 0,
           };
-        }
+        });
 
         supplierTotals[proveedorId]!['total_cup'] += totalRow;
         supplierTotals[proveedorId]!['total_usd'] += precioUsd * quantity;
@@ -91,7 +116,6 @@ class SupplierPaymentService {
         supplierTotals[proveedorId]!['total_orders'] += 1;
       }
 
-      // Obtener datos completos de proveedores
       final proveedorIds = supplierTotals.keys.toList();
       if (proveedorIds.isEmpty) {
         return [];
@@ -103,9 +127,8 @@ class SupplierPaymentService {
           .select('*')
           .inFilter('id', proveedorIds);
 
-      // Combinar datos
       final List<SupplierPaymentSummary> suppliers = [];
-      for (var proveedor in proveedoresResponse) {
+      for (final proveedor in proveedoresResponse) {
         final id = proveedor['id'] as int;
         final totals = supplierTotals[id]!;
 
@@ -133,12 +156,9 @@ class SupplierPaymentService {
         );
       }
 
-      // Ordenar por total CUP descendente
       suppliers.sort((a, b) => b.totalCup.compareTo(a.totalCup));
 
-      debugPrint(
-        '✅ ${suppliers.length} proveedores procesados (método manual)',
-      );
+      debugPrint('✅ ${suppliers.length} proveedores procesados');
       return suppliers;
     } catch (e) {
       debugPrint('❌ Error en método manual: $e');
@@ -155,51 +175,28 @@ class SupplierPaymentService {
     try {
       debugPrint('📦 Obteniendo órdenes para proveedor $proveedorId...');
 
-      final response = await _supabase
-          .schema('carnavalapp')
-          .from('OrderDetails')
-          .select('''
-            order_id,
-            product_id,
-            quantity,
-            price,
-            precio_usd,
-            precio_euro,
-            transferencia,
-            Orders!inner(status, created_at),
-            Productos!inner(
-              name,
-              image
-            )
-          ''')
-          .eq('proveedor', proveedorId)
-          .eq('Orders.status', 'Completado')
-          .gte('created_at', fechaInicio.toIso8601String())
-          .lte('created_at', fechaFin.toIso8601String());
+      final response = await _fetchPaymentLines(
+        fechaInicio: fechaInicio,
+        fechaFin: fechaFin,
+        proveedorId: proveedorId,
+      );
 
-      // Agrupar por Order ID
       final Map<int, OrderPaymentDetail> ordersMap = {};
       final Map<int, List<ProductPaymentDetail>> orderProductsMap = {};
 
-      for (var item in response) {
-        final orderId = item['order_id'] as int;
-        final orderData = item['Orders']; // OrderDetails -> Orders relationship
+      for (final item in response) {
+        final orderId = _asInt(item['order_id']);
+        if (orderId == null) continue;
 
-        if (orderData == null) {
-          continue;
-        }
-
-        final productId = item['product_id'] as int;
-        final quantity = item['quantity'] as int? ?? 0;
+        final productId = _asInt(item['product_id']) ?? 0;
+        final quantity = _asInt(item['quantity']) ?? 0;
         final price = (item['price'] as num?)?.toDouble() ?? 0.0;
         final isTransfer = item['transferencia'] as bool? ?? false;
 
-        final productData = item['Productos'];
-
         final product = ProductPaymentDetail(
           productId: productId,
-          productName: productData?['name'] ?? 'Sin nombre',
-          productImage: productData?['image'],
+          productName: item['product_name'] as String? ?? 'Sin nombre',
+          productImage: item['product_image'] as String?,
           quantity: quantity,
           price: price,
           subtotal: price * quantity,
@@ -208,40 +205,31 @@ class SupplierPaymentService {
         if (!orderProductsMap.containsKey(orderId)) {
           orderProductsMap[orderId] = [];
 
-          final createdAtStr = orderData['created_at'] as String?;
-          final createdAt =
-              createdAtStr != null
-                  ? DateTime.parse(createdAtStr)
-                  : DateTime.now();
-
-          // Initialize order entry placeholder
-          // We will update total later
           ordersMap[orderId] = OrderPaymentDetail(
             orderId: orderId,
-            createdAt: createdAt,
+            createdAt: _asDate(item['fecha_creacion']) ??
+                _asDate(item['fecha_completado']) ??
+                DateTime.now(),
             total: 0.0,
-            isTransfer:
-                isTransfer, // Assuming all items in order share same payment method or taking first one
+            isTransfer: isTransfer,
             products: [],
           );
         }
 
         orderProductsMap[orderId]!.add(product);
 
-        // Update total
         final currentOrder = ordersMap[orderId]!;
         ordersMap[orderId] = OrderPaymentDetail(
           orderId: currentOrder.orderId,
           createdAt: currentOrder.createdAt,
           total: currentOrder.total + product.subtotal,
-          isTransfer: isTransfer, // Keep it consistent
-          products: [], // We will assign this at the end
+          isTransfer: isTransfer,
+          products: [],
         );
       }
 
-      // Final Assembly
       final List<OrderPaymentDetail> result = [];
-      for (var orderId in ordersMap.keys) {
+      for (final orderId in ordersMap.keys) {
         final orderBase = ordersMap[orderId]!;
         result.add(
           OrderPaymentDetail(
@@ -254,7 +242,6 @@ class SupplierPaymentService {
         );
       }
 
-      // Ordenar por fecha descendente (más recientes primero)
       result.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
       debugPrint('✅ ${result.length} órdenes encontradas');
@@ -263,6 +250,183 @@ class SupplierPaymentService {
       debugPrint('❌ Error obteniendo órdenes: $e');
       return [];
     }
+  }
+
+  /// Órdenes Carnaval creadas en el rango, excluyendo canceladas/devueltas
+  /// (Carnaval status y estado actual Inventtia 3/4/5).
+  static Future<List<Map<String, dynamic>>> _fetchPaymentLines({
+    required DateTime fechaInicio,
+    required DateTime fechaFin,
+    int? proveedorId,
+  }) async {
+    final from = _toDateIso(fechaInicio);
+    final to = _toDateIso(fechaFin);
+
+    return _fetchPaymentLinesClient(
+      fromDate: from,
+      toDate: to,
+      proveedorId: proveedorId,
+    );
+  }
+
+  static Future<List<Map<String, dynamic>>> _fetchPaymentLinesClient({
+    required String fromDate,
+    required String toDate,
+    int? proveedorId,
+  }) async {
+    var query = _supabase
+        .schema('carnavalapp')
+        .from('OrderDetails')
+        .select('''
+            order_id,
+            proveedor,
+            product_id,
+            quantity,
+            price,
+            precio_usd,
+            precio_euro,
+            transferencia,
+            Orders!inner(status, created_at),
+            Productos(name, image)
+          ''')
+        .gte('Orders.created_at', fromDate)
+        .lte('Orders.created_at', toDate)
+        .not(
+          'Orders.status',
+          'in',
+          '(Cancelado,Cancelada,Devuelto,Devuelta)',
+        );
+
+    if (proveedorId != null) {
+      query = query.eq('proveedor', proveedorId);
+    }
+
+    final details = List<Map<String, dynamic>>.from(await query as List);
+    if (details.isEmpty) return [];
+
+    final orderIds =
+        details.map((d) => _asInt(d['order_id'])).whereType<int>().toSet();
+    final excluded = await _inventtiaExcludedLines(orderIds);
+
+    final result = <Map<String, dynamic>>[];
+    for (final detail in details) {
+      final orderId = _asInt(detail['order_id']);
+      final detailProveedor = _asInt(detail['proveedor']);
+      if (orderId == null) continue;
+
+      final isExcluded = excluded.any((e) {
+        if (e.orderId != orderId) return false;
+        if (e.proveedorId == null || detailProveedor == null) return true;
+        return e.proveedorId == detailProveedor;
+      });
+      if (isExcluded) continue;
+
+      final order = _asMap(detail['Orders']);
+      final product = _asMap(detail['Productos']);
+      result.add({
+        'order_id': orderId,
+        'proveedor': detailProveedor,
+        'product_id': _asInt(detail['product_id']),
+        'product_name': product?['name'] ?? 'Sin nombre',
+        'product_image': product?['image'],
+        'quantity': _asInt(detail['quantity']) ?? 0,
+        'price': (detail['price'] as num?)?.toDouble() ?? 0.0,
+        'precio_usd': (detail['precio_usd'] as num?)?.toDouble() ?? 1.0,
+        'precio_euro': (detail['precio_euro'] as num?)?.toDouble() ?? 1.0,
+        'transferencia': detail['transferencia'] as bool? ?? false,
+        'fecha_creacion': order?['created_at'],
+      });
+    }
+
+    debugPrint('✅ ${result.length} líneas (creadas, no canceladas/devueltas)');
+    return result;
+  }
+
+  static Future<List<_ExcludedInventtiaLine>> _inventtiaExcludedLines(
+    Set<int> orderIds,
+  ) async {
+    if (orderIds.isEmpty) return [];
+
+    final ops = await _supabase
+        .from('app_dat_operaciones')
+        .select('id, id_carnaval_order, id_tienda')
+        .inFilter('id_carnaval_order', orderIds.toList());
+
+    final opRows = List<Map<String, dynamic>>.from(ops as List);
+    if (opRows.isEmpty) return [];
+
+    final opIds =
+        opRows.map((r) => _asInt(r['id'])).whereType<int>().toSet();
+    final latestByOp = await _latestEstadoByOperacion(opIds);
+
+    final tiendaIds = opRows
+        .map((r) => _asInt(r['id_tienda']))
+        .whereType<int>()
+        .toSet();
+    final proveedorByTienda = await _proveedorByTienda(tiendaIds);
+
+    final excluded = <_ExcludedInventtiaLine>[];
+    for (final row in opRows) {
+      final opId = _asInt(row['id']);
+      final orderId = _asInt(row['id_carnaval_order']);
+      if (opId == null || orderId == null) continue;
+
+      final latest = latestByOp[opId];
+      if (latest == null) continue;
+      if (!_estadosExcluidosInventtia.contains(latest.estado)) continue;
+
+      final tiendaId = _asInt(row['id_tienda']);
+      excluded.add(
+        _ExcludedInventtiaLine(
+          orderId: orderId,
+          proveedorId: tiendaId != null ? proveedorByTienda[tiendaId] : null,
+        ),
+      );
+    }
+    return excluded;
+  }
+
+  static Future<Map<int, ({int estado, DateTime createdAt})>>
+      _latestEstadoByOperacion(Set<int> operacionIds) async {
+    if (operacionIds.isEmpty) return {};
+
+    final rows = await _supabase
+        .from('app_dat_estado_operacion')
+        .select('id, id_operacion, estado, created_at')
+        .inFilter('id_operacion', operacionIds.toList())
+        .order('id', ascending: false);
+
+    final latest = <int, ({int estado, DateTime createdAt})>{};
+    for (final row in List<Map<String, dynamic>>.from(rows as List)) {
+      final opId = _asInt(row['id_operacion']);
+      final estado = _asInt(row['estado']);
+      final createdAt = _asDate(row['created_at']);
+      if (opId == null || estado == null || createdAt == null) continue;
+      latest.putIfAbsent(
+        opId,
+        () => (estado: estado, createdAt: createdAt),
+      );
+    }
+    return latest;
+  }
+
+  static Future<Map<int, int>> _proveedorByTienda(Set<int> tiendaIds) async {
+    if (tiendaIds.isEmpty) return {};
+
+    final rows = await _supabase
+        .from('app_dat_tienda')
+        .select('id, id_tienda_carnaval')
+        .inFilter('id', tiendaIds.toList());
+
+    final map = <int, int>{};
+    for (final row in List<Map<String, dynamic>>.from(rows as List)) {
+      final id = _asInt(row['id']);
+      final proveedor = _asInt(row['id_tienda_carnaval']);
+      if (id != null && proveedor != null) {
+        map[id] = proveedor;
+      }
+    }
+    return map;
   }
 
   /// Obtener los porcentajes globales de comisión desde la tabla
@@ -295,7 +459,6 @@ class SupplierPaymentService {
     required double transferencia,
   }) async {
     try {
-      // Update the single row (id=1)
       await _supabase
           .from('precio_global_productos_carnaval')
           .update({

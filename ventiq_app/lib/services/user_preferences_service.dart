@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/promotion_rules.dart';
 import '../utils/uuid_generator.dart';
@@ -96,6 +97,9 @@ class UserPreferencesService {
       'egresos_cache'; // Cache de egresos para modo offline
   static const String _storeConfigKey =
       'store_config'; // Configuración de la tienda
+  static const String _storePrintNameKey = 'store_print_name';
+  static const String _storePrintLogoUrlKey = 'store_print_logo_url';
+  static const String _storePrintLogoBytesKey = 'store_print_logo_bytes';
   // Inventario/catálogo offline compartido por tienda (vendedor + admin
   // en el mismo teléfono usan el mismo stock local).
   static const String _offlineInventoryStoreKey = 'offline_inventory_store_id';
@@ -1508,6 +1512,10 @@ class UserPreferencesService {
     orderData['created_offline_at'] = DateTime.now().toIso8601String();
     orderData['offline_user_id'] ??= prefs.getString(_userIdKey);
     orderData['offline_store_id'] ??= prefs.getInt(_offlineInventoryStoreKey);
+    final existingUuid = orderData['client_uuid']?.toString();
+    if (existingUuid == null || existingUuid.isEmpty) {
+      orderData['client_uuid'] = UuidGenerator.v4();
+    }
     pendingOrders.add(orderData);
 
     await prefs.setString(_pendingOrdersKey, jsonEncode(pendingOrders));
@@ -1536,6 +1544,30 @@ class UserPreferencesService {
       await prefs.setString(_pendingOrdersKey, jsonEncode(pendingOrders));
     }
     return changed;
+  }
+
+  /// Fusiona campos en una orden pendiente ya guardada (uuids de idempotencia,
+  /// id de operación, flags de pago, etc.) para que un reintento use los mismos.
+  Future<void> patchPendingOrder(
+    String orderId,
+    Map<String, dynamic> fields,
+  ) async {
+    if (fields.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    final pendingOrders = await getPendingOrders();
+    var changed = false;
+
+    for (final order in pendingOrders) {
+      if (order['id']?.toString() != orderId) continue;
+      order.addAll(fields);
+      order['last_modified'] = DateTime.now().toIso8601String();
+      changed = true;
+      break;
+    }
+
+    if (changed) {
+      await prefs.setString(_pendingOrdersKey, jsonEncode(pendingOrders));
+    }
   }
 
   /// Obtener todas las órdenes pendientes de sincronización
@@ -3945,9 +3977,58 @@ class UserPreferencesService {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_storeConfigKey);
+      await prefs.remove(_storePrintNameKey);
+      await prefs.remove(_storePrintLogoUrlKey);
+      await prefs.remove(_storePrintLogoBytesKey);
       print('🗑️ Configuración de tienda eliminada del cache');
     } catch (e) {
       print('❌ Error limpiando configuración de tienda: $e');
+    }
+  }
+
+  /// Guardar nombre/logo de tienda para impresión offline
+  Future<void> saveStorePrintInfo(
+    String name,
+    String? logoUrl,
+    Uint8List? logoBytes,
+  ) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_storePrintNameKey, name);
+      if (logoUrl != null && logoUrl.isNotEmpty) {
+        await prefs.setString(_storePrintLogoUrlKey, logoUrl);
+      } else {
+        await prefs.remove(_storePrintLogoUrlKey);
+      }
+      if (logoBytes != null && logoBytes.isNotEmpty) {
+        await prefs.setString(
+          _storePrintLogoBytesKey,
+          base64Encode(logoBytes),
+        );
+      } else {
+        await prefs.remove(_storePrintLogoBytesKey);
+      }
+    } catch (e) {
+      print('❌ Error guardando info de tienda para impresión: $e');
+    }
+  }
+
+  /// Obtener nombre/logo de tienda cacheado para impresión offline
+  Future<Map<String, dynamic>?> getStorePrintInfo() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final name = prefs.getString(_storePrintNameKey);
+      if (name == null || name.isEmpty) return null;
+      final logoUrl = prefs.getString(_storePrintLogoUrlKey);
+      final logoBytesBase64 = prefs.getString(_storePrintLogoBytesKey);
+      Uint8List? logoBytes;
+      if (logoBytesBase64 != null && logoBytesBase64.isNotEmpty) {
+        logoBytes = base64Decode(logoBytesBase64);
+      }
+      return {'name': name, 'logoUrl': logoUrl, 'logoBytes': logoBytes};
+    } catch (e) {
+      print('❌ Error obteniendo info de tienda para impresión: $e');
+      return null;
     }
   }
 

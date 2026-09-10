@@ -931,6 +931,16 @@ class BluetoothPrinterService {
   }
 
   Future<_StorePrintInfo> _loadStorePrintInfo() async {
+    // Usar cache persistente primero para evitar consultas a Supabase
+    // en cada impresión.
+    final cached = await _userPreferencesService.getStorePrintInfo();
+    if (cached != null) {
+      return _StorePrintInfo(
+        name: cached['name'] as String,
+        logoBytes: cached['logoBytes'] as Uint8List?,
+      );
+    }
+
     try {
       final storeId = await _userPreferencesService.getIdTienda();
       Map<String, dynamic>? storeData;
@@ -944,17 +954,26 @@ class BluetoothPrinterService {
                 .maybeSingle();
       }
 
-      final storeName = storeData?['denominacion'] as String? ?? 'Inventtia';
-      final storeLogoUrl = storeData?['imagen_url'] as String?;
-      final logoBytes = await _downloadImageBytes(storeLogoUrl);
+      if (storeData != null) {
+        final storeName = storeData['denominacion'] as String? ?? 'Inventtia';
+        final storeLogoUrl = storeData['imagen_url'] as String?;
+        final logoBytes = await _downloadImageBytes(storeLogoUrl);
 
-      return _StorePrintInfo(name: storeName, logoBytes: logoBytes);
+        await _userPreferencesService.saveStorePrintInfo(
+          storeName,
+          storeLogoUrl,
+          logoBytes,
+        );
+
+        return _StorePrintInfo(name: storeName, logoBytes: logoBytes);
+      }
     } catch (e) {
       debugPrint(
         '⚠️ No se pudo cargar datos de tienda para impresión Bluetooth: $e',
       );
-      return const _StorePrintInfo(name: 'Inventtia');
     }
+
+    return const _StorePrintInfo(name: 'Inventtia');
   }
 
   Future<Uint8List?> _downloadImageBytes(String? url) async {

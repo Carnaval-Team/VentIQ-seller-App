@@ -448,6 +448,20 @@ class _AdminTurnosOfflineScreenState extends State<AdminTurnosOfflineScreen> {
                 const SizedBox(height: 16),
                 if (closedPending) ...[
                   FilledButton.icon(
+                    onPressed: () {
+                      final id = turno['local_id']?.toString();
+                      Navigator.pop(context);
+                      Navigator.pushNamed(
+                        context,
+                        '/cierre-pendiente',
+                        arguments: (id != null && id.isNotEmpty) ? id : null,
+                      );
+                    },
+                    icon: const Icon(Icons.visibility_outlined),
+                    label: const Text('Ver todo lo guardado'),
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton.icon(
                     onPressed: _syncing
                         ? null
                         : () {

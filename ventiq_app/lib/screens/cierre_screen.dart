@@ -17,6 +17,7 @@ import '../services/inventory_service.dart';
 import '../services/auto_sync_service.dart';
 import '../services/connectivity_service.dart';
 import '../services/server_time_service.dart';
+import '../utils/navigation_helper.dart';
 import '../widgets/cash_count_dialog.dart';
 
 class CierreScreen extends StatefulWidget {
@@ -427,9 +428,19 @@ class _CierreScreenState extends State<CierreScreen> {
       final turnoAbierto = await TurnoService.getTurnoAbierto();
       if (turnoAbierto == null) {
         print('⚠️ No open shift found');
+        final closedPending =
+            await _userPrefs.getClosedPendingOfflineTurnos();
+        if (!mounted) return;
         setState(() {
           _isLoadingData = false;
         });
+        if (closedPending.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            Navigator.pushReplacementNamed(context, '/cierre-pendiente');
+          });
+          return;
+        }
         if (mounted) {
           _showNoOpenShiftAlert();
         }
@@ -2975,11 +2986,12 @@ class _CierreScreenState extends State<CierreScreen> {
   }
 
   void _showSuccessDialog(double montoFinal, double diferencia) {
+    final stateContext = context;
     showDialog(
-      context: context,
+      context: stateContext,
       barrierDismissible: false,
       builder:
-          (context) => AlertDialog(
+          (dialogContext) => AlertDialog(
             title: Row(
               children: [
                 Icon(Icons.check_circle, color: Colors.green, size: 24),
@@ -3008,9 +3020,9 @@ class _CierreScreenState extends State<CierreScreen> {
             ),
             actions: [
               ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  Navigator.pop(context, true);
+                onPressed: () async {
+                  Navigator.pop(dialogContext);
+                  await NavigationHelper.goHome(stateContext);
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF4A90E2),
@@ -3291,11 +3303,12 @@ class _CierreScreenState extends State<CierreScreen> {
     bool syncFailedOnline = false,
     String? syncMessage,
   }) {
+    final stateContext = context;
     showDialog(
-      context: context,
+      context: stateContext,
       barrierDismissible: false,
       builder:
-          (context) => AlertDialog(
+          (dialogContext) => AlertDialog(
             title: Row(
               children: [
                 Icon(
@@ -3359,10 +3372,20 @@ class _CierreScreenState extends State<CierreScreen> {
               ],
             ),
             actions: [
-              ElevatedButton(
+              TextButton(
                 onPressed: () {
-                  Navigator.pop(context);
-                  Navigator.pop(context, true);
+                  Navigator.pop(dialogContext);
+                  Navigator.pushReplacementNamed(
+                    stateContext,
+                    '/cierre-pendiente',
+                  );
+                },
+                child: const Text('Ver detalle'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  Navigator.pop(dialogContext);
+                  await NavigationHelper.goHome(stateContext);
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.orange[700],

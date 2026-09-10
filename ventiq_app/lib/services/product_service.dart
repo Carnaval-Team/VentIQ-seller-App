@@ -143,9 +143,7 @@ class ProductService {
           );
         }
       }
-      debugPrint(
-        '⚠️ No hay productos locales para categoría $categoryId',
-      );
+      debugPrint('⚠️ No hay productos locales para categoría $categoryId');
       return {};
     }
 
@@ -258,10 +256,7 @@ class ProductService {
   /// Gana la versión de COCINA: si el plato se puede cocinar, lo que importa es
   /// su disponibilidad por receta, no el cero de la barra. Al revés el vendedor
   /// vería el plato como agotado teniendo materia prima de sobra.
-  List<dynamic> _unirCatalogos(
-    List<dynamic> barra,
-    List<dynamic> cocina,
-  ) {
+  List<dynamic> _unirCatalogos(List<dynamic> barra, List<dynamic> cocina) {
     final idsCocina = <int>{};
     for (final item in cocina) {
       final id = (item as Map)['id_producto'];
@@ -327,7 +322,10 @@ class ProductService {
       foto:
           data['imagen'] ??
           _generateProductImage(data['denominacion'] as String? ?? 'producto'),
-      precio: (data['precio_venta'] as num?)?.toDouble() ?? 0.0,
+      precio:
+          ((data['precio_actual'] as num?) ?? (data['precio_venta'] as num?))
+              ?.toDouble() ??
+          0.0,
       cantidad:
           data['tiene_stock']
               ? (data['stock_disponible'] as num?) ?? 0

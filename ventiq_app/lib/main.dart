@@ -13,6 +13,7 @@ import 'screens/apertura_screen.dart';
 import 'screens/egreso_screen.dart';
 import 'screens/venta_total_screen.dart';
 import 'screens/cierre_screen.dart';
+import 'screens/cierre_pendiente_detalle_screen.dart';
 import 'screens/shift_workers_screen.dart';
 import 'screens/offline_data_viewer_screen.dart';
 import 'screens/subscription_detail_screen.dart';
@@ -135,6 +136,12 @@ class MyApp extends StatelessWidget {
         '/egreso': (context) => const EgresoScreen(),
         '/venta-total': (context) => const VentaTotalScreen(),
         '/cierre': (context) => const CierreScreen(),
+        '/cierre-pendiente': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          return CierrePendienteDetalleScreen(
+            localTurnoId: args is String ? args : null,
+          );
+        },
         '/shift-workers': (context) => const ShiftWorkersScreen(),
         '/offline-data-viewer': (context) => const OfflineDataViewerScreen(),
         '/subscription-detail': (context) => const SubscriptionDetailScreen(),

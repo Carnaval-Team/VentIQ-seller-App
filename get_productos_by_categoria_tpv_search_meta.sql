@@ -198,7 +198,7 @@ BEGIN
         WHERE pv_inner.id_producto = p.id
         AND (pv_inner.id_variante IS NULL OR pv_inner.id_variante = 0)
         AND (pv_inner.fecha_hasta IS NULL OR pv_inner.fecha_hasta >= CURRENT_DATE)
-        ORDER BY pv_inner.created_at DESC
+        ORDER BY pv_inner.fecha_desde DESC
         LIMIT 1
     ) pv ON TRUE
     -- JOIN con TPV para filtrar solo productos del almacén asociado al TPV

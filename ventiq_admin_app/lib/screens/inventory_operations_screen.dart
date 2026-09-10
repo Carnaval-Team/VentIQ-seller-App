@@ -45,6 +45,11 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   int? _tipoOperacionId;
   List<Map<String, dynamic>> _tiposOperacion = [];
   bool _isLoadingTipos = false;
+  List<Map<String, dynamic>> _metodosPago = [];
+  int? _metodoPagoId;
+  bool? _contabilizadaFiltro;
+  bool _filtersExpanded = true;
+  final Set<int> _updatingAccountingIds = {};
 
   // Pagination
   int _currentPage = 1;
@@ -88,6 +93,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     print('  • Items por página: $_itemsPerPage');
 
     _loadTiposOperacion();
+    _loadMetodosPago();
     _initPermissionsAndOperations();
     _searchController.addListener(_onSearchChanged);
     _montoController.addListener(_onMontoChanged);
@@ -183,6 +189,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         fechaDesde: _fechaDesde,
         fechaHasta: _fechaHasta,
         tipoOperacionId: _tipoOperacionId,
+        medioPagoId: _metodoPagoId,
+        contabilizada: _contabilizadaFiltro,
         limite: _itemsPerPage,
         pagina: _currentPage,
       );
@@ -699,11 +707,69 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     setState(() {
       _setCurrentMonthRange();
       _tipoOperacionId = null;
+      _metodoPagoId = null;
+      _contabilizadaFiltro = null;
       _montoFiltro = null;
     });
     _montoController.clear();
     _currentPage = 1;
     _loadOperations();
+  }
+
+  Future<void> _loadMetodosPago() async {
+    try {
+      final methods = await InventoryService.getPaymentMethods();
+      if (!mounted) return;
+      setState(() => _metodosPago = methods);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al cargar métodos de pago: $e')),
+      );
+    }
+  }
+
+  Future<void> _setAccountingStatus(
+    Map<String, dynamic> operation,
+    bool contabilizada,
+  ) async {
+    final operationId = (operation['id'] as num).toInt();
+    if (_updatingAccountingIds.contains(operationId)) return;
+    setState(() => _updatingAccountingIds.add(operationId));
+    try {
+      await InventoryService.updateOperationAccountingStatus(
+        operationId: operationId,
+        contabilizada: contabilizada,
+      );
+      if (!mounted) return;
+      setState(() {
+        operation['contabilizada'] = contabilizada;
+        operation['contabilizada_at'] = DateTime.now().toIso8601String();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            contabilizada
+                ? 'Operación marcada como contabilizada'
+                : 'Operación marcada como no contabilizada',
+          ),
+        ),
+      );
+      if (_contabilizadaFiltro != null &&
+          _contabilizadaFiltro != contabilizada) {
+        _currentPage = 1;
+        await _loadOperations();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo actualizar la operación: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _updatingAccountingIds.remove(operationId));
+      }
+    }
   }
 
   Future<void> _loadTiposOperacion() async {
@@ -897,8 +963,14 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   }
 
   Widget _buildFilters() {
+    final hasFilters =
+        _fechaDesde != null ||
+        _fechaHasta != null ||
+        _tipoOperacionId != null ||
+        _metodoPagoId != null ||
+        _contabilizadaFiltro != null ||
+        _montoFiltro != null;
     return Container(
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [
@@ -910,124 +982,138 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
           ),
         ],
       ),
-      child: Row(
-        children: [
-          // Search bar
-          Expanded(
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Buscar operaciones...',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-
-          // Monto filter
-          SizedBox(
-            width: 110,
-            child: TextField(
-              controller: _montoController,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: InputDecoration(
-                hintText: 'Monto',
-                prefixIcon: const Icon(Icons.attach_money),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 12,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-
-          // Compact date filter icon
-          Container(
-            decoration: BoxDecoration(
-              color: _fechaDesde != null && _fechaHasta != null
-                  ? const Color(0xFF4A90E2).withOpacity(0.1)
-                  : Colors.grey.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: _fechaDesde != null && _fechaHasta != null
-                    ? const Color(0xFF4A90E2)
-                    : Colors.grey.withOpacity(0.3),
-              ),
-            ),
-            child: IconButton(
-              onPressed: _showDateRangeDialog,
-              icon: Icon(
-                Icons.date_range,
-                color: _fechaDesde != null && _fechaHasta != null
-                    ? const Color(0xFF4A90E2)
-                    : Colors.grey[600],
-              ),
-              tooltip: _fechaDesde != null && _fechaHasta != null
-                  ? '${_formatDate(_fechaDesde!)} - ${_formatDate(_fechaHasta!)}'
-                  : 'Seleccionar rango de fechas',
-            ),
-          ),
-
-          // Operation type filter
-          const SizedBox(width: 12),
-          Container(
-            decoration: BoxDecoration(
-              color: _tipoOperacionId != null
-                  ? const Color(0xFF4A90E2).withOpacity(0.1)
-                  : Colors.grey.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: _tipoOperacionId != null
-                    ? const Color(0xFF4A90E2)
-                    : Colors.grey.withOpacity(0.3),
-              ),
-            ),
-            child: IconButton(
-              onPressed: _showOperationTypeDialog,
-              icon: Icon(
-                Icons.filter_list,
-                color: _tipoOperacionId != null
-                    ? const Color(0xFF4A90E2)
-                    : Colors.grey[600],
-              ),
-              tooltip: _tipoOperacionId != null
-                  ? 'Tipo: ${_tipoOperacionNombreSeleccionado ?? _tipoOperacionId}'
-                  : 'Filtrar por tipo de operación',
-            ),
-          ),
-
-          // Clear filter button
-          if (_fechaDesde != null ||
-              _fechaHasta != null ||
-              _tipoOperacionId != null ||
-              _montoFiltro != null) ...[
-            const SizedBox(width: 8),
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.red.withOpacity(0.3)),
-              ),
-              child: IconButton(
+      child: ExpansionTile(
+        initiallyExpanded: _filtersExpanded,
+        onExpansionChanged: (value) => _filtersExpanded = value,
+        leading: Icon(
+          Icons.filter_alt_outlined,
+          color: hasFilters ? const Color(0xFF4A90E2) : Colors.grey[600],
+        ),
+        title: Text(hasFilters ? 'Filtros activos' : 'Filtros'),
+        subtitle: !_filtersExpanded && hasFilters
+            ? const Text('Toca para revisar o limpiar los filtros')
+            : null,
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (hasFilters)
+              IconButton(
                 onPressed: _clearAllFilters,
                 icon: const Icon(Icons.clear, color: Colors.red),
                 tooltip: 'Limpiar todos los filtros',
               ),
-            ),
+            Icon(_filtersExpanded ? Icons.expand_less : Icons.expand_more),
           ],
+        ),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                SizedBox(
+                  width: 300,
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: const InputDecoration(
+                      labelText: 'Buscar operaciones',
+                      prefixIcon: Icon(Icons.search),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: 150,
+                  child: TextField(
+                    controller: _montoController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Monto exacto',
+                      prefixIcon: Icon(Icons.attach_money),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _showDateRangeDialog,
+                  icon: const Icon(Icons.date_range),
+                  label: Text(
+                    _fechaDesde != null && _fechaHasta != null
+                        ? '${_formatDate(_fechaDesde!)} - ${_formatDate(_fechaHasta!)}'
+                        : 'Fechas',
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _showOperationTypeDialog,
+                  icon: const Icon(Icons.category_outlined),
+                  label: Text(
+                    _tipoOperacionNombreSeleccionado ?? 'Tipo de operación',
+                  ),
+                ),
+                SizedBox(
+                  width: 230,
+                  child: DropdownButtonFormField<int?>(
+                    value: _metodoPagoId,
+                    decoration: const InputDecoration(
+                      labelText: 'Método de pago',
+                      prefixIcon: Icon(Icons.payment),
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text('Todos'),
+                      ),
+                      ..._metodosPago.map(
+                        (method) => DropdownMenuItem<int?>(
+                          value: (method['id'] as num).toInt(),
+                          child: Text(method['denominacion'].toString()),
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      setState(() => _metodoPagoId = value);
+                      _currentPage = 1;
+                      _loadOperations();
+                    },
+                  ),
+                ),
+                SizedBox(
+                  width: 220,
+                  child: DropdownButtonFormField<bool?>(
+                    value: _contabilizadaFiltro,
+                    decoration: const InputDecoration(
+                      labelText: 'Contabilización',
+                      prefixIcon: Icon(Icons.fact_check_outlined),
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem<bool?>(
+                        value: null,
+                        child: Text('Todas'),
+                      ),
+                      DropdownMenuItem<bool?>(
+                        value: true,
+                        child: Text('Contabilizadas'),
+                      ),
+                      DropdownMenuItem<bool?>(
+                        value: false,
+                        child: Text('No contabilizadas'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      setState(() => _contabilizadaFiltro = value);
+                      _currentPage = 1;
+                      _loadOperations();
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -1120,6 +1206,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     final cantidadItems = _calculateTotalItems(operation);
     final estadoNombre = operation['estado_nombre'] ?? 'Sin estado';
     final observaciones = operation['observaciones'] ?? '';
+    final contabilizada = operation['contabilizada'] == true;
+    final tieneEfectivo = operation['tiene_efectivo'] == true;
+    final operationId = (operation['id'] as num).toInt();
+    final updatingAccounting = _updatingAccountingIds.contains(operationId);
 
     // Debug: Log the exact status we're getting from the database
     print(
@@ -1236,6 +1326,22 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                       ),
                     ),
                   ],
+                  if (_isVentaOperation(operation)) ...[
+                    const SizedBox(width: 8),
+                    Chip(
+                      avatar: Icon(
+                        contabilizada
+                            ? Icons.check_circle
+                            : Icons.pending_outlined,
+                        size: 16,
+                        color: contabilizada ? Colors.green : Colors.orange,
+                      ),
+                      label: Text(
+                        contabilizada ? 'Contabilizada' : 'No contabilizada',
+                      ),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ],
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
@@ -1302,6 +1408,36 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                   ),
                 ],
               ),
+              if (_isVentaOperation(operation) &&
+                  tieneEfectivo &&
+                  (_userRole == UserRole.gerente ||
+                      _userRole == UserRole.supervisor)) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: OutlinedButton.icon(
+                    onPressed: updatingAccounting
+                        ? null
+                        : () => _setAccountingStatus(operation, !contabilizada),
+                    icon: updatingAccounting
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(
+                            contabilizada
+                                ? Icons.undo
+                                : Icons.fact_check_outlined,
+                          ),
+                    label: Text(
+                      contabilizada
+                          ? 'Marcar no contabilizada'
+                          : 'Marcar contabilizada',
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -2664,134 +2800,129 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
               int index = entry.key;
               Map<String, dynamic> item = entry.value;
 
-                  return Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      border:
-                          index > 0
-                              ? Border(
-                                top: BorderSide(color: Colors.grey[200]!),
-                              )
-                              : null,
-                    ),
-                    child: Row(
-                      children: [
-                        // Product info
-                        Expanded(
-                          flex: 3,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _getProductName(item),
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF1F2937),
-                                ),
-                              ),
-                              if (item['variante'] != null ||
-                                  item['opcion_variante'] != null) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  '${item['variante'] ?? ''}: ${item['opcion_variante'] ?? ''}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                              ],
-                              // FASE 2: la presentacion de la linea. Con
-                              // factor <> 1 se muestra la equivalencia, que es
-                              // el dato que faltaba para leer "2 Cajas" sin
-                              // tener que abrir la ficha del producto.
-                              if (item['presentacion_nombre'] != null) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  _getPresentacionTexto(item),
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                    color: Color(0xFF4A90E2),
-                                  ),
-                                ),
-                              ],
-                              if (item['sku_producto'] != null) ...[
-                                const SizedBox(height: 2),
-                                Text(
-                                  'SKU: ${item['sku_producto']}',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.grey[500],
-                                    fontFamily: 'monospace',
-                                  ),
-                                ),
-                              ],
-                              if (item['precio_unitario'] != null) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Precio: \$${_formatFieldValue(item['precio_unitario'])}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.grey[700],
-                                  ),
-                                ),
-                              ],
-                            ],
+              return Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  border: index > 0
+                      ? Border(top: BorderSide(color: Colors.grey[200]!))
+                      : null,
+                ),
+                child: Row(
+                  children: [
+                    // Product info
+                    Expanded(
+                      flex: 3,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _getProductName(item),
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1F2937),
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        // Quantity and Subtotal
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF4A90E2).withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                  color: const Color(
-                                    0xFF4A90E2,
-                                  ).withOpacity(0.3),
-                                ),
-                              ),
-                              // FASE 2/3: la RPC manda cantidad_formateada
-                              // ("4 Bultos"), armada en SQL con
-                              // fn_plural_presentacion (archivos 15 y 28). Se
-                              // prefiere sobre la cantidad cruda; el fallback
-                              // cubre las operaciones de conteo, que traen
-                              // cantidad_fisica y no pasan por el helper.
-                              child: Text(
-                                _getCantidadTexto(item),
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF4A90E2),
-                                ),
+                          if (item['variante'] != null ||
+                              item['opcion_variante'] != null) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              '${item['variante'] ?? ''}: ${item['opcion_variante'] ?? ''}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
                               ),
                             ),
-                            if (item['importe'] != null) ...[
-                              const SizedBox(height: 6),
-                              Text(
-                                '\$${_formatFieldValue(item['importe'])}',
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF1F2937),
-                                ),
-                              ),
-                            ],
                           ],
+                          // FASE 2: la presentacion de la linea. Con
+                          // factor <> 1 se muestra la equivalencia, que es
+                          // el dato que faltaba para leer "2 Cajas" sin
+                          // tener que abrir la ficha del producto.
+                          if (item['presentacion_nombre'] != null) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              _getPresentacionTexto(item),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF4A90E2),
+                              ),
+                            ),
+                          ],
+                          if (item['sku_producto'] != null) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              'SKU: ${item['sku_producto']}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey[500],
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                          ],
+                          if (item['precio_unitario'] != null) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              'Precio: \$${_formatFieldValue(item['precio_unitario'])}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    // Quantity and Subtotal
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF4A90E2).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: const Color(0xFF4A90E2).withOpacity(0.3),
+                            ),
+                          ),
+                          // FASE 2/3: la RPC manda cantidad_formateada
+                          // ("4 Bultos"), armada en SQL con
+                          // fn_plural_presentacion (archivos 15 y 28). Se
+                          // prefiere sobre la cantidad cruda; el fallback
+                          // cubre las operaciones de conteo, que traen
+                          // cantidad_fisica y no pasan por el helper.
+                          child: Text(
+                            _getCantidadTexto(item),
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF4A90E2),
+                            ),
+                          ),
                         ),
+                        if (item['importe'] != null) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            '\$${_formatFieldValue(item['importe'])}',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1F2937),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
-                  );
-                }).toList(),
+                  ],
+                ),
+              );
+            }).toList(),
           ),
         ),
       ],
@@ -2854,6 +2985,34 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     }
 
     addRow('Operador:', operation['usuario_nombre']);
+    if (_isVentaOperation(operation)) {
+      addRow(
+        'Contabilización:',
+        operation['contabilizada'] == true
+            ? 'Contabilizada'
+            : 'No contabilizada',
+      );
+      addRow('Contabilizada por:', operation['contabilizada_por_nombre']);
+      final accountingAt = operation['contabilizada_at']?.toString();
+      if (accountingAt != null) {
+        final parsed = DateTime.tryParse(accountingAt);
+        addRow(
+          'Cambio de contabilización:',
+          parsed == null ? accountingAt : _formatDateTime(parsed),
+        );
+      }
+      final methods = operation['medios_pago'];
+      if (methods is List) {
+        addRow(
+          'Métodos de pago:',
+          methods
+              .whereType<Map>()
+              .map((method) => method['denominacion'])
+              .where((name) => name != null)
+              .join(', '),
+        );
+      }
+    }
     addRow('Entregado por:', esp?['entregado_por']);
     addRow('Transportado por:', esp?['transportado_por']);
     addRow('Recibido por:', esp?['recibido_por']);
@@ -4266,13 +4425,12 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     );
 
     try {
-      final result = await InventoryService.auditReceptionInventory(idOperacion);
+      final result = await InventoryService.auditReceptionInventory(
+        idOperacion,
+      );
       if (!mounted) return;
       Navigator.pop(context);
-      _showReceptionAuditResults(
-        result,
-        idOperacion: idOperacion,
-      );
+      _showReceptionAuditResults(result, idOperacion: idOperacion);
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context);
@@ -4299,13 +4457,16 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       return;
     }
 
-    final items = (result['items'] as List?)
+    final items =
+        (result['items'] as List?)
             ?.map((e) => Map<String, dynamic>.from(e as Map))
             .toList() ??
         <Map<String, dynamic>>[];
     final lineasOk = (result['lineas_ok'] as num?)?.toInt() ?? 0;
-    final lineasProblema = (result['lineas_con_problema'] as num?)?.toInt() ?? 0;
-    final totalLineas = (result['total_lineas'] as num?)?.toInt() ?? items.length;
+    final lineasProblema =
+        (result['lineas_con_problema'] as num?)?.toInt() ?? 0;
+    final totalLineas =
+        (result['total_lineas'] as num?)?.toInt() ?? items.length;
     final estadoNombre = result['estado_nombre']?.toString() ?? 'N/A';
     final idOperacionStr = result['id_operacion']?.toString() ?? '';
     final diagnostico = result['diagnostico_operacion'] is Map
@@ -4398,8 +4559,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                               ),
                             ),
                           if (item['causas_adicionales'] is List &&
-                              (item['causas_adicionales'] as List)
-                                  .isNotEmpty)
+                              (item['causas_adicionales'] as List).isNotEmpty)
                             ...((item['causas_adicionales'] as List).map(
                               (extra) => Padding(
                                 padding: const EdgeInsets.only(top: 2),
@@ -4459,8 +4619,9 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     );
 
     try {
-      final result =
-          await InventoryService.repairReceptionInventoryMissing(idOperacion);
+      final result = await InventoryService.repairReceptionInventoryMissing(
+        idOperacion,
+      );
       if (!mounted) return;
       Navigator.pop(context);
       _showReceptionRepairResults(result, idOperacion: idOperacion);
@@ -4480,7 +4641,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     Map<String, dynamic> result, {
     required int idOperacion,
   }) {
-    final detalle = (result['detalle'] as List?)
+    final detalle =
+        (result['detalle'] as List?)
             ?.map((e) => Map<String, dynamic>.from(e as Map))
             .toList() ??
         <Map<String, dynamic>>[];
@@ -4507,7 +4669,9 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              Text('Corregidas: $exitosas · Omitidas: $omitidas · Fallidas: $fallidas'),
+              Text(
+                'Corregidas: $exitosas · Omitidas: $omitidas · Fallidas: $fallidas',
+              ),
               const SizedBox(height: 12),
               if (detalle.isEmpty)
                 const Text('Sin líneas procesadas.')
@@ -5322,18 +5486,18 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     final detalle = response['detalle_contabilizacion'];
     final items = detalle is List
         ? detalle
-            .map((e) => e is Map
-                ? Map<String, dynamic>.from(e)
-                : {'mensaje': e.toString()})
-            .toList()
+              .map(
+                (e) => e is Map
+                    ? Map<String, dynamic>.from(e)
+                    : {'mensaje': e.toString()},
+              )
+              .toList()
         : <Map<String, dynamic>>[];
 
-    final errores = items
-        .where((item) {
-          final estado = item['estado']?.toString() ?? 'ERROR';
-          return estado != 'OK' && estado != 'OMITIDO';
-        })
-        .toList();
+    final errores = items.where((item) {
+      final estado = item['estado']?.toString() ?? 'ERROR';
+      return estado != 'OK' && estado != 'OMITIDO';
+    }).toList();
 
     final exitosas = response['exitosas'];
     final omitidas = response['omitidas'];

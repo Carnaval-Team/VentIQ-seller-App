@@ -1,9 +1,58 @@
 {
-  "current_version": "2.8.6",
-  "build": 286,
+  "current_version": "2.8.8",
+  "build": 288,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.8.8",
+      "date": "2026-09-10",
+      "title": "Contabilización, filtros y edición rápida de órdenes Carnaval",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Control de contabilización en órdenes Carnaval",
+          "description": "Las órdenes en efectivo vinculadas con una operación de Inventtia pueden marcarse como contabilizadas o revertirse directamente desde el listado. Cada cambio guarda quién lo realizó y cuándo."
+        },
+        {
+          "type": "feature",
+          "title": "Historial de contabilización dentro de la orden",
+          "description": "El detalle de cada orden muestra todos los cambios de contabilización con el estado aplicado, el usuario responsable y la fecha y hora."
+        },
+        {
+          "type": "feature",
+          "title": "Nuevos filtros de pago y contabilización",
+          "description": "El listado de órdenes Carnaval permite filtrar por método de pago y mostrar todas, solo las contabilizadas o solo las no contabilizadas. Los filtros ahora están organizados en un panel desplegable."
+        },
+        {
+          "type": "fix",
+          "title": "Carga segura al salir de Órdenes Carnaval",
+          "description": "Se evita intentar actualizar la interfaz después de cerrar o abandonar la pantalla mientras todavía había consultas en curso."
+        }
+      ]
+    },
+    {
+      "version": "2.8.7",
+      "date": "2026-08-30",
+      "title": "Evidencias, visor de imágenes y estados de carga en Pago a Proveedores y Depósitos Bancarios",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Subida de evidencias con nombres especiales ya no falla",
+          "description": "En Pago a Proveedores y Depósitos Bancarios se sanitiza la clave de Supabase Storage para archivos con acentos, eñes o espacios, evitando el error InvalidKey. El nombre original se conserva en la base de datos."
+        },
+        {
+          "type": "improvement",
+          "title": "Selector de archivos web maneja cancelar",
+          "description": "En la web, si el usuario cierra el selector de archivos sin elegir nada, el flujo se detiene limpiamente."
+        },
+        {
+          "type": "improvement",
+          "title": "Loading y errores inline en creación y recarga de saldo",
+          "description": "Los diálogos de crear factura/depósito y recargar saldo ahora muestran un spinner mientras procesan y, si ocurre un error, lo muestran dentro del mismo diálogo sin cerrarlo."
+        }
+      ]
+    },
     {
       "version": "2.8.6",
       "date": "2026-08-29",

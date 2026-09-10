@@ -17,6 +17,7 @@ import '../widgets/notification_widget.dart';
 import '../widgets/sync_status_chip.dart';
 import '../services/notification_service.dart';
 import '../utils/connection_error_handler.dart';
+import '../utils/price_utils.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/smart_offline_manager.dart';
 import '../services/connectivity_service.dart';
@@ -761,7 +762,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
                                 crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
                                   Text(
-                                    '\$${product.precio.toStringAsFixed(2)}',
+                                    '\$${PriceUtils.formatDiscountPrice(product.precio)}',
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       color: Color(0xFF4A90E2),
@@ -1133,6 +1134,9 @@ class _CategoriesScreenState extends State<CategoriesScreen>
               color: category.color,
               isLimitDataUsageEnabled: _isLimitDataUsageEnabled,
               isFluidModeEnabled: _isFluidModeEnabled,
+              onReturn: () {
+                if (mounted) setState(() {});
+              },
             );
           },
         ),
@@ -1475,6 +1479,7 @@ class _CategoryCard extends StatefulWidget {
   final Color color;
   final bool isLimitDataUsageEnabled;
   final bool isFluidModeEnabled;
+  final VoidCallback? onReturn;
 
   const _CategoryCard({
     required this.id,
@@ -1483,6 +1488,7 @@ class _CategoryCard extends StatefulWidget {
     required this.color,
     required this.isLimitDataUsageEnabled,
     required this.isFluidModeEnabled,
+    this.onReturn,
   });
 
   @override
@@ -1529,7 +1535,7 @@ class _CategoryCardState extends State<_CategoryCard>
       Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const FluidModeScreen()),
-      );
+      ).then((_) => widget.onReturn?.call());
     } else {
       print('📱 Modo tradicional - Navegando a ProductsScreen');
       // Navigate to products list for this category (traditional mode)
@@ -1543,7 +1549,7 @@ class _CategoryCardState extends State<_CategoryCard>
                 categoryColor: widget.color,
               ),
         ),
-      );
+      ).then((_) => widget.onReturn?.call());
     }
   }
 

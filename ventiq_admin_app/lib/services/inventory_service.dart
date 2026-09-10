@@ -235,6 +235,8 @@ class InventoryService {
     DateTime? fechaDesde,
     DateTime? fechaHasta,
     int? tipoOperacionId,
+    int? medioPagoId,
+    bool? contabilizada,
     int? limite,
     int? pagina,
   }) async {
@@ -276,6 +278,8 @@ class InventoryService {
           'p_busqueda': busqueda,
           'p_limite': limite,
           'p_pagina': pagina,
+          'p_id_medio_pago': medioPagoId,
+          'p_contabilizada': contabilizada,
         },
       );
 
@@ -300,6 +304,24 @@ class InventoryService {
       print('Error al obtener operaciones de inventario: $e');
       rethrow;
     }
+  }
+
+  static Future<List<Map<String, dynamic>>> getPaymentMethods() async {
+    final response = await _supabase
+        .from('app_nom_medio_pago')
+        .select('id, denominacion, es_efectivo')
+        .order('denominacion');
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  static Future<void> updateOperationAccountingStatus({
+    required int operationId,
+    required bool contabilizada,
+  }) async {
+    await _supabase.rpc(
+      'fn_actualizar_operacion_contabilizada',
+      params: {'p_id_operacion': operationId, 'p_contabilizada': contabilizada},
+    );
   }
 
   /// Get operation details (products moved in the operation)
