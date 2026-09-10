@@ -235,6 +235,8 @@ class InventoryService {
     DateTime? fechaDesde,
     DateTime? fechaHasta,
     int? tipoOperacionId,
+    int? medioPagoId,
+    bool? contabilizada,
     int? limite,
     int? pagina,
   }) async {
@@ -276,6 +278,8 @@ class InventoryService {
           'p_busqueda': busqueda,
           'p_limite': limite,
           'p_pagina': pagina,
+          'p_id_medio_pago': medioPagoId,
+          'p_contabilizada': contabilizada,
         },
       );
 
@@ -300,6 +304,24 @@ class InventoryService {
       print('Error al obtener operaciones de inventario: $e');
       rethrow;
     }
+  }
+
+  static Future<List<Map<String, dynamic>>> getPaymentMethods() async {
+    final response = await _supabase
+        .from('app_nom_medio_pago')
+        .select('id, denominacion, es_efectivo')
+        .order('denominacion');
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  static Future<void> updateOperationAccountingStatus({
+    required int operationId,
+    required bool contabilizada,
+  }) async {
+    await _supabase.rpc(
+      'fn_actualizar_operacion_contabilizada',
+      params: {'p_id_operacion': operationId, 'p_contabilizada': contabilizada},
+    );
   }
 
   /// Get operation details (products moved in the operation)
@@ -1749,7 +1771,6 @@ class InventoryService {
     return resultado;
   }
 
-
   /// Descompone un producto elaborado recursivamente
   static Future<void> _decomposeRecursively(
     int productId,
@@ -2847,9 +2868,7 @@ class InventoryService {
               final cantidad = (ep['cantidad'] as num?)?.toDouble() ?? 0.0;
 
               if (idProducto == null) {
-                erroresExtraccion.add(
-                  'Extracción línea $idEP: producto nulo',
-                );
+                erroresExtraccion.add('Extracción línea $idEP: producto nulo');
                 continue;
               }
 
@@ -3327,8 +3346,8 @@ class InventoryService {
 
           final rate = await CurrencyService.getEffectiveUsdToCupRate();
           if (rate > 0) {
-            updateData['precio_venta_usd'] =
-                (precioRedondeado / rate).roundToDouble();
+            updateData['precio_venta_usd'] = (precioRedondeado / rate)
+                .roundToDouble();
           }
 
           await _supabase
@@ -4145,7 +4164,8 @@ class InventoryService {
     );
   }
 
-  static Future<Map<String, dynamic>> _completeReceptionOperationClientFallback({
+  static Future<Map<String, dynamic>>
+  _completeReceptionOperationClientFallback({
     required int idOperacion,
     required String comentario,
     required String uuid,
@@ -4194,7 +4214,8 @@ class InventoryService {
         'success': false,
         'status': 'error',
         'error': 'STATE_CHANGE_FAILED',
-        'message': stateResponse['message']?.toString() ??
+        'message':
+            stateResponse['message']?.toString() ??
             'Inventario contabilizado pero falló el cambio de estado.',
         'id_operacion': idOperacion,
         'detalle_contabilizacion': contabResult['detalle'],
@@ -4208,7 +4229,8 @@ class InventoryService {
     return {
       'success': true,
       'status': 'success',
-      'message': contabResult['message']?.toString() ??
+      'message':
+          contabResult['message']?.toString() ??
           'Recepción completada e inventario contabilizado',
       'id_operacion': idOperacion,
       'detalle_contabilizacion': contabResult['detalle'],
@@ -4424,7 +4446,9 @@ class InventoryService {
             .eq('id_producto', idProducto)
             .eq('id_ubicacion', idUbicacion)
             .eq('id_presentacion', idPresentacion);
-        final stockRows = await stockQuery.order('id', ascending: false).limit(1);
+        final stockRows = await stockQuery
+            .order('id', ascending: false)
+            .limit(1);
         final cantidadInicial = (stockRows as List).isNotEmpty
             ? _asDouble(stockRows.first['cantidad_final'])
             : 0.0;
@@ -4514,7 +4538,8 @@ class InventoryService {
       if (response is Map) {
         final result = Map<String, dynamic>.from(response);
         final items = result['items'];
-        final hasCausa = items is List &&
+        final hasCausa =
+            items is List &&
             items.isNotEmpty &&
             items.first is Map &&
             (items.first as Map).containsKey('causa_codigo');
@@ -4586,8 +4611,7 @@ class InventoryService {
         .whereType<int>()
         .toList();
 
-    final movimientosPorRecepcion =
-        <int, List<Map<String, dynamic>>>{};
+    final movimientosPorRecepcion = <int, List<Map<String, dynamic>>>{};
     if (recepcionIds.isNotEmpty) {
       final movsResp = await _supabase
           .from('app_dat_inventario_productos')
@@ -4706,7 +4730,8 @@ class InventoryService {
         productoExiste: producto is Map,
         ubicacionExiste: layout is Map,
         presentacionValida:
-            idPresentacion == null || presentacionesValidas.contains(idPresentacion),
+            idPresentacion == null ||
+            presentacionesValidas.contains(idPresentacion),
         presentacionesProducto: presentacionesProducto.length,
         tienePresentacionBase: tienePresentacionBase,
         numMovimientos: movs.length,
@@ -4746,8 +4771,9 @@ class InventoryService {
 
     items.sort((a, b) {
       final rank = (String r) => r == 'OK' ? 1 : 0;
-      final cmp = rank(b['resultado_auditoria'] as String)
-          .compareTo(rank(a['resultado_auditoria'] as String));
+      final cmp = rank(
+        b['resultado_auditoria'] as String,
+      ).compareTo(rank(a['resultado_auditoria'] as String));
       if (cmp != 0) return cmp;
       return (a['producto_nombre'] as String).compareTo(
         b['producto_nombre'] as String,
@@ -4957,9 +4983,7 @@ class InventoryService {
     } else {
       final topCausa = conteoCausas.entries.isEmpty
           ? null
-          : conteoCausas.entries.reduce(
-              (a, b) => a.value >= b.value ? a : b,
-            );
+          : conteoCausas.entries.reduce((a, b) => a.value >= b.value ? a : b);
       causaPrincipal = topCausa?.key;
       resumen =
           'Hay $lineasProblema línea(s) con problemas de contabilización. '

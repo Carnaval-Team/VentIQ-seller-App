@@ -19,6 +19,13 @@ class CarnavalOrdersScreen extends StatefulWidget {
 class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
   static const _adminIds = [3, 29, 38];
   static const _pageSize = 20;
+  static const _paymentMethods = [
+    'Efectivo',
+    'Transferencia',
+    'Zelle',
+    'Stripe',
+    'Tropipay',
+  ];
   static const _allStatuses = [
     'Nuevo',
     'Procesando',
@@ -34,9 +41,11 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
   bool _isLoading = true;
   bool _isLoadingMore = false;
   bool _isExporting = false;
+  bool _isAuditing = false;
   bool _hasMore = true;
   int _currentPage = 0;
   int? _carnavalStoreId;
+  int? _ventiqStoreId;
   bool _isAdmin = false;
   List<Map<String, dynamic>> _orders = [];
   Map<int, int> _ventiqOps = {}; // carnaval order id -> ventiq operation id
@@ -48,6 +57,10 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
   DateTime? _dateFrom;
   DateTime? _dateTo;
   bool _filterByStatusDate = false;
+  String? _selectedPaymentMethod;
+  bool? _selectedAccountingStatus;
+  bool _filtersExpanded = true;
+  final Set<int> _updatingAccountingIds = {};
 
   @override
   void initState() {
@@ -80,12 +93,13 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     try {
       final storeId = await UserPreferencesService().getIdTienda();
       if (storeId == null) {
-        setState(() => _isLoading = false);
+        if (mounted) setState(() => _isLoading = false);
         return;
       }
+      _ventiqStoreId = storeId;
       final carnavalId = await CarnavalService.getCarnavalStoreId(storeId);
       if (carnavalId == null) {
-        setState(() => _isLoading = false);
+        if (mounted) setState(() => _isLoading = false);
         return;
       }
       _carnavalStoreId = carnavalId;
@@ -94,7 +108,7 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       await _loadOrders();
     } catch (e) {
       print('❌ Error init carnaval orders: $e');
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -144,6 +158,7 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
   }
 
   Future<void> _loadOrders() async {
+    if (!mounted || _carnavalStoreId == null) return;
     setState(() => _isLoading = true);
     _currentPage = 0;
     _ventiqOps = {};
@@ -157,10 +172,17 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       dateFrom: _dateFrom,
       dateTo: _dateTo,
       filterByStatusDate: _filterByStatusDate,
+      paymentMethodFilter: _selectedPaymentMethod,
+      contabilizadaFilter: _selectedAccountingStatus,
+      ventiqStoreId: _ventiqStoreId,
     );
     final ordersWithDireccion = await _enrichOrdersWithDireccion(orders);
+    final enrichedOrders = await _enrichOrdersWithAccounting(
+      ordersWithDireccion,
+    );
+    if (!mounted) return;
     setState(() {
-      _orders = ordersWithDireccion;
+      _orders = enrichedOrders;
       _hasMore = orders.length == _pageSize;
       _isLoading = false;
     });
@@ -182,15 +204,67 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       dateFrom: _dateFrom,
       dateTo: _dateTo,
       filterByStatusDate: _filterByStatusDate,
+      paymentMethodFilter: _selectedPaymentMethod,
+      contabilizadaFilter: _selectedAccountingStatus,
+      ventiqStoreId: _ventiqStoreId,
     );
     final ordersWithDireccion = await _enrichOrdersWithDireccion(orders);
+    final enrichedOrders = await _enrichOrdersWithAccounting(
+      ordersWithDireccion,
+    );
+    if (!mounted) return;
     setState(() {
-      _orders.addAll(ordersWithDireccion);
+      _orders.addAll(enrichedOrders);
       _hasMore = orders.length == _pageSize;
       _isLoadingMore = false;
     });
     _loadVentiqOps(orders);
     _ensureRepartidores(orders);
+  }
+
+  Future<List<Map<String, dynamic>>> _enrichOrdersWithAccounting(
+    List<Map<String, dynamic>> orders,
+  ) async {
+    final orderIds = orders
+        .map((order) => (order['id'] as num?)?.toInt())
+        .whereType<int>()
+        .toList();
+    final info = await CarnavalService.getCarnavalOrdersAccountingInfo(
+      orderIds,
+    );
+    return orders.map((order) {
+      final enriched = Map<String, dynamic>.from(order);
+      final orderId = (order['id'] as num?)?.toInt();
+      final accounting = orderId == null ? null : info[orderId];
+      if (accounting != null) enriched.addAll(accounting);
+      return enriched;
+    }).toList();
+  }
+
+  Future<void> _setAccountingStatus(Map<String, dynamic> order) async {
+    final operationId = (order['operation_id'] as num?)?.toInt();
+    if (operationId == null || _updatingAccountingIds.contains(operationId)) {
+      return;
+    }
+    final newValue = order['contabilizada'] != true;
+    setState(() => _updatingAccountingIds.add(operationId));
+    try {
+      await CarnavalService.updateCarnavalOrderAccountingStatus(
+        operationId: operationId,
+        contabilizada: newValue,
+      );
+      if (!mounted) return;
+      await _loadOrders();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo actualizar la contabilización: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _updatingAccountingIds.remove(operationId));
+      }
+    }
   }
 
   Future<List<Map<String, dynamic>>> _enrichOrdersWithDireccion(
@@ -202,7 +276,9 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
         final userId = result['user_id'] as int?;
         if (userId == null) return result;
 
-        final direccionInfo = await CarnavalService.getLastUserDireccion(userId);
+        final direccionInfo = await CarnavalService.getLastUserDireccion(
+          userId,
+        );
         // Solo nombres de ubicación. NUNCA addAll: Direcciones.id pisa
         // Orders.id y hace que el estado parezca de otra orden al cruzar con BD.
         if (direccionInfo != null) {
@@ -309,6 +385,150 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
           dateTo: _dateTo,
           statusFilter: _selectedStatus,
         ),
+      ),
+    );
+  }
+
+  /// Auditoría de totales: suma los OrderDetails y compara con Orders.total.
+  Future<void> _runTotalAudit() async {
+    if (_orders.isEmpty || _carnavalStoreId == null || _isAuditing) return;
+
+    setState(() => _isAuditing = true);
+    try {
+      final orderIds = _orders
+          .map((o) => o['id'] as int?)
+          .whereType<int>()
+          .toList();
+      final expectedMap = await CarnavalService.getExpectedOrderTotals(
+        orderIds,
+      );
+
+      final discrepancies = <_TotalAuditDiscrepancy>[];
+      for (final order in _orders) {
+        final id = order['id'] as int?;
+        if (id == null) continue;
+
+        final actual = (order['total'] as num?)?.toDouble() ?? 0;
+        final expected = expectedMap[id] ?? 0;
+        if ((actual - expected).abs() >= 0.01) {
+          discrepancies.add(
+            _TotalAuditDiscrepancy(
+              orderId: id,
+              actual: actual,
+              expected: expected,
+            ),
+          );
+        }
+      }
+
+      if (!mounted) return;
+      _showTotalAuditResults(discrepancies, _orders.length);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error en auditoría de totales: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isAuditing = false);
+    }
+  }
+
+  void _showTotalAuditResults(
+    List<_TotalAuditDiscrepancy> discrepancies,
+    int auditedCount,
+  ) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(
+              discrepancies.isEmpty ? Icons.check_circle : Icons.warning,
+              color: discrepancies.isEmpty ? Colors.green : Colors.orange,
+            ),
+            const SizedBox(width: 8),
+            const Expanded(child: Text('Auditoría de totales')),
+          ],
+        ),
+        content: SizedBox(
+          width: 360,
+          child: discrepancies.isEmpty
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.verified, color: Colors.green, size: 48),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Se auditaron $auditedCount orden(es) y el total de los detalles coincide con el total de la orden en todas.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Se encontraron ${discrepancies.length} orden(es) con totales inconsistentes de $auditedCount auditadas:',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 260,
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: discrepancies
+                              .map(_buildDiscrepancyTile)
+                              .toList(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDiscrepancyTile(_TotalAuditDiscrepancy d) {
+    final diff = d.actual - d.expected;
+    final isLower = diff < 0;
+    final color = isLower ? Colors.red : Colors.orange;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Orden #${d.orderId}',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 4),
+          Text('Total orden: \$${d.actual.toStringAsFixed(2)} CUP'),
+          Text('Suma detalles: \$${d.expected.toStringAsFixed(2)} CUP'),
+          Text(
+            'Diferencia: \$${diff.abs().toStringAsFixed(2)} CUP '
+            '(${isLower ? 'faltante' : 'sobrante'})',
+            style: TextStyle(color: color, fontWeight: FontWeight.w600),
+          ),
+        ],
       ),
     );
   }
@@ -451,141 +671,247 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
             )
           : Column(
               children: [
-                // Search bar + dashboard icon
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _searchController,
-                          keyboardType: TextInputType.number,
-                          onSubmitted: (_) => _onSearch(),
-                          decoration: InputDecoration(
-                            hintText: 'Buscar por ID de orden...',
-                            prefixIcon: const Icon(Icons.search, size: 20),
-                            suffixIcon: _searchController.text.isNotEmpty
-                                ? IconButton(
-                                    icon: const Icon(Icons.clear, size: 20),
-                                    onPressed: () {
-                                      _searchController.clear();
-                                      _loadOrders();
-                                    },
-                                  )
-                                : null,
-                            isDense: true,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 10,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
+                ListTile(
+                  leading: const Icon(Icons.filter_alt_outlined),
+                  title: const Text('Filtros'),
+                  subtitle: Text(
+                    _selectedPaymentMethod != null ||
+                            _selectedAccountingStatus != null ||
+                            _selectedStatus != null ||
+                            _dateFrom != null ||
+                            _dateTo != null
+                        ? 'Hay filtros activos'
+                        : 'Buscar y filtrar órdenes',
+                  ),
+                  trailing: Icon(
+                    _filtersExpanded ? Icons.expand_less : Icons.expand_more,
+                  ),
+                  onTap: () =>
+                      setState(() => _filtersExpanded = !_filtersExpanded),
+                ),
+                if (_filtersExpanded) ...[
+                  // Search bar + dashboard icon
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _searchController,
+                            keyboardType: TextInputType.number,
+                            onSubmitted: (_) => _onSearch(),
+                            decoration: InputDecoration(
+                              hintText: 'Buscar por ID de orden...',
+                              prefixIcon: const Icon(Icons.search, size: 20),
+                              suffixIcon: _searchController.text.isNotEmpty
+                                  ? IconButton(
+                                      icon: const Icon(Icons.clear, size: 20),
+                                      onPressed: () {
+                                        _searchController.clear();
+                                        _loadOrders();
+                                      },
+                                    )
+                                  : null,
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      if (_isAdmin)
-                        IconButton(
-                          onPressed: _openDashboard,
-                          icon: const Icon(Icons.dashboard),
-                          tooltip: 'Dashboard',
-                          style: IconButton.styleFrom(
-                            backgroundColor: Colors.indigo.withValues(
-                              alpha: 0.1,
+                        const SizedBox(width: 8),
+                        if (_isAdmin)
+                          IconButton(
+                            onPressed: _openDashboard,
+                            icon: const Icon(Icons.dashboard),
+                            tooltip: 'Dashboard',
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.indigo.withValues(
+                                alpha: 0.1,
+                              ),
                             ),
                           ),
-                        ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        onPressed: _openAudit,
-                        icon: const Icon(Icons.rule_folder_outlined),
-                        tooltip: 'Auditoría Carnaval vs Inventtia',
-                        style: IconButton.styleFrom(
-                          backgroundColor: Colors.teal.withValues(alpha: 0.1),
-                        ),
-                      ),
-                      if (_isAdmin) ...[
                         const SizedBox(width: 8),
                         IconButton(
-                          onPressed: _openBitacora,
-                          icon: const Icon(Icons.fact_check_outlined),
-                          tooltip: 'Bitácora de capitán',
+                          onPressed: _openAudit,
+                          icon: const Icon(Icons.rule_folder_outlined),
+                          tooltip: 'Auditoría Carnaval vs Inventtia',
                           style: IconButton.styleFrom(
-                            backgroundColor: Colors.deepPurple.withValues(
+                            backgroundColor: Colors.teal.withValues(alpha: 0.1),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          onPressed: _isAuditing ? null : _runTotalAudit,
+                          icon: _isAuditing
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.orange,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.account_balance_wallet_outlined,
+                                ),
+                          tooltip: 'Auditoría de totales',
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.orange.withValues(
                               alpha: 0.1,
                             ),
+                          ),
+                        ),
+                        if (_isAdmin) ...[
+                          const SizedBox(width: 8),
+                          IconButton(
+                            onPressed: _openBitacora,
+                            icon: const Icon(Icons.fact_check_outlined),
+                            tooltip: 'Bitácora de capitán',
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.deepPurple.withValues(
+                                alpha: 0.1,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                    child: SegmentedButton<bool>(
+                      segments: const [
+                        ButtonSegment(
+                          value: false,
+                          icon: Icon(Icons.add_circle_outline, size: 16),
+                          label: Text('Fecha de creación'),
+                        ),
+                        ButtonSegment(
+                          value: true,
+                          icon: Icon(Icons.history, size: 16),
+                          label: Text('Llegada al estado'),
+                        ),
+                      ],
+                      selected: {_filterByStatusDate},
+                      showSelectedIcon: false,
+                      onSelectionChanged: (selection) {
+                        final byStatusDate = selection.first;
+                        if (byStatusDate && _selectedStatus == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Selecciona primero el estado que deseas consultar',
+                              ),
+                            ),
+                          );
+                          return;
+                        }
+                        setState(() => _filterByStatusDate = byStatusDate);
+                        _loadOrders();
+                      },
+                    ),
+                  ),
+                  if (_filterByStatusDate && _selectedStatus != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Mostrando órdenes que llegaron a “$_selectedStatus” durante el período',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.indigo,
+                          ),
+                        ),
+                      ),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String?>(
+                            value: _selectedPaymentMethod,
+                            decoration: const InputDecoration(
+                              labelText: 'Método de pago',
+                              prefixIcon: Icon(Icons.payment),
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            items: [
+                              const DropdownMenuItem<String?>(
+                                value: null,
+                                child: Text('Todos'),
+                              ),
+                              ..._paymentMethods.map(
+                                (method) => DropdownMenuItem<String?>(
+                                  value: method,
+                                  child: Text(method),
+                                ),
+                              ),
+                            ],
+                            onChanged: (value) {
+                              setState(() => _selectedPaymentMethod = value);
+                              _loadOrders();
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButtonFormField<bool?>(
+                            value: _selectedAccountingStatus,
+                            decoration: const InputDecoration(
+                              labelText: 'Contabilización',
+                              prefixIcon: Icon(Icons.fact_check_outlined),
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            items: const [
+                              DropdownMenuItem<bool?>(
+                                value: null,
+                                child: Text('Todas'),
+                              ),
+                              DropdownMenuItem<bool?>(
+                                value: true,
+                                child: Text('Contabilizadas'),
+                              ),
+                              DropdownMenuItem<bool?>(
+                                value: false,
+                                child: Text('No contabilizadas'),
+                              ),
+                            ],
+                            onChanged: (value) {
+                              setState(() => _selectedAccountingStatus = value);
+                              _loadOrders();
+                            },
                           ),
                         ),
                       ],
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                  child: SegmentedButton<bool>(
-                    segments: const [
-                      ButtonSegment(
-                        value: false,
-                        icon: Icon(Icons.add_circle_outline, size: 16),
-                        label: Text('Fecha de creación'),
-                      ),
-                      ButtonSegment(
-                        value: true,
-                        icon: Icon(Icons.history, size: 16),
-                        label: Text('Llegada al estado'),
-                      ),
-                    ],
-                    selected: {_filterByStatusDate},
-                    showSelectedIcon: false,
-                    onSelectionChanged: (selection) {
-                      final byStatusDate = selection.first;
-                      if (byStatusDate && _selectedStatus == null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Selecciona primero el estado que deseas consultar',
-                            ),
-                          ),
-                        );
-                        return;
-                      }
-                      setState(() => _filterByStatusDate = byStatusDate);
-                      _loadOrders();
-                    },
-                  ),
-                ),
-                if (_filterByStatusDate && _selectedStatus != null)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Mostrando órdenes que llegaron a “$_selectedStatus” durante el período',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.indigo,
-                        ),
-                      ),
                     ),
                   ),
-                // Date range filter
-                _buildDateRangeRow(),
-                // Status chips
-                SizedBox(
-                  height: 48,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
+                  // Date range filter
+                  _buildDateRangeRow(),
+                  // Status chips
+                  SizedBox(
+                    height: 48,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      children: [
+                        _buildStatusChip(null, 'Todos'),
+                        ..._allStatuses.map((s) => _buildStatusChip(s, s)),
+                      ],
                     ),
-                    children: [
-                      _buildStatusChip(null, 'Todos'),
-                      ..._allStatuses.map((s) => _buildStatusChip(s, s)),
-                    ],
                   ),
-                ),
+                ],
                 // Orders list
                 Expanded(
                   child: _isLoading
@@ -855,7 +1181,12 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     final usuario = order['Usuarios'] as Map<String, dynamic>?;
     final clienteName = usuario?['name'] as String? ?? '';
     final clientePhone = usuario?['telefono'] as String? ?? '';
-    final ventiqOpId = _ventiqOps[orderId];
+    final ventiqOpId =
+        (order['operation_id'] as num?)?.toInt() ?? _ventiqOps[orderId];
+    final contabilizada = order['contabilizada'] == true;
+    final isCash = metodoPago.toLowerCase() == 'efectivo';
+    final updatingAccounting =
+        ventiqOpId != null && _updatingAccountingIds.contains(ventiqOpId);
 
     final paqueteria = order['paqueteria'];
     final isPaqueteria = paqueteria is Map && paqueteria.isNotEmpty;
@@ -1195,6 +1526,52 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(
+                      contabilizada
+                          ? Icons.check_circle
+                          : Icons.pending_outlined,
+                      size: 14,
+                      color: contabilizada ? Colors.green : Colors.orange,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      contabilizada ? 'Contabilizada' : 'No contabilizada',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: contabilizada ? Colors.green : Colors.orange,
+                      ),
+                    ),
+                    if (isCash && _isAdmin) ...[
+                      const Spacer(),
+                      TextButton.icon(
+                        onPressed: updatingAccounting
+                            ? null
+                            : () => _setAccountingStatus(order),
+                        icon: updatingAccounting
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Icon(
+                                contabilizada
+                                    ? Icons.undo
+                                    : Icons.fact_check_outlined,
+                                size: 16,
+                              ),
+                        label: Text(
+                          contabilizada ? 'Revertir' : 'Contabilizar',
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ],
               const SizedBox(height: 8),
               Row(
@@ -1314,4 +1691,16 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       ),
     );
   }
+}
+
+class _TotalAuditDiscrepancy {
+  final int orderId;
+  final double actual;
+  final double expected;
+
+  const _TotalAuditDiscrepancy({
+    required this.orderId,
+    required this.actual,
+    required this.expected,
+  });
 }

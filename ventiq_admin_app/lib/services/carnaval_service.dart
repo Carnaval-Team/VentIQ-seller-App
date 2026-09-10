@@ -1246,6 +1246,9 @@ class CarnavalService {
     DateTime? dateFrom,
     DateTime? dateTo,
     bool filterByStatusDate = false,
+    String? paymentMethodFilter,
+    bool? contabilizadaFilter,
+    int? ventiqStoreId,
   }) async {
     try {
       final from = page * pageSize;
@@ -1294,6 +1297,22 @@ class CarnavalService {
         if (orderIdsByStatusDate.isEmpty) return [];
       }
 
+      Set<int>? orderIdsByAccounting;
+      if (contabilizadaFilter != null && ventiqStoreId != null) {
+        final response = await _supabase.rpc(
+          'fn_ordenes_carnaval_por_contabilizacion',
+          params: {
+            'p_id_tienda': ventiqStoreId,
+            'p_contabilizada': contabilizadaFilter,
+          },
+        );
+        orderIdsByAccounting = (response as List)
+            .map<int?>((row) => (row['order_id'] as num?)?.toInt())
+            .whereType<int>()
+            .toSet();
+        if (orderIdsByAccounting.isEmpty) return [];
+      }
+
       var query = _supabase
           .schema('carnavalapp')
           .from('Orders')
@@ -1305,6 +1324,12 @@ class CarnavalService {
 
       if (orderIdsByStatusDate != null) {
         query = query.inFilter('id', orderIdsByStatusDate.toList());
+      }
+      if (orderIdsByAccounting != null) {
+        query = query.inFilter('id', orderIdsByAccounting.toList());
+      }
+      if (paymentMethodFilter != null) {
+        query = query.eq('metodo_pago', paymentMethodFilter);
       }
 
       if (statusFilter != null && !filterByStatusDate) {
@@ -1439,6 +1464,37 @@ class CarnavalService {
     }
   }
 
+  /// Calcula el total esperado de cada orden a partir de sus OrderDetails.
+  /// Usado por la auditoría de totales del listado de órdenes Carnaval.
+  static Future<Map<int, double>> getExpectedOrderTotals(
+    List<int> orderIds,
+  ) async {
+    try {
+      if (orderIds.isEmpty) return {};
+
+      final response = await _supabase
+          .schema('carnavalapp')
+          .from('OrderDetails')
+          .select('order_id, price, quantity, extra')
+          .inFilter('order_id', orderIds);
+
+      final result = <int, double>{};
+      for (final row in List<Map<String, dynamic>>.from(response)) {
+        final orderId = (row['order_id'] as num?)?.toInt();
+        if (orderId == null) continue;
+
+        final price = (row['price'] as num?)?.toDouble() ?? 0;
+        final quantity = (row['quantity'] as num?)?.toDouble() ?? 0;
+        final extra = (row['extra'] as num?)?.toDouble() ?? 0;
+        result[orderId] = (result[orderId] ?? 0) + price * (quantity + extra);
+      }
+      return result;
+    } catch (e) {
+      print('❌ Error al calcular totales esperados: $e');
+      rethrow;
+    }
+  }
+
   /// Actualiza el status de una orden
   static Future<bool> updateOrderStatus(
     int orderId,
@@ -1460,10 +1516,7 @@ class CarnavalService {
   }
 
   /// Cancela una orden que ya fue entregada al repartidor, devolviendo stock.
-  static Future<bool> cancelOrder(
-    int orderId, {
-    String? changedBy,
-  }) async {
+  static Future<bool> cancelOrder(int orderId, {String? changedBy}) async {
     try {
       final response = await _supabase.rpc(
         'fn_cancelar_orden_carnaval',
@@ -2202,9 +2255,10 @@ class CarnavalService {
       final trimmed = direccionText.trim();
       if (trimmed.isEmpty) return null;
 
-      var query = _supabase.schema('carnavalapp').from('Direcciones').select(
-            'id, address, provincia, municipio, user_id',
-          );
+      var query = _supabase
+          .schema('carnavalapp')
+          .from('Direcciones')
+          .select('id, address, provincia, municipio, user_id');
 
       // Primero intentamos resolver por id si el campo es numérico.
       final idDir = int.tryParse(trimmed);
@@ -2328,6 +2382,48 @@ class CarnavalService {
       'municipio_nombre': municipio,
       'provincia_nombre': provincia,
     };
+  }
+
+  static Future<Map<int, Map<String, dynamic>>> getCarnavalOrdersAccountingInfo(
+    List<int> orderIds,
+  ) async {
+    if (orderIds.isEmpty) return {};
+    final response = await _supabase.rpc(
+      'fn_info_contabilizacion_ordenes_carnaval',
+      params: {'p_order_ids': orderIds},
+    );
+    final result = <int, Map<String, dynamic>>{};
+    for (final row in List<Map<String, dynamic>>.from(response as List)) {
+      final orderId = (row['order_id'] as num?)?.toInt();
+      if (orderId != null) result[orderId] = row;
+    }
+    return result;
+  }
+
+  static Future<List<Map<String, dynamic>>> getOperationAccountingHistory(
+    int operationId,
+  ) async {
+    final response = await _supabase.rpc(
+      'fn_historial_contabilizacion_operacion',
+      params: {'p_id_operacion': operationId},
+    );
+    final rows = List<Map<String, dynamic>>.from(response as List);
+    final uniqueById = <int, Map<String, dynamic>>{};
+    for (final row in rows) {
+      final id = (row['id'] as num?)?.toInt();
+      if (id != null) uniqueById[id] = row;
+    }
+    return uniqueById.values.toList();
+  }
+
+  static Future<void> updateCarnavalOrderAccountingStatus({
+    required int operationId,
+    required bool contabilizada,
+  }) async {
+    await _supabase.rpc(
+      'fn_actualizar_operacion_contabilizada',
+      params: {'p_id_operacion': operationId, 'p_contabilizada': contabilizada},
+    );
   }
 
   /// Obtiene el ID de operación VentIQ asociada a una orden de Carnaval

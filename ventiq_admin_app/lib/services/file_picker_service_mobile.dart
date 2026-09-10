@@ -5,20 +5,44 @@ class PickedFile {
   final Uint8List bytes;
   final String nombre;
   final String mimeType;
-  PickedFile({required this.bytes, required this.nombre, required this.mimeType});
+  PickedFile({
+    required this.bytes,
+    required this.nombre,
+    required this.mimeType,
+  });
 }
 
 class FilePickerService {
+  static const int _maxSize = 20 * 1024 * 1024;
+
   static Future<PickedFile?> pickFile() async {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf', 'doc', 'docx', 'xls', 'xlsx'],
+        allowedExtensions: [
+          'jpg',
+          'jpeg',
+          'png',
+          'pdf',
+          'doc',
+          'docx',
+          'xls',
+          'xlsx',
+          'JPG',
+          'JPEG',
+          'PNG',
+          'PDF',
+          'DOC',
+          'DOCX',
+          'XLS',
+          'XLSX',
+        ],
         withData: true,
       );
       if (result == null || result.files.isEmpty) return null;
       final file = result.files.first;
       if (file.bytes == null) return null;
+      if (file.size > _maxSize) return null;
 
       final ext = (file.extension ?? 'bin').toLowerCase();
       final mime = _mimeFromExt(ext);
@@ -32,15 +56,23 @@ class FilePickerService {
 
   static String _mimeFromExt(String ext) {
     switch (ext) {
-      case 'pdf':   return 'application/pdf';
-      case 'doc':   return 'application/msword';
-      case 'docx':  return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-      case 'xls':   return 'application/vnd.ms-excel';
-      case 'xlsx':  return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-      case 'png':   return 'image/png';
+      case 'pdf':
+        return 'application/pdf';
+      case 'doc':
+        return 'application/msword';
+      case 'docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case 'xls':
+        return 'application/vnd.ms-excel';
+      case 'xlsx':
+        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      case 'png':
+        return 'image/png';
       case 'jpg':
-      case 'jpeg':  return 'image/jpeg';
-      default:      return 'application/octet-stream';
+      case 'jpeg':
+        return 'image/jpeg';
+      default:
+        return 'application/octet-stream';
     }
   }
 }

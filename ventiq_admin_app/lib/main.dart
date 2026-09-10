@@ -65,6 +65,13 @@ import 'screens/hr/hr_worker_config_screen.dart';
 import 'screens/hr/hr_attendance_history_screen.dart';
 import 'screens/importadora/importadora_facturas_screen.dart';
 import 'screens/importadora/estados_factura_screen.dart';
+import 'screens/pago_proveedores/pago_proveedores_screen.dart';
+import 'screens/pago_proveedores/estados_factura_proveedores_screen.dart';
+import 'screens/pago_proveedores/monedas_proveedores_screen.dart';
+import 'screens/depositos_bancarios/depositos_bancarios_screen.dart';
+import 'screens/depositos_bancarios/estados_deposito_screen.dart';
+import 'screens/depositos_bancarios/monedas_depositos_screen.dart';
+import 'screens/depositos_bancarios/bancos_screen.dart';
 import 'utils/app_route_observer.dart';
 import 'widgets_home/widget_background_scheduler.dart';
 
@@ -250,6 +257,15 @@ class MyApp extends StatelessWidget {
         '/hr-attendance-history': (context) => const HRAttendanceHistoryScreen(),
         '/importadora-facturas': (context) => const ImportadoraFacturasScreen(),
         '/importadora-estados': (context) => const EstadosFacturaScreen(),
+        '/pago-proveedores': (context) => const PagoProveedoresScreen(),
+        '/pago-proveedores-estados': (context) =>
+            const EstadosFacturaProveedoresScreen(),
+        '/pago-proveedores-monedas': (context) =>
+            const MonedasProveedoresScreen(),
+        '/depositos-bancarios': (context) => const DepositosBancariosScreen(),
+        '/depositos-estados': (context) => const EstadosDepositoScreen(),
+        '/depositos-monedas': (context) => const MonedasDepositosScreen(),
+        '/depositos-bancos': (context) => const BancosScreen(),
       },
     );
   }

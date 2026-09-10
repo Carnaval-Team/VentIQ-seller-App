@@ -692,6 +692,32 @@ class _AdminDrawerState extends State<AdminDrawer> {
                 ),
                 const Divider(height: 1),
 
+                // Pago a proveedores
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.handshake_outlined,
+                  title: 'Pago a proveedores',
+                  subtitle: 'Facturas y saldo por proveedor',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(context, '/pago-proveedores');
+                  },
+                ),
+                const Divider(height: 1),
+
+                // Depósitos bancarios
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.account_balance,
+                  title: 'Depósitos bancarios',
+                  subtitle: 'Depósitos y saldo por banco',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(context, '/depositos-bancarios');
+                  },
+                ),
+                const Divider(height: 1),
+
                 // Configuración (solo Gerente)
                 FutureBuilder<bool>(
                   future: NavigationGuard.canNavigate(
