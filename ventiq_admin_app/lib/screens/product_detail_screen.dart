@@ -40,8 +40,9 @@ import '../services/currency_service.dart';
 import '../services/restaurant_service.dart';
 
 import '../services/product_image_download_service.dart';
-import '../services/inventory_service.dart';
-import '../models/inventory.dart';
+import '../models/stock_mixto.dart';
+import '../services/presentacion_cadena_service.dart';
+import '../utils/stock_mixto_formatter.dart';
 
 import 'package:flutter/foundation.dart';
 
@@ -65,9 +66,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   bool _isLoadingCharts = false;
 
-  List<Map<String, dynamic>> _stockLocations = [];
+  ProductStockSnapshot? _stockSnapshot;
 
-  Map<int, StockBreakdown> _stockBreakdowns = {};
+  String? _stockLocationsError;
+
+  List<PresentacionCadena> _presentacionesCanonicas = const [];
+
+  String? _presentacionesError;
 
   List<Map<String, dynamic>> _receptionOperations = [];
 
@@ -233,6 +238,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
       _loadProductsUsingThisIngredient(),
 
+      _loadPresentacionesCanonicas(),
+
       _loadEquivalenciasPresentacion(),
     ]);
 
@@ -306,27 +313,29 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Future<void> _loadStockLocations() async {
-    if (mounted) setState(() => _isLoadingLocations = true);
+    if (mounted) {
+      setState(() {
+        _isLoadingLocations = true;
+        _stockLocationsError = null;
+      });
+    }
 
     try {
-      _stockLocations = await ProductService.getProductStockLocations(
+      final snapshot = await ProductService.getProductStockSnapshot(
         _product.id,
       );
-
-      final productId = int.tryParse(_product.id);
-      if (productId != null && _stockLocations.isNotEmpty) {
-        final breakdowns = await InventoryService.getStockBreakdownsForProduct(
-          productId,
-          _stockLocations,
-        );
-        if (mounted) {
-          setState(() => _stockBreakdowns = breakdowns);
-        }
-      }
+      if (!mounted) return;
+      setState(() {
+        _stockSnapshot = snapshot;
+      });
     } catch (e) {
-      print('Error loading stock locations: $e');
-
-      _stockLocations = [];
+      debugPrint('Error loading mixed stock: $e');
+      if (mounted) {
+        setState(() {
+          _stockSnapshot = null;
+          _stockLocationsError = 'No se pudo cargar el stock por ubicación.';
+        });
+      }
     } finally {
       if (mounted) setState(() => _isLoadingLocations = false);
     }
@@ -701,24 +710,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Widget _buildStockLocationsSection() {
-    final totalEnAlmacen = _stockLocations.fold<double>(0, (sum, location) {
-      final ubiId = int.tryParse(location['id_ubicacion']?.toString() ?? '');
-      final breakdown = ubiId != null ? _stockBreakdowns[ubiId] : null;
-      return sum +
-          (breakdown?.enAlmacen ??
-              ((location['cantidad'] as num?)?.toDouble() ?? 0.0));
-    });
-    final totalEntregando = _stockLocations.fold<double>(0, (sum, location) {
-      final ubiId = int.tryParse(location['id_ubicacion']?.toString() ?? '');
-      final breakdown = ubiId != null ? _stockBreakdowns[ubiId] : null;
-      return sum + (breakdown?.entregando ?? 0.0);
-    });
-    final totalEnPedidos = _stockLocations.fold<double>(0, (sum, location) {
-      final ubiId = int.tryParse(location['id_ubicacion']?.toString() ?? '');
-      final breakdown = ubiId != null ? _stockBreakdowns[ubiId] : null;
-      return sum + (breakdown?.enPedidos ?? 0.0);
-    });
-    String fmt(double v) => v.toStringAsFixed(v == v.roundToDouble() ? 0 : 2);
+    final total = _stockSnapshot?.total;
 
     return _buildInfoCard(
       title: 'Ubicaciones y Stock',
@@ -726,216 +718,104 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       children: [
         if (_isLoadingLocations)
           const Center(child: CircularProgressIndicator())
-        else if (_stockLocations.isEmpty)
+        else if (_stockLocationsError != null)
+          _buildLoadError(_stockLocationsError!, _loadStockLocations)
+        else if (_stockSnapshot == null || _stockSnapshot!.ubicaciones.isEmpty)
           Text(
-            'No hay ubicaciones registradas',
+            'Sin stock registrado',
             style: TextStyle(
               color: Colors.grey[600],
               fontStyle: FontStyle.italic,
             ),
           )
         else ...[
-          Container(
-            width: double.infinity,
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.06),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppColors.primary.withOpacity(0.2)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.warehouse_outlined, size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'En almacén (total): ${fmt(totalEnAlmacen)}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                if (totalEnPedidos > 0 || totalEntregando > 0) ...[
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: [
-                      if (totalEnPedidos > 0)
-                        Text(
-                          'En pedidos: ${fmt(totalEnPedidos)}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[700],
-                          ),
-                        ),
-                      if (totalEntregando > 0)
-                        Text(
-                          'Entregando (Carnaval): ${fmt(totalEntregando)}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[700],
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
-          Column(
-            children: _stockLocations
-                .map(
-                  (location) => Container(
-                    margin: const EdgeInsets.only(bottom: 12),
-
-                    padding: const EdgeInsets.all(16),
-
-                    decoration: BoxDecoration(
-                      color: Colors.grey[50],
-
-                      borderRadius: BorderRadius.circular(8),
-
-                      border: Border.all(color: Colors.grey[200]!),
-                    ),
-
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.warehouse,
-
-                          color: AppColors.primary,
-
-                          size: 20,
-                        ),
-
-                        const SizedBox(width: 12),
-
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-
-                            children: [
-                              Text(
-                                '${location['almacen'] ?? 'Almacén'} - ${location['ubicacion'] ?? 'Zona'}',
-
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-
-                              const SizedBox(height: 6),
-
-                              _buildStockBreakdownRow(location),
-                            ],
-                          ),
-                        ),
-
-                        _buildStockTotalBadge(location),
-                      ],
-                    ),
-                  ),
-                )
-                .toList(),
-          ),
+          _buildMixedStockSummary(total!),
+          const SizedBox(height: 12),
+          ..._stockSnapshot!.ubicaciones.map(_buildStockLocationCard),
         ],
       ],
     );
   }
 
-  Widget _buildStockBreakdownRow(Map<String, dynamic> location) {
-    final ubiId = int.tryParse(location['id_ubicacion']?.toString() ?? '');
-
-    final breakdown = ubiId != null ? _stockBreakdowns[ubiId] : null;
-
-    final enAlmacen =
-        breakdown?.enAlmacen ??
-        ((location['cantidad'] as num?)?.toDouble() ?? 0.0);
-
-    final enPedidos = breakdown?.enPedidos ?? 0.0;
-
-    final entregando = breakdown?.entregando ?? 0.0;
-
-    return Wrap(
-      spacing: 8,
-
-      runSpacing: 4,
-
-      children: [
-        _buildStockChip(
-          label: 'En almacén: ${enAlmacen.toStringAsFixed(0)}',
-
-          color: AppColors.success,
-
-          icon: Icons.warehouse_outlined,
-        ),
-
-        if (enPedidos > 0)
-          _buildStockChip(
-            label: 'En pedidos: ${enPedidos.toStringAsFixed(0)}',
-
-            color: AppColors.warning,
-
-            icon: Icons.shopping_bag_outlined,
+  Widget _buildMixedStockSummary(StockMixto stock) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Existencia física',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
           ),
-
-        if (entregando > 0)
-          _buildStockChip(
-            label: 'Entregando: ${entregando.toStringAsFixed(0)}',
-
-            color: AppColors.info,
-
-            icon: Icons.local_shipping_outlined,
+          const SizedBox(height: 4),
+          Text(
+            stock.texto,
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
           ),
-      ],
+          const SizedBox(height: 4),
+          Text(
+            'Equivalente: ${StockMixtoFormatter.cantidad(stock.equivalenteBase)} '
+            '${stock.nombrePresentacionBase} base',
+            style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildStockTotalBadge(Map<String, dynamic> location) {
-    final ubiId = int.tryParse(location['id_ubicacion']?.toString() ?? '');
-
-    final breakdown = ubiId != null ? _stockBreakdowns[ubiId] : null;
-
-    final realStock =
-        breakdown?.enAlmacen ??
-        ((location['cantidad'] as num?)?.toDouble() ?? 0.0);
-
-    final statusColor = realStock <= 0
-        ? AppColors.error
-        : realStock <= 10
-        ? AppColors.warning
-        : AppColors.success;
-
+  Widget _buildStockLocationCard(ProductStockLocationSnapshot location) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: statusColor.withOpacity(0.1),
-
-        borderRadius: BorderRadius.circular(12),
-
-        border: Border.all(color: statusColor.withOpacity(0.3)),
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey[200]!),
       ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.warehouse, color: AppColors.primary, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${location.almacen} - ${location.ubicacion}',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 6),
+                Text(location.stock.texto),
+                const SizedBox(height: 3),
+                Text(
+                  'Equivalente: ${StockMixtoFormatter.cantidad(location.stock.equivalenteBase)} '
+                  '${location.stock.nombrePresentacionBase} base',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-      child: Text(
-        realStock.toStringAsFixed(0),
-
-        style: TextStyle(
-          fontSize: 14,
-
-          fontWeight: FontWeight.bold,
-
-          color: statusColor,
+  Widget _buildLoadError(String message, Future<void> Function() retry) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(message, style: const TextStyle(color: Colors.red)),
         ),
-      ),
+        TextButton(onPressed: retry, child: const Text('Reintentar')),
+      ],
     );
   }
 
@@ -1573,20 +1453,20 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         const SizedBox(height: 12),
                         ...events.map((event) {
                           final date = event['fecha'] as DateTime?;
-                          final cupAnterior =
-                              (event['cup_anterior'] as num?)?.toDouble();
-                          final cupNuevo =
-                              (event['cup_nuevo'] as num?)?.toDouble();
-                          final usdAnterior =
-                              (event['usd_anterior'] as num?)?.toDouble();
-                          final usdNuevo =
-                              (event['usd_nuevo'] as num?)?.toDouble();
-                          final storedUsd =
-                              (event['usd_guardado'] as num?)?.toDouble();
-                          final calculatedUsd =
-                              (event['usd_calculado'] as num?)?.toDouble();
-                          final rate =
-                              (event['tasa_cambio'] as num?)?.toDouble();
+                          final cupAnterior = (event['cup_anterior'] as num?)
+                              ?.toDouble();
+                          final cupNuevo = (event['cup_nuevo'] as num?)
+                              ?.toDouble();
+                          final usdAnterior = (event['usd_anterior'] as num?)
+                              ?.toDouble();
+                          final usdNuevo = (event['usd_nuevo'] as num?)
+                              ?.toDouble();
+                          final storedUsd = (event['usd_guardado'] as num?)
+                              ?.toDouble();
+                          final calculatedUsd = (event['usd_calculado'] as num?)
+                              ?.toDouble();
+                          final rate = (event['tasa_cambio'] as num?)
+                              ?.toDouble();
                           final conversionOk = event['conversion_ok'] == true;
 
                           String moneyCup(double? value) => value == null
@@ -3675,21 +3555,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Widget _buildInventoryInfo() {
-    final stockFromLocations = _stockLocations.fold<double>(0, (sum, location) {
-      final ubiId = int.tryParse(location['id_ubicacion']?.toString() ?? '');
-      final breakdown = ubiId != null ? _stockBreakdowns[ubiId] : null;
-      return sum +
-          (breakdown?.enAlmacen ??
-              ((location['cantidad'] as num?)?.toDouble() ?? 0.0));
-    });
-    final stockDisponibleMostrado =
-        !_isLoadingLocations && _stockLocations.isNotEmpty
-        ? stockFromLocations
-        : _product.stockDisponible.toDouble();
-    final stockLabel =
-        stockDisponibleMostrado == stockDisponibleMostrado.roundToDouble()
-        ? stockDisponibleMostrado.toStringAsFixed(0)
-        : stockDisponibleMostrado.toStringAsFixed(2);
+    final stock = _stockSnapshot?.total;
+    final stockLabel = _stockLocationsError != null
+        ? 'No disponible'
+        : stock?.texto ?? 'Cargando stock…';
+    final tieneStock = stock != null && stock.equivalenteBase > 0;
 
     return _buildInfoCard(
       title: 'Inventario',
@@ -3697,9 +3567,15 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       icon: Icons.inventory,
 
       children: [
-        _buildInfoRow('Stock Disponible', stockLabel),
+        _buildInfoRow('Existencia física', stockLabel),
 
-        _buildInfoRow('Tiene Stock', stockDisponibleMostrado > 0 ? 'Sí' : 'No'),
+        if (stock != null)
+          _buildInfoRow(
+            'Equivalente base',
+            StockMixtoFormatter.cantidad(stock.equivalenteBase),
+          ),
+
+        _buildInfoRow('Tiene Stock', tieneStock ? 'Sí' : 'No'),
 
         // if (_product.inventario.isNotEmpty) ...[
 
@@ -4075,6 +3951,29 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     );
   }
 
+  Future<void> _loadPresentacionesCanonicas({
+    bool forzarRecarga = false,
+  }) async {
+    final productId = int.tryParse(_product.id);
+    if (productId == null) return;
+    if (mounted) setState(() => _presentacionesError = null);
+    try {
+      final presentaciones = await PresentacionCadenaService.cadena(
+        productId,
+        forzarRecarga: forzarRecarga,
+      );
+      if (mounted) setState(() => _presentacionesCanonicas = presentaciones);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _presentacionesCanonicas = const [];
+          _presentacionesError =
+              'No se pudieron cargar los factores de empaque.';
+        });
+      }
+    }
+  }
+
   Future<void> _loadEquivalenciasPresentacion() async {
     if (mounted) setState(() => _isLoadingEquivalencias = true);
 
@@ -4084,7 +3983,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             int.parse(_product.id),
           );
     } catch (e) {
-      debugPrint('Error cargando equivalencias: $e');
+      debugPrint('Error cargando notas históricas: $e');
 
       _equivalenciasPresentacion = [];
     } finally {
@@ -4092,550 +3991,76 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     }
   }
 
-  String get _nombrePresentacionBase {
-    for (final pres in _product.presentaciones) {
-      if (pres['es_base'] == true) {
-        return pres['presentacion']?.toString() ?? 'unidad base';
-      }
-    }
-
-    if (_product.presentaciones.isNotEmpty) {
-      return _product.presentaciones.first['presentacion']?.toString() ??
-          'unidad base';
-    }
-
-    return _product.um?.isNotEmpty == true ? _product.um! : 'unidad base';
-  }
-
   Widget _buildEquivalenciaCantidadesSection() {
+    final notas = _equivalenciasPresentacion
+        .map((item) => item['observaciones']?.toString().trim())
+        .whereType<String>()
+        .where((nota) => nota.isNotEmpty)
+        .toList();
+    if (_isLoadingEquivalencias) {
+      return _buildInfoCard(
+        title: 'Notas históricas sobre presentaciones',
+        icon: Icons.notes,
+        children: const [Center(child: CircularProgressIndicator())],
+      );
+    }
+    if (notas.isEmpty) return const SizedBox.shrink();
+
     return _buildInfoCard(
-      title: 'Equivalencia de cantidades',
-
-      icon: Icons.swap_horiz,
-
+      title: 'Notas históricas sobre presentaciones',
+      icon: Icons.notes,
       children: [
-        Container(
-          width: double.infinity,
-
-          padding: const EdgeInsets.all(12),
-
-          decoration: BoxDecoration(
-            color: AppColors.primary.withOpacity(0.06),
-
-            borderRadius: BorderRadius.circular(8),
-
-            border: Border.all(color: AppColors.primary.withOpacity(0.2)),
-          ),
-
-          child: Row(
-            children: [
-              Icon(Icons.info_outline, size: 18, color: AppColors.primary),
-
-              const SizedBox(width: 8),
-
-              Expanded(
-                child: Text(
-                  'Define cuántas unidades de "$_nombrePresentacionBase" equivale cada presentación. '
-                  'Esta información es referencial para inventario, ventas y reportes.',
-
-                  style: TextStyle(fontSize: 12, color: Colors.grey[700]),
-                ),
-              ),
-            ],
+        Text(
+          'Información histórica; no modifica inventario, factores, precios ni costos.',
+          style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+        ),
+        const SizedBox(height: 8),
+        ...notas.map(
+          (nota) => Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text('• $nota'),
           ),
         ),
-
-        const SizedBox(height: 12),
-
-        if (_canEditProduct)
-          Align(
-            alignment: Alignment.centerRight,
-
-            child: TextButton.icon(
-              onPressed: _showEquivalenciaDialog,
-
-              icon: const Icon(Icons.add, size: 18),
-
-              label: const Text('Agregar equivalencia'),
-            ),
-          ),
-
-        if (_isLoadingEquivalencias)
-          const Padding(
-            padding: EdgeInsets.all(24),
-
-            child: Center(child: CircularProgressIndicator()),
-          )
-        else if (_equivalenciasPresentacion.isEmpty)
-          Container(
-            width: double.infinity,
-
-            padding: const EdgeInsets.all(20),
-
-            decoration: BoxDecoration(
-              color: Colors.grey[50],
-
-              borderRadius: BorderRadius.circular(8),
-
-              border: Border.all(color: Colors.grey[200]!),
-            ),
-
-            child: Column(
-              children: [
-                Icon(Icons.compare_arrows, size: 40, color: Colors.grey[400]),
-
-                const SizedBox(height: 8),
-
-                Text(
-                  'No hay equivalencias configuradas',
-
-                  style: TextStyle(color: Colors.grey[600], fontSize: 14),
-                ),
-
-                if (_canEditProduct) ...[
-                  const SizedBox(height: 4),
-
-                  Text(
-                    'Ejemplo: 1 Caja = 12 $_nombrePresentacionBase',
-
-                    style: TextStyle(color: Colors.grey[500], fontSize: 12),
-                  ),
-                ],
-              ],
-            ),
-          )
-        else
-          ..._equivalenciasPresentacion.map((eq) {
-            final nombre = eq['presentacion'] as String? ?? 'Presentación';
-
-            final cantidad = (eq['cantidad'] as num?)?.toDouble() ?? 0;
-
-            final linea = ProductService.formatEquivalenciaLine(
-              presentacionNombre: nombre,
-
-              cantidad: cantidad,
-
-              unidadBaseNombre: _nombrePresentacionBase,
-            );
-
-            return Container(
-              margin: const EdgeInsets.only(bottom: 8),
-
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-
-              decoration: BoxDecoration(
-                color: Colors.grey[50],
-
-                borderRadius: BorderRadius.circular(8),
-
-                border: Border.all(color: Colors.grey[200]!),
-              ),
-
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.1),
-
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-
-                    child: Icon(
-                      Icons.inventory_2_outlined,
-
-                      size: 20,
-
-                      color: AppColors.primary,
-                    ),
-                  ),
-
-                  const SizedBox(width: 12),
-
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-
-                      children: [
-                        Text(
-                          linea,
-
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-
-                            fontSize: 14,
-                          ),
-                        ),
-
-                        if ((eq['observaciones'] as String?)?.isNotEmpty ==
-                            true)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-
-                            child: Text(
-                              eq['observaciones'] as String,
-
-                              style: TextStyle(
-                                fontSize: 12,
-
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-
-                  if (_canEditProduct) ...[
-                    IconButton(
-                      icon: const Icon(Icons.edit_outlined, size: 20),
-
-                      tooltip: 'Editar',
-
-                      onPressed: () =>
-                          _showEquivalenciaDialog(equivalencia: eq),
-                    ),
-
-                    IconButton(
-                      icon: Icon(
-                        Icons.delete_outline,
-                        size: 20,
-                        color: Colors.red[400],
-                      ),
-
-                      tooltip: 'Eliminar',
-
-                      onPressed: () => _confirmDeleteEquivalencia(eq),
-                    ),
-                  ],
-                ],
-              ),
-            );
-          }),
       ],
     );
   }
 
-  Future<void> _showEquivalenciaDialog({
-    Map<String, dynamic>? equivalencia,
-  }) async {
-    final isEdit = equivalencia != null;
-
-    final productId = int.parse(_product.id);
-
-    List<Map<String, dynamic>> presentacionesNom =
-        await ProductService.getPresentaciones();
-
-    final idsUsados = _equivalenciasPresentacion
-        .where((e) => e['id'] != equivalencia?['id'])
-        .map((e) => e['id_presentacion'] as int)
-        .toSet();
-
-    presentacionesNom = presentacionesNom.where((p) {
-      final id = (p['id'] as num).toInt();
-
-      if (isEdit && id == equivalencia!['id_presentacion']) return true;
-
-      return !idsUsados.contains(id);
-    }).toList();
-
-    if (presentacionesNom.isEmpty && !isEdit) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No hay presentaciones disponibles para agregar'),
-
-          backgroundColor: Colors.orange,
-        ),
-      );
-
-      return;
-    }
-
-    int? selectedPresentacionId = isEdit
-        ? (equivalencia!['id_presentacion'] as num?)?.toInt()
-        : (presentacionesNom.isNotEmpty
-              ? (presentacionesNom.first['id'] as num).toInt()
-              : null);
-
-    final cantidadController = TextEditingController(
-      text: isEdit ? (equivalencia!['cantidad'] as num?)?.toString() ?? '' : '',
-    );
-
-    final observacionesController = TextEditingController(
-      text: equivalencia?['observaciones'] as String? ?? '',
-    );
-
-    final formKey = GlobalKey<FormState>();
-
-    if (!mounted) return;
-
-    final saved = await showDialog<bool>(
-      context: context,
-
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: Text(isEdit ? 'Editar equivalencia' : 'Nueva equivalencia'),
-
-          content: SizedBox(
-            width: 400,
-
-            child: Form(
-              key: formKey,
-
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-
-                crossAxisAlignment: CrossAxisAlignment.start,
-
-                children: [
-                  Text(
-                    'Unidad base: $_nombrePresentacionBase',
-
-                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  if (presentacionesNom.isNotEmpty)
-                    DropdownButtonFormField<int>(
-                      value: selectedPresentacionId,
-
-                      decoration: const InputDecoration(
-                        labelText: 'Presentación',
-
-                        border: OutlineInputBorder(),
-                      ),
-
-                      items: presentacionesNom.map((p) {
-                        final id = (p['id'] as num).toInt();
-
-                        return DropdownMenuItem(
-                          value: id,
-
-                          child: Text(p['denominacion'] as String? ?? ''),
-                        );
-                      }).toList(),
-
-                      onChanged: isEdit
-                          ? null
-                          : (v) => setDialogState(
-                              () => selectedPresentacionId = v,
-                            ),
-                    ),
-
-                  const SizedBox(height: 12),
-
-                  TextFormField(
-                    controller: cantidadController,
-
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-
-                    decoration: InputDecoration(
-                      labelText: 'Cantidad equivalente',
-
-                      hintText: 'Ej: 12',
-
-                      suffixText: _nombrePresentacionBase,
-
-                      border: const OutlineInputBorder(),
-                    ),
-
-                    validator: (v) {
-                      final n = double.tryParse(v?.replaceAll(',', '.') ?? '');
-
-                      if (n == null || n <= 0) {
-                        return 'Ingrese una cantidad válida mayor que 0';
-                      }
-
-                      return null;
-                    },
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  TextFormField(
-                    controller: observacionesController,
-
-                    maxLines: 2,
-
-                    decoration: const InputDecoration(
-                      labelText: 'Observaciones (opcional)',
-
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-
-              child: const Text('Cancelar'),
-            ),
-
-            ElevatedButton(
-              onPressed: () {
-                if (formKey.currentState?.validate() != true) return;
-
-                if (selectedPresentacionId == null) return;
-
-                Navigator.pop(ctx, true);
-              },
-
-              child: Text(isEdit ? 'Guardar' : 'Agregar'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (saved != true || !mounted) {
-      cantidadController.dispose();
-
-      observacionesController.dispose();
-
-      return;
-    }
-
-    try {
-      final cantidad = double.parse(
-        cantidadController.text.replaceAll(',', '.'),
-      );
-
-      await ProductService.upsertEquivalenciaPresentacion(
-        idProducto: productId,
-
-        idPresentacion: selectedPresentacionId!,
-
-        cantidad: cantidad,
-
-        observaciones: observacionesController.text.trim().isEmpty
-            ? null
-            : observacionesController.text.trim(),
-
-        id: isEdit ? (equivalencia!['id'] as int?) : null,
-      );
-
-      await _loadEquivalenciasPresentacion();
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              isEdit ? 'Equivalencia actualizada' : 'Equivalencia agregada',
-            ),
-
-            backgroundColor: AppColors.success,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al guardar: $e'),
-
-            backgroundColor: AppColors.error,
-          ),
-        );
-      }
-    } finally {
-      cantidadController.dispose();
-
-      observacionesController.dispose();
-    }
-  }
-
-  Future<void> _confirmDeleteEquivalencia(Map<String, dynamic> eq) async {
-    final nombre = eq['presentacion'] as String? ?? 'esta presentación';
-
-    final confirm = await showDialog<bool>(
-      context: context,
-
-      builder: (ctx) => AlertDialog(
-        title: const Text('Eliminar equivalencia'),
-
-        content: Text('¿Eliminar la equivalencia de "$nombre"?'),
-
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-
-            child: const Text('Cancelar'),
-          ),
-
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true || !mounted) return;
-
-    final ok = await ProductService.deleteEquivalenciaPresentacion(
-      eq['id'] as int,
-    );
-
-    await _loadEquivalenciasPresentacion();
-
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(ok ? 'Equivalencia eliminada' : 'No se pudo eliminar'),
-
-        backgroundColor: ok ? AppColors.success : AppColors.error,
-      ),
-    );
-  }
-
   Widget _buildPresentationsSection() {
-    if (_product.presentaciones.isEmpty) return const SizedBox.shrink();
-
     return _buildInfoCard(
-      title: 'Presentaciones (${_product.presentaciones.length})',
-
+      title: 'Presentaciones y factores de empaque',
       icon: Icons.view_module,
-
       children: [
-        ..._product.presentaciones.map(
-          (pres) => Container(
-            margin: const EdgeInsets.only(bottom: 8),
-
-            padding: const EdgeInsets.all(12),
-
-            decoration: BoxDecoration(
-              color: Colors.grey[50],
-
-              borderRadius: BorderRadius.circular(8),
-
-              border: Border.all(color: Colors.grey[200]!),
-            ),
-
-            child: Text(
-              'Tipo: ' +
-                  pres['presentacion'] +
-                  ' Cantidad equivalente: ' +
-                  pres['cantidad'].toString() +
-                  'unds',
-
-              style: TextStyle(fontSize: 13, color: Colors.grey[700]),
-            ),
-          ),
-        ),
+        if (_presentacionesError != null)
+          _buildLoadError(
+            _presentacionesError!,
+            () => _loadPresentacionesCanonicas(forzarRecarga: true),
+          )
+        else if (_presentacionesCanonicas.isEmpty)
+          Text(
+            'No hay presentaciones operativas configuradas.',
+            style: TextStyle(color: Colors.grey[600]),
+          )
+        else
+          ..._presentacionesCanonicas.map((presentacion) {
+            final base = _presentacionesCanonicas.firstWhere(
+              (item) => item.esBase,
+              orElse: () => _presentacionesCanonicas.first,
+            );
+            final factor = StockMixtoFormatter.cantidad(presentacion.factorRel);
+            final detalle = presentacion.esBase
+                ? 'Presentación base'
+                : '1 ${presentacion.nombre} = $factor ${base.nombre} base'
+                      '${presentacion.esFraccionable ? ' · Fraccionable' : ''}';
+            return ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                Icons.inventory_2_outlined,
+                color: AppColors.primary,
+              ),
+              title: Text(presentacion.nombre),
+              subtitle: Text(detalle),
+            );
+          }),
       ],
     );
   }

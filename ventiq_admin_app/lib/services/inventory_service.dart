@@ -2031,94 +2031,51 @@ class InventoryService {
     return productosFinales;
   }
 
-  /// Get inventory summary by user using fn_inventario_resumen_por_usuario RPC
-  /// Returns aggregated inventory data with product names, variants, and location/presentation counts
+  /// Get inventory summary by user using the mixed-stock v3 RPC.
   static Future<List<InventorySummaryByUser>> getInventorySummaryByUser(
     int? idAlmacen,
     String? busqueda,
     String? filtroStock,
   ) async {
-    try {
-      final userData = await _prefsService.getUserData();
-      final idTiendaRaw = userData['idTienda'];
-      final idTienda = idTiendaRaw is int
-          ? idTiendaRaw
-          : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
-
-      if (idTienda == null) {
-        throw Exception('No se encontró el ID de tienda en las preferencias');
-      }
-
-      print('🔍 InventoryService: Getting inventory summary by user...');
-
-      final response = await _supabase.rpc(
-        'fn_inventario_resumen_por_usuario_almacen',
-        params: {
-          'p_id_tienda': idTienda,
-          'p_id_almacen': idAlmacen,
-          'p_busqueda': busqueda,
-          'p_mostrar_sin_stock': true,
-          'p_filtro_stock': filtroStock ?? 'Todos',
-          'p_limite': 9999,
-          'p_pagina': 1,
-        },
-      );
-
-      print('📦 Raw response type: ${response.runtimeType}');
-      print('📦 Response length: ${response?.length ?? 0}');
-      print('📦 Raw response data: $response');
-
-      if (response == null) {
-        print('❌ Response is null');
-        return [];
-      }
-
-      if (response is! List) {
-        print('❌ Response is not a List, got: ${response.runtimeType}');
-        return [];
-      }
-
-      final List<dynamic> responseList = response as List<dynamic>;
-      print('📋 Processing ${responseList.length} items from response');
-
-      final List<InventorySummaryByUser> summaries = [];
-
-      for (int i = 0; i < responseList.length; i++) {
-        final item = responseList[i];
-        /*  print('🔍 Processing item $i: $item');
-        print('🔍 Item type: ${item.runtimeType}');*/
-
-        if (item is Map<String, dynamic>) {
-          /*    print('🔍 Item keys: ${item.keys.toList()}');
-          print('🔍 Item values: ${item.values.toList()}');*/
-
-          try {
-            final summary = InventorySummaryByUser.fromJson(item);
-            summaries.add(summary);
-          } catch (e, stackTrace) {
-            print('❌ Error creating InventorySummaryByUser from item $i: $e');
-            print('❌ Stack trace: $stackTrace');
-            print('❌ Failed item data: $item');
-          }
-        } else {
-          print('❌ Item $i is not a Map, got: ${item.runtimeType}');
-        }
-      }
-
-      print('✅ Successfully processed ${summaries.length} inventory summaries');
-      for (int i = 0; i < summaries.length; i++) {
-        final summary = summaries[i];
-        print(
-          '📋 Summary $i: ${summary.productoNombre} (ID: ${summary.idProducto}) - ${summary.cantidadTotalEnAlmacen} units, ${summary.zonasDiferentes} zones, ${summary.presentacionesDiferentes} presentations',
-        );
-      }
-
-      return summaries;
-    } catch (e, stackTrace) {
-      print('❌ Error in getInventorySummaryByUser: $e');
-      print('❌ Stack trace: $stackTrace');
-      rethrow;
+    final userData = await _prefsService.getUserData();
+    final idTienda = _asInt(userData['idTienda']);
+    if (idTienda == null) {
+      throw StateError('No se encontró el ID de tienda en las preferencias');
     }
+
+    final response = await _supabase.rpc(
+      'fn_inventario_resumen_por_usuario_almacen3',
+      params: {
+        'p_id_tienda': idTienda,
+        'p_id_almacen': idAlmacen,
+        'p_busqueda': busqueda,
+        'p_mostrar_sin_stock': true,
+        'p_filtro_stock': filtroStock ?? 'Todos',
+        'p_limite': 9999,
+        'p_pagina': 1,
+      },
+    );
+
+    if (response == null) return const [];
+    if (response is! List) {
+      throw StateError(
+        'Respuesta inválida de fn_inventario_resumen_por_usuario_almacen3: '
+        '${response.runtimeType}',
+      );
+    }
+
+    return response
+        .map((raw) {
+          if (raw is! Map) {
+            throw FormatException(
+              'Fila inválida en resumen de inventario: ${raw.runtimeType}',
+            );
+          }
+          return InventorySummaryByUser.fromJson(
+            Map<String, dynamic>.from(raw),
+          );
+        })
+        .toList(growable: false);
   }
 
   /// Insert inventory adjustment using fn_insertar_ajuste_inventario2 RPC
@@ -4056,7 +4013,7 @@ class InventoryService {
         final enPedidos = _asDouble(row['en_pedidos']);
         final entregando = _asDouble(row['entregando']);
         result[prodId] = StockBreakdown(
-          enAlmacen: baseByProduct[prodId]! + enPedidos,
+          enAlmacen: baseByProduct[prodId]!,
           enPedidos: enPedidos,
           entregando: entregando,
         );

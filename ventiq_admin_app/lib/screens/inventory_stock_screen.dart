@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../models/inventory.dart';
 import '../services/inventory_service.dart';
+import '../utils/stock_mixto_formatter.dart';
 import '../services/user_preferences_service.dart';
 import '../widgets/inventory_summary_card.dart';
 import '../widgets/inventory_export_dialog.dart';
@@ -36,7 +37,8 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
   String _stockFilter = 'Todos';
   String _errorMessage = '';
   bool _isDetailedView = false; // Toggle between summary and detailed view
-  bool _showDescriptionInSelectors = false; // Configuration for showing product descriptions
+  bool _showDescriptionInSelectors =
+      false; // Configuration for showing product descriptions
 
   // Pagination and summary data
   int _currentPage = 1;
@@ -58,12 +60,12 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     _scrollController.addListener(_scrollListener);
     _loadShowDescriptionConfig();
     _loadWarehouses();
-    
+
     // Si es almacenero, establecer filtro por defecto
     if (widget.isAlmacenero && widget.assignedWarehouseId != null) {
       _selectedWarehouseId = widget.assignedWarehouseId;
     }
-    
+
     _loadInventoryData();
   }
 
@@ -78,11 +80,14 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
 
   Future<void> _loadShowDescriptionConfig() async {
     try {
-      final showDescription = await _userPreferencesService.getShowDescriptionInSelectors();
+      final showDescription = await _userPreferencesService
+          .getShowDescriptionInSelectors();
       setState(() {
         _showDescriptionInSelectors = showDescription;
       });
-      print('📋 Configuración "Mostrar descripción en selectores" cargada: $showDescription');
+      print(
+        '📋 Configuración "Mostrar descripción en selectores" cargada: $showDescription',
+      );
     } catch (e) {
       print('❌ Error al cargar configuración de mostrar descripción: $e');
       // Mantener valor por defecto (false)
@@ -232,7 +237,6 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     }
   }
 
-
   List<InventoryProduct> _groupProducts2(List<InventoryProduct> products) {
     print('🔄 Grouping ${products.length} products to eliminate duplicates...');
 
@@ -257,8 +261,12 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
       print('   - Stock Disponible: ${product.stockDisponible}');
 
       if (groupedMap.containsKey(uniqueKey)) {
-        print('   ⚠️  DUPLICADO ENCONTRADO - Conservando el primero y descartando este');
-        print('      - Stock del primero: ${groupedMap[uniqueKey]!.stockDisponible}');
+        print(
+          '   ⚠️  DUPLICADO ENCONTRADO - Conservando el primero y descartando este',
+        );
+        print(
+          '      - Stock del primero: ${groupedMap[uniqueKey]!.stockDisponible}',
+        );
         print('      - Stock del duplicado: ${product.stockDisponible}');
         // No hacemos nada, conservamos el primer producto que ya está en el mapa
       } else {
@@ -356,7 +364,10 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                       Expanded(
                         child: Text(
                           'Filtro bloqueado - Solo puedes ver tu almacén asignado',
-                          style: TextStyle(color: Colors.orange.shade700, fontSize: 12),
+                          style: TextStyle(
+                            color: Colors.orange.shade700,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
                     ],
@@ -365,31 +376,38 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                 const SizedBox(height: 12),
               ],
               ..._warehouses.map((warehouse) {
-                final warehouseName = warehouse['denominacion'] as String? ?? 'Sin nombre';
+                final warehouseName =
+                    warehouse['denominacion'] as String? ?? 'Sin nombre';
                 final warehouseId = warehouse['id'].toString();
                 final isSelected = _selectedWarehouse == warehouseId;
-                
+
                 return RadioListTile<String>(
                   value: warehouseId,
                   groupValue: _selectedWarehouse,
-                  onChanged: widget.isAlmacenero ? null : (value) {
-                    setState(() {
-                      _selectedWarehouse = value!;
-                      if (value == 'Todos') {
-                        _selectedWarehouseId = null;
-                      } else {
-                        _selectedWarehouseId = int.tryParse(value);
-                      }
-                    });
-                    Navigator.of(context).pop();
-                    _loadInventoryData();
-                  },
+                  onChanged: widget.isAlmacenero
+                      ? null
+                      : (value) {
+                          setState(() {
+                            _selectedWarehouse = value!;
+                            if (value == 'Todos') {
+                              _selectedWarehouseId = null;
+                            } else {
+                              _selectedWarehouseId = int.tryParse(value);
+                            }
+                          });
+                          Navigator.of(context).pop();
+                          _loadInventoryData();
+                        },
                   title: Text(
                     warehouseName,
                     style: TextStyle(
                       fontSize: 14,
-                      color: widget.isAlmacenero ? Colors.grey.shade600 : Colors.black,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      color: widget.isAlmacenero
+                          ? Colors.grey.shade600
+                          : Colors.black,
+                      fontWeight: isSelected
+                          ? FontWeight.bold
+                          : FontWeight.normal,
                     ),
                   ),
                   subtitle: Text(
@@ -418,25 +436,30 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
         title: const Text('Filtrar por Stock'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
-          children: ['Todos', 'Con stock', 'Sin Stock', 'Stock Bajo', 'Stock OK'].map((value) {
-            final isSelected = _stockFilter == value;
-            return RadioListTile<String>(
-              value: value,
-              groupValue: _stockFilter,
-              onChanged: (value) {
-                setState(() => _stockFilter = value!);
-                Navigator.of(context).pop();
-                _loadInventoryData();
-              },
-              title: Text(
-                value,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                ),
-              ),
-            );
-          }).toList(),
+          children:
+              ['Todos', 'Con stock', 'Sin Stock', 'Stock Bajo', 'Stock OK'].map(
+                (value) {
+                  final isSelected = _stockFilter == value;
+                  return RadioListTile<String>(
+                    value: value,
+                    groupValue: _stockFilter,
+                    onChanged: (value) {
+                      setState(() => _stockFilter = value!);
+                      Navigator.of(context).pop();
+                      _loadInventoryData();
+                    },
+                    title: Text(
+                      value,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: isSelected
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                      ),
+                    ),
+                  );
+                },
+              ).toList(),
         ),
         actions: [
           TextButton(
@@ -482,7 +505,6 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     );
   }
 
-
   Widget _buildSummaryInventoryList() {
     final filteredSummaries = _getFilteredInventorySummaries();
 
@@ -492,9 +514,11 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     print('📊 filteredSummaries.length: ${filteredSummaries.length}');
     print('📊 _isLoading: $_isLoading');
     print('📊 _errorMessage: $_errorMessage');
-    
+
     if (_inventorySummaries.isNotEmpty) {
-      print('📋 First summary: ${_inventorySummaries[0].productoNombre} - ${_inventorySummaries[0].cantidadTotalEnAlmacen} units');
+      print(
+        '📋 First summary: ${_inventorySummaries[0].productoNombre} - ${_inventorySummaries[0].cantidadTotalEnAlmacen} units',
+      );
     }
 
     return InventorySummaryList(
@@ -527,7 +551,9 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     // ✅ Los filtros principales se manejan en el servidor, pero se refina
     // el filtro de stock usando el desglose real (enAlmacen).
     print('🔍 _getFilteredInventorySummaries called');
-    print('📊 Summaries count (server-filtered): ${_inventorySummaries.length}');
+    print(
+      '📊 Summaries count (server-filtered): ${_inventorySummaries.length}',
+    );
     print('📊 Search query: "$_searchQuery"');
     print('📊 Stock filter: "$_stockFilter"');
 
@@ -536,30 +562,23 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     switch (_stockFilter) {
       case 'Con stock':
         filtered = filtered.where((s) {
-          final realStock = _breakdownsByProduct[s.idProducto]?.enAlmacen ??
-              s.cantidadTotalEnAlmacen;
-          return realStock > 0;
+          return s.stock.equivalenteBase > 0;
         }).toList();
         break;
       case 'Sin Stock':
         filtered = filtered.where((s) {
-          final realStock = _breakdownsByProduct[s.idProducto]?.enAlmacen ??
-              s.cantidadTotalEnAlmacen;
-          return realStock <= 0;
+          return s.stock.equivalenteBase <= 0;
         }).toList();
         break;
       case 'Stock Bajo':
         filtered = filtered.where((s) {
-          final realStock = _breakdownsByProduct[s.idProducto]?.enAlmacen ??
-              s.cantidadTotalEnAlmacen;
-          return realStock > 0 && realStock <= 10;
+          final stock = s.stock.equivalenteBase;
+          return stock > 0 && stock <= 10;
         }).toList();
         break;
       case 'Stock OK':
         filtered = filtered.where((s) {
-          final realStock = _breakdownsByProduct[s.idProducto]?.enAlmacen ??
-              s.cantidadTotalEnAlmacen;
-          return realStock > 10;
+          return s.stock.equivalenteBase > 10;
         }).toList();
         break;
       case 'Todos':
@@ -657,7 +676,11 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                     value: 'warehouse',
                     child: Row(
                       children: [
-                        Icon(Icons.warehouse, color: AppColors.primary, size: 20),
+                        Icon(
+                          Icons.warehouse,
+                          color: AppColors.primary,
+                          size: 20,
+                        ),
                         const SizedBox(width: 8),
                         Text('Almacén'),
                         const Spacer(),
@@ -675,7 +698,11 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                     value: 'stock',
                     child: Row(
                       children: [
-                        Icon(Icons.inventory_2, color: AppColors.primary, size: 20),
+                        Icon(
+                          Icons.inventory_2,
+                          color: AppColors.primary,
+                          size: 20,
+                        ),
                         const SizedBox(width: 8),
                         Text('Stock'),
                         const Spacer(),
@@ -812,7 +839,8 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 )
-              else if (item.descripcionCorta != null && item.descripcionCorta!.isNotEmpty)
+              else if (item.descripcionCorta != null &&
+                  item.descripcionCorta!.isNotEmpty)
                 Text(
                   item.descripcionCorta!,
                   style: TextStyle(
@@ -863,23 +891,19 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
 
     // Apply search filter
     if (_searchQuery.isNotEmpty) {
-      filtered =
-          filtered.where((item) {
-            return item.nombreProducto.toLowerCase().contains(
-                  _searchQuery.toLowerCase(),
-                ) ||
-                item.skuProducto.toLowerCase().contains(
-                  _searchQuery.toLowerCase(),
-                );
-          }).toList();
+      filtered = filtered.where((item) {
+        return item.nombreProducto.toLowerCase().contains(
+              _searchQuery.toLowerCase(),
+            ) ||
+            item.skuProducto.toLowerCase().contains(_searchQuery.toLowerCase());
+      }).toList();
     }
 
     // Apply warehouse filter
     if (_selectedWarehouse != 'Todos' && _selectedWarehouseId != null) {
-      filtered =
-          filtered
-              .where((item) => item.idAlmacen == _selectedWarehouseId)
-              .toList();
+      filtered = filtered
+          .where((item) => item.idAlmacen == _selectedWarehouseId)
+          .toList();
       print('🔍 Filtering by warehouse ID: $_selectedWarehouseId');
       print('📋 Filtered to ${filtered.length} items for selected warehouse');
     }
@@ -941,52 +965,38 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     final breakdown = _breakdownsByLocation[key];
 
     if (breakdown == null) {
-      return _buildDetailSection(
-        'Stock Real',
-        Icons.inventory_2_outlined,
-        [
-          _buildDetailRow(
-            'En almacén',
-            item.cantidadConPresentacion,
+      return _buildDetailSection('Stock Real', Icons.inventory_2_outlined, [
+        _buildDetailRow('En almacén', item.cantidadConPresentacion),
+        const SizedBox(height: 8),
+        Center(
+          child: Text(
+            'Calculando desglose de pedidos...',
+            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
           ),
-          const SizedBox(height: 8),
-          Center(
-            child: Text(
-              'Calculando desglose de pedidos...',
-              style: TextStyle(
-                fontSize: 12,
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ),
-        ],
-      );
+        ),
+      ]);
     }
 
-    return _buildDetailSection(
-      'Stock Real',
-      Icons.inventory_2_outlined,
-      [
-        _buildBreakdownRow(
-          'En almacén',
-          breakdown.enAlmacen,
-          AppColors.success,
-          Icons.warehouse_outlined,
-        ),
-        _buildBreakdownRow(
-          'En pedidos',
-          breakdown.enPedidos,
-          AppColors.warning,
-          Icons.shopping_bag_outlined,
-        ),
-        _buildBreakdownRow(
-          'Entregando',
-          breakdown.entregando,
-          AppColors.info,
-          Icons.local_shipping_outlined,
-        ),
-      ],
-    );
+    return _buildDetailSection('Stock Real', Icons.inventory_2_outlined, [
+      _buildBreakdownRow(
+        'En almacén',
+        breakdown.enAlmacen,
+        AppColors.success,
+        Icons.warehouse_outlined,
+      ),
+      _buildBreakdownRow(
+        'En pedidos',
+        breakdown.enPedidos,
+        AppColors.warning,
+        Icons.shopping_bag_outlined,
+      ),
+      _buildBreakdownRow(
+        'Entregando',
+        breakdown.entregando,
+        AppColors.info,
+        Icons.local_shipping_outlined,
+      ),
+    ]);
   }
 
   Widget _buildBreakdownRow(
@@ -1037,61 +1047,34 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
 
   Widget _buildSummaryStockBreakdownSection(InventorySummaryByUser summary) {
     final breakdown = _breakdownsByProduct[summary.idProducto];
+    final logistics = breakdown?.logisticsStatus;
 
-    if (breakdown == null) {
-      return _buildDetailSection(
-        'Stock Real',
-        Icons.inventory_2_outlined,
-        [
-          _buildDetailRow(
-            'En almacén',
-            '${summary.cantidadTotalEnAlmacen.toStringAsFixed(2)} unidades',
-          ),
-          const SizedBox(height: 8),
-          Center(
-            child: Text(
-              'Calculando desglose de pedidos...',
-              style: TextStyle(
-                fontSize: 12,
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-
-    return _buildDetailSection(
-      'Stock Real',
-      Icons.inventory_2_outlined,
-      [
-        _buildBreakdownRow(
-          'En almacén',
-          breakdown.enAlmacen,
-          AppColors.success,
-          Icons.warehouse_outlined,
-        ),
-        _buildBreakdownRow(
-          'En pedidos',
-          breakdown.enPedidos,
-          AppColors.warning,
-          Icons.shopping_bag_outlined,
-        ),
-        _buildBreakdownRow(
-          'Entregando',
-          breakdown.entregando,
-          AppColors.info,
-          Icons.local_shipping_outlined,
+    return _buildDetailSection('Existencia física', Icons.inventory_2_outlined, [
+      _buildDetailRow('Stock', summary.stock.texto),
+      _buildDetailRow(
+        'Equivalente',
+        '${StockMixtoFormatter.cantidad(summary.stock.equivalenteBase)} '
+            '${StockMixtoFormatter.plural(summary.stock.nombrePresentacionBase, summary.stock.equivalenteBase)} base',
+      ),
+      if (logistics != null &&
+          (logistics.tienePedidos || logistics.tieneEntregas)) ...[
+        const SizedBox(height: 8),
+        _buildDetailRow(
+          'Logística',
+          [
+            if (logistics.tienePedidos) 'Pedidos pendientes',
+            if (logistics.tieneEntregas) 'Entregas en curso',
+          ].join(' · '),
         ),
       ],
-    );
+    ]);
   }
 
   Widget _buildDetailSection(
-      String title,
-      IconData icon,
-      List<Widget> children,
-      ) {
+    String title,
+    IconData icon,
+    List<Widget> children,
+  ) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -1163,536 +1146,535 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
   void _showInventoryProductDetails(InventoryProduct item) {
     showDialog(
       context: context,
-      builder:
-          (context) => Dialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Container(
-              width: MediaQuery.of(context).size.width * 0.9,
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.8,
-              ),
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          width: MediaQuery.of(context).size.width * 0.9,
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.8,
+          ),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
                 children: [
-                  // Header
-                  Row(
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.inventory_2,
+                      color: AppColors.primary,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.nombreProducto,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        // Mostrar descripción si está habilitado y existe
+                        if (_showDescriptionInSelectors)
+                          if (item.descripcion != null &&
+                              item.descripcion!.isNotEmpty)
+                            Text(
+                              item.descripcion!,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                                fontStyle: FontStyle.italic,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            )
+                          else if (item.descripcionCorta != null &&
+                              item.descripcionCorta!.isNotEmpty)
+                            Text(
+                              item.descripcionCorta!,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                                fontStyle: FontStyle.italic,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                        Text(
+                          '${item.variante} ${item.opcionVariante}',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(
+                      Icons.close,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+
+              // Content
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Stock Status Card
                       Container(
-                        padding: const EdgeInsets.all(8),
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
+                          color: item.stockLevelColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: item.stockLevelColor.withOpacity(0.3),
+                          ),
                         ),
-                        child: const Icon(
-                          Icons.inventory_2,
-                          color: AppColors.primary,
-                          size: 24,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              item.nombreProducto,
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                            // Mostrar descripción si está habilitado y existe
-                            if (_showDescriptionInSelectors)
-                              if (item.descripcion != null && item.descripcion!.isNotEmpty)
-                                Text(
-                                  item.descripcion!,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: AppColors.textSecondary,
-                                    fontStyle: FontStyle.italic,
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                )
-                              else if (item.descripcionCorta != null && item.descripcionCorta!.isNotEmpty)
-                                Text(
-                                  item.descripcionCorta!,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: AppColors.textSecondary,
-                                    fontStyle: FontStyle.italic,
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.inventory,
+                                  color: item.stockLevelColor,
+                                  size: 20,
                                 ),
-                            Text(
-                              '${item.variante} ${item.opcionVariante}',
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: AppColors.textSecondary,
-                              ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Estado de Stock',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Stock Actual',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                    Text(
+                                      item.cantidadConPresentacion,
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: item.stockLevelColor,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: item.stockLevelColor,
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    item.stockLevel,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
                       ),
-                      IconButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        icon: const Icon(
-                          Icons.close,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
+                      const SizedBox(height: 16),
 
-                  // Content
-                  Expanded(
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Stock Status Card
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: item.stockLevelColor.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: item.stockLevelColor.withOpacity(0.3),
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.inventory,
-                                      color: item.stockLevelColor,
-                                      size: 20,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    const Text(
-                                      'Estado de Stock',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.textPrimary,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Stock Actual',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: AppColors.textSecondary,
-                                          ),
-                                        ),
-                                        Text(
-                                          item.cantidadConPresentacion,
-                                          style: TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.bold,
-                                            color: item.stockLevelColor,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: item.stockLevelColor,
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      child: Text(
-                                        item.stockLevel,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
+                      // Product Information
+                      _buildDetailSection(
+                        'Información del Producto',
+                        Icons.info_outline,
+                        [
+                          _buildDetailRow('Categoría', item.categoria),
+                          _buildDetailRow('Subcategoría', item.subcategoria),
+                          _buildDetailRow('Variante', item.variante),
+                          _buildDetailRow(
+                            'Opción Variante',
+                            item.opcionVariante,
                           ),
-                          const SizedBox(height: 16),
-
-                          // Product Information
-                          _buildDetailSection(
-                            'Información del Producto',
-                            Icons.info_outline,
-                            [
-                              _buildDetailRow('Categoría', item.categoria),
-                              _buildDetailRow(
-                                'Subcategoría',
-                                item.subcategoria,
-                              ),
-                              _buildDetailRow('Variante', item.variante),
-                              _buildDetailRow(
-                                'Opción Variante',
-                                item.opcionVariante,
-                              ),
-                              _buildDetailRow(
-                                'Presentación',
-                                item.presentacion,
-                              ),
-                              _buildDetailRow(
-                                'Vendible',
-                                item.esVendible ? 'Sí' : 'No',
-                              ),
-                              _buildDetailRow(
-                                'Inventariable',
-                                item.esInventariable ? 'Sí' : 'No',
-                              ),
-                            ],
+                          _buildDetailRow('Presentación', item.presentacion),
+                          _buildDetailRow(
+                            'Vendible',
+                            item.esVendible ? 'Sí' : 'No',
                           ),
-                          const SizedBox(height: 16),
-
-                          // Location Information
-                          _buildDetailSection(
-                            'Ubicación',
-                            Icons.location_on_outlined,
-                            [
-                              _buildDetailRow('Tienda', item.tienda),
-                              _buildDetailRow('Almacén', item.almacen),
-                              _buildDetailRow('Ubicación', item.ubicacion),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-
-                          // Real stock breakdown
-                          _buildStockBreakdownSection(item),
-
-                          // Stock Details
-                          _buildDetailSection(
-                            'Detalles de Stock',
-                            Icons.inventory_2_outlined,
-                            [
-                              _buildDetailRow(
-                                'Cantidad Inicial',
-                                item.cantidadEnPresentacion(item.cantidadInicial),
-                              ),
-                              _buildDetailRow(
-                                'Stock Disponible',
-                                item.cantidadEnPresentacion(item.stockDisponible),
-                              ),
-                              _buildDetailRow(
-                                'Stock Reservado',
-                                item.cantidadEnPresentacion(item.stockReservado),
-                              ),
-                              _buildDetailRow(
-                                'Stock Ajustado',
-                                item.cantidadEnPresentacion(item.stockDisponibleAjustado),
-                              ),
-                            ],
+                          _buildDetailRow(
+                            'Inventariable',
+                            item.esInventariable ? 'Sí' : 'No',
                           ),
                         ],
                       ),
-                    ),
-                  ),
+                      const SizedBox(height: 16),
 
-                  // Actions
-                  const SizedBox(height: 24),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.swap_horiz, size: 18),
-                          label: const Text('Transferir'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.primary,
-                            side: const BorderSide(color: AppColors.primary),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                        ),
+                      // Location Information
+                      _buildDetailSection(
+                        'Ubicación',
+                        Icons.location_on_outlined,
+                        [
+                          _buildDetailRow('Tienda', item.tienda),
+                          _buildDetailRow('Almacén', item.almacen),
+                          _buildDetailRow('Ubicación', item.ubicacion),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.close, size: 18),
-                          label: const Text('Cerrar'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.white,
+                      const SizedBox(height: 16),
+
+                      // Real stock breakdown
+                      _buildStockBreakdownSection(item),
+
+                      // Stock Details
+                      _buildDetailSection(
+                        'Detalles de Stock',
+                        Icons.inventory_2_outlined,
+                        [
+                          _buildDetailRow(
+                            'Cantidad Inicial',
+                            item.cantidadEnPresentacion(item.cantidadInicial),
                           ),
-                        ),
+                          _buildDetailRow(
+                            'Stock Disponible',
+                            item.cantidadEnPresentacion(item.stockDisponible),
+                          ),
+                          _buildDetailRow(
+                            'Stock Reservado',
+                            item.cantidadEnPresentacion(item.stockReservado),
+                          ),
+                          _buildDetailRow(
+                            'Stock Ajustado',
+                            item.cantidadEnPresentacion(
+                              item.stockDisponibleAjustado,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
+                ),
+              ),
+
+              // Actions
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.swap_horiz, size: 18),
+                      label: const Text('Transferir'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        side: const BorderSide(color: AppColors.primary),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close, size: 18),
+                      label: const Text('Cerrar'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
                 ],
               ),
-            ),
+            ],
           ),
+        ),
+      ),
     );
   }
 
   void _showInventorySummaryDetails(InventorySummaryByUser summary) {
     showDialog(
       context: context,
-      builder:
-          (context) => Dialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Container(
-              width: MediaQuery.of(context).size.width * 0.9,
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.8,
-              ),
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          width: MediaQuery.of(context).size.width * 0.9,
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.8,
+          ),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
                 children: [
-                  // Header
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(
-                          Icons.inventory_2,
-                          color: AppColors.primary,
-                          size: 24,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              summary.productoNombre,
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                            if (summary.variantDisplay.isNotEmpty)
-                              Text(
-                                summary.variantDisplay,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        icon: const Icon(
-                          Icons.close,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Content
-                  Expanded(
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Stock Status Card
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: summary.stockLevelColor.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: summary.stockLevelColor.withOpacity(0.3),
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.inventory,
-                                      color: summary.stockLevelColor,
-                                      size: 20,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    const Text(
-                                      'Resumen de Stock',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.textPrimary,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Builder(
-                                      builder: (context) {
-                                        final breakdown = _breakdownsByProduct[summary.idProducto];
-                                        final realStock = breakdown?.enAlmacen ?? summary.cantidadTotalEnAlmacen;
-                                        final stockStatus = _getStockStatus(realStock.toInt());
-                                        return Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            const Text(
-                                              'Total en Almacén',
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: AppColors.textSecondary,
-                                              ),
-                                            ),
-                                            Text(
-                                              '${realStock.toStringAsFixed(0)} unidades',
-                                              style: TextStyle(
-                                                fontSize: 18,
-                                                fontWeight: FontWeight.bold,
-                                                color: stockStatus.color,
-                                              ),
-                                            ),
-                                          ],
-                                        );
-                                      },
-                                    ),
-                                    Builder(
-                                      builder: (context) {
-                                        final breakdown = _breakdownsByProduct[summary.idProducto];
-                                        final realStock = breakdown?.enAlmacen ?? summary.cantidadTotalEnAlmacen;
-                                        final stockStatus = _getStockStatus(realStock.toInt());
-                                        return Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 4,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: stockStatus.color,
-                                            borderRadius: BorderRadius.circular(20),
-                                          ),
-                                          child: Text(
-                                            stockStatus.label,
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-
-                          // Real stock breakdown
-                          _buildSummaryStockBreakdownSection(summary),
-
-                          const SizedBox(height: 16),
-
-                          // Distribution Information
-                          _buildDetailSection(
-                            'Distribución',
-                            Icons.location_on_outlined,
-                            [
-                              _buildDetailRow(
-                                'Zonas diferentes',
-                                '${summary.zonasDiferentes}',
-                              ),
-                              _buildDetailRow(
-                                'Presentaciones diferentes',
-                                '${summary.presentacionesDiferentes}',
-                              ),
-                              _buildDetailRow(
-                                'Unidades base totales',
-                                '${summary.cantidadTotalEnUnidadesBase.toStringAsFixed(1)}',
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.inventory_2,
+                      color: AppColors.primary,
+                      size: 24,
                     ),
                   ),
-
-                  // Actions
-                  const SizedBox(height: 24),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () {
-                            Navigator.of(context).pop();
-                            setState(() {
-                              _isDetailedView = true;
-                              _searchQuery = summary.productoNombre;
-                              _searchController.text = summary.productoNombre;
-                            });
-                            _loadInventoryData();
-                          },
-                          icon: const Icon(Icons.visibility, size: 18),
-                          label: const Text('Ver Detalles'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.primary,
-                            side: const BorderSide(color: AppColors.primary),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          summary.productoNombre,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textPrimary,
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.close, size: 18),
-                          label: const Text('Cerrar'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.white,
+                        if (summary.variantDisplay.isNotEmpty)
+                          Text(
+                            summary.variantDisplay,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: AppColors.textSecondary,
+                            ),
                           ),
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(
+                      Icons.close,
+                      color: AppColors.textSecondary,
+                    ),
                   ),
                 ],
               ),
-            ),
+              const SizedBox(height: 24),
+
+              // Content
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Stock Status Card
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: summary.stockLevelColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: summary.stockLevelColor.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.inventory,
+                                  color: summary.stockLevelColor,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Resumen de Stock',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Builder(
+                                  builder: (context) {
+                                    final stockStatus = _getStockStatus(
+                                      summary.stock.equivalenteBase.toInt(),
+                                    );
+                                    return Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'Existencia física',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: AppColors.textSecondary,
+                                          ),
+                                        ),
+                                        Text(
+                                          summary.stock.texto,
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                            color: stockStatus.color,
+                                          ),
+                                        ),
+                                        Text(
+                                          'Equivalente: ${StockMixtoFormatter.cantidad(summary.stock.equivalenteBase)} '
+                                          '${StockMixtoFormatter.plural(summary.stock.nombrePresentacionBase, summary.stock.equivalenteBase)} base',
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: AppColors.textSecondary,
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                ),
+                                Builder(
+                                  builder: (context) {
+                                    final stockStatus = _getStockStatus(
+                                      summary.stock.equivalenteBase.toInt(),
+                                    );
+                                    return Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: stockStatus.color,
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: Text(
+                                        stockStatus.label,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Real stock breakdown
+                      _buildSummaryStockBreakdownSection(summary),
+
+                      const SizedBox(height: 16),
+
+                      // Distribution Information
+                      _buildDetailSection(
+                        'Distribución',
+                        Icons.location_on_outlined,
+                        [
+                          _buildDetailRow(
+                            'Zonas diferentes',
+                            '${summary.zonasDiferentes}',
+                          ),
+                          _buildDetailRow(
+                            'Presentaciones diferentes',
+                            '${summary.presentacionesDiferentes}',
+                          ),
+                          _buildDetailRow(
+                            'Equivalente base',
+                            StockMixtoFormatter.cantidad(
+                              summary.stock.equivalenteBase,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Actions
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        setState(() {
+                          _isDetailedView = true;
+                          _searchQuery = summary.productoNombre;
+                          _searchController.text = summary.productoNombre;
+                        });
+                        _loadInventoryData();
+                      },
+                      icon: const Icon(Icons.visibility, size: 18),
+                      label: const Text('Ver Detalles'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        side: const BorderSide(color: AppColors.primary),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close, size: 18),
+                      label: const Text('Cerrar'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
+        ),
+      ),
     );
   }
 
@@ -1718,7 +1700,10 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: const Icon(Icons.file_download_outlined, color: AppColors.success),
+                leading: const Icon(
+                  Icons.file_download_outlined,
+                  color: AppColors.success,
+                ),
                 title: const Text('Exportar inventario'),
                 onTap: () {
                   Navigator.pop(context);
@@ -1744,11 +1729,11 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
   Future<void> _showWarehousePickerForStockList() async {
     final selectableWarehouses =
         (widget.isAlmacenero && widget.assignedWarehouseId != null)
-            ? _warehouses.where((w) {
-                final id = int.tryParse(w['id'].toString());
-                return id == widget.assignedWarehouseId;
-              }).toList()
-            : List<Map<String, dynamic>>.from(_warehouses);
+        ? _warehouses.where((w) {
+            final id = int.tryParse(w['id'].toString());
+            return id == widget.assignedWarehouseId;
+          }).toList()
+        : List<Map<String, dynamic>>.from(_warehouses);
 
     if (selectableWarehouses.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1774,7 +1759,9 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
               return ListTile(
                 title: Text(name),
                 subtitle: Text('ID: ${w['id']}'),
-                trailing: isSelected ? const Icon(Icons.check, color: AppColors.success) : null,
+                trailing: isSelected
+                    ? const Icon(Icons.check, color: AppColors.success)
+                    : null,
                 onTap: () => Navigator.pop(context, id),
               );
             },
@@ -1795,7 +1782,8 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
   }
 
   Future<void> _showStockListDialog(int warehouseId) async {
-    final warehouseName = _warehouses
+    final warehouseName =
+        _warehouses
             .firstWhere(
               (w) => int.tryParse(w['id'].toString()) == warehouseId,
               orElse: () => {'denominacion': 'Almacén $warehouseId'},
@@ -1824,19 +1812,17 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
       Navigator.of(context).pop();
 
       final items = summaries
-          .map((s) {
-            final b = breakdowns[s.idProducto];
-            final realStock = b?.enAlmacen ?? s.cantidadTotalEnAlmacen;
-            return (summary: s, breakdown: b, realStock: realStock);
-          })
-          .where((item) => item.realStock > 0)
+          .where((s) => s.stock.equivalenteBase > 0)
           .toList();
       items.sort(
-        (a, b) => a.summary.productoNombre
-            .toLowerCase()
-            .compareTo(b.summary.productoNombre.toLowerCase()),
+        (a, b) => a.productoNombre.toLowerCase().compareTo(
+          b.productoNombre.toLowerCase(),
+        ),
       );
-      final totalStock = items.fold<double>(0, (s, i) => s + i.realStock);
+      final totalStock = items.fold<double>(
+        0,
+        (total, item) => total + item.stock.equivalenteBase,
+      );
 
       showDialog(
         context: context,
@@ -1862,7 +1848,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '${items.length} productos · ${totalStock.toStringAsFixed(0)} unidades en almacén',
+                        '${items.length} productos · ${StockMixtoFormatter.cantidad(totalStock)} unidades base equivalentes',
                         style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
@@ -1875,28 +1861,37 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                           shrinkWrap: true,
                           itemCount: items.length,
                           itemBuilder: (context, index) {
-                            final s = items[index].summary;
-                            final b = items[index].breakdown;
-                            final realStock = items[index].realStock;
-                            final color = realStock <= 0
+                            final summary = items[index];
+                            final breakdown = breakdowns[summary.idProducto];
+                            final equivalent = summary.stock.equivalenteBase;
+                            final color = equivalent <= 0
                                 ? AppColors.error
-                                : realStock <= 10
-                                    ? AppColors.warning
-                                    : AppColors.success;
+                                : equivalent <= 10
+                                ? AppColors.warning
+                                : AppColors.success;
+                            final logistics = breakdown?.logisticsStatus;
+                            final logisticsText = [
+                              if (logistics?.tienePedidos == true)
+                                'Pedidos pendientes',
+                              if (logistics?.tieneEntregas == true)
+                                'Entregas en curso',
+                            ].join(' · ');
                             return ListTile(
                               dense: true,
                               title: Text(
-                                s.productoNombre,
-                                style: const TextStyle(fontWeight: FontWeight.w500),
+                                summary.productoNombre,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                ),
                               ),
                               subtitle: Text(
-                                b != null
-                                    ? 'En almacén: ${realStock.toStringAsFixed(0)}  |  En pedidos: ${b.enPedidos.toStringAsFixed(0)}  |  Entregando: ${b.entregando.toStringAsFixed(0)}'
-                                    : 'En almacén: ${realStock.toStringAsFixed(0)}',
+                                logisticsText.isEmpty
+                                    ? summary.stock.texto
+                                    : '${summary.stock.texto}\n$logisticsText',
                                 style: const TextStyle(fontSize: 12),
                               ),
                               trailing: Text(
-                                realStock.toStringAsFixed(0),
+                                '${StockMixtoFormatter.cantidad(equivalent)} base',
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   color: color,
@@ -1920,9 +1915,9 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     } catch (e) {
       if (!mounted) return;
       Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error cargando listado: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error cargando listado: $e')));
     }
   }
 }

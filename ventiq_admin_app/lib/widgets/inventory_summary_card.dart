@@ -15,10 +15,10 @@ class InventorySummaryCard extends StatelessWidget {
     this.onTap,
   }) : super(key: key);
 
-  ({Color color, String label}) _getStockStatus(double stock) {
-    if (stock <= 0) {
+  ({Color color, String label}) _getStockStatus(double equivalentStock) {
+    if (equivalentStock <= 0) {
       return (color: AppColors.error, label: 'Sin Stock');
-    } else if (stock < 10) {
+    } else if (equivalentStock < 10) {
       return (color: AppColors.warning, label: 'Stock Bajo');
     } else {
       return (color: AppColors.success, label: 'Stock OK');
@@ -58,8 +58,8 @@ class InventorySummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final b = breakdown;
-    final realStock = b?.enAlmacen ?? summary.cantidadTotalEnAlmacen;
-    final stockStatus = _getStockStatus(realStock);
+    final stock = summary.stock;
+    final stockStatus = _getStockStatus(stock.equivalenteBase);
     // print('🎨 Building InventorySummaryCard for: ${summary.productoNombre}');
     // print(
     //   '🎨 Card data - ID: ${summary.idProducto}, Quantity: ${summary.cantidadTotalEnAlmacen}, Zones: ${summary.zonasDiferentes}, Presentations: ${summary.presentacionesDiferentes}',
@@ -85,268 +85,263 @@ class InventorySummaryCard extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(12),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Header with product name and stock badge
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        summary.productoNombre,
-                                        style: const TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                          color: AppColors.textPrimary,
-                                        ),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header with product name and stock badge
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      summary.productoNombre,
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.textPrimary,
                                       ),
-                                      // Mostrar descripción si existe
-                                      if (summary.productoDescripcion != null && summary.productoDescripcion!.isNotEmpty)
-                                        Padding(
-                                          padding: const EdgeInsets.only(top: 2),
-                                          child: Text(
-                                            summary.productoDescripcion!,
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.grey[600],
-                                              fontStyle: FontStyle.italic,
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    // Mostrar descripción si existe
+                                    if (summary.productoDescripcion != null &&
+                                        summary.productoDescripcion!.isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 2),
+                                        child: Text(
+                                          summary.productoDescripcion!,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey[600],
+                                            fontStyle: FontStyle.italic,
                                           ),
-                                        ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        'SKU: ${summary.productoSku}',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey[600],
-                                          fontFamily: 'monospace',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
-                                    ],
-                                  ),
-                                ),
-                                // Icons for multiple layouts and presentations
-                                if (summary.hasMultipleLocations) ...[
-                                  const SizedBox(width: 8),
-                                  Icon(
-                                    Icons.location_on,
-                                    size: 16,
-                                    color: AppColors.info,
-                                  ),
-                                ],
-                                if (summary.hasMultiplePresentations) ...[
-                                  const SizedBox(width: 4),
-                                  Icon(
-                                    Icons.inventory,
-                                    size: 16,
-                                    color: AppColors.warning,
-                                  ),
-                                ],
-                              ],
-                            ),
-                            if (summary.variantDisplay.isNotEmpty) ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                summary.variantDisplay,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  color: AppColors.textSecondary,
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'SKU: ${summary.productoSku}',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[600],
+                                        fontFamily: 'monospace',
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
+                              // Icons for multiple layouts and presentations
+                              if (summary.hasMultipleLocations) ...[
+                                const SizedBox(width: 8),
+                                Icon(
+                                  Icons.location_on,
+                                  size: 16,
+                                  color: AppColors.info,
+                                ),
+                              ],
+                              if (summary.hasMultiplePresentations) ...[
+                                const SizedBox(width: 4),
+                                Icon(
+                                  Icons.inventory,
+                                  size: 16,
+                                  color: AppColors.warning,
+                                ),
+                              ],
                             ],
+                          ),
+                          if (summary.variantDisplay.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              summary.variantDisplay,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
                           ],
-                        ),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: stockStatus.color,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          stockStatus.label,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                    ),
+                    const SizedBox(width: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Quantity and ID row
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.inventory_2,
+                      decoration: BoxDecoration(
                         color: stockStatus.color,
-                        size: 20,
+                        borderRadius: BorderRadius.circular(20),
                       ),
-                      const SizedBox(width: 8),
-                      // FASE 3: no se dice "unidades" en duro.
-                      //
-                      // `cantidadTotalEnAlmacen` es la suma de cantidades FISICAS
-                      // de todas las presentaciones del producto (4 Cajas + 4
-                      // Unidades = 8), asi que la palabra "unidades" era falsa en
-                      // cuanto el producto tiene mas de una presentacion.
-                      // El resumen no trae los nombres, asi que se muestra el
-                      // numero y, cuando hay varias presentaciones, el
-                      // equivalente en base al lado — que si es comparable.
-                      Text(
-                        StockMixtoFormatter.cantidad(realStock),
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: stockStatus.color,
-                        ),
-                      ),
-                      if (summary.hasMultiplePresentations) ...[
-                        const SizedBox(width: 6),
-                        Text(
-                          '= ${StockMixtoFormatter.cantidad(summary.cantidadTotalEnUnidadesBase)} u. base',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
-                      const Spacer(),
-                      Text(
-                        'ID: ${summary.idProducto}',
+                      child: Text(
+                        stockStatus.label,
                         style: const TextStyle(
+                          color: Colors.white,
                           fontSize: 12,
-                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                    ],
-                  ),
-                  if (b != null &&
-                      (b.enPedidos > 0 || b.entregando > 0)) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        if (b.enPedidos > 0)
-                          _buildBreakdownChip(
-                            label:
-                                'En pedidos: ${b.enPedidos.toStringAsFixed(0)}',
-                            color: AppColors.warning,
-                            icon: Icons.shopping_bag_outlined,
-                          ),
-                        if (b.enPedidos > 0 && b.entregando > 0)
-                          const SizedBox(width: 8),
-                        if (b.entregando > 0)
-                          _buildBreakdownChip(
-                            label:
-                                'Entregando: ${b.entregando.toStringAsFixed(0)}',
-                            color: AppColors.info,
-                            icon: Icons.local_shipping_outlined,
-                          ),
-                      ],
                     ),
                   ],
-                  const SizedBox(height: 12),
+                ),
+                const SizedBox(height: 12),
 
-                  // Distribution badges
+                // Quantity and ID row
+                Row(
+                  children: [
+                    Icon(Icons.inventory_2, color: stockStatus.color, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            stock.texto,
+                            key: const Key('stock-mixto-text'),
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: stockStatus.color,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Equivalente: ${StockMixtoFormatter.cantidad(stock.equivalenteBase)} '
+                            '${StockMixtoFormatter.plural(stock.nombrePresentacionBase, stock.equivalenteBase)} base',
+                            key: const Key('stock-equivalente-text'),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      'ID: ${summary.idProducto}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+                if (b != null &&
+                    (b.logisticsStatus.tienePedidos ||
+                        b.logisticsStatus.tieneEntregas)) ...[
+                  const SizedBox(height: 8),
                   Row(
                     children: [
-                      if (summary.hasMultipleLocations) ...[
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.info.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: AppColors.info.withOpacity(0.3),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.location_on,
-                                size: 12,
-                                color: AppColors.info,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                '${summary.zonasDiferentes} zonas',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: AppColors.info,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
+                      if (b.logisticsStatus.tienePedidos)
+                        _buildBreakdownChip(
+                          label: 'Con pedidos pendientes',
+                          color: AppColors.warning,
+                          icon: Icons.shopping_bag_outlined,
                         ),
+                      if (b.logisticsStatus.tienePedidos &&
+                          b.logisticsStatus.tieneEntregas)
                         const SizedBox(width: 8),
-                      ],
-                      if (summary.hasMultiplePresentations) ...[
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.warning.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: AppColors.warning.withOpacity(0.3),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.category,
-                                size: 12,
-                                color: AppColors.warning,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                '${summary.presentacionesDiferentes} presentaciones',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: AppColors.warning,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
+                      if (b.logisticsStatus.tieneEntregas)
+                        _buildBreakdownChip(
+                          label: 'Con entregas en curso',
+                          color: AppColors.info,
+                          icon: Icons.local_shipping_outlined,
                         ),
-                      ],
                     ],
                   ),
                 ],
-              ),
+                const SizedBox(height: 12),
+
+                // Distribution badges
+                Row(
+                  children: [
+                    if (summary.hasMultipleLocations) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.info.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: AppColors.info.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.location_on,
+                              size: 12,
+                              color: AppColors.info,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${summary.zonasDiferentes} zonas',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: AppColors.info,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    if (summary.hasMultiplePresentations) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.warning.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: AppColors.warning.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.category,
+                              size: 12,
+                              color: AppColors.warning,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${summary.presentacionesDiferentes} presentaciones',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: AppColors.warning,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
             ),
           ),
         ),
-      );
+      ),
+    );
   }
 }
 
@@ -376,7 +371,7 @@ class InventorySummaryList extends StatelessWidget {
     print('📊 isLoading: $isLoading');
     print('📊 errorMessage: $errorMessage');
     print('📊 summaries.length: ${summaries.length}');
-    
+
     if (isLoading) {
       print('🔄 Showing loading state');
       return const Center(
@@ -464,7 +459,9 @@ class InventorySummaryList extends StatelessWidget {
     print('✅ Building ListView with ${summaries.length} items');
     for (int i = 0; i < summaries.length && i < 3; i++) {
       final summary = summaries[i];
-      print('📋 Item $i: ${summary.productoNombre} - ${summary.cantidadTotalEnAlmacen} units');
+      print(
+        '📋 Item $i: ${summary.productoNombre} - ${summary.cantidadTotalEnAlmacen} units',
+      );
     }
 
     return ListView.builder(

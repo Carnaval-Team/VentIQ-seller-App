@@ -99,9 +99,21 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
 
     setState(() {
       _cadena = cadena;
-      // Por defecto arranca en mixto cuando hay cadena real: es lo que la fase
-      // vino a habilitar. El usuario puede volver al modo simple.
       _modoMixto = cadena.length > 1;
+      if (cadena.isNotEmpty) {
+        final base = cadena.firstWhere(
+          (presentacion) => presentacion.esBase,
+          orElse: () => cadena.first,
+        );
+        final matches = _availablePresentations.where(
+          (presentacion) =>
+              presentacion['id']?.toString() == base.idPresentacion.toString(),
+        );
+        if (matches.isNotEmpty) {
+          _selectedPresentation = matches.first;
+          _loadAveragePriceForPresentation(matches.first);
+        }
+      }
     });
 
     if (cadena.length > 1) {
@@ -187,16 +199,11 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
     _selectedVariant = null;
     _selectedPresentation = null;
 
-    // Auto-select base presentation if available
+    // Selección temporal hasta que llegue la cadena canónica. No se infiere la
+    // base por el nombre; `_cargarCadenaMixta` la sustituye usando `esBase`.
     if (_availablePresentations.isNotEmpty) {
-      final basePresentation = _availablePresentations.firstWhere((p) {
-        final name = _getPresentationName(p).toLowerCase();
-        return name.contains('base') ||
-            name.contains('unidad') ||
-            name.contains('individual');
-      }, orElse: () => _availablePresentations.first);
-      _selectedPresentation = basePresentation;
-      _loadAveragePriceForPresentation(basePresentation);
+      _selectedPresentation = _availablePresentations.first;
+      _loadAveragePriceForPresentation(_selectedPresentation!);
     }
   }
 
@@ -247,12 +254,11 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
 
     setState(() => _isLoadingAveragePrice = true);
     try {
-      final response =
-          await Supabase.instance.client
-              .from('app_dat_producto_presentacion')
-              .select('precio_promedio')
-              .eq('id', presentation['id'])
-              .single();
+      final response = await Supabase.instance.client
+          .from('app_dat_producto_presentacion')
+          .select('precio_promedio')
+          .eq('id', presentation['id'])
+          .single();
 
       if (response != null) {
         final precioPromedio = response['precio_promedio'];
@@ -413,11 +419,13 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
           // Los datos avanzados son de la operacion, no de la presentacion: se
           // aplican una sola vez, en la primera linea, para no duplicar
           // descuentos ni bonificaciones al partir en varias lineas.
-          'descuento_porcentaje':
-              linea == _lineasMixtas.first ? descuentoPorcentaje : 0,
+          'descuento_porcentaje': linea == _lineasMixtas.first
+              ? descuentoPorcentaje
+              : 0,
           'descuento_monto': linea == _lineasMixtas.first ? descuentoMonto : 0,
-          'bonificacion_cantidad':
-              linea == _lineasMixtas.first ? bonificacionCantidad : 0,
+          'bonificacion_cantidad': linea == _lineasMixtas.first
+              ? bonificacionCantidad
+              : 0,
           'denominacion': widget.product.name,
           'sku_producto': widget.product.sku,
           'moneda_precio': 'USD',
@@ -434,12 +442,12 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
 
         final productData =
             await PresentationConverter.processProductForReception(
-          productId: widget.product.id,
-          selectedPresentation: linea.presentacion.toPresentationMap(),
-          cantidad: linea.cantidad,
-          precioUnitario: precioUSD,
-          baseProductData: baseProductData,
-        );
+              productId: widget.product.id,
+              selectedPresentation: linea.presentacion.toPresentationMap(),
+              cantidad: linea.cantidad,
+              precioUnitario: precioUSD,
+              baseProductData: baseProductData,
+            );
 
         widget.onProductAdded(productData);
       }
@@ -581,7 +589,9 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
                           invoiceCurrency: widget.invoiceCurrency,
                           priceController: _precioUnitarioController,
                           onPriceConverted: (convertedPrice, currency) {
-                            print('💱 Precio convertido a USD: $convertedPrice');
+                            print(
+                              '💱 Precio convertido a USD: $convertedPrice',
+                            );
                             setState(() {
                               _finalPriceInUSD = convertedPrice;
                               _finalCurrency = currency; // Siempre 'USD'
@@ -805,7 +815,8 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
   /// N precios ese widget no sirve, asi que la eleccion de moneda se hace una
   /// vez para todas las filas y la conversion la hace _aUSD.
   Widget _buildSelectorMonedaMixta() {
-    final sinTasa = _monedaEntradaMixta == 'CUP' &&
+    final sinTasa =
+        _monedaEntradaMixta == 'CUP' &&
         (_usdToCupRate == null || _usdToCupRate! <= 0);
 
     return Column(
@@ -824,8 +835,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
                 child: ChoiceChip(
                   label: Text(m, style: const TextStyle(fontSize: 12)),
                   selected: _monedaEntradaMixta == m,
-                  onSelected: (_) =>
-                      setState(() => _monedaEntradaMixta = m),
+                  onSelected: (_) => setState(() => _monedaEntradaMixta = m),
                 ),
               ),
             ),
@@ -1004,20 +1014,19 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
                 focusedBorder: OutlineInputBorder(
                   borderSide: BorderSide(color: AppColors.primary, width: 2),
                 ),
-                prefixIcon:
-                    _isLoadingLastPrice
-                        ? SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: Padding(
-                            padding: EdgeInsets.all(12),
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: AppColors.primary,
-                            ),
+                prefixIcon: _isLoadingLastPrice
+                    ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: Padding(
+                          padding: EdgeInsets.all(12),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.primary,
                           ),
-                        )
-                        : Icon(Icons.attach_money, color: AppColors.primary),
+                        ),
+                      )
+                    : Icon(Icons.attach_money, color: AppColors.primary),
               ),
               keyboardType: TextInputType.numberWithOptions(decimal: true),
               validator: (value) {

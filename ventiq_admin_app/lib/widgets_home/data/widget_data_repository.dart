@@ -55,7 +55,8 @@ class WidgetDataRepository {
 
       // La serie que dibuja el Dashboard son FlSpot; se extrae solo la Y.
       final trend = _extractTrend(analysis['salesData']);
-      final labels = (analysis['salesLabels'] as List?)
+      final labels =
+          (analysis['salesLabels'] as List?)
               ?.map((label) => label.toString())
               .toList() ??
           const <String>[];
@@ -90,10 +91,10 @@ class WidgetDataRepository {
           WidgetKeys.fieldGananciaNeta: _money(gananciaNeta),
           WidgetKeys.fieldOrdenes: ordenes.toString(),
           WidgetKeys.fieldDeltaPct: _money(deltaPct),
-          WidgetKeys.fieldTrend:
-              trend.map(_money).join(WidgetKeys.seriesSeparator),
-          WidgetKeys.fieldTrendLabels:
-              labels.join(WidgetKeys.seriesSeparator),
+          WidgetKeys.fieldTrend: trend
+              .map(_money)
+              .join(WidgetKeys.seriesSeparator),
+          WidgetKeys.fieldTrendLabels: labels.join(WidgetKeys.seriesSeparator),
         },
       );
     } catch (error) {
@@ -144,12 +145,11 @@ class WidgetDataRepository {
       }
 
       // Solo vendedores con movimiento, ordenados por importe (como la app).
-      final visible = enriched
-          .where((report) => report.totalDineroGeneral > 0)
-          .toList()
-        ..sort(
-          (a, b) => b.totalDineroGeneral.compareTo(a.totalDineroGeneral),
-        );
+      final visible =
+          enriched.where((report) => report.totalDineroGeneral > 0).toList()
+            ..sort(
+              (a, b) => b.totalDineroGeneral.compareTo(a.totalDineroGeneral),
+            );
 
       double total = 0.0;
       double efectivo = 0.0;
@@ -179,8 +179,9 @@ class WidgetDataRepository {
 
       return WidgetSnapshot(
         values: {
-          WidgetKeys.fieldModo:
-              isRealtime ? WidgetKeys.modoRealtime : WidgetKeys.modoRange,
+          WidgetKeys.fieldModo: isRealtime
+              ? WidgetKeys.modoRealtime
+              : WidgetKeys.modoRange,
           WidgetKeys.fieldDesde: _isoDate(range.desde),
           WidgetKeys.fieldHasta: _isoDate(range.hasta),
           WidgetKeys.fieldTotal: _money(total),
@@ -205,7 +206,10 @@ class WidgetDataRepository {
     final productoId = config.productoId;
     final storeId = config.storeId;
     if (storeId == null || productoId == null) {
-      return const WidgetSnapshot(values: {}, error: 'Sin producto seleccionado');
+      return const WidgetSnapshot(
+        values: {},
+        error: 'Sin producto seleccionado',
+      );
     }
 
     try {
@@ -232,19 +236,13 @@ class WidgetDataRepository {
         debugPrint('⚠️ Widget: ventas del producto no disponibles: $error');
       }
 
-      // Stock en tiempo real: suma de las ubicaciones.
-      double stock = 0.0;
-      try {
-        final locations = await ProductService.getProductStockLocations(
-          productoId.toString(),
-          storeId: storeId,
-        );
-        for (final location in locations) {
-          stock += _toDouble(location['cantidad']);
-        }
-      } catch (error) {
-        debugPrint('⚠️ Widget: stock del producto no disponible: $error');
-      }
+      // Stock comparable: el widget conserva su campo escalar, pero ahora recibe
+      // el equivalente base canónico y nunca suma cantidades físicas heterogéneas.
+      final stockSnapshot = await ProductService.getProductStockSnapshot(
+        productoId.toString(),
+        storeId: storeId,
+      );
+      final stock = stockSnapshot.total.equivalenteBase;
 
       return WidgetSnapshot(
         values: {
