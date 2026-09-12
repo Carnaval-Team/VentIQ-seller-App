@@ -13,9 +13,7 @@ import '../widgets/variants_tab_view.dart';
 import '../widgets/presentations_tab_view.dart';
 import '../widgets/units_tab_view.dart';
 import '../widgets/carnaval_tab_view.dart';
-import '../widgets/price_management_tab_view.dart';
 import '../widgets/personal_rates_tab_view.dart';
-import '../widgets/carnaval_prices_tab_view.dart';
 import '../widgets/margins_tab_view.dart';
 import '../services/store_data_service.dart';
 import '../services/store_service.dart';
@@ -149,7 +147,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     final role = results[1] as UserRole;
     final isSupervisor = role == UserRole.supervisor;
     // Supervisor: Tienda + Global + Carnaval App. Gerente: todas.
-    final tabCount = isSupervisor ? 3 : 11;
+    final tabCount = isSupervisor ? 3 : 9;
     _tabController?.dispose();
     setState(() {
       _canEditSettings = canEdit;
@@ -199,9 +197,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             Tab(text: 'Variantes', icon: Icon(Icons.format_shapes)),
             Tab(text: 'Presentaciones', icon: Icon(Icons.format_paint)),
             Tab(text: 'Unidades', icon: Icon(Icons.straighten)),
-            Tab(text: 'Precios', icon: Icon(Icons.sell)),
             Tab(text: 'Tasas pers.', icon: Icon(Icons.currency_exchange)),
-            Tab(text: 'Precios Carnaval', icon: Icon(Icons.price_check)),
             Tab(text: 'Carnaval App', icon: Icon(Icons.storefront)),
             Tab(text: 'Márgenes', icon: Icon(Icons.trending_up)),
           ];
@@ -219,9 +215,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             VariantsTabView(key: _variantsTabKey),
             PresentationsTabView(key: _presentationsTabKey),
             UnitsTabView(key: _unitsTabKey),
-            PriceManagementTabView(),
             PersonalRatesTabView(canEdit: _canEditSettings),
-            const CarnavalPricesTabView(),
             CarnavalTabView(key: _carnavalTabKey),
             const MarginsTabView(),
           ];

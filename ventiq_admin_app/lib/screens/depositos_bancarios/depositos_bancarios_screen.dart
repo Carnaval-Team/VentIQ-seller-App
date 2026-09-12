@@ -35,6 +35,7 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
   List<HistorialSaldoDeposito> _historialSaldo = [];
   List<DepositoBancario> _depositos = [];
   List<EstadoDeposito> _estados = [];
+  List<TipoExtraccion> _tiposExtraccion = [];
 
   bool _isLoadingSaldo = false;
   bool _isLoadingDepositos = false;
@@ -137,15 +138,17 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
       final results = await Future.wait([
         _service.getDepositos(id),
         _service.getEstados(),
+        _service.getTiposExtraccion(soloActivos: true),
       ]);
       setState(() {
         _depositos = results[0] as List<DepositoBancario>;
         _estados = results[1] as List<EstadoDeposito>;
+        _tiposExtraccion = results[2] as List<TipoExtraccion>;
         _isLoadingDepositos = false;
       });
     } catch (e) {
       setState(() => _isLoadingDepositos = false);
-      _showError('Error cargando facturas: $e');
+      _showError('Error cargando extracciones: $e');
     }
   }
 
@@ -359,7 +362,7 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
             ..sort((a, b) => a.numeroPagina.compareTo(b.numeroPagina));
 
           return AlertDialog(
-            title: Text('Fotos — Factura #${factura.numeroDeposito}'),
+            title: Text('Fotos — Extracción #${factura.numeroDeposito}'),
             contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
             content: SizedBox(
               width: 360,
@@ -762,7 +765,7 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
         builder: (ctx) => AlertDialog(
           title: const Text('Sin estados configurados'),
           content: const Text(
-            'Debe configurar al menos un estado en el nomenclador antes de crear depósitos.',
+            'Debe configurar al menos un estado en el nomenclador antes de crear extracciones.',
           ),
           actions: [
             TextButton(
@@ -798,8 +801,10 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
         builder: (ctx, setDialogState) {
           var isLoading = false;
           var errorMessage = '';
+          var selectedTipoId = _tiposExtraccion.isNotEmpty ? _tiposExtraccion.first.id : null;
+
           return AlertDialog(
-            title: const Text('Nuevo depósito'),
+            title: const Text('Nueva extracción'),
             content: SingleChildScrollView(
               child: SizedBox(
                 width: 360,
@@ -835,7 +840,7 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
                     TextField(
                       controller: numFacturaCtrl,
                       decoration: const InputDecoration(
-                        labelText: 'Número de depósito *',
+                        labelText: 'Número / Referencia *',
                         border: OutlineInputBorder(),
                       ),
                     ),
@@ -850,6 +855,27 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
                         prefixText: '\$ ',
                         border: OutlineInputBorder(),
                       ),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<int>(
+                      value: selectedTipoId,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Tipo de extracción *',
+                        border: OutlineInputBorder(),
+                      ),
+                      items:
+                          _tiposExtraccion
+                              .map(
+                                (t) => DropdownMenuItem(
+                                  value: t.id,
+                                  child: Text(t.denominacion),
+                                ),
+                              )
+                              .toList(),
+                      onChanged: (value) {
+                        setDialogState(() => selectedTipoId = value);
+                      },
                     ),
                     const SizedBox(height: 12),
                     InkWell(
@@ -1063,11 +1089,13 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
               ),
               _buildSubmitButton(
                 isLoading: isLoading,
-                label: 'Crear Factura',
+                label: 'Registrar extracción',
                 onPressed: () async {
                   final numFactura = numFacturaCtrl.text.trim();
                   final valor = double.tryParse(valorCtrl.text) ?? 0;
-                  if (numFactura.isEmpty || valor <= 0) {
+                  if (numFactura.isEmpty ||
+                      valor <= 0 ||
+                      selectedTipoId == null) {
                     setDialogState(
                       () => errorMessage = 'Complete los campos obligatorios',
                     );
@@ -1083,12 +1111,13 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
                       numeroDeposito: numFactura,
                       valor: valor,
                       fechaProcesamiento: selectedDate,
+                      idTipoExtraccion: selectedTipoId,
                       fotosEntradas: fotos,
                     );
                     await _loadAllData();
                     if (ctx.mounted) Navigator.pop(ctx);
                     _showSuccess(
-                      'Factura #$numFactura creada con ${fotos.length} archivo(s)',
+                      'Extracción #$numFactura registrada con ${fotos.length} archivo(s)',
                     );
                   } catch (e) {
                     setDialogState(() {
@@ -1115,8 +1144,13 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Editar Factura #${factura.numeroDeposito}'),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          var selectedTipoId = factura.idTipoExtraccion ??
+              (_tiposExtraccion.isNotEmpty ? _tiposExtraccion.first.id : null);
+
+          return AlertDialog(
+        title: Text('Editar extracción #${factura.numeroDeposito}'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1149,7 +1183,7 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
               TextField(
                 controller: numCtrl,
                 decoration: const InputDecoration(
-                  labelText: 'Número de depósito *',
+                  labelText: 'Número / Referencia *',
                   border: OutlineInputBorder(),
                 ),
               ),
@@ -1165,6 +1199,27 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
                   border: OutlineInputBorder(),
                 ),
               ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<int>(
+                value: selectedTipoId,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Tipo de extracción *',
+                  border: OutlineInputBorder(),
+                ),
+                items:
+                    _tiposExtraccion
+                        .map(
+                          (t) => DropdownMenuItem(
+                            value: t.id,
+                            child: Text(t.denominacion),
+                          ),
+                        )
+                        .toList(),
+                onChanged: (value) {
+                  setDialogState(() => selectedTipoId = value);
+                },
+              ),
             ],
           ),
         ),
@@ -1179,7 +1234,9 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
             onPressed: () async {
               final nuevoNumero = numCtrl.text.trim();
               final nuevoValor = double.tryParse(valorCtrl.text) ?? 0;
-              if (nuevoNumero.isEmpty || nuevoValor <= 0) {
+              if (nuevoNumero.isEmpty ||
+                  nuevoValor <= 0 ||
+                  selectedTipoId == null) {
                 ScaffoldMessenger.of(ctx).showSnackBar(
                   const SnackBar(
                     content: Text('Complete los campos obligatorios'),
@@ -1196,15 +1253,18 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
                   nuevoNumeroDeposito: nuevoNumero,
                   valorAnterior: factura.valor,
                   nuevoValor: nuevoValor,
+                  idTipoExtraccion: selectedTipoId,
                 );
                 await _loadAllData();
-                _showSuccess('Factura actualizada correctamente');
+                _showSuccess('Extracción actualizada correctamente');
               } catch (e) {
                 _showError('$e');
               }
             },
           ),
         ],
+      );
+        },
       ),
     );
   }
@@ -1218,7 +1278,7 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          title: Text('Cambiar Estado - Factura #${factura.numeroDeposito}'),
+          title: Text('Cambiar Estado - Extracción #${factura.numeroDeposito}'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: _estados
@@ -1274,7 +1334,7 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
         future: _service.getHistorialEstadoDeposito(factura.id!),
         builder: (ctx, snap) {
           return AlertDialog(
-            title: Text('Historial - Factura #${factura.numeroDeposito}'),
+            title: Text('Historial - Extracción #${factura.numeroDeposito}'),
             content: SizedBox(
               width: 360,
               height: 300,
@@ -1390,7 +1450,7 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Depósitos bancarios'),
+        title: const Text('Fondo de Caja'),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         actions: [
@@ -1399,6 +1459,12 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
             onSelected: (value) async {
               if (value == 'estados') {
                 await Navigator.pushNamed(context, '/depositos-estados');
+                await _loadDepositosData();
+              } else if (value == 'tipos-extraccion') {
+                await Navigator.pushNamed(
+                  context,
+                  '/depositos-tipos-extraccion',
+                );
                 await _loadDepositosData();
               } else if (value == 'bancos') {
                 await _openBancosScreen();
@@ -1415,7 +1481,17 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
                   children: [
                     Icon(Icons.label_outline, size: 18),
                     SizedBox(width: 8),
-                    Text('Estados de depósito'),
+                    Text('Estados de extracción'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'tipos-extraccion',
+                child: Row(
+                  children: [
+                    Icon(Icons.output, size: 18),
+                    SizedBox(width: 8),
+                    Text('Tipos de extracción'),
                   ],
                 ),
               ),
@@ -1459,7 +1535,7 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
                 unselectedLabelColor: Colors.white70,
                 tabs: const [
                   Tab(icon: Icon(Icons.account_balance_wallet), text: 'Saldo'),
-                  Tab(icon: Icon(Icons.receipt_long), text: 'Depósitos'),
+                  Tab(icon: Icon(Icons.output), text: 'Extracciones'),
                 ],
               ),
       ),
@@ -1586,7 +1662,7 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
           ),
           const SizedBox(height: 8),
           Text(
-            'Elige un banco arriba para ver saldo y depósitos',
+            'Elige un banco arriba para ver saldo y extracciones',
             style: TextStyle(fontSize: 14, color: Colors.grey[500]),
             textAlign: TextAlign.center,
           ),
@@ -1605,7 +1681,7 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
             backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,
             icon: const Icon(Icons.add),
-            label: const Text('Recargar Saldo'),
+            label: const Text('Recargar Fondo'),
           );
         } else {
           return FloatingActionButton.extended(
@@ -1613,7 +1689,7 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
             backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,
             icon: const Icon(Icons.add),
-            label: const Text('Nuevo depósito'),
+            label: const Text('Nueva extracción'),
           );
         }
       },
@@ -2346,12 +2422,12 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        'Sin facturas registradas',
+                        'Sin extracciones registradas',
                         style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Presione el botón + para agregar una factura',
+                        'Presione el botón + para agregar una extracción',
                         style: TextStyle(fontSize: 13, color: Colors.grey[500]),
                       ),
                     ],
@@ -2514,7 +2590,7 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Factura #${factura.numeroDeposito}',
+                        'Extracción #${factura.numeroDeposito}',
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 15,

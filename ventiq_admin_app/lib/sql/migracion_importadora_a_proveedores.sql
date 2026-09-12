@@ -3,43 +3,49 @@
 --
 -- Requisitos previos:
 --   1) Ejecutar pago_proveedores_schema.sql
---   2) Completar v_nombre_proveedor abajo (nombre que verás en el selector)
+--   2) Completar v_id_tienda y v_id_proveedor abajo
 --
 -- Qué hace:
---   - Por cada tienda con datos en Importadora, crea (o reutiliza) un
---     proveedor en app_dat_proveedor con ese nombre.
---   - Copia saldo, recargas, historial de saldo, estados, facturas,
---     fotos e historial de estados a prv_*.
+--   - Migra, para la tienda y proveedor indicados, saldo, recargas,
+--     historial de saldo, estados, facturas, fotos e historial de estados
+--     desde las tablas imp_* hacia las tablas prv_*.
 --   - NO borra ni modifica imp_* (Importadora sigue intacta).
 --
--- Idempotente: se puede re-ejecutar; no duplica facturas ya migradas
--- (columna temporal id_imp_origen).
+-- Idempotente: se puede re-ejecutar; no duplica facturas ni recargas ya migradas
+-- (columna temporal id_imp_origen + observaciones con ID origen).
 -- ============================================================================
 
 DO $$
 DECLARE
-    -- >>> EDITAR: nombre del proveedor destino (ej. 'Importadora XYZ') <<<
-    v_nombre_proveedor TEXT := 'Pucara';
-    v_moneda_codigo    TEXT := 'USD';  -- moneda por defecto del módulo
+    -- >>> EDITAR: IDs reales de tienda y proveedor destino <<<
+    v_id_tienda     INTEGER := 177;      -- poner aquí el id de la tienda
+    v_id_proveedor  BIGINT  := 58;      -- poner aquí el id del proveedor
+    v_moneda_codigo TEXT    := 'USD';  -- moneda por defecto del módulo
 
     v_id_moneda        BIGINT;
-    v_tienda           INTEGER;
-    v_id_proveedor     BIGINT;
-    v_sku              TEXT;
     v_facturas_ins     INTEGER := 0;
     v_recargas_ins     INTEGER := 0;
-    v_tiendas          INTEGER := 0;
+    v_nombre_proveedor TEXT;
 BEGIN
-    IF v_nombre_proveedor IS NULL
-       OR btrim(v_nombre_proveedor) = ''
-       OR upper(btrim(v_nombre_proveedor)) = 'NOMBRE_DEL_PROVEEDOR' THEN
-        RAISE EXCEPTION
-          'Define v_nombre_proveedor con el nombre real del proveedor antes de migrar.';
+    IF v_id_tienda IS NULL OR v_id_tienda <= 0 THEN
+        RAISE EXCEPTION 'Define v_id_tienda con el ID real de la tienda antes de migrar.';
+    END IF;
+
+    IF v_id_proveedor IS NULL OR v_id_proveedor <= 0 THEN
+        RAISE EXCEPTION 'Define v_id_proveedor con el ID real del proveedor antes de migrar.';
+    END IF;
+
+    -- Verificar que el proveedor exista y pertenezca a la tienda
+    SELECT denominacion INTO v_nombre_proveedor
+    FROM public.app_dat_proveedor
+    WHERE id = v_id_proveedor AND idtienda = v_id_tienda;
+
+    IF v_nombre_proveedor IS NULL THEN
+        RAISE EXCEPTION 'No existe el proveedor % para la tienda %.', v_id_proveedor, v_id_tienda;
     END IF;
 
     IF to_regclass('public.prv_dat_saldo') IS NULL THEN
-        RAISE EXCEPTION
-          'No existe prv_dat_saldo. Ejecuta primero pago_proveedores_schema.sql.';
+        RAISE EXCEPTION 'No existe prv_dat_saldo. Ejecuta primero pago_proveedores_schema.sql.';
     END IF;
 
     SELECT id INTO v_id_moneda
@@ -84,268 +90,216 @@ BEGIN
         )
     );
 
-    -- Tiendas con cualquier dato de Importadora
-    FOR v_tienda IN
-        SELECT DISTINCT idtienda FROM (
-            SELECT idtienda FROM public.imp_dat_saldo
-            UNION
-            SELECT idtienda FROM public.imp_dat_factura
-            UNION
-            SELECT idtienda FROM public.imp_dat_recarga_saldo
-            UNION
-            SELECT idtienda FROM public.imp_hist_saldo
-        ) t
-        ORDER BY idtienda
-    LOOP
-        v_tiendas := v_tiendas + 1;
-        v_sku := 'IMP-MIG-' || v_tienda::text;
+    -- Config moneda
+    INSERT INTO public.prv_dat_proveedor_config (idtienda, id_proveedor, id_moneda)
+    VALUES (v_id_tienda, v_id_proveedor, v_id_moneda)
+    ON CONFLICT (idtienda, id_proveedor) DO UPDATE
+    SET id_moneda = EXCLUDED.id_moneda,
+        updated_at = now();
 
-        -- Reutilizar si ya existe proveedor con ese nombre o SKU en la tienda
-        SELECT id INTO v_id_proveedor
-        FROM public.app_dat_proveedor
-        WHERE idtienda = v_tienda
-          AND (
-              lower(btrim(denominacion)) = lower(btrim(v_nombre_proveedor))
-              OR sku_codigo = v_sku
-          )
-        ORDER BY id
-        LIMIT 1;
+    -- Saldo
+    INSERT INTO public.prv_dat_saldo (idtienda, id_proveedor, saldo_disponible, updated_at)
+    SELECT
+        s.idtienda,
+        v_id_proveedor,
+        GREATEST(COALESCE(s.saldo_disponible, 0), 0),
+        COALESCE(s.updated_at, now())
+    FROM public.imp_dat_saldo s
+    WHERE s.idtienda = v_id_tienda
+    ON CONFLICT (idtienda, id_proveedor) DO UPDATE
+    SET saldo_disponible = EXCLUDED.saldo_disponible,
+        updated_at = EXCLUDED.updated_at;
 
-        IF v_id_proveedor IS NULL THEN
-            INSERT INTO public.app_dat_proveedor (
-                denominacion, sku_codigo, idtienda, created_at
-            )
-            VALUES (
-                btrim(v_nombre_proveedor),
-                v_sku,
-                v_tienda,
-                now()
-            )
-            RETURNING id INTO v_id_proveedor;
-        ELSE
-            UPDATE public.app_dat_proveedor
-            SET denominacion = btrim(v_nombre_proveedor)
-            WHERE id = v_id_proveedor
-              AND lower(btrim(denominacion)) <> lower(btrim(v_nombre_proveedor));
-        END IF;
+    -- Si no había fila de saldo pero sí movimientos, crear saldo 0
+    INSERT INTO public.prv_dat_saldo (idtienda, id_proveedor, saldo_disponible, updated_at)
+    VALUES (v_id_tienda, v_id_proveedor, 0, now())
+    ON CONFLICT (idtienda, id_proveedor) DO NOTHING;
 
-        -- Config moneda
-        INSERT INTO public.prv_dat_proveedor_config (idtienda, id_proveedor, id_moneda)
-        VALUES (v_tienda, v_id_proveedor, v_id_moneda)
-        ON CONFLICT (idtienda, id_proveedor) DO UPDATE
-        SET id_moneda = EXCLUDED.id_moneda,
-            updated_at = now();
+    -- Recargas (evitar duplicados por observación de migración)
+    INSERT INTO public.prv_dat_recarga_saldo (
+        idtienda, id_proveedor, monto, fecha_pago, observacion, created_at
+    )
+    SELECT
+        r.idtienda,
+        v_id_proveedor,
+        r.monto,
+        r.fecha_pago,
+        trim(both FROM
+            COALESCE(r.observacion, '') ||
+            ' [migrado Importadora recarga#' || r.id || ']'
+        ),
+        r.created_at
+    FROM public.imp_dat_recarga_saldo r
+    WHERE r.idtienda = v_id_tienda
+      AND NOT EXISTS (
+          SELECT 1
+          FROM public.prv_dat_recarga_saldo x
+          WHERE x.idtienda = r.idtienda
+            AND x.id_proveedor = v_id_proveedor
+            AND x.observacion LIKE '%[migrado Importadora recarga#' || r.id || ']%'
+      );
+    GET DIAGNOSTICS v_recargas_ins = ROW_COUNT;
 
-        -- Saldo
-        INSERT INTO public.prv_dat_saldo (idtienda, id_proveedor, saldo_disponible, updated_at)
-        SELECT
-            s.idtienda,
-            v_id_proveedor,
-            GREATEST(COALESCE(s.saldo_disponible, 0), 0),
-            COALESCE(s.updated_at, now())
-        FROM public.imp_dat_saldo s
-        WHERE s.idtienda = v_tienda
-        ON CONFLICT (idtienda, id_proveedor) DO UPDATE
-        SET saldo_disponible = EXCLUDED.saldo_disponible,
-            updated_at = EXCLUDED.updated_at;
-
-        -- Si no había fila de saldo pero sí movimientos, crear saldo 0
-        INSERT INTO public.prv_dat_saldo (idtienda, id_proveedor, saldo_disponible, updated_at)
-        VALUES (v_tienda, v_id_proveedor, 0, now())
-        ON CONFLICT (idtienda, id_proveedor) DO NOTHING;
-
-        -- Recargas (evitar duplicados por observación de migración)
-        INSERT INTO public.prv_dat_recarga_saldo (
-            idtienda, id_proveedor, monto, fecha_pago, observacion, created_at
-        )
-        SELECT
-            r.idtienda,
-            v_id_proveedor,
-            r.monto,
-            r.fecha_pago,
-            trim(both FROM
-                COALESCE(r.observacion, '') ||
-                ' [migrado Importadora recarga#' || r.id || ']'
+    -- Facturas
+    INSERT INTO public.prv_dat_factura (
+        idtienda, id_proveedor, numero_factura, valor,
+        fecha_procesamiento, foto_url, id_estado, created_at, id_imp_origen
+    )
+    SELECT
+        f.idtienda,
+        v_id_proveedor,
+        f.numero_factura,
+        f.valor,
+        f.fecha_procesamiento,
+        f.foto_url,
+        COALESCE(
+            (
+                SELECT p.id
+                FROM public.prv_nom_estado_factura p
+                JOIN public.imp_nom_estado_factura i ON i.id = f.id_estado
+                WHERE lower(p.denominacion) = lower(
+                    CASE
+                        WHEN lower(i.denominacion) = lower('Pagado a Importadora')
+                            THEN 'Pagado a Proveedor'
+                        ELSE i.denominacion
+                    END
+                )
+                LIMIT 1
             ),
-            r.created_at
-        FROM public.imp_dat_recarga_saldo r
-        WHERE r.idtienda = v_tienda
-          AND NOT EXISTS (
-              SELECT 1
-              FROM public.prv_dat_recarga_saldo x
-              WHERE x.idtienda = r.idtienda
-                AND x.id_proveedor = v_id_proveedor
-                AND x.observacion LIKE '%[migrado Importadora recarga#' || r.id || ']%'
-          );
-        GET DIAGNOSTICS v_recargas_ins = ROW_COUNT;
+            (SELECT id FROM public.prv_nom_estado_factura ORDER BY orden ASC LIMIT 1)
+        ),
+        f.created_at,
+        f.id
+    FROM public.imp_dat_factura f
+    WHERE f.idtienda = v_id_tienda
+      AND NOT EXISTS (
+          SELECT 1
+          FROM public.prv_dat_factura x
+          WHERE x.id_imp_origen = f.id
+      );
+    GET DIAGNOSTICS v_facturas_ins = ROW_COUNT;
 
-        -- Facturas
-        INSERT INTO public.prv_dat_factura (
-            idtienda, id_proveedor, numero_factura, valor,
-            fecha_procesamiento, foto_url, id_estado, created_at, id_imp_origen
-        )
-        SELECT
-            f.idtienda,
-            v_id_proveedor,
-            f.numero_factura,
-            f.valor,
-            f.fecha_procesamiento,
-            f.foto_url,
-            COALESCE(
-                (
-                    SELECT p.id
-                    FROM public.prv_nom_estado_factura p
-                    JOIN public.imp_nom_estado_factura i ON i.id = f.id_estado
-                    WHERE lower(p.denominacion) = lower(
-                        CASE
-                            WHEN lower(i.denominacion) = lower('Pagado a Importadora')
-                                THEN 'Pagado a Proveedor'
-                            ELSE i.denominacion
-                        END
-                    )
-                    LIMIT 1
-                ),
-                (SELECT id FROM public.prv_nom_estado_factura ORDER BY orden ASC LIMIT 1)
-            ),
-            f.created_at,
-            f.id
-        FROM public.imp_dat_factura f
-        WHERE f.idtienda = v_tienda
-          AND NOT EXISTS (
-              SELECT 1
-              FROM public.prv_dat_factura x
-              WHERE x.id_imp_origen = f.id
-          );
-        GET DIAGNOSTICS v_facturas_ins = ROW_COUNT;
+    -- Fotos
+    INSERT INTO public.prv_dat_factura_foto (
+        id_factura, foto_url, numero_pagina, nombre_archivo, mime_type, created_at
+    )
+    SELECT
+        p.id,
+        fo.foto_url,
+        fo.numero_pagina,
+        fo.nombre_archivo,
+        fo.mime_type,
+        fo.created_at
+    FROM public.imp_dat_factura_foto fo
+    JOIN public.prv_dat_factura p ON p.id_imp_origen = fo.id_factura
+    WHERE p.idtienda = v_id_tienda
+      AND p.id_proveedor = v_id_proveedor
+      AND NOT EXISTS (
+          SELECT 1
+          FROM public.prv_dat_factura_foto x
+          WHERE x.id_factura = p.id
+            AND x.foto_url = fo.foto_url
+            AND x.numero_pagina = fo.numero_pagina
+      );
 
-        -- Fotos
-        INSERT INTO public.prv_dat_factura_foto (
-            id_factura, foto_url, numero_pagina, nombre_archivo, mime_type, created_at
-        )
-        SELECT
-            p.id,
-            fo.foto_url,
-            fo.numero_pagina,
-            fo.nombre_archivo,
-            fo.mime_type,
-            fo.created_at
-        FROM public.imp_dat_factura_foto fo
-        JOIN public.prv_dat_factura p ON p.id_imp_origen = fo.id_factura
-        WHERE p.idtienda = v_tienda
-          AND p.id_proveedor = v_id_proveedor
-          AND NOT EXISTS (
-              SELECT 1
-              FROM public.prv_dat_factura_foto x
-              WHERE x.id_factura = p.id
-                AND x.foto_url = fo.foto_url
-                AND x.numero_pagina = fo.numero_pagina
-          );
+    -- Historial de estados de factura
+    INSERT INTO public.prv_hist_estado_factura (
+        id_factura, id_estado_anterior, id_estado_nuevo, observacion, created_at
+    )
+    SELECT
+        p.id,
+        COALESCE(
+            (
+                SELECT np.id
+                FROM public.prv_nom_estado_factura np
+                JOIN public.imp_nom_estado_factura ni ON ni.id = h.id_estado_anterior
+                WHERE lower(np.denominacion) = lower(
+                    CASE
+                        WHEN lower(ni.denominacion) = lower('Pagado a Importadora')
+                            THEN 'Pagado a Proveedor'
+                        ELSE ni.denominacion
+                    END
+                )
+                LIMIT 1
+            ),
+            (SELECT id FROM public.prv_nom_estado_factura ORDER BY orden ASC LIMIT 1)
+        ),
+        COALESCE(
+            (
+                SELECT np.id
+                FROM public.prv_nom_estado_factura np
+                JOIN public.imp_nom_estado_factura ni ON ni.id = h.id_estado_nuevo
+                WHERE lower(np.denominacion) = lower(
+                    CASE
+                        WHEN lower(ni.denominacion) = lower('Pagado a Importadora')
+                            THEN 'Pagado a Proveedor'
+                        ELSE ni.denominacion
+                    END
+                )
+                LIMIT 1
+            ),
+            (SELECT id FROM public.prv_nom_estado_factura ORDER BY orden ASC LIMIT 1)
+        ),
+        trim(both FROM
+            COALESCE(h.observacion, '') ||
+            ' [migrado Importadora hist#' || h.id || ']'
+        ),
+        h.created_at
+    FROM public.imp_hist_estado_factura h
+    JOIN public.prv_dat_factura p ON p.id_imp_origen = h.id_factura
+    WHERE p.idtienda = v_id_tienda
+      AND p.id_proveedor = v_id_proveedor
+      AND NOT EXISTS (
+          SELECT 1
+          FROM public.prv_hist_estado_factura x
+          WHERE x.id_factura = p.id
+            AND x.observacion LIKE '%[migrado Importadora hist#' || h.id || ']%'
+      );
 
-        -- Historial de estados de factura
-        INSERT INTO public.prv_hist_estado_factura (
-            id_factura, id_estado_anterior, id_estado_nuevo, observacion, created_at
-        )
-        SELECT
-            p.id,
-            COALESCE(
-                (
-                    SELECT np.id
-                    FROM public.prv_nom_estado_factura np
-                    JOIN public.imp_nom_estado_factura ni ON ni.id = h.id_estado_anterior
-                    WHERE lower(np.denominacion) = lower(
-                        CASE
-                            WHEN lower(ni.denominacion) = lower('Pagado a Importadora')
-                                THEN 'Pagado a Proveedor'
-                            ELSE ni.denominacion
-                        END
-                    )
-                    LIMIT 1
-                ),
-                (SELECT id FROM public.prv_nom_estado_factura ORDER BY orden ASC LIMIT 1)
-            ),
-            COALESCE(
-                (
-                    SELECT np.id
-                    FROM public.prv_nom_estado_factura np
-                    JOIN public.imp_nom_estado_factura ni ON ni.id = h.id_estado_nuevo
-                    WHERE lower(np.denominacion) = lower(
-                        CASE
-                            WHEN lower(ni.denominacion) = lower('Pagado a Importadora')
-                                THEN 'Pagado a Proveedor'
-                            ELSE ni.denominacion
-                        END
-                    )
-                    LIMIT 1
-                ),
-                (SELECT id FROM public.prv_nom_estado_factura ORDER BY orden ASC LIMIT 1)
-            ),
-            trim(both FROM
-                COALESCE(h.observacion, '') ||
-                ' [migrado Importadora hist#' || h.id || ']'
-            ),
-            h.created_at
-        FROM public.imp_hist_estado_factura h
-        JOIN public.prv_dat_factura p ON p.id_imp_origen = h.id_factura
-        WHERE p.idtienda = v_tienda
-          AND p.id_proveedor = v_id_proveedor
-          AND NOT EXISTS (
-              SELECT 1
-              FROM public.prv_hist_estado_factura x
-              WHERE x.id_factura = p.id
-                AND x.observacion LIKE '%[migrado Importadora hist#' || h.id || ']%'
-          );
-
-        -- Historial de saldo
-        INSERT INTO public.prv_hist_saldo (
-            idtienda, id_proveedor, monto_anterior, monto_nuevo, diferencia,
-            tipo_operacion, referencia, created_at
-        )
-        SELECT
-            h.idtienda,
-            v_id_proveedor,
-            h.monto_anterior,
-            h.monto_nuevo,
-            h.diferencia,
-            h.tipo_operacion,
-            trim(both FROM
-                COALESCE(h.referencia, '') ||
-                ' [migrado Importadora saldo#' || h.id || ']'
-            ),
-            h.created_at
-        FROM public.imp_hist_saldo h
-        WHERE h.idtienda = v_tienda
-          AND NOT EXISTS (
-              SELECT 1
-              FROM public.prv_hist_saldo x
-              WHERE x.idtienda = h.idtienda
-                AND x.id_proveedor = v_id_proveedor
-                AND x.referencia LIKE '%[migrado Importadora saldo#' || h.id || ']%'
-          );
-
-        RAISE NOTICE
-          'Tienda % → proveedor id=% ("%") | facturas nuevas=% | recargas nuevas=%',
-          v_tienda, v_id_proveedor, v_nombre_proveedor, v_facturas_ins, v_recargas_ins;
-    END LOOP;
+    -- Historial de saldo
+    INSERT INTO public.prv_hist_saldo (
+        idtienda, id_proveedor, monto_anterior, monto_nuevo, diferencia,
+        tipo_operacion, referencia, created_at
+    )
+    SELECT
+        h.idtienda,
+        v_id_proveedor,
+        h.monto_anterior,
+        h.monto_nuevo,
+        h.diferencia,
+        h.tipo_operacion,
+        trim(both FROM
+            COALESCE(h.referencia, '') ||
+            ' [migrado Importadora saldo#' || h.id || ']'
+        ),
+        h.created_at
+    FROM public.imp_hist_saldo h
+    WHERE h.idtienda = v_id_tienda
+      AND NOT EXISTS (
+          SELECT 1
+          FROM public.prv_hist_saldo x
+          WHERE x.idtienda = h.idtienda
+            AND x.id_proveedor = v_id_proveedor
+            AND x.referencia LIKE '%[migrado Importadora saldo#' || h.id || ']%'
+      );
 
     RAISE NOTICE
-      'Migración OK. Tiendas procesadas: %. Proveedor: "%". Importadora (imp_*) no se modificó.',
-      v_tiendas, v_nombre_proveedor;
+      'Tienda % → proveedor id=% ("%") | facturas nuevas=% | recargas nuevas=%',
+      v_id_tienda, v_id_proveedor, v_nombre_proveedor, v_facturas_ins, v_recargas_ins;
+
+    RAISE NOTICE
+      'Migración OK. Proveedor: "%". Importadora (imp_*) no se modificó.',
+      v_nombre_proveedor;
 END $$;
 
 
 -- ============================================================================
 -- Verificación rápida (ejecutar después)
 -- ============================================================================
--- SELECT p.idtienda, t.denominacion AS tienda, p.denominacion AS proveedor, p.sku_codigo
+-- SELECT p.idtienda, p.id AS id_proveedor, p.denominacion AS proveedor,
+--        s.saldo_disponible, (SELECT COUNT(*) FROM prv_dat_factura f WHERE f.id_proveedor = p.id AND f.idtienda = p.idtienda) AS facturas
 -- FROM app_dat_proveedor p
--- LEFT JOIN app_dat_tienda t ON t.id = p.idtienda
--- WHERE p.sku_codigo LIKE 'IMP-MIG-%'
--- ORDER BY p.idtienda;
---
--- SELECT s.idtienda, s.id_proveedor, s.saldo_disponible AS prv_saldo,
---        i.saldo_disponible AS imp_saldo
--- FROM prv_dat_saldo s
--- JOIN app_dat_proveedor p ON p.id = s.id_proveedor AND p.sku_codigo LIKE 'IMP-MIG-%'
--- LEFT JOIN imp_dat_saldo i ON i.idtienda = s.idtienda;
+-- LEFT JOIN prv_dat_saldo s ON s.id_proveedor = p.id AND s.idtienda = p.idtienda
+-- WHERE p.id = 0 AND p.idtienda = 0;  -- ajustar IDs
 --
 -- SELECT COUNT(*) AS facturas_migradas FROM prv_dat_factura WHERE id_imp_origen IS NOT NULL;

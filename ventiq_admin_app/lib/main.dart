@@ -72,6 +72,7 @@ import 'screens/depositos_bancarios/depositos_bancarios_screen.dart';
 import 'screens/depositos_bancarios/estados_deposito_screen.dart';
 import 'screens/depositos_bancarios/monedas_depositos_screen.dart';
 import 'screens/depositos_bancarios/bancos_screen.dart';
+import 'screens/depositos_bancarios/tipos_extraccion_screen.dart';
 import 'utils/app_route_observer.dart';
 import 'widgets_home/widget_background_scheduler.dart';
 
@@ -266,6 +267,7 @@ class MyApp extends StatelessWidget {
         '/depositos-estados': (context) => const EstadosDepositoScreen(),
         '/depositos-monedas': (context) => const MonedasDepositosScreen(),
         '/depositos-bancos': (context) => const BancosScreen(),
+        '/depositos-tipos-extraccion': (context) => const TiposExtraccionScreen(),
       },
     );
   }

@@ -42,6 +42,7 @@ class BancoDeposito {
   final String? codigoMoneda;
   final String? simboloMoneda;
   final bool activo;
+  final bool esPredeterminadaFondoCaja;
   final String? observacion;
 
   BancoDeposito({
@@ -53,6 +54,7 @@ class BancoDeposito {
     this.codigoMoneda,
     this.simboloMoneda,
     this.activo = true,
+    this.esPredeterminadaFondoCaja = false,
     this.observacion,
   });
 
@@ -74,6 +76,7 @@ class BancoDeposito {
       codigoMoneda: moneda?['codigo'] as String?,
       simboloMoneda: moneda?['simbolo'] as String?,
       activo: json['activo'] ?? true,
+      esPredeterminadaFondoCaja: json['es_predeterminada_fondo_caja'] ?? false,
       observacion: json['observacion'],
     );
   }
@@ -83,6 +86,7 @@ class BancoDeposito {
       'denominacion': denominacion,
       'id_moneda': idMoneda,
       'activo': activo,
+      'es_predeterminada_fondo_caja': esPredeterminadaFondoCaja,
       'observacion': observacion,
     };
   }
@@ -189,6 +193,45 @@ class DepositoFoto {
   }
 }
 
+class TipoExtraccion {
+  final int? id;
+  final String denominacion;
+  final String? descripcion;
+  final String? color;
+  final int orden;
+  final bool activo;
+
+  TipoExtraccion({
+    this.id,
+    required this.denominacion,
+    this.descripcion,
+    this.color,
+    required this.orden,
+    this.activo = true,
+  });
+
+  factory TipoExtraccion.fromJson(Map<String, dynamic> json) {
+    return TipoExtraccion(
+      id: json['id'],
+      denominacion: json['denominacion'] ?? '',
+      descripcion: json['descripcion'],
+      color: json['color'],
+      orden: json['orden'] ?? 0,
+      activo: json['activo'] ?? true,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'denominacion': denominacion,
+      'descripcion': descripcion,
+      'color': color,
+      'orden': orden,
+      'activo': activo,
+    };
+  }
+}
+
 class DepositoBancario {
   final int? id;
   final String numeroDeposito;
@@ -198,6 +241,9 @@ class DepositoBancario {
   final int idEstado;
   final String? denominacionEstado;
   final String? colorEstado;
+  final int? idTipoExtraccion;
+  final String? denominacionTipoExtraccion;
+  final String? colorTipoExtraccion;
   final int idBanco;
   final String? nombreBanco;
   final int idtienda;
@@ -213,6 +259,9 @@ class DepositoBancario {
     required this.idEstado,
     this.denominacionEstado,
     this.colorEstado,
+    this.idTipoExtraccion,
+    this.denominacionTipoExtraccion,
+    this.colorTipoExtraccion,
     required this.idBanco,
     this.nombreBanco,
     required this.idtienda,
@@ -223,6 +272,7 @@ class DepositoBancario {
   factory DepositoBancario.fromJson(Map<String, dynamic> json) {
     final fotosRaw = json['fotos'] as List<dynamic>?;
     final banco = json['banco'] as Map<String, dynamic>?;
+    final tipoExtraccion = json['tipo_extraccion'] as Map<String, dynamic>?;
     return DepositoBancario(
       id: json['id'],
       numeroDeposito: json['numero_deposito'] ?? '',
@@ -234,6 +284,9 @@ class DepositoBancario {
       idEstado: json['id_estado'] ?? 0,
       denominacionEstado: json['estado']?['denominacion'],
       colorEstado: json['estado']?['color'],
+      idTipoExtraccion: json['id_tipo_extraccion'],
+      denominacionTipoExtraccion: tipoExtraccion?['denominacion'],
+      colorTipoExtraccion: tipoExtraccion?['color'],
       idBanco: json['id_banco'] ?? 0,
       nombreBanco: banco?['denominacion'] as String?,
       idtienda: json['idtienda'] ?? 0,
@@ -256,6 +309,9 @@ class DepositoBancario {
       idEstado: idEstado,
       denominacionEstado: denominacionEstado,
       colorEstado: colorEstado,
+      idTipoExtraccion: idTipoExtraccion,
+      denominacionTipoExtraccion: denominacionTipoExtraccion,
+      colorTipoExtraccion: colorTipoExtraccion,
       idBanco: idBanco,
       nombreBanco: nombreBanco,
       idtienda: idtienda,
@@ -306,7 +362,8 @@ class HistorialSaldoDeposito {
   final double montoAnterior;
   final double montoNuevo;
   final double diferencia;
-  final String tipoOperacion; // 'recarga', 'descuento_deposito', 'ajuste_deposito'
+  final String
+  tipoOperacion; // 'recarga', 'descuento_deposito', 'ajuste_deposito'
   final String? referencia;
   final String? observacion;
   final int? idRecarga;

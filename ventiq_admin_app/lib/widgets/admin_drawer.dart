@@ -680,7 +680,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                 ),
 
                 // Pagos a Importadora
-                _buildDrawerItem(
+                /* _buildDrawerItem(
                   context,
                   icon: Icons.import_export,
                   title: 'Pagos a Importadora',
@@ -690,7 +690,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                     Navigator.pushNamed(context, '/importadora-facturas');
                   },
                 ),
-                const Divider(height: 1),
+                const Divider(height: 1), */
 
                 // Pago a proveedores
                 _buildDrawerItem(
@@ -705,12 +705,12 @@ class _AdminDrawerState extends State<AdminDrawer> {
                 ),
                 const Divider(height: 1),
 
-                // Depósitos bancarios
+                // Fondo de Caja
                 _buildDrawerItem(
                   context,
-                  icon: Icons.account_balance,
-                  title: 'Depósitos bancarios',
-                  subtitle: 'Depósitos y saldo por banco',
+                  icon: Icons.account_balance_wallet,
+                  title: 'Fondo de Caja',
+                  subtitle: 'Recargas y extracciones por caja/banco',
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.pushNamed(context, '/depositos-bancarios');

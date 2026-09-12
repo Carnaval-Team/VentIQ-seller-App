@@ -51,7 +51,9 @@ class _BancosScreenState extends State<BancosScreen> {
     if (_monedas.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Crea al menos una moneda activa antes de agregar bancos'),
+          content: Text(
+            'Crea al menos una moneda activa antes de agregar bancos',
+          ),
           backgroundColor: AppColors.error,
         ),
       );
@@ -63,6 +65,7 @@ class _BancosScreenState extends State<BancosScreen> {
     final obsCtrl = TextEditingController(text: banco?.observacion ?? '');
     int? idMoneda = banco?.idMoneda ?? _monedas.first.id;
     bool activo = banco?.activo ?? true;
+    bool esPredeterminada = banco?.esPredeterminadaFondoCaja ?? false;
 
     await showDialog(
       context: context,
@@ -110,7 +113,21 @@ class _BancosScreenState extends State<BancosScreen> {
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Activo'),
                   value: activo,
-                  onChanged: (v) => setDialogState(() => activo = v),
+                  onChanged: (v) => setDialogState(() {
+                    activo = v;
+                    if (!v) esPredeterminada = false;
+                  }),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Cuenta predeterminada de Fondo de Caja'),
+                  subtitle: const Text(
+                    'Los egresos contabilizados alimentarán esta cuenta',
+                  ),
+                  value: esPredeterminada,
+                  onChanged: activo
+                      ? (v) => setDialogState(() => esPredeterminada = v)
+                      : null,
                 ),
               ],
             ),
@@ -135,6 +152,7 @@ class _BancosScreenState extends State<BancosScreen> {
                           ? null
                           : obsCtrl.text.trim(),
                       activo: activo,
+                      esPredeterminadaFondoCaja: esPredeterminada,
                     );
                   } else {
                     await _service.createBanco(
@@ -144,6 +162,7 @@ class _BancosScreenState extends State<BancosScreen> {
                           ? null
                           : obsCtrl.text.trim(),
                       activo: activo,
+                      esPredeterminadaFondoCaja: esPredeterminada,
                     );
                   }
                   await _load();
@@ -218,10 +237,7 @@ class _BancosScreenState extends State<BancosScreen> {
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _load,
-          ),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
         ],
       ),
       floatingActionButton: FloatingActionButton(
@@ -232,54 +248,53 @@ class _BancosScreenState extends State<BancosScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _bancos.isEmpty
-              ? const Center(child: Text('No hay bancos. Crea el primero.'))
-              : ListView.separated(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _bancos.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (context, index) {
-                    final b = _bancos[index];
-                    return Card(
-                      child: ListTile(
-                        leading: Icon(
-                          Icons.account_balance,
-                          color: b.activo
-                              ? AppColors.primary
-                              : Colors.grey,
+          ? const Center(child: Text('No hay bancos. Crea el primero.'))
+          : ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: _bancos.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (context, index) {
+                final b = _bancos[index];
+                return Card(
+                  child: ListTile(
+                    leading: Icon(
+                      Icons.account_balance,
+                      color: b.activo ? AppColors.primary : Colors.grey,
+                    ),
+                    title: Text(b.denominacion),
+                    subtitle: Text(
+                      [
+                        b.monedaLabel.isNotEmpty
+                            ? 'Moneda: ${b.monedaLabel}'
+                            : null,
+                        b.activo ? 'Activo' : 'Inactivo',
+                        if (b.esPredeterminadaFondoCaja)
+                          'Predeterminada para Fondo de Caja',
+                        if (b.observacion != null && b.observacion!.isNotEmpty)
+                          b.observacion,
+                      ].whereType<String>().join(' · '),
+                    ),
+                    trailing: PopupMenuButton<String>(
+                      onSelected: (v) {
+                        if (v == 'edit') _showBancoDialog(banco: b);
+                        if (v == 'off') _deactivate(b);
+                      },
+                      itemBuilder: (_) => [
+                        const PopupMenuItem(
+                          value: 'edit',
+                          child: Text('Editar'),
                         ),
-                        title: Text(b.denominacion),
-                        subtitle: Text(
-                          [
-                            b.monedaLabel.isNotEmpty
-                                ? 'Moneda: ${b.monedaLabel}'
-                                : null,
-                            b.activo ? 'Activo' : 'Inactivo',
-                            if (b.observacion != null &&
-                                b.observacion!.isNotEmpty)
-                              b.observacion,
-                          ].whereType<String>().join(' · '),
-                        ),
-                        trailing: PopupMenuButton<String>(
-                          onSelected: (v) {
-                            if (v == 'edit') _showBancoDialog(banco: b);
-                            if (v == 'off') _deactivate(b);
-                          },
-                          itemBuilder: (_) => [
-                            const PopupMenuItem(
-                              value: 'edit',
-                              child: Text('Editar'),
-                            ),
-                            if (b.activo)
-                              const PopupMenuItem(
-                                value: 'off',
-                                child: Text('Desactivar'),
-                              ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                        if (b.activo)
+                          const PopupMenuItem(
+                            value: 'off',
+                            child: Text('Desactivar'),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
     );
   }
 }
