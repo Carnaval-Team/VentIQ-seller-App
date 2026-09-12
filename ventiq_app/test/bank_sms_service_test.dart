@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ventiq_app/models/bank_sms_payment.dart';
 import 'package:ventiq_app/services/bank_sms_service.dart';
+import 'package:ventiq_app/utils/bank_sms_parser.dart';
 
 BankSmsPayment payment({
   required String tx,
@@ -92,6 +93,40 @@ void main() {
       final pending = await svc.getPendingPayments();
       expect(pending, hasLength(1));
       expect(pending.first.nroTransaccionBanco, 'BBB22222');
+    });
+
+    test('un SMS usado no vuelve a casar por el mismo monto', () async {
+      final svc = BankSmsService();
+      await BankSmsService.appendPendingPayment(
+        payment(tx: 'KW601IONM4999', monto: 840.0),
+      );
+      expect(await svc.findMatchingPayment(840.0), isNotNull);
+
+      await svc.removePendingPayment('KW601IONM4999');
+
+      // Reaparece el mismo SMS (p.ej. desde inbox) — no debe casar otra venta.
+      await BankSmsService.appendPendingPayment(
+        payment(tx: 'KW601IONM4999', monto: 840.0),
+      );
+      expect(await svc.findMatchingPayment(840.0), isNull);
+      expect(await svc.getPendingPayments(), isEmpty);
+    });
+
+    test('bloquea reuso por mensaje completo sin id de banco', () async {
+      final svc = BankSmsService();
+      const raw = '''Banco Bandec El pago externo fue completado
+Fecha: 11/8/2026
+Monto Pagado: 500.00 CUP''';
+      final first = BankSmsParser.parse(raw)!;
+      expect(first.idFromRawMessage, isTrue);
+
+      await BankSmsService.appendPendingPayment(first);
+      expect(await svc.findMatchingPayment(500.0), isNotNull);
+      await svc.removePendingPayment(first.nroTransaccionBanco);
+
+      final again = BankSmsParser.parse(raw)!;
+      await BankSmsService.appendPendingPayment(again);
+      expect(await svc.findMatchingPayment(500.0), isNull);
     });
 
     test('limpia todo el buffer', () async {

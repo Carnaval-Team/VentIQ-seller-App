@@ -3038,8 +3038,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
   }
 
-  /// Mostrar pantalla de conteo de billetes
-  void _showBillCountDialog(Order order) {
+  /// Mostrar pantalla de conteo de billetes (solo la parte en efectivo).
+  Future<void> _showBillCountDialog(Order order) async {
+    final cashExpected = await _resolveCashExpectedAmount(order);
+    if (!mounted) return;
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -3048,6 +3050,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
               backgroundColor: Colors.white,
               body: BillCountDialog(
                 order: order,
+                expectedAmount: cashExpected,
                 userPreferencesService: _userPreferencesService,
                 onConfirmPayment: () {
                   _updateOrderStatus(order, OrderStatus.completada);
@@ -3056,6 +3059,39 @@ class _OrdersScreenState extends State<OrdersScreen> {
             ),
       ),
     );
+  }
+
+  /// Suma solo los pagos en efectivo de la orden (no el total mixto).
+  Future<double> _resolveCashExpectedAmount(Order order) async {
+    List<Map<String, dynamic>> payments;
+    if (_isOfflineMode || order.operationId == null) {
+      payments = _getLocalPaymentBreakdown(order);
+    } else {
+      try {
+        payments = await _orderService.getSalePayments(order.operationId!);
+      } catch (e) {
+        print('⚠️ No se pudo leer pagos online para conteo: $e');
+        payments = _getLocalPaymentBreakdown(order);
+      }
+    }
+
+    var cash = 0.0;
+    for (final payment in payments) {
+      final esEfectivo =
+          (payment['medio_pago_es_efectivo'] ?? payment['es_efectivo']) ==
+          true;
+      if (esEfectivo) {
+        cash += _resolvePaymentAmount(payment);
+      }
+    }
+
+    if (cash <= 0) {
+      cash = order.items
+          .where((item) => item.paymentMethod?.esEfectivo ?? false)
+          .fold<double>(0.0, (sum, item) => sum + item.subtotal);
+    }
+
+    return cash > 0 ? cash : order.total;
   }
 
   void _showConfirmationDialog(

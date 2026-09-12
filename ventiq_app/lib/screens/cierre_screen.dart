@@ -2801,42 +2801,41 @@ class _CierreScreenState extends State<CierreScreen> {
       // Cerrar trabajadores activos antes de cerrar el turno
       await _closeActiveWorkers();
 
-      // Si la apertura fue offline (cola local), el cierre debe ir por la cola
-      // y, si hay red, abrir+cerrar en servidor en este momento.
+      // Modo offline (config o auto por pérdida de red) o sin conexión:
+      // guardar SOLO local. No intentar cierre online primero (evita el
+      // fallback "intentó online → falló → cartel offline").
       //
-      // OJO: cualquier turno abierto se cachea localmente en la cola offline
-      // "por resiliencia" (ver `saveOfflineTurno`) aunque se haya operado
-      // 100% online, marcado con `apertura.origen_apertura == 'online'`. Si
-      // forzamos SIEMPRE el camino de la cola offline solo porque existe esa
-      // copia cacheada, un cierre que en realidad es online termina pasando
-      // por la cola (con sus reintentos automáticos) y puede quedar
-      // "pendiente de sync" indefinidamente si algo en ese camino falla,
-      // aunque hubiera red disponible en todo momento. Por eso, si hay red
-      // ahora mismo y la copia local es solo ese cache de resiliencia (no un
-      // turno genuinamente creado offline), preferimos el cierre directo.
+      // OJO: un turno abierto online se cachea en la cola por resiliencia
+      // (`origen_apertura == 'online'`). Con modo online + red real, ese
+      // cache no debe forzar el camino offline (quedaría pending sin
+      // necesidad). Sí debe ir por cola si la apertura fue genuinamente
+      // offline.
       final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
+      final hasNetwork =
+          await ConnectivityService().performImmediateCheck();
+      final forceLocalOnly = isOfflineModeEnabled || !hasNetwork;
       final offlineOpen = await _userPrefs.getOfflineTurno();
       final aperturaOffline = offlineOpen?['apertura'];
       final isCachedOnlineTurno =
           aperturaOffline is Map &&
           aperturaOffline['origen_apertura'] == 'online';
-      final hasNetworkNow =
-          !isOfflineModeEnabled &&
-          await ConnectivityService().performImmediateCheck();
       final useOfflineTurnoPath =
-          isOfflineModeEnabled ||
-          (offlineOpen != null && !(isCachedOnlineTurno && hasNetworkNow));
+          forceLocalOnly ||
+          (offlineOpen != null && !isCachedOnlineTurno);
 
       if (useOfflineTurnoPath) {
         print(
           '🔌 Cierre vía turno offline'
-          '${offlineOpen != null ? ' (${offlineOpen['local_id']})' : ''}...',
+          '${offlineOpen != null ? ' (${offlineOpen['local_id']})' : ''}'
+          ' forceLocalOnly=$forceLocalOnly '
+          'offlineMode=$isOfflineModeEnabled hasNetwork=$hasNetwork...',
         );
         await _createOfflineCierre(
           efectivoFinal: montoFinal,
           productos: productCounts ?? [],
           observaciones: observacionesFinales,
           diferencia: diferencia,
+          allowImmediateServerSync: !forceLocalOnly,
         );
       } else {
         print('🌐 Modo online - Creando cierre en Supabase...');
@@ -2850,7 +2849,6 @@ class _CierreScreenState extends State<CierreScreen> {
                     ? serverTurnoIdRaw.toInt()
                     : int.tryParse('$serverTurnoIdRaw'));
 
-        // Call TurnoService to close the shift
         final result = await TurnoService.cerrarTurnoDetailed(
           efectivoReal: montoFinal,
           productos: productCounts ?? [],
@@ -2873,13 +2871,15 @@ class _CierreScreenState extends State<CierreScreen> {
           _showSuccessDialog(montoFinal, diferencia);
         } else if (result.isNetworkError) {
           print(
-            '📵 Error de red en cierre online. Creando cierre offline de respaldo',
+            '📵 Error de red en cierre online. Guardando solo offline '
+            '(sin reintentar sync inmediato)',
           );
           await _createOfflineCierre(
             efectivoFinal: montoFinal,
             productos: productCounts ?? [],
             observaciones: observacionesFinales,
             diferencia: diferencia,
+            allowImmediateServerSync: false,
           );
         } else {
           // Error de negocio: NO crear cierre offline. Mostrar mensaje real.
@@ -3077,12 +3077,16 @@ class _CierreScreenState extends State<CierreScreen> {
     });
   }
 
-  /// Crear cierre offline
+  /// Crear cierre offline.
+  ///
+  /// [allowImmediateServerSync]: si false (modo offline, sin red, o fallback
+  /// tras error de red), solo guarda en cola local — no intenta subir ahora.
   Future<void> _createOfflineCierre({
     required double efectivoFinal,
     required List<Map<String, dynamic>> productos,
     required String observaciones,
     required double diferencia,
+    bool allowImmediateServerSync = true,
   }) async {
     try {
       final userData = await _userPrefs.getUserData();
@@ -3192,26 +3196,20 @@ class _CierreScreenState extends State<CierreScreen> {
       await _clearInventoryCounts();
       PrinterManager().clearSavedPrinter();
 
-      // En modo online (o con red y sin full-offline activo): abrir+cerrar
-      // en servidor ahora. Si el dispositivo está en full-offline (modo
-      // offline ON + preparado), el cierre queda solo local y la cola lo
-      // sube al sincronizar (admin / desactivar offline).
-      //
-      // Importante: `shouldUseLocalData()` también es true solo por estar
-      // "preparado" full-offline aunque el modo offline esté OFF; no debe
-      // bloquear el sync del cierre cuando hay red real.
+      // Solo intentar subir si el caller lo permite Y no hay modo offline.
+      // Subir con modo offline ON (o tras fallo de red) duplicaba aperturas /
+      // mostraba el cartel de "intentó online y falló".
       var syncedToServer = false;
       String? syncMessage;
-      final stayFullyOffline = await _userPrefs.shouldStayFullyOffline();
       final isOfflineMode = await _userPrefs.isOfflineModeEnabled();
       final hasNetwork = await ConnectivityService().performImmediateCheck();
-      final isOnlineMode = !isOfflineMode && !stayFullyOffline;
+      final tryServerSync =
+          allowImmediateServerSync && !isOfflineMode && hasNetwork;
 
-      if (hasNetwork && !stayFullyOffline) {
+      if (tryServerSync) {
         print(
-          '[TURNO_SYNC] _createOfflineCierre tiene red → '
-          'syncOfflineTurnoAfterLocalCierre(localId=$localTurnoId) '
-          'modo=${isOnlineMode ? 'online' : 'offline_mode_off+red'}',
+          '[TURNO_SYNC] _createOfflineCierre tiene red y modo online → '
+          'syncOfflineTurnoAfterLocalCierre(localId=$localTurnoId)',
         );
         final syncResult = await AutoSyncService()
             .syncOfflineTurnoAfterLocalCierre(localId: localTurnoId);
@@ -3227,12 +3225,12 @@ class _CierreScreenState extends State<CierreScreen> {
       } else {
         print(
           '[TURNO_SYNC] _createOfflineCierre SIN sync inmediato → '
-          'queda pending sync hasNetwork=$hasNetwork '
-          'stayFullyOffline=$stayFullyOffline isOfflineMode=$isOfflineMode',
+          'allowImmediateServerSync=$allowImmediateServerSync '
+          'hasNetwork=$hasNetwork isOfflineMode=$isOfflineMode',
         );
         syncMessage =
-            stayFullyOffline
-                ? 'Modo full-offline: el cierre se sincronizará al subir turnos'
+            isOfflineMode
+                ? 'Modo offline: el cierre se sincronizará al desactivar el modo offline'
                 : 'Sin conexión a internet';
       }
 
@@ -3250,8 +3248,8 @@ class _CierreScreenState extends State<CierreScreen> {
             ),
           );
           _showSuccessDialog(efectivoFinal, diferencia);
-        } else if (isOnlineMode) {
-          // Estaba en online: no fingir éxito offline silencioso.
+        } else if (allowImmediateServerSync && !isOfflineMode) {
+          // Intentó sync inmediato en modo online y falló.
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
@@ -3270,12 +3268,14 @@ class _CierreScreenState extends State<CierreScreen> {
           );
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
+            SnackBar(
               content: Text(
-                'Cierre guardado localmente. Se sincronizará cuando haya conexión.',
+                isOfflineMode
+                    ? 'Cierre guardado localmente. Se sincronizará al desactivar el modo offline.'
+                    : 'Cierre guardado localmente. Se sincronizará cuando haya conexión.',
               ),
               backgroundColor: Colors.orange,
-              duration: Duration(seconds: 3),
+              duration: const Duration(seconds: 3),
             ),
           );
           _showOfflineSuccessDialog(efectivoFinal, diferencia);

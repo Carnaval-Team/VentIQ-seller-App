@@ -155,11 +155,21 @@ Nro. Transaccion Banco: KW601IONM4999.''';
       expect(BankSmsParser.parse(rechazado), isNull);
     });
 
-    test('rechaza mensaje sin nro de transaccion banco', () {
+    test('sin nro de transaccion banco usa huella del mensaje', () {
       const sinTx = '''Banco Bandec El pago externo fue completado
 Fecha: 11/8/2026
 Monto Pagado: 840.00 CUP''';
-      expect(BankSmsParser.parse(sinTx), isNull);
+      final p = BankSmsParser.parse(sinTx);
+      expect(p, isNotNull);
+      expect(p!.monto, 840.00);
+      expect(p.idFromRawMessage, isTrue);
+      expect(p.nroTransaccionBanco, startsWith('MSG:'));
+      expect(p.rawMessage, sinTx);
+      // Misma huella en dos parses.
+      expect(
+        BankSmsParser.parse(sinTx)!.nroTransaccionBanco,
+        p.nroTransaccionBanco,
+      );
     });
 
     test('rechaza mensaje sin monto', () {
@@ -179,8 +189,9 @@ Nro. Transaccion Banco: KW601IONM4999.''';
 
   group('BankSmsParser - multipart', () {
     test('detecta fragmento incompleto como parcial', () {
+      // Sin monto ni id: incompleto (multipart a medias).
       const fragmento = 'Banco Bandec Elpago externo fue completado '
-          'Fecha: 11/8/2026 Entidad: Carnaval Alimento SURL Monto Pagado: 840.00';
+          'Fecha: 11/8/2026 Entidad: Carnaval Alimento SURL';
       expect(BankSmsParser.parse(fragmento), isNull);
       expect(BankSmsParser.looksLikePartialPayment(fragmento), isTrue);
     });

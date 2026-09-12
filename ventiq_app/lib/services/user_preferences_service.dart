@@ -3796,14 +3796,16 @@ class UserPreferencesService {
       final prefs = await SharedPreferences.getInstance();
       final egresosOffline = await getEgresosOffline();
 
-      // Agregar timestamp de creación offline
       egresoData['created_offline_at'] = DateTime.now().toIso8601String();
-      egresoData['offline_id'] = '${DateTime.now().millisecondsSinceEpoch}';
+      // UUID estable (no epoch): evita colisión si se crean 2 en el mismo ms.
+      if (egresoData['offline_id'] == null ||
+          '${egresoData['offline_id']}'.isEmpty) {
+        egresoData['offline_id'] = UuidGenerator.v4();
+      }
 
-      // 🔑 IDEMPOTENCIA: client_uuid estable por egreso, para que un reintento
-      // de sincronización NO duplique el egreso en el servidor.
+      // IDEMPOTENCIA: client_uuid estable por egreso.
       if (egresoData['client_uuid'] == null ||
-          (egresoData['client_uuid'] as String).isEmpty) {
+          (egresoData['client_uuid'] as String?)?.isEmpty == true) {
         egresoData['client_uuid'] = UuidGenerator.v4();
       }
 
@@ -3870,6 +3872,20 @@ class UserPreferencesService {
               .where((e) => !syncedSet.contains(e['offline_id']?.toString()))
               .toList();
       await saveEgresosOffline(restantes);
+
+      // Quitar también del cache de UI las filas offline ya subidas.
+      final cache = await getEgresosCache();
+      final cacheRestante =
+          cache
+              .where((e) => !syncedSet.contains(e['offline_id']?.toString()))
+              .toList();
+      if (cacheRestante.length != cache.length) {
+        await saveEgresosCache(cacheRestante);
+      }
+
+      // Limpiar ops legacy type=egreso (cola muerta; la fuente es egresos_offline).
+      await removePendingOperationsByType('egreso');
+
       print(
         '🧹 Egresos offline: ${syncedOfflineIds.length} sincronizados removidos, '
         '${restantes.length} conservados',
@@ -3877,6 +3893,48 @@ class UserPreferencesService {
     } catch (e) {
       print('❌ Error removiendo egresos offline sincronizados: $e');
     }
+  }
+
+  /// Actualiza campos de un egreso pendiente (p.ej. client_uuid / id_turno).
+  Future<void> updateOfflineEgreso(
+    String offlineId,
+    Map<String, dynamic> patch,
+  ) async {
+    final all = await getEgresosOffline();
+    var changed = false;
+    for (final e in all) {
+      if (e['offline_id']?.toString() == offlineId) {
+        e.addAll(patch);
+        changed = true;
+        break;
+      }
+    }
+    if (changed) await saveEgresosOffline(all);
+  }
+
+  /// Filas de cache para egresos aún no subidos (para no perderlos al bajar
+  /// egresos del servidor).
+  List<Map<String, dynamic>> egresosOfflineAsCacheRows(
+    List<Map<String, dynamic>> pending,
+  ) {
+    return pending.map((e) {
+      final offlineId = e['offline_id']?.toString() ?? '';
+      return {
+        'id_egreso': 0,
+        'monto_entrega': e['monto_entrega'],
+        'motivo_entrega': e['motivo_entrega'],
+        'nombre_autoriza': e['nombre_autoriza'],
+        'nombre_recibe': e['nombre_recibe'],
+        'fecha_entrega': e['fecha_entrega'],
+        'id_medio_pago': e['id_medio_pago'],
+        'turno_estado': 1,
+        'medio_pago': e['medio_pago'] ?? 'Efectivo',
+        'es_digital': e['es_digital'] ?? false,
+        'offline_id': offlineId,
+        'created_offline_at': e['created_offline_at'],
+        'pending_sync': true,
+      };
+    }).toList();
   }
 
   /// Guardar cache de egresos para modo offline

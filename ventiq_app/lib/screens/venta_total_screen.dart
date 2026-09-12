@@ -40,6 +40,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   double _totalTransferencia = 0.0; // Ventas pagadas con transferencia/digital
   Map<String, double> _totalesPorMedioPago = {};
   bool _isLoading = true;
+  bool _hasActiveTurno = false;
 
   // Expenses data
   List<Expense> _expenses = [];
@@ -194,6 +195,19 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   }
 
   Future<void> _initializeData() async {
+    if (mounted) setState(() => _isLoading = true);
+    final isOffline = await _userPreferencesService.isOfflineModeEnabled();
+    final onlineTurno = isOffline ? null : await TurnoService.getTurnoAbierto();
+    final offlineTurno = await _userPreferencesService.getOpenOfflineTurno();
+    final hasActiveTurno = onlineTurno != null || offlineTurno != null;
+
+    if (!mounted) return;
+    setState(() {
+      _hasActiveTurno = hasActiveTurno;
+      if (!hasActiveTurno) _isLoading = false;
+    });
+    if (!hasActiveTurno) return;
+
     await _loadExpenses();
     await _calcularVentaTotal();
   }
@@ -527,115 +541,147 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          Column(
-            children: [
-              // Resumen de ventas
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  border: Border(
-                    bottom: BorderSide(color: Colors.grey, width: 0.2),
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.receipt_long,
-                          color: const Color(0xFF4A90E2),
-                          size: 24,
-                        ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          'Resumen de Ventas',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1F2937),
+      body:
+          !_isLoading && !_hasActiveTurno
+              ? _buildNoActiveTurnoState()
+              : Stack(
+                children: [
+                  Column(
+                    children: [
+                      // Resumen de ventas
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          border: Border(
+                            bottom: BorderSide(color: Colors.grey, width: 0.2),
                           ),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildClickableSummaryCard(
-                            'Total Egresado',
-                            _egresosEfectivo.toStringAsFixed(0),
-                            Icons.attach_money,
-                            const Color.fromARGB(255, 160, 22, 22),
-                            onTap: _showEgresosList,
-                          ),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.receipt_long,
+                                  color: const Color(0xFF4A90E2),
+                                  size: 24,
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Resumen de Ventas',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF1F2937),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _buildClickableSummaryCard(
+                                    'Total Egresado',
+                                    _egresosEfectivo.toStringAsFixed(0),
+                                    Icons.attach_money,
+                                    const Color.fromARGB(255, 160, 22, 22),
+                                    onTap: _showEgresosList,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: _buildClickableSummaryCard(
+                                    'Total Ventas',
+                                    '\$${_totalVentas.toStringAsFixed(0)}',
+                                    Icons.attach_money,
+                                    Colors.green,
+                                    onTap: _showAllOrders,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _buildClickableSummaryCard(
+                                    'Total Transferencia',
+                                    '\$${_totalTransferencia.toStringAsFixed(0)}',
+                                    Icons.credit_card,
+                                    Colors.orange,
+                                    onTap: _showTransferOrders,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: _buildClickableSummaryCard(
+                                    'Efectivo Real',
+                                    '\$${_totalEfectivoReal.toStringAsFixed(0)}',
+                                    Icons.account_balance_wallet,
+                                    Colors.green,
+                                    onTap: _showCashOrders,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _buildClickableSummaryCard(
-                            'Total Ventas',
-                            '\$${_totalVentas.toStringAsFixed(0)}',
-                            Icons.attach_money,
-                            Colors.green,
-                            onTap: _showAllOrders,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildClickableSummaryCard(
-                            'Total Transferencia',
-                            '\$${_totalTransferencia.toStringAsFixed(0)}',
-                            Icons.credit_card,
-                            Colors.orange,
-                            onTap: _showTransferOrders,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _buildClickableSummaryCard(
-                            'Efectivo Real',
-                            '\$${_totalEfectivoReal.toStringAsFixed(0)}',
-                            Icons.account_balance_wallet,
-                            Colors.green,
-                            onTap: _showCashOrders,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+                      ),
 
-              // Lista de órdenes vendidas
-              Expanded(
-                child:
-                    _isLoading
-                        ? const Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              CircularProgressIndicator(),
-                              SizedBox(height: 16),
-                              Text('Cargando datos de ventas...'),
-                            ],
-                          ),
-                        )
-                        : _ordenesVendidas.isEmpty
-                        ? _buildEmptyState()
-                        : _buildOrdersList(),
+                      // Lista de órdenes vendidas
+                      Expanded(
+                        child:
+                            _isLoading
+                                ? const Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      CircularProgressIndicator(),
+                                      SizedBox(height: 16),
+                                      Text('Cargando datos de ventas...'),
+                                    ],
+                                  ),
+                                )
+                                : _ordenesVendidas.isEmpty
+                                ? _buildEmptyState()
+                                : _buildOrdersList(),
+                      ),
+                    ],
+                  ),
+                  // USD Rate Chip positioned at bottom left
+                  Positioned(bottom: 16, left: 16, child: _buildUsdRateChip()),
+                ],
               ),
-            ],
-          ),
-          // USD Rate Chip positioned at bottom left
-          Positioned(bottom: 16, left: 16, child: _buildUsdRateChip()),
-        ],
+    );
+  }
+
+  Widget _buildNoActiveTurnoState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.lock_clock_outlined, size: 72, color: Colors.grey[400]),
+            const SizedBox(height: 20),
+            const Text(
+              'No hay turno activo',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1F2937),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Abre un turno para consultar el resumen de ventas.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 15, color: Colors.grey[600]),
+            ),
+          ],
+        ),
       ),
     );
   }

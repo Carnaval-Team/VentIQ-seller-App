@@ -109,10 +109,14 @@ class BankSmsParser {
       );
     }
 
-    // Sin identificador único no hay idempotencia posible: se descarta.
-    if (nroTxBanco == null) return null;
+    // Sin id de banco: aún así guardamos el SMS usando una huella del mensaje
+    // completo, para poder bloquear reutilización cuando dos ventas tienen el
+    // mismo monto.
+    final idFromMessage = nroTxBanco == null;
+    final stableId =
+        nroTxBanco?.toUpperCase() ?? fingerprintRawMessage(body);
 
-    // Monto cobrado (= total de la orden).
+    // Monto cobrado (= total de la transferencia / orden).
     //   clásica: "Monto Pagado".
     //   nueva:   "Importe" (NO "Importe Pagado", que es el neto).
     var montoRaw = _matchGroup(
@@ -157,14 +161,33 @@ class BankSmsParser {
         ),
       ),
       nroTransaccion: nroTxPasarela,
-      nroTransaccionBanco: nroTxBanco.toUpperCase(),
+      nroTransaccionBanco: stableId,
       monto: monto,
       montoPagado: montoPagado,
       moneda: moneda,
       rawMessage: body,
       receivedAt: receivedAt ?? DateTime.now(),
+      idFromRawMessage: idFromMessage,
     );
   }
+
+  /// Huella estable del cuerpo del SMS (misma entrada → mismo id entre runs).
+  /// Se usa cuando el banco no manda `Nro. Transaccion Banco`.
+  static String fingerprintRawMessage(String body) {
+    final normalized =
+        body.replaceAll(RegExp(r'\s+'), ' ').trim().toUpperCase();
+    // FNV-1a 32-bit sobre UTF-8.
+    var hash = 2166136261;
+    for (final unit in normalized.codeUnits) {
+      hash ^= unit & 0xFF;
+      hash = (hash * 16777619) & 0xFFFFFFFF;
+    }
+    return 'MSG:${hash.toRadixString(16).padLeft(8, '0')}';
+  }
+
+  /// Normaliza el cuerpo para comparar mensajes idénticos (anti-reuso).
+  static String normalizeRawMessage(String body) =>
+      body.replaceAll(RegExp(r'\s+'), ' ').trim().toUpperCase();
 
   /// `true` si el texto parece el inicio de un SMS de pago pero aún no tiene
   /// todos los campos — señal de que es un fragmento multipart incompleto y

@@ -504,6 +504,7 @@ class _AppDrawerState extends State<AppDrawer> {
                     ),
                     const Divider(height: 1),
                   ],
+                ] else ...[
                   // Modo restaurante: el item de mesas va primero como entrada
                   // principal de la operación. La "Venta de Productos" se
                   // mantiene debajo (útil para venta de mostrador puntual).

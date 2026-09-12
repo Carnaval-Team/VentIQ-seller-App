@@ -99,6 +99,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool get _tieneTransferencia => widget.order.items
       .any((item) => item.paymentMethod?.esTransferencia ?? false);
 
+  /// Monto que debe casar el SMS: solo la parte por transferencia.
+  /// Si todo es transferencia, coincide con [finalTotal].
+  double get transferExpectedAmount {
+    var total = 0.0;
+    for (final item in widget.order.items) {
+      if (item.paymentMethod?.esTransferencia ?? false) {
+        total += _calculateItemPrice(item);
+      }
+    }
+    return total > 0 ? total : finalTotal;
+  }
+
   /// Arranca (o reengancha) la escucha del SMS de confirmación y se suscribe a
   /// los pagos entrantes. Todo best-effort: la confirmación es informativa.
   Future<void> _initSmsPaymentWatch() async {
@@ -116,11 +128,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     _smsSub = _bankSmsService.onPayment.listen((_) => _tryMatchPending());
   }
 
-  /// Busca en el buffer un pago cuyo monto coincida con el total y, si lo
-  /// encuentra, lo marca como confirmado en la UI.
+  /// Busca en el buffer un pago cuyo monto coincida con la parte transferencia
+  /// y, si lo encuentra, lo marca como confirmado en la UI.
   Future<void> _tryMatchPending() async {
     if (_confirmedPayment != null) return;
-    final match = await _bankSmsService.findMatchingPayment(finalTotal);
+    final match =
+        await _bankSmsService.findMatchingPayment(transferExpectedAmount);
     if (match == null || !mounted) return;
     setState(() {
       _confirmedPayment = match;
@@ -142,7 +155,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (_confirmedPayment != null) return _confirmedPayment;
     if (!BankSmsService.isSupported) return null;
     await _bankSmsService.reconcileFromInbox();
-    return _bankSmsService.findMatchingPayment(finalTotal);
+    return _bankSmsService.findMatchingPayment(transferExpectedAmount);
   }
 
   /// Detiene la escucha y saca el pago del buffer una vez asociado a la venta.
@@ -1484,7 +1497,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Buscando SMS de PAGOxMOVIL por \$${finalTotal.toStringAsFixed(2)}. '
+                  'Buscando SMS de PAGOxMOVIL por '
+                  '\$${transferExpectedAmount.toStringAsFixed(2)}. '
                   'Puedes crear la orden sin esperar.',
                   style: TextStyle(fontSize: 12, color: Colors.grey[700]),
                 ),

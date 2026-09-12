@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/turno_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/payment_method_service.dart';
 import '../services/server_time_service.dart';
+import '../services/connectivity_service.dart';
 import '../models/payment_method.dart';
+import '../utils/uuid_generator.dart';
 
 class EgresoScreen extends StatefulWidget {
   const EgresoScreen({Key? key}) : super(key: key);
@@ -26,6 +29,9 @@ class _EgresoScreenState extends State<EgresoScreen> {
   String? _errorMessage;
   List<PaymentMethod> _paymentMethods = [];
   PaymentMethod? _selectedPaymentMethod;
+  Map<String, dynamic>? _defaultCashFund;
+  bool _contabilizarFondoCaja = false;
+  bool _isLoadingCashFund = true;
 
   final UserPreferencesService _userPrefs = UserPreferencesService();
 
@@ -34,6 +40,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
     super.initState();
     _checkTurnoAbierto();
     _loadPaymentMethods();
+    _loadDefaultCashFund();
   }
 
   @override
@@ -47,13 +54,17 @@ class _EgresoScreenState extends State<EgresoScreen> {
 
   Future<void> _checkTurnoAbierto() async {
     try {
-      // Verificar si el modo offline está activado
       final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
+      final hasNetwork =
+          await ConnectivityService().performImmediateCheck();
+      final useLocal = isOfflineModeEnabled || !hasNetwork;
 
-      if (isOfflineModeEnabled) {
-        print('🔌 Modo offline activado - Cargando turno desde cache...');
+      if (useLocal) {
+        print(
+          '🔌 Egreso vía datos locales '
+          '(offlineMode=$isOfflineModeEnabled hasNetwork=$hasNetwork)...',
+        );
 
-        // Obtener turno offline
         final turnoOffline = await _userPrefs.getOfflineTurno();
 
         setState(() {
@@ -75,7 +86,6 @@ class _EgresoScreenState extends State<EgresoScreen> {
         _isLoadingTurno = false;
         if (turno != null) {
           _turnoAbierto = turno;
-          // Guardar turno en preferencias
           _userPrefs.saveTurnoData(turno);
         } else {
           _errorMessage = 'No hay turno abierto para realizar egreso';
@@ -91,10 +101,12 @@ class _EgresoScreenState extends State<EgresoScreen> {
 
   Future<void> _loadPaymentMethods() async {
     try {
-      // Verificar si el modo offline está activado
       final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
+      final hasNetwork =
+          await ConnectivityService().performImmediateCheck();
+      final useLocal = isOfflineModeEnabled || !hasNetwork;
 
-      if (isOfflineModeEnabled) {
+      if (useLocal) {
         print(
           '🔌 Modo offline activado - Cargando métodos de pago desde cache...',
         );
@@ -146,6 +158,46 @@ class _EgresoScreenState extends State<EgresoScreen> {
         _isLoadingPaymentMethods = false;
       });
       print('Error loading payment methods: $e');
+    }
+  }
+
+  Future<void> _loadDefaultCashFund() async {
+    try {
+      final offlineData = await _userPrefs.getOfflineData();
+      Map<String, dynamic>? account;
+      final cached = offlineData?['default_cash_fund'];
+      if (cached is Map) account = Map<String, dynamic>.from(cached);
+
+      final isOffline = await _userPrefs.isOfflineModeEnabled();
+      final hasNetwork =
+          await ConnectivityService().performImmediateCheck();
+      if (!isOffline && hasNetwork) {
+        final storeId = await _userPrefs.getIdTienda();
+        if (storeId != null) {
+          final response =
+              await Supabase.instance.client
+                  .from('dep_dat_banco')
+                  .select('id, idtienda, denominacion, id_moneda, activo')
+                  .eq('idtienda', storeId)
+                  .eq('activo', true)
+                  .eq('es_predeterminada_fondo_caja', true)
+                  .maybeSingle();
+          account = response;
+          if (response != null) {
+            await _userPrefs.mergeOfflineData({'default_cash_fund': response});
+          }
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _defaultCashFund = account;
+        _isLoadingCashFund = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoadingCashFund = false);
+      print('Error cargando cuenta predeterminada de Fondo de Caja: $e');
     }
   }
 
@@ -457,6 +509,35 @@ class _EgresoScreenState extends State<EgresoScreen> {
 
                       const SizedBox(height: 20),
 
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[300]!),
+                        ),
+                        child: CheckboxListTile(
+                          value: _contabilizarFondoCaja,
+                          onChanged:
+                              _defaultCashFund != null && !_isLoadingCashFund
+                                  ? (value) => setState(
+                                    () =>
+                                        _contabilizarFondoCaja = value ?? false,
+                                  )
+                                  : null,
+                          title: const Text('Contabilizar en Fondo de Caja'),
+                          subtitle: Text(
+                            _isLoadingCashFund
+                                ? 'Verificando cuenta predeterminada...'
+                                : _defaultCashFund == null
+                                ? 'Configure una cuenta predeterminada de Fondo de Caja'
+                                : 'Ingresará en ${_defaultCashFund!['denominacion']}',
+                          ),
+                          controlAffinity: ListTileControlAffinity.leading,
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
                       // Personas involucradas
                       Container(
                         padding: const EdgeInsets.all(16),
@@ -627,11 +708,29 @@ class _EgresoScreenState extends State<EgresoScreen> {
           _turnoAbierto!['local_id']?.toString() ??
           _turnoAbierto!['local_turno_id']?.toString();
 
-      // Verificar si el modo offline está activado
+      // Modo offline o sin red: guardar solo local (cola egresos_offline).
       final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
+      final hasNetwork =
+          await ConnectivityService().performImmediateCheck();
+      final forceLocalOnly = isOfflineModeEnabled || !hasNetwork;
 
-      if (isOfflineModeEnabled) {
-        print('🔌 Modo offline - Creando egreso offline...');
+      if (forceLocalOnly) {
+        print(
+          '🔌 Creando egreso offline '
+          '(offlineMode=$isOfflineModeEnabled hasNetwork=$hasNetwork)...',
+        );
+        if (_contabilizarFondoCaja && _defaultCashFund == null) {
+          throw Exception(
+            'No hay cuenta predeterminada de Fondo de Caja en cache. '
+            'Sincronice online o prepare el dispositivo antes de marcar '
+            'Contabilizar en Fondo de Caja.',
+          );
+        }
+        if (localTurnoId == null || localTurnoId.isEmpty) {
+          throw Exception(
+            'No hay turno offline abierto al que asociar el egreso',
+          );
+        }
         await _createOfflineEgreso(
           localTurnoId: localTurnoId,
           serverIdTurno: serverIdTurno,
@@ -639,28 +738,74 @@ class _EgresoScreenState extends State<EgresoScreen> {
           motivo: motivo,
           nombreAutoriza: nombreAutoriza,
           nombreRecibe: nombreRecibe,
+          contabilizarFondoCaja: _contabilizarFondoCaja,
         );
       } else {
         print('🌐 Modo online - Registrando egreso en servidor...');
         if (serverIdTurno == null) {
           throw Exception('No hay id de turno válido para registrar el egreso');
         }
-        // Llamar a la función RPC
-        final result = await TurnoService.registrarEgresoParcial(
-          idTurno: serverIdTurno,
-          montoEntrega: monto,
-          motivoEntrega: motivo,
-          nombreAutoriza: nombreAutoriza,
-          nombreRecibe: nombreRecibe,
-          idMedioPago: _selectedPaymentMethod?.id,
-        );
+        try {
+          Map<String, dynamic> result;
+          if (_contabilizarFondoCaja) {
+            final storeId = await _userPrefs.getIdTienda();
+            final userId = await _userPrefs.getUserId();
+            if (storeId == null || _defaultCashFund == null) {
+              throw Exception('No hay cuenta predeterminada de Fondo de Caja');
+            }
+            final response = await Supabase.instance.client.rpc(
+              'fn_registrar_egreso_fondo_caja',
+              params: {
+                'p_client_uuid': UuidGenerator.v4(),
+                'p_idtienda': storeId,
+                'p_id_turno': serverIdTurno,
+                'p_monto_entrega': monto,
+                'p_nombre_recibe': nombreRecibe,
+                'p_nombre_autoriza': nombreAutoriza,
+                'p_motivo_entrega': motivo,
+                'p_id_medio_pago': _selectedPaymentMethod?.id,
+                'p_uuid_usuario': userId,
+              },
+            );
+            result = Map<String, dynamic>.from(response as Map);
+          } else {
+            result = await TurnoService.registrarEgresoParcial(
+              idTurno: serverIdTurno,
+              montoEntrega: monto,
+              motivoEntrega: motivo,
+              nombreAutoriza: nombreAutoriza,
+              nombreRecibe: nombreRecibe,
+              idMedioPago: _selectedPaymentMethod?.id,
+            );
+          }
 
-        if (result['success'] == true) {
-          // Mostrar confirmación de éxito
-          _showSuccessDialog(result);
-        } else {
-          // Mostrar error del servidor
-          _showErrorMessage(result['message'] ?? 'Error desconocido');
+          if (result['success'] == true) {
+            _showSuccessDialog(result);
+          } else {
+            _showErrorMessage(result['message'] ?? 'Error desconocido');
+          }
+        } catch (e) {
+          final msg = e.toString().toLowerCase();
+          final looksNetwork =
+              msg.contains('socket') ||
+              msg.contains('network') ||
+              msg.contains('connection') ||
+              msg.contains('timeout') ||
+              msg.contains('failed host lookup');
+          if (looksNetwork) {
+            print('📵 Error de red en egreso online → guardando offline');
+            await _createOfflineEgreso(
+              localTurnoId: localTurnoId,
+              serverIdTurno: serverIdTurno,
+              monto: monto,
+              motivo: motivo,
+              nombreAutoriza: nombreAutoriza,
+              nombreRecibe: nombreRecibe,
+              contabilizarFondoCaja: _contabilizarFondoCaja,
+            );
+          } else {
+            rethrow;
+          }
         }
       }
     } catch (e) {
@@ -729,6 +874,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
     required String motivo,
     required String nombreAutoriza,
     required String nombreRecibe,
+    required bool contabilizarFondoCaja,
   }) async {
     try {
       // Crear estructura de egreso offline
@@ -745,20 +891,21 @@ class _EgresoScreenState extends State<EgresoScreen> {
         'fecha_entrega': ServerTimeService().now().toIso8601String(),
         'es_digital': _selectedPaymentMethod?.esDigital ?? false,
         'medio_pago': _selectedPaymentMethod?.denominacion ?? 'Efectivo',
+        'contabilizar_fondo_caja': contabilizarFondoCaja,
       };
 
-      // Guardar egreso offline
+      // Cola real de sync: egresos_offline (no pending_operations type=egreso).
       await _userPrefs.saveOfflineEgreso(egresoData);
 
       final egresosCache = await _userPrefs.getEgresosCache();
       final updatedCache = List<Map<String, dynamic>>.from(egresosCache);
-      final offlineId = egresoData['offline_id'];
+      final offlineId = egresoData['offline_id']?.toString();
       final alreadyCached = updatedCache.any(
-        (item) => item['offline_id'] == offlineId,
+        (item) => item['offline_id']?.toString() == offlineId,
       );
       if (!alreadyCached) {
         updatedCache.add({
-          'id_egreso': offlineId ?? 0,
+          'id_egreso': 0,
           'monto_entrega': monto,
           'motivo_entrega': motivo,
           'nombre_autoriza': nombreAutoriza,
@@ -770,30 +917,26 @@ class _EgresoScreenState extends State<EgresoScreen> {
           'es_digital': _selectedPaymentMethod?.esDigital ?? false,
           'offline_id': offlineId,
           'created_offline_at': egresoData['created_offline_at'],
+          'pending_sync': true,
         });
         await _userPrefs.saveEgresosCache(updatedCache);
         print('💾 Egreso offline agregado al cache de egresos');
       }
 
-      // Guardar como operación pendiente para sincronización
-      await _userPrefs.savePendingOperation({
-        'type': 'egreso',
-        'data': egresoData,
-      });
-
+      final isOfflineMode = await _userPrefs.isOfflineModeEnabled();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text(
-              'Egreso creado offline. Se sincronizará cuando tengas conexión.',
+              isOfflineMode
+                  ? 'Egreso guardado localmente. Se sincronizará al desactivar el modo offline.'
+                  : 'Egreso guardado localmente. Se sincronizará cuando haya conexión.',
             ),
             backgroundColor: Colors.orange,
-            duration: Duration(seconds: 3),
+            duration: const Duration(seconds: 3),
           ),
         );
-
-        // Mostrar diálogo de éxito offline
-        _showOfflineSuccessDialog(monto);
+        _showOfflineSuccessDialog(monto, isOfflineMode: isOfflineMode);
       }
 
       print('✅ Egreso offline creado exitosamente');
@@ -807,7 +950,10 @@ class _EgresoScreenState extends State<EgresoScreen> {
     }
   }
 
-  void _showOfflineSuccessDialog(double monto) {
+  void _showOfflineSuccessDialog(
+    double monto, {
+    bool isOfflineMode = true,
+  }) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -827,9 +973,11 @@ class _EgresoScreenState extends State<EgresoScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'El egreso se ha guardado localmente y se sincronizará automáticamente cuando tengas conexión a internet.',
-                  style: TextStyle(fontSize: 14),
+                Text(
+                  isOfflineMode
+                      ? 'El egreso se guardó localmente y se sincronizará al desactivar el modo offline (o con sync explícito).'
+                      : 'El egreso se guardó localmente y se sincronizará automáticamente cuando haya conexión.',
+                  style: const TextStyle(fontSize: 14),
                 ),
                 const SizedBox(height: 16),
                 Container(
@@ -870,8 +1018,8 @@ class _EgresoScreenState extends State<EgresoScreen> {
             actions: [
               ElevatedButton(
                 onPressed: () {
-                  Navigator.pop(context); // Cerrar diálogo
-                  Navigator.pop(context); // Volver a pantalla anterior
+                  Navigator.pop(context);
+                  Navigator.pop(context);
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.orange[700],
