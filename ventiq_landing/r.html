@@ -433,6 +433,8 @@
 
     <div id="toast" class="toast"><span class="dot"></span><span id="toastText">Invitación lista</span></div>
 
+    <script src="assets/js/supabase.min.js"></script>
+    <script src="assets/js/tracking.js"></script>
     <script>
         (function () {
             var PLAY_URL = "https://play.google.com/store/apps/details?id=com.carnaval24&hl=es_419";
@@ -472,6 +474,7 @@
                 refChip.style.display = "inline-flex";
                 refCodeEl.textContent = code;
                 manualText.value = payload;
+                VentiqTracking.track('referral_visit', { code: code });
             } else {
                 ctaHint.textContent = "Te llevamos a la tienda oficial.";
             }
@@ -546,6 +549,7 @@
 
             function handleCta() {
                 ctaBtn.classList.add("loading");
+                VentiqTracking.track('play_store_click', { code: code || null });
 
                 // Si no hay código, vamos directo a la tienda.
                 if (!code) {
@@ -569,6 +573,7 @@
                     // En el próximo click, ir directo a la tienda.
                     ctaBtn.removeEventListener("click", handleCta);
                     ctaBtn.addEventListener("click", function () {
+                        VentiqTracking.track('play_store_click', { code: code || null });
                         // Intento final silencioso por si el usuario ya seleccionó.
                         tryCopy().catch(function () {});
                         openStore();
