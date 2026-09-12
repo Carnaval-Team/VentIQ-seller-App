@@ -43,6 +43,8 @@ class AppRoutes {
     AppRoute(route: '/muevete/planes', label: 'Solicitudes de Plan', group: 'Muévete'),
     AppRoute(route: '/muevete/cargas', label: 'Gestión de Cargas', group: 'Muévete'),
     AppRoute(route: '/carnaval-dashboard', label: 'Info de Carnaval', group: 'Carnaval'),
+    AppRoute(route: '/carnaval-precios-tiendas', label: 'Recargos Carnaval por Tienda', group: 'Carnaval'),
+    AppRoute(route: '/carnaval-productos-tienda', label: 'Productos por Tienda en Carnaval', group: 'Carnaval'),
     AppRoute(route: '/roles', label: 'Gestión de Roles', group: 'Sistema'),
     AppRoute(route: '/configuracion', label: 'Configuración', group: 'Sistema'),
   ];

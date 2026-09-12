@@ -216,6 +216,16 @@ class AppDrawer extends StatelessWidget {
                       title: 'Info de Carnaval',
                       route: '/carnaval-dashboard',
                     ),
+                    _DrawerItem(
+                      icon: Icons.percent,
+                      title: 'Recargos Carnaval por Tienda',
+                      route: '/carnaval-precios-tiendas',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.storefront,
+                      title: 'Productos por Tienda en Carnaval',
+                      route: '/carnaval-productos-tienda',
+                    ),
                   ],
                 ),
                 _buildMenuSection(
@@ -391,6 +401,8 @@ class AppDrawer extends StatelessWidget {
                 item.route == '/agentes' ||
                 item.route == '/ingresos-distribucion' ||
                 item.route == '/carnaval-dashboard' ||
+                item.route == '/carnaval-precios-tiendas' ||
+                item.route == '/carnaval-productos-tienda' ||
                 item.route == '/roles') {
               Navigator.of(context).pushReplacementNamed(item.route);
             } else {

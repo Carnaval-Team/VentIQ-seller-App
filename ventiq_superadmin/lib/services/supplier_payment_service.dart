@@ -48,6 +48,75 @@ class SupplierPaymentService {
     return null;
   }
 
+  /// Carga los porcentajes de recargo aplicables a cada proveedor (tienda)
+  /// usando la configuración de `app_dat_precio_general_tienda` con el piso
+  /// global de `precio_global_productos_carnaval`.
+  static Future<Map<int, ({double cashPct, double transferPct})>> _loadStorePricing(
+    Set<int> carnavalProviderIds,
+  ) async {
+    if (carnavalProviderIds.isEmpty) {
+      return {};
+    }
+
+    final globalResponse = await _supabase
+        .from('precio_global_productos_carnaval')
+        .select('porciento_efectivo, porciento_transferencia')
+        .limit(1)
+        .maybeSingle();
+
+    final floorCash =
+        (globalResponse?['porciento_efectivo'] as num?)?.toDouble() ?? 0.0;
+    final floorTransfer =
+        (globalResponse?['porciento_transferencia'] as num?)?.toDouble() ?? 0.0;
+
+    final tiendasResponse = await _supabase
+        .from('app_dat_tienda')
+        .select('id, id_tienda_carnaval')
+        .inFilter('id_tienda_carnaval', carnavalProviderIds.toList());
+
+    final tiendaIdsByProvider = <int, int>{};
+    for (final row in tiendasResponse as List) {
+      final providerId = _asInt(row['id_tienda_carnaval']);
+      final tiendaId = _asInt(row['id']);
+      if (providerId != null && tiendaId != null) {
+        tiendaIdsByProvider[providerId] = tiendaId;
+      }
+    }
+
+    final pricingResponse = await _supabase
+        .from('app_dat_precio_general_tienda')
+        .select(
+          'id_tienda, precio_venta_carnaval, precio_venta_carnaval_transferencia',
+        )
+        .inFilter('id_tienda', tiendaIdsByProvider.values.toList());
+
+    final configsByTienda = <int, Map<String, double>>{};
+    for (final row in pricingResponse as List) {
+      final tiendaId = _asInt(row['id_tienda']);
+      if (tiendaId == null) continue;
+      configsByTienda[tiendaId] = {
+        'cash':
+            (row['precio_venta_carnaval'] as num?)?.toDouble() ?? floorCash,
+        'transfer':
+            (row['precio_venta_carnaval_transferencia'] as num?)?.toDouble() ??
+                floorTransfer,
+      };
+    }
+
+    final result = <int, ({double cashPct, double transferPct})>{};
+    for (final providerId in carnavalProviderIds) {
+      final tiendaId = tiendaIdsByProvider[providerId];
+      final config = tiendaId != null ? configsByTienda[tiendaId] : null;
+      final cash = config?['cash'] ?? floorCash;
+      final transfer = config?['transfer'] ?? floorTransfer;
+      result[providerId] = (
+        cashPct: cash < floorCash ? floorCash : cash,
+        transferPct: transfer < floorTransfer ? floorTransfer : transfer,
+      );
+    }
+    return result;
+  }
+
   /// Obtener resumen de pagos por proveedor en un rango de fechas
   static Future<List<SupplierPaymentSummary>> getSupplierPayments(
     DateTime fechaInicio,
@@ -80,6 +149,10 @@ class SupplierPaymentService {
         fechaFin: fechaFin,
       );
 
+      final carnavalProviderIds =
+          lines.map((order) => _asInt(order['proveedor']) ?? 3).toSet();
+      final pricingByProvider = await _loadStorePricing(carnavalProviderIds);
+
       final Map<int, Map<String, dynamic>> supplierTotals = {};
 
       for (final order in lines) {
@@ -91,6 +164,10 @@ class SupplierPaymentService {
         final isTransfer = order['transferencia'] as bool? ?? false;
 
         final totalRow = price * quantity;
+        final pricing = pricingByProvider[proveedorId] ??
+            (cashPct: 0.0, transferPct: 0.0);
+        final pct = isTransfer ? pricing.transferPct : pricing.cashPct;
+        final netRow = totalRow * (1 - pct / 100);
 
         supplierTotals.putIfAbsent(proveedorId, () {
           return {
@@ -99,6 +176,8 @@ class SupplierPaymentService {
             'total_euro': 0.0,
             'total_cash': 0.0,
             'total_transfer': 0.0,
+            'net_cash': 0.0,
+            'net_transfer': 0.0,
             'total_orders': 0,
           };
         });
@@ -109,8 +188,10 @@ class SupplierPaymentService {
 
         if (isTransfer) {
           supplierTotals[proveedorId]!['total_transfer'] += totalRow;
+          supplierTotals[proveedorId]!['net_transfer'] += netRow;
         } else {
           supplierTotals[proveedorId]!['total_cash'] += totalRow;
+          supplierTotals[proveedorId]!['net_cash'] += netRow;
         }
 
         supplierTotals[proveedorId]!['total_orders'] += 1;
@@ -151,6 +232,8 @@ class SupplierPaymentService {
             totalEuro: totals['total_euro'] as double,
             totalCash: totals['total_cash'] as double,
             totalTransfer: totals['total_transfer'] as double,
+            netCash: totals['net_cash'] as double,
+            netTransfer: totals['net_transfer'] as double,
             totalOrders: totals['total_orders'] as int,
           ),
         );
@@ -180,6 +263,10 @@ class SupplierPaymentService {
         fechaFin: fechaFin,
         proveedorId: proveedorId,
       );
+
+      final pricingByProvider = await _loadStorePricing({proveedorId});
+      final pricing = pricingByProvider[proveedorId] ??
+          (cashPct: 0.0, transferPct: 0.0);
 
       final Map<int, OrderPaymentDetail> ordersMap = {};
       final Map<int, List<ProductPaymentDetail>> orderProductsMap = {};
@@ -212,6 +299,8 @@ class SupplierPaymentService {
                 DateTime.now(),
             total: 0.0,
             isTransfer: isTransfer,
+            cashPct: pricing.cashPct,
+            transferPct: pricing.transferPct,
             products: [],
           );
         }
@@ -224,6 +313,8 @@ class SupplierPaymentService {
           createdAt: currentOrder.createdAt,
           total: currentOrder.total + product.subtotal,
           isTransfer: isTransfer,
+          cashPct: currentOrder.cashPct,
+          transferPct: currentOrder.transferPct,
           products: [],
         );
       }
@@ -237,6 +328,8 @@ class SupplierPaymentService {
             createdAt: orderBase.createdAt,
             total: orderBase.total,
             isTransfer: orderBase.isTransfer,
+            cashPct: orderBase.cashPct,
+            transferPct: orderBase.transferPct,
             products: orderProductsMap[orderId]!,
           ),
         );
@@ -427,51 +520,6 @@ class SupplierPaymentService {
       }
     }
     return map;
-  }
-
-  /// Obtener los porcentajes globales de comisión desde la tabla
-  static Future<Map<String, double>> getGlobalPercentages() async {
-    try {
-      final response = await _supabase
-          .from('precio_global_productos_carnaval')
-          .select('porciento_efectivo, porciento_transferencia')
-          .limit(1)
-          .maybeSingle();
-
-      if (response == null) {
-        return {'efectivo': 5.0, 'transferencia': 15.0};
-      }
-
-      return {
-        'efectivo': (response['porciento_efectivo'] as num?)?.toDouble() ?? 5.0,
-        'transferencia':
-            (response['porciento_transferencia'] as num?)?.toDouble() ?? 15.0,
-      };
-    } catch (e) {
-      debugPrint('❌ Error obteniendo porcentajes globales: $e');
-      return {'efectivo': 5.0, 'transferencia': 15.0};
-    }
-  }
-
-  /// Actualizar los porcentajes globales de comisión
-  static Future<bool> updateGlobalPercentages({
-    required double efectivo,
-    required double transferencia,
-  }) async {
-    try {
-      await _supabase
-          .from('precio_global_productos_carnaval')
-          .update({
-            'porciento_efectivo': efectivo,
-            'porciento_transferencia': transferencia,
-            'updated_at': DateTime.now().toIso8601String(),
-          })
-          .eq('id', 1);
-      return true;
-    } catch (e) {
-      debugPrint('❌ Error actualizando porcentajes: $e');
-      return false;
-    }
   }
 
   /// Obtener estadísticas generales de pagos

@@ -11,8 +11,10 @@ class SupplierPaymentSummary {
   final double totalCup;
   final double totalUsd;
   final double totalEuro;
-  final double totalCash; // New: Total amount paid in cash
-  final double totalTransfer; // New: Total amount paid via transfer
+  final double totalCash; // Total amount sold in cash (gross)
+  final double totalTransfer; // Total amount sold via transfer (gross)
+  final double netCash; // Net amount to pay for cash sales
+  final double netTransfer; // Net amount to pay for transfer sales
   final int totalOrders;
   List<OrderPaymentDetail>? orders; // Loaded on demand
 
@@ -31,6 +33,8 @@ class SupplierPaymentSummary {
     required this.totalEuro,
     required this.totalCash,
     required this.totalTransfer,
+    required this.netCash,
+    required this.netTransfer,
     required this.totalOrders,
     this.orders,
   });
@@ -54,6 +58,8 @@ class SupplierPaymentSummary {
       totalEuro: (json['total_euro'] as num?)?.toDouble() ?? 0.0,
       totalCash: (json['total_cash'] as num?)?.toDouble() ?? 0.0,
       totalTransfer: (json['total_transfer'] as num?)?.toDouble() ?? 0.0,
+      netCash: (json['net_cash'] as num?)?.toDouble() ?? 0.0,
+      netTransfer: (json['net_transfer'] as num?)?.toDouble() ?? 0.0,
       totalOrders: json['total_orders'] as int? ?? 0,
     );
   }
@@ -74,6 +80,8 @@ class SupplierPaymentSummary {
       'total_euro': totalEuro,
       'total_cash': totalCash,
       'total_transfer': totalTransfer,
+      'net_cash': netCash,
+      'net_transfer': netTransfer,
       'total_orders': totalOrders,
     };
   }
@@ -84,6 +92,8 @@ class OrderPaymentDetail {
   final DateTime createdAt;
   final double total;
   final bool isTransfer; // True if transfer, False if cash
+  final double cashPct;
+  final double transferPct;
   final List<ProductPaymentDetail> products;
 
   OrderPaymentDetail({
@@ -91,14 +101,16 @@ class OrderPaymentDetail {
     required this.createdAt,
     required this.total,
     required this.isTransfer,
+    this.cashPct = 5,
+    this.transferPct = 15,
     required this.products,
   });
 
-  double discountAmount({double cashPct = 5, double transferPct = 15}) =>
-      isTransfer ? total * (transferPct / 100) : total * (cashPct / 100);
+  double get _appliedPct => isTransfer ? transferPct : cashPct;
 
-  double totalToPay({double cashPct = 5, double transferPct = 15}) =>
-      total - discountAmount(cashPct: cashPct, transferPct: transferPct);
+  double discountAmount() => total * (_appliedPct / 100);
+
+  double totalToPay() => total - discountAmount();
 }
 
 class ProductPaymentDetail {
