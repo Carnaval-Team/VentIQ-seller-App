@@ -1,335 +1,538 @@
-# Publicaciones problema + UI
+# Publicaciones problema + UI — prompts para IA de imagen
 
-Copy listo para Facebook / WhatsApp. Cada post indica **qué pantalla capturar** para armar la imagen de referencia.
+Documento listo para **copiar y pegar** en una IA generativa de imagen (ChatGPT/DALL·E, Gemini, Ideogram, Midjourney, etc.) **junto con capturas reales** de las apps.
 
-**CTA:** inventtia.com · WhatsApp +53 63464544  
-**Regla:** 1 problema = 1 imagen. El titular habla del dolor; la captura muestra la pantalla que lo resuelve (no logo genérico ni collage).
+**Cómo usarlo**
+1. Abre la app y captura la pantalla del mapa (columna “Pantalla”). Ideal: datos demo, sin datos personales sensibles.
+2. En la IA de imagen: **adjunta esa captura como referencia** (imagen 1). En el duo Dom, adjunta 2 capturas (Caja + Gestión).
+3. Copia el bloque **PROMPT COMPLETO** del post y pégalo en el mismo mensaje.
+4. Publica el copy del post con la imagen generada.
 
----
+**CTA fijo (texto del post):** inventtia.com · WhatsApp +53 63464544  
+**Regla:** 1 problema = 1 imagen. El titular habla del dolor; la captura real es la prueba visual.
 
-## Guía rápida de captura
-
-| Tema | Qué hacer |
-|------|-----------|
-| Formato | 1080×1350 (FB feed) o 1080×1080. Stories 1080×1920 con UI en la mitad inferior. |
-| Datos | Tienda demo: nombres genéricos, montos creíbles, sin clientes reales ni teléfonos. |
-| UI | Ocupa 50–70% del frame. Margen para el titular del problema (no tape botones clave). |
-| Marca | Esquina: Inventtia Caja / Gestión / GoReservas / Muévete. CTA abajo: inventtia.com |
-| Estilo | Foto real del dispositivo o mockup simple. Evitar collages de muchas pantallas. |
+**Qué debe hacer la IA (importante)**  
+No inventar otra UI. Tomar la captura adjunta como **fuente de verdad** de la pantalla, montarla en un mockup/publicidad y añadir solo titular + badge + atmósfera. Mantener layout, colores, tipografía e iconos de Inventtia lo más fiel posible.
 
 ---
 
-## Mapa rápido: problema → pantalla
+## Instrucciones globales para la IA (léelas una vez)
 
-| ID | App | Problema | Pantalla a mostrar |
-|----|-----|----------|-------------------|
-| C1 | Caja | No sabes cuánto debería haber en caja al final del día | Cierre de turno |
-| C2 | Caja | Se va la luz o el internet y se paran las ventas | Offline + catálogo |
-| C3 | Caja | Cobrar con varios métodos de pago es un lío | Checkout / cobro |
-| C4 | Caja | Las órdenes se pierden entre mostrador y cocina/almacén | Lista de órdenes |
-| C5 | Caja | Vender rápido se vuelve lento si buscas productos a ciegas | Catálogo por categorías |
-| C6 | Caja | No hay control de quién abrió la caja ni con cuánto | Apertura de caja |
-| G1 | Gestión | No sabes qué se vende ni qué ganas de verdad | Dashboard ejecutivo |
-| G2 | Gestión | El inventario vive en la cabeza de alguien | Inventario / stock |
-| G3 | Gestión | Cambiar precios es un caos entre papel, WhatsApp y la caja | Gestión de precios |
-| G4 | Gestión | Sin trazabilidad de quién movió la mercancía | Operaciones de inventario |
-| G5 | Gestión | Las ventas del día se quedan en el TPV sin análisis | Monitoreo de ventas |
-| G6 | Gestión | El dinero se mezcla con gastos sin control | Sistema financiero |
-| R1 | GoReservas | Agenda en papel → doble reserva | Reserva / panel del día |
-| M1 | Muévete | Pedir viaje es incierto (precio, espera, confianza) | Mapa solicitud de viaje |
+Úsalas como prefijo si la herramienta no acepta prompts largos, o déjalas incluidas en cada PROMPT COMPLETO.
 
----
+```
+Eres un director de arte para ads de software B2B (punto de venta y gestión de negocio).
+Genera UNA sola imagen de publicidad para redes (Facebook feed).
 
-## Orden sugerido de la semana (negocios)
+REFERENCIA OBLIGATORIA: el usuario adjunta captura(s) REAL(es) de la app Inventtia.
+Esa captura es la fuente de verdad de la UI. NO rediseñes la interfaz. NO inventes otra app.
+Reproduce la misma pantalla (layout, colores, botones, tipografía, iconos) con la máxima fidelidad.
+Puedes enfocar/recortar levemente, aumentar nitidez y colocarla dentro de un mockup de dispositivo.
+Si hay datos sensibles en la captura, puedes difuminarlos; no inventes datos personales nuevos.
 
-| Día | Post | Tema |
-|-----|------|------|
-| Lun | C1 | Cierre de caja |
-| Mar | G2 | Inventario |
-| Mié | C2 | Offline |
-| Jue | G3 | Precios |
-| Vie | C3 | Cobro |
-| Sáb | G1 | Dashboard |
-| Dom | Duo | Caja + Gestión (checkout + dashboard en split): “cobra en Caja, controla en Gestión” |
+FORMATO: 1080×1350 vertical (o 1080×1080 si se indica).
+COMPOSICIÓN: una sola pieza, no collage. La UI de la captura ocupa 50–70% del frame.
+ESTILO: mockup limpio (phone/tablet/laptop según el producto) + atmósfera de fondo suave
+(local comercial o escritorio desenfocado). Sin stock “startup purple”.
+TEXTO EXTRA EN LA PIEZA (fuera de la UI): máximo 1 titular corto en español + badge de producto
+(Inventtia Caja / Gestión / GoReservas / Muévete). CTA pequeño: inventtia.com
+NO tape la UI con stickers, badges flotantes ni texto encima de botones/números clave.
+EVITAR: rediseñar la app, collages, muchas pantallas, glow neón, purple/indigo AI look,
+crema+terracota genérico, layout tipo periódico, emojis, logos sueltos.
+```
 
 ---
 
-## Inventtia Caja (ventiq_app)
+## Prefijo reutilizable (opcional)
 
-En la imagen debe leerse **Inventtia Caja**.
+Si tu IA tiene límite de caracteres, pega primero esto + la captura, y luego el prompt del post:
 
-### C1 — Caja que no cuadra
+```
+Ad vertical 1080x1350 para Facebook. Usa la captura adjunta como la UI REAL de Inventtia
+(no la rediseñes). Colócala en un mockup de dispositivo. Una sola composición.
+Titular del problema fuera de la UI; la captura ocupa 50–70% del frame.
+Badge del producto. CTA inventtia.com abajo. Sin collage, sin purple AI.
+```
+---
 
-**Problema:** No sabes cuánto debería haber en caja al final del día.
+## Mapa rápido
 
-**Gancho:** Si al cerrar el día “calculas de memoria”, ya perdiste dinero.
+| ID | Producto | Problema | Captura a adjuntar |
+|----|----------|----------|---------------------|
+| C1 | Inventtia Caja | Caja que no cuadra | Cierre de turno |
+| C2 | Inventtia Caja | Sin internet | Offline + catálogo |
+| C3 | Inventtia Caja | Métodos de pago | Checkout |
+| C4 | Inventtia Caja | Órdenes perdidas | Lista de órdenes |
+| C5 | Inventtia Caja | Catálogo lento | Categorías |
+| C6 | Inventtia Caja | Apertura sin control | Apertura de caja |
+| G1 | Inventtia Gestión | Sin números | Dashboard |
+| G2 | Inventtia Gestión | Inventario invisible | Inventario |
+| G3 | Inventtia Gestión | Precios desalineados | Precios |
+| G4 | Inventtia Gestión | Sin trazabilidad | Operaciones inventario |
+| G5 | Inventtia Gestión | Ventas sin análisis | Monitoreo ventas |
+| G6 | Inventtia Gestión | Finanzas mezcladas | Módulo financiero |
+| R1 | GoReservas | Doble reserva | Agenda del día |
+| M1 | Muévete | Viaje incierto | Mapa solicitud |
 
-**Cuerpo:** Muchos negocios cobran todo el día… y al final no saben si faltó efectivo, sobró, o alguien se equivocó. Inventtia Caja abre turno, registra cobros y cierra con totales claros: efectivo, transferencia y egresos.
-
-**CTA:** Prueba Inventtia Caja → inventtia.com · WhatsApp +53 63464544
-
-| Campo | Valor |
-|-------|--------|
-| **Pantalla** | Cierre de turno (totales del día) |
-| **Archivo** | `cierre_screen.dart` |
-| **Cómo capturar** | Turno real o demo: totales de efectivo/transferencia visibles, sin datos personales. |
-| **Composición** | Izquierda: texto del problema. Derecha: screenshot de cierre (~60%). Overlay: “¿Cuadra tu caja hoy?” |
+**Semana negocios:** Lun C1 · Mar G2 · Mié C2 · Jue G3 · Vie C3 · Sáb G1 · Dom duo Caja+Gestión
 
 ---
 
-### C2 — Sin internet
+# Inventtia Caja
 
-**Problema:** Se va la luz o el internet y se paran las ventas.
+## C1 — Caja que no cuadra
 
-**Gancho:** Tu cliente no espera a que vuelva el WiFi.
+**Copy del post (publicar tal cual):**
 
-**Cuerpo:** Cuando se cae la conexión, el cuaderno vuelve… y después nadie reconcilia bien. Inventtia Caja sigue vendiendo offline y sincroniza cuando vuelve la red.
+> Si al cerrar el día “calculas de memoria”, ya perdiste dinero.
+>
+> Muchos negocios cobran todo el día… y al final no saben si faltó efectivo, sobró, o alguien se equivocó. Inventtia Caja abre turno, registra cobros y cierra con totales claros: efectivo, transferencia y egresos.
+>
+> Prueba Inventtia Caja → inventtia.com · WhatsApp +53 63464544
 
-**CTA:** Sigue cobrando aunque falle internet → inventtia.com · WhatsApp +53 63464544
+**Captura a adjuntar:** cierre de turno / cierre de caja (totales visibles).
 
-| Campo | Valor |
-|-------|--------|
-| **Pantalla** | Indicador / datos offline + catálogo o preorden |
-| **Archivo** | `offline_data_viewer_screen.dart` + `categories_screen.dart` |
-| **Cómo capturar** | Estado “sin conexión” o visor offline junto al catálogo listo para vender. |
-| **Composición** | Screenshot del POS con badge offline. Overlay: “Sin internet ≠ sin ventas”. |
+**PROMPT COMPLETO (pegar en la IA + adjuntar la captura):**
+
+```
+Ad vertical 1080x1350 para Facebook. Inventtia Caja (punto de venta).
+
+REFERENCIA: usa la captura adjunta de CIERRE DE TURNO / CIERRE DE CAJA como la UI real.
+No rediseñes la pantalla; mantén layout, colores y textos de la app con máxima fidelidad.
+Colócala en un mockup de smartphone o tablet sobre un mostrador.
+
+COMPOSICIÓN: una sola imagen. La captura ocupa ~60% del frame. Espacio para titular fuera de la UI.
+TITULAR en español (grande, legible): "¿Cuadra tu caja hoy?"
+Badge: "Inventtia Caja". CTA pequeño abajo: inventtia.com
+
+ATMÓSFERA: local comercial cálido y profesional, luz natural suave, fondo desenfocado.
+ESTILO: foto de producto / mockup limpio, no ilustración cartoon.
+EVITAR: inventar otra UI, collage, purple gradients, neon, stickers, emojis, logos flotantes, tapar números de la captura.
+```
+
+**Negativo (si la herramienta lo permite):** redesigned UI, different app, collage, multiple screens, purple UI, neon glow, emoji stickers, overlays covering UI text
+---
+
+## C2 — Sin internet
+
+**Copy del post:**
+
+> Tu cliente no espera a que vuelva el WiFi.
+>
+> Cuando se cae la conexión, el cuaderno vuelve… y después nadie reconcilia bien. Inventtia Caja sigue vendiendo offline y sincroniza cuando vuelve la red.
+>
+> Sigue cobrando aunque falle internet → inventtia.com · WhatsApp +53 63464544
+
+**Captura a adjuntar:** catálogo o venta con modo offline / sin conexión visible.
+
+**PROMPT COMPLETO:**
+
+```
+Ad vertical 1080x1350. Inventtia Caja.
+
+REFERENCIA: usa la captura adjunta (POS en modo offline / sin conexión) como UI real. No la rediseñes.
+Monta la captura en un smartphone; que se vea usable y lista para vender (no una pantalla de error inventada).
+
+COMPOSICIÓN: captura ~60%. Titular fuera de la UI: "Sin internet ≠ sin ventas"
+Badge: Inventtia Caja. CTA: inventtia.com
+
+ATMÓSFERA: contraste sutil entre “sin red” y “negocio que sigue”; fondo de tienda suave.
+EVITAR: inventar otra UI, iconos de error rojo grandes, collage, purple AI look, stickers.
+```
+---
+
+## C3 — Métodos de pago
+
+**Copy del post:**
+
+> Efectivo + transferencia + “pásame por Zelle”… y el cuaderno no aguanta.
+>
+> En el mostrador el problema no es vender: es registrar bien cómo te pagaron. Inventtia Caja cierra la orden con el método correcto y deja el historial limpio.
+>
+> Cobra ordenado → inventtia.com · WhatsApp +53 63464544
+
+**Captura a adjuntar:** checkout / finalizar cobro con métodos de pago.
+
+**PROMPT COMPLETO:**
+
+```
+Ad vertical 1080x1350. Inventtia Caja.
+
+REFERENCIA: usa la captura adjunta de CHECKOUT / FINALIZAR COBRO como UI real. No la rediseñes.
+Colócala en close-up de POS móvil; mantén métodos de pago y totales legibles tal como en la captura.
+
+COMPOSICIÓN: captura dominante. Titular fuera de la UI: "Un cobro. Varios métodos. Cero confusión."
+Badge: Inventtia Caja. CTA: inventtia.com
+
+ESTILO: limpio, profesional, confianza en caja.
+EVITAR: inventar otra UI, collage, purple glow, stickers, tapar botones de pago.
+```
+---
+
+## C4 — Órdenes perdidas
+
+**Copy del post:**
+
+> “¿Esa orden ya salió?” no debería ser una pelea diaria.
+>
+> Pedidos a medias, tickets perdidos y “yo pensé que ya se cobró”. Inventtia Caja concentra preórdenes y órdenes en un solo flujo: tomar, cobrar, consultar.
+>
+> Ordena tu mostrador → inventtia.com · WhatsApp +53 63464544
+
+**Captura a adjuntar:** lista de órdenes / preórdenes.
+
+**PROMPT COMPLETO:**
+
+```
+Ad vertical 1080x1350. Inventtia Caja.
+
+REFERENCIA: usa la captura adjunta de LISTA DE ÓRDENES como UI real. No inventes pedidos ni otra UI.
+Monta la captura casi a pantalla completa en un mockup limpio.
+
+COMPOSICIÓN: captura dominante. Badge Inventtia Caja.
+Titular corto fuera de la UI: "Todas las órdenes, en un solo lugar"
+CTA: inventtia.com
+
+EVITAR: rediseñar la app, collage de cocina + POS, purple UI, stickers encima de la lista.
+```
+---
+
+## C5 — Catálogo lento
+
+**Copy del post:**
+
+> Si tardas 40 segundos en encontrar un producto, la cola se alarga.
+>
+> El POS tiene que ser más rápido que el papel. Inventtia Caja organiza el catálogo por categorías para armar y cobrar sin fricción.
+>
+> Vende más rápido → inventtia.com · WhatsApp +53 63464544
+
+**Captura a adjuntar:** catálogo por categorías.
+
+**PROMPT COMPLETO:**
+
+```
+Ad vertical 1080x1350 (o tablet landscape croppeado a vertical). Inventtia Caja.
+
+REFERENCIA: usa la captura adjunta del catálogo por CATEGORÍAS como UI real. No la rediseñes.
+Colócala en mockup de tablet o phone.
+
+COMPOSICIÓN: captura ~65%. Titular fuera de la UI: "Del tap al cobro"
+Badge: Inventtia Caja. CTA: inventtia.com
+
+ATMÓSFERA: velocidad y claridad; fondo de mostrador desenfocado.
+EVITAR: inventar otra UI, collage, purple theme, stickers encima del grid.
+```
+---
+
+## C6 — Apertura sin control
+
+**Copy del post:**
+
+> Sin apertura de turno, cualquier diferencia es “misterio”.
+>
+> Empezar el día sin registrar fondo de caja es invitar al descuadre. Inventtia Caja abre turno con efectivo inicial y responsables claros.
+>
+> Abre tu turno bien → inventtia.com · WhatsApp +53 63464544
+
+**Captura a adjuntar:** apertura de caja / abrir turno.
+
+**PROMPT COMPLETO:**
+
+```
+Ad vertical 1080x1350. Inventtia Caja.
+
+REFERENCIA: usa la captura adjunta de APERTURA DE CAJA / ABRIR TURNO como UI real. No la rediseñes.
+Mantén monto inicial y campos tal como en la captura.
+
+COMPOSICIÓN: captura ~60%. Titular fuera de la UI: "El control empieza al abrir"
+Badge: Inventtia Caja. CTA: inventtia.com
+
+ESTILO: inicio de jornada, luz de mañana suave.
+EVITAR: inventar otra UI, collage, purple AI, stickers.
+```
+---
+
+# Inventtia Gestión
+
+Preferible captura **web/desktop**. Adjunta la screenshot real de Gestión.
+
+## G1 — Sin números reales
+
+**Copy del post:**
+
+> Vender mucho no significa ganar. Sin números, solo intuición.
+>
+> Dueños que “sienten” que el mes fue bueno… hasta que faltan pagos. Inventtia Gestión te muestra ventas y panorama del negocio para decidir con datos.
+>
+> Mira tu negocio completo → inventtia.com · WhatsApp +53 63464544
+
+**Captura a adjuntar:** dashboard / inicio con KPIs.
+
+**PROMPT COMPLETO:**
+
+```
+Ad vertical 1080x1350. Inventtia Gestión (backoffice web).
+
+REFERENCIA: usa la captura adjunta del DASHBOARD como UI real. No rediseñes gráficos ni KPIs.
+Colócala en mockup de laptop o monitor.
+
+COMPOSICIÓN: captura ~65%. Titular fuera de la UI: "Deja de adivinar. Empieza a ver."
+Badge: Inventtia Gestión. CTA: inventtia.com
+
+ESTILO: SaaS profesional, escritorio ordenado, luz neutra.
+EVITAR: inventar otro dashboard, purple cliché, collage, tapar números.
+```
+---
+
+## G2 — Inventario invisible
+
+**Copy del post:**
+
+> Si solo una persona “sabe qué hay”, tu negocio depende de esa persona.
+>
+> Faltantes, sobrestock y compras a ciegas cuestan caro. Inventtia Gestión centraliza stock, movimientos y salud del almacén.
+>
+> Controla tu inventario → inventtia.com · WhatsApp +53 63464544
+
+**Captura a adjuntar:** inventario / stock.
+
+**PROMPT COMPLETO:**
+
+```
+Ad vertical 1080x1350. Inventtia Gestión.
+
+REFERENCIA: usa la captura adjunta de INVENTARIO / STOCK como UI real. No la rediseñes.
+Colócala en mockup de laptop/monitor.
+
+COMPOSICIÓN: captura ~60%. Titular fuera de la UI: "Stock visible = compras inteligentes"
+Badge: Inventtia Gestión. CTA: inventtia.com
+
+ATMÓSFERA: almacén/negocio ordenado al fondo, desenfocado.
+EVITAR: inventar otra UI, collage, purple UI, stickers.
+```
+---
+
+## G3 — Precios desalineados
+
+**Copy del post:**
+
+> Subiste el precio… pero la caja sigue cobrando el de ayer.
+>
+> Precios desactualizados = margen perdido o clientes molestos. Inventtia Gestión actualiza costo y precio de venta para que Caja cobre lo correcto.
+>
+> Alinea precios y caja → inventtia.com · WhatsApp +53 63464544
+
+**Captura a adjuntar:** gestión de precios (costo / precio de venta).
+
+**PROMPT COMPLETO:**
+
+```
+Ad vertical 1080x1350. Inventtia Gestión.
+
+REFERENCIA: usa la captura adjunta de GESTIÓN DE PRECIOS como UI real. No la rediseñes.
+Puedes añadir una flecha sutil “Gestión → Caja” fuera de la UI (no sticker encima de la tabla).
+
+COMPOSICIÓN: captura ~60%. Titular fuera de la UI: "Gestión → Caja: el mismo precio"
+Badge: Inventtia Gestión. CTA: inventtia.com
+
+EVITAR: inventar otra UI, collage de WhatsApp + Excel + papel, purple theme.
+```
+---
+
+## G4 — Sin trazabilidad
+
+**Copy del post:**
+
+> Sin historial de movimientos, el faltante no tiene culpable ni causa.
+>
+> Entradas, salidas y transferencias sin registro se vuelven pelea. Inventtia Gestión deja el rastro de operaciones de inventario.
+>
+> Audita tu almacén → inventtia.com · WhatsApp +53 63464544
+
+**Captura a adjuntar:** operaciones de inventario (movimientos).
+
+**PROMPT COMPLETO:**
+
+```
+Ad vertical 1080x1350. Inventtia Gestión.
+
+REFERENCIA: usa la captura adjunta de OPERACIONES DE INVENTARIO como UI real. No la rediseñes.
+
+COMPOSICIÓN: captura ~60%. Titular fuera de la UI: "Cada movimiento, registrado"
+Badge: Inventtia Gestión. CTA: inventtia.com
+
+EVITAR: inventar otra UI, collage, purple UI, fotos de almacén sin software.
+```
+---
+
+## G5 — Ventas sin análisis
+
+**Copy del post:**
+
+> La caja cobró. ¿Y el dueño qué aprendió?
+>
+> Sin monitoreo, no sabes qué TPV vende, qué horario peina o qué se frena. Inventtia Gestión concentra el seguimiento de ventas.
+>
+> Analiza tus ventas → inventtia.com · WhatsApp +53 63464544
+
+**Captura a adjuntar:** monitoreo / análisis de ventas.
+
+**PROMPT COMPLETO:**
+
+```
+Ad vertical 1080x1350. Inventtia Gestión.
+
+REFERENCIA: usa la captura adjunta de MONITOREO DE VENTAS como UI real. No la rediseñes.
+
+COMPOSICIÓN: captura ~60%. Titular fuera de la UI: "Lo que se cobra en Caja, se entiende en Gestión"
+Badge: Inventtia Gestión. CTA: inventtia.com
+
+EVITAR: inventar otra UI, collage Caja+Gestión forzado, purple charts.
+```
+---
+
+## G6 — Finanzas mezcladas
+
+**Copy del post:**
+
+> Si no separas finanzas, “hubo venta” no te salva a fin de mes.
+>
+> Gastos, costos y resultados necesitan un lugar. Inventtia Gestión te da el módulo financiero para ver el dinero con orden.
+>
+> Ordena tus finanzas → inventtia.com · WhatsApp +53 63464544
+
+**Captura a adjuntar:** módulo financiero / resumen de dinero.
+
+**PROMPT COMPLETO:**
+
+```
+Ad vertical 1080x1350. Inventtia Gestión.
+
+REFERENCIA: usa la captura adjunta del módulo FINANCIERO como UI real. No la rediseñes.
+Si hay datos bancarios sensibles, difumínalos; no inventes números de cuenta.
+
+COMPOSICIÓN: captura ~60%. Titular fuera de la UI: "Ventas ≠ utilidad. Aquí se ve la diferencia."
+Badge: Inventtia Gestión. CTA: inventtia.com
+
+EVITAR: inventar otra UI, billetes reales como único foco, purple fintech cliché, collage.
+```
+---
+
+# GoReservas y Muévete
+
+## R1 — GoReservas
+
+**Copy del post:**
+
+> Dos personas reservaron el mismo cupo. Tú pierdes la cara.
+>
+> Clínicas, salones y talleres pierden dinero por choques de horario. Inventtia GoReservas reserva cupos con capacidad real.
+>
+> Agenda sin choques → inventtia.com · WhatsApp +53 63464544
+
+**Captura a adjuntar:** agenda / reservas del día.
+
+**PROMPT COMPLETO:**
+
+```
+Ad vertical 1080x1350. Inventtia GoReservas.
+
+REFERENCIA: usa la captura adjunta de AGENDA / RESERVAS DEL DÍA como UI real. No la rediseñes.
+Colócala en mockup de phone o laptop.
+
+COMPOSICIÓN: captura ~60%. Titular fuera de la UI: "Cupos claros. Cero doble reserva."
+Badge: Inventtia GoReservas. CTA: inventtia.com
+
+EVITAR: inventar otra agenda, papel como hero, purple calendar UI, collage.
+```
+---
+
+## M1 — Muévete
+
+**Copy del post:**
+
+> Necesitas moverte ahora… sin pelear tarifas a ciegas.
+>
+> Inventtia Muévete conecta pasajero y conductor desde el mapa: origen, destino y oferta clara.
+>
+> Pide o conduce → inventtia.com · WhatsApp +53 63464544
+
+**Captura a adjuntar:** mapa de solicitud de viaje (pasajero).
+
+**PROMPT COMPLETO:**
+
+```
+Ad vertical 1080x1350. Inventtia Muévete (viajes de pasajeros, NO fletes).
+
+REFERENCIA: usa la captura adjunta del MAPA de solicitud de viaje como UI real. No la rediseñes.
+Colócala en smartphone; mantén origen/destino/precio como en la captura (difumina datos personales si hace falta).
+
+COMPOSICIÓN: captura ~70%. Titular fuera de la UI: "Del punto A al B, con claridad"
+Badge: Inventtia Muévete. CTA: inventtia.com
+
+ATMÓSFERA: ciudad contemporánea, día claro.
+EVITAR: inventar otra app, camiones/fletes, purple map glow, stickers de descuento.
+```
+---
+
+## Dom — Duo Caja + Gestión (opcional)
+
+**Copy del post:**
+
+> Cobra en Caja. Controla en Gestión.
+>
+> Un solo ecosistema Inventtia: el mostrador cobra; el dueño ve ventas, inventario y números.
+>
+> inventtia.com · WhatsApp +53 63464544
+
+**Capturas a adjuntar:** (1) Inventtia Caja — checkout o venta · (2) Inventtia Gestión — dashboard.
+
+**PROMPT COMPLETO:**
+
+```
+Ad vertical 1080x1350. Ecosistema Inventtia.
+
+REFERENCIA: usa las DOS capturas adjuntas como UI real.
+Imagen 1 = Inventtia Caja en phone. Imagen 2 = Inventtia Gestión en laptop.
+No rediseñes ninguna de las dos pantallas.
+
+COMPOSICIÓN: UNA sola pieza (no collage caótico): phone con Caja a un lado; laptop con Gestión al otro.
+Relación clara “cobra → controla”. Cada captura debe reconocerse como la app real.
+
+TITULAR fuera de las UIs: "Cobra en Caja. Controla en Gestión."
+Badges: Inventtia Caja + Inventtia Gestión. CTA: inventtia.com
+
+EVITAR: inventar UIs, más de 2 pantallas, purple theme, stickers, logos sueltos.
+```
 
 ---
 
-### C3 — Métodos de pago
+## Tip si distorsiona la captura o sale “muy IA”
 
-**Problema:** Cobrar con varios métodos de pago es un lío.
+Si cambia botones, colores o layout de tu screenshot, añade:
 
-**Gancho:** Efectivo + transferencia + “pásame por Zelle”… y el cuaderno no aguanta.
+```
+CRITICAL: treat the attached screenshot as ground truth.
+Match the exact UI layout, colors, icons and Spanish labels from the reference.
+Do not redesign the app. Only place it in a device mockup and add the headline outside the UI.
+```
 
-**Cuerpo:** En el mostrador el problema no es vender: es registrar bien cómo te pagaron. Inventtia Caja cierra la orden con el método correcto y deja el historial limpio.
+Si el resultado sale genérico / “muy IA”:
 
-**CTA:** Cobra ordenado → inventtia.com · WhatsApp +53 63464544
+```
+Photorealistic product marketing photo, natural lighting, subtle depth of field,
+UI sharpness high, no watermarks, no stock-photo people faces close-up.
+```
 
-| Campo | Valor |
-|-------|--------|
-| **Pantalla** | Checkout / finalizar cobro |
-| **Archivo** | `checkout_screen.dart` |
-| **Cómo capturar** | Métodos de pago visibles (efectivo/transferencia). UI de selección clara. |
-| **Composición** | Close-up del checkout. Texto: “Un cobro. Varios métodos. Cero confusión.” |
+Si inventa texto basura encima de la captura:
 
----
-
-### C4 — Órdenes perdidas
-
-**Problema:** Las órdenes se pierden entre el mostrador y la cocina/almacén.
-
-**Gancho:** “¿Esa orden ya salió?” no debería ser una pelea diaria.
-
-**Cuerpo:** Pedidos a medias, tickets perdidos y “yo pensé que ya se cobró”. Inventtia Caja concentra preórdenes y órdenes en un solo flujo: tomar, cobrar, consultar.
-
-**CTA:** Ordena tu mostrador → inventtia.com · WhatsApp +53 63464544
-
-| Campo | Valor |
-|-------|--------|
-| **Pantalla** | Lista de órdenes (con estados) |
-| **Archivo** | `orders_screen.dart` |
-| **Cómo capturar** | 4–6 órdenes demo en distintos estados. Productos genéricos. |
-| **Composición** | Screenshot a pantalla completa de Órdenes. Badge: “Inventtia Caja”. |
-
----
-
-### C5 — Catálogo lento
-
-**Problema:** Vender rápido se vuelve lento si buscas productos a ciegas.
-
-**Gancho:** Si tardas 40 segundos en encontrar un producto, la cola se alarga.
-
-**Cuerpo:** El POS tiene que ser más rápido que el papel. Inventtia Caja organiza el catálogo por categorías para armar y cobrar sin fricción.
-
-**CTA:** Vende más rápido → inventtia.com · WhatsApp +53 63464544
-
-| Campo | Valor |
-|-------|--------|
-| **Pantalla** | Catálogo por categorías |
-| **Archivo** | `categories_screen.dart` (móvil) o `categories_web_screen.dart` (web) |
-| **Cómo capturar** | Grid de categorías con íconos/colores. Preferible tablet/web. |
-| **Composición** | UI de categorías + tip: “Del tap al cobro”. |
-
----
-
-### C6 — Apertura sin control
-
-**Problema:** No hay control de quién abrió la caja ni con cuánto.
-
-**Gancho:** Sin apertura de turno, cualquier diferencia es “misterio”.
-
-**Cuerpo:** Empezar el día sin registrar fondo de caja es invitar al descuadre. Inventtia Caja abre turno con efectivo inicial y responsables claros.
-
-**CTA:** Abre tu turno bien → inventtia.com · WhatsApp +53 63464544
-
-| Campo | Valor |
-|-------|--------|
-| **Pantalla** | Crear apertura de caja |
-| **Archivo** | `apertura_screen.dart` |
-| **Cómo capturar** | Formulario de apertura con monto inicial visible. Ideal con trabajadores de turno. |
-| **Composición** | Screenshot de apertura. Texto: “El control empieza al abrir.” |
-
----
-
-## Inventtia Gestión (ventiq_admin_app)
-
-Preferible captura **web/desktop** para dashboard y tablas. En la imagen: **Inventtia Gestión**.
-
-### G1 — Sin números reales
-
-**Problema:** No sabes qué se vende ni qué ganas de verdad.
-
-**Gancho:** Vender mucho no significa ganar. Sin números, solo intuición.
-
-**Cuerpo:** Dueños que “sienten” que el mes fue bueno… hasta que faltan pagos. Inventtia Gestión te muestra ventas y panorama del negocio para decidir con datos.
-
-**CTA:** Mira tu negocio completo → inventtia.com · WhatsApp +53 63464544
-
-| Campo | Valor |
-|-------|--------|
-| **Pantalla** | Dashboard ejecutivo |
-| **Archivo** | `dashboard_web_screen.dart` |
-| **Cómo capturar** | KPIs con datos demo realistas (no ceros). |
-| **Composición** | Screenshot web 16:9. Overlay: “Deja de adivinar. Empieza a ver.” |
-
----
-
-### G2 — Inventario invisible
-
-**Problema:** El inventario vive en la cabeza de alguien.
-
-**Gancho:** Si solo una persona “sabe qué hay”, tu negocio depende de esa persona.
-
-**Cuerpo:** Faltantes, sobrestock y compras a ciegas cuestan caro. Inventtia Gestión centraliza stock, movimientos y salud del almacén.
-
-**CTA:** Controla tu inventario → inventtia.com · WhatsApp +53 63464544
-
-| Campo | Valor |
-|-------|--------|
-| **Pantalla** | Inventario / stock |
-| **Archivo** | `inventory_screen.dart` |
-| **Cómo capturar** | Lista con cantidades y alertas de bajo stock. |
-| **Composición** | UI de inventario. Texto: “Stock visible = compras inteligentes.” |
-
----
-
-### G3 — Precios desalineados
-
-**Problema:** Cambiar precios es un caos entre papel, WhatsApp y la caja.
-
-**Gancho:** Subiste el precio… pero la caja sigue cobrando el de ayer.
-
-**Cuerpo:** Precios desactualizados = margen perdido o clientes molestos. Inventtia Gestión actualiza costo y precio de venta para que Caja cobre lo correcto.
-
-**CTA:** Alinea precios y caja → inventtia.com · WhatsApp +53 63464544
-
-| Campo | Valor |
-|-------|--------|
-| **Pantalla** | Gestión de precios |
-| **Archivo** | `precios_productos_screen.dart` (o `tpv_prices_screen.dart`) |
-| **Cómo capturar** | Tabla/lista con precio de venta editable. |
-| **Composición** | Screenshot de precios + flecha “Gestión → Caja”. |
-
----
-
-### G4 — Sin trazabilidad
-
-**Problema:** No hay trazabilidad: “¿quién movió esa mercancía?”
-
-**Gancho:** Sin historial de movimientos, el faltante no tiene culpable ni causa.
-
-**Cuerpo:** Entradas, salidas y transferencias sin registro se vuelven pelea. Inventtia Gestión deja el rastro de operaciones de inventario.
-
-**CTA:** Audita tu almacén → inventtia.com · WhatsApp +53 63464544
-
-| Campo | Valor |
-|-------|--------|
-| **Pantalla** | Operaciones de inventario |
-| **Archivo** | `inventory_operations_screen.dart` |
-| **Cómo capturar** | Lista de operaciones (recepción/transferencia/salida) con fechas y estados. |
-| **Composición** | UI de operaciones. Texto: “Cada movimiento, registrado.” |
-
----
-
-### G5 — Ventas sin análisis
-
-**Problema:** Las ventas del día se quedan en el TPV y nadie las analiza.
-
-**Gancho:** La caja cobró. ¿Y el dueño qué aprendió?
-
-**Cuerpo:** Sin monitoreo, no sabes qué TPV vende, qué horario peina o qué se frena. Inventtia Gestión concentra el seguimiento de ventas.
-
-**CTA:** Analiza tus ventas → inventtia.com · WhatsApp +53 63464544
-
-| Campo | Valor |
-|-------|--------|
-| **Pantalla** | Monitoreo de ventas |
-| **Archivo** | `sales_screen.dart` |
-| **Cómo capturar** | Filtros de período/TPV y listado o resumen visible. |
-| **Composición** | Screenshot de ventas. Texto: “Lo que se cobra en Caja, se entiende en Gestión.” |
-
----
-
-### G6 — Finanzas mezcladas
-
-**Problema:** El dinero del negocio se mezcla con gastos sin control.
-
-**Gancho:** Si no separas finanzas, “hubo venta” no te salva a fin de mes.
-
-**Cuerpo:** Gastos, costos y resultados necesitan un lugar. Inventtia Gestión te da el módulo financiero para ver el dinero con orden.
-
-**CTA:** Ordena tus finanzas → inventtia.com · WhatsApp +53 63464544
-
-| Campo | Valor |
-|-------|--------|
-| **Pantalla** | Sistema financiero |
-| **Archivo** | `financial_screen.dart` |
-| **Cómo capturar** | Resumen financiero claro. Sin datos bancarios reales. |
-| **Composición** | UI financiera. Texto: “Ventas ≠ utilidad. Aquí se ve la diferencia.” |
-
----
-
-## Refuerzo: GoReservas y Muévete
-
-### R1 — GoReservas (inventtia_flow)
-
-**Problema:** La agenda en papel genera doble reserva y clientes enojados.
-
-**Gancho:** Dos personas reservaron el mismo cupo. Tú pierdes la cara.
-
-**Cuerpo:** Clínicas, salones y talleres pierden dinero por choques de horario. Inventtia GoReservas reserva cupos con capacidad real.
-
-**CTA:** Agenda sin choques → inventtia.com · WhatsApp +53 63464544
-
-| Campo | Valor |
-|-------|--------|
-| **Pantalla** | Reserva de servicio / panel del día |
-| **Archivo** | Reserva sheet / planificación o reservas del día |
-| **Cómo capturar** | Día con turnos ocupados/libres, realista. |
-| **Composición** | UI de agenda. Texto: “Cupos claros. Cero doble reserva.” |
-
----
-
-### M1 — Muévete (inventtia_muevete)
-
-**Problema:** Pedir un viaje es incierto: precio, espera y confianza.
-
-**Gancho:** Necesitas moverte ahora… sin pelear tarifas a ciegas.
-
-**Cuerpo:** Inventtia Muévete conecta pasajero y conductor desde el mapa: origen, destino y oferta clara.
-
-**CTA:** Pide o conduce → inventtia.com · WhatsApp +53 63464544
-
-| Campo | Valor |
-|-------|--------|
-| **Pantalla** | Mapa de solicitud de viaje (pasajero) |
-| **Archivo** | Pantalla de request / mapa |
-| **Cómo capturar** | Mapa con origen-destino y precio/oferta. Sin datos personales reales. |
-| **Composición** | Mapa fullscreen. Texto: “Del punto A al B, con claridad.” |
-
+```
+Do not redraw or OCR-replace text inside the app screen.
+Keep the UI pixels faithful to the attached screenshot; only add the external headline and badge.
+```
 ---
 
 ## Relacionado
 
-- Plan general de nombres, calendario y plantillas WA: [`plan-publicaciones-inventtia.md`](./plan-publicaciones-inventtia.md)
+- Plan general: [`plan-publicaciones-inventtia.md`](./plan-publicaciones-inventtia.md)
