@@ -2933,26 +2933,41 @@ class ExportService {
 
     // ── Totales ─────────────────────────────────────────────────────────────
     double totalCantidad = 0;
-    double totalCostoUsd = 0;
+    double totalCostoCup = 0;
     double totalVentaCup = 0;
     for (final p in productos) {
       final qty = (p['cantidad_propuesta'] as num?)?.toDouble() ?? 0;
-      final costo = (p['precio_costo_usd'] as num?)?.toDouble() ?? 0;
+      final costoCup = (p['precio_costo_cup'] as num?)?.toDouble() ?? 0;
       final venta = (p['precio_venta_cup'] as num?)?.toDouble() ?? 0;
       totalCantidad += qty;
-      totalCostoUsd += costo * qty;
+      totalCostoCup += costoCup * qty;
       totalVentaCup += venta * qty;
     }
 
     // ── Filas de la tabla de productos ───────────────────────────────────────
     final tableRows = productos.map((p) {
-      final nombre =
+      // Nombre del producto base
+      final nombreBase =
           p['producto_denominacion'] as String? ??
           p['denominacion'] as String? ??
           'N/A';
+      
+      // Presentación (nueva en v3)
+      final presentacion = p['denominacion_presentacion'] as String?;
+      final unidades = (p['presentacion_unidades'] as num?)?.toInt() ?? 1;
+      final esBase = p['es_presentacion_base'] as bool? ?? true;
+      
+      // Construir nombre completo: "Producto (Presentación x Unid.)"
+      String nombre = nombreBase;
+      if (presentacion != null && !esBase) {
+        nombre = '$nombreBase ($presentacion x$unidades)';
+      } else if (presentacion != null && esBase && unidades > 1) {
+        nombre = '$nombreBase ($presentacion x$unidades)';
+      }
+      
       final sku = p['producto_sku'] as String? ?? p['sku'] as String? ?? '';
       final qty = (p['cantidad_propuesta'] as num?)?.toDouble() ?? 0;
-      final costo = (p['precio_costo_usd'] as num?)?.toDouble() ?? 0;
+      final costoCup = (p['precio_costo_cup'] as num?)?.toDouble() ?? 0;
       final venta = (p['precio_venta_cup'] as num?)?.toDouble();
 
       return pw.TableRow(
@@ -2960,7 +2975,7 @@ class ExportService {
           _buildTableCell(nombre, font: regularFont),
           _buildTableCell(sku, font: regularFont, align: pw.TextAlign.center),
           _buildTableCell(
-            '\$${_fmt(costo)} USD',
+            '\$${_fmt(costoCup)} CUP',
             font: regularFont,
             align: pw.TextAlign.right,
           ),
@@ -3149,7 +3164,7 @@ class ExportService {
                   children: [
                     _buildTableHeader('Producto', font: boldFont),
                     _buildTableHeader('SKU', font: boldFont),
-                    _buildTableHeader('P.Costo (USD)', font: boldFont),
+                    _buildTableHeader('P.Costo (CUP)', font: boldFont),
                     _buildTableHeader('P.Venta (CUP)', font: boldFont),
                     _buildTableHeader('Cant.', font: boldFont),
                   ],
@@ -3243,7 +3258,7 @@ class ExportService {
                         style: pw.TextStyle(font: boldFont, fontSize: 11),
                       ),
                       pw.Text(
-                        '\$${_fmt(totalCostoUsd)} USD',
+                        '\$${_fmt(totalCostoCup)} CUP',
                         style: pw.TextStyle(font: boldFont, fontSize: 11),
                       ),
                     ],

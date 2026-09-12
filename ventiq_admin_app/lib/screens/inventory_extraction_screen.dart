@@ -2,13 +2,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../models/warehouse.dart';
-import '../models/inventory.dart';
-import '../services/warehouse_service.dart';
+import '../services/cumplimiento_fisico_service.dart';
 import '../services/inventory_service.dart';
 import '../services/presentacion_cadena_service.dart';
-import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
-import '../widgets/cantidad_mixta_input.dart';
 import '../widgets/conversion_info_widget.dart';
 import '../widgets/product_selector_widget.dart';
 import '../widgets/location_selector_widget.dart';
@@ -37,7 +34,8 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
   Map<String, dynamic>? _selectedMotivo;
   WarehouseZone? _selectedSourceLocation;
   bool _isLoading = false;
-  bool _isLoadingMotivos = true;
+  String? _clientRequestUuid;
+  String? _requestPayloadSignature;
 
   @override
   void initState() {
@@ -83,17 +81,39 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
 
     showDialog(
       context: context,
-      builder:
-          (context) => _ProductQuantityDialog(
-            product: productWithId,
-            sourceLocation: _selectedSourceLocation,
-            onProductAdded: (productData) {
-              setState(() {
-                _selectedProducts.add(productData);
-              });
-            },
-          ),
+      builder: (context) => _ProductQuantityDialog(
+        product: productWithId,
+        sourceLocation: _selectedSourceLocation,
+        onProductAdded: (productData) {
+          final duplicate = _selectedProducts.any(
+            (selected) =>
+                _stockIdentity(selected) == _stockIdentity(productData),
+          );
+          if (duplicate) {
+            ScaffoldMessenger.of(this.context).showSnackBar(
+              const SnackBar(
+                content: Text('Esta presentación del producto ya fue agregada'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+            return false;
+          }
+          setState(() => _selectedProducts.add(productData));
+          return true;
+        },
+      ),
     );
+  }
+
+  String _stockIdentity(Map<String, dynamic> product) {
+    String part(String key) => product[key]?.toString() ?? 'null';
+    return [
+      part('id_producto'),
+      part('id_variante'),
+      part('id_opcion_variante'),
+      part('id_ubicacion'),
+      part('id_presentacion'),
+    ].join('|');
   }
 
   void _removeProductFromExtraction(int index) {
@@ -105,180 +125,172 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
   void _showExtractionConfirmation() {
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text(
-              'Confirmar Extracción',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            content: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Ubicación origen
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppColors.warning.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: AppColors.warning.withOpacity(0.3),
+      builder: (context) => AlertDialog(
+        title: const Text(
+          'Confirmar Extracción',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Ubicación origen
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.warning.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.location_on,
+                      color: AppColors.warning.withOpacity(0.7),
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Zona de Origen:',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12,
+                            ),
+                          ),
+                          Text(
+                            _selectedSourceLocation?.name ?? 'No seleccionada',
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                        ],
                       ),
                     ),
-                    child: Row(
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Lista de productos
+              const Text(
+                'Productos a Extraer:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              const SizedBox(height: 8),
+              ..._selectedProducts.map((productData) {
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppColors.warning.withOpacity(0.3),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        productData['denominacion'] ??
+                            productData['nombre_producto'] ??
+                            'Sin nombre',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      if (productData['variante'] != null &&
+                          productData['variante'].toString().isNotEmpty)
+                        Text(
+                          'Variante: ${productData['variante']}',
+                          style: TextStyle(
+                            color: AppColors.warning.withOpacity(0.6),
+                            fontSize: 12,
+                          ),
+                        ),
+                      if (productData['presentacion'] != null &&
+                          productData['presentacion'].toString().isNotEmpty)
+                        Text(
+                          'Presentación: ${productData['presentacion']}',
+                          style: TextStyle(
+                            color: AppColors.warning.withOpacity(0.6),
+                            fontSize: 12,
+                          ),
+                        ),
+                      Text(
+                        'Cantidad: ${productData['cantidad']}',
+                        style: const TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                      Text(
+                        'Zona: ${productData['zona_nombre']}',
+                        style: TextStyle(
+                          color: AppColors.warning.withOpacity(0.6),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+              const SizedBox(height: 16),
+
+              // Motivo y autorizado por
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.warning.withOpacity(0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
                       children: [
                         Icon(
-                          Icons.location_on,
+                          Icons.info_outline,
                           color: AppColors.warning.withOpacity(0.7),
                           size: 20,
                         ),
                         const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Zona de Origen:',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 12,
-                                ),
-                              ),
-                              Text(
-                                _selectedSourceLocation?.name ??
-                                    'No seleccionada',
-                                style: const TextStyle(fontSize: 14),
-                              ),
-                            ],
+                        const Text(
+                          'Información Adicional:',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
                           ),
                         ),
                       ],
                     ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Lista de productos
-                  const Text(
-                    'Productos a Extraer:',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                  const SizedBox(height: 8),
-                  ..._selectedProducts.map((productData) {
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppColors.warning.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: AppColors.warning.withOpacity(0.3),
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            productData['denominacion'] ??
-                                productData['nombre_producto'] ??
-                                'Sin nombre',
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          if (productData['variante'] != null &&
-                              productData['variante'].toString().isNotEmpty)
-                            Text(
-                              'Variante: ${productData['variante']}',
-                              style: TextStyle(
-                                color: AppColors.warning.withOpacity(0.6),
-                                fontSize: 12,
-                              ),
-                            ),
-                          if (productData['presentacion'] != null &&
-                              productData['presentacion'].toString().isNotEmpty)
-                            Text(
-                              'Presentación: ${productData['presentacion']}',
-                              style: TextStyle(
-                                color: AppColors.warning.withOpacity(0.6),
-                                fontSize: 12,
-                              ),
-                            ),
-                          Text(
-                            'Cantidad: ${productData['cantidad']}',
-                            style: const TextStyle(fontWeight: FontWeight.w500),
-                          ),
-                          Text(
-                            'Zona: ${productData['zona_nombre']}',
-                            style: TextStyle(
-                              color: AppColors.warning.withOpacity(0.6),
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                  const SizedBox(height: 16),
-
-                  // Motivo y autorizado por
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppColors.warning.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: AppColors.warning.withOpacity(0.3),
-                      ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Motivo: ${_selectedMotivo?['denominacion'] ?? 'No seleccionado'}',
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.info_outline,
-                              color: AppColors.warning.withOpacity(0.7),
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                            const Text(
-                              'Información Adicional:',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Motivo: ${_selectedMotivo?['denominacion'] ?? 'No seleccionado'}',
-                        ),
-                        Text(
-                          'Autorizado por: ${_autorizadoPorController.text.isEmpty ? 'No especificado' : _autorizadoPorController.text}',
-                        ),
-                      ],
+                    Text(
+                      'Autorizado por: ${_autorizadoPorController.text.isEmpty ? 'No especificado' : _autorizadoPorController.text}',
                     ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancelar'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  _submitExtraction();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.warning,
+                  ],
                 ),
-                child: const Text('Confirmar Extracción'),
               ),
             ],
           ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _submitExtraction();
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.warning),
+            child: const Text('Confirmar Extracción'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -312,46 +324,53 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
       final userPrefs = UserPreferencesService();
       final userUuid = await userPrefs.getUserId();
       final userData = await userPrefs.getUserData();
-      final idTienda = userData['idTienda'] as int?;
+      final idTiendaRaw = userData['idTienda'];
+      final idTienda = idTiendaRaw is int
+          ? idTiendaRaw
+          : int.tryParse(idTiendaRaw?.toString() ?? '');
 
       if (userUuid == null || idTienda == null) {
         throw Exception('No se encontró información del usuario o tienda');
       }
 
-      // Prepare products list for the RPC
-      final productos =
-          _selectedProducts.map((product) {
-            // Validar que id_presentacion no sea null
-            final idPresentacion = product['id_presentacion'];
-            if (idPresentacion == null) {
-              print(
-                '⚠️ Producto sin id_presentacion: ${product['denominacion']}',
-              );
-              print('⚠️ Datos del producto: $product');
-            }
+      final motivoRaw = _selectedMotivo!['id'];
+      final idMotivo = motivoRaw is int
+          ? motivoRaw
+          : int.tryParse(motivoRaw?.toString() ?? '');
+      if (idMotivo == null) {
+        throw Exception('El motivo de extracción no es válido');
+      }
 
-            return {
-              'id_producto': product['id_producto'],
-              'id_variante': product['id_variante'],
-              'id_opcion_variante': product['id_opcion_variante'],
-              'id_ubicacion': product['id_ubicacion'],
-              'id_presentacion':
-                  idPresentacion ?? 1, // Fallback a 1 (Unidad base)
-              'cantidad': product['cantidad'],
-              'precio_unitario': product['precio_unitario'],
-              'sku_producto': product['sku_producto'],
-              'sku_ubicacion': product['sku_ubicacion'],
-            };
-          }).toList();
+      final productos = _selectedProducts.map((product) {
+        return {
+          'id_producto': product['id_producto'],
+          'id_variante': product['id_variante'],
+          'id_opcion_variante': product['id_opcion_variante'],
+          'id_ubicacion': product['id_ubicacion'],
+          'id_presentacion': product['id_presentacion'],
+          'cantidad': product['cantidad'],
+          'precio_unitario': product['precio_unitario'],
+        };
+      }).toList();
+      final requestPayloadSignature = [
+        _autorizadoPorController.text.trim(),
+        _selectedMotivo!['id'],
+        idTienda,
+        _observacionesController.text.trim(),
+        productos,
+      ].toString();
+      if (_requestPayloadSignature != requestPayloadSignature) {
+        _clientRequestUuid = InventoryService.createClientRequestUuid();
+        _requestPayloadSignature = requestPayloadSignature;
+      }
 
-      final result = await InventoryService.insertCompleteExtraction(
+      final result = await InventoryService.insertCompleteExtractionV2(
         autorizadoPor: _autorizadoPorController.text.trim(),
-        estadoInicial: 1, // 2 = Confirmado (completed immediately)
-        idMotivoOperacion: _selectedMotivo!['id'],
+        idMotivoOperacion: idMotivo,
         idTienda: idTienda,
         observaciones: _observacionesController.text.trim(),
         productos: productos,
-        uuid: userUuid,
+        clientRequestUuid: _clientRequestUuid!,
       );
 
       if (result['status'] != 'success') {
@@ -359,48 +378,28 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
       }
 
       final operationId = result['id_operacion'];
-      print('✅ Extracción registrada con ID: $operationId');
+      final physicalLines = (result['lineas_fisicas'] as List?) ?? const [];
+      print(
+        '✅ Extracción física registrada con ID: $operationId '
+        '(${physicalLines.length} líneas)',
+      );
 
-      // Complete the operation after successful extraction
-      if (operationId != null) {
-        try {
-          print('🔄 Iniciando completar operación...');
-          print('📊 ID Operación: $operationId');
-          print('👤 UUID Usuario: $userUuid');
-
-          final completeResult = await InventoryService.completeOperation(
-            idOperacion: operationId,
-            comentario:
-                'Extracción completada automáticamente - ${_observacionesController.text.trim()}',
-            uuid: userUuid,
-          );
-
-          print('📋 Resultado completeOperation: $completeResult');
-
-          if (completeResult['status'] == 'success') {
-            print('✅ Operación completada exitosamente');
-            print(
-              '📊 Productos afectados: ${completeResult['productos_afectados']}',
-            );
-          } else {
-            print(
-              '⚠️ Advertencia al completar operación: ${completeResult['message']}',
-            );
-            print('🔍 Detalles del error: $completeResult');
-          }
-        } catch (completeError, stackTrace) {
-          print('❌ Error al completar operación: $completeError');
-          print('📍 StackTrace completo: $stackTrace');
-          // Don't throw here - extraction was successful, completion is secondary
-        }
-      } else {
-        print('⚠️ No se obtuvo ID de operación para completar');
-      }
-
+      _clientRequestUuid = null;
+      _requestPayloadSignature = null;
       if (mounted) {
+        final physicalSummary = physicalLines
+            .map((raw) {
+              final line = Map<String, dynamic>.from(raw as Map);
+              return '${line['cantidad']} ${line['nombre'] ?? 'Presentación'}';
+            })
+            .join(', ');
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Extracción registrada exitosamente'),
+          SnackBar(
+            content: Text(
+              physicalSummary.isEmpty
+                  ? 'Extracción registrada exitosamente'
+                  : 'Despacho físico: $physicalSummary',
+            ),
             backgroundColor: AppColors.success,
           ),
         );
@@ -420,16 +419,11 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
   }
 
   Future<void> _loadMotivoOptions() async {
-    setState(() => _isLoadingMotivos = true);
-
     try {
-      // Load extraction motives from Supabase database
       _motivoOptions = await InventoryService.getMotivoExtraccionOptions();
-
-      setState(() => _isLoadingMotivos = false);
+      if (mounted) setState(() {});
     } catch (e) {
       print('Error loading motivo options: $e');
-      setState(() => _isLoadingMotivos = false);
     }
   }
 
@@ -453,13 +447,12 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
                 labelText: 'Motivo',
                 border: OutlineInputBorder(),
               ),
-              items:
-                  _motivoOptions.map((motivo) {
-                    return DropdownMenuItem(
-                      value: motivo,
-                      child: Text(motivo['denominacion'] ?? ''),
-                    );
-                  }).toList(),
+              items: _motivoOptions.map((motivo) {
+                return DropdownMenuItem(
+                  value: motivo,
+                  child: Text(motivo['denominacion'] ?? ''),
+                );
+              }).toList(),
               onChanged: (motivo) {
                 setState(() => _selectedMotivo = motivo);
               },
@@ -514,7 +507,7 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
               'Seleccionar Ubicación',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),*/
-/*
+            /*
             const SizedBox(height: 16),
 */
             LocationSelectorWidget(
@@ -528,10 +521,9 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
                   _selectedProducts.clear();
                 });
               },
-              validationMessage:
-                  _selectedSourceLocation == null
-                      ? 'Debe seleccionar una zona'
-                      : null,
+              validationMessage: _selectedSourceLocation == null
+                  ? 'Debe seleccionar una zona'
+                  : null,
             ),
           ],
         ),
@@ -579,12 +571,14 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
               SizedBox(
                 height: 300,
                 child: ProductSelectorWidget(
-                  key: ValueKey('product_selector_${_selectedSourceLocation!.id}'), // Key única por ubicación
+                  key: ValueKey(
+                    'product_selector_${_selectedSourceLocation!.id}',
+                  ), // Key única por ubicación
                   searchType: ProductSearchType.withStock,
                   requireInventory: true,
                   locationId: int.tryParse(_selectedSourceLocation!.id),
                   searchHint:
-                  'Buscar productos en ${_selectedSourceLocation!.name}...',
+                      'Buscar productos en ${_selectedSourceLocation!.name}...',
                   onProductSelected: _addProductToExtraction,
                 ),
               ),
@@ -730,8 +724,8 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
                                 ),
                               ),
                               IconButton(
-                                onPressed:
-                                    () => _removeProductFromExtraction(index),
+                                onPressed: () =>
+                                    _removeProductFromExtraction(index),
                                 icon: Icon(
                                   Icons.remove_circle,
                                   color: AppColors.warning.withOpacity(0.4),
@@ -797,10 +791,9 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed:
-                  _selectedProducts.isEmpty
-                      ? null
-                      : _showExtractionConfirmation,
+              onPressed: _selectedProducts.isEmpty
+                  ? null
+                  : _showExtractionConfirmation,
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.warning,
                 foregroundColor: AppColors.background,
@@ -828,117 +821,114 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
   void _showAllSelectedProducts() {
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Text(
-              'Productos Seleccionados (${_selectedProducts.length})',
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: AppColors.warning.withOpacity(0.7),
-              ),
-            ),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: _selectedProducts.length,
-                itemBuilder: (context, index) {
-                  final product = _selectedProducts[index];
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppColors.warning.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: AppColors.warning.withOpacity(0.3),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (context) => AlertDialog(
+        title: Text(
+          'Productos Seleccionados (${_selectedProducts.length})',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: AppColors.warning.withOpacity(0.7),
+          ),
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: _selectedProducts.length,
+            itemBuilder: (context, index) {
+              final product = _selectedProducts[index];
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.warning.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            product['denominacion'] ??
+                                product['nombre_producto'] ??
+                                'Producto sin nombre',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
                             children: [
                               Text(
-                                product['denominacion'] ??
-                                    product['nombre_producto'] ??
-                                    'Producto sin nombre',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
+                                'Cantidad: ${product['cantidad']}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: AppColors.warning.withOpacity(0.6),
+                                  fontWeight: FontWeight.w500,
                                 ),
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
                               ),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  Text(
-                                    'Cantidad: ${product['cantidad']}',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: AppColors.warning.withOpacity(0.6),
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                  Text(
-                                    ' • ',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: AppColors.warning.withOpacity(0.6),
-                                    ),
-                                  ),
-                                  Text(
-                                    '${product['zona_nombre'] ?? 'N/A'}',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: AppColors.warning.withOpacity(0.6),
-                                    ),
-                                  ),
-                                ],
+                              Text(
+                                ' • ',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: AppColors.warning.withOpacity(0.6),
+                                ),
+                              ),
+                              Text(
+                                '${product['zona_nombre'] ?? 'N/A'}',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: AppColors.warning.withOpacity(0.6),
+                                ),
                               ),
                             ],
                           ),
-                        ),
-                        IconButton(
-                          onPressed: () {
-                            _removeProductFromExtraction(index);
-                            Navigator.pop(context);
-                            if (_selectedProducts.length <= 3) {
-                              // If we're back to 3 or fewer products, close the dialog
-                              return;
-                            }
-                            // Refresh the dialog if there are still more than 3 products
-                            _showAllSelectedProducts();
-                          },
-                          icon: Icon(
-                            Icons.remove_circle,
-                            color: AppColors.warning.withOpacity(0.4),
-                            size: 18,
-                          ),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 24,
-                            minHeight: 24,
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  );
-                },
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text(
-                  'Cerrar',
-                  style: TextStyle(color: AppColors.warning.withOpacity(0.6)),
+                    IconButton(
+                      onPressed: () {
+                        _removeProductFromExtraction(index);
+                        Navigator.pop(context);
+                        if (_selectedProducts.length <= 3) {
+                          // If we're back to 3 or fewer products, close the dialog
+                          return;
+                        }
+                        // Refresh the dialog if there are still more than 3 products
+                        _showAllSelectedProducts();
+                      },
+                      icon: Icon(
+                        Icons.remove_circle,
+                        color: AppColors.warning.withOpacity(0.4),
+                        size: 18,
+                      ),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 24,
+                        minHeight: 24,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
+              );
+            },
           ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cerrar',
+              style: TextStyle(color: AppColors.warning.withOpacity(0.6)),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -960,31 +950,30 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: AppColors.background),
       ),
-      body:
-          _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : Form(
-                key: _formKey,
-                child: Column(
-                  children: [
-                    Expanded(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildExtractionInfoSection(),
-                            const SizedBox(height: 24),
-                            _buildLocationSelectionSection(),
-                            const SizedBox(height: 24),
-                            _buildProductSelectionSection(),
-                          ],
-                        ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Form(
+              key: _formKey,
+              child: Column(
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildExtractionInfoSection(),
+                          const SizedBox(height: 24),
+                          _buildLocationSelectionSection(),
+                          const SizedBox(height: 24),
+                          _buildProductSelectionSection(),
+                        ],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
+            ),
       bottomNavigationBar: _buildBottomBar(),
     );
   }
@@ -993,7 +982,7 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
 class _ProductQuantityDialog extends StatefulWidget {
   final Map<String, dynamic> product; // Cambiar tipo
   final WarehouseZone? sourceLocation;
-  final Function(Map<String, dynamic>) onProductAdded;
+  final bool Function(Map<String, dynamic>) onProductAdded;
 
   const _ProductQuantityDialog({
     required this.product,
@@ -1007,228 +996,403 @@ class _ProductQuantityDialog extends StatefulWidget {
 
 class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
   final _quantityController = TextEditingController();
-  Map<String, dynamic>? _selectedVariant;
-  List<Map<String, dynamic>> _availableVariants = [];
-  bool _isLoadingVariants = false;
-  double _maxAvailableStock = 0.0;
-
-  // Variables para presentaciones
+  List<Map<String, dynamic>> _inventoryRows = const [];
+  List<PresentacionCadena> _presentationChain = const [];
+  List<Map<String, dynamic>> _availableIdentities = const [];
+  Map<String, dynamic>? _selectedIdentity;
+  List<Map<String, dynamic>> _availablePresentations = const [];
   Map<String, dynamic>? _selectedPresentation;
-  List<Map<String, dynamic>> _availablePresentations = [];
-  bool _isLoadingPresentations = false;
-
-  // ── FASE 2 presentaciones: extraccion mixta ──────────────────────────────
-  // Permite pedir "2 cajas Y 3 unidades" en un solo paso. En egresos importa
-  // ademas porque si falta saldo suelto, fn_descontar_con_rebalanceo abre el
-  // empaque mayor: el widget avisa antes de confirmar.
-  bool _modoMixto = false;
-  List<PresentacionCadena> _cadena = [];
-  List<LineaMixta> _lineasMixtas = [];
-  StockMixto? _stockMixto;
+  bool _isLoading = true;
+  bool _isPreviewing = false;
+  String? _loadError;
 
   @override
   void initState() {
     super.initState();
-    _maxAvailableStock = 0.0;
-    print('🔍 DEBUG: Stock inicial del producto: $_maxAvailableStock');
-    _loadLocationSpecificVariants();
-    _loadAvailablePresentations(); // NUEVO: Cargar presentaciones disponibles
-    _cargarMixto();
+    _loadDialogData();
   }
 
-  int? get _idProducto {
-    final raw = widget.product['id'] ?? widget.product['id_producto'];
-    if (raw == null) return null;
-    return raw is int ? raw : int.tryParse(raw.toString());
+  @override
+  void dispose() {
+    _quantityController.dispose();
+    super.dispose();
   }
 
-  /// Lee la cadena y el saldo real por presentacion en la ubicacion de origen.
-  ///
-  /// El saldo se pide a `fn_stock_mixto_json` (no al dropdown viejo) porque es la
-  /// misma fuente que va a usar el SQL al descontar: mostrar otra cosa seria
-  /// prometerle al usuario un stock que el servidor no ve.
-  Future<void> _cargarMixto() async {
+  int? get _idProducto =>
+      _asInt(widget.product['id'] ?? widget.product['id_producto']);
+
+  Map<String, dynamic>? get _selectedInventoryRow {
+    final presentationId = _asInt(_selectedPresentation?['id']);
+    final identity = _selectedIdentity;
+    if (identity == null || presentationId == null) return null;
+    return _inventoryRowFor(identity, presentationId);
+  }
+
+  Map<String, dynamic>? _inventoryRowFor(
+    Map<String, dynamic> identity,
+    int presentationId,
+  ) {
+    for (final row in _inventoryRows) {
+      if (_sameIdentity(row, identity) &&
+          _asInt(row['id_presentacion']) == presentationId) {
+        return row;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _loadDialogData() async {
+    final productId = _idProducto;
+    final locationId = _asInt(widget.sourceLocation?.id);
+    if (productId == null || locationId == null) {
+      setState(() {
+        _isLoading = false;
+        _loadError = 'El producto o la ubicación no son válidos.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
+    try {
+      final results = await Future.wait<dynamic>([
+        InventoryService.getProductPresentationsInZone(
+          idProducto: productId,
+          idLayout: locationId,
+          throwOnError: true,
+        ),
+        PresentacionCadenaService.cadena(productId),
+      ]);
+      if (!mounted) return;
+
+      final rows = results[0] as List<Map<String, dynamic>>;
+      final chain = results[1] as List<PresentacionCadena>;
+      if (chain.isEmpty) {
+        throw StateError('El producto no tiene presentaciones configuradas.');
+      }
+      setState(() {
+        _inventoryRows = rows;
+        _presentationChain = [...chain]
+          ..sort((a, b) => a.nivel.compareTo(b.nivel));
+        _availableIdentities = _buildIdentities(rows);
+        _selectedIdentity = _initialIdentity(_availableIdentities);
+        _refreshPresentations();
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _loadError = 'No se pudo cargar el inventario del producto: $e';
+      });
+    }
+  }
+
+  static String _identityKey(Map<String, dynamic> row) =>
+      '${_asInt(row['id_variante'])}|${_asInt(row['id_opcion_variante'])}';
+
+  static bool _sameIdentity(
+    Map<String, dynamic> left,
+    Map<String, dynamic> right,
+  ) => _identityKey(left) == _identityKey(right);
+
+  List<Map<String, dynamic>> _buildIdentities(List<Map<String, dynamic>> rows) {
+    final identities = <String, Map<String, dynamic>>{};
+    for (final row in rows) {
+      identities.putIfAbsent(
+        _identityKey(row),
+        () => <String, dynamic>{
+          'id_variante': _asInt(row['id_variante']),
+          'id_opcion_variante': _asInt(row['id_opcion_variante']),
+          'variante_nombre': row['variante_nombre']?.toString() ?? 'Unidad',
+          'opcion_variante_nombre':
+              row['opcion_variante_nombre']?.toString() ?? 'Única',
+        },
+      );
+    }
+    if (identities.isEmpty) {
+      identities['null|null'] = <String, dynamic>{
+        'id_variante': _asInt(widget.product['id_variante']),
+        'id_opcion_variante': _asInt(widget.product['id_opcion_variante']),
+        'variante_nombre': widget.product['variante']?.toString() ?? 'Unidad',
+        'opcion_variante_nombre':
+            widget.product['opcion_variante']?.toString() ?? 'Única',
+      };
+    }
+    return identities.values.toList(growable: false);
+  }
+
+  Map<String, dynamic>? _initialIdentity(
+    List<Map<String, dynamic>> identities,
+  ) {
+    final expectedVariant = _asInt(widget.product['id_variante']);
+    final expectedOption = _asInt(widget.product['id_opcion_variante']);
+    if (expectedVariant != null || expectedOption != null) {
+      final expected = <String, dynamic>{
+        'id_variante': expectedVariant,
+        'id_opcion_variante': expectedOption,
+      };
+      for (final identity in identities) {
+        if (_sameIdentity(identity, expected)) return identity;
+      }
+    }
+    return identities.length == 1 ? identities.first : null;
+  }
+
+  void _refreshPresentations() {
+    if (_selectedIdentity == null) {
+      _availablePresentations = const [];
+      _selectedPresentation = null;
+      return;
+    }
+    final rows = _inventoryRows
+        .where((row) => _sameIdentity(row, _selectedIdentity!))
+        .toList(growable: false);
+    final byPresentation = <int, Map<String, dynamic>>{};
+    for (final row in rows) {
+      final id = _asInt(row['id_presentacion']);
+      if (id != null) byPresentation[id] = row;
+    }
+
+    final options = <Map<String, dynamic>>[];
+    for (final presentation in _presentationChain) {
+      final row = byPresentation.remove(presentation.idPresentacion);
+      options.add(_presentationOption(presentation, row));
+    }
+    for (final entry in byPresentation.entries) {
+      final row = entry.value;
+      options.add(<String, dynamic>{
+        ...row,
+        'id': entry.key,
+        'denominacion':
+            row['presentacion_nombre']?.toString() ?? 'Presentación',
+        'factor_rel': null,
+        'es_base': false,
+        'es_fraccionable': true,
+        'nivel': 999,
+      });
+    }
+    _availablePresentations = options;
+    final previousId = _asInt(_selectedPresentation?['id']);
+    _selectedPresentation =
+        _findPresentation(options, previousId) ??
+        _findBasePresentation(options) ??
+        (options.isEmpty ? null : options.first);
+  }
+
+  Map<String, dynamic> _presentationOption(
+    PresentacionCadena presentation,
+    Map<String, dynamic>? row,
+  ) => <String, dynamic>{
+    if (row != null) ...row,
+    'id': presentation.idPresentacion,
+    'id_presentacion': presentation.idPresentacion,
+    'denominacion': presentation.nombre,
+    'presentacion_nombre': presentation.nombre,
+    'factor': presentation.factor,
+    'factor_rel': presentation.factorRel,
+    'es_base': presentation.esBase,
+    'es_fraccionable': presentation.esFraccionable,
+    'nivel': presentation.nivel,
+    'cantidad_final': _asDouble(row?['cantidad_final']),
+    'stock_disponible': _asDouble(row?['stock_disponible']),
+  };
+
+  static Map<String, dynamic>? _findPresentation(
+    List<Map<String, dynamic>> options,
+    int? id,
+  ) {
+    if (id == null) return null;
+    for (final option in options) {
+      if (_asInt(option['id']) == id) return option;
+    }
+    return null;
+  }
+
+  static Map<String, dynamic>? _findBasePresentation(
+    List<Map<String, dynamic>> options,
+  ) {
+    for (final option in options) {
+      if (option['es_base'] == true) return option;
+    }
+    return null;
+  }
+
+  String get _basePresentationName {
+    for (final presentation in _presentationChain) {
+      if (presentation.esBase) return presentation.nombre;
+    }
+    return _presentationChain.isEmpty
+        ? 'unidad base'
+        : _presentationChain.last.nombre;
+  }
+
+  String _presentationDetail(Map<String, dynamic> presentation) {
+    final name = presentation['denominacion']?.toString() ?? 'Presentación';
+    final physical = _formatQuantity(_asDouble(presentation['cantidad_final']));
+    final available = _formatQuantity(
+      _asDouble(presentation['stock_disponible']),
+    );
+    final equivalence = presentation['es_base'] == true
+        ? 'base'
+        : presentation['factor_rel'] == null
+        ? 'equivalencia no disponible'
+        : '1 $name = ${_formatQuantity(_asDouble(presentation['factor_rel']))} $_basePresentationName';
+    return '$name · $equivalence · físico: $physical · disponible: $available';
+  }
+
+  String _identityLabel(Map<String, dynamic> identity) {
+    final variant = identity['variante_nombre']?.toString() ?? 'Unidad';
+    final option = identity['opcion_variante_nombre']?.toString() ?? 'Única';
+    return variant == option ? variant : '$variant · $option';
+  }
+
+  Future<void> _previewAndAddProduct() async {
+    if (_isPreviewing) return;
+
+    final quantity = double.tryParse(_quantityController.text.trim());
     final idProducto = _idProducto;
-    if (idProducto == null) return;
+    final idUbicacion = _asInt(widget.sourceLocation?.id);
+    if (quantity == null || quantity <= 0) {
+      _showMessage('Ingrese una cantidad válida');
+      return;
+    }
+    if (idProducto == null || idUbicacion == null) {
+      _showMessage('El producto o la ubicación no son válidos');
+      return;
+    }
 
-    final cadena = await PresentacionCadenaService.cadena(idProducto);
-    if (!mounted) return;
+    final selectedIdentity = _selectedIdentity;
+    final selectedPresentation = _selectedPresentation;
+    if (selectedIdentity == null || selectedPresentation == null) {
+      _showMessage('Seleccione la variante y la presentación');
+      return;
+    }
+    if (selectedPresentation['es_fraccionable'] != true &&
+        quantity != quantity.roundToDouble()) {
+      _showMessage('Esta presentación solo permite cantidades enteras');
+      return;
+    }
 
-    StockMixto? stock;
-    final idUbicacion = widget.sourceLocation != null
-        ? int.tryParse(widget.sourceLocation!.id)
-        : null;
+    final idPresentacion = _asInt(selectedPresentation['id']);
+    if (idPresentacion == null) {
+      _showMessage('La presentación seleccionada no es válida');
+      return;
+    }
+    final idVariante = _asInt(selectedIdentity['id_variante']);
+    final idOpcionVariante = _asInt(selectedIdentity['id_opcion_variante']);
 
-    if (cadena.length > 1) {
-      stock = await PresentacionCadenaService.stockMixto(
-        idProducto,
+    setState(() => _isPreviewing = true);
+    try {
+      final plan = await CumplimientoFisicoService().preview(
+        idProducto: idProducto,
         idUbicacion: idUbicacion,
+        idPresentacion: idPresentacion,
+        cantidad: quantity,
+        idVariante: idVariante,
+        idOpcionVariante: idOpcionVariante,
       );
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _cadena = cadena;
-      _stockMixto = stock;
-      _modoMixto = cadena.length > 1;
-    });
-  }
-
-  Future<void> _loadLocationSpecificVariants() async {
-    if (widget.sourceLocation == null) return;
-
-    final sourceLayoutId = int.tryParse(widget.sourceLocation!.id);
-    if (sourceLayoutId == null) return;
-
-    setState(() => _isLoadingVariants = true);
-
-    try {
-      final rawId = widget.product['id'] ?? widget.product['id_producto'];
-      if (rawId == null) {
-        print('❌ Error: El producto no tiene un ID válido');
-        setState(() => _isLoadingVariants = false);
+      if (!mounted) return;
+      if (!plan.esExitoso) {
+        _showMessage(plan.mensaje);
         return;
       }
-      final productId = rawId is int ? rawId : int.parse(rawId.toString());
 
-      final variants = await InventoryService.getProductVariantsInLocation(
-        idProducto: productId,
-        idLayout: sourceLayoutId,
+      final accepted = await _confirmPhysicalPlan(plan);
+      if (!accepted || !mounted) return;
+
+      final inventoryRow = _inventoryRowFor(selectedIdentity, idPresentacion);
+      final baseProductData = {
+        'id_producto': idProducto,
+        'id_variante': idVariante,
+        'id_opcion_variante': idOpcionVariante,
+        'id_ubicacion': idUbicacion,
+        'precio_unitario': _asDouble(
+          inventoryRow?['precio_unitario'] ?? widget.product['precio_venta'],
+        ),
+        'denominacion':
+            inventoryRow?['nombre_producto'] ??
+            widget.product['nombre_producto'] ??
+            widget.product['denominacion'] ??
+            '',
+        'sku_producto':
+            inventoryRow?['sku_producto'] ??
+            widget.product['sku_producto'] ??
+            widget.product['sku'] ??
+            '',
+        'variante': selectedIdentity['variante_nombre'] ?? '',
+        'opcionVariante': selectedIdentity['opcion_variante_nombre'] ?? '',
+        'zona_nombre': widget.sourceLocation?.name ?? 'Sin zona',
+      };
+      final processed = await PresentationConverter.processProductForExtraction(
+        productId: idProducto.toString(),
+        selectedPresentation: {...selectedPresentation, 'id': idPresentacion},
+        cantidad: quantity,
+        baseProductData: baseProductData,
       );
-
-      setState(() {
-        _availableVariants = variants;
-        if (variants.isNotEmpty) {
-          _selectedVariant = variants.first;
-          print('🔍 DEBUG: Selected variant data: $_selectedVariant');
-          print(
-            '🔍 DEBUG: Stock disponible: ${_selectedVariant!['stock_disponible']}',
-          );
-          _maxAvailableStock =
-              _selectedVariant!['stock_disponible']?.toDouble() ?? 0.0;
-          print('🔍 DEBUG: Max available stock set to: $_maxAvailableStock');
-        }
-        _isLoadingVariants = false;
-      });
-    } catch (e) {
-      setState(() => _isLoadingVariants = false);
-      // Fallback data if service fails
-      final fallbackStock = (widget.product['stock_disponible'] as num?)?.toDouble() ?? 0.0;
-      _availableVariants = [
-        {
-          'id_variante': null,
-          'variante': 'Estándar',
-          'id_presentacion': null,
-          'presentacion': 'Unidad',
-          'stock_disponible': fallbackStock,
-        },
-      ];
-      _selectedVariant = _availableVariants.first;
-      _maxAvailableStock = fallbackStock;
-    }
-  }
-
-  void _onVariantChanged(Map<String, dynamic>? variant) {
-    setState(() {
-      _selectedVariant = variant;
-      _maxAvailableStock = variant?['stock_disponible']?.toDouble() ?? 0.0;
-      _quantityController.clear();
-    });
-  }
-
-  Future<void> _loadAvailablePresentations() async {
-    if (widget.sourceLocation == null) return;
-
-    final sourceLayoutId = int.tryParse(widget.sourceLocation!.id);
-    if (sourceLayoutId == null) return;
-
-    setState(() => _isLoadingPresentations = true);
-
-    try {
-      final rawId = widget.product['id'] ?? widget.product['id_producto'];
-      if (rawId == null) {
-        print('⚠️ No se puede obtener presentaciones: ID de producto nulo');
-        setState(() => _isLoadingPresentations = false);
-        return;
+      if (!mounted) return;
+      if (widget.onProductAdded(processed)) {
+        Navigator.of(context).pop();
       }
-      final productId = rawId is int ? rawId : int.parse(rawId.toString());
-
-      print(
-        '🔍 DEBUG: Cargando presentaciones para producto $productId',
-      );
-
-      final presentations =
-          await InventoryService.getProductPresentationsInZone(
-            idProducto: productId,
-            idLayout: sourceLayoutId,
-          );
-
-      setState(() {
-        _availablePresentations = presentations;
-        if (presentations.isNotEmpty) {
-          _selectedPresentation = presentations.first;
-          print('🔍 DEBUG: Presentación seleccionada: $_selectedPresentation');
-        } else {
-          // Si no hay presentaciones, usar fallback con presentación base
-          print('⚠️ No hay presentaciones disponibles, usando fallback');
-          final stockFromVariant = _selectedVariant?['stock_disponible']?.toDouble() ?? _maxAvailableStock;
-          _availablePresentations = [
-            {
-              'id':
-                  widget.product['id_presentacion'] ??
-                  1, // Fallback a ID 1 (Unidad)
-              'denominacion': widget.product['presentacion'] ?? 'Unidad',
-              'cantidad': 1.0,
-              'stock_disponible': stockFromVariant,
-            },
-          ];
-          _selectedPresentation = _availablePresentations.first;
-        }
-        _isLoadingPresentations = false;
-      });
-
-      print('✅ Presentaciones cargadas: ${presentations.length}');
     } catch (e) {
-      print('❌ Error cargando presentaciones: $e');
-      setState(() => _isLoadingPresentations = false);
-
-      // Fallback: usar presentación del producto
-      final stockFromVariant = _selectedVariant?['stock_disponible']?.toDouble() ?? _maxAvailableStock;
-      _availablePresentations = [
-        {
-          'id': widget.product['id_presentacion'],
-          'denominacion': widget.product['presentacion'] ?? 'Unidad',
-          'cantidad': 1.0,
-          'stock_disponible': stockFromVariant,
-        },
-      ];
-      _selectedPresentation = _availablePresentations.first;
+      if (mounted) _showMessage('No se pudo validar el despacho físico: $e');
+    } finally {
+      if (mounted) setState(() => _isPreviewing = false);
     }
   }
 
-  /// Valida si hay stock suficiente de ingredientes para un producto elaborado
-  Future<bool> _validateIngredientStock(int productId, double quantity) async {
-    try {
-      final ingredients = await ProductService.getProductIngredients(
-        productId.toString(),
-      );
+  Future<bool> _confirmPhysicalPlan(PlanCumplimiento plan) async {
+    final lines = plan.lineasFisicas
+        .map((line) => '${_formatQuantity(line.cantidad)} ${line.nombre}')
+        .join('\n');
+    final conversions = plan.conversiones.isEmpty
+        ? 'No requiere abrir ni reempaquetar presentaciones.'
+        : 'Conversiones internas: ${plan.conversiones.length}.';
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Confirmar despacho físico'),
+            content: Text('$lines\n\n$conversions'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Agregar'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
 
-      for (final ingredient in ingredients) {
-        final ingredientId = ingredient['producto_id'] as int;
-        final cantidadNecesaria =
-            (ingredient['cantidad_necesaria'] as num).toDouble();
-        final totalRequired = cantidadNecesaria * quantity;
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
 
-        // Aquí se podría verificar stock real del ingrediente
-        // Por ahora retorna true, pero se puede extender
-        print('🔍 Ingrediente $ingredientId requiere: $totalRequired');
-      }
-
-      return true;
-    } catch (e) {
-      print('❌ Error validando stock de ingredientes: $e');
-      return false;
+  static int? _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num && value.isFinite && value == value.truncateToDouble()) {
+      return value.toInt();
     }
+    return int.tryParse(value?.toString() ?? '');
+  }
+
+  static double _asDouble(dynamic value) {
+    if (value is num && value.isFinite) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  static String _formatQuantity(double value) {
+    return value == value.roundToDouble()
+        ? value.toInt().toString()
+        : value.toString();
   }
 
   @override
@@ -1323,22 +1487,7 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                             ],
                           ),
                           const SizedBox(height: 12),
-                          _buildInfoRow('SKU', widget.product['sku'] ?? 'N/A'),
-                          _buildInfoRow(
-                            'Stock en Ubicación',
-                            _maxAvailableStock.toStringAsFixed(1),
-                            valueColor:
-                                _maxAvailableStock > 0
-                                    ? AppColors.success
-                                    : AppColors.error,
-                          ),
-                          if ((widget.product['presentacion'] ?? '')
-                              .toString()
-                              .isNotEmpty)
-                            _buildInfoRow(
-                              'Presentación',
-                              widget.product['presentacion'] ?? 'N/A',
-                            ),
+                          ..._buildProductInfoRows(),
                         ],
                       ),
                     ),
@@ -1364,243 +1513,110 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
 
                     const SizedBox(height: 20),
 
-                    // Presentation Selection
-                    if (_isLoadingVariants)
+                    if (_isLoading)
                       const Center(
                         child: Padding(
                           padding: EdgeInsets.all(20),
                           child: CircularProgressIndicator(),
                         ),
                       )
-                    else if (_availableVariants.isNotEmpty) ...[
-                      /*Text(
-                        'Seleccionar Presentación',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16,
-                          color: AppColors.black87,
-                        ),
-                      ),*/
-                      /*const SizedBox(height: 12),
-
-                      // Presentation Cards
-                      ..._availableVariants.map((variant) {
-                        final isSelected = _selectedVariant == variant;
-                        return GestureDetector(
-                          onTap: () => _onVariantChanged(variant),
-                          child: Container(
-                            width: double.infinity,
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color:
-                                  isSelected
-                                      ? AppColors.primary.withOpacity(0.1)
-                                      : Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color:
-                                    isSelected
-                                        ? AppColors.primary
-                                        : AppColors.border,
-                                width: isSelected ? 2 : 1,
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 20,
-                                  height: 20,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color:
-                                        isSelected
-                                            ? AppColors.primary
-                                            : Colors.transparent,
-                                    border: Border.all(
-                                      color:
-                                          isSelected
-                                              ? AppColors.primary
-                                              : AppColors.grey,
-                                      width: 2,
-                                    ),
-                                  ),
-                                  child:
-                                      isSelected
-                                          ? const Icon(
-                                            Icons.check,
-                                            color: Colors.white,
-                                            size: 12,
-                                          )
-                                          : null,
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        variant['presentacion_nombre'] ??
-                                            'Sin presentación',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 15,
-                                          color:
-                                              isSelected
-                                                  ? AppColors.primary
-                                                  : AppColors.black87,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        'Stock disponible: ${variant['stock_disponible']?.toStringAsFixed(1) ?? '0.0'}',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: AppColors.grey.shade600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }).toList(),*/
-
-                      /*const SizedBox(height: 20),*/
-
-                      // Stock Info
-                      if (_selectedVariant != null)
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: AppColors.success.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: AppColors.success.withOpacity(0.3),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.check_circle_outline,
-                                color: AppColors.success,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  'Stock disponible: ${_maxAvailableStock.toStringAsFixed(1)} unidades',
-                                  style: TextStyle(
-                                    color: AppColors.success,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ),
-                            ],
+                    else if (_loadError != null)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppColors.error.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: AppColors.error.withOpacity(0.3),
                           ),
                         ),
-
-                      const SizedBox(height: 20),
-
-                      // ── FASE 2: captura mixta o dropdown clasico ──────────
-                      if (_modoMixto) ...[
-                        _buildSelectorModoMixto(),
-                        const SizedBox(height: 12),
-                        CantidadMixtaInput(
-                          idProducto: _idProducto!,
-                          stockActual: _stockMixto,
-                          avisarRebalanceo: true,
-                          onChanged: (lineas) =>
-                              setState(() => _lineasMixtas = lineas),
-                        ),
-                        const SizedBox(height: 20),
-                      ] else ...[
-                        if (_cadena.length > 1) ...[
-                          _buildSelectorModoMixto(),
-                          const SizedBox(height: 12),
-                        ],
-                        // Presentation Selection Section
-                        if (_isLoadingPresentations)
-                          const Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(20),
-                              child: CircularProgressIndicator(),
+                        child: Column(
+                          children: [
+                            Text(
+                              _loadError!,
+                              style: TextStyle(color: AppColors.error),
                             ),
-                          )
-                        else if (_availablePresentations.isNotEmpty) ...[
-                        Text(
-                          'Seleccionar Presentación',
-                          style: const TextStyle(
+                            const SizedBox(height: 8),
+                            TextButton.icon(
+                              onPressed: _loadDialogData,
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Reintentar'),
+                            ),
+                          ],
+                        ),
+                      )
+                    else ...[
+                      if (_availableIdentities.length > 1) ...[
+                        const Text(
+                          'Seleccionar Variante',
+                          style: TextStyle(
                             fontWeight: FontWeight.w600,
                             fontSize: 16,
                             color: AppColors.black87,
                           ),
                         ),
                         const SizedBox(height: 12),
-
-                        // Presentation Dropdown
+                        DropdownButtonFormField<Map<String, dynamic>>(
+                          value: _selectedIdentity,
+                          isExpanded: true,
+                          decoration: _selectorDecoration(Icons.tune),
+                          hint: const Text('Seleccione variante y opción'),
+                          items: _availableIdentities
+                              .map(
+                                (identity) => DropdownMenuItem(
+                                  value: identity,
+                                  child: Text(
+                                    _identityLabel(identity),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              )
+                              .toList(growable: false),
+                          onChanged: (value) {
+                            setState(() {
+                              _selectedIdentity = value;
+                              _refreshPresentations();
+                              _quantityController.clear();
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 20),
+                      ],
+                      if (_selectedIdentity == null)
+                        _buildSelectionNotice(
+                          'Seleccione una variante para ver sus presentaciones y saldos.',
+                        )
+                      else if (_availablePresentations.isEmpty)
+                        _buildSelectionNotice(
+                          'No hay presentaciones configuradas para esta variante.',
+                        )
+                      else ...[
+                        const Text(
+                          'Seleccionar Presentación',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                            color: AppColors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
                         DropdownButtonFormField<Map<String, dynamic>>(
                           value: _selectedPresentation,
-                          decoration: InputDecoration(
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                            prefixIcon: Icon(
-                              Icons.category,
-                              color: AppColors.primary,
-                              size: 20,
-                            ),
-                          ),
+                          isExpanded: true,
+                          decoration: _selectorDecoration(Icons.category),
                           hint: const Text('Seleccionar presentación'),
-                          isExpanded: true, // Esta línea es clave
-                          items: _availablePresentations.map((presentation) {
-                            return DropdownMenuItem<Map<String, dynamic>>(
-                              value: presentation,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    presentation['denominacion'] + ' - ' + presentation['cantidad'].toString() ??
-                                        'Sin nombre',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 14,
-                                    ),
-                                    overflow: TextOverflow.ellipsis, // Añadir esto
-                                    maxLines: 1, // Opcional: forzar una sola línea
+                          items: _availablePresentations
+                              .map(
+                                (presentation) => DropdownMenuItem(
+                                  value: presentation,
+                                  child: Text(
+                                    _presentationDetail(presentation),
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                  /*if (presentation['cantidad'] != null)
-            Text(
-              '${presentation['cantidad']} unidades base',
-              style: TextStyle(
-                fontSize: 12,
-                color: AppColors.grey.shade600,
-              ),
-            ),
-          if (presentation['stock_disponible'] !=
-              null)
-            Text(
-              'Stock: ${presentation['stock_disponible']}',
-              style: TextStyle(
-                fontSize: 12,
-                color: AppColors.success,
-                fontWeight: FontWeight.w500,
-              ),
-            ),*/
-                                ],
-                              ),
-                            );
-                          }).toList(),
+                                ),
+                              )
+                              .toList(growable: false),
                           onChanged: (value) {
                             setState(() {
                               _selectedPresentation = value;
@@ -1608,24 +1624,30 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                             });
                           },
                         ),
-
-                        const SizedBox(height: 20),
-                        ],
+                        const SizedBox(height: 12),
+                        ..._availablePresentations.map(
+                          (presentation) => _buildPresentationStockRow(
+                            presentation,
+                            selected: identical(
+                              presentation,
+                              _selectedPresentation,
+                            ),
+                          ),
+                        ),
                       ],
+                      const SizedBox(height: 20),
                     ],
 
-                    // Quantity Input — solo en modo simple: en el mixto cada
-                    // presentacion tiene su propio campo.
-                    if (!_modoMixto) ...[
-                      Text(
-                        'Cantidad a Extraer',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16,
-                          color: AppColors.black87,
-                        ),
+                    // Quantity Input
+                    Text(
+                      'Cantidad a Extraer',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                        color: AppColors.black87,
                       ),
-                      const SizedBox(height: 12),
+                    ),
+                    const SizedBox(height: 12),
                     TextFormField(
                       controller: _quantityController,
                       keyboardType: const TextInputType.numberWithOptions(
@@ -1646,7 +1668,9 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                           color: AppColors.primary,
                         ),
                         suffixText:
-                            _selectedVariant?['presentacion_nombre'] ?? '',
+                            _selectedPresentation?['denominacion']
+                                ?.toString() ??
+                            '',
                         suffixStyle: TextStyle(
                           color: AppColors.primary,
                           fontWeight: FontWeight.w500,
@@ -1677,13 +1701,9 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                         if (quantity == null || quantity <= 0) {
                           return 'La cantidad debe ser mayor a 0';
                         }
-                        if (quantity > _maxAvailableStock) {
-                          return 'Cantidad excede stock disponible (Max: ${_maxAvailableStock.toStringAsFixed(1)})';
-                        }
                         return null;
                       },
                     ),
-                    ],
                   ],
                 ),
               ),
@@ -1727,99 +1747,13 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                     flex: 2,
                     child: ElevatedButton(
                       onPressed:
-                          _selectedVariant == null
-                              ? null
-                              : (_modoMixto
-                                  ? _agregarMixto
-                                  : () async {
-                                final quantity = double.tryParse(
-                                  _quantityController.text,
-                                );
-                                if (quantity == null || quantity <= 0) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        'Ingrese una cantidad válida',
-                                      ),
-                                    ),
-                                  );
-                                  return;
-                                }
-                                if (quantity > _maxAvailableStock) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        'Cantidad excede stock disponible',
-                                      ),
-                                    ),
-                                  );
-                                  return;
-                                }
-
-                                try {
-                                  // Datos base del producto
-                                  final baseProductData = {
-                                    'id_producto': widget.product['id'],
-                                    'id_variante':
-                                        widget.product['id_variante'],
-                                    'id_opcion_variante':
-                                        widget.product['id_opcion_variante'],
-                                    'id_ubicacion':
-                                        widget.sourceLocation != null
-                                            ? int.tryParse(
-                                              widget.sourceLocation!.id,
-                                            )
-                                            : null,
-                                    'precio_unitario':
-                                        (widget.product['precio_venta'] as num?)
-                                            ?.toDouble() ??
-                                        0.0,
-                                    'sku_producto': widget.product['sku'] ?? '',
-                                    'sku_ubicacion':
-                                        widget.product['ubicacion'] ?? '',
-                                    'denominacion':
-                                        widget.product['denominacion'] ??
-                                        widget.product['nombre_producto'] ??
-                                        '',
-                                    'variante':
-                                        widget.product['variante'] ?? '',
-                                    'opcionVariante':
-                                        widget.product['opcion_variante'] ?? '',
-                                    'zona_nombre':
-                                        widget.sourceLocation?.name ??
-                                        'Sin zona',
-                                  };
-
-                                  // Usar PresentationConverter para procesar el producto
-                                  final processedProductData =
-                                      await PresentationConverter.processProductForExtraction(
-                                        productId:
-                                            widget.product['id'].toString(),
-                                        selectedPresentation:
-                                            _selectedPresentation,
-                                        cantidad: quantity,
-                                        baseProductData: baseProductData,
-                                      );
-
-                                  print(
-                                    '✅ Producto procesado para extracción: $processedProductData',
-                                  );
-
-                                  widget.onProductAdded(processedProductData);
-                                  Navigator.of(context).pop();
-                                } catch (e) {
-                                  print(
-                                    '❌ Error procesando producto para extracción: $e',
-                                  );
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'Error procesando producto: $e',
-                                      ),
-                                    ),
-                                  );
-                                }
-                              }),
+                          _isLoading ||
+                              _loadError != null ||
+                              _selectedIdentity == null ||
+                              _selectedPresentation == null ||
+                              _isPreviewing
+                          ? null
+                          : _previewAndAddProduct,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.warning,
                         foregroundColor: Colors.white,
@@ -1829,13 +1763,22 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                         ),
                         elevation: 0,
                       ),
-                      child: const Text(
-                        'Agregar Producto',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                      child: _isPreviewing
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text(
+                              'Agregar Producto',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                     ),
                   ),
                 ],
@@ -1847,109 +1790,122 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
     );
   }
 
-  /// Alterna captura mixta / una sola presentacion.
-  Widget _buildSelectorModoMixto() {
+  InputDecoration _selectorDecoration(IconData icon) {
+    return InputDecoration(
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      prefixIcon: Icon(icon, color: AppColors.primary, size: 20),
+    );
+  }
+
+  Widget _buildSelectionNotice(String message) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.grey.shade50,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border),
+        color: AppColors.warning.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(10),
       ),
-      child: Row(
-        children: [
-          Icon(
-            _modoMixto ? Icons.view_list : Icons.looks_one,
-            size: 18,
-            color: AppColors.primary,
+      child: Text(message, style: const TextStyle(fontSize: 13)),
+    );
+  }
+
+  Widget _buildPresentationStockRow(
+    Map<String, dynamic> presentation, {
+    required bool selected,
+  }) {
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedPresentation = presentation;
+          _quantityController.clear();
+        });
+      },
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary.withOpacity(0.08) : Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected ? AppColors.primary : AppColors.border,
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              _modoMixto
-                  ? 'Varias presentaciones a la vez'
-                  : 'Una sola presentación',
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              presentation['es_base'] == true
+                  ? Icons.home_outlined
+                  : Icons.inventory_2_outlined,
+              size: 18,
+              color: selected ? AppColors.primary : AppColors.grey.shade600,
             ),
-          ),
-          TextButton(
-            onPressed: () {
-              setState(() {
-                _modoMixto = !_modoMixto;
-                _lineasMixtas = [];
-                _quantityController.clear();
-              });
-            },
-            child: Text(
-              _modoMixto ? 'Cambiar a una' : 'Cambiar a varias',
-              style: const TextStyle(fontSize: 12),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _presentationDetail(presentation),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                  color: selected ? AppColors.primary : AppColors.black87,
+                ),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  /// Agrega UNA linea de extraccion por presentacion con cantidad.
-  ///
-  /// No valida contra el stock suelto: si falta saldo en la presentacion pedida,
-  /// `fn_descontar_con_rebalanceo` abre el empaque mayor y lo deja registrado.
-  /// Validar aca rechazaria extracciones que el servidor si puede cumplir. Lo
-  /// unico que se hace es avisar (lo hace el widget) para que el usuario sepa
-  /// que se va a romper un empaque.
-  Future<void> _agregarMixto() async {
-    if (_lineasMixtas.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Escriba la cantidad de al menos una presentación'),
-        ),
-      );
-      return;
+  String _firstText(Iterable<dynamic> values, {String fallback = 'N/A'}) {
+    for (final value in values) {
+      final text = value?.toString().trim() ?? '';
+      if (text.isNotEmpty) return text;
     }
+    return fallback;
+  }
 
-    final idUbicacion = widget.sourceLocation != null
-        ? int.tryParse(widget.sourceLocation!.id)
-        : null;
-
-    try {
-      for (final linea in _lineasMixtas) {
-        final baseProductData = {
-          'id_producto': widget.product['id'],
-          'id_variante': widget.product['id_variante'],
-          'id_opcion_variante': widget.product['id_opcion_variante'],
-          'id_ubicacion': idUbicacion,
-          'precio_unitario':
-              (widget.product['precio_venta'] as num?)?.toDouble() ?? 0.0,
-          'sku_producto': widget.product['sku'] ?? '',
-          'sku_ubicacion': widget.product['ubicacion'] ?? '',
-          'denominacion': widget.product['denominacion'] ??
-              widget.product['nombre_producto'] ??
-              '',
-          'variante': widget.product['variante'] ?? '',
-          'opcionVariante': widget.product['opcion_variante'] ?? '',
-          'zona_nombre': widget.sourceLocation?.name ?? 'Sin zona',
-        };
-
-        final processed =
-            await PresentationConverter.processProductForExtraction(
-          productId: widget.product['id'].toString(),
-          selectedPresentation: linea.presentacion.toPresentationMap(),
-          cantidad: linea.cantidad,
-          baseProductData: baseProductData,
-        );
-
-        widget.onProductAdded(processed);
-      }
-
-      if (mounted) Navigator.of(context).pop();
-    } catch (e) {
-      print('❌ Error procesando extracción mixta: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error procesando producto: $e')),
-        );
-      }
-    }
+  List<Widget> _buildProductInfoRows() {
+    final row =
+        _selectedInventoryRow ??
+        (_inventoryRows.isEmpty ? null : _inventoryRows.first);
+    final name = _firstText([
+      row?['nombre_producto'],
+      widget.product['nombre_producto'],
+      widget.product['denominacion'],
+    ]);
+    final sku = _firstText([
+      row?['sku_producto'],
+      widget.product['sku_producto'],
+      widget.product['sku'],
+    ]);
+    final unit = _firstText([
+      row?['um'],
+      widget.product['um'],
+      widget.product['unidad_medida'],
+    ], fallback: '');
+    final category = _firstText([
+      row?['categoria'],
+      widget.product['categoria'],
+      widget.product['nombre_categoria'],
+    ], fallback: '');
+    final subcategory = _firstText([
+      row?['subcategoria'],
+      widget.product['subcategoria'],
+      widget.product['nombre_subcategoria'],
+    ], fallback: '');
+    return [
+      _buildInfoRow('Producto', name),
+      _buildInfoRow('SKU', sku),
+      _buildInfoRow('Ubicación', widget.sourceLocation?.name ?? 'N/A'),
+      if (unit.isNotEmpty) _buildInfoRow('Unidad', unit),
+      if (category.isNotEmpty) _buildInfoRow('Categoría', category),
+      if (subcategory.isNotEmpty) _buildInfoRow('Subcategoría', subcategory),
+      if (_selectedIdentity != null)
+        _buildInfoRow('Variante', _identityLabel(_selectedIdentity!)),
+    ];
   }
 
   Widget _buildInfoRow(String label, String value, {Color? valueColor}) {
@@ -1981,26 +1937,6 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
           ),
         ],
       ),
-    );
-  }
-
-  /// Muestra ingredientes de producto elaborado
-  Widget _buildIngredientsList() {
-    if (widget.product['es_elaborado'] != true) return const SizedBox.shrink();
-
-    return FutureBuilder(
-      future: ProductService.getProductIngredients(
-        widget.product['id'].toString(),
-      ),
-      builder: (context, snapshot) {
-        if (snapshot.hasData && snapshot.data!.isNotEmpty) {
-          return Text(
-            'Ingredientes: ${snapshot.data!.length}',
-            style: const TextStyle(fontSize: 12, color: Colors.grey),
-          );
-        }
-        return const SizedBox.shrink();
-      },
     );
   }
 }

@@ -537,22 +537,60 @@ class _ConsignacionEnvioDetallesScreenState
     Map<String, dynamic> producto, {
     required bool puedeEditar,
   }) {
-    final nombreProducto =
+    // Nombre del producto base
+    final nombreBase =
         producto['producto_denominacion'] as String? ??
         producto['nombre_producto'] as String? ??
         producto['denominacion'] as String? ??
         'N/A';
+    
+    // Presentación (nueva en v3)
+    final presentacion = producto['denominacion_presentacion'] as String?;
+    final unidades = (producto['presentacion_unidades'] as num?)?.toInt() ?? 1;
+    final esBase = producto['es_presentacion_base'] as bool? ?? true;
+    
+    // Construir nombre completo: "Producto (Presentación x Unid.)"
+    String nombreProducto = nombreBase;
+    if (presentacion != null && !esBase) {
+      nombreProducto = '$nombreBase ($presentacion x$unidades)';
+    } else if (presentacion != null && esBase && unidades > 1) {
+      nombreProducto = '$nombreBase ($presentacion x$unidades)';
+    }
+    
+    // Variante (nueva en v3)
+    final varianteAttr = producto['variante_atributo'] as String?;
+    final varianteVal = producto['variante_valor'] as String?;
+    final tieneVariante = varianteAttr != null && varianteVal != null;
+    
     final sku =
         producto['producto_sku'] as String? ??
         producto['sku'] as String? ??
         'N/A';
     final cantidad = producto['cantidad_propuesta'] ?? 0;
-    final precioCostoUsd =
-        (producto['precio_costo_usd'] as num?)?.toDouble() ?? 0.0;
+    
+    // Costo: usar precio_costo_cup (fiable) y precio_costo_real_usd (costo real de presentación)
+    final precioCostoCup = (producto['precio_costo_cup'] as num?)?.toDouble() ?? 0.0;
+    final precioCostoRealUsd = (producto['precio_costo_real_usd'] as num?)?.toDouble();
+    final precioCostoUsd = (producto['precio_costo_usd'] as num?)?.toDouble();
+    final tasaCambio = (producto['tasa_cambio'] as num?)?.toDouble();
+    
+    // Si precio_costo_real_usd es NULL, calcular desde CUP/tasa
+    double costoUsdFinal;
+    if (precioCostoRealUsd != null) {
+      costoUsdFinal = precioCostoRealUsd;
+    } else if (precioCostoCup > 0 && tasaCambio != null && tasaCambio > 0) {
+      costoUsdFinal = precioCostoCup / tasaCambio;
+    } else {
+      costoUsdFinal = precioCostoUsd ?? 0.0;
+    }
+    
     final precioVentaCup = (producto['precio_venta_cup'] as num?)?.toDouble();
     
-    // Obtener estado_producto (0=Pendiente, 1=Confirmado, 2=Rechazado)
-    final estadoProducto = (producto['estado_producto'] as num?)?.toInt() ?? 0;
+    // Ubicación (nueva en v3)
+    final ubicacion = producto['ubicacion_nombre'] as String?;
+    
+    // Obtener estado_producto (1=PROPUESTO, 2=CONFIGURADO, 3=ACEPTADO, 4=RECHAZADO)
+    final estadoProducto = (producto['estado_producto'] as num?)?.toInt() ?? 1;
     final estadoTexto = _obtenerTextoEstadoProducto(estadoProducto);
     final estadoColor = _obtenerColorEstadoProducto(estadoProducto);
 
@@ -598,6 +636,20 @@ class _ConsignacionEnvioDetallesScreenState
                         'SKU: $sku',
                         style: TextStyle(fontSize: 11, color: Colors.grey[600]),
                       ),
+                      if (tieneVariante)
+                        Text(
+                          '$varianteAttr: $varianteVal',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.blue[700],
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      if (ubicacion != null)
+                        Text(
+                          'Ubicación: $ubicacion',
+                          style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                        ),
                     ],
                   ),
                 ),
@@ -659,7 +711,7 @@ class _ConsignacionEnvioDetallesScreenState
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
-                      'Costo: \$${precioCostoUsd.toStringAsFixed(2)} USD',
+                      'Costo: \$${precioCostoCup.toStringAsFixed(2)} CUP',
                       style: TextStyle(
                         fontSize: 11,
                         color: Colors.orange[700],
@@ -668,6 +720,29 @@ class _ConsignacionEnvioDetallesScreenState
                     ),
                   ),
                 ),
+                if (costoUsdFinal > 0) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '\$${costoUsdFinal.toStringAsFixed(2)} USD',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.blue[700],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
                 if (precioVentaCup != null && precioVentaCup > 0) ...[
                   const SizedBox(width: 8),
                   Expanded(
@@ -1755,14 +1830,16 @@ class _ConsignacionEnvioDetallesScreenState
   }
 
   /// Obtiene el texto del estado del producto
-  /// 0 = Pendiente, 1 = Confirmado, 2 = Rechazado
+  /// 1=PROPUESTO 2=CONFIGURADO 3=ACEPTADO 4=RECHAZADO
   String _obtenerTextoEstadoProducto(int estado) {
     switch (estado) {
-      case 0:
-        return 'Pendiente';
       case 1:
-        return 'Confirmado';
+        return 'Propuesto';
       case 2:
+        return 'Configurado';
+      case 3:
+        return 'Aceptado';
+      case 4:
         return 'Rechazado';
       default:
         return 'Desconocido';
@@ -1770,14 +1847,16 @@ class _ConsignacionEnvioDetallesScreenState
   }
 
   /// Obtiene el color del estado del producto
-  /// 0 = Pendiente (naranja), 1 = Confirmado (verde), 2 = Rechazado (rojo)
+  /// 1=PROPUESTO(naranja) 2=CONFIGURADO(azul) 3=ACEPTADO(verde) 4=RECHAZADO(rojo)
   Color _obtenerColorEstadoProducto(int estado) {
     switch (estado) {
-      case 0:
-        return Colors.orange;
       case 1:
-        return Colors.green;
+        return Colors.orange;
       case 2:
+        return Colors.blue;
+      case 3:
+        return Colors.green;
+      case 4:
         return Colors.red;
       default:
         return Colors.grey;

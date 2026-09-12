@@ -749,7 +749,8 @@ class _AsignarProductosConsignacionScreenState
               sku
             ),
             app_dat_producto_presentacion(
-              precio_promedio
+              precio_promedio,
+              cantidad
             )
           ''')
           .inFilter('id', productosIds);
@@ -773,18 +774,23 @@ class _AsignarProductosConsignacionScreenState
             0.0; // Inicializar en 0, el consignador lo configurará
 
         // Obtener precio_promedio de la presentación para usar como precio_costo_usd
+        // ⭐ MULTIPLICAR por las unidades de la presentación (caja x24 = precio × 24)
         double costUSD = 0.0;
         final idPresentacion = p['id_presentacion'];
+        int unidadesPresentacion = 1; // Por defecto 1 (presentación base)
+        
         if (idPresentacion != null) {
           final presResp = await _supabase
               .from('app_dat_producto_presentacion')
-              .select('precio_promedio')
+              .select('precio_promedio, cantidad')
               .eq('id_producto', idProducto)
               .eq('id_presentacion', idPresentacion)
               .limit(1);
 
           if ((presResp as List).isNotEmpty) {
-            costUSD = (presResp[0]['precio_promedio'] ?? 0).toDouble();
+            final precioBase = (presResp[0]['precio_promedio'] ?? 0).toDouble();
+            unidadesPresentacion = (presResp[0]['cantidad'] ?? 1) as int;
+            costUSD = precioBase * unidadesPresentacion; // ⭐ Multiplicar
           }
         }
 
@@ -792,18 +798,21 @@ class _AsignarProductosConsignacionScreenState
         if (costUSD == 0.0) {
           final presBaseResp = await _supabase
               .from('app_dat_producto_presentacion')
-              .select('precio_promedio')
+              .select('precio_promedio, cantidad')
               .eq('id_producto', idProducto)
               .eq('es_base', true)
               .limit(1);
 
           if ((presBaseResp as List).isNotEmpty) {
-            costUSD = (presBaseResp[0]['precio_promedio'] ?? 0).toDouble();
+            final precioBase = (presBaseResp[0]['precio_promedio'] ?? 0).toDouble();
+            unidadesPresentacion = (presBaseResp[0]['cantidad'] ?? 1) as int;
+            costUSD = precioBase * unidadesPresentacion; // ⭐ Multiplicar
           }
         }
 
         p['precio_costo_usd'] = costUSD;
         p['precio_costo_cup'] = costUSD * tasaCambio;
+        p['unidades_presentacion'] = unidadesPresentacion; // ⭐ Guardar para la UI
       }
 
       if (widget.isDevolucion) {
@@ -1765,7 +1774,7 @@ class _ConsignacionProductosConfigScreenState
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Precio Costo Original (USD)',
+                                'Precio Costo Original (USD) - Presentación completa',
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w500,
@@ -1781,6 +1790,14 @@ class _ConsignacionProductosConfigScreenState
                                   color: Colors.blue,
                                 ),
                               ),
+                              if (p['unidades_presentacion'] != null && p['unidades_presentacion'] > 1)
+                                Text(
+                                  '(Incluye ${p['unidades_presentacion']} unidades)',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.blue[600],
+                                  ),
+                                ),
                               const SizedBox(height: 8),
                               Row(
                                 mainAxisAlignment:

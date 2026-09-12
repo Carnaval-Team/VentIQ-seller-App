@@ -107,8 +107,8 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
         _isLoading = true;
         _errorMessage = '';
         _currentPage = 1;
-        _inventoryProducts.clear();
-        _inventorySummaries.clear();
+        _inventoryProducts = <InventoryProduct>[];
+        _inventorySummaries = <InventorySummaryByUser>[];
       });
     }
 

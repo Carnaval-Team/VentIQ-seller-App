@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../config/app_colors.dart';
+import '../models/inventory.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
 import '../services/inventory_service.dart';
 import '../services/presentacion_cadena_service.dart';
 import '../services/warehouse_service.dart';
 import '../services/user_preferences_service.dart';
+import '../widgets/adjustment_presentations_dialog.dart';
 import '../widgets/product_selector_widget.dart';
 import '../services/product_search_service.dart';
-import '../widgets/presentacion_equivalencia_widget.dart';
 
 class InventoryAdjustmentScreen extends StatefulWidget {
   final int operationType; // 3 para faltante (sumar), 4 para exceso (restar)
@@ -22,7 +23,8 @@ class InventoryAdjustmentScreen extends StatefulWidget {
   });
 
   @override
-  State<InventoryAdjustmentScreen> createState() => _InventoryAdjustmentScreenState();
+  State<InventoryAdjustmentScreen> createState() =>
+      _InventoryAdjustmentScreenState();
 }
 
 // Modelo interno para una fila de ajuste (producto + presentación)
@@ -77,19 +79,27 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
     try {
       // Obtener todos los almacenes/zonas disponibles
       final warehouses = await WarehouseService().listWarehousesOK();
-      
+
       // Convertir almacenes a formato de zonas para el dropdown
-      final warehousesWithZones = warehouses.map((warehouse) => {
-        'id': int.tryParse(warehouse.id) ?? 0,
-        'name': warehouse.name,
-        'denominacion': warehouse.denominacion ?? warehouse.name,
-        'zones': warehouse.zones.map((zone) => {
-          'id': int.tryParse(zone.id) ?? 0,
-          'denominacion': zone.name,
-          'code': zone.code ?? '',
-        }).toList(),
-      }).toList();
-      
+      final warehousesWithZones = warehouses
+          .map(
+            (warehouse) => {
+              'id': int.tryParse(warehouse.id) ?? 0,
+              'name': warehouse.name,
+              'denominacion': warehouse.denominacion ?? warehouse.name,
+              'zones': warehouse.zones
+                  .map(
+                    (zone) => {
+                      'id': int.tryParse(zone.id) ?? 0,
+                      'denominacion': zone.name,
+                      'code': zone.code ?? '',
+                    },
+                  )
+                  .toList(),
+            },
+          )
+          .toList();
+
       setState(() {
         _warehousesWithZones = warehousesWithZones;
         _isLoadingZones = false;
@@ -127,8 +137,11 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
     if (_selectedZone == null) return;
     setState(() => _isLoadingProduct = true);
     try {
-      final productId = int.tryParse(
-            (product['id_producto'] ?? product['id'])?.toString() ?? '0') ?? 0;
+      final productId =
+          int.tryParse(
+            (product['id_producto'] ?? product['id'])?.toString() ?? '0',
+          ) ??
+          0;
       final zoneId = _selectedZone!['id'] as int;
 
       final response = await InventoryService.getInventoryProducts(
@@ -143,44 +156,85 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
       if (response.products.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('No se encontraron presentaciones para este producto en la zona'),
+            content: Text(
+              'No se encontraron presentaciones para este producto en la zona',
+            ),
             backgroundColor: Colors.orange,
           ),
         );
         return;
       }
 
-      // Show dialog for each presentation
-      for (final inv in response.products) {
+      final candidates = response.products.where((inv) {
         final key = '${productId}_${inv.idPresentacion ?? 'null'}_$zoneId';
-        if (_rows.any((r) => r.rowKey == key)) continue;
+        return !_rows.any((row) => row.rowKey == key);
+      }).toList();
 
-        if (!mounted) return;
-        
-        await _showAdjustmentDialog(
-          productId: productId,
-          productName: inv.nombreProducto.isNotEmpty ? inv.nombreProducto : product['denominacion']?.toString() ?? 'Producto',
-          presentationName: inv.presentacion.isNotEmpty ? inv.presentacion : 'Sin presentación',
-          currentStock: inv.cantidadFinal,
-          onSave: (adjustmentAmount) {
-            setState(() {
-              _rows.add(_AdjustRow(
-                idProducto: productId,
-                nombreProducto: inv.nombreProducto.isNotEmpty ? inv.nombreProducto : product['denominacion']?.toString() ?? 'Producto',
-                idPresentacion: inv.idPresentacion,
-                nombrePresentacion: inv.presentacion.isNotEmpty ? inv.presentacion : 'Sin presentación',
-                idUbicacion: zoneId,
-                stockActual: inv.cantidadFinal,
-                cantidadController: TextEditingController(text: adjustmentAmount.toString()),
-              ));
-            });
-          },
+      if (candidates.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Todas las presentaciones ya fueron agregadas'),
+            backgroundColor: Colors.orange,
+          ),
         );
+        return;
       }
+
+      final identities = candidates
+          .map(
+            (inv) =>
+                '${inv.idVariante ?? 'null'}|${inv.idOpcionVariante ?? 'null'}',
+          )
+          .toSet();
+      if (identities.length > 1) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Este producto tiene varias variantes en la zona. '
+              'El ajuste actual no permite distinguirlas de forma segura.',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      final productName = candidates.first.nombreProducto.isNotEmpty
+          ? candidates.first.nombreProducto
+          : product['denominacion']?.toString() ?? 'Producto';
+      final results = await _showAdjustmentDialog(
+        productId: productId,
+        productName: productName,
+        candidates: candidates,
+        zoneId: zoneId,
+      );
+      if (!mounted || results == null) return;
+
+      setState(() {
+        for (final result in results) {
+          final item = result.item;
+          _rows.add(
+            _AdjustRow(
+              idProducto: productId,
+              nombreProducto: productName,
+              idPresentacion: item.idPresentacion,
+              nombrePresentacion: item.nombre,
+              idUbicacion: zoneId,
+              stockActual: item.stockActual,
+              cantidadController: TextEditingController(
+                text: result.cantidad.toString(),
+              ),
+            ),
+          );
+        }
+      });
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al cargar producto: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Error al cargar producto: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
@@ -188,167 +242,45 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
     }
   }
 
-  Future<void> _showAdjustmentDialog({
+  Future<List<AdjustmentPresentationValue>?> _showAdjustmentDialog({
     required int productId,
     required String productName,
-    required String presentationName,
-    required double currentStock,
-    required Function(double) onSave,
+    required List<InventoryProduct> candidates,
+    required int zoneId,
   }) async {
-    final adjustmentController = TextEditingController();
-    final isExcess = widget.adjustmentType == 'excess';
+    final results = await Future.wait([
+      PresentacionCadenaService.cadena(productId),
+      PresentacionCadenaService.stockMixto(productId, idUbicacion: zoneId),
+    ]);
+    if (!mounted) return null;
 
-    // FASE 2: el saldo completo del producto en la zona, desglosado por
-    // presentacion. Ajustar una presentacion a ciegas es la via rapida a un
-    // descuadre: si hay 4 Bultos ademas de las 100 Bolsas, el operador necesita
-    // verlo antes de decidir cuanto sumar o restar.
-    final zoneId = _selectedZone?['id'] as int?;
-    final stockMixto = await PresentacionCadenaService.stockMixto(
-      productId,
-      idUbicacion: zoneId,
-    );
+    final chain = results[0] as List<PresentacionCadena>;
+    final stockMixto = results[1] as StockMixto;
+    final chainById = <int, PresentacionCadena>{
+      for (final presentation in chain)
+        presentation.idPresentacion: presentation,
+    };
 
-    return showDialog(
+    final items = candidates.map((candidate) {
+      final presentationId = candidate.idPresentacion;
+      final presentation = presentationId == null
+          ? null
+          : chainById[presentationId];
+      return AdjustmentPresentationItem(
+        idPresentacion: presentationId,
+        nombre: presentation?.nombre ?? candidate.presentacion,
+        stockActual: candidate.cantidadFinal,
+        cadena: presentation,
+      );
+    }).toList();
+
+    return showDialog<List<AdjustmentPresentationValue>>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          final ajuste = double.tryParse(adjustmentController.text.trim()) ?? 0;
-          final ajusteAplicado = isExcess ? -ajuste : ajuste;
-          final resultado = currentStock + ajusteAplicado;
-
-          return AlertDialog(
-            title: Text('Ajustar: $productName'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Presentación: $presentationName',
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-                  const SizedBox(height: 12),
-
-                  // Saldo mixto de TODO el producto en la zona: deja claro que
-                  // se esta ajustando una sola presentacion de varias.
-                  if (stockMixto.desglose.length > 1) ...[
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.blue.shade100),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(Icons.inventory_2,
-                                  size: 16, color: Colors.blue.shade700),
-                              const SizedBox(width: 6),
-                              Text(
-                                'Saldo total en la zona',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.blue.shade900,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            stockMixto.texto,
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.blue.shade900,
-                            ),
-                          ),
-                          Text(
-                            'Solo se ajusta "$presentationName". Las demás '
-                            'presentaciones no se tocan.',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.blue.shade700,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-
-                  PresentacionEquivalenciaBanner(productId: productId),
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Column(
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text('Stock Actual:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-                            Text(currentStock.toStringAsFixed(1),
-                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue)),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: adjustmentController,
-                          keyboardType: TextInputType.numberWithOptions(signed: false, decimal: true),
-                          decoration: InputDecoration(
-                            labelText: 'Cantidad a ${isExcess ? 'Restar' : 'Sumar'}',
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                            prefixIcon: const Icon(Icons.edit),
-                            isDense: true,
-                          ),
-                          inputFormatters: [
-                            FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
-                          ],
-                          onChanged: (_) => setDialogState(() {}),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text('Resultado:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-                            Text(resultado.toStringAsFixed(1),
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: resultado >= 0 ? Colors.green : Colors.red,
-                                )),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancelar'),
-              ),
-              ElevatedButton(
-                onPressed: ajuste >= 0.01
-                    ? () {
-                        onSave(ajuste);
-                        Navigator.pop(context);
-                      }
-                    : null,
-                child: const Text('Guardar'),
-              ),
-            ],
-          );
-        },
+      builder: (_) => AdjustmentPresentationsDialog(
+        productName: productName,
+        isExcess: widget.adjustmentType == 'excess',
+        stockSummary: stockMixto.texto,
+        presentations: items,
       ),
     );
   }
@@ -364,19 +296,28 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
     final motivo = _reasonController.text.trim();
     if (_selectedZone == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Debe seleccionar una zona'), backgroundColor: Colors.red),
+        const SnackBar(
+          content: Text('Debe seleccionar una zona'),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
     if (_rows.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Agregue al menos un producto'), backgroundColor: Colors.red),
+        const SnackBar(
+          content: Text('Agregue al menos un producto'),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
     if (motivo.length < 5) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('El motivo debe tener al menos 5 caracteres'), backgroundColor: Colors.red),
+        const SnackBar(
+          content: Text('El motivo debe tener al menos 5 caracteres'),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
@@ -389,7 +330,9 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
     if (rowsToProcess.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Ingrese la cantidad a ajustar en al menos una fila (mínimo 0.01 ${widget.adjustmentType == 'excess' ? 'a restar' : 'a sumar'})'),
+          content: Text(
+            'Ingrese la cantidad a ajustar en al menos una fila (mínimo 0.01 ${widget.adjustmentType == 'excess' ? 'a restar' : 'a sumar'})',
+          ),
           backgroundColor: Colors.orange,
         ),
       );
@@ -410,7 +353,9 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
       for (final row in rowsToProcess) {
         final ajuste = row.nuevaCantidad!;
         // Apply sign based on adjustment type: excess subtracts, shortage adds
-        final ajusteAplicado = widget.adjustmentType == 'excess' ? -ajuste : ajuste;
+        final ajusteAplicado = widget.adjustmentType == 'excess'
+            ? -ajuste
+            : ajuste;
         final cantidadNueva = row.stockActual + ajusteAplicado;
         final result = await InventoryService.insertInventoryAdjustment(
           idProducto: row.idProducto,
@@ -432,7 +377,9 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
           successCount++;
         } else {
           errorCount++;
-          print('❌ Error ajustando ${row.nombreProducto} / ${row.nombrePresentacion}: ${result['message']}');
+          print(
+            '❌ Error ajustando ${row.nombreProducto} / ${row.nombrePresentacion}: ${result['message']}',
+          );
         }
       }
 
@@ -440,7 +387,9 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
         if (errorCount == 0) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('$successCount ajuste(s) registrado(s) exitosamente'),
+              content: Text(
+                '$successCount ajuste(s) registrado(s) exitosamente',
+              ),
               backgroundColor: Colors.green,
             ),
           );
@@ -448,7 +397,9 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('$successCount exitoso(s), $errorCount con error. Revisa la consola.'),
+              content: Text(
+                '$successCount exitoso(s), $errorCount con error. Revisa la consola.',
+              ),
               backgroundColor: Colors.orange,
               duration: const Duration(seconds: 5),
             ),
@@ -476,9 +427,14 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: Text(title,
-            style: const TextStyle(
-                color: Colors.white, fontWeight: FontWeight.w600, fontSize: 20)),
+        title: Text(
+          title,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+            fontSize: 20,
+          ),
+        ),
         centerTitle: true,
         backgroundColor: color,
         elevation: 0,
@@ -502,389 +458,498 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-              // ── Header ────────────────────────────────────────────────
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: color.withOpacity(0.3)),
-                ),
-                child: Row(children: [
-                  Icon(icon, color: color, size: 28),
-                  const SizedBox(width: 10),
-                  Text(title,
-                      style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: color)),
-                ]),
-              ),
-              const SizedBox(height: 20),
-
-              // ── Motivo ────────────────────────────────────────────────
-              Text('Motivo del Ajuste *',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleSmall
-                      ?.copyWith(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _reasonController,
-                decoration: const InputDecoration(
-                  hintText: 'Ej: Conteo físico, Merma, Error de registro',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.description),
-                  isDense: true,
-                ),
-                validator: (v) {
-                  if (v == null || v.trim().length < 5) {
-                    return 'Mínimo 5 caracteres';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 14),
-
-              // ── Observaciones ─────────────────────────────────────────
-              Text('Observaciones',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleSmall
-                      ?.copyWith(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _observationsController,
-                decoration: const InputDecoration(
-                  hintText: 'Información adicional (opcional)',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.note),
-                  isDense: true,
-                ),
-                maxLines: 2,
-              ),
-              const SizedBox(height: 20),
-
-              // ── Selección de Zona ─────────────────────────────────────
-              Row(children: [
-                Icon(Icons.warehouse,
-                    color: _selectedZone != null ? Colors.green : Colors.blue,
-                    size: 20),
-                const SizedBox(width: 8),
-                Text('Zona',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleSmall
-                        ?.copyWith(fontWeight: FontWeight.bold)),
-                if (_selectedZone != null) ...[
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _selectedZone!['denominacion'] as String? ?? '',
-                      style: const TextStyle(
-                          color: Colors.green, fontWeight: FontWeight.w600),
-                      overflow: TextOverflow.ellipsis,
+                    // ── Header ────────────────────────────────────────────────
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: color.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(icon, color: color, size: 28),
+                          const SizedBox(width: 10),
+                          Text(
+                            title,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: color,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  TextButton(
-                    onPressed: () => setState(() {
-                      _selectedZone = null;
-                      for (final r in _rows) r.dispose();
-                      _rows.clear();
-                    }),
-                    child: const Text('Cambiar'),
-                  ),
-                ],
-              ]),
-              const SizedBox(height: 8),
+                    const SizedBox(height: 20),
 
-              if (_selectedZone == null) ...[
-                if (_isLoadingZones)
-                  const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                else
-                  Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
+                    // ── Motivo ────────────────────────────────────────────────
+                    Text(
+                      'Motivo del Ajuste *',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                    child: Column(
-                      children: _warehousesWithZones.map((warehouse) {
-                        return ExpansionTile(
-                          leading:
-                              const Icon(Icons.warehouse, color: Colors.blue),
-                          title: Text(warehouse['name'],
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _reasonController,
+                      decoration: const InputDecoration(
+                        hintText: 'Ej: Conteo físico, Merma, Error de registro',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.description),
+                        isDense: true,
+                      ),
+                      validator: (v) {
+                        if (v == null || v.trim().length < 5) {
+                          return 'Mínimo 5 caracteres';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 14),
+
+                    // ── Observaciones ─────────────────────────────────────────
+                    Text(
+                      'Observaciones',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _observationsController,
+                      decoration: const InputDecoration(
+                        hintText: 'Información adicional (opcional)',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.note),
+                        isDense: true,
+                      ),
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 20),
+
+                    // ── Selección de Zona ─────────────────────────────────────
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.warehouse,
+                          color: _selectedZone != null
+                              ? Colors.green
+                              : Colors.blue,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Zona',
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        if (_selectedZone != null) ...[
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _selectedZone!['denominacion'] as String? ?? '',
                               style: const TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 14)),
-                          subtitle: Text(
-                              '${(warehouse['zones'] as List).length} zona(s)',
-                              style: TextStyle(
-                                  color: Colors.grey.shade600, fontSize: 12)),
-                          children: (warehouse['zones']
-                                  as List<Map<String, dynamic>>)
-                              .map<Widget>((zone) => ListTile(
-                                    contentPadding: const EdgeInsets.only(
-                                        left: 56, right: 16),
-                                    leading: const Icon(Icons.location_on,
-                                        color: Colors.orange, size: 18),
-                                    title: Text(zone['denominacion'],
-                                        style:
-                                            const TextStyle(fontSize: 13)),
-                                    subtitle: (zone['code'] as String)
-                                            .isNotEmpty
-                                        ? Text('Código: ${zone['code']}',
-                                            style: const TextStyle(
-                                                fontSize: 11))
-                                        : null,
-                                    onTap: () => _onZoneSelected(zone),
-                                  ))
-                              .toList(),
-                        );
-                      }).toList(),
+                                color: Colors.green,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () => setState(() {
+                              _selectedZone = null;
+                              for (final r in _rows) r.dispose();
+                              _rows.clear();
+                            }),
+                            child: const Text('Cambiar'),
+                          ),
+                        ],
+                      ],
                     ),
-                  ),
-              ],
+                    const SizedBox(height: 8),
 
-              // ── Búsqueda de productos (solo si hay zona) ──────────────
-              if (_selectedZone != null) ...[
-                const SizedBox(height: 20),
-                Row(children: [
-                  Icon(Icons.search,
-                      color: _rows.isNotEmpty ? Colors.green : Colors.blue,
-                      size: 20),
-                  const SizedBox(width: 8),
-                  Text('Agregar Productos',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleSmall
-                          ?.copyWith(fontWeight: FontWeight.bold)),
-                  if (_isLoadingProduct) ...[
-                    const SizedBox(width: 10),
-                    const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2)),
-                  ],
-                ]),
-                const SizedBox(height: 8),
-                SizedBox(
-                  height: 280,
-                  child: ProductSelectorWidget(
-                    searchType: ProductSearchType.withStock,
-                    locationId: _selectedZone!['id'],
-                    requireInventory: true,
-                    searchHint:
-                        'Buscar en ${_selectedZone!['denominacion']}...',
-                    onProductSelected: _onProductSelected,
-                  ),
-                ),
-              ],
+                    if (_selectedZone == null) ...[
+                      if (_isLoadingZones)
+                        const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Center(child: CircularProgressIndicator()),
+                        )
+                      else
+                        Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Column(
+                            children: _warehousesWithZones.map((warehouse) {
+                              return ExpansionTile(
+                                leading: const Icon(
+                                  Icons.warehouse,
+                                  color: Colors.blue,
+                                ),
+                                title: Text(
+                                  warehouse['name'],
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  '${(warehouse['zones'] as List).length} zona(s)',
+                                  style: TextStyle(
+                                    color: Colors.grey.shade600,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                children:
+                                    (warehouse['zones']
+                                            as List<Map<String, dynamic>>)
+                                        .map<Widget>(
+                                          (zone) => ListTile(
+                                            contentPadding:
+                                                const EdgeInsets.only(
+                                                  left: 56,
+                                                  right: 16,
+                                                ),
+                                            leading: const Icon(
+                                              Icons.location_on,
+                                              color: Colors.orange,
+                                              size: 18,
+                                            ),
+                                            title: Text(
+                                              zone['denominacion'],
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                            subtitle:
+                                                (zone['code'] as String)
+                                                    .isNotEmpty
+                                                ? Text(
+                                                    'Código: ${zone['code']}',
+                                                    style: const TextStyle(
+                                                      fontSize: 11,
+                                                    ),
+                                                  )
+                                                : null,
+                                            onTap: () => _onZoneSelected(zone),
+                                          ),
+                                        )
+                                        .toList(),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                    ],
 
-              // ── Lista de productos a ajustar ──────────────────────────
-              if (_rows.isNotEmpty) ...[
-                const SizedBox(height: 20),
-                Row(children: [
-                  const Icon(Icons.list_alt, color: Colors.indigo, size: 20),
-                  const SizedBox(width: 8),
-                  Text('Productos a Ajustar (${_rows.length})',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleSmall
-                          ?.copyWith(fontWeight: FontWeight.bold)),
-                ]),
-                const SizedBox(height: 8),
-
-                // Table header
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade200,
-                    borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(8)),
-                  ),
-                  child: Row(children: [
-                    Expanded(
-                        flex: 4,
-                        child: Text('Producto / Presentación',
-                            style: TextStyle(
-                                fontSize: 21,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.grey.shade700))),
-                    SizedBox(
-                        width: 160,
-                        child: Text('Stock',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                                fontSize: 21,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.grey.shade700))),
-                    SizedBox(
-                        width: 200,
-                        child: Text('Cantidad a\nAjustar',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                                fontSize: 19,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.grey.shade700))),
-                    SizedBox(
-                        width: 160,
-                        child: Text('Resultado',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                                fontSize: 21,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.grey.shade700))),
-                    const SizedBox(width: 32),
-                  ]),
-                ),
-
-                // Table rows
-                Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey.shade300),
-                    borderRadius: const BorderRadius.vertical(
-                        bottom: Radius.circular(8)),
-                  ),
-                  child: Column(
-                    children: _rows.asMap().entries.map((entry) {
-                      final i = entry.key;
-                      final row = entry.value;
-                      return StatefulBuilder(
-                        builder: (ctx, setRowState) {
-                          final ajuste = row.nuevaCantidad; // adjustment amount (always positive from user)
-                          // For excess: subtract; for shortage: add
-                          final ajusteAplicado = isExcess ? -(ajuste ?? 0) : (ajuste ?? 0);
-                          final resultado = ajuste != null
-                              ? row.stockActual + ajusteAplicado
-                              : row.stockActual;
-                          final hasChange = ajuste != null && ajuste >= 0.01;
-
-                          return Container(
-                            decoration: BoxDecoration(
-                              color: i.isEven
-                                  ? Colors.white
-                                  : Colors.grey.shade50,
-                              border: i < _rows.length - 1
-                                  ? Border(
-                                      bottom: BorderSide(
-                                          color: Colors.grey.shade200))
-                                  : null,
+                    // ── Búsqueda de productos (solo si hay zona) ──────────────
+                    if (_selectedZone != null) ...[
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.search,
+                            color: _rows.isNotEmpty
+                                ? Colors.green
+                                : Colors.blue,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Agregar Productos',
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          if (_isLoadingProduct) ...[
+                            const SizedBox(width: 10),
+                            const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
                             ),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 12),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                // Product + presentation name
-                                Expanded(
-                                  flex: 4,
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisAlignment: MainAxisAlignment.center,
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 280,
+                        child: ProductSelectorWidget(
+                          searchType: ProductSearchType.withStock,
+                          locationId: _selectedZone!['id'],
+                          requireInventory: true,
+                          searchHint:
+                              'Buscar en ${_selectedZone!['denominacion']}...',
+                          onProductSelected: _onProductSelected,
+                        ),
+                      ),
+                    ],
+
+                    // ── Lista de productos a ajustar ──────────────────────────
+                    if (_rows.isNotEmpty) ...[
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.list_alt,
+                            color: Colors.indigo,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Productos a Ajustar (${_rows.length})',
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+
+                      // Table header
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade200,
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(8),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              flex: 4,
+                              child: Text(
+                                'Producto / Presentación',
+                                style: TextStyle(
+                                  fontSize: 21,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey.shade700,
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: 160,
+                              child: Text(
+                                'Stock',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 21,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey.shade700,
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: 200,
+                              child: Text(
+                                'Cantidad a\nAjustar',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 19,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey.shade700,
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: 160,
+                              child: Text(
+                                'Resultado',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 21,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey.shade700,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 32),
+                          ],
+                        ),
+                      ),
+
+                      // Table rows
+                      Container(
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: const BorderRadius.vertical(
+                            bottom: Radius.circular(8),
+                          ),
+                        ),
+                        child: Column(
+                          children: _rows.asMap().entries.map((entry) {
+                            final i = entry.key;
+                            final row = entry.value;
+                            return StatefulBuilder(
+                              builder: (ctx, setRowState) {
+                                final ajuste = row
+                                    .nuevaCantidad; // adjustment amount (always positive from user)
+                                // For excess: subtract; for shortage: add
+                                final ajusteAplicado = isExcess
+                                    ? -(ajuste ?? 0)
+                                    : (ajuste ?? 0);
+                                final resultado = ajuste != null
+                                    ? row.stockActual + ajusteAplicado
+                                    : row.stockActual;
+                                final hasChange =
+                                    ajuste != null && ajuste >= 0.01;
+
+                                return Container(
+                                  decoration: BoxDecoration(
+                                    color: i.isEven
+                                        ? Colors.white
+                                        : Colors.grey.shade50,
+                                    border: i < _rows.length - 1
+                                        ? Border(
+                                            bottom: BorderSide(
+                                              color: Colors.grey.shade200,
+                                            ),
+                                          )
+                                        : null,
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 12,
+                                  ),
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.center,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text(
-                                        row.nombreProducto,
-                                        style: const TextStyle(
+                                      // Product + presentation name
+                                      Expanded(
+                                        flex: 4,
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Text(
+                                              row.nombreProducto,
+                                              style: const TextStyle(
+                                                fontSize: 22,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            Text(
+                                              row.nombrePresentacion,
+                                              style: TextStyle(
+                                                fontSize: 21,
+                                                color: Colors.grey.shade700,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      // Current stock
+                                      SizedBox(
+                                        width: 160,
+                                        child: Text(
+                                          row.stockActual.toStringAsFixed(1),
+                                          textAlign: TextAlign.center,
+                                          style: const TextStyle(
                                             fontSize: 22,
-                                            fontWeight: FontWeight.w600),
-                                        overflow: TextOverflow.ellipsis,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
                                       ),
-                                      Text(
-                                        row.nombrePresentacion,
-                                        style: TextStyle(
-                                            fontSize: 21,
-                                            color: Colors.grey.shade700,
-                                            fontWeight: FontWeight.w500),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
+                                      // Adjustment amount field (positive only)
+                                      SizedBox(
+                                        width: 200,
+                                        child: TextField(
+                                          controller: row.cantidadController,
+                                          keyboardType:
+                                              TextInputType.numberWithOptions(
+                                                signed: false,
+                                                decimal: true,
+                                              ),
+                                          textAlign: TextAlign.center,
+                                          style: const TextStyle(
+                                            fontSize: 22,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                          decoration: InputDecoration(
+                                            isDense: true,
+                                            contentPadding:
+                                                const EdgeInsets.symmetric(
+                                                  horizontal: 6,
+                                                  vertical: 8,
+                                                ),
+                                            border: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                            ),
+                                            hintText: '0',
+                                            hintStyle: TextStyle(
+                                              color: Colors.grey.shade400,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                          inputFormatters: [
+                                            FilteringTextInputFormatter.allow(
+                                              RegExp(r'^\d+\.?\d{0,2}'),
+                                            ),
+                                          ],
+                                          onChanged: (_) => setRowState(() {}),
+                                        ),
+                                      ),
+                                      // Resulting qty (Stock + adjustment)
+                                      SizedBox(
+                                        width: 160,
+                                        child: Text(
+                                          hasChange
+                                              ? resultado.toStringAsFixed(1)
+                                              : '-',
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                            fontSize: 22,
+                                            fontWeight: FontWeight.bold,
+                                            color: hasChange
+                                                ? (resultado >= 0
+                                                      ? Colors.green.shade700
+                                                      : Colors.red.shade700)
+                                                : Colors.grey,
+                                          ),
+                                        ),
+                                      ),
+                                      // Remove button
+                                      SizedBox(
+                                        width: 40,
+                                        child: IconButton(
+                                          icon: const Icon(
+                                            Icons.close,
+                                            size: 20,
+                                          ),
+                                          padding: const EdgeInsets.all(4),
+                                          constraints: const BoxConstraints(
+                                            minWidth: 40,
+                                            minHeight: 40,
+                                          ),
+                                          tooltip: 'Eliminar fila',
+                                          onPressed: () => _removeRow(row),
+                                        ),
                                       ),
                                     ],
                                   ),
-                                ),
-                                // Current stock
-                                SizedBox(
-                                  width: 160,
-                                  child: Text(
-                                    row.stockActual.toStringAsFixed(1),
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
-                                  ),
-                                ),
-                                // Adjustment amount field (positive only)
-                                SizedBox(
-                                  width: 200,
-                                  child: TextField(
-                                    controller: row.cantidadController,
-                                    keyboardType: TextInputType.numberWithOptions(signed: false, decimal: true),
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
-                                    decoration: InputDecoration(
-                                      isDense: true,
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                              horizontal: 6, vertical: 8),
-                                      border: OutlineInputBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(6)),
-                                      hintText: '0',
-                                      hintStyle: TextStyle(
-                                          color: Colors.grey.shade400,
-                                          fontSize: 12),
-                                    ),
-                                    inputFormatters: [
-                                      FilteringTextInputFormatter.allow(
-                                          RegExp(r'^\d+\.?\d{0,2}')),
-                                    ],
-                                    onChanged: (_) =>
-                                        setRowState(() {}),
-                                  ),
-                                ),
-                                // Resulting qty (Stock + adjustment)
-                                SizedBox(
-                                  width: 160,
-                                  child: Text(
-                                    hasChange
-                                        ? resultado.toStringAsFixed(1)
-                                        : '-',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.bold,
-                                      color: hasChange
-                                          ? (resultado >= 0
-                                              ? Colors.green.shade700
-                                              : Colors.red.shade700)
-                                          : Colors.grey,
-                                    ),
-                                  ),
-                                ),
-                                // Remove button
-                                SizedBox(
-                                  width: 40,
-                                  child: IconButton(
-                                    icon: const Icon(Icons.close, size: 20),
-                                    padding: const EdgeInsets.all(4),
-                                    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-                                    tooltip: 'Eliminar fila',
-                                    onPressed: () => _removeRow(row),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      );
-                    }).toList(),
-                  ),
-                ),
-              ],
+                                );
+                              },
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ],
 
-              const SizedBox(height: 16),
+                    const SizedBox(height: 16),
                   ],
                 ),
               ),
@@ -905,20 +970,27 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
                           width: 18,
                           height: 18,
                           child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white))
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
                       : const Icon(Icons.check_circle_outline),
                   label: Text(
                     _isLoading
                         ? 'Procesando...'
                         : 'Registrar ${isExcess ? 'Ajuste por Exceso' : 'Ajuste por Faltante'}',
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: color,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 ),
               ),
@@ -933,7 +1005,10 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
           switch (index) {
             case 0:
               Navigator.pushNamedAndRemoveUntil(
-                  context, '/dashboard', (route) => false);
+                context,
+                '/dashboard',
+                (route) => false,
+              );
               break;
             case 1:
               Navigator.pushNamed(context, '/products');

@@ -1501,14 +1501,16 @@ class _ConfirmarRecepcionConsignacionScreenState
   }
 
   /// Obtiene el texto del estado del producto
-  /// 0 = Pendiente, 1 = Confirmado, 2 = Rechazado
+  /// 1=PROPUESTO 2=CONFIGURADO 3=ACEPTADO 4=RECHAZADO
   String _obtenerTextoEstadoProducto(int estado) {
     switch (estado) {
-      case 0:
-        return 'Pendiente';
       case 1:
-        return 'Confirmado';
+        return 'Propuesto';
       case 2:
+        return 'Configurado';
+      case 3:
+        return 'Aceptado';
+      case 4:
         return 'Rechazado';
       default:
         return 'Desconocido';
@@ -1516,14 +1518,16 @@ class _ConfirmarRecepcionConsignacionScreenState
   }
 
   /// Obtiene el color del estado del producto
-  /// 0 = Pendiente (naranja), 1 = Confirmado (verde), 2 = Rechazado (rojo)
+  /// 1=PROPUESTO(naranja) 2=CONFIGURADO(azul) 3=ACEPTADO(verde) 4=RECHAZADO(rojo)
   Color _obtenerColorEstadoProducto(int estado) {
     switch (estado) {
-      case 0:
-        return Colors.orange;
       case 1:
-        return Colors.green;
+        return Colors.orange;
       case 2:
+        return Colors.blue;
+      case 3:
+        return Colors.green;
+      case 4:
         return Colors.red;
       default:
         return Colors.grey;

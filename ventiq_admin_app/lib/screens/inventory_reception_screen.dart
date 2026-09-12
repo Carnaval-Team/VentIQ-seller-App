@@ -36,7 +36,8 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   static String _lastEntregadoPor = '';
   static String _lastRecibidoPor = '';
   static String _lastObservaciones = '';
-  final String _selectedCurrency = 'USD'; // Siempre USD, la conversión se hace por producto
+  final String _selectedCurrency =
+      'USD'; // Siempre USD, la conversión se hace por producto
   List<Map<String, dynamic>> _selectedProducts = [];
   List<Map<String, dynamic>> _motivoOptions = [];
   Map<String, dynamic>? _selectedMotivo;
@@ -60,7 +61,6 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     // Load persisted values from previous entries
     _loadPersistedValues();
   }
-
 
   void _loadPersistedValues() {
     _entregadoPorController.text = _lastEntregadoPor;
@@ -278,39 +278,41 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   void _addProductToReception(Product product) {
     showDialog(
       context: context,
-      builder:
-          (context) => ProductQuantityDialog(
-            product: product,
-            selectedLocation: _selectedLocation,
-            invoiceCurrency: _selectedCurrency,
-            exchangeRate: null,
-            onProductAdded: (productData) {
-              setState(() {
-                // Identify the incoming product by its numeric ID and presentation
-                final incomingId = productData['id_producto'] ?? productData['id'];
-                final incomingPresId = productData['id_presentacion'];
+      builder: (context) => ProductQuantityDialog(
+        product: product,
+        selectedLocation: _selectedLocation,
+        invoiceCurrency: _selectedCurrency,
+        exchangeRate: null,
+        onProductAdded: (productData) {
+          setState(() {
+            // Identify the incoming product by its numeric ID and presentation
+            final incomingId = productData['id_producto'] ?? productData['id'];
+            final incomingPresId = productData['id_presentacion'];
 
-                final existingIndex = _selectedProducts.indexWhere((p) {
-                  final existingId = p['id_producto'] ?? p['id'];
-                  final existingPresId = p['id_presentacion'];
-                  return existingId != null &&
-                      existingId == incomingId &&
-                      existingPresId == incomingPresId;
-                });
+            final existingIndex = _selectedProducts.indexWhere((p) {
+              final existingId = p['id_producto'] ?? p['id'];
+              final existingPresId = p['id_presentacion'];
+              return existingId != null &&
+                  existingId == incomingId &&
+                  existingPresId == incomingPresId;
+            });
 
-                if (existingIndex != -1) {
-                  // Merge: sum quantity, keep higher unit price (or the new one)
-                  final existing = Map<String, dynamic>.from(_selectedProducts[existingIndex]);
-                  final prevQty = (existing['cantidad'] as num?)?.toDouble() ?? 0.0;
-                  final newQty = (productData['cantidad'] as num?)?.toDouble() ?? 0.0;
-                  existing['cantidad'] = prevQty + newQty;
-                  _selectedProducts[existingIndex] = existing;
-                } else {
-                  _selectedProducts.add(productData);
-                }
-              });
-            },
-          ),
+            if (existingIndex != -1) {
+              // Merge: sum quantity, keep higher unit price (or the new one)
+              final existing = Map<String, dynamic>.from(
+                _selectedProducts[existingIndex],
+              );
+              final prevQty = (existing['cantidad'] as num?)?.toDouble() ?? 0.0;
+              final newQty =
+                  (productData['cantidad'] as num?)?.toDouble() ?? 0.0;
+              existing['cantidad'] = prevQty + newQty;
+              _selectedProducts[existingIndex] = existing;
+            } else {
+              _selectedProducts.add(productData);
+            }
+          });
+        },
+      ),
     );
   }
 
@@ -383,32 +385,31 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
       }
 
       // Prepare products list with location IDs
-      final productosParaEnviar =
-          _selectedProducts.map((product) {
-            // Add selected location ID to each product
-            final productWithLocation = Map<String, dynamic>.from(product);
+      final productosParaEnviar = _selectedProducts.map((product) {
+        // Add selected location ID to each product
+        final productWithLocation = Map<String, dynamic>.from(product);
 
-            // Fix: Ensure id_producto is set (AI and ProductSelector might use 'id')
-            if (productWithLocation['id_producto'] == null &&
-                productWithLocation['id'] != null) {
-              productWithLocation['id_producto'] = productWithLocation['id'];
-            }
+        // Fix: Ensure id_producto is set (AI and ProductSelector might use 'id')
+        if (productWithLocation['id_producto'] == null &&
+            productWithLocation['id'] != null) {
+          productWithLocation['id_producto'] = productWithLocation['id'];
+        }
 
-            if (_selectedLocation != null) {
-              // Remove prefix ('z' for zones, 'w' for warehouses) before parsing as int
-              try {
-                // El LocationSelectorWidget ahora devuelve directamente el ID de la zona
-                final locationId = int.parse(_selectedLocation!.id);
-                // print("Location ID: $locationId");
-                productWithLocation['id_ubicacion'] = locationId;
-              } catch (e) {
-                throw Exception(
-                  'Error: ID de ubicación inválido "${_selectedLocation!.id}"',
-                );
-              }
-            }
-            return productWithLocation;
-          }).toList();
+        if (_selectedLocation != null) {
+          // Remove prefix ('z' for zones, 'w' for warehouses) before parsing as int
+          try {
+            // El LocationSelectorWidget ahora devuelve directamente el ID de la zona
+            final locationId = int.parse(_selectedLocation!.id);
+            // print("Location ID: $locationId");
+            productWithLocation['id_ubicacion'] = locationId;
+          } catch (e) {
+            throw Exception(
+              'Error: ID de ubicación inválido "${_selectedLocation!.id}"',
+            );
+          }
+        }
+        return productWithLocation;
+      }).toList();
 
       // Debug: Print products list before sending to Supabase
       print("=== PRODUCTOS PARA ENVIAR A SUPABASE ===");
@@ -421,10 +422,9 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
       final result = await InventoryService.insertInventoryReception(
         entregadoPor: _entregadoPorController.text,
         idTienda: idTienda,
-        montoTotal:
-            _montoTotalController.text.isNotEmpty
-                ? double.parse(_montoTotalController.text)
-                : _totalAmount,
+        montoTotal: _montoTotalController.text.isNotEmpty
+            ? double.parse(_montoTotalController.text)
+            : _totalAmount,
         motivo: _selectedMotivo?['id'] ?? '',
         observaciones: _observacionesController.text,
         productos: productosParaEnviar,
@@ -549,30 +549,29 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
             _isLoadingMotivos
                 ? const Center(child: CircularProgressIndicator())
                 : DropdownButtonFormField<Map<String, dynamic>>(
-                  value: _selectedMotivo,
-                  decoration: const InputDecoration(
-                    labelText: 'Motivo',
-                    border: OutlineInputBorder(),
+                    value: _selectedMotivo,
+                    decoration: const InputDecoration(
+                      labelText: 'Motivo',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _motivoOptions.map((motivo) {
+                      return DropdownMenuItem(
+                        value: motivo,
+                        child: Text(
+                          motivo['denominacion'] ?? 'Sin denominación',
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (motivo) {
+                      setState(() {
+                        _selectedMotivo = motivo;
+                      });
+                    },
+                    validator: (value) {
+                      if (value == null) return 'Campo requerido';
+                      return null;
+                    },
                   ),
-                  items:
-                      _motivoOptions.map((motivo) {
-                        return DropdownMenuItem(
-                          value: motivo,
-                          child: Text(
-                            motivo['denominacion'] ?? 'Sin denominación',
-                          ),
-                        );
-                      }).toList(),
-                  onChanged: (motivo) {
-                    setState(() {
-                      _selectedMotivo = motivo;
-                    });
-                  },
-                  validator: (value) {
-                    if (value == null) return 'Campo requerido';
-                    return null;
-                  },
-                ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _observacionesController,
@@ -593,7 +592,6 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
               ),
               keyboardType: TextInputType.number,
             ),
-
           ],
         ),
       ),
@@ -806,12 +804,11 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   }
 
   String _buildQuantityDisplay(Map<String, dynamic> item) {
-    final cantidad = item['cantidad'] as double;
-    final precio = item['precio_unitario'] as double? ?? 0.0;
+    final cantidad = (item['cantidad'] as num?)?.toDouble() ?? 0;
 
     // Verificar si se aplicó conversión
     final conversionApplied = item['conversion_applied'] == true;
-    final cantidadOriginal = item['cantidad_original'] as double?;
+    final cantidadOriginal = (item['cantidad_original'] as num?)?.toDouble();
 
     String quantityText;
     if (conversionApplied && cantidadOriginal != null) {
@@ -822,29 +819,47 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
       String presentacionOriginalText = 'unidades';
       String presentacionFinalText = 'unidades base';
 
-      if (presentacionOriginal != null &&
+      if (presentacionOriginal is Map &&
           presentacionOriginal['denominacion'] != null) {
-        presentacionOriginalText = presentacionOriginal['denominacion'];
+        presentacionOriginalText = presentacionOriginal['denominacion']
+            .toString();
       }
 
-      if (presentacionFinal != null &&
+      if (presentacionFinal is Map &&
           presentacionFinal['denominacion'] != null) {
-        presentacionFinalText = presentacionFinal['denominacion'];
+        presentacionFinalText = presentacionFinal['denominacion'].toString();
       }
 
-      // Mostrar conversión con nombres de presentaciones
       quantityText =
-          'Cantidad: ${cantidadOriginal.toInt()} $presentacionOriginalText → ${cantidad.toInt()} $presentacionFinalText';
+          'Cantidad: ${_formatQuantity(cantidadOriginal)} $presentacionOriginalText '
+          '→ ${_formatQuantity(cantidad)} $presentacionFinalText';
     } else {
-      // Mostrar cantidad normal
-      quantityText = 'Cantidad: ${cantidad.toInt()}';
+      final presentationInfo = item['presentation_info'];
+      final presentationName = presentationInfo is Map
+          ? (presentationInfo['denominacion'] ??
+                    presentationInfo['presentacion'] ??
+                    presentationInfo['nombre'])
+                ?.toString()
+          : null;
+      final visiblePresentation = presentationName?.trim().isNotEmpty == true
+          ? presentationName!.trim()
+          : 'Presentación base';
+      quantityText =
+          'Cantidad: ${_formatQuantity(cantidad)} $visiblePresentation';
     }
 
     return quantityText;
   }
 
+  String _formatQuantity(double value) => value == value.roundToDouble()
+      ? value.toStringAsFixed(0)
+      : value
+            .toStringAsFixed(2)
+            .replaceFirst(RegExp(r'0+$'), '')
+            .replaceFirst(RegExp(r'\.$'), '');
+
   String _buildPriceDisplay(Map<String, dynamic> item) {
-    final precio = item['precio_unitario'] as double? ?? 0.0;
+    final precio = (item['precio_unitario'] as num?)?.toDouble() ?? 0.0;
     return 'Precio: \$${precio.toStringAsFixed(2)} USD';
   }
 
@@ -882,13 +897,12 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                 backgroundColor: AppColors.primary,
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
-              child:
-                  _isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text(
-                        'Registrar Recepción',
-                        style: TextStyle(color: Colors.white, fontSize: 16),
-                      ),
+              child: _isLoading
+                  ? const CircularProgressIndicator(color: Colors.white)
+                  : const Text(
+                      'Registrar Recepción',
+                      style: TextStyle(color: Colors.white, fontSize: 16),
+                    ),
             ),
           ),
         ],
@@ -918,10 +932,9 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                   _selectedLocation = location;
                 });
               },
-              validationMessage:
-                  _selectedLocation == null
-                      ? 'Debe seleccionar una ubicación'
-                      : null,
+              validationMessage: _selectedLocation == null
+                  ? 'Debe seleccionar una ubicación'
+                  : null,
             ),
           ],
         ),
@@ -955,51 +968,50 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         const SizedBox(height: 8),
         _isLoadingProveedores
             ? const Padding(
-              padding: EdgeInsets.all(8.0),
-              child: SizedBox(
-                height: 20,
-                width: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            )
+                padding: EdgeInsets.all(8.0),
+                child: SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
             : DropdownButtonFormField<Map<String, dynamic>>(
-              value: _selectedProveedor,
-              decoration: InputDecoration(
-                labelText: 'Seleccionar proveedor',
-                border: const OutlineInputBorder(),
-                hintText:
-                    _proveedores.isEmpty
-                        ? 'No hay proveedores disponibles'
-                        : 'Todos los proveedores',
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
+                value: _selectedProveedor,
+                decoration: InputDecoration(
+                  labelText: 'Seleccionar proveedor',
+                  border: const OutlineInputBorder(),
+                  hintText: _proveedores.isEmpty
+                      ? 'No hay proveedores disponibles'
+                      : 'Todos los proveedores',
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                 ),
-              ),
-              items: [
-                DropdownMenuItem<Map<String, dynamic>>(
-                  value: null,
-                  child: const Text('Todos los proveedores'),
-                ),
-                ..._proveedores.map((proveedor) {
-                  return DropdownMenuItem<Map<String, dynamic>>(
-                    value: proveedor,
-                    child: Text(
-                      proveedor['denominacion'] ?? 'Sin nombre',
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                items: [
+                  DropdownMenuItem<Map<String, dynamic>>(
+                    value: null,
+                    child: const Text('Todos los proveedores'),
+                  ),
+                  ..._proveedores.map((proveedor) {
+                    return DropdownMenuItem<Map<String, dynamic>>(
+                      value: proveedor,
+                      child: Text(
+                        proveedor['denominacion'] ?? 'Sin nombre',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    );
+                  }).toList(),
+                ],
+                onChanged: (proveedor) {
+                  setState(() {
+                    _selectedProveedor = proveedor;
+                  });
+                  print(
+                    '✅ Proveedor seleccionado: ${proveedor?['denominacion'] ?? "Todos"}',
                   );
-                }).toList(),
-              ],
-              onChanged: (proveedor) {
-                setState(() {
-                  _selectedProveedor = proveedor;
-                });
-                print(
-                  '✅ Proveedor seleccionado: ${proveedor?['denominacion'] ?? "Todos"}',
-                );
-              },
-            ),
+                },
+              ),
       ],
     );
   }

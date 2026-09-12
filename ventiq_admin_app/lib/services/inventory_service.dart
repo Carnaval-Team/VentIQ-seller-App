@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/inventory.dart';
 import '../models/warehouse.dart';
@@ -23,6 +25,20 @@ class InventoryService {
   static final SupabaseClient _supabase = Supabase.instance.client;
   static final UserPreferencesService _prefsService = UserPreferencesService();
   static final FinancialService _financialService = FinancialService();
+
+  /// UUID v4 independiente del usuario para idempotencia de una operación.
+  static String createClientRequestUuid() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
+        '${hex.substring(20)}';
+  }
 
   /// Fecha calendario local `yyyy-MM-dd` para RPCs con parámetro DATE.
   static String? _toDateParam(DateTime? date) {
@@ -226,6 +242,53 @@ class InventoryService {
         'message': 'Error al registrar extracción: $e',
       };
     }
+  }
+
+  /// Registra y contabiliza una extracción física v2 en una sola transacción.
+  static Future<Map<String, dynamic>> insertCompleteExtractionV2({
+    required String autorizadoPor,
+    required int idMotivoOperacion,
+    required int idTienda,
+    required String observaciones,
+    required List<Map<String, dynamic>> productos,
+    required String clientRequestUuid,
+  }) async {
+    try {
+      final response = await _supabase.rpc(
+        'fn_crear_extraccion_con_movimiento_v2',
+        params: {
+          'p_autorizado_por': autorizadoPor,
+          'p_id_motivo_operacion': idMotivoOperacion,
+          'p_id_tienda': idTienda,
+          'p_observaciones': observaciones,
+          'p_productos': productos,
+          'p_client_request_uuid': clientRequestUuid,
+        },
+      );
+
+      if (response is! Map) {
+        throw Exception('Respuesta inválida del servidor');
+      }
+
+      final result = Map<String, dynamic>.from(response);
+      result['lineas_fisicas'] = _asMapList(result['lineas_fisicas']);
+      result['lineas_logicas'] = _asMapList(result['lineas_logicas']);
+      return result;
+    } catch (e) {
+      print('❌ Error al insertar extracción física v2: $e');
+      return {
+        'status': 'error',
+        'message': 'Error al registrar extracción: $e',
+      };
+    }
+  }
+
+  static List<Map<String, dynamic>> _asMapList(dynamic value) {
+    if (value is! List) return const [];
+    return value
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList(growable: false);
   }
 
   /// Get inventory operations using fn_listar_operaciones RPC with pagination and filters
@@ -1496,8 +1559,66 @@ class InventoryService {
     }
   }
 
-  /// Get product variants and presentations available in a specific location
-  /// Returns detailed information about stock availability for each variant/presentation
+  static List<Map<String, dynamic>> _normalizeInventoryPresentationRows(
+    dynamic response, {
+    required int idProducto,
+    required int idLayout,
+  }) {
+    final List<dynamic> rows;
+    if (response is List) {
+      rows = response;
+    } else if (response is Map && response['data'] is List) {
+      rows = response['data'] as List<dynamic>;
+    } else if (response == null) {
+      return const [];
+    } else {
+      throw FormatException(
+        'Respuesta de inventario inesperada: ${response.runtimeType}',
+      );
+    }
+
+    return rows
+        .whereType<Map>()
+        .map((raw) {
+          final item = Map<String, dynamic>.from(raw);
+          final productId = _asInt(item['id_producto']) ?? idProducto;
+          final locationId = _asInt(item['id_ubicacion']) ?? idLayout;
+          final variantId = _asInt(item['id_variante']);
+          final optionId = _asInt(item['id_opcion_variante']);
+          final presentationId = _asInt(item['id_presentacion']);
+          final finalQuantity = _asDouble(item['cantidad_final']);
+          return <String, dynamic>{
+            ...item,
+            'id_producto': productId,
+            'id_ubicacion': locationId,
+            'id_layout': locationId,
+            'id_variante': variantId,
+            'id_opcion_variante': optionId,
+            'id_presentacion': presentationId,
+            'nombre_producto': item['nombre_producto']?.toString() ?? '',
+            'sku_producto': item['sku_producto']?.toString() ?? '',
+            'variante_nombre': item['variante']?.toString() ?? 'Sin variante',
+            'opcion_variante_nombre':
+                item['opcion_variante']?.toString() ?? 'Única',
+            'presentacion_nombre':
+                item['presentacion']?.toString() ?? 'Sin presentación',
+            'cantidad_inicial': _asDouble(item['cantidad_inicial']),
+            'cantidad_final': finalQuantity,
+            'stock_actual': finalQuantity,
+            'stock_disponible': _asDouble(item['stock_disponible']),
+            'stock_reservado': _asDouble(item['stock_reservado']),
+            'stock_disponible_ajustado': _asDouble(
+              item['stock_disponible_ajustado'],
+            ),
+            'precio_unitario': _asDouble(item['precio_venta']),
+            'inventory_identity':
+                '$productId|$locationId|$variantId|$optionId|$presentationId',
+          };
+        })
+        .toList(growable: false);
+  }
+
+  /// Get product variants and presentations available in a specific location.
   static Future<List<Map<String, dynamic>>> getProductVariantsInLocation({
     required int idProducto,
     required int idLayout,
@@ -1524,94 +1645,22 @@ class InventoryService {
         return [];
       }
 
-      // Handle nested response structure from fn_listar_inventario_productos_paged
-      final data = response is List
-          ? response as List<dynamic>
-          : (response['data'] as List<dynamic>? ?? []);
-      print('📦 Encontradas ${data.length} variantes con stock');
+      final variants = _normalizeInventoryPresentationRows(
+        response,
+        idProducto: idProducto,
+        idLayout: idLayout,
+      );
+      print('📦 Encontradas ${variants.length} filas con stock');
 
-      final variants = data.map<Map<String, dynamic>>((item) {
-        final stockDisponible =
-            (item['stock_disponible'] as num?)?.toDouble() ?? 0.0;
-
-        // Debug logging for variant data analysis
-        /* print('🔍 Processing item:');
-            print('   - id_variante: ${item['id_variante']} (${item['id_variante'].runtimeType})');
-            print('   - variante: ${item['variante']} (${item['variante'].runtimeType})');
-            print('   - id_opcion_variante: ${item['id_opcion_variante']} (${item['id_opcion_variante'].runtimeType})');
-            print('   - opcion_variante: ${item['opcion_variante']} (${item['opcion_variante'].runtimeType})');
-            print('   - id_presentacion: ${item['id_presentacion']} (${item['id_presentacion'].runtimeType})');
-            print('   - um: ${item['um']} (${item['um'].runtimeType})');
-            print('   - stock_disponible: ${item['stock_disponible']}');*/
-
-        return {
-          'id_producto': item['id_producto'] ?? idProducto,
-          'nombre_producto': item['denominacion'] ?? 'Producto sin nombre',
-          'sku_producto': item['sku_producto'] ?? '',
-
-          // Información de variante
-          'id_variante': item['id_variante'],
-          'variante_nombre': item['variante'] ?? 'Sin variante',
-          'id_opcion_variante': item['id_opcion_variante'],
-          'opcion_variante_nombre': item['opcion_variante'] ?? 'Única',
-
-          // Información de presentación - Handle null id_presentacion
-          'id_presentacion':
-              item['id_presentacion'], // Keep original null value
-          'presentacion_nombre': item['id_presentacion'] != null
-              ? _safeSubstring(
-                  item['um'] ?? 'UN',
-                  0,
-                  3,
-                ) // Safe substring to prevent RangeError
-              : 'Sin presentación',
-          'presentacion_codigo': item['id_presentacion'] != null
-              ? (item['um_codigo'] ?? 'UN')
-              : 'SIN_PRES',
-
-          // Stock disponible
-          'stock_disponible': stockDisponible,
-          'stock_reservado':
-              (item['stock_reservado'] as num?)?.toDouble() ?? 0.0,
-          'stock_actual': (item['stock_actual'] as num?)?.toDouble() ?? 0.0,
-
-          // Información adicional
-          'precio_unitario': (item['precio_venta'] as num?)?.toDouble() ?? 0.0,
-          'id_layout': idLayout,
-
-          // Clave única para agrupación - Solo por presentación para transferencias
-          'presentation_key': '${item['id_presentacion'] ?? 'null'}',
-        };
-      }).toList();
-
-      // Agrupar por presentación únicamente (ignorar variantes)
-      final Map<String, Map<String, dynamic>> groupedPresentations = {};
-
+      final uniqueRows = <String, Map<String, dynamic>>{};
       for (final variant in variants) {
-        final presentationKey = variant['presentation_key'];
-
-        if (!groupedPresentations.containsKey(presentationKey)) {
-          // Tomar la primera ocurrencia de cada presentación (stocks ya consolidados en SQL)
-          groupedPresentations[presentationKey] = Map<String, dynamic>.from(
-            variant,
-          );
-          print(
-            '📦 Agregando presentación: ${variant['presentacion_nombre']} (key: $presentationKey, stock: ${variant['stock_disponible']})',
-          );
-        } else {
-          // No sumar stocks - ya vienen consolidados de la función SQL
-          print(
-            '📦 Ignorando duplicado de presentación: ${variant['presentacion_nombre']} (key: $presentationKey, stock: ${variant['stock_disponible']})',
-          );
-        }
+        uniqueRows.putIfAbsent(
+          variant['inventory_identity'].toString(),
+          () => variant,
+        );
       }
 
-      final groupedVariants = groupedPresentations.values.toList();
-      print(
-        '📦 Después de agrupar: ${groupedVariants.length} presentaciones únicas',
-      );
-
-      return groupedVariants;
+      return uniqueRows.values.toList(growable: false);
     } catch (e) {
       print('❌ Error obteniendo variantes del producto: $e');
       return [];
@@ -1624,6 +1673,7 @@ class InventoryService {
   static Future<List<Map<String, dynamic>>> getProductPresentationsInZone({
     required int idProducto,
     required int idLayout,
+    bool throwOnError = false,
   }) async {
     try {
       print(
@@ -1648,62 +1698,24 @@ class InventoryService {
         return [];
       }
 
-      final data = response['data'] as List<dynamic>? ?? [];
-      print('📦 Encontradas ${data.length} presentaciones configuradas');
-
-      final presentations = data.map<Map<String, dynamic>>((item) {
-        return {
-          'id_producto': item['id_producto'] ?? idProducto,
-          'nombre_producto': item['denominacion'] ?? 'Producto sin nombre',
-          'sku_producto': item['sku_producto'] ?? '',
-
-          // Información de variante
-          'id_variante': item['id_variante'],
-          'variante_nombre': item['variante'] ?? 'Sin variante',
-          'id_opcion_variante': item['id_opcion_variante'],
-          'opcion_variante_nombre': item['opcion_variante'] ?? 'Única',
-
-          // Información de presentación
-          'id_presentacion':
-              item['id_presentacion'], // Keep original null value
-          'presentacion_nombre': item['id_presentacion'] != null
-              ? _safeSubstring(
-                  item['um'] ?? 'UN',
-                  0,
-                  3,
-                ) // Safe substring to prevent RangeError
-              : 'Sin presentación',
-          'presentacion_codigo': item['id_presentacion'] != null
-              ? (item['um_codigo'] ?? 'UN')
-              : 'SIN_PRES',
-
-          // Stock (puede ser 0)
-          'stock_disponible':
-              (item['stock_disponible'] as num?)?.toDouble() ?? 0.0,
-          'stock_reservado':
-              (item['stock_reservado'] as num?)?.toDouble() ?? 0.0,
-          'stock_actual': (item['stock_actual'] as num?)?.toDouble() ?? 0.0,
-
-          // Información adicional
-          'precio_unitario': (item['precio_venta'] as num?)?.toDouble() ?? 0.0,
-          'id_layout': idLayout,
-
-          // Clave única
-          'variant_key':
-              '${item['id_variante'] ?? 'null'}_${item['id_opcion_variante'] ?? 'null'}_${item['id_presentacion'] ?? 'null'}',
-        };
-      }).toList();
-
-      print('📊 Presentaciones encontradas: ${presentations.length}');
-      for (final pres in presentations) {
-        print(
-          '   - ID: ${pres['id_presentacion']}, Nombre: ${pres['presentacion_nombre']}, Stock: ${pres['stock_disponible']}',
+      final presentations = _normalizeInventoryPresentationRows(
+        response,
+        idProducto: idProducto,
+        idLayout: idLayout,
+      );
+      final uniqueRows = <String, Map<String, dynamic>>{};
+      for (final presentation in presentations) {
+        uniqueRows.putIfAbsent(
+          presentation['inventory_identity'].toString(),
+          () => presentation,
         );
       }
 
-      return presentations;
+      print('📊 Presentaciones encontradas: ${uniqueRows.length}');
+      return uniqueRows.values.toList(growable: false);
     } catch (e) {
       print('❌ Error obteniendo presentaciones del producto: $e');
+      if (throwOnError) rethrow;
       return [];
     }
   }
@@ -3908,7 +3920,9 @@ class InventoryService {
   static int? _asInt(dynamic value) {
     if (value == null) return null;
     if (value is int) return value;
-    if (value is num) return value.toInt();
+    if (value is num && value.isFinite && value == value.truncateToDouble()) {
+      return value.toInt();
+    }
     return int.tryParse(value.toString());
   }
 

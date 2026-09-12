@@ -42,7 +42,10 @@
       "PowerShell(docker version *)",
       "PowerShell(python -c \"import pglast; print\\(pglast.__version__\\)\")",
       "PowerShell(git *)",
-      "mcp__supabase__list_tables"
+      "mcp__supabase__list_tables",
+      "PowerShell($path = 'C:\\\\Users\\\\cesar\\\\Documents\\\\VentIQ-seller-App\\\\presentaciones_inventario\\\\35_cumplimiento_fisico_v2.sql'; if \\(Get-Command psql -ErrorAction SilentlyContinue\\) { psql --version }; if \\(Get-Command python -ErrorAction SilentlyContinue\\) { python -c \"import pathlib; p=pathlib.Path\\(r'$path'\\); print\\('lines', len\\(p.read_text\\(encoding='utf-8'\\).splitlines\\(\\)\\), 'bytes', p.stat\\(\\).st_size\\)\" })",
+      "Skill(update-config)",
+      "PowerShell($config = Get-Content -Raw \".mcp.json\" | ConvertFrom-Json; $url = $config.mcpServers.supabase.url; if \\($url -notmatch 'read_only=false'\\) { throw 'Supabase MCP is not writable' }; Write-Output \"Valid JSON; Supabase MCP write mode enabled.\")"
     ]
   },
   "enabledMcpjsonServers": [
