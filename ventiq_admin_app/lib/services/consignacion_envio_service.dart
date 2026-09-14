@@ -64,20 +64,17 @@ class ConsignacionEnvioService {
       // tasa_cambio: tasa vigente al momento de la creación
       // ⭐ DATOS ORIGINALES (presentación, variante, ubicación) para devoluciones
       final productosJson = productos.map((p) {
-        final precioVentaCup = (p['precio_venta'] ?? 0.0) as double;
-        final tasaCambio = (p['tasa_cambio'] ?? 440.0) as double;
+        final precioVentaCup = (p['precio_venta'] as num?)?.toDouble() ?? 0.0;
+        final tasaCambio = (p['tasa_cambio'] as num?)?.toDouble() ?? 440.0;
 
-        // Costo real: usar el valor que viene de la presentación (precio_promedio)
-        // Si no hay costo real, recalcular desde precio_venta / tasa (fallback)
-        final costoUsdReal = (p['precio_costo_usd'] ?? 0.0) as double;
-        final costoCupReal = (p['precio_costo_cup'] ?? 0.0) as double;
-
-        final precioCostoUsd = costoUsdReal > 0
-            ? costoUsdReal
-            : (tasaCambio > 0 ? precioVentaCup / tasaCambio : 0.0);
+        // El costo que llega desde la asignación es el costo unitario de la
+        // presentación elegida. Un precio de venta nunca debe usarse como costo.
+        final precioCostoUsd =
+            (p['precio_costo_usd'] as num?)?.toDouble() ?? 0.0;
+        final costoCupReal = (p['precio_costo_cup'] as num?)?.toDouble() ?? 0.0;
         final precioCostoCup = costoCupReal > 0
             ? costoCupReal
-            : (precioCostoUsd * tasaCambio);
+            : precioCostoUsd * tasaCambio;
 
         return {
           'id_inventario': p['id_inventario'],
@@ -91,6 +88,10 @@ class ConsignacionEnvioService {
           'id_presentacion': p['id_presentacion'],
           'id_variante': p['id_variante'],
           'id_ubicacion': p['id_ubicacion'],
+          'denominacion_presentacion': p['denominacion_presentacion'],
+          'unidades_presentacion': p['unidades_presentacion'],
+          'costo_total_usd': p['costo_total_usd'],
+          'costo_total_cup': p['costo_total_cup'],
         };
       }).toList();
 

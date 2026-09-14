@@ -5,6 +5,7 @@ import '../config/app_colors.dart';
 import '../services/consignacion_service.dart';
 import '../services/consignacion_envio_service.dart';
 import '../services/currency_service.dart';
+import '../services/presentacion_cadena_service.dart';
 import '../widgets/presentacion_equivalencia_widget.dart';
 
 class AsignarProductosConsignacionScreen extends StatefulWidget {
@@ -34,14 +35,16 @@ class _AsignarProductosConsignacionScreenState
 
   // Extracción en tiempo real
   int? _idExtraccion; // ID de la operación de extracción activa
-  Map<int, int> _idExtraccionProducto = {}; // idInventario -> id de app_dat_extraccion_productos
+  Map<int, int> _idExtraccionProducto =
+      {}; // idInventario -> id de app_dat_extraccion_productos
   bool _aplicandoMovimiento = false; // evita doble llamada
 
   // Controladores por producto para debounce y detección de foco
   final Map<int, TextEditingController> _cantControllers = {};
   final Map<int, FocusNode> _cantFocusNodes = {};
   final Map<int, Timer> _cantTimers = {};
-  final Set<int> _confirmandoProducto = {}; // evita doble disparo timer+focusNode
+  final Set<int> _confirmandoProducto =
+      {}; // evita doble disparo timer+focusNode
 
   // Estados de expansión
   Map<String, bool> _expandedAlmacenes = {}; // almacen_id -> expandido
@@ -49,7 +52,8 @@ class _AsignarProductosConsignacionScreenState
   Map<String, List<Map<String, dynamic>>> _zonasInventario =
       {}; // almacen_id_zona_id -> productos
   Map<String, bool> _loadingZonas = {}; // almacen_id_zona_id -> cargando
-  Map<String, TextEditingController> _zonaSearchControllers = {}; // key -> buscador
+  Map<String, TextEditingController> _zonaSearchControllers =
+      {}; // key -> buscador
   bool _isLoading = true;
 
   @override
@@ -158,11 +162,10 @@ class _AsignarProductosConsignacionScreenState
             .eq('id_tienda', idTienda);
       }
 
-      final almacenesConZonas =
-          response.map((almacen) {
-            final zonas = almacen['app_dat_layout_almacen'] as List? ?? [];
-            return {...almacen as Map<String, dynamic>, 'zonas': zonas};
-          }).toList();
+      final almacenesConZonas = response.map((almacen) {
+        final zonas = almacen['app_dat_layout_almacen'] as List? ?? [];
+        return {...almacen as Map<String, dynamic>, 'zonas': zonas};
+      }).toList();
 
       setState(() {
         _almacenes = almacenesConZonas;
@@ -306,7 +309,7 @@ class _AsignarProductosConsignacionScreenState
                 'id_opcion_variante': idOpcionVariante,
                 'precio_unitario': 0,
                 'sku_producto': skuProducto,
-              }
+              },
             ],
             'p_uuid': uuid,
           },
@@ -417,10 +420,9 @@ class _AsignarProductosConsignacionScreenState
               .order('created_at', ascending: false)
               .limit(1);
 
-          final cantidadInicial =
-              (invRows as List).isNotEmpty
-                  ? (invRows[0]['cantidad_final'] as num?)?.toDouble() ?? 0.0
-                  : 0.0;
+          final cantidadInicial = (invRows as List).isNotEmpty
+              ? (invRows[0]['cantidad_final'] as num?)?.toDouble() ?? 0.0
+              : 0.0;
           final cantidadFinal = cantidadInicial - cantidad;
 
           // Insertar en extraccion_productos
@@ -522,9 +524,7 @@ class _AsignarProductosConsignacionScreenState
         }
       });
 
-      debugPrint(
-        '↩️ Producto inventario #$idInventario quitado de extracción',
-      );
+      debugPrint('↩️ Producto inventario #$idInventario quitado de extracción');
     } catch (e) {
       debugPrint('❌ Error quitando producto de extracción: $e');
       if (mounted) {
@@ -571,26 +571,23 @@ class _AsignarProductosConsignacionScreenState
     if (_idExtraccion != null) {
       final confirmar = await showDialog<bool>(
         context: context,
-        builder:
-            (ctx) => AlertDialog(
-              title: const Text('Cancelar extracción'),
-              content: const Text(
-                '¿Desea cancelar la extracción en curso? Se revertirán todos los movimientos de inventario.',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: const Text('No'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, true),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.red,
-                  ),
-                  child: const Text('Sí, cancelar'),
-                ),
-              ],
+        builder: (ctx) => AlertDialog(
+          title: const Text('Cancelar extracción'),
+          content: const Text(
+            '¿Desea cancelar la extracción en curso? Se revertirán todos los movimientos de inventario.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('No'),
             ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Sí, cancelar'),
+            ),
+          ],
+        ),
       );
       if (confirmar == true) {
         await _cancelarExtraccionPendiente();
@@ -606,11 +603,10 @@ class _AsignarProductosConsignacionScreenState
   Future<bool> _reconciliarExtraccion() async {
     if (_idExtraccion == null) return true;
 
-    final seleccionados =
-        _productosSeleccionados.entries
-            .where((e) => e.value['seleccionado'] == true)
-            .map((e) => e.key)
-            .toSet();
+    final seleccionados = _productosSeleccionados.entries
+        .where((e) => e.value['seleccionado'] == true)
+        .map((e) => e.key)
+        .toSet();
 
     final enExtraccion = _idExtraccionProducto.keys.toSet();
 
@@ -679,11 +675,10 @@ class _AsignarProductosConsignacionScreenState
   // ────────────────────────────────────────────────────────────────────────
 
   Future<void> _procederConConfiguracion() async {
-    final productosIds =
-        _productosSeleccionados.entries
-            .where((e) => e.value['seleccionado'] == true)
-            .map((e) => e.key)
-            .toList();
+    final productosIds = _productosSeleccionados.entries
+        .where((e) => e.value['seleccionado'] == true)
+        .map((e) => e.key)
+        .toList();
 
     if (productosIds.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -766,53 +761,80 @@ class _AsignarProductosConsignacionScreenState
 
         // Precios: El consignador configura el precio_costo_usd que quiere cobrar
         // Este precio es independiente de los precios en la tienda consignadora
-        final idProducto = p['id_producto'];
+        final idProducto = (p['id_producto'] as num).toInt();
 
         // ⚠️ NO obtener precio_venta del producto original - No se debe tocar
         // El precio_venta de la tienda consignadora debe permanecer intacto
         p['precio_venta'] =
             0.0; // Inicializar en 0, el consignador lo configurará
 
-        // Obtener precio_promedio de la presentación para usar como precio_costo_usd
-        // ⭐ MULTIPLICAR por las unidades de la presentación (caja x24 = precio × 24)
-        double costUSD = 0.0;
-        final idPresentacion = p['id_presentacion'];
-        int unidadesPresentacion = 1; // Por defecto 1 (presentación base)
-        
-        if (idPresentacion != null) {
-          final presResp = await _supabase
-              .from('app_dat_producto_presentacion')
-              .select('precio_promedio, cantidad')
-              .eq('id_producto', idProducto)
-              .eq('id_presentacion', idPresentacion)
-              .limit(1);
+        // id_presentacion en inventario es app_dat_producto_presentacion.id.
+        // El costo es por UNA unidad de la presentación elegida (un cajón, una
+        // caja o una unidad), nunca se convierte a costo por unidad base.
+        final idPresentacion = (p['id_presentacion'] as num?)?.toInt();
+        double costoUnitarioUsd = 0.0;
+        double factorRelativo = 1.0;
+        String nombrePresentacion = 'Presentación base';
 
-          if ((presResp as List).isNotEmpty) {
-            final precioBase = (presResp[0]['precio_promedio'] ?? 0).toDouble();
-            unidadesPresentacion = (presResp[0]['cantidad'] ?? 1) as int;
-            costUSD = precioBase * unidadesPresentacion; // ⭐ Multiplicar
+        if (idPresentacion != null) {
+          final presentacionResp = await _supabase
+              .from('app_dat_producto_presentacion')
+              .select('''
+                precio_promedio,
+                cantidad,
+                es_base,
+                app_nom_presentacion(denominacion)
+              ''')
+              .eq('id', idPresentacion)
+              .maybeSingle();
+
+          if (presentacionResp != null) {
+            costoUnitarioUsd =
+                (presentacionResp['precio_promedio'] as num?)?.toDouble() ??
+                0.0;
+            final nomPresentacion =
+                presentacionResp['app_nom_presentacion']
+                    as Map<String, dynamic>?;
+            nombrePresentacion =
+                nomPresentacion?['denominacion'] as String? ??
+                nombrePresentacion;
+          }
+
+          final cadena = await PresentacionCadenaService.cadena(idProducto);
+          final eslabon = cadena.where(
+            (item) => item.idPresentacion == idPresentacion,
+          );
+          if (eslabon.isNotEmpty) {
+            factorRelativo = eslabon.first.factorRel;
+            nombrePresentacion = eslabon.first.nombre;
           }
         }
 
-        // Si no hay precio_promedio en la presentación, intentar obtener del producto base
-        if (costUSD == 0.0) {
-          final presBaseResp = await _supabase
+        // Cuando la presentación no tiene costo histórico propio, usar el costo
+        // base y su equivalencia canónica. Así un cajón x30 conserva su costo
+        // unitario por cajón sin aplanarlo al costo de una unidad.
+        if (costoUnitarioUsd <= 0) {
+          final baseResp = await _supabase
               .from('app_dat_producto_presentacion')
-              .select('precio_promedio, cantidad')
+              .select('precio_promedio')
               .eq('id_producto', idProducto)
               .eq('es_base', true)
-              .limit(1);
-
-          if ((presBaseResp as List).isNotEmpty) {
-            final precioBase = (presBaseResp[0]['precio_promedio'] ?? 0).toDouble();
-            unidadesPresentacion = (presBaseResp[0]['cantidad'] ?? 1) as int;
-            costUSD = precioBase * unidadesPresentacion; // ⭐ Multiplicar
-          }
+              .limit(1)
+              .maybeSingle();
+          final costoBaseUsd =
+              (baseResp?['precio_promedio'] as num?)?.toDouble() ?? 0.0;
+          costoUnitarioUsd = costoBaseUsd * factorRelativo;
         }
 
-        p['precio_costo_usd'] = costUSD;
-        p['precio_costo_cup'] = costUSD * tasaCambio;
-        p['unidades_presentacion'] = unidadesPresentacion; // ⭐ Guardar para la UI
+        final cantidadSeleccionada =
+            _productosSeleccionados[idInv]?['cantidad'] as double? ?? 0.0;
+        p['denominacion_presentacion'] = nombrePresentacion;
+        p['unidades_presentacion'] = factorRelativo;
+        p['precio_costo_usd'] = costoUnitarioUsd;
+        p['precio_costo_cup'] = costoUnitarioUsd * tasaCambio;
+        p['costo_total_usd'] = costoUnitarioUsd * cantidadSeleccionada;
+        p['costo_total_cup'] =
+            costoUnitarioUsd * tasaCambio * cantidadSeleccionada;
       }
 
       if (widget.isDevolucion) {
@@ -831,20 +853,19 @@ class _AsignarProductosConsignacionScreenState
       } else {
         idOperacionReserva = await ConsignacionService.crearReservaStock(
           idContrato: widget.idContrato,
-          productos:
-              productosData
-                  .map(
-                    (p) => {
-                      'id_producto': p['id_producto'],
-                      'cantidad': p['cantidad_seleccionada'],
-                      'id_presentacion': p['id_presentacion'],
-                      'id_ubicacion': p['id_ubicacion'],
-                      'id_variante': p['id_variante'],
-                      'id_opcion_variante': p['id_opcion_variante'],
-                      'precio_costo_unitario': p['precio_costo_usd'],
-                    },
-                  )
-                  .toList(),
+          productos: productosData
+              .map(
+                (p) => {
+                  'id_producto': p['id_producto'],
+                  'cantidad': p['cantidad_seleccionada'],
+                  'id_presentacion': p['id_presentacion'],
+                  'id_ubicacion': p['id_ubicacion'],
+                  'id_variante': p['id_variante'],
+                  'id_opcion_variante': p['id_opcion_variante'],
+                  'precio_costo_unitario': p['precio_costo_usd'],
+                },
+              )
+              .toList(),
           idTiendaOrigen: idTiendaConsignadora,
         );
       }
@@ -855,46 +876,45 @@ class _AsignarProductosConsignacionScreenState
       final result = await Navigator.push(
         context,
         MaterialPageRoute(
-          builder:
-              (context) => ConsignacionProductosConfigScreen(
-                productos: productosData,
-                contrato: widget.contrato,
-                idOperacionExtraccion: idOperacionReserva,
-                onConfirm: (finalProductos, opId) async {
-                  final user = _supabase.auth.currentUser;
-                  if (user == null) return;
+          builder: (context) => ConsignacionProductosConfigScreen(
+            productos: productosData,
+            contrato: widget.contrato,
+            idOperacionExtraccion: idOperacionReserva,
+            onConfirm: (finalProductos, opId) async {
+              final user = _supabase.auth.currentUser;
+              if (user == null) return;
 
-                  final idAlmacenDestino =
-                      widget.contrato['id_almacen_destino'] as int?;
-                  if (idAlmacenDestino == null) {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Error: El contrato no tiene un almacén destino configurado',
-                          ),
-                          backgroundColor: Colors.red,
-                        ),
-                      );
-                    }
-                    return;
-                  }
-
-                  final envioResult = await ConsignacionEnvioService.crearEnvio(
-                    idContrato: widget.idContrato,
-                    idAlmacenOrigen: productosData[0]['id_ubicacion'],
-                    idAlmacenDestino: idAlmacenDestino,
-                    idUsuario: user.id,
-                    productos: finalProductos,
-                    idOperacionExtraccion: opId,
+              final idAlmacenDestino =
+                  widget.contrato['id_almacen_destino'] as int?;
+              if (idAlmacenDestino == null) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Error: El contrato no tiene un almacén destino configurado',
+                      ),
+                      backgroundColor: Colors.red,
+                    ),
                   );
+                }
+                return;
+              }
 
-                  if (envioResult != null) {
-                    Navigator.pop(context); // Cerrar config
-                    Navigator.pop(context, true); // Volver al listado
-                  }
-                },
-              ),
+              final envioResult = await ConsignacionEnvioService.crearEnvio(
+                idContrato: widget.idContrato,
+                idAlmacenOrigen: productosData[0]['id_ubicacion'],
+                idAlmacenDestino: idAlmacenDestino,
+                idUsuario: user.id,
+                productos: finalProductos,
+                idOperacionExtraccion: opId,
+              );
+
+              if (envioResult != null) {
+                Navigator.pop(context); // Cerrar config
+                Navigator.pop(context, true); // Volver al listado
+              }
+            },
+          ),
         ),
       );
     } catch (e) {
@@ -921,22 +941,21 @@ class _AsignarProductosConsignacionScreenState
         throw Exception('El contrato no tiene un almacén destino configurado');
       }
 
-      final productosParaDevolucion =
-          productos
-              .map(
-                (p) => {
-                  'id_inventario': p['id'] as int,
-                  'id_producto': p['id_producto'],
-                  'cantidad': p['cantidad_seleccionada'],
-                  'precio_costo_usd': p['precio_costo_usd'],
-                  'precio_costo_cup': p['precio_costo_cup'],
-                  'tasa_cambio': p['tasa_cambio'],
-                  'id_presentacion': p['id_presentacion'],
-                  'id_variante': p['id_variante'],
-                  'id_ubicacion': p['id_ubicacion'],
-                },
-              )
-              .toList();
+      final productosParaDevolucion = productos
+          .map(
+            (p) => {
+              'id_inventario': p['id'] as int,
+              'id_producto': p['id_producto'],
+              'cantidad': p['cantidad_seleccionada'],
+              'precio_costo_usd': p['precio_costo_usd'],
+              'precio_costo_cup': p['precio_costo_cup'],
+              'tasa_cambio': p['tasa_cambio'],
+              'id_presentacion': p['id_presentacion'],
+              'id_variante': p['id_variante'],
+              'id_ubicacion': p['id_ubicacion'],
+            },
+          )
+          .toList();
 
       final result = await ConsignacionEnvioService.crearDevolucion(
         idContrato: widget.idContrato,
@@ -981,24 +1000,24 @@ class _AsignarProductosConsignacionScreenState
         await _onBackPressed();
       },
       child: Scaffold(
-      appBar: AppBar(
-        title: Text(
-          widget.isDevolucion
-              ? 'Crear Devolución'
-              : 'Asignar Productos en Consignación',
+        appBar: AppBar(
+          title: Text(
+            widget.isDevolucion
+                ? 'Crear Devolución'
+                : 'Asignar Productos en Consignación',
+          ),
+          backgroundColor: widget.isDevolucion
+              ? Colors.deepOrange
+              : AppColors.primary,
+          foregroundColor: Colors.white,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: _onBackPressed,
+          ),
         ),
-        backgroundColor:
-            widget.isDevolucion ? Colors.deepOrange : AppColors.primary,
-        foregroundColor: Colors.white,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: _onBackPressed,
-        ),
-      ),
-      body:
-          _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : Column(
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : Column(
                 children: [
                   Container(
                     padding: const EdgeInsets.all(16),
@@ -1022,18 +1041,16 @@ class _AsignarProductosConsignacionScreenState
                     ),
                   ),
                   Expanded(
-                    child:
-                        _almacenes.isEmpty
-                            ? const Center(
-                              child: Text('No hay almacenes disponibles'),
-                            )
-                            : ListView.builder(
-                              padding: const EdgeInsets.all(16),
-                              itemCount: _almacenes.length,
-                              itemBuilder:
-                                  (context, index) =>
-                                      _buildAlmacenCard(_almacenes[index]),
-                            ),
+                    child: _almacenes.isEmpty
+                        ? const Center(
+                            child: Text('No hay almacenes disponibles'),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: _almacenes.length,
+                            itemBuilder: (context, index) =>
+                                _buildAlmacenCard(_almacenes[index]),
+                          ),
                   ),
                   if (haySeleccion)
                     Container(
@@ -1048,35 +1065,34 @@ class _AsignarProductosConsignacionScreenState
                         width: double.infinity,
                         height: 50,
                         child: ElevatedButton.icon(
-                          onPressed:
-                              _procediendo ? null : _procederConConfiguracion,
-                          icon:
-                              _procediendo
-                                  ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                  : Icon(
-                                    widget.isDevolucion
-                                        ? Icons.replay
-                                        : Icons.arrow_forward,
+                          onPressed: _procediendo
+                              ? null
+                              : _procederConConfiguracion,
+                          icon: _procediendo
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
                                   ),
+                                )
+                              : Icon(
+                                  widget.isDevolucion
+                                      ? Icons.replay
+                                      : Icons.arrow_forward,
+                                ),
                           label: Text(
                             _procediendo
                                 ? 'Procesando...'
                                 : (widget.isDevolucion
-                                    ? 'Solicitar Devolución'
-                                    : 'Configurar Productos'),
+                                      ? 'Solicitar Devolución'
+                                      : 'Configurar Productos'),
                           ),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor:
-                                widget.isDevolucion
-                                    ? Colors.deepOrange
-                                    : AppColors.primary,
+                            backgroundColor: widget.isDevolucion
+                                ? Colors.deepOrange
+                                : AppColors.primary,
                             foregroundColor: Colors.white,
                           ),
                         ),
@@ -1101,8 +1117,8 @@ class _AsignarProductosConsignacionScreenState
             title: Text(almacen['denominacion']),
             subtitle: Text('${zonas.length} zonas'),
             trailing: Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
-            onTap:
-                () => setState(() => _expandedAlmacenes[idStr] = !isExpanded),
+            onTap: () =>
+                setState(() => _expandedAlmacenes[idStr] = !isExpanded),
           ),
           if (isExpanded)
             ...zonas.map((z) => _buildZonaCard(idStr, z)).toList(),
@@ -1166,7 +1182,8 @@ class _AsignarProductosConsignacionScreenState
                   isDense: true,
                   hintText: 'Buscar producto...',
                   prefixIcon: const Icon(Icons.search, size: 18),
-                  suffixIcon: (_zonaSearchControllers[key]?.text.isNotEmpty ?? false)
+                  suffixIcon:
+                      (_zonaSearchControllers[key]?.text.isNotEmpty ?? false)
                       ? IconButton(
                           icon: const Icon(Icons.clear, size: 16),
                           onPressed: () {
@@ -1175,7 +1192,10 @@ class _AsignarProductosConsignacionScreenState
                           },
                         )
                       : null,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -1185,12 +1205,17 @@ class _AsignarProductosConsignacionScreenState
             ],
             Builder(
               builder: (context) {
-                final query = (_zonaSearchControllers[key]?.text ?? '').toLowerCase().trim();
+                final query = (_zonaSearchControllers[key]?.text ?? '')
+                    .toLowerCase()
+                    .trim();
                 final filtered = query.isEmpty
                     ? prods
                     : prods.where((p) {
-                        final nombre = (p['denominacion_producto'] as String? ?? '').toLowerCase();
-                        final sku = (p['sku_producto'] as String? ?? '').toLowerCase();
+                        final nombre =
+                            (p['denominacion_producto'] as String? ?? '')
+                                .toLowerCase();
+                        final sku = (p['sku_producto'] as String? ?? '')
+                            .toLowerCase();
                         return nombre.contains(query) || sku.contains(query);
                       }).toList();
                 if (prods.isEmpty && !loading) {
@@ -1234,8 +1259,9 @@ class _AsignarProductosConsignacionScreenState
       margin: const EdgeInsets.symmetric(vertical: 4),
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color:
-            isSelected ? AppColors.primary.withOpacity(0.05) : Colors.grey[50],
+        color: isSelected
+            ? AppColors.primary.withOpacity(0.05)
+            : Colors.grey[50],
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: isSelected ? AppColors.primary : Colors.grey[300]!,
@@ -1299,16 +1325,18 @@ class _AsignarProductosConsignacionScreenState
                 decoration: InputDecoration(
                   isDense: true,
                   labelText: 'Cantidad',
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 12,
+                  ),
                   border: const OutlineInputBorder(),
-                  suffixIcon:
-                      tieneMovimiento
-                          ? Icon(
-                            Icons.lock_outline,
-                            size: 14,
-                            color: Colors.green[600],
-                          )
-                          : null,
+                  suffixIcon: tieneMovimiento
+                      ? Icon(
+                          Icons.lock_outline,
+                          size: 14,
+                          color: Colors.green[600],
+                        )
+                      : null,
                 ),
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
@@ -1413,64 +1441,60 @@ class _AsignarProductosConsignacionScreenState
             .toList();
 
         // Mapear la respuesta para tener la estructura esperada con información de variante/presentación
-        response =
-            response.map((item) {
-              final producto = item['app_dat_producto'] as Map<String, dynamic>;
-              final presentacionData =
-                  item['app_dat_producto_presentacion']
-                      as Map<String, dynamic>?;
-              final varianteData =
-                  item['app_dat_variantes'] as Map<String, dynamic>?;
-              final atributoOpcion =
-                  item['app_dat_atributo_opcion'] as Map<String, dynamic>?;
+        response = response.map((item) {
+          final producto = item['app_dat_producto'] as Map<String, dynamic>;
+          final presentacionData =
+              item['app_dat_producto_presentacion'] as Map<String, dynamic>?;
+          final varianteData =
+              item['app_dat_variantes'] as Map<String, dynamic>?;
+          final atributoOpcion =
+              item['app_dat_atributo_opcion'] as Map<String, dynamic>?;
 
-              // Extraer denominación de presentación
-              String? presentacionNombre;
-              if (presentacionData != null) {
-                final nomPresentacion =
-                    presentacionData['app_nom_presentacion']
-                        as Map<String, dynamic>?;
-                presentacionNombre =
-                    nomPresentacion?['denominacion'] as String?;
-              }
+          // Extraer denominación de presentación
+          String? presentacionNombre;
+          if (presentacionData != null) {
+            final nomPresentacion =
+                presentacionData['app_nom_presentacion']
+                    as Map<String, dynamic>?;
+            presentacionNombre = nomPresentacion?['denominacion'] as String?;
+          }
 
-              // Extraer denominación de atributo (variante)
-              String? atributoNombre;
-              if (varianteData != null) {
-                final atributos =
-                    varianteData['app_dat_atributos'] as Map<String, dynamic>?;
-                atributoNombre = atributos?['denominacion'] as String?;
-              }
+          // Extraer denominación de atributo (variante)
+          String? atributoNombre;
+          if (varianteData != null) {
+            final atributos =
+                varianteData['app_dat_atributos'] as Map<String, dynamic>?;
+            atributoNombre = atributos?['denominacion'] as String?;
+          }
 
-              // Extraer valor de opción de variante
-              String? opcionValor = atributoOpcion?['valor'] as String?;
+          // Extraer valor de opción de variante
+          String? opcionValor = atributoOpcion?['valor'] as String?;
 
-              // Construir denominación completa con variante/presentación
-              String denominacionCompleta =
-                  producto['denominacion'] ?? 'Producto';
-              if (presentacionNombre != null && presentacionNombre.isNotEmpty) {
-                denominacionCompleta += ' - $presentacionNombre';
-              }
-              if (atributoNombre != null && atributoNombre.isNotEmpty) {
-                denominacionCompleta += ' ($atributoNombre';
-                if (opcionValor != null && opcionValor.isNotEmpty) {
-                  denominacionCompleta += ': $opcionValor';
-                }
-                denominacionCompleta += ')';
-              }
+          // Construir denominación completa con variante/presentación
+          String denominacionCompleta = producto['denominacion'] ?? 'Producto';
+          if (presentacionNombre != null && presentacionNombre.isNotEmpty) {
+            denominacionCompleta += ' - $presentacionNombre';
+          }
+          if (atributoNombre != null && atributoNombre.isNotEmpty) {
+            denominacionCompleta += ' ($atributoNombre';
+            if (opcionValor != null && opcionValor.isNotEmpty) {
+              denominacionCompleta += ': $opcionValor';
+            }
+            denominacionCompleta += ')';
+          }
 
-              return {
-                'id': item['id'],
-                'cantidad_final': item['cantidad_final'],
-                'id_producto': item['id_producto'],
-                'id_ubicacion': item['id_ubicacion'],
-                'id_presentacion': item['id_presentacion'],
-                'id_variante': item['id_variante'],
-                'id_opcion_variante': item['id_opcion_variante'],
-                'denominacion_producto': denominacionCompleta,
-                'sku_producto': producto['sku'],
-              };
-            }).toList();
+          return {
+            'id': item['id'],
+            'cantidad_final': item['cantidad_final'],
+            'id_producto': item['id_producto'],
+            'id_ubicacion': item['id_ubicacion'],
+            'id_presentacion': item['id_presentacion'],
+            'id_variante': item['id_variante'],
+            'id_opcion_variante': item['id_opcion_variante'],
+            'denominacion_producto': denominacionCompleta,
+            'sku_producto': producto['sku'],
+          };
+        }).toList();
       } else {
         // Para envíos normales: obtener todos los registros de la zona, sin filtro previo
         final inventarioResponse = await _supabase
@@ -1517,10 +1541,9 @@ class _AsignarProductosConsignacionScreenState
         }
 
         // 2. Solo los que realmente tienen disponibilidad (cantidad_final > 0 en el último registro)
-        response =
-            productosUnicos.values
-                .where((item) => ((item['cantidad_final'] as num?) ?? 0) > 0)
-                .map((item) {
+        response = productosUnicos.values
+            .where((item) => ((item['cantidad_final'] as num?) ?? 0) > 0)
+            .map((item) {
               final producto = item['app_dat_producto'] as Map<String, dynamic>;
               final presentacionData =
                   item['app_dat_producto_presentacion']
@@ -1576,16 +1599,17 @@ class _AsignarProductosConsignacionScreenState
                 'denominacion_producto': denominacionCompleta,
                 'sku_producto': producto['sku'],
               };
-            }).toList();
+            })
+            .toList();
       }
 
       // Ordenar productos alfabéticamente por nombre
       final productosOrdenados = List<Map<String, dynamic>>.from(response);
       productosOrdenados.sort((a, b) {
-        final nombreA =
-            (a['denominacion_producto'] as String? ?? '').toLowerCase();
-        final nombreB =
-            (b['denominacion_producto'] as String? ?? '').toLowerCase();
+        final nombreA = (a['denominacion_producto'] as String? ?? '')
+            .toLowerCase();
+        final nombreB = (b['denominacion_producto'] as String? ?? '')
+            .toLowerCase();
         return nombreA.compareTo(nombreB);
       });
 
@@ -1647,8 +1671,8 @@ class _ConsignacionProductosConfigScreenState
         'margen_porcentaje': 1.0,
       };
       // Crear controller para cada producto
-      final precioInicial =
-          (p['precio_venta'] > 0 ? p['precio_venta'] : '').toString();
+      final precioInicial = (p['precio_venta'] > 0 ? p['precio_venta'] : '')
+          .toString();
       _precioVentaControllers[p['id']] = TextEditingController(
         text: precioInicial,
       );
@@ -1698,22 +1722,25 @@ class _ConsignacionProductosConfigScreenState
     }
 
     // Construir productos en el formato que espera ConsignacionEnvioService.crearEnvio()
-    final finalProds =
-        widget.productos.map((p) {
-          final config = _productosConfig[p['id']]!;
-          return {
-            'id_inventario': p['id'],
-            'id_producto': p['id_producto'],
-            'id_variante': p['id_variante'],
-            'id_presentacion': p['id_presentacion'],
-            'id_ubicacion': p['id_ubicacion'],
-            'cantidad': config['cantidad'],
-            'precio_costo_usd': p['precio_costo_usd'] ?? 0.0,
-            'precio_costo_cup': p['precio_costo_cup'] ?? 0.0,
-            'tasa_cambio': p['tasa_cambio'] ?? 440.0,
-            'precio_venta': config['precio_venta'],
-          };
-        }).toList();
+    final finalProds = widget.productos.map((p) {
+      final config = _productosConfig[p['id']]!;
+      return {
+        'id_inventario': p['id'],
+        'id_producto': p['id_producto'],
+        'id_variante': p['id_variante'],
+        'id_presentacion': p['id_presentacion'],
+        'id_ubicacion': p['id_ubicacion'],
+        'cantidad': config['cantidad'],
+        'precio_costo_usd': p['precio_costo_usd'] ?? 0.0,
+        'precio_costo_cup': p['precio_costo_cup'] ?? 0.0,
+        'tasa_cambio': p['tasa_cambio'] ?? 440.0,
+        'denominacion_presentacion': p['denominacion_presentacion'],
+        'unidades_presentacion': p['unidades_presentacion'] ?? 1.0,
+        'costo_total_usd': p['costo_total_usd'] ?? 0.0,
+        'costo_total_cup': p['costo_total_cup'] ?? 0.0,
+        'precio_venta': config['precio_venta'],
+      };
+    }).toList();
 
     widget.onConfirm(finalProds, widget.idOperacionExtraccion);
   }
@@ -1735,14 +1762,25 @@ class _ConsignacionProductosConfigScreenState
               itemBuilder: (context, index) {
                 final p = widget.productos[index];
                 final config = _productosConfig[p['id']]!;
-                final precioCostoUSD = (p['precio_costo_usd'] ?? 0).toDouble();
+                final precioCostoUSD =
+                    (p['precio_costo_usd'] as num?)?.toDouble() ?? 0.0;
                 final precioCostoCUP =
-                    precioCostoUSD *
-                    _tasaCambio; // Convertir USD a CUP usando tasa de cambio
+                    (p['precio_costo_cup'] as num?)?.toDouble() ??
+                    precioCostoUSD * _tasaCambio;
+                final cantidadPresentaciones =
+                    (config['cantidad'] as num?)?.toDouble() ?? 0.0;
+                final unidadesPresentacion =
+                    (p['unidades_presentacion'] as num?)?.toDouble() ?? 1.0;
+                final nombrePresentacion =
+                    p['denominacion_presentacion'] as String? ?? 'Presentación';
+                final costoTotalUSD = precioCostoUSD * cantidadPresentaciones;
+                final costoTotalCUP = precioCostoCUP * cantidadPresentaciones;
                 final precioVentaCUP = (config['precio_venta'] ?? 0).toDouble();
-                final precioVentaUSD =
-                    precioVentaCUP > 0 ? precioVentaCUP / _tasaCambio : 0.0;
+                final precioVentaUSD = precioVentaCUP > 0
+                    ? precioVentaCUP / _tasaCambio
+                    : 0.0;
                 final gananciaUSD = precioVentaUSD - precioCostoUSD;
+                final gananciaTotalUSD = gananciaUSD * cantidadPresentaciones;
                 final margenPorcentaje = config['margen_porcentaje'] ?? 0.0;
 
                 return Card(
@@ -1757,6 +1795,15 @@ class _ConsignacionProductosConfigScreenState
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '$nombrePresentacion · ${cantidadPresentaciones.toStringAsFixed(0)} ${cantidadPresentaciones == 1 ? 'presentación' : 'presentaciones'}'
+                          '${unidadesPresentacion > 1 ? ' · x${unidadesPresentacion.toStringAsFixed(0)} unidades base' : ''}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[700],
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -1774,7 +1821,7 @@ class _ConsignacionProductosConfigScreenState
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Precio Costo Original (USD) - Presentación completa',
+                                'Costo unitario por $nombrePresentacion',
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w500,
@@ -1783,21 +1830,30 @@ class _ConsignacionProductosConfigScreenState
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                '\$${precioCostoUSD.toStringAsFixed(2)} USD',
+                                '\$${precioCostoUSD.toStringAsFixed(2)} USD · \$${precioCostoCUP.toStringAsFixed(2)} CUP',
                                 style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
                                   color: Colors.blue,
                                 ),
                               ),
-                              if (p['unidades_presentacion'] != null && p['unidades_presentacion'] > 1)
+                              if (unidadesPresentacion > 1)
                                 Text(
-                                  '(Incluye ${p['unidades_presentacion']} unidades)',
+                                  '$nombrePresentacion x${unidadesPresentacion.toStringAsFixed(0)} unidades base',
                                   style: TextStyle(
                                     fontSize: 10,
                                     color: Colors.blue[600],
                                   ),
                                 ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Costo total: \$${costoTotalUSD.toStringAsFixed(2)} USD · \$${costoTotalCUP.toStringAsFixed(2)} CUP',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blue[800],
+                                ),
+                              ),
                               const SizedBox(height: 8),
                               Row(
                                 mainAxisAlignment:
@@ -1913,21 +1969,18 @@ class _ConsignacionProductosConfigScreenState
                         // Campo de Precio de Venta
                         TextField(
                           controller: _precioVentaControllers[p['id']],
-                          decoration: const InputDecoration(
-                            labelText: 'Precio de Venta Final (CUP)',
-                            border: OutlineInputBorder(),
-                            prefixIcon: Icon(Icons.attach_money),
+                          decoration: InputDecoration(
+                            labelText:
+                                'Precio de venta por $nombrePresentacion (CUP)',
+                            border: const OutlineInputBorder(),
+                            prefixIcon: const Icon(Icons.attach_money),
                           ),
                           keyboardType: const TextInputType.numberWithOptions(
                             decimal: true,
                           ),
-                          onChanged:
-                              (val) => setState(
-                                () =>
-                                    config['precio_venta'] = double.tryParse(
-                                      val,
-                                    ),
-                              ),
+                          onChanged: (val) => setState(
+                            () => config['precio_venta'] = double.tryParse(val),
+                          ),
                         ),
                         const SizedBox(height: 8),
                         // Información de Precio de Venta en USD y Ganancia
@@ -1944,7 +1997,7 @@ class _ConsignacionProductosConfigScreenState
                             child: Row(
                               children: [
                                 Text(
-                                  'En USD: \$${precioVentaUSD.toStringAsFixed(2)}',
+                                  'Venta unitaria: \$${precioVentaUSD.toStringAsFixed(2)} USD',
                                   style: TextStyle(
                                     fontSize: 11,
                                     color: Colors.grey[700],
@@ -1958,21 +2011,19 @@ class _ConsignacionProductosConfigScreenState
                                     vertical: 4,
                                   ),
                                   decoration: BoxDecoration(
-                                    color:
-                                        gananciaUSD >= 0
-                                            ? Colors.green[100]
-                                            : Colors.red[100],
+                                    color: gananciaUSD >= 0
+                                        ? Colors.green[100]
+                                        : Colors.red[100],
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                   child: Text(
-                                    'Ganancia: \$${gananciaUSD.toStringAsFixed(2)} USD',
+                                    'Ganancia total: \$${gananciaTotalUSD.toStringAsFixed(2)} USD',
                                     style: TextStyle(
                                       fontSize: 10,
                                       fontWeight: FontWeight.bold,
-                                      color:
-                                          gananciaUSD >= 0
-                                              ? Colors.green[700]
-                                              : Colors.red[700],
+                                      color: gananciaUSD >= 0
+                                          ? Colors.green[700]
+                                          : Colors.red[700],
                                     ),
                                   ),
                                 ),
