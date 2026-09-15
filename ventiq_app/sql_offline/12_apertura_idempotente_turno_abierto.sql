@@ -30,6 +30,10 @@ DECLARE
     v_turno_abierto bigint;
     v_new_id bigint;
 BEGIN
+    PERFORM pg_advisory_xact_lock(
+        hashtextextended(p_id_tpv::text || ':' || p_id_vendedor::text, 0)
+    );
+
     SELECT id_operacion INTO v_existing
     FROM public.app_dat_operacion_offline_idempotencia
     WHERE client_uuid = p_client_uuid AND tipo = 'apertura_turno';

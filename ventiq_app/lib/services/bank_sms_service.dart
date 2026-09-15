@@ -18,6 +18,13 @@ import '../utils/bank_sms_parser.dart';
 /// funciona en ambos.
 const String _kPendingSmsKey = 'bank_sms_pending_payments';
 
+/// SMS ya asociados a una venta (id banco o huella del mensaje). Evita que el
+/// mismo SMS confirme varias operaciones del mismo monto.
+const String _kUsedSmsKey = 'bank_sms_used_payments';
+
+/// Entradas usadas: `{id, raw_normalized?, used_at}`.
+const Duration _maxUsedAge = Duration(days: 14);
+
 /// Handler de SMS en background.
 ///
 /// Debe ser una función **top-level** y llevar `@pragma('vm:entry-point')`
@@ -214,7 +221,7 @@ class BankSmsService {
   // Buffer de pagos pendientes de conciliar
   // --------------------------------------------------------------------------
 
-  /// Guarda un pago en el buffer, deduplicando por `nroTransaccionBanco`.
+  /// Guarda un pago en el buffer, deduplicando por id banco / huella / mensaje.
   ///
   /// `static` porque también la usa el isolate de background.
   static Future<void> appendPendingPayment(BankSmsPayment payment) async {
@@ -223,11 +230,18 @@ class BankSmsService {
       // Releer justo antes de escribir: el isolate de background y el
       // principal pueden tocar la lista casi a la vez.
       await prefs.reload();
-      final list = _decodePayments(prefs.getStringList(_kPendingSmsKey));
 
-      if (list.any(
-        (p) => p.nroTransaccionBanco == payment.nroTransaccionBanco,
-      )) {
+      if (await _isPaymentAlreadyUsed(prefs, payment)) {
+        debugPrint(
+          '🚫 SMS de pago ya usado — no se reincorpora: ${payment.stableId}',
+        );
+        return;
+      }
+
+      final list = _decodePayments(prefs.getStringList(_kPendingSmsKey));
+      final rawNorm = BankSmsParser.normalizeRawMessage(payment.rawMessage);
+
+      if (list.any((p) => _samePayment(p, payment, rawNorm))) {
         return;
       }
 
@@ -242,14 +256,31 @@ class BankSmsService {
     }
   }
 
+  static bool _samePayment(
+    BankSmsPayment existing,
+    BankSmsPayment incoming,
+    String incomingRawNorm,
+  ) {
+    if (existing.nroTransaccionBanco == incoming.nroTransaccionBanco) {
+      return true;
+    }
+    if (existing.rawMessage.isEmpty || incoming.rawMessage.isEmpty) {
+      return false;
+    }
+    return BankSmsParser.normalizeRawMessage(existing.rawMessage) ==
+        incomingRawNorm;
+  }
+
   /// Pagos detectados y aún no asociados a una venta, del más reciente al más
-  /// antiguo. Descarta los más viejos que [maxPaymentAge].
+  /// antiguo. Descarta los más viejos que [maxPaymentAge] y los ya usados.
   Future<List<BankSmsPayment>> getPendingPayments() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.reload();
       final list = _decodePayments(prefs.getStringList(_kPendingSmsKey));
       _pruneOld(list);
+      final used = await _loadUsedEntries(prefs);
+      list.removeWhere((p) => _matchesUsedEntry(p, used));
       list.sort((a, b) => b.receivedAt.compareTo(a.receivedAt));
       return list;
     } catch (e) {
@@ -258,19 +289,68 @@ class BankSmsService {
     }
   }
 
-  /// Saca un pago del buffer, tras haberlo asociado a una venta.
+  /// Saca un pago del buffer y lo marca como usado (anti-reuso entre ventas).
   Future<void> removePendingPayment(String nroTransaccionBanco) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.reload();
-      final list = _decodePayments(prefs.getStringList(_kPendingSmsKey))
-        ..removeWhere((p) => p.nroTransaccionBanco == nroTransaccionBanco);
+      final list = _decodePayments(prefs.getStringList(_kPendingSmsKey));
+      BankSmsPayment? removed;
+      list.removeWhere((p) {
+        final match = p.nroTransaccionBanco == nroTransaccionBanco;
+        if (match) removed = p;
+        return match;
+      });
       await prefs.setStringList(
         _kPendingSmsKey,
         list.map((p) => jsonEncode(p.toJson())).toList(),
       );
+      if (removed != null) {
+        await markPaymentUsed(removed!);
+      } else {
+        // Aun sin estar en pending, bloquear el id.
+        await markPaymentUsed(
+          BankSmsPayment(
+            banco: 'Desconocido',
+            nroTransaccionBanco: nroTransaccionBanco,
+            monto: 0,
+            rawMessage: '',
+            receivedAt: DateTime.now(),
+            idFromRawMessage: nroTransaccionBanco.startsWith('MSG:'),
+          ),
+        );
+      }
     } catch (e) {
       debugPrint('❌ Error removiendo pago SMS: $e');
+    }
+  }
+
+  /// Registra un SMS como ya conciliado con una venta.
+  ///
+  /// Guarda el id (banco o huella) y, si hace falta, el mensaje normalizado
+  /// para que el mismo texto no se reutilice en otra operación del mismo monto.
+  static Future<void> markPaymentUsed(BankSmsPayment payment) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.reload();
+      final entries = await _loadUsedEntries(prefs);
+      if (_matchesUsedEntry(payment, entries)) return;
+
+      entries.add({
+        'id': payment.stableId,
+        'raw_normalized': payment.rawMessage.isNotEmpty
+            ? BankSmsParser.normalizeRawMessage(payment.rawMessage)
+            : null,
+        'used_at': DateTime.now().toIso8601String(),
+      });
+      _pruneUsedEntries(entries);
+      await prefs.setStringList(
+        _kUsedSmsKey,
+        entries.map((e) => jsonEncode(e)).toList(),
+      );
+      debugPrint('🔒 SMS de pago marcado como usado: ${payment.stableId}');
+    } catch (e) {
+      debugPrint('❌ Error marcando SMS usado: $e');
     }
   }
 
@@ -283,6 +363,61 @@ class BankSmsService {
     }
   }
 
+  static Future<bool> _isPaymentAlreadyUsed(
+    SharedPreferences prefs,
+    BankSmsPayment payment,
+  ) async {
+    final used = await _loadUsedEntries(prefs);
+    return _matchesUsedEntry(payment, used);
+  }
+
+  static bool _matchesUsedEntry(
+    BankSmsPayment payment,
+    List<Map<String, dynamic>> used,
+  ) {
+    final rawNorm = payment.rawMessage.isNotEmpty
+        ? BankSmsParser.normalizeRawMessage(payment.rawMessage)
+        : null;
+    for (final entry in used) {
+      final id = entry['id']?.toString();
+      if (id != null && id == payment.stableId) return true;
+      final storedRaw = entry['raw_normalized']?.toString();
+      if (rawNorm != null &&
+          storedRaw != null &&
+          storedRaw.isNotEmpty &&
+          storedRaw == rawNorm) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static Future<List<Map<String, dynamic>>> _loadUsedEntries(
+    SharedPreferences prefs,
+  ) async {
+    final raw = prefs.getStringList(_kUsedSmsKey);
+    if (raw == null || raw.isEmpty) return [];
+    final out = <Map<String, dynamic>>[];
+    for (final s in raw) {
+      try {
+        final decoded = jsonDecode(s);
+        if (decoded is Map) {
+          out.add(Map<String, dynamic>.from(decoded));
+        }
+      } catch (_) {}
+    }
+    _pruneUsedEntries(out);
+    return out;
+  }
+
+  static void _pruneUsedEntries(List<Map<String, dynamic>> entries) {
+    final cutoff = DateTime.now().subtract(_maxUsedAge);
+    entries.removeWhere((e) {
+      final usedAt = DateTime.tryParse(e['used_at']?.toString() ?? '');
+      return usedAt != null && usedAt.isBefore(cutoff);
+    });
+  }
+
   static List<BankSmsPayment> _decodePayments(List<String>? raw) {
     if (raw == null || raw.isEmpty) return [];
     final out = <BankSmsPayment>[];
@@ -291,6 +426,9 @@ class BankSmsService {
         final decoded = jsonDecode(s);
         if (decoded is Map<String, dynamic>) {
           final p = BankSmsPayment.fromJson(decoded);
+          if (p.nroTransaccionBanco.isNotEmpty) out.add(p);
+        } else if (decoded is Map) {
+          final p = BankSmsPayment.fromJson(Map<String, dynamic>.from(decoded));
           if (p.nroTransaccionBanco.isNotEmpty) out.add(p);
         }
       } catch (_) {
@@ -311,9 +449,8 @@ class BankSmsService {
 
   /// Busca en el buffer un pago cuyo monto coincida con [expectedAmount].
   ///
-  /// Ante varios candidatos devuelve el más reciente. Si dos ventas del mismo
-  /// monto compiten, el `nroTransaccionBanco` con índice unique en BD impide
-  /// que el mismo SMS confirme ambas.
+  /// Ante varios candidatos devuelve el más reciente. Los ya usados (mismo
+  /// id o mismo mensaje) no se ofrecen de nuevo.
   Future<BankSmsPayment?> findMatchingPayment(double expectedAmount) async {
     final pending = await getPendingPayments();
     for (final p in pending) {

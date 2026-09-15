@@ -771,41 +771,17 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   Future<void> _activateOfflineMode() async {
     try {
-      final hadOfflineData = await _userPreferencesService.hasOfflineData();
-
-      // Siempre intentar una sincronización fresca antes de activar el modo
-      // offline: si ya había datos offline de una sesión/sync anterior (p.ej.
-      // de antes de un cambio de almacén del TPV o un fix en el servidor),
-      // activar directamente con ese cache dejaba al vendedor con datos
-      // desactualizados (inventario, ubicaciones, precios, etc.) hasta el
-      // próximo ciclo del AutoSyncService. Solo si la sincronización falla Y
-      // no había datos previos bloqueamos la activación; si falla pero ya
-      // había datos, seguimos con el cache existente (mejor que nada).
-      final synced = await _forceSyncNow(blockWhenRunning: false);
-      if (!synced && !hadOfflineData) {
+      final synced = await _forceSyncNow(
+        blockWhenRunning: false,
+        offlineReadinessOnly: true,
+      );
+      if (!synced) {
         if (mounted) {
-          setState(() {
-            _isOfflineModeEnabled = false;
-          });
+          setState(() => _isOfflineModeEnabled = false);
         }
-        return;
-      }
-      if (!synced && hadOfflineData) {
         _showAutoSyncBlockedMessage(
-          '⚠️ No se pudo sincronizar; se usarán los últimos datos offline guardados.',
+          'No se activó el modo offline: faltan módulos obligatorios. Revisa el detalle de sincronización.',
         );
-      }
-
-      final isReady = await _userPreferencesService.hasOfflineData();
-      if (!isReady) {
-        _showAutoSyncBlockedMessage(
-          '⚠️ No hay datos offline disponibles. Sincroniza primero.',
-        );
-        if (mounted) {
-          setState(() {
-            _isOfflineModeEnabled = false;
-          });
-        }
         return;
       }
 
@@ -2088,15 +2064,17 @@ class _SettingsScreenState extends State<SettingsScreen>
             : 'Turno actual';
 
     return ListTile(
-      onTap: status == UserPreferencesService.offlineTurnoStatusClosedPending
-          ? () {
-              Navigator.pushNamed(
-                context,
-                '/cierre-pendiente',
-                arguments: (localId != null && localId.isNotEmpty) ? localId : null,
-              );
-            }
-          : null,
+      onTap:
+          status == UserPreferencesService.offlineTurnoStatusClosedPending
+              ? () {
+                Navigator.pushNamed(
+                  context,
+                  '/cierre-pendiente',
+                  arguments:
+                      (localId != null && localId.isNotEmpty) ? localId : null,
+                );
+              }
+              : null,
       leading: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
@@ -2769,9 +2747,10 @@ class _SettingsScreenState extends State<SettingsScreen>
     Navigator.pushNamed(
       context,
       '/cierre-pendiente',
-      arguments: (localId != null && localId.isNotEmpty && localId != 'N/A')
-          ? localId
-          : null,
+      arguments:
+          (localId != null && localId.isNotEmpty && localId != 'N/A')
+              ? localId
+              : null,
     );
   }
 
@@ -2844,7 +2823,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                     subtitle: const Text(
                       'Detalle de lo guardado para sincronizar',
                     ),
-                    trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+                    trailing: const Icon(
+                      Icons.chevron_right,
+                      color: Colors.grey,
+                    ),
                     onTap: () {
                       Navigator.pop(context);
                       _openCierrePendienteDetalle();
@@ -3428,7 +3410,10 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   /// Forzar sincronización inmediata
-  Future<bool> _forceSyncNow({bool blockWhenRunning = true}) async {
+  Future<bool> _forceSyncNow({
+    bool blockWhenRunning = true,
+    bool offlineReadinessOnly = false,
+  }) async {
     final status = await _getIntegrationStatusSafe();
 
     if (status != null) {
@@ -3475,20 +3460,36 @@ class _SettingsScreenState extends State<SettingsScreen>
         ),
       );
 
-      // Sincronizar todos los módulos como hace la sync por módulos.
+      const requiredOfflineModules = {
+        SyncModule.license,
+        SyncModule.storeConfig,
+        SyncModule.credentials,
+        SyncModule.paymentMethods,
+        SyncModule.promotions,
+        SyncModule.categories,
+        SyncModule.products,
+        SyncModule.layouts,
+        SyncModule.turno,
+        SyncModule.egresos,
+        SyncModule.orders,
+        SyncModule.shiftWorkers,
+        SyncModule.defaultCashFund,
+      };
+      var syncSucceeded = false;
       final wasOffline = await _userPreferencesService.isOfflineModeEnabled();
       if (wasOffline) {
         await _userPreferencesService.setOfflineMode(false);
       }
       try {
         final result = await AutoSyncService().syncModules(
-          SyncModule.values.toSet(),
+          offlineReadinessOnly
+              ? requiredOfflineModules
+              : SyncModule.values.toSet(),
+          resumeFromCheckpoint: !offlineReadinessOnly,
         );
+        syncSucceeded = result.success;
         if (!mounted) return false;
         await _showSyncResultFeedback(result);
-        if (!result.success && !result.hasProgress) {
-          return false;
-        }
       } finally {
         if (wasOffline) {
           await _userPreferencesService.setOfflineMode(true);
@@ -3496,7 +3497,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       }
 
       unawaited(_refreshDataSection());
-      return true;
+      return syncSucceeded;
     } catch (e) {
       print('❌ Error forzando sincronización: $e');
 
@@ -3545,6 +3546,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         content: Text(short),
         backgroundColor: bg,
         duration: const Duration(seconds: 5),
+        persist: false,
         action: SnackBarAction(
           label: 'Detalle',
           textColor: Colors.white,
@@ -3770,8 +3772,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                             }
                             _showTurnoDetailDialog(
                               t,
-                              onSync:
-                                  () => setDialogState(() => refreshKey++),
+                              onSync: () => setDialogState(() => refreshKey++),
                             );
                           },
                         );
@@ -4015,6 +4016,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     final sync = AutoSyncService();
     final result = await sync.syncOfflineTurnoAfterLocalCierre(
       localId: localId,
+      allowWhileOffline: true,
     );
     print(
       '[TURNO_SYNC] Settings._syncSingleTurno END '
@@ -4124,7 +4126,13 @@ class _SyncDialogState extends State<_SyncDialog> {
               successfulSteps.add(task['name']!);
               break;
             case 'egresos':
-              await _syncEgresos();
+              // Subir cola egresos_offline (+ turnos si hace falta el id_turno),
+              // luego refrescar cache desde servidor.
+              await AutoSyncService().syncModules({
+                SyncModule.uploadTurno,
+                SyncModule.uploadEgresos,
+                SyncModule.egresos,
+              });
               successfulSteps.add(task['name']!);
               break;
             case 'store_config':
@@ -4806,7 +4814,12 @@ class _SyncDialogState extends State<_SyncDialog> {
             await _processCierreTurno(operation['data']);
             break;
           case 'egreso':
-            await _processEgresoOffline(operation['data']);
+            // La cola real es `egresos_offline` (AutoSync). No re-subir desde
+            // pending_operations: duplicaría con RPC no idempotente.
+            print(
+              'ℹ️ pending_operations type=egreso omitido '
+              '(sync vía AutoSync / egresos_offline)',
+            );
             break;
           case 'order_status_change':
             await _processOrderStatusChange(operation);
@@ -5010,7 +5023,8 @@ class _SyncDialogState extends State<_SyncDialog> {
           'id_ubicacion': inventoryMetadata['id_ubicacion'],
           // FASE 4: se prefiere la presentación guardada en el ítem; la de
           // `inventory_metadata` queda como respaldo para órdenes viejas.
-          'id_presentacion': itemData['id_presentacion'] ??
+          'id_presentacion':
+              itemData['id_presentacion'] ??
               inventoryMetadata['id_presentacion'],
           'cantidad': itemData['cantidad'],
           'precio_unitario': itemData['precio_unitario'],
@@ -5689,7 +5703,8 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
           'id_ubicacion': inventoryMetadata['id_ubicacion'],
           // FASE 4: se prefiere la presentación guardada en el ítem; la de
           // `inventory_metadata` queda como respaldo para órdenes viejas.
-          'id_presentacion': itemData['id_presentacion'] ??
+          'id_presentacion':
+              itemData['id_presentacion'] ??
               inventoryMetadata['id_presentacion'],
           'cantidad': itemData['cantidad'],
           'precio_unitario': itemData['precio_unitario'],
@@ -5975,7 +5990,8 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
           'id_ubicacion': inventoryMetadata['id_ubicacion'],
           // FASE 4: se prefiere la presentación guardada en el ítem; la de
           // `inventory_metadata` queda como respaldo para órdenes viejas.
-          'id_presentacion': itemData['id_presentacion'] ??
+          'id_presentacion':
+              itemData['id_presentacion'] ??
               inventoryMetadata['id_presentacion'],
           'cantidad': itemData['cantidad'],
           'precio_unitario': itemData['precio_unitario'],

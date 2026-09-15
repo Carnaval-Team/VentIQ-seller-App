@@ -11,6 +11,11 @@ class BillCountDialog extends StatefulWidget {
   final String confirmLabel;
   final String cancelLabel;
 
+  /// Monto en efectivo a verificar. Si hay pago mixto (efectivo + transferencia),
+  /// debe ser solo la parte en efectivo — no el total de la orden.
+  /// Si es null, se usa [order.total].
+  final double? expectedAmount;
+
   const BillCountDialog({
     Key? key,
     required this.order,
@@ -19,6 +24,7 @@ class BillCountDialog extends StatefulWidget {
     this.closeOnly = false,
     this.confirmLabel = 'Confirmar Pago',
     this.cancelLabel = 'Cancelar',
+    this.expectedAmount,
   }) : super(key: key);
 
   @override
@@ -38,11 +44,19 @@ class _BillCountDialogState extends State<BillCountDialog> {
   double _cambioCupUsd = 420.0;
   bool _isLoading = true;
 
+  /// Objetivo del conteo: efectivo de la orden (o total si no se pasó override).
+  double get _targetAmount =>
+      widget.expectedAmount ?? widget.order.total;
+
+  bool get _isCashPortionOnly =>
+      widget.expectedAmount != null &&
+      (widget.expectedAmount! - widget.order.total).abs() > 0.009;
+
   @override
   void initState() {
     super.initState();
     _initialize();
-    _remainingAmount = widget.order.total;
+    _remainingAmount = _targetAmount;
   }
 
   Future<void> _initialize() async {
@@ -115,7 +129,7 @@ class _BillCountDialogState extends State<BillCountDialog> {
                 .toList();
         _billCounts.clear();
         _totalAmount = 0.0;
-        _remainingAmount = widget.order.total;
+        _remainingAmount = _targetAmount;
 
         for (final controller in _controllers.values) {
           controller.dispose();
@@ -190,10 +204,11 @@ class _BillCountDialogState extends State<BillCountDialog> {
     }
 
     _totalAmount = total;
-    _remainingAmount = widget.order.total - total;
+    _remainingAmount = _targetAmount - total;
 
     print('💰 Cálculo de totales:');
     print('  - Moneda: $_selectedCurrency');
+    print('  - Objetivo (efectivo): $_targetAmount');
     print('  - Total contado: $_totalAmount');
     print('  - Tipo de cambio USD: $_cambioCupUsd');
     print('  - Falta/Sobra: $_remainingAmount');
@@ -610,15 +625,17 @@ class _BillCountDialogState extends State<BillCountDialog> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text(
-                                'Total a pagar:',
-                                style: TextStyle(
+                              Text(
+                                _isCashPortionOnly
+                                    ? 'Efectivo a contar:'
+                                    : 'Total a pagar:',
+                                style: const TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),
                               Text(
-                                '\$${widget.order.total.toStringAsFixed(2)} CUP',
+                                '\$${_targetAmount.toStringAsFixed(2)} CUP',
                                 style: const TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.bold,
@@ -627,6 +644,28 @@ class _BillCountDialogState extends State<BillCountDialog> {
                               ),
                             ],
                           ),
+                          if (_isCashPortionOnly) ...[
+                            const SizedBox(height: 2),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Total orden:',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                                Text(
+                                  '\$${widget.order.total.toStringAsFixed(2)} CUP',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                           const SizedBox(height: 4),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,

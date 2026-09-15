@@ -692,6 +692,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
   }
 
   void _showBillCountDialog(Order order) {
+    final cashExpected = order.items
+        .where((item) => item.paymentMethod?.esEfectivo ?? false)
+        .fold<double>(0.0, (sum, item) => sum + item.subtotal);
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -700,6 +703,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
               backgroundColor: Colors.white,
               body: BillCountDialog(
                 order: order,
+                expectedAmount:
+                    cashExpected > 0 ? cashExpected : order.total,
                 userPreferencesService: _userPreferencesService,
                 closeOnly: true,
                 confirmLabel: 'Cerrar',

@@ -41,6 +41,7 @@ class DeviceOfflinePrepService {
     SyncModule.orders,
     SyncModule.turno,
     SyncModule.egresos,
+    SyncModule.defaultCashFund,
   };
 
   Future<void> assertCanPrepare() async {

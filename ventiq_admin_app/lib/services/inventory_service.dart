@@ -298,6 +298,7 @@ class InventoryService {
     DateTime? fechaDesde,
     DateTime? fechaHasta,
     int? tipoOperacionId,
+    List<int>? estados,
     int? medioPagoId,
     bool? contabilizada,
     int? limite,
@@ -332,7 +333,7 @@ class InventoryService {
           'p_id_tienda': idTienda,
           'p_id_tpv': null,
           'p_id_tipo_operacion': tipoOperacionId,
-          'p_estados': null,
+          'p_estados': estados,
           // Usar componentes locales (yyyy-MM-dd); toIso8601String puede
           // correr el día por zona horaria (sobre todo en web).
           'p_fecha_desde': _toDateParam(effectiveFechaDesde),
@@ -367,6 +368,14 @@ class InventoryService {
       print('Error al obtener operaciones de inventario: $e');
       rethrow;
     }
+  }
+
+  static Future<List<Map<String, dynamic>>> getOperationStatuses() async {
+    final response = await _supabase
+        .from('app_nom_estado_operacion')
+        .select('id, denominacion')
+        .order('id');
+    return List<Map<String, dynamic>>.from(response);
   }
 
   static Future<List<Map<String, dynamic>>> getPaymentMethods() async {

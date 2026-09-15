@@ -1,8 +1,50 @@
 {
-  "current_version": "2.4.5",
-  "build": 847,
+  "current_version": "2.4.6",
+  "build": 848,
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.4.6",
+      "date": "2026-09-12",
+      "title": "Offline más seguro: turnos, egresos, pagos y conteo de efectivo",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Apertura y cierre ya no se duplican al salir de offline",
+          "description": "Con el modo offline activo, la apertura y el cierre se guardan solo en el dispositivo y se suben al desactivar el modo offline. Corregimos el caso en que al sincronizar se creaban dos aperturas en el servidor; el cierre sigue registrándose una sola vez."
+        },
+        {
+          "type": "improvement",
+          "title": "Cierre directo en local si estás offline o sin red",
+          "description": "Si el modo offline está activado o no hay conexión, el cierre se guarda localmente de inmediato. Ya no intenta primero el servidor ni muestra el aviso de fallo online seguido de un respaldo offline."
+        },
+        {
+          "type": "improvement",
+          "title": "Consulta el cierre guardado antes de sincronizar",
+          "description": "Puedes revisar el detalle completo del cierre pendiente (cuadre, inventario, ventas y egresos) desde el menú, Configuración o Admin, sin esperar a que se suba al servidor."
+        },
+        {
+          "type": "fix",
+          "title": "Egresos offline se sincronizan bien al volver online",
+          "description": "Los egresos creados sin conexión quedan en cola, se asocian al turno correcto al sincronizar y ya no se pierden de la vista ni se duplican. Si marcas Contabilizar en Fondo de Caja, el ingreso a la cuenta predeterminada también se aplica al subir."
+        },
+        {
+          "type": "improvement",
+          "title": "El conteo de billetes verifica solo el efectivo",
+          "description": "Si la orden combina efectivo y transferencia, Contar Billetes pide únicamente la parte en efectivo. Si todo es efectivo, sigue pidiendo el total de la orden."
+        },
+        {
+          "type": "improvement",
+          "title": "Confirmación SMS de transferencia más precisa",
+          "description": "Al esperar el SMS de PAGOxMOVIL, la app busca el monto de la transferencia (no el total mixto). Guarda el identificador del banco o el mensaje completo y evita que el mismo SMS confirme varias ventas del mismo importe."
+        },
+        {
+          "type": "fix",
+          "title": "Pagos de la venta offline viajan juntos con la orden",
+          "description": "Al sincronizar ventas hechas offline, el desglose de pagos se registra en la misma operación. Si faltan los pagos, la venta no se marca como sincronizada, para que no quede cobrada a medias en el servidor."
+        }
+      ]
+    },
     {
       "version": "2.4.5",
       "date": "2026-08-27",

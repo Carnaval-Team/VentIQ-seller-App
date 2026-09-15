@@ -10,8 +10,6 @@ class SupplierPdfGenerator {
     required DateTime fechaInicio,
     required DateTime fechaFin,
     required List<OrderPaymentDetail> orders,
-    double pctEfectivo = 5,
-    double pctTransferencia = 15,
   }) async {
     final pdf = pw.Document();
 
@@ -23,12 +21,7 @@ class SupplierPdfGenerator {
     final dateFormat = DateFormat('dd/MM/yyyy');
     final numberFormat = NumberFormat('#,##0.00', 'es');
 
-    // Calculations
-    final cashDiscount = supplier.totalCash * (pctEfectivo / 100);
-    final netCash = supplier.totalCash - cashDiscount;
-    final transferDiscount = supplier.totalTransfer * (pctTransferencia / 100);
-    final netTransfer = supplier.totalTransfer - transferDiscount;
-    final totalToPay = netCash + netTransfer;
+    final totalToPay = supplier.netCash + supplier.netTransfer;
 
     pdf.addPage(
       pw.MultiPage(
@@ -40,14 +33,8 @@ class SupplierPdfGenerator {
             pw.SizedBox(height: 20),
             _buildPaymentSummaryTable(
               supplier,
-              cashDiscount,
-              netCash,
-              transferDiscount,
-              netTransfer,
               totalToPay,
               numberFormat,
-              pctEfectivo: pctEfectivo,
-              pctTransferencia: pctTransferencia,
             ),
             pw.SizedBox(height: 20),
             pw.Text(
@@ -113,15 +100,9 @@ class SupplierPdfGenerator {
 
   static pw.Widget _buildPaymentSummaryTable(
     SupplierPaymentSummary supplier,
-    double cashDiscount,
-    double netCash,
-    double transferDiscount,
-    double netTransfer,
     double totalToPay,
-    NumberFormat numberFormat, {
-    double pctEfectivo = 5,
-    double pctTransferencia = 15,
-  }) {
+    NumberFormat numberFormat,
+  ) {
     return pw.Container(
       padding: const pw.EdgeInsets.all(10),
       decoration: pw.BoxDecoration(
@@ -133,10 +114,7 @@ class SupplierPdfGenerator {
         children: [
           _buildSummaryRow(
             'Efectivo',
-            supplier.totalCash,
-            '${pctEfectivo.toStringAsFixed(0)}%',
-            cashDiscount,
-            netCash,
+            supplier.netCash,
             numberFormat,
           ),
           pw.Padding(
@@ -145,10 +123,7 @@ class SupplierPdfGenerator {
           ),
           _buildSummaryRow(
             'Transferencia',
-            supplier.totalTransfer,
-            '${pctTransferencia.toStringAsFixed(0)}%',
-            transferDiscount,
-            netTransfer,
+            supplier.netTransfer,
             numberFormat,
           ),
           pw.Padding(
@@ -182,72 +157,22 @@ class SupplierPdfGenerator {
 
   static pw.Widget _buildSummaryRow(
     String label,
-    double total,
-    String discountPercent,
-    double discountAmount,
-    double net,
+    double amount,
     NumberFormat numberFormat,
   ) {
     return pw.Row(
       children: [
         pw.Expanded(
-          flex: 2,
-          child: pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Text(
-                label,
-                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-              ),
-              pw.Text(
-                'Total: \$${numberFormat.format(total)}',
-                style: const pw.TextStyle(
-                  fontSize: 10,
-                  color: PdfColors.grey600,
-                ),
-              ),
-            ],
+          child: pw.Text(
+            label,
+            style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
           ),
         ),
-        pw.Expanded(
-          flex: 2,
-          child: pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.end,
-            children: [
-              pw.Text(
-                'Desc. ($discountPercent)',
-                style: const pw.TextStyle(
-                  fontSize: 10,
-                  color: PdfColors.red700,
-                ),
-              ),
-              pw.Text(
-                '-\$${numberFormat.format(discountAmount)}',
-                style: const pw.TextStyle(color: PdfColors.red700),
-              ),
-            ],
-          ),
-        ),
-        pw.Expanded(
-          flex: 2,
-          child: pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.end,
-            children: [
-              pw.Text(
-                'Neto',
-                style: pw.TextStyle(
-                  fontWeight: pw.FontWeight.bold,
-                  fontSize: 10,
-                ),
-              ),
-              pw.Text(
-                '\$${numberFormat.format(net)}',
-                style: pw.TextStyle(
-                  fontWeight: pw.FontWeight.bold,
-                  fontSize: 12,
-                ),
-              ),
-            ],
+        pw.Text(
+          '\$${numberFormat.format(amount)}',
+          style: pw.TextStyle(
+            fontWeight: pw.FontWeight.bold,
+            fontSize: 12,
           ),
         ),
       ],

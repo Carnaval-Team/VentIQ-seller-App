@@ -45,11 +45,9 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   int? _tipoOperacionId;
   List<Map<String, dynamic>> _tiposOperacion = [];
   bool _isLoadingTipos = false;
-  List<Map<String, dynamic>> _metodosPago = [];
-  int? _metodoPagoId;
-  bool? _contabilizadaFiltro;
+  List<Map<String, dynamic>> _estadosOperacion = [];
+  int? _estadoOperacionId;
   bool _filtersExpanded = true;
-  final Set<int> _updatingAccountingIds = {};
 
   // Pagination
   int _currentPage = 1;
@@ -93,7 +91,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     print('  • Items por página: $_itemsPerPage');
 
     _loadTiposOperacion();
-    _loadMetodosPago();
+    _loadEstadosOperacion();
     _initPermissionsAndOperations();
     _searchController.addListener(_onSearchChanged);
     _montoController.addListener(_onMontoChanged);
@@ -189,8 +187,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         fechaDesde: _fechaDesde,
         fechaHasta: _fechaHasta,
         tipoOperacionId: _tipoOperacionId,
-        medioPagoId: _metodoPagoId,
-        contabilizada: _contabilizadaFiltro,
+        estados: _estadoOperacionId == null ? null : [_estadoOperacionId!],
         limite: _itemsPerPage,
         pagina: _currentPage,
       );
@@ -707,8 +704,6 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     setState(() {
       _setCurrentMonthRange();
       _tipoOperacionId = null;
-      _metodoPagoId = null;
-      _contabilizadaFiltro = null;
       _montoFiltro = null;
     });
     _montoController.clear();
@@ -716,59 +711,16 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     _loadOperations();
   }
 
-  Future<void> _loadMetodosPago() async {
+  Future<void> _loadEstadosOperacion() async {
     try {
-      final methods = await InventoryService.getPaymentMethods();
+      final estados = await InventoryService.getOperationStatuses();
       if (!mounted) return;
-      setState(() => _metodosPago = methods);
+      setState(() => _estadosOperacion = estados);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al cargar métodos de pago: $e')),
+        SnackBar(content: Text('Error al cargar estados: $e')),
       );
-    }
-  }
-
-  Future<void> _setAccountingStatus(
-    Map<String, dynamic> operation,
-    bool contabilizada,
-  ) async {
-    final operationId = (operation['id'] as num).toInt();
-    if (_updatingAccountingIds.contains(operationId)) return;
-    setState(() => _updatingAccountingIds.add(operationId));
-    try {
-      await InventoryService.updateOperationAccountingStatus(
-        operationId: operationId,
-        contabilizada: contabilizada,
-      );
-      if (!mounted) return;
-      setState(() {
-        operation['contabilizada'] = contabilizada;
-        operation['contabilizada_at'] = DateTime.now().toIso8601String();
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            contabilizada
-                ? 'Operación marcada como contabilizada'
-                : 'Operación marcada como no contabilizada',
-          ),
-        ),
-      );
-      if (_contabilizadaFiltro != null &&
-          _contabilizadaFiltro != contabilizada) {
-        _currentPage = 1;
-        await _loadOperations();
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo actualizar la operación: $e')),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _updatingAccountingIds.remove(operationId));
-      }
     }
   }
 
@@ -958,7 +910,47 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Column(children: [_buildFilters(), _buildOperationsList()]),
+      body: Column(
+        children: [
+          _buildStatusFilter(),
+          _buildFilters(),
+          _buildOperationsList(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusFilter() {
+    return Material(
+      color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+        child: DropdownButtonFormField<int?>(
+          value: _estadoOperacionId,
+          decoration: const InputDecoration(
+            labelText: 'Estado',
+            prefixIcon: Icon(Icons.info_outline),
+            border: OutlineInputBorder(),
+          ),
+          items: [
+            const DropdownMenuItem<int?>(
+              value: null,
+              child: Text('Todos los estados'),
+            ),
+            ..._estadosOperacion.map(
+              (estado) => DropdownMenuItem<int?>(
+                value: (estado['id'] as num).toInt(),
+                child: Text(estado['denominacion'].toString()),
+              ),
+            ),
+          ],
+          onChanged: (value) {
+            setState(() => _estadoOperacionId = value);
+            _currentPage = 1;
+            _loadOperations();
+          },
+        ),
+      ),
     );
   }
 
@@ -967,8 +959,6 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         _fechaDesde != null ||
         _fechaHasta != null ||
         _tipoOperacionId != null ||
-        _metodoPagoId != null ||
-        _contabilizadaFiltro != null ||
         _montoFiltro != null;
     return Container(
       decoration: BoxDecoration(
@@ -1051,64 +1041,6 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                   icon: const Icon(Icons.category_outlined),
                   label: Text(
                     _tipoOperacionNombreSeleccionado ?? 'Tipo de operación',
-                  ),
-                ),
-                SizedBox(
-                  width: 230,
-                  child: DropdownButtonFormField<int?>(
-                    value: _metodoPagoId,
-                    decoration: const InputDecoration(
-                      labelText: 'Método de pago',
-                      prefixIcon: Icon(Icons.payment),
-                      border: OutlineInputBorder(),
-                    ),
-                    items: [
-                      const DropdownMenuItem<int?>(
-                        value: null,
-                        child: Text('Todos'),
-                      ),
-                      ..._metodosPago.map(
-                        (method) => DropdownMenuItem<int?>(
-                          value: (method['id'] as num).toInt(),
-                          child: Text(method['denominacion'].toString()),
-                        ),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      setState(() => _metodoPagoId = value);
-                      _currentPage = 1;
-                      _loadOperations();
-                    },
-                  ),
-                ),
-                SizedBox(
-                  width: 220,
-                  child: DropdownButtonFormField<bool?>(
-                    value: _contabilizadaFiltro,
-                    decoration: const InputDecoration(
-                      labelText: 'Contabilización',
-                      prefixIcon: Icon(Icons.fact_check_outlined),
-                      border: OutlineInputBorder(),
-                    ),
-                    items: const [
-                      DropdownMenuItem<bool?>(
-                        value: null,
-                        child: Text('Todas'),
-                      ),
-                      DropdownMenuItem<bool?>(
-                        value: true,
-                        child: Text('Contabilizadas'),
-                      ),
-                      DropdownMenuItem<bool?>(
-                        value: false,
-                        child: Text('No contabilizadas'),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      setState(() => _contabilizadaFiltro = value);
-                      _currentPage = 1;
-                      _loadOperations();
-                    },
                   ),
                 ),
               ],
@@ -1206,11 +1138,6 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     final cantidadItems = _calculateTotalItems(operation);
     final estadoNombre = operation['estado_nombre'] ?? 'Sin estado';
     final observaciones = operation['observaciones'] ?? '';
-    final contabilizada = operation['contabilizada'] == true;
-    final tieneEfectivo = operation['tiene_efectivo'] == true;
-    final operationId = (operation['id'] as num).toInt();
-    final updatingAccounting = _updatingAccountingIds.contains(operationId);
-
     // Debug: Log the exact status we're getting from the database
     print(
       '📋 Operation Card - ID: ${operation['id']}, Tipo: "$tipoOperacion", Accion: "$accion", Estado: "$estadoNombre"',
@@ -1326,22 +1253,6 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                       ),
                     ),
                   ],
-                  if (_isVentaOperation(operation)) ...[
-                    const SizedBox(width: 8),
-                    Chip(
-                      avatar: Icon(
-                        contabilizada
-                            ? Icons.check_circle
-                            : Icons.pending_outlined,
-                        size: 16,
-                        color: contabilizada ? Colors.green : Colors.orange,
-                      ),
-                      label: Text(
-                        contabilizada ? 'Contabilizada' : 'No contabilizada',
-                      ),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ],
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
@@ -1408,36 +1319,6 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                   ),
                 ],
               ),
-              if (_isVentaOperation(operation) &&
-                  tieneEfectivo &&
-                  (_userRole == UserRole.gerente ||
-                      _userRole == UserRole.supervisor)) ...[
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: OutlinedButton.icon(
-                    onPressed: updatingAccounting
-                        ? null
-                        : () => _setAccountingStatus(operation, !contabilizada),
-                    icon: updatingAccounting
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Icon(
-                            contabilizada
-                                ? Icons.undo
-                                : Icons.fact_check_outlined,
-                          ),
-                    label: Text(
-                      contabilizada
-                          ? 'Marcar no contabilizada'
-                          : 'Marcar contabilizada',
-                    ),
-                  ),
-                ),
-              ],
             ],
           ),
         ),

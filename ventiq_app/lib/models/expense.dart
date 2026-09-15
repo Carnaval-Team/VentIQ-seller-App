@@ -25,17 +25,30 @@ class Expense {
 
   factory Expense.fromJson(Map<String, dynamic> json) {
     return Expense(
-      idEgreso: json['id_egreso'] ?? 0,
+      idEgreso: _parseIdEgreso(json['id_egreso']),
       montoEntrega: (json['monto_entrega'] ?? 0.0).toDouble(),
       motivoEntrega: json['motivo_entrega'] ?? '',
       nombreRecibe: json['nombre_recibe'] ?? '',
       nombreAutoriza: json['nombre_autoriza'] ?? '',
       fechaEntrega: DateTime.parse(json['fecha_entrega']),
-      idMedioPago: json['id_medio_pago'],
-      turnoEstado: json['turno_estado'] ?? 0,
+      idMedioPago: json['id_medio_pago'] is int
+          ? json['id_medio_pago'] as int
+          : int.tryParse('${json['id_medio_pago'] ?? ''}'),
+      turnoEstado: json['turno_estado'] is int
+          ? json['turno_estado'] as int
+          : int.tryParse('${json['turno_estado'] ?? 0}') ?? 0,
       medioPago: json['medio_pago'],
       esDigital: json['es_digital'],
     );
+  }
+
+  /// Offline puede guardar `id_egreso` como string (offline_id); no romper el
+  /// parseo tipado.
+  static int _parseIdEgreso(dynamic raw) {
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    if (raw is String) return int.tryParse(raw) ?? 0;
+    return 0;
   }
 
   // Método para crear una copia con datos enriquecidos

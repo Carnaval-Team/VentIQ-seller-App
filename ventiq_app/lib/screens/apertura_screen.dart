@@ -504,7 +504,7 @@ class _AperturaScreenState extends State<AperturaScreen>
           _checkingExistingShift = false;
         });
       }
-      _loadPreviousShiftSummary();
+
     } catch (e) {
       print('Error checking existing shift: $e');
       // Sin snackbar de conexión: en offline/local se continúa con cache.
@@ -516,7 +516,7 @@ class _AperturaScreenState extends State<AperturaScreen>
         });
       }
       _loadUserData();
-      _loadPreviousShiftSummary();
+
     }
   }
 
@@ -1115,10 +1115,6 @@ class _AperturaScreenState extends State<AperturaScreen>
                           ],
                         ),
                       ),
-
-                      const SizedBox(height: 20),
-
-                      _buildPreviousShiftSummary(),
 
                       const SizedBox(height: 20),
 
@@ -2522,7 +2518,7 @@ class _AperturaScreenState extends State<AperturaScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'Apertura creada offline. Se sincronizará cuando tengas conexión.',
+              'Apertura creada offline. Se sincronizará al desactivar el modo offline.',
             ),
             backgroundColor: Colors.orange,
             duration: Duration(seconds: 3),

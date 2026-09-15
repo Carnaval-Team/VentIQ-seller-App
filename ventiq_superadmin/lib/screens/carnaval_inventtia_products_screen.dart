@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../services/carnaval_inventtia_products_service.dart';
@@ -36,6 +37,7 @@ class _CarnavalInventtiaProductsScreenState
   int _stockTotal = 0;
   String _stockSearch = '';
   List<Map<String, dynamic>> _stockItems = [];
+  Timer? _stockSearchDebounce;
 
   // Prices table state
   final ScrollController _pricesScroll = ScrollController();
@@ -46,6 +48,7 @@ class _CarnavalInventtiaProductsScreenState
   int _pricesTotal = 0;
   String _pricesSearch = '';
   List<Map<String, dynamic>> _pricesItems = [];
+  Timer? _pricesSearchDebounce;
 
   @override
   void initState() {
@@ -57,6 +60,8 @@ class _CarnavalInventtiaProductsScreenState
 
   @override
   void dispose() {
+    _stockSearchDebounce?.cancel();
+    _pricesSearchDebounce?.cancel();
     _stockScroll.dispose();
     _pricesScroll.dispose();
     super.dispose();
@@ -581,8 +586,14 @@ class _CarnavalInventtiaProductsScreenState
                       isDense: true,
                     ),
                     onChanged: (v) {
-                      _stockSearch = v;
-                      _loadStock(reset: true);
+                      _stockSearchDebounce?.cancel();
+                      _stockSearchDebounce = Timer(
+                        const Duration(milliseconds: 500),
+                        () {
+                          _stockSearch = v;
+                          _loadStock(reset: true);
+                        },
+                      );
                     },
                   ),
                 ),
@@ -788,8 +799,14 @@ class _CarnavalInventtiaProductsScreenState
                       isDense: true,
                     ),
                     onChanged: (v) {
-                      _pricesSearch = v;
-                      _loadPrices(reset: true);
+                      _pricesSearchDebounce?.cancel();
+                      _pricesSearchDebounce = Timer(
+                        const Duration(milliseconds: 500),
+                        () {
+                          _pricesSearch = v;
+                          _loadPrices(reset: true);
+                        },
+                      );
                     },
                   ),
                 ),

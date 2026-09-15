@@ -64,7 +64,9 @@ class ShiftWorkersService {
   }
 
   /// Obtener trabajadores disponibles de la tienda
-  static Future<List<AvailableWorker>> getAvailableWorkers() async {
+  static Future<List<AvailableWorker>> getAvailableWorkers({
+    bool fallbackToCache = true,
+  }) async {
     try {
       print('🔍 Obteniendo trabajadores disponibles...');
 
@@ -110,7 +112,8 @@ class ShiftWorkersService {
       return workers;
     } catch (e) {
       print('❌ Error obteniendo trabajadores disponibles: $e');
-      
+      if (!fallbackToCache) rethrow;
+
       // Intentar cargar desde cache
       try {
         return await _getAvailableWorkersOffline();

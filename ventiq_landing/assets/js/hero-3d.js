@@ -69,7 +69,7 @@ async function bootScene() {
     key.position.set(4, 5, 4);
     scene.add(key);
 
-    const rim = new THREE.DirectionalLight(0x7c3aed, 1.4);
+    const rim = new THREE.DirectionalLight(0x163353, 1.4);
     rim.position.set(-4, -2, -3);
     scene.add(rim);
 
@@ -87,7 +87,7 @@ async function bootScene() {
     const slabs = [];
     const slabConfigs = [
         {
-            ringColor: 0x7c3aed,
+            ringColor: 0x163353,
             texture: 'assets/images/screenshoot.jpg',
             x: -1.55, y:  0.55, z: -0.4, rot: -0.18, scale: 1.0,
         },
@@ -342,10 +342,10 @@ function makeGradientEnv(THREE, pmrem) {
     canvas.height = 256;
     const ctx = canvas.getContext('2d');
     const grad = ctx.createLinearGradient(0, 0, 0, 256);
-    grad.addColorStop(0.0, '#1E1B4B');
-    grad.addColorStop(0.35, '#7C3AED');
-    grad.addColorStop(0.65, '#4F46E5');
-    grad.addColorStop(1.0, '#22D3EE');
+    grad.addColorStop(0.0, '#0F2438');
+    grad.addColorStop(0.35, '#163353');
+    grad.addColorStop(0.65, '#1E4A6E');
+    grad.addColorStop(1.0, '#3A9BB8');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 512, 256);
 

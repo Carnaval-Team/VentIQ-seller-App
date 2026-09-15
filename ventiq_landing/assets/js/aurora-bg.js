@@ -33,11 +33,11 @@
     // PS3 XMB-style "wave bands": 5 stacked sine waves with shifted phases & colors.
     // Drawn additively so colors mix into iridescent ribbons.
     const bands = [
-        { color: 'rgba(124, 58, 237, 0.55)', amp: 0.18, freq: 0.0022, speed: 0.22, phase: 0.0,  yBase: 0.42, thick: 220 },
-        { color: 'rgba( 79, 70, 229, 0.50)', amp: 0.22, freq: 0.0018, speed: 0.18, phase: 1.5,  yBase: 0.55, thick: 260 },
-        { color: 'rgba( 37, 99, 235, 0.42)', amp: 0.16, freq: 0.0026, speed: 0.28, phase: 3.0,  yBase: 0.32, thick: 200 },
-        { color: 'rgba( 34, 211, 238, 0.38)', amp: 0.20, freq: 0.0020, speed: 0.16, phase: 4.5,  yBase: 0.62, thick: 240 },
-        { color: 'rgba(236,  72, 153, 0.30)', amp: 0.14, freq: 0.0024, speed: 0.24, phase: 5.8,  yBase: 0.48, thick: 180 },
+        { color: 'rgba( 22,  51,  83, 0.50)', amp: 0.18, freq: 0.0022, speed: 0.22, phase: 0.0,  yBase: 0.42, thick: 220 },
+        { color: 'rgba( 15,  36,  56, 0.46)', amp: 0.22, freq: 0.0018, speed: 0.18, phase: 1.5,  yBase: 0.55, thick: 260 },
+        { color: 'rgba( 42,  95, 138, 0.40)', amp: 0.16, freq: 0.0026, speed: 0.28, phase: 3.0,  yBase: 0.32, thick: 200 },
+        { color: 'rgba( 58, 155, 184, 0.34)', amp: 0.20, freq: 0.0020, speed: 0.16, phase: 4.5,  yBase: 0.62, thick: 240 },
+        { color: 'rgba( 91, 132, 158, 0.28)', amp: 0.14, freq: 0.0024, speed: 0.24, phase: 5.8,  yBase: 0.48, thick: 180 },
     ];
 
     let t = 0;

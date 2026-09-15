@@ -1066,9 +1066,23 @@ class OrderService {
     try {
       final userPrefs = UserPreferencesService();
       final isOfflineModeEnabled = await userPrefs.isOfflineModeEnabled();
+      final pendingOrders = await userPrefs.getPendingOrders();
+      final isPendingUnsynced = pendingOrders.any((pendingOrder) {
+        if (pendingOrder['synced'] == true) return false;
+        final pendingId = pendingOrder['id']?.toString();
+        final pendingOperationId = pendingOrder['id_operacion'];
+        final pendingDisplay = pendingOperationId is num
+            ? 'ORD-${pendingOperationId.toInt()}'
+            : null;
+        return pendingId == orderId || pendingDisplay == orderId;
+      });
 
-      if (isOfflineModeEnabled) {
-        print('🔌 Modo offline - Actualizando estado de orden offline...');
+      if (isOfflineModeEnabled || isPendingUnsynced) {
+        print(
+          isPendingUnsynced
+              ? '📝 Orden aún no sincronizada - cambio de estado en cola local'
+              : '🔌 Modo offline - Actualizando estado de orden offline...',
+        );
         return await _updateOrderStatusOffline(orderId, newStatus);
       }
 
@@ -2553,6 +2567,12 @@ class OrderService {
             'operation_type': 'status_change',
           },
         );
+        await userPrefs.savePendingOperation({
+          'type': 'order_status_change',
+          'order_id': pendingLocalId,
+          'new_status': _orderStatusToString(newStatus),
+          'timestamp': DateTime.now().toIso8601String(),
+        });
 
         print(
           '📝 Estado actualizado en órdenes pendientes: $pendingLocalId -> ${newStatus.toString()}',

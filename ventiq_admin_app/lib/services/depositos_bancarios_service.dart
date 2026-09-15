@@ -113,6 +113,7 @@ class DepositosBancariosService {
     required int idMoneda,
     String? observacion,
     bool activo = true,
+    bool esPredeterminadaFondoCaja = false,
   }) async {
     try {
       final storeId = await _userPrefs.getIdTienda();
@@ -131,6 +132,10 @@ class DepositosBancariosService {
           })
           .select('*, moneda:id_moneda(codigo, denominacion, simbolo)')
           .single();
+      if (esPredeterminadaFondoCaja) {
+        await establecerBancoPredeterminado(response['id'] as int);
+        response['es_predeterminada_fondo_caja'] = true;
+      }
       return BancoDeposito.fromJson(response);
     } catch (e) {
       print('❌ Error creando banco: $e');
@@ -144,6 +149,7 @@ class DepositosBancariosService {
     required int idMoneda,
     String? observacion,
     required bool activo,
+    bool esPredeterminadaFondoCaja = false,
   }) async {
     try {
       final storeId = await _userPrefs.getIdTienda();
@@ -155,6 +161,8 @@ class DepositosBancariosService {
             'denominacion': denominacion,
             'id_moneda': idMoneda,
             'activo': activo,
+            if (!esPredeterminadaFondoCaja)
+              'es_predeterminada_fondo_caja': false,
             'observacion': observacion,
             'updated_at': DateTime.now().toIso8601String(),
           })
@@ -162,11 +170,27 @@ class DepositosBancariosService {
           .eq('idtienda', storeId)
           .select('*, moneda:id_moneda(codigo, denominacion, simbolo)')
           .single();
+      if (esPredeterminadaFondoCaja) {
+        if (!activo) {
+          throw Exception('La cuenta predeterminada debe estar activa');
+        }
+        await establecerBancoPredeterminado(id);
+        response['es_predeterminada_fondo_caja'] = true;
+      }
       return BancoDeposito.fromJson(response);
     } catch (e) {
       print('❌ Error actualizando banco: $e');
       rethrow;
     }
+  }
+
+  Future<void> establecerBancoPredeterminado(int idBanco) async {
+    final storeId = await _userPrefs.getIdTienda();
+    if (storeId == null) throw Exception('No se pudo obtener ID de tienda');
+    await _supabase.rpc(
+      'dep_establecer_banco_predeterminado',
+      params: {'p_idtienda': storeId, 'p_id_banco': idBanco},
+    );
   }
 
   Future<void> deactivateBanco(int id) async {
@@ -523,6 +547,130 @@ class DepositosBancariosService {
     }
   }
 
+  // ==================== TIPOS DE EXTRACCIÓN ====================
+
+  Future<List<TipoExtraccion>> getTiposExtraccion({
+    bool soloActivos = false,
+  }) async {
+    try {
+      var query = _supabase.from('dep_nom_tipo_extraccion').select();
+      if (soloActivos) {
+        query = query.eq('activo', true);
+      }
+      final response = await query.order('orden');
+      return response
+          .map<TipoExtraccion>((j) => TipoExtraccion.fromJson(j))
+          .toList();
+    } catch (e) {
+      print('❌ Error obteniendo tipos de extracción: $e');
+      rethrow;
+    }
+  }
+
+  Future<TipoExtraccion> createTipoExtraccion(TipoExtraccion tipo) async {
+    try {
+      final response = await _supabase
+          .from('dep_nom_tipo_extraccion')
+          .insert(tipo.toJson())
+          .select()
+          .single();
+      return TipoExtraccion.fromJson(response);
+    } catch (e) {
+      print('❌ Error creando tipo de extracción: $e');
+      rethrow;
+    }
+  }
+
+  Future<TipoExtraccion> updateTipoExtraccion(
+    int id,
+    TipoExtraccion tipo,
+  ) async {
+    try {
+      final response = await _supabase
+          .from('dep_nom_tipo_extraccion')
+          .update(tipo.toJson())
+          .eq('id', id)
+          .select()
+          .single();
+      return TipoExtraccion.fromJson(response);
+    } catch (e) {
+      print('❌ Error actualizando tipo de extracción: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> deleteTipoExtraccion(int id) async {
+    try {
+      await _supabase.from('dep_nom_tipo_extraccion').delete().eq('id', id);
+    } catch (e) {
+      print('❌ Error eliminando tipo de extracción: $e');
+      rethrow;
+    }
+  }
+
+  Future<TipoExtraccion?> getTipoExtraccionInicial() async {
+    try {
+      final response = await _supabase
+          .from('dep_nom_tipo_extraccion')
+          .select()
+          .eq('activo', true)
+          .order('orden', ascending: true)
+          .limit(1)
+          .maybeSingle();
+      if (response == null) return null;
+      return TipoExtraccion.fromJson(response);
+    } catch (e) {
+      print('❌ Error obteniendo tipo de extracción inicial: $e');
+      return null;
+    }
+  }
+
+  Future<void> inicializarTiposExtraccionEstandar() async {
+    final tiposEstandar = [
+      {
+        'denominacion': 'Depósito bancario',
+        'descripcion':
+            'Extracción destinada a un depósito en una cuenta bancaria',
+        'color': '#2196F3',
+        'orden': 1,
+        'activo': true,
+      },
+      {
+        'denominacion': 'Pago a proveedor',
+        'descripcion': 'Extracción para pagar a un proveedor',
+        'color': '#FF9800',
+        'orden': 2,
+        'activo': true,
+      },
+      {
+        'denominacion': 'Gasto operativo',
+        'descripcion': 'Extracción para gastos de funcionamiento',
+        'color': '#9C27B0',
+        'orden': 3,
+        'activo': true,
+      },
+      {
+        'denominacion': 'Otro',
+        'descripcion': 'Otro tipo de extracción de caja',
+        'color': '#607D8B',
+        'orden': 4,
+        'activo': true,
+      },
+    ];
+
+    for (final tipo in tiposEstandar) {
+      try {
+        await _supabase.from('dep_nom_tipo_extraccion').insert(tipo);
+      } catch (e) {
+        if (!e.toString().contains('duplicate') &&
+            !e.toString().contains('unique')) {
+          print('❌ Error insertando tipo de extracción estándar: $e');
+        }
+      }
+    }
+    print('✅ Tipos de extracción estándar inicializados');
+  }
+
   // ==================== DEPÓSITOS ====================
 
   Future<List<DepositoBancario>> getDepositos(int idBanco) async {
@@ -533,7 +681,7 @@ class DepositosBancariosService {
       final response = await _supabase
           .from('dep_dat_deposito')
           .select(
-            '*, estado:id_estado(denominacion, color), banco:id_banco(denominacion), fotos:dep_dat_deposito_foto(id, id_deposito, foto_url, numero_pagina, nombre_archivo, mime_type, created_at)',
+            '*, estado:id_estado(denominacion, color), tipo_extraccion:id_tipo_extraccion(denominacion, color), banco:id_banco(denominacion), fotos:dep_dat_deposito_foto(id, id_deposito, foto_url, numero_pagina, nombre_archivo, mime_type, created_at)',
           )
           .eq('idtienda', storeId)
           .eq('id_banco', idBanco)
@@ -617,6 +765,7 @@ class DepositosBancariosService {
     required String numeroDeposito,
     required double valor,
     required DateTime fechaProcesamiento,
+    int? idTipoExtraccion,
     List<({Uint8List bytes, String nombre, String mimeType})> fotosEntradas =
         const [],
   }) async {
@@ -652,15 +801,18 @@ class DepositosBancariosService {
             .split('T')
             .first,
         'id_estado': estadoInicial.id,
+        if (idTipoExtraccion != null) 'id_tipo_extraccion': idTipoExtraccion,
         'created_at': DateTime.now().toIso8601String(),
       };
-      print('🔍 Insertando depósito con id_estado=${insertData['id_estado']}');
+      print(
+        '🔍 Insertando extracción con id_estado=${insertData['id_estado']}',
+      );
 
       final response = await _supabase
           .from('dep_dat_deposito')
           .insert(insertData)
           .select(
-            '*, estado:id_estado(denominacion, color), banco:id_banco(denominacion)',
+            '*, estado:id_estado(denominacion, color), tipo_extraccion:id_tipo_extraccion(denominacion, color), banco:id_banco(denominacion)',
           )
           .single();
 
@@ -801,6 +953,7 @@ class DepositosBancariosService {
     required String nuevoNumeroDeposito,
     required double valorAnterior,
     required double nuevoValor,
+    int? idTipoExtraccion,
   }) async {
     try {
       final storeId = await _userPrefs.getIdTienda();
@@ -817,9 +970,14 @@ class DepositosBancariosService {
         }
       }
 
+      final updateData = {
+        'numero_deposito': nuevoNumeroDeposito,
+        'valor': nuevoValor,
+        if (idTipoExtraccion != null) 'id_tipo_extraccion': idTipoExtraccion,
+      };
       await _supabase
           .from('dep_dat_deposito')
-          .update({'numero_deposito': nuevoNumeroDeposito, 'valor': nuevoValor})
+          .update(updateData)
           .eq('id', idDeposito);
 
       if (diferencia != 0) {
