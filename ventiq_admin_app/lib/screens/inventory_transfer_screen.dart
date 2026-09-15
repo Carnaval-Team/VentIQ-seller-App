@@ -4,8 +4,10 @@ import '../config/app_colors.dart';
 import '../models/warehouse.dart';
 import '../services/warehouse_service.dart';
 import '../services/inventory_service.dart';
+import '../services/presentacion_cadena_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/permissions_service.dart';
+import '../utils/stock_mixto_formatter.dart';
 import '../widgets/presentacion_equivalencia_widget.dart';
 
 class InventoryTransferScreen extends StatefulWidget {
@@ -36,11 +38,13 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   WarehouseZone? _selectedDestinationLocation;
   bool _isLoading = false;
   bool _isLoadingWarehouses = true;
+
   /// Solo el gerente puede "Registrar y Completar" en un solo paso.
   bool _canRegisterAndComplete = false;
 
   // Inline product list state
   List<Map<String, dynamic>> _sourceProducts = [];
+  final Map<int, List<PresentacionCadena>> _presentationChains = {};
   bool _isLoadingProducts = false;
   // qty controllers keyed by variant_key
   final Map<String, TextEditingController> _qtyControllers = {};
@@ -52,8 +56,10 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     if (_searchQuery.isEmpty) return _sourceProducts;
     final q = _searchQuery.toLowerCase();
     return _sourceProducts
-        .where((p) =>
-            (p['nombre_producto']?.toString().toLowerCase() ?? '').contains(q))
+        .where(
+          (p) => (p['nombre_producto']?.toString().toLowerCase() ?? '')
+              .contains(q),
+        )
         .toList();
   }
 
@@ -131,6 +137,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     setState(() {
       _isLoadingProducts = true;
       _sourceProducts = [];
+      _presentationChains.clear();
       // Dispose old controllers
       for (final c in _qtyControllers.values) {
         c.dispose();
@@ -158,33 +165,35 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         );
         products = resp.products
             .where((p) => p.cantidadFinal > 0)
-            .map((p) => {
-                  'id_producto': p.idProducto,
-                  'nombre_producto': p.nombreProducto,
-                  'sku_producto': p.skuProducto,
-                  'id_variante': p.idVariante,
-                  'variante_nombre': p.variante,
-                  'id_opcion_variante': p.idOpcionVariante,
-                  'opcion_variante_nombre': p.opcionVariante,
-                  'id_presentacion': p.idPresentacion,
-                  'presentacion_nombre': p.presentacion,
-                  'presentacion_codigo': p.presentacion,
-                  'stock_disponible': p.cantidadFinal,
-                  'stock_reservado': p.stockReservado,
-                  'stock_actual': p.cantidadFinal,
-                  'precio_unitario': p.precioVenta ?? 0.0,
-                  'id_layout': layoutId,
-                  'variant_key':
-                      '${p.id}_${p.idVariante ?? 'null'}_${p.idOpcionVariante ?? 'null'}_${p.idPresentacion ?? 'null'}',
-                })
+            .map(
+              (p) => {
+                'id_producto': p.idProducto,
+                'nombre_producto': p.nombreProducto,
+                'sku_producto': p.skuProducto,
+                'id_variante': p.idVariante,
+                'variante_nombre': p.variante,
+                'id_opcion_variante': p.idOpcionVariante,
+                'opcion_variante_nombre': p.opcionVariante,
+                'id_presentacion': p.idPresentacion,
+                'presentacion_nombre': p.presentacion,
+                'presentacion_codigo': p.presentacion,
+                'stock_disponible': p.cantidadFinal,
+                'stock_reservado': p.stockReservado,
+                'stock_actual': p.cantidadFinal,
+                'precio_unitario': p.precioVenta ?? 0.0,
+                'id_layout': layoutId,
+                'variant_key':
+                    '${p.id}_${p.idVariante ?? 'null'}_${p.idOpcionVariante ?? 'null'}_${p.idPresentacion ?? 'null'}',
+              },
+            )
             .toList();
       }
 
-      // Deduplicate by id_producto + id_presentacion, summing stock for duplicates
+      // Preserve every physical identity. Different variants/options sharing a
+      // presentation must remain separate both visually and in the RPC payload.
       final Map<String, Map<String, dynamic>> deduped = {};
       for (final p in products) {
-        final dedupKey =
-            '${p['id_producto']}_${p['id_presentacion'] ?? 'null'}';
+        final dedupKey = _productIdentityKey(p);
         if (!deduped.containsKey(dedupKey)) {
           final entry = Map<String, dynamic>.from(p);
           entry['variant_key'] = dedupKey;
@@ -200,6 +209,19 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         }
       }
       final dedupedProducts = deduped.values.toList();
+      final productIds = dedupedProducts
+          .map((p) => _asInt(p['id_producto']))
+          .whereType<int>()
+          .toSet();
+      final chains = await Future.wait(
+        productIds.map(
+          (id) async =>
+              MapEntry(id, await PresentacionCadenaService.cadena(id)),
+        ),
+      );
+      final chainsByProduct = <int, List<PresentacionCadena>>{
+        for (final entry in chains) entry.key: entry.value,
+      };
 
       // Create qty controllers for each row
       final controllers = <String, TextEditingController>{};
@@ -211,6 +233,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       if (mounted) {
         setState(() {
           _sourceProducts = dedupedProducts;
+          _presentationChains.addAll(chainsByProduct);
           _qtyControllers.addAll(controllers);
           _isLoadingProducts = false;
         });
@@ -220,6 +243,67 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       if (mounted) setState(() => _isLoadingProducts = false);
     }
   }
+
+  static int? _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '');
+  }
+
+  static String _productIdentityKey(Map<String, dynamic> product) =>
+      '${_asInt(product['id_producto']) ?? 'null'}|'
+      '${_asInt(product['id_variante']) ?? 'null'}|'
+      '${_asInt(product['id_opcion_variante']) ?? 'null'}|'
+      '${_asInt(product['id_presentacion']) ?? 'null'}';
+
+  PresentacionCadena? _presentationFor(Map<String, dynamic> product) {
+    final productId = _asInt(product['id_producto']);
+    final presentationId = _asInt(product['id_presentacion']);
+    if (productId == null || presentationId == null) return null;
+    for (final presentation in _presentationChains[productId] ?? const []) {
+      if (presentation.idPresentacion == presentationId) return presentation;
+    }
+    return null;
+  }
+
+  PresentacionCadena? _basePresentationFor(Map<String, dynamic> product) {
+    final productId = _asInt(product['id_producto']);
+    if (productId == null) return null;
+    final chain = _presentationChains[productId] ?? const [];
+    for (final presentation in chain) {
+      if (presentation.esBase) return presentation;
+    }
+    return chain.isEmpty ? null : chain.last;
+  }
+
+  String _presentationName(Map<String, dynamic> product) =>
+      _presentationFor(product)?.nombre ??
+      product['presentacion_nombre']?.toString().trim() ??
+      '';
+
+  String _formattedPresentationQuantity(
+    num quantity,
+    Map<String, dynamic> product,
+  ) {
+    final name = _presentationName(product);
+    return StockMixtoFormatter.linea(quantity, name.isEmpty ? null : name);
+  }
+
+  String? _presentationEquivalence(Map<String, dynamic> product) {
+    final presentation = _presentationFor(product);
+    if (presentation == null) return null;
+    if (presentation.esBase) return 'Presentación base';
+    final baseName = _basePresentationFor(product)?.nombre ?? 'unidad base';
+    return '1 ${presentation.nombre} = '
+        '${StockMixtoFormatter.cantidad(presentation.factorRel)} '
+        '${StockMixtoFormatter.plural(baseName, presentation.factorRel)}';
+  }
+
+  bool _hasRealVariant(Map<String, dynamic> product) =>
+      _asInt(product['id_variante']) != null;
+
+  bool _hasRealOption(Map<String, dynamic> product) =>
+      _asInt(product['id_opcion_variante']) != null;
 
   /// Build _selectedProducts from qty inputs before submitting
   void _buildSelectedProductsFromInputs() {
@@ -253,53 +337,50 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder:
-          (context) => WillPopScope(
-            onWillPop: () async => false,
-            child: AlertDialog(
-              title: const Text('Procesando Transferencia'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox(height: 16),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: LinearProgressIndicator(
-                      value: _transferProgress,
-                      minHeight: 8,
-                      backgroundColor: Colors.grey[300],
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        _transferProgress < 1.0
-                            ? AppColors.primary
-                            : Colors.green,
-                      ),
-                    ),
+      builder: (context) => WillPopScope(
+        onWillPop: () async => false,
+        child: AlertDialog(
+          title: const Text('Procesando Transferencia'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 16),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: LinearProgressIndicator(
+                  value: _transferProgress,
+                  minHeight: 8,
+                  backgroundColor: Colors.grey[300],
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    _transferProgress < 1.0 ? AppColors.primary : Colors.green,
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    '${(_transferProgress * 100).toStringAsFixed(0)}%',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    _transferStatus,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                  ),
-                  if (_totalSteps > 0) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      'Paso $_currentStep de $_totalSteps',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-                    ),
-                  ],
-                ],
+                ),
               ),
-            ),
+              const SizedBox(height: 16),
+              Text(
+                '${(_transferProgress * 100).toStringAsFixed(0)}%',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                _transferStatus,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+              ),
+              if (_totalSteps > 0) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Paso $_currentStep de $_totalSteps',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                ),
+              ],
+            ],
           ),
+        ),
+      ),
     );
   }
 
@@ -435,18 +516,18 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       print('🔗 ID Layout Destino: $destinationLayoutId');
 
       // Prepare products list for transfer
-      final productosParaEnviar =
-          _selectedProducts.map((product) {
-            return {
-              'id_producto': product['id_producto'],
-              'cantidad': product['cantidad'],
-              'precio_unitario': product['precio_unitario'] ?? 0.0,
-              'id_variante': product['id_variante'],
-              'id_presentacion': product['id_presentacion'],
-              // CRÍTICO: Agregar ubicación de origen para la extracción
-              'id_ubicacion': sourceLayoutId,
-            };
-          }).toList();
+      final productosParaEnviar = _selectedProducts.map((product) {
+        return {
+          'id_producto': product['id_producto'],
+          'cantidad': product['cantidad'],
+          'precio_unitario': product['precio_unitario'] ?? 0.0,
+          'id_variante': product['id_variante'],
+          'id_opcion_variante': product['id_opcion_variante'],
+          'id_presentacion': product['id_presentacion'],
+          // CRÍTICO: Agregar ubicación de origen para la extracción
+          'id_ubicacion': sourceLayoutId,
+        };
+      }).toList();
 
       print('📤 Productos preparados para envío:');
       for (int i = 0; i < productosParaEnviar.length; i++) {
@@ -839,7 +920,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                 ),
               ],
             ),
-            if (!isEnabled) ...[  
+            if (!isEnabled) ...[
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(14),
@@ -864,11 +945,11 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                   ],
                 ),
               ),
-            ] else if (_isLoadingProducts) ...[  
+            ] else if (_isLoadingProducts) ...[
               const SizedBox(height: 16),
               const Center(child: CircularProgressIndicator()),
               const SizedBox(height: 16),
-            ] else if (_sourceProducts.isEmpty) ...[  
+            ] else if (_sourceProducts.isEmpty) ...[
               const SizedBox(height: 12),
               const Center(
                 child: Text(
@@ -905,59 +986,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                 onChanged: (val) => setState(() => _searchQuery = val.trim()),
               ),
               const SizedBox(height: 10),
-              // Column header row
-              Row(
-                children: [
-                  Expanded(
-                    flex: 4,
-                    child: Text(
-                      'Producto / Presentación',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 68,
-                    child: Text(
-                      'Disponible',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 72,
-                    child: Text(
-                      'Cantidad',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 64,
-                    child: Text(
-                      'Quedará',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const Divider(height: 8),
             ],
           ],
         ),
@@ -988,19 +1016,16 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       SliverPadding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         sliver: SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) {
-              final isLast = index == filtered.length - 1;
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildProductRow(filtered[index]),
-                  if (!isLast) const Divider(height: 1),
-                ],
-              );
-            },
-            childCount: filtered.length,
-          ),
+          delegate: SliverChildBuilderDelegate((context, index) {
+            final isLast = index == filtered.length - 1;
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildProductRow(filtered[index]),
+                if (!isLast) const Divider(height: 1),
+              ],
+            );
+          }, childCount: filtered.length),
         ),
       ),
     ];
@@ -1010,134 +1035,315 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     final key = product['variant_key'].toString();
     final ctrl = _qtyControllers[key]!;
     final stock = (product['stock_disponible'] as num?)?.toDouble() ?? 0.0;
-    final nombre = product['nombre_producto']?.toString() ?? '';
-    final presNombre = product['presentacion_nombre']?.toString() ?? '';
-    final varNombre = product['variante_nombre']?.toString() ?? '';
-    final hasVariant = varNombre.isNotEmpty && varNombre != 'Sin variante';
-    final idProducto = (product['id_producto'] as num?)?.toInt();
+    final name = product['nombre_producto']?.toString() ?? '';
+    final productId = _asInt(product['id_producto']);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // Product name + presentation
-          Expanded(
-            flex: 4,
-            child: Column(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth >= 720;
+        final content = compact
+            ? _buildCompactProductRow(product, ctrl, stock, name, productId)
+            : _buildMobileProductCard(product, ctrl, stock, name, productId);
+        return Padding(
+          padding: EdgeInsets.symmetric(vertical: compact ? 5 : 7),
+          child: content,
+        );
+      },
+    );
+  }
+
+  Widget _buildCompactProductRow(
+    Map<String, dynamic> product,
+    TextEditingController controller,
+    double stock,
+    String name,
+    int? productId,
+  ) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(child: _buildProductIdentity(product, name)),
+        _buildStockValue('Disponible', stock, product, width: 150),
+        if (productId != null)
+          PresentacionEquivalenciaIconButton(
+            productId: productId,
+            productName: name,
+            iconSize: 18,
+          ),
+        _buildQuantityInput(product, controller, width: 150),
+        _buildRemainingValue(product, controller, stock, width: 150),
+      ],
+    );
+  }
+
+  Widget _buildMobileProductCard(
+    Map<String, dynamic> product,
+    TextEditingController controller,
+    double stock,
+    String name,
+    int? productId,
+  ) {
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: Colors.grey.shade300),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  nombre,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                if (presNombre.isNotEmpty)
-                  Text(
-                    presNombre + (hasVariant ? ' · $varNombre' : ''),
-                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                Expanded(child: _buildProductIdentity(product, name)),
+                if (productId != null)
+                  PresentacionEquivalenciaIconButton(
+                    productId: productId,
+                    productName: name,
+                    iconSize: 18,
                   ),
               ],
             ),
-          ),
-          // Available stock
-          SizedBox(
-            width: 68,
-            child: Text(
-              stock.toInt().toString(),
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: stock > 0 ? Colors.green[700] : Colors.red[600],
-              ),
-            ),
-          ),
-          if (idProducto != null)
-            PresentacionEquivalenciaIconButton(
-              productId: idProducto,
-              productName: nombre,
-              iconSize: 18,
-            ),
-          // Qty input
-          SizedBox(
-            width: 72,
-            child: StatefulBuilder(
-              builder: (context, setRowState) {
-                return TextFormField(
-                  controller: ctrl,
-                  textAlign: TextAlign.center,
-                  keyboardType: TextInputType.number,
-                  style: const TextStyle(fontSize: 13),
-                  decoration: InputDecoration(
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 8,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    hintText: '0',
-                  ),
-                  validator: (val) {
-                    if (val == null || val.trim().isEmpty) return null;
-                    final q = double.tryParse(val.trim());
-                    if (q == null || q < 0) return 'Inválido';
-                    // FASE 2: pedir mas de lo que hay SUELTO en esta
-                    // presentacion ya no es un error. Si falta saldo,
-                    // fn_descontar_con_rebalanceo abre el empaque mayor (o
-                    // empaqueta sueltas) y lo deja registrado en el kardex.
-                    // Bloquear aca rechazaria traslados que el servidor si
-                    // puede cumplir; el aviso lo da la columna de al lado.
-                    return null;
-                  },
-                  onChanged: (_) => setState(() {}),
-                );
-              },
-            ),
-          ),
-          // Remaining after transfer
-          SizedBox(
-            width: 64,
-            child: Builder(builder: (context) {
-              final qty = double.tryParse(ctrl.text.trim()) ?? 0;
-              final remaining = stock - qty;
-
-              // Se pide mas de lo que hay suelto: el servidor va a convertir.
-              if (qty > stock) {
-                return Tooltip(
-                  message:
-                      'Hay $stock suelto en esta presentación. Al confirmar, el '
-                      'sistema convertirá desde otra presentación y lo dejará '
-                      'registrado.',
-                  child: Icon(
-                    Icons.auto_awesome,
-                    size: 18,
-                    color: Colors.blue.shade700,
-                  ),
-                );
-              }
-
-              return Text(
-                qty >= 0 ? remaining.toInt().toString() : '—',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: qty < 0
-                      ? Colors.red
-                      : remaining == 0
-                      ? Colors.orange[700]
-                      : Colors.blueGrey[700],
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: _buildStockValue('Disponible', stock, product)),
+                const SizedBox(width: 8),
+                Expanded(child: _buildQuantityInput(product, controller)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildRemainingValue(product, controller, stock),
                 ),
-              );
-            }),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProductIdentity(Map<String, dynamic> product, String name) {
+    final presentationName = _presentationName(product);
+    final equivalence = _presentationEquivalence(product);
+    final variant = product['variante_nombre']?.toString().trim() ?? '';
+    final option = product['opcion_variante_nombre']?.toString().trim() ?? '';
+    final identityParts = <String>[
+      if (_hasRealVariant(product) && variant.isNotEmpty) variant,
+      if (_hasRealOption(product) && option.isNotEmpty) option,
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          name,
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        ),
+        if (identityParts.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Text(
+            identityParts.join(' · '),
+            style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+          ),
+        ],
+        if (presentationName.isNotEmpty) ...[
+          const SizedBox(height: 5),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Chip(
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+                label: Text(
+                  presentationName,
+                  style: const TextStyle(fontSize: 11),
+                ),
+              ),
+              if (equivalence != null)
+                Text(
+                  equivalence,
+                  style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildStockValue(
+    String label,
+    double stock,
+    Map<String, dynamic> product, {
+    double? width,
+  }) {
+    return SizedBox(
+      width: width,
+      child: _buildLabeledValue(
+        label,
+        _formattedPresentationQuantity(stock, product),
+        stock > 0 ? Colors.green.shade700 : Colors.red.shade600,
+      ),
+    );
+  }
+
+  Widget _buildQuantityInput(
+    Map<String, dynamic> product,
+    TextEditingController controller, {
+    double? width,
+  }) {
+    final presentationName = _presentationName(product);
+    return SizedBox(
+      width: width,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Cantidad',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+          ),
+          if (presentationName.isNotEmpty)
+            Text(
+              presentationName,
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+            ),
+          const SizedBox(height: 3),
+          TextFormField(
+            controller: controller,
+            textAlign: TextAlign.center,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            style: const TextStyle(fontSize: 13),
+            decoration: InputDecoration(
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 6,
+                vertical: 8,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(6),
+              ),
+              hintText: '0',
+            ),
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) return null;
+              final quantity = double.tryParse(value.trim());
+              if (quantity == null || quantity < 0) return 'Inválido';
+              // La conversión y el rebalanceo siguen siendo autoritativos en el
+              // servidor; no se bloquea una cantidad mayor al saldo suelto.
+              return null;
+            },
+            onChanged: (_) => setState(() {}),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildRemainingValue(
+    Map<String, dynamic> product,
+    TextEditingController controller,
+    double stock, {
+    double? width,
+  }) {
+    final quantity = double.tryParse(controller.text.trim()) ?? 0;
+    final remaining = stock - quantity;
+    final presentationName = _presentationName(product);
+
+    Widget value;
+    if (quantity > stock) {
+      final looseStock = _formattedPresentationQuantity(stock, product);
+      value = Tooltip(
+        message:
+            'Hay $looseStock suelto en esta presentación. Al confirmar, '
+            'el sistema intentará convertir desde otra presentación y dejará '
+            'el rebalanceo registrado.',
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.auto_awesome, size: 17, color: Colors.blue.shade700),
+            const SizedBox(width: 3),
+            Flexible(
+              child: Text(
+                'Rebalanceo',
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 10, color: Colors.blue.shade700),
+              ),
+            ),
+          ],
+        ),
+      );
+    } else {
+      final color = remaining == 0
+          ? Colors.orange.shade700
+          : Colors.blueGrey.shade700;
+      value = Text(
+        _formattedPresentationQuantity(remaining, product),
+        textAlign: TextAlign.center,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      );
+    }
+
+    return SizedBox(
+      width: width,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Quedará',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+          ),
+          if (presentationName.isNotEmpty)
+            Text(
+              presentationName,
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+            ),
+          const SizedBox(height: 8),
+          value,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLabeledValue(String label, String value, Color color) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          label,
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          value,
+          textAlign: TextAlign.center,
+          overflow: TextOverflow.ellipsis,
+          maxLines: 2,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: color,
+          ),
+        ),
+      ],
     );
   }
 
@@ -1157,34 +1363,34 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       ),
       child: Column(
         children: [
-          Builder(builder: (context) {
-            final selected = _sourceProducts
-                .where((p) {
-                  final key = p['variant_key'].toString();
-                  final qty =
-                      double.tryParse(_qtyControllers[key]?.text.trim() ?? '') ??
-                      0;
-                  return qty > 0;
-                })
-                .length;
-            return Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Productos a transferir:',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  '$selected',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primary,
+          Builder(
+            builder: (context) {
+              final selected = _sourceProducts.where((p) {
+                final key = p['variant_key'].toString();
+                final qty =
+                    double.tryParse(_qtyControllers[key]?.text.trim() ?? '') ??
+                    0;
+                return qty > 0;
+              }).length;
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Productos a transferir:',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
-                ),
-              ],
-            );
-          }),
+                  Text(
+                    '$selected',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
           const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
@@ -1201,7 +1407,10 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                   : const Icon(Icons.save_outlined),
               label: Text(
                 _isLoading ? 'Procesando...' : 'Registrar Transferencia',
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppColors.primary,
@@ -1271,21 +1480,20 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       ),
       hint: Text(isSource ? 'Seleccionar origen' : 'Seleccionar destino'),
-      items:
-          flatZones.map((item) {
-            final WarehouseZone zone = item['zone'];
-            final String warehouseName = item['warehouse'];
-            final String displayName = '$warehouseName - ${zone.name}';
+      items: flatZones.map((item) {
+        final WarehouseZone zone = item['zone'];
+        final String warehouseName = item['warehouse'];
+        final String displayName = '$warehouseName - ${zone.name}';
 
-            return DropdownMenuItem<WarehouseZone>(
-              value: zone,
-              child: Text(
-                displayName,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 14),
-              ),
-            );
-          }).toList(),
+        return DropdownMenuItem<WarehouseZone>(
+          value: zone,
+          child: Text(
+            displayName,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 14),
+          ),
+        );
+      }).toList(),
       onChanged: (WarehouseZone? newZone) {
         setState(() {
           if (isSource) {
@@ -1307,24 +1515,22 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   String _getWarehouseName(String warehouseId) {
     final warehouse = _warehouses.firstWhere(
       (w) => w.id == warehouseId,
-      orElse:
-          () => Warehouse(
-            id: warehouseId,
-            name: 'Almacén desconocido',
-            description: 'Almacén no encontrado',
-            address: '',
-            city: '',
-            country: 'Chile',
-            type: 'principal',
-            createdAt: DateTime.now(),
-            zones: [],
-            denominacion: 'Almacén desconocido',
-            direccion: '',
-          ),
+      orElse: () => Warehouse(
+        id: warehouseId,
+        name: 'Almacén desconocido',
+        description: 'Almacén no encontrado',
+        address: '',
+        city: '',
+        country: 'Chile',
+        type: 'principal',
+        createdAt: DateTime.now(),
+        zones: [],
+        denominacion: 'Almacén desconocido',
+        direccion: '',
+      ),
     );
     return warehouse.name;
   }
-
 }
 
 // Product Quantity Dialog - Enhanced with location-specific variants
@@ -1430,17 +1636,16 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
           'variante_nombre': 'Sin variante',
           'id_opcion_variante': null,
           'opcion_variante_nombre': 'Única',
-          'id_presentacion':
-              1, // Use default presentation ID (1 = unidad) instead of null
-          'presentacion_nombre': 'Unidad',
-          'presentacion_codigo': 'UN',
-          'stock_disponible':
-              (widget.product['stock_disponible'] ?? 0).toDouble(),
+          'id_presentacion': null,
+          'presentacion_nombre': 'Presentación base',
+          'presentacion_codigo': '',
+          'stock_disponible': (widget.product['stock_disponible'] ?? 0)
+              .toDouble(),
           'stock_reservado': 0.0,
           'stock_actual': (widget.product['stock_disponible'] ?? 0).toDouble(),
-          'precio_unitario':
-              (widget.product['precio_unitario'] ?? 0).toDouble(),
-          'variant_key': 'null_null_1',
+          'precio_unitario': (widget.product['precio_unitario'] ?? 0)
+              .toDouble(),
+          'variant_key': 'null_null_null',
         },
       ];
       _selectedVariant = _availableVariants.first;
@@ -1554,25 +1759,23 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                     helperText:
                         'Seleccione la variante específica a transferir',
                   ),
-                  items:
-                      _availableVariants.map((variant) {
-                        return DropdownMenuItem(
-                          value: variant,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Text(
-                              _buildVariantDisplayName(variant),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                              style: const TextStyle(fontSize: 14),
-                            ),
-                          ),
-                        );
-                      }).toList(),
+                  items: _availableVariants.map((variant) {
+                    return DropdownMenuItem(
+                      value: variant,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Text(
+                          _buildVariantDisplayName(variant),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ),
+                    );
+                  }).toList(),
                   onChanged: _onVariantChanged,
-                  validator:
-                      (value) =>
-                          value == null ? 'Seleccione una variante' : null,
+                  validator: (value) =>
+                      value == null ? 'Seleccione una variante' : null,
                 ),
                 const SizedBox(height: 16),
               ],
@@ -1583,10 +1786,9 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                 decoration: InputDecoration(
                   labelText: 'Cantidad',
                   border: const OutlineInputBorder(),
-                  helperText:
-                      _maxAvailableStock > 0
-                          ? 'Máximo disponible: ${_maxAvailableStock.toInt()}'
-                          : 'Sin stock disponible',
+                  helperText: _maxAvailableStock > 0
+                      ? 'Máximo disponible: ${_maxAvailableStock.toInt()}'
+                      : 'Sin stock disponible',
                   helperStyle: TextStyle(
                     color: _maxAvailableStock > 0 ? Colors.green : Colors.red,
                     fontWeight: FontWeight.w500,
@@ -1665,53 +1867,51 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
           child: const Text('Cancelar'),
         ),
         ElevatedButton(
-          onPressed:
-              _maxAvailableStock <= 0
-                  ? null
-                  : () {
-                    if (_formKey.currentState!.validate() &&
-                        _selectedVariant != null) {
-                      final productData = {
-                        'id_producto': _selectedVariant!['id_producto'],
-                        'nombre_producto': _selectedVariant!['nombre_producto'],
-                        'cantidad': double.parse(_quantityController.text),
-                        'precio_unitario': _selectedVariant!['precio_unitario'],
-                        'id_variante': _selectedVariant!['id_variante'],
-                        'variante_nombre': _selectedVariant!['variante_nombre'],
-                        'id_opcion_variante':
-                            _selectedVariant!['id_opcion_variante'],
-                        'opcion_variante_nombre':
-                            _selectedVariant!['opcion_variante_nombre'],
-                        'id_presentacion': _selectedVariant!['id_presentacion'],
-                        'presentacion_nombre':
-                            _selectedVariant!['presentacion_nombre'],
-                        'stock_disponible':
-                            _selectedVariant!['stock_disponible'],
-                        'variant_key': _selectedVariant!['variant_key'],
-                      };
+          onPressed: _maxAvailableStock <= 0
+              ? null
+              : () {
+                  if (_formKey.currentState!.validate() &&
+                      _selectedVariant != null) {
+                    final productData = {
+                      'id_producto': _selectedVariant!['id_producto'],
+                      'nombre_producto': _selectedVariant!['nombre_producto'],
+                      'cantidad': double.parse(_quantityController.text),
+                      'precio_unitario': _selectedVariant!['precio_unitario'],
+                      'id_variante': _selectedVariant!['id_variante'],
+                      'variante_nombre': _selectedVariant!['variante_nombre'],
+                      'id_opcion_variante':
+                          _selectedVariant!['id_opcion_variante'],
+                      'opcion_variante_nombre':
+                          _selectedVariant!['opcion_variante_nombre'],
+                      'id_presentacion': _selectedVariant!['id_presentacion'],
+                      'presentacion_nombre':
+                          _selectedVariant!['presentacion_nombre'],
+                      'stock_disponible': _selectedVariant!['stock_disponible'],
+                      'variant_key': _selectedVariant!['variant_key'],
+                    };
 
-                      // Debug logging for presentation ID tracking
-                      print('🔍 DEBUG: ProductData creado en diálogo:');
-                      print('   - id_producto: ${productData['id_producto']}');
-                      print(
-                        '   - nombre_producto: ${productData['nombre_producto']}',
-                      );
-                      print(
-                        '   - id_presentacion: ${productData['id_presentacion']}',
-                      );
-                      print(
-                        '   - presentacion_nombre: ${productData['presentacion_nombre']}',
-                      );
-                      print(
-                        '   - _selectedVariant id_presentacion: ${_selectedVariant!['id_presentacion']}',
-                      );
-                      print(
-                        '   - Tipo de id_presentacion: ${productData['id_presentacion'].runtimeType}',
-                      );
+                    // Debug logging for presentation ID tracking
+                    print('🔍 DEBUG: ProductData creado en diálogo:');
+                    print('   - id_producto: ${productData['id_producto']}');
+                    print(
+                      '   - nombre_producto: ${productData['nombre_producto']}',
+                    );
+                    print(
+                      '   - id_presentacion: ${productData['id_presentacion']}',
+                    );
+                    print(
+                      '   - presentacion_nombre: ${productData['presentacion_nombre']}',
+                    );
+                    print(
+                      '   - _selectedVariant id_presentacion: ${_selectedVariant!['id_presentacion']}',
+                    );
+                    print(
+                      '   - Tipo de id_presentacion: ${productData['id_presentacion'].runtimeType}',
+                    );
 
-                      widget.onAdd(productData);
-                    }
-                  },
+                    widget.onAdd(productData);
+                  }
+                },
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,

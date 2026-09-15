@@ -60,6 +60,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
   // se conserva para productos de una sola presentacion y como salida si algo
   // falla al leer la cadena.
   bool _modoMixto = false;
+  bool _cargandoCadenaMixta = true;
   List<PresentacionCadena> _cadena = [];
   List<LineaMixta> _lineasMixtas = [];
 
@@ -92,7 +93,10 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
   /// formulario mas complicado para hacer exactamente lo mismo.
   Future<void> _cargarCadenaMixta() async {
     final idProducto = int.tryParse(widget.product.id);
-    if (idProducto == null) return;
+    if (idProducto == null) {
+      if (mounted) setState(() => _cargandoCadenaMixta = false);
+      return;
+    }
 
     final cadena = await PresentacionCadenaService.cadena(idProducto);
     if (!mounted) return;
@@ -100,6 +104,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
     setState(() {
       _cadena = cadena;
       _modoMixto = cadena.length > 1;
+      _cargandoCadenaMixta = false;
       if (cadena.isNotEmpty) {
         final base = cadena.firstWhere(
           (presentacion) => presentacion.esBase,
@@ -569,7 +574,9 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
                     children: [
                       // Product Information
                       _buildProductInfo(),
-                      if (int.tryParse(widget.product.id) != null)
+                      if (!_cargandoCadenaMixta &&
+                          !_modoMixto &&
+                          int.tryParse(widget.product.id) != null)
                         PresentacionEquivalenciaBanner(
                           productId: int.parse(widget.product.id),
                           productPresentaciones: widget.product.presentaciones,
@@ -701,10 +708,6 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
                       color: AppColors.textSecondary,
                     ),
                   ),
-                Text(
-                  'Stock actual: ${widget.product.stockDisponible}',
-                  style: TextStyle(fontSize: 16, color: AppColors.primary),
-                ),
               ],
             ),
           ),
@@ -767,44 +770,31 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
   /// es un formulario mas grande sin beneficio. Cambiar de modo descarta lo
   /// escrito en el otro, asi que se avisa.
   Widget _buildSelectorModo() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.surface.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            _modoMixto ? Icons.view_list : Icons.looks_one,
-            size: 18,
-            color: AppColors.primary,
+    return SizedBox(
+      width: double.infinity,
+      child: SegmentedButton<bool>(
+        segments: const [
+          ButtonSegment<bool>(
+            value: false,
+            icon: Icon(Icons.looks_one, size: 17),
+            label: Text('Una presentación'),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              _modoMixto
-                  ? 'Varias presentaciones a la vez'
-                  : 'Una sola presentación',
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-            ),
-          ),
-          TextButton(
-            onPressed: () {
-              setState(() {
-                _modoMixto = !_modoMixto;
-                // Al salir del mixto se descartan las lineas: dejarlas
-                // guardaria cantidades que el formulario simple ya no muestra.
-                _lineasMixtas = [];
-              });
-            },
-            child: Text(
-              _modoMixto ? 'Cambiar a una' : 'Cambiar a varias',
-              style: const TextStyle(fontSize: 12),
-            ),
+          ButtonSegment<bool>(
+            value: true,
+            icon: Icon(Icons.view_list, size: 17),
+            label: Text('Varias presentaciones'),
           ),
         ],
+        selected: {_modoMixto},
+        showSelectedIcon: false,
+        onSelectionChanged: (seleccion) {
+          setState(() {
+            _modoMixto = seleccion.first;
+            // Al salir del mixto se descartan las lineas: dejarlas guardaria
+            // cantidades que el formulario simple ya no muestra.
+            _lineasMixtas = [];
+          });
+        },
       ),
     );
   }
@@ -869,6 +859,25 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
   }
 
   Widget _buildInputSection() {
+    if (_cargandoCadenaMixta) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 32),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(strokeWidth: 2),
+              SizedBox(height: 10),
+              Text(
+                'Cargando presentaciones...',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     if (_modoMixto) {
       // El modo mixto solo se activa cuando la cadena vino de la RPC, y para eso
       // el id ya tuvo que parsearse bien en _cargarCadenaMixta.
@@ -892,7 +901,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
             // La key fuerza a reconstruir el estado interno cuando cambia la
             // moneda: los precios ya escritos estaban en la moneda anterior y
             // dejarlos seria cambiarles el significado en silencio.
-            key: ValueKey('mixto_$idProducto\_$_monedaEntradaMixta'),
+            key: ValueKey('mixto_${idProducto}_$_monedaEntradaMixta'),
             idProducto: idProducto,
             capturarPrecio: true,
             monedaLabel: _monedaEntradaMixta,

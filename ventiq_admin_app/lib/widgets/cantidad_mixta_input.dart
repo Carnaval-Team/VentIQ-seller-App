@@ -134,8 +134,7 @@ class _CantidadMixtaInputState extends State<CantidadMixtaInput> {
         // Prioridad: precio ya capturado > precio_promedio de esa presentacion
         // > el sugerido (solo para la base). Nunca se deriva base x factor.
         final pIni = widget.preciosIniciales?[p.idPresentacion];
-        final sugerido =
-            pIni ?? (p.esBase ? widget.precioSugeridoBase : null);
+        final sugerido = pIni ?? (p.esBase ? widget.precioSugeridoBase : null);
         _precioControllers[p.idPresentacion] = TextEditingController(
           text: (sugerido != null && sugerido > 0)
               ? sugerido.toStringAsFixed(2)
@@ -166,8 +165,10 @@ class _CantidadMixtaInputState extends State<CantidadMixtaInput> {
 
   double? _precioDe(int idPresentacion) {
     if (!widget.capturarPrecio) return null;
-    final txt =
-        _precioControllers[idPresentacion]?.text.trim().replaceAll(',', '.');
+    final txt = _precioControllers[idPresentacion]?.text.trim().replaceAll(
+      ',',
+      '.',
+    );
     if (txt == null || txt.isEmpty) return null;
     return double.tryParse(txt);
   }
@@ -177,11 +178,13 @@ class _CantidadMixtaInputState extends State<CantidadMixtaInput> {
     for (final p in _cadena) {
       final v = _valorDe(p.idPresentacion);
       if (v > 0) {
-        out.add(LineaMixta(
-          presentacion: p,
-          cantidad: v,
-          precioUnitario: _precioDe(p.idPresentacion),
-        ));
+        out.add(
+          LineaMixta(
+            presentacion: p,
+            cantidad: v,
+            precioUnitario: _precioDe(p.idPresentacion),
+          ),
+        );
       }
     }
     return out;
@@ -284,140 +287,188 @@ class _CantidadMixtaInputState extends State<CantidadMixtaInput> {
     final pedido = _valorDe(p.idPresentacion);
     final excede =
         disponible != null && pedido > disponible && widget.avisarRebalanceo;
-
-    // El subtitulo muestra el factor SOLO si no es la base y aporta algo.
-    final equivalenciaTexto = p.esBase
-        ? 'presentación base'
+    final equivalencia = p.esBase
+        ? 'Equivale a 1 $_nombreBase'
         : '1 ${p.nombre} = ${_fmt(p.factorRel)} $_nombreBase';
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                flex: 3,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      p.nombre,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w500,
-                        fontSize: 13,
-                      ),
-                    ),
-                    Text(
-                      equivalenciaTexto,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    if (disponible != null)
-                      Text(
-                        'disponible: ${_fmt(disponible)}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: excede
-                              ? Colors.orange.shade800
-                              : AppColors.textSecondary,
-                        ),
-                      ),
-                  ],
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      elevation: 0,
+      color: AppColors.surface.withValues(alpha: 0.35),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: AppColors.border.withValues(alpha: 0.55)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(
+              spacing: 6,
+              runSpacing: 5,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                  p.nombre,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 2,
-                child: TextFormField(
-                  controller: _controllers[p.idPresentacion],
-                  decoration: InputDecoration(
-                    labelText: 'Cantidad',
-                    hintText: '0',
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 10,
-                    ),
-                    border: const OutlineInputBorder(),
-                    suffixIcon: excede
-                        ? Tooltip(
-                            message:
-                                'Más de lo que hay suelto en esta presentación',
-                            child: Icon(
-                              Icons.info_outline,
-                              size: 16,
-                              color: Colors.orange.shade800,
-                            ),
-                          )
-                        : null,
-                  ),
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  onChanged: (_) {
-                    setState(() {}); // refresca equivalente y avisos
-                    _notificar();
-                  },
-                ),
-              ),
-              if (widget.capturarPrecio) ...[
-                const SizedBox(width: 8),
-                Expanded(
-                  flex: 2,
-                  child: TextFormField(
-                    controller: _precioControllers[p.idPresentacion],
-                    decoration: InputDecoration(
-                      labelText: 'Precio',
-                      hintText: '0.00',
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 10,
-                      ),
-                      border: const OutlineInputBorder(),
-                      // Se marca en rojo solo si hay cantidad sin precio: pedir
-                      // el precio de una fila vacia seria ruido.
-                      errorText: (pedido > 0 &&
-                              (_precioDe(p.idPresentacion) ?? 0) <= 0)
-                          ? 'Falta'
-                          : null,
-                      errorStyle: const TextStyle(fontSize: 10),
-                    ),
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    onChanged: (_) {
-                      setState(() {});
-                      _notificar();
-                    },
-                  ),
+                if (p.esBase) _buildEstadoChip('Base', AppColors.primary),
+                _buildEstadoChip(
+                  p.esFraccionable ? 'Fraccionable' : 'Enteros',
+                  p.esFraccionable ? Colors.teal : AppColors.textSecondary,
                 ),
               ],
-            ],
-          ),
-          // Importe de la linea, para que el usuario vea el total sin calcular.
-          if (widget.capturarPrecio &&
-              pedido > 0 &&
-              (_precioDe(p.idPresentacion) ?? 0) > 0)
-            Padding(
-              padding: const EdgeInsets.only(top: 2, left: 4),
-              child: Text(
-                '${_fmt(pedido)} × ${_precioDe(p.idPresentacion)!.toStringAsFixed(2)} '
-                '= ${(pedido * _precioDe(p.idPresentacion)!).toStringAsFixed(2)}'
-                '${widget.monedaLabel != null ? ' ${widget.monedaLabel}' : ''}',
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: AppColors.textSecondary,
+            ),
+            const SizedBox(height: 4),
+            Text(equivalencia, style: _equivalenciaStyle),
+            if (disponible != null)
+              Text(
+                'Disponible: ${_fmt(disponible)} ${p.nombre}',
+                style: _disponibleStyle(excede),
+              ),
+            const SizedBox(height: 10),
+            _buildCamposCaptura(p, pedido, excede),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static const _equivalenciaStyle = TextStyle(
+    fontSize: 11,
+    color: AppColors.textSecondary,
+  );
+
+  TextStyle _disponibleStyle(bool excede) => TextStyle(
+    fontSize: 11,
+    color: excede ? Colors.orange.shade800 : AppColors.textSecondary,
+  );
+
+  Widget _buildEstadoChip(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.09),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCamposCaptura(PresentacionCadena p, double pedido, bool excede) {
+    final cantidad = _buildCantidadField(p, excede);
+    final precio = _buildPrecioField(p, pedido);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final horizontal = widget.capturarPrecio && constraints.maxWidth >= 380;
+        final campos = horizontal
+            ? Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: cantidad),
+                  const SizedBox(width: 10),
+                  Expanded(child: precio!),
+                ],
+              )
+            : Column(
+                children: [
+                  cantidad,
+                  if (widget.capturarPrecio) ...[
+                    const SizedBox(height: 10),
+                    precio!,
+                  ],
+                ],
+              );
+
+        final precioValor = _precioDe(p.idPresentacion) ?? 0;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            campos,
+            if (widget.capturarPrecio && pedido > 0 && precioValor > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 5, left: 2),
+                child: Text(
+                  '${_fmt(pedido)} × ${precioValor.toStringAsFixed(2)} = '
+                  '${(pedido * precioValor).toStringAsFixed(2)}'
+                  '${widget.monedaLabel != null ? ' ${widget.monedaLabel}' : ''}',
+                  style: _equivalenciaStyle,
                 ),
               ),
-            ),
-        ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildCantidadField(PresentacionCadena p, bool excede) {
+    return TextFormField(
+      controller: _controllers[p.idPresentacion],
+      decoration: InputDecoration(
+        labelText: 'Cantidad',
+        hintText: '0',
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: 10,
+        ),
+        border: const OutlineInputBorder(),
+        suffixIcon: excede
+            ? Tooltip(
+                message: 'Más de lo que hay suelto en esta presentación',
+                child: Icon(
+                  Icons.info_outline,
+                  size: 16,
+                  color: Colors.orange.shade800,
+                ),
+              )
+            : null,
       ),
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      onChanged: (_) {
+        setState(() {});
+        _notificar();
+      },
+    );
+  }
+
+  Widget? _buildPrecioField(PresentacionCadena p, double pedido) {
+    if (!widget.capturarPrecio) return null;
+    return TextFormField(
+      controller: _precioControllers[p.idPresentacion],
+      decoration: InputDecoration(
+        labelText:
+            'Precio${widget.monedaLabel != null ? ' (${widget.monedaLabel})' : ''}',
+        hintText: '0.00',
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: 10,
+        ),
+        border: const OutlineInputBorder(),
+        errorText: pedido > 0 && (_precioDe(p.idPresentacion) ?? 0) <= 0
+            ? 'Falta'
+            : null,
+        errorStyle: const TextStyle(fontSize: 10),
+      ),
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      onChanged: (_) {
+        setState(() {});
+        _notificar();
+      },
     );
   }
 
@@ -444,8 +495,10 @@ class _CantidadMixtaInputState extends State<CantidadMixtaInput> {
         color: AppColors.primary.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           Text(
             mixto,
@@ -455,18 +508,16 @@ class _CantidadMixtaInputState extends State<CantidadMixtaInput> {
               color: AppColors.primary,
             ),
           ),
-          const SizedBox(height: 2),
           Text(
-            '= ${_fmt(_equivalenteTotal)} $_nombreBase',
+            '· Equivalente: ${_fmt(_equivalenteTotal)} $_nombreBase',
             style: const TextStyle(
               fontSize: 12,
               color: AppColors.textSecondary,
             ),
           ),
-          if (widget.capturarPrecio && _importeTotal > 0) ...[
-            const SizedBox(height: 4),
+          if (widget.capturarPrecio && _importeTotal > 0)
             Text(
-              'Total: ${_importeTotal.toStringAsFixed(2)}'
+              '· Total: ${_importeTotal.toStringAsFixed(2)}'
               '${widget.monedaLabel != null ? ' ${widget.monedaLabel}' : ''}',
               style: const TextStyle(
                 fontSize: 12,
@@ -474,7 +525,6 @@ class _CantidadMixtaInputState extends State<CantidadMixtaInput> {
                 color: AppColors.textPrimary,
               ),
             ),
-          ],
         ],
       ),
     );

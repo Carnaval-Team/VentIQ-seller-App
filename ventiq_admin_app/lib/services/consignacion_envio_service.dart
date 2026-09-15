@@ -57,33 +57,41 @@ class ConsignacionEnvioService {
       debugPrint('   Operación Extracción: $idOperacionExtraccion');
 
       // Preparar productos en formato JSONB
-      // precio_venta: precio de costo para la consignación (configurado por consignador en CUP)
-      // precio_costo_usd: precio_venta convertido a USD según tasa vigente
-      // precio_costo_cup: precio_venta (precio configurado por consignador)
-      // precio_venta_cup: se configura después por el consignatario en ConfirmarRecepcionConsignacionScreen
-      // ⭐ NUEVO: Incluye datos originales (presentación, variante, ubicación) para devoluciones
+      // precio_costo_usd: costo REAL del producto (precio_promedio de la presentación)
+      // precio_costo_cup: costo real en CUP (precio_promedio * tasa)
+      // precio_venta: precio que el consignador cobra por la consignación (lo configura en UI)
+      // precio_venta_cup: se configura después por el consignatario
+      // tasa_cambio: tasa vigente al momento de la creación
+      // ⭐ DATOS ORIGINALES (presentación, variante, ubicación) para devoluciones
       final productosJson = productos.map((p) {
-        final precioVentaCup = (p['precio_venta'] ?? 0.0) as double;
-        final tasaCambio = (p['tasa_cambio'] ?? 440.0) as double;
-        final precioCostoUsd = tasaCambio > 0
-            ? precioVentaCup / tasaCambio
-            : 0.0;
+        final precioVentaCup = (p['precio_venta'] as num?)?.toDouble() ?? 0.0;
+        final tasaCambio = (p['tasa_cambio'] as num?)?.toDouble() ?? 440.0;
+
+        // El costo que llega desde la asignación es el costo unitario de la
+        // presentación elegida. Un precio de venta nunca debe usarse como costo.
+        final precioCostoUsd =
+            (p['precio_costo_usd'] as num?)?.toDouble() ?? 0.0;
+        final costoCupReal = (p['precio_costo_cup'] as num?)?.toDouble() ?? 0.0;
+        final precioCostoCup = costoCupReal > 0
+            ? costoCupReal
+            : precioCostoUsd * tasaCambio;
 
         return {
           'id_inventario': p['id_inventario'],
           'id_producto': p['id_producto'],
           'cantidad': p['cantidad'],
-          'precio_costo_usd':
-              precioCostoUsd, // Precio configurado convertido a USD
-          'precio_costo_cup':
-              precioVentaCup, // Precio configurado por consignador
-          'precio_venta':
-              precioVentaCup, // Mismo valor para compatibilidad con RPC
+          'precio_costo_usd': precioCostoUsd,
+          'precio_costo_cup': precioCostoCup,
+          'precio_venta': precioVentaCup,
           'tasa_cambio': tasaCambio,
-          // ⭐ DATOS ORIGINALES (el RPC los obtiene del inventario, pero los pasamos por si acaso)
+          // ⭐ DATOS ORIGINALES (el RPC los usa para persistir en la tabla)
           'id_presentacion': p['id_presentacion'],
           'id_variante': p['id_variante'],
           'id_ubicacion': p['id_ubicacion'],
+          'denominacion_presentacion': p['denominacion_presentacion'],
+          'unidades_presentacion': p['unidades_presentacion'],
+          'costo_total_usd': p['costo_total_usd'],
+          'costo_total_cup': p['costo_total_cup'],
         };
       }).toList();
 
@@ -94,9 +102,9 @@ class ConsignacionEnvioService {
         );
       }
 
-      // Llamar función RPC
+      // Llamar función RPC (v2: persiste tasa_cambio y costo real)
       final response = await _supabase.rpc(
-        'crear_envio_consignacion',
+        'crear_envio_consignacion_v2',
         params: {
           'p_id_contrato': idContrato,
           'p_id_almacen_origen': idAlmacenOrigen,
@@ -154,7 +162,7 @@ class ConsignacionEnvioService {
       );
 
       // Preparar productos en formato JSONB incluyendo presentación/variante/ubicación
-      // para que el RPC pueda almacenarlos y obtener_productos_envio2 los pueda consultar
+      // para que el RPC pueda almacenarlos y obtener_productos_envio3 los pueda consultar
       final productosJson = productos
           .map(
             (p) => {
@@ -765,7 +773,7 @@ class ConsignacionEnvioService {
       debugPrint('📦 Obteniendo productos del envío: $idEnvio');
 
       final response = await _supabase.rpc(
-        'obtener_productos_envio2',
+        'obtener_productos_envio3',
         params: {'p_id_envio': idEnvio},
       );
 

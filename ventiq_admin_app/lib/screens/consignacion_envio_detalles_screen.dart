@@ -43,7 +43,8 @@ class _ConsignacionEnvioDetallesScreenState
   // Operaciones vinculadas al envío
   int? _idOperacionExtraccion;
   int? _idOperacionRecepcion;
-  int _estadoOperacionExtraccion = 0; // 0=no cargado, 1=pendiente, 2=completada, 3=cancelada
+  int _estadoOperacionExtraccion =
+      0; // 0=no cargado, 1=pendiente, 2=completada, 3=cancelada
   int _estadoOperacionRecepcion = 0;
 
   @override
@@ -92,25 +93,29 @@ class _ConsignacionEnvioDetallesScreenState
   void _refrescar() {
     print('🔄 Refrescando detalles del envío ${widget.idEnvio}');
     setState(() {
-      _detallesFuture = ConsignacionEnvioListadoService.obtenerDetallesEnvio(
-        widget.idEnvio,
-      ).then((detalles) {
-        if (detalles != null) {
-          print('📋 Detalles recibidos en pantalla:');
-          print('   - Almacén Origen: ${detalles['almacen_origen']}');
-          print('   - Almacén Destino: ${detalles['almacen_destino']}');
-          print('   - Porcentaje Comisión: ${detalles['porcentaje_comision']}');
-          print('   - Todas las claves: ${detalles.keys.toList()}');
-          _detallesCargados = detalles;
-        }
-        return detalles;
-      });
-      _productosFuture = ConsignacionEnvioListadoService.obtenerProductosEnvio(
-        widget.idEnvio,
-      ).then((productos) {
-        _productosCargados = productos;
-        return productos;
-      });
+      _detallesFuture =
+          ConsignacionEnvioListadoService.obtenerDetallesEnvio(
+            widget.idEnvio,
+          ).then((detalles) {
+            if (detalles != null) {
+              print('📋 Detalles recibidos en pantalla:');
+              print('   - Almacén Origen: ${detalles['almacen_origen']}');
+              print('   - Almacén Destino: ${detalles['almacen_destino']}');
+              print(
+                '   - Porcentaje Comisión: ${detalles['porcentaje_comision']}',
+              );
+              print('   - Todas las claves: ${detalles.keys.toList()}');
+              _detallesCargados = detalles;
+            }
+            return detalles;
+          });
+      _productosFuture =
+          ConsignacionEnvioListadoService.obtenerProductosEnvio(
+            widget.idEnvio,
+          ).then((productos) {
+            _productosCargados = productos;
+            return productos;
+          });
     });
     _cargarOperacionesEnvio();
   }
@@ -245,16 +250,14 @@ class _ConsignacionEnvioDetallesScreenState
 
           final detalles = snapshot.data!;
           final estadoEnvioRaw = detalles['estado_envio'];
-          final estadoEnvio =
-              estadoEnvioRaw is num
-                  ? estadoEnvioRaw.toInt()
-                  : int.tryParse(estadoEnvioRaw?.toString() ?? '');
+          final estadoEnvio = estadoEnvioRaw is num
+              ? estadoEnvioRaw.toInt()
+              : int.tryParse(estadoEnvioRaw?.toString() ?? '');
 
           final tipoEnvioRaw = detalles['tipo_envio'];
-          final tipoEnvio =
-              tipoEnvioRaw is num
-                  ? tipoEnvioRaw.toInt()
-                  : int.tryParse(tipoEnvioRaw?.toString() ?? '') ?? 1;
+          final tipoEnvio = tipoEnvioRaw is num
+              ? tipoEnvioRaw.toInt()
+              : int.tryParse(tipoEnvioRaw?.toString() ?? '') ?? 1;
 
           // Lógica de permisos de edición
           // El consignatario PUEDE editar precios en PROPUESTO y EN_TRANSITO
@@ -272,27 +275,28 @@ class _ConsignacionEnvioDetallesScreenState
           // Acciones para que el CONSIGNADOR gestione la devolución desde el detalle
           bool puedeGestionarDevolucionConsignador =
               (_canManageConsignacion &&
-                  tipoEnvio == 2 &&
-                  widget.rol == 'consignador' &&
-                  estadoEnvio == ConsignacionEnvioListadoService.ESTADO_PROPUESTO);
+              tipoEnvio == 2 &&
+              widget.rol == 'consignador' &&
+              estadoEnvio == ConsignacionEnvioListadoService.ESTADO_PROPUESTO);
 
           // Botón "Verificar Envío" para CONSIGNATARIO cuando envío está PROPUESTO
           bool puedeVerificarEnvio =
               (_canManageConsignacion &&
-                  tipoEnvio == 1 &&
-                  widget.rol == 'consignatario' &&
-                  estadoEnvio ==
-                      ConsignacionEnvioListadoService.ESTADO_PROPUESTO);
+              tipoEnvio == 1 &&
+              widget.rol == 'consignatario' &&
+              estadoEnvio == ConsignacionEnvioListadoService.ESTADO_PROPUESTO);
 
           // Acciones de CANCELACIÓN (quien crea, puede cancelar antes de avanzar)
           bool puedeCancelar =
               (_canManageConsignacion &&
-                  ((tipoEnvio == 1 &&
-                          widget.rol == 'consignador' &&
-                          estadoEnvio == ConsignacionEnvioListadoService.ESTADO_PROPUESTO) ||
-                      (tipoEnvio == 2 &&
-                          widget.rol == 'consignatario' &&
-                          estadoEnvio == ConsignacionEnvioListadoService.ESTADO_PROPUESTO)));
+              ((tipoEnvio == 1 &&
+                      widget.rol == 'consignador' &&
+                      estadoEnvio ==
+                          ConsignacionEnvioListadoService.ESTADO_PROPUESTO) ||
+                  (tipoEnvio == 2 &&
+                      widget.rol == 'consignatario' &&
+                      estadoEnvio ==
+                          ConsignacionEnvioListadoService.ESTADO_PROPUESTO)));
 
           // Quién puede completar la extracción:
           // - Envío normal (tipo 1): consignador cuando CONFIGURADO y extracción PENDIENTE
@@ -301,14 +305,16 @@ class _ConsignacionEnvioDetallesScreenState
               _canManageConsignacion &&
               _idOperacionExtraccion != null &&
               _estadoOperacionExtraccion == 1 &&
-              (
-                (tipoEnvio == 1 &&
-                    widget.rol == 'consignador' &&
-                    estadoEnvio == ConsignacionEnvioListadoService.ESTADO_CONFIGURADO) ||
-                (tipoEnvio == 2 &&
-                    widget.rol == 'consignatario' &&
-                    (estadoEnvio == 1 || estadoEnvio == ConsignacionEnvioListadoService.ESTADO_CONFIGURADO))
-              );
+              ((tipoEnvio == 1 &&
+                      widget.rol == 'consignador' &&
+                      estadoEnvio ==
+                          ConsignacionEnvioListadoService.ESTADO_CONFIGURADO) ||
+                  (tipoEnvio == 2 &&
+                      widget.rol == 'consignatario' &&
+                      (estadoEnvio == 1 ||
+                          estadoEnvio ==
+                              ConsignacionEnvioListadoService
+                                  .ESTADO_CONFIGURADO)));
 
           // Quién puede completar la recepción:
           // - Envío normal (tipo 1): consignatario cuando extracción COMPLETADA y recepción PENDIENTE
@@ -319,12 +325,11 @@ class _ConsignacionEnvioDetallesScreenState
               _estadoOperacionExtraccion == 2 &&
               _idOperacionRecepcion != null &&
               _estadoOperacionRecepcion == 1 &&
-              (
-                (tipoEnvio == 1 &&
-                    widget.rol == 'consignatario' &&
-                    estadoEnvio == ConsignacionEnvioListadoService.ESTADO_CONFIGURADO) ||
-                (tipoEnvio == 2 && widget.rol == 'consignador')
-              );
+              ((tipoEnvio == 1 &&
+                      widget.rol == 'consignatario' &&
+                      estadoEnvio ==
+                          ConsignacionEnvioListadoService.ESTADO_CONFIGURADO) ||
+                  (tipoEnvio == 2 && widget.rol == 'consignador'));
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
@@ -335,7 +340,8 @@ class _ConsignacionEnvioDetallesScreenState
                 const SizedBox(height: 24),
                 _buildSeccionProductos(puedeEditar: puedeEditar),
 
-                if (_idOperacionExtraccion != null || _idOperacionRecepcion != null) ...[
+                if (_idOperacionExtraccion != null ||
+                    _idOperacionRecepcion != null) ...[
                   const SizedBox(height: 24),
                   _buildSeccionOperaciones(
                     puedeCompletarExtraccion: puedeCompletarExtraccion,
@@ -537,22 +543,71 @@ class _ConsignacionEnvioDetallesScreenState
     Map<String, dynamic> producto, {
     required bool puedeEditar,
   }) {
-    final nombreProducto =
+    // Nombre del producto base
+    final nombreBase =
         producto['producto_denominacion'] as String? ??
         producto['nombre_producto'] as String? ??
         producto['denominacion'] as String? ??
         'N/A';
+
+    // Presentación (nueva en v3)
+    final presentacion = producto['denominacion_presentacion'] as String?;
+    final unidades = (producto['presentacion_unidades'] as num?)?.toInt() ?? 1;
+    final esBase = producto['es_presentacion_base'] as bool? ?? true;
+
+    // Construir nombre completo: "Producto (Presentación x Unid.)"
+    String nombreProducto = nombreBase;
+    if (presentacion != null && !esBase) {
+      nombreProducto = '$nombreBase ($presentacion x$unidades)';
+    } else if (presentacion != null && esBase && unidades > 1) {
+      nombreProducto = '$nombreBase ($presentacion x$unidades)';
+    }
+
+    // Variante (nueva en v3)
+    final varianteAttr = producto['variante_atributo'] as String?;
+    final varianteVal = producto['variante_valor'] as String?;
+    final tieneVariante = varianteAttr != null && varianteVal != null;
+
     final sku =
         producto['producto_sku'] as String? ??
         producto['sku'] as String? ??
         'N/A';
-    final cantidad = producto['cantidad_propuesta'] ?? 0;
-    final precioCostoUsd =
-        (producto['precio_costo_usd'] as num?)?.toDouble() ?? 0.0;
+    final cantidad =
+        (producto['cantidad_propuesta'] as num?)?.toDouble() ?? 0.0;
+    final cantidadTexto = cantidad == cantidad.roundToDouble()
+        ? cantidad.toStringAsFixed(0)
+        : cantidad.toString();
+    final equivalenciaTexto = unidades > 1
+        ? '$presentacion x$unidades unidades base'
+        : (presentacion ?? 'Unidad');
+
+    // Costo: usar precio_costo_cup (fiable) y precio_costo_real_usd (costo real de presentación)
+    final precioCostoCup =
+        (producto['precio_costo_cup'] as num?)?.toDouble() ?? 0.0;
+    final precioCostoRealUsd = (producto['precio_costo_real_usd'] as num?)
+        ?.toDouble();
+    final precioCostoUsd = (producto['precio_costo_usd'] as num?)?.toDouble();
+    final tasaCambio = (producto['tasa_cambio'] as num?)?.toDouble();
+
+    // Si precio_costo_real_usd es NULL, calcular desde CUP/tasa
+    double costoUsdFinal;
+    if (precioCostoRealUsd != null) {
+      costoUsdFinal = precioCostoRealUsd;
+    } else if (precioCostoCup > 0 && tasaCambio != null && tasaCambio > 0) {
+      costoUsdFinal = precioCostoCup / tasaCambio;
+    } else {
+      costoUsdFinal = precioCostoUsd ?? 0.0;
+    }
+
     final precioVentaCup = (producto['precio_venta_cup'] as num?)?.toDouble();
-    
-    // Obtener estado_producto (0=Pendiente, 1=Confirmado, 2=Rechazado)
-    final estadoProducto = (producto['estado_producto'] as num?)?.toInt() ?? 0;
+    final costoTotalCup = precioCostoCup * cantidad;
+    final costoTotalUsd = costoUsdFinal * cantidad;
+
+    // Ubicación (nueva en v3)
+    final ubicacion = producto['ubicacion_nombre'] as String?;
+
+    // Obtener estado_producto (1=PROPUESTO, 2=CONFIGURADO, 3=ACEPTADO, 4=RECHAZADO)
+    final estadoProducto = (producto['estado_producto'] as num?)?.toInt() ?? 1;
     final estadoTexto = _obtenerTextoEstadoProducto(estadoProducto);
     final estadoColor = _obtenerColorEstadoProducto(estadoProducto);
 
@@ -598,6 +653,23 @@ class _ConsignacionEnvioDetallesScreenState
                         'SKU: $sku',
                         style: TextStyle(fontSize: 11, color: Colors.grey[600]),
                       ),
+                      if (tieneVariante)
+                        Text(
+                          '$varianteAttr: $varianteVal',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.blue[700],
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      if (ubicacion != null)
+                        Text(
+                          'Ubicación: $ubicacion',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[600],
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -614,7 +686,7 @@ class _ConsignacionEnvioDetallesScreenState
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
-                        '$cantidad un.',
+                        '$cantidadTexto $presentacion',
                         style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
@@ -645,6 +717,11 @@ class _ConsignacionEnvioDetallesScreenState
                 ),
               ],
             ),
+            const SizedBox(height: 4),
+            Text(
+              equivalenciaTexto,
+              style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+            ),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -659,7 +736,7 @@ class _ConsignacionEnvioDetallesScreenState
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
-                      'Costo: \$${precioCostoUsd.toStringAsFixed(2)} USD',
+                      'Costo unitario: \$${precioCostoCup.toStringAsFixed(2)} CUP',
                       style: TextStyle(
                         fontSize: 11,
                         color: Colors.orange[700],
@@ -668,6 +745,29 @@ class _ConsignacionEnvioDetallesScreenState
                     ),
                   ),
                 ),
+                if (costoUsdFinal > 0) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '\$${costoUsdFinal.toStringAsFixed(2)} USD',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.blue[700],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
                 if (precioVentaCup != null && precioVentaCup > 0) ...[
                   const SizedBox(width: 8),
                   Expanded(
@@ -692,6 +792,15 @@ class _ConsignacionEnvioDetallesScreenState
                   ),
                 ],
               ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Costo total de la línea: \$${costoTotalUsd.toStringAsFixed(2)} USD · \$${costoTotalCup.toStringAsFixed(2)} CUP',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: Colors.blue[800],
+              ),
             ),
           ],
         ),
@@ -751,41 +860,40 @@ class _ConsignacionEnvioDetallesScreenState
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Rechazar producto'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('¿Rechazar este producto del envío?'),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: motivoController,
-                  decoration: const InputDecoration(
-                    labelText: 'Motivo del rechazo',
-                    border: OutlineInputBorder(),
-                  ),
-                  minLines: 2,
-                  maxLines: 4,
-                ),
-              ],
+      builder: (context) => AlertDialog(
+        title: const Text('Rechazar producto'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('¿Rechazar este producto del envío?'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: motivoController,
+              decoration: const InputDecoration(
+                labelText: 'Motivo del rechazo',
+                border: OutlineInputBorder(),
+              ),
+              minLines: 2,
+              maxLines: 4,
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancelar'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context, true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('Rechazar'),
-              ),
-            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
           ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Rechazar'),
+          ),
+        ],
+      ),
     );
 
     if (confirmed != true) return;
@@ -830,48 +938,47 @@ class _ConsignacionEnvioDetallesScreenState
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Rechazar Envío Completo'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  tipoEnvio == 2
-                      ? '¿Estás seguro de que deseas rechazar esta solicitud de devolución? '
+      builder: (context) => AlertDialog(
+        title: const Text('Rechazar Envío Completo'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              tipoEnvio == 2
+                  ? '¿Estás seguro de que deseas rechazar esta solicitud de devolución? '
                         'El envío quedará marcado como rechazado.'
-                      : '¿Estás seguro de que deseas rechazar este envío por completo? '
+                  : '¿Estás seguro de que deseas rechazar este envío por completo? '
                         'Esta acción devolverá los productos al stock del consignador.',
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: motivoController,
-                  decoration: const InputDecoration(
-                    labelText: 'Motivo del rechazo',
-                    border: OutlineInputBorder(),
-                    hintText: 'Ej: Diferencia en cantidades, mal estado, etc.',
-                  ),
-                  minLines: 2,
-                  maxLines: 4,
-                ),
-              ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancelar'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: motivoController,
+              decoration: const InputDecoration(
+                labelText: 'Motivo del rechazo',
+                border: OutlineInputBorder(),
+                hintText: 'Ej: Diferencia en cantidades, mal estado, etc.',
               ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context, true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('Confirmar Rechazo'),
-              ),
-            ],
+              minLines: 2,
+              maxLines: 4,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
           ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Confirmar Rechazo'),
+          ),
+        ],
+      ),
     );
 
     if (confirmed != true) return;
@@ -950,7 +1057,9 @@ class _ConsignacionEnvioDetallesScreenState
         SizedBox(
           width: double.infinity,
           child: ElevatedButton.icon(
-            onPressed: _isAccepting ? null : () => _navegarAVerificarEnvio(detalles),
+            onPressed: _isAccepting
+                ? null
+                : () => _navegarAVerificarEnvio(detalles),
             icon: const Icon(Icons.fact_check),
             label: const Text(
               'Verificar Envío',
@@ -967,7 +1076,9 @@ class _ConsignacionEnvioDetallesScreenState
         SizedBox(
           width: double.infinity,
           child: OutlinedButton.icon(
-            onPressed: _isAccepting ? null : () => _rechazarEnvioGlobal(tipoEnvio: 1),
+            onPressed: _isAccepting
+                ? null
+                : () => _rechazarEnvioGlobal(tipoEnvio: 1),
             icon: const Icon(Icons.close),
             label: const Text(
               'Rechazar Envío',
@@ -1041,15 +1152,14 @@ class _ConsignacionEnvioDetallesScreenState
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder:
-            (context) => ConfirmarRecepcionConsignacionScreen(
-              idContrato: idContrato,
-              idTiendaOrigen: idTiendaOrigen,
-              idTiendaDestino: idTiendaDestino,
-              idAlmacenOrigen: idAlmacenOrigen,
-              idAlmacenDestino: idAlmacenDestino,
-              idEnvio: widget.idEnvio, // Pasar el ID del envío
-            ),
+        builder: (context) => ConfirmarRecepcionConsignacionScreen(
+          idContrato: idContrato,
+          idTiendaOrigen: idTiendaOrigen,
+          idTiendaDestino: idTiendaDestino,
+          idAlmacenOrigen: idAlmacenOrigen,
+          idAlmacenDestino: idAlmacenDestino,
+          idEnvio: widget.idEnvio, // Pasar el ID del envío
+        ),
       ),
     );
 
@@ -1131,8 +1241,7 @@ class _ConsignacionEnvioDetallesScreenState
         .select('id, denominacion')
         .eq('id_tienda', idTienda);
 
-    final almacenes =
-        (almacenesResp as List).cast<Map<String, dynamic>>();
+    final almacenes = (almacenesResp as List).cast<Map<String, dynamic>>();
 
     if (almacenes.isEmpty) {
       if (!mounted) return;
@@ -1153,10 +1262,9 @@ class _ConsignacionEnvioDetallesScreenState
         .select('id, denominacion')
         .eq('id_almacen', selectedAlmacenId!);
 
-    List<Map<String, dynamic>> zonas =
-        (zonasIniciales as List).cast<Map<String, dynamic>>();
-    int? selectedZonaId =
-        zonas.isNotEmpty ? zonas.first['id'] as int : null;
+    List<Map<String, dynamic>> zonas = (zonasIniciales as List)
+        .cast<Map<String, dynamic>>();
+    int? selectedZonaId = zonas.isNotEmpty ? zonas.first['id'] as int : null;
 
     if (!mounted) return;
 
@@ -1204,8 +1312,8 @@ class _ConsignacionEnvioDetallesScreenState
                         .from('app_dat_layout_almacen')
                         .select('id, denominacion')
                         .eq('id_almacen', value);
-                    final lista =
-                        (nuevasZonas as List).cast<Map<String, dynamic>>();
+                    final lista = (nuevasZonas as List)
+                        .cast<Map<String, dynamic>>();
                     setStateDialog(() {
                       selectedAlmacenId = value;
                       zonas = lista;
@@ -1432,7 +1540,10 @@ class _ConsignacionEnvioDetallesScreenState
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: estadoColor.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(12),
@@ -1463,7 +1574,10 @@ class _ConsignacionEnvioDetallesScreenState
                   icon: const Icon(Icons.check_circle_outline, size: 18),
                   label: Text(
                     'Completar $tipo',
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: completada ? Colors.grey : colorBase,
@@ -1481,19 +1595,27 @@ class _ConsignacionEnvioDetallesScreenState
 
   String _textoEstadoOperacion(int estado) {
     switch (estado) {
-      case 1: return 'Pendiente';
-      case 2: return 'Completada';
-      case 3: return 'Cancelada';
-      default: return 'Sin estado';
+      case 1:
+        return 'Pendiente';
+      case 2:
+        return 'Completada';
+      case 3:
+        return 'Cancelada';
+      default:
+        return 'Sin estado';
     }
   }
 
   Color _colorEstadoOperacion(int estado) {
     switch (estado) {
-      case 1: return Colors.orange;
-      case 2: return Colors.green;
-      case 3: return Colors.red;
-      default: return Colors.grey;
+      case 1:
+        return Colors.orange;
+      case 2:
+        return Colors.green;
+      case 3:
+        return Colors.red;
+      default:
+        return Colors.grey;
     }
   }
 
@@ -1539,7 +1661,8 @@ class _ConsignacionEnvioDetallesScreenState
 
       final result = await InventoryService.completeOperation(
         idOperacion: idOp,
-        comentario: 'Extracción completada desde detalles del envío #${widget.idEnvio}',
+        comentario:
+            'Extracción completada desde detalles del envío #${widget.idEnvio}',
         uuid: userUuid,
       );
 
@@ -1556,7 +1679,9 @@ class _ConsignacionEnvioDetallesScreenState
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('❌ ${result['message'] ?? 'Error al completar extracción'}'),
+            content: Text(
+              '❌ ${result['message'] ?? 'Error al completar extracción'}',
+            ),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 5),
           ),
@@ -1615,7 +1740,8 @@ class _ConsignacionEnvioDetallesScreenState
 
       final result = await InventoryService.completeOperation(
         idOperacion: idOp,
-        comentario: 'Recepción completada desde detalles del envío #${widget.idEnvio}',
+        comentario:
+            'Recepción completada desde detalles del envío #${widget.idEnvio}',
         uuid: userUuid,
       );
 
@@ -1624,7 +1750,9 @@ class _ConsignacionEnvioDetallesScreenState
       if (result['success'] == true || result['status'] == 'success') {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('✅ Recepción completada. Productos registrados en inventario.'),
+            content: Text(
+              '✅ Recepción completada. Productos registrados en inventario.',
+            ),
             backgroundColor: Colors.green,
           ),
         );
@@ -1632,7 +1760,9 @@ class _ConsignacionEnvioDetallesScreenState
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('❌ ${result['message'] ?? 'Error al completar recepción'}'),
+            content: Text(
+              '❌ ${result['message'] ?? 'Error al completar recepción'}',
+            ),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 5),
           ),
@@ -1676,42 +1806,41 @@ class _ConsignacionEnvioDetallesScreenState
     final motivoController = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Cancelar Solicitud'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '¿Estás seguro de que deseas cancelar esta solicitud? Los productos reservados volverán al inventario.',
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: motivoController,
-                  decoration: const InputDecoration(
-                    labelText: 'Motivo (opcional)',
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLines: 2,
-                ),
-              ],
+      builder: (context) => AlertDialog(
+        title: const Text('Cancelar Solicitud'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '¿Estás seguro de que deseas cancelar esta solicitud? Los productos reservados volverán al inventario.',
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('NO, VOLVER'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: motivoController,
+              decoration: const InputDecoration(
+                labelText: 'Motivo (opcional)',
+                border: OutlineInputBorder(),
               ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context, true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('SÍ, CANCELAR'),
-              ),
-            ],
+              maxLines: 2,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('NO, VOLVER'),
           ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('SÍ, CANCELAR'),
+          ),
+        ],
+      ),
     );
 
     if (confirmed == true) {
@@ -1755,14 +1884,16 @@ class _ConsignacionEnvioDetallesScreenState
   }
 
   /// Obtiene el texto del estado del producto
-  /// 0 = Pendiente, 1 = Confirmado, 2 = Rechazado
+  /// 1=PROPUESTO 2=CONFIGURADO 3=ACEPTADO 4=RECHAZADO
   String _obtenerTextoEstadoProducto(int estado) {
     switch (estado) {
-      case 0:
-        return 'Pendiente';
       case 1:
-        return 'Confirmado';
+        return 'Propuesto';
       case 2:
+        return 'Configurado';
+      case 3:
+        return 'Aceptado';
+      case 4:
         return 'Rechazado';
       default:
         return 'Desconocido';
@@ -1770,14 +1901,16 @@ class _ConsignacionEnvioDetallesScreenState
   }
 
   /// Obtiene el color del estado del producto
-  /// 0 = Pendiente (naranja), 1 = Confirmado (verde), 2 = Rechazado (rojo)
+  /// 1=PROPUESTO(naranja) 2=CONFIGURADO(azul) 3=ACEPTADO(verde) 4=RECHAZADO(rojo)
   Color _obtenerColorEstadoProducto(int estado) {
     switch (estado) {
-      case 0:
-        return Colors.orange;
       case 1:
-        return Colors.green;
+        return Colors.orange;
       case 2:
+        return Colors.blue;
+      case 3:
+        return Colors.green;
+      case 4:
         return Colors.red;
       default:
         return Colors.grey;
