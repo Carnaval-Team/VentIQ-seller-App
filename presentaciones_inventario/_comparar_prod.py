@@ -62,6 +62,26 @@ def main() -> int:
                 d1 = con_crlf - len_prod
                 print(f"  -> #{i} NO coincide (diferencia {d1:+d} con CRLF, "
                       f"{sin_cr - len_prod:+d} con LF)")
+                # PITFALL (visto al aplicar el 43): si el archivo lleva
+                # comentarios de linea completa que se quitaron al aplicar la
+                # funcion, `len` NO coincide aunque el CUERPO sea identico.
+                # El largo por si solo da FALSOS POSITIVOS. Hay que comparar la
+                # huella normalizada sin comentarios, que se saca con:
+                #
+                #   SELECT length(regexp_replace(prosrc,'(?m)^[ \t]*--.*$','','g')),
+                #          md5(lower(regexp_replace(
+                #              regexp_replace(prosrc,'(?m)^[ \t]*--.*$','','g'),
+                #              '\s','','g')))
+                #     FROM pg_proc WHERE proname = '...';
+                #
+                # y del lado local, el md5 de
+                #   re.sub(r'\s','', <cuerpo sin lineas que empiezan con -->).lower()
+                #
+                # Verificado en el 43: las 3 funciones dan huella identica a
+                # produccion en las 3, y el `len` diferia en 2 por esa razon.
+                print(f"     OJO: si el archivo lleva comentarios de linea completa, "
+                      f"usa la huella normalizada (ver _comparar_43.py), "
+                      f"no el largo.")
 
     if len(sys.argv) >= 4:
         lineas_prod = int(sys.argv[3])

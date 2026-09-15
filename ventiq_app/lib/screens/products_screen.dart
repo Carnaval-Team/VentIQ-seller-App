@@ -219,13 +219,10 @@ class _ProductsScreenState extends State<ProductsScreen> {
       });
 
       // Offline o dispositivo full-offline: siempre datos locales (sin sync/red).
-      final useLocalData =
-          await _userPreferencesService.shouldUseLocalData();
+      final useLocalData = await _userPreferencesService.shouldUseLocalData();
 
       // Verificar caché si no es refresh forzado y estamos online
-      if (!forceRefresh &&
-          !useLocalData &&
-          _isCacheValid(widget.categoryId)) {
+      if (!forceRefresh && !useLocalData && _isCacheValid(widget.categoryId)) {
         final cachedProducts = _productsCache[widget.categoryId]!;
         setState(() {
           productsBySubcategory = cachedProducts;
@@ -513,7 +510,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
                             categoryColor: widget.categoryColor,
                             promotionData: _promotionData,
                             isLimitDataUsageEnabled: _isLimitDataUsageEnabled,
-                            showSku: _isShowSkuEnabled || _userPreferencesService.isShowSkuEnabledSync,
+                            showSku:
+                                _isShowSkuEnabled ||
+                                _userPreferencesService.isShowSkuEnabledSync,
                           );
                         },
                       ),
@@ -938,10 +937,7 @@ class _SubcategorySectionState extends State<_SubcategorySection> {
     final double columnHeight = cardHeight * 3 + 6 * 2; // 3 cards + 2 gaps
 
     if (!kIsWeb) {
-      return SizedBox(
-        height: columnHeight,
-        child: focusableList,
-      );
+      return SizedBox(height: columnHeight, child: focusableList);
     }
 
     return SizedBox(
@@ -1120,7 +1116,12 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
         );
       },
       child: Container(
-        height: (widget.showSku && widget.product.sku != null && widget.product.sku!.isNotEmpty) ? 84 : 70,
+        height:
+            (widget.showSku &&
+                    widget.product.sku != null &&
+                    widget.product.sku!.isNotEmpty)
+                ? 84
+                : 70,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: Colors.white,
@@ -1196,7 +1197,9 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // SKU del producto (si está habilitado)
-                  if (widget.showSku && widget.product.sku != null && widget.product.sku!.isNotEmpty)
+                  if (widget.showSku &&
+                      widget.product.sku != null &&
+                      widget.product.sku!.isNotEmpty)
                     Text(
                       'SKU: ${widget.product.sku}',
                       maxLines: 1,
@@ -1310,9 +1313,7 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                                 ? '(elaborado)'
                                 : widget.product.esServicio
                                 ? '(servicio)'
-                                : widget.product.cantidadReal > 0
-                                ? 'Stock: ${widget.product.cantidadReal}'
-                                : 'Agotado',
+                                : widget.product.stockLabel(),
                             style: TextStyle(
                               fontSize: 13,
                               color:
@@ -1350,7 +1351,10 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                         if (widget.product.reservadoCarnaval > 0) ...[
                           const SizedBox(width: 6),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.orange[50],
                               borderRadius: BorderRadius.circular(8),
@@ -1608,7 +1612,7 @@ class _ProductCardState extends State<_ProductCard>
                                       ? '(elaborado)'
                                       : widget.product.esServicio
                                       ? '(servicio)'
-                                      : 'Stock: ${widget.product.cantidadReal}',
+                                      : widget.product.stockLabel(),
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
@@ -1630,11 +1634,16 @@ class _ProductCardState extends State<_ProductCard>
                               if (widget.product.reservadoCarnaval > 0) ...[
                                 const SizedBox(width: 6),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 4,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: Colors.orange[50],
                                     borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: Colors.orange[300]!),
+                                    border: Border.all(
+                                      color: Colors.orange[300]!,
+                                    ),
                                   ),
                                   child: Text(
                                     'Res: ${widget.product.reservadoCarnaval}',

@@ -295,17 +295,71 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
   }
 
   double _getTotalEquivalentUnits() {
-    final conversionFactor = _selectedPresentation?.cantidad ?? 1.0;
-
     if (_currentProduct?.variantes.isNotEmpty ?? false) {
+      // CADA variante lleva su propia presentacion (fila de inventario
+      // distinta), asi que el factor se resuelve POR VARIANTE. Antes se
+      // aplicaba un solo factor global a todas y el equivalente salia falso
+      // cuando cada una estaba en un empaque distinto.
       double total = 0.0;
-      for (final quantity in _variantQuantities.values) {
-        total += quantity * conversionFactor;
+      for (final e in _variantQuantities.entries) {
+        total += e.value * _factorRelDeVariante(e.key);
       }
       return total;
     }
 
-    return _selectedQuantity * conversionFactor;
+    return _selectedQuantity * _factorRelSeleccionado();
+  }
+
+  /// Factor relativo a la base de la presentacion de UNA variante.
+  ///
+  /// La variante trae su `id_presentacion` (fila de
+  /// `app_dat_producto_presentacion`) en `inventoryMetadata`, puesto por
+  /// `ProductDetailService._extractInventoryMetadata`. Se busca esa fila en la
+  /// cadena y se usa su `factorRel`. Si la variante no expone presentacion, cae
+  /// al selector global y luego a 1.0.
+  double _factorRelDeVariante(ProductVariant variant) {
+    final idPres =
+        (variant.inventoryMetadata?['id_presentacion'] as num?)?.toInt();
+    if (idPres != null) {
+      final cadena = _cadenaLocal();
+      for (final p in cadena) {
+        if (p.idPresentacion == idPres) return p.factorRel;
+      }
+    }
+    return _factorRelSeleccionado();
+  }
+
+  /// ProductPresentation de la variante, buscada por su `id_presentacion`
+  /// (fila de `app_dat_producto_presentacion`) en las presentaciones cargadas.
+  /// Devuelve null si la variante no expone presentacion.
+  ProductPresentation? _presentacionDeVariante(ProductVariant variant) {
+    final idPres =
+        (variant.inventoryMetadata?['id_presentacion'] as num?)?.toInt();
+    if (idPres == null) return null;
+    for (final p in _productPresentations) {
+      if (p.id == idPres) return p;
+    }
+    return null;
+  }
+
+  /// Cadena de presentaciones resuelta desde el estado del widget.
+  List<PresentacionLocal> _cadenaLocal() {
+    return PresentacionCadenaLocal.resolverDesdeCrudas(
+      _productPresentations
+          .map(
+            (p) => {
+              'id': p.id,
+              'cantidad': p.cantidad,
+              'es_base': p.esBase,
+              'presentacion': {
+                'id': p.idPresentacion,
+                'denominacion': p.presentacion.denominacion,
+                'sku_codigo': p.presentacion.skuCodigo,
+              },
+            },
+          )
+          .toList(),
+    );
   }
 
   /// Construye la sección de precio con promociones
@@ -504,21 +558,11 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
     final sel = _selectedPresentation;
     if (sel == null) return 1.0;
 
-    final cadena = PresentacionCadenaLocal.resolverDesdeCrudas(
-      _productPresentations
-          .map((p) => {
-                'id': p.id,
-                'cantidad': p.cantidad,
-                'es_base': p.esBase,
-                'presentacion': {
-                  'id': p.idPresentacion,
-                  'denominacion': p.presentacion.denominacion,
-                  'sku_codigo': p.presentacion.skuCodigo,
-                },
-              })
-          .toList(),
-    );
+    final cadena = _cadenaLocal();
 
+    // Match por `id` = FILA de `app_dat_producto_presentacion`. Verificado en
+    // produccion (producto 11007): la cadena expone la fila (11197, 11198...) y
+    // el ledger guarda esa misma fila. NO usar `idPresentacion` (nomenclador).
     for (final p in cadena) {
       if (p.idPresentacion == sel.id) return p.factorRel;
     }
@@ -540,7 +584,13 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
           // unidad, asi que el modo fluido perdia el empaque igual que la
           // pantalla de detalle. El importe es el mismo producto de los dos
           // numeros, asi que el total no cambia.
-          final factorRel = _factorRelSeleccionado();
+          //
+          // El factor y la presentacion son POR VARIANTE: cada una lleva su
+          // propia fila de inventario (`inventoryMetadata['id_presentacion']`).
+          // Usar el selector global aqui metia "1 Caja" con el id de la
+          // "Bolsa" cuando las variantes estaban en empaques distintos.
+          final factorRel = _factorRelDeVariante(variant);
+          final presVariante = _presentacionDeVariante(variant);
           final prices = _calculatePromotionPrices(variant.precio);
           final activePromotion = _getActivePromotion();
 
@@ -554,10 +604,11 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
               ubicacionAlmacen: variant.descripcion ?? 'Almacén',
               variante: variant,
               promotionData: activePromotion, // Incluir datos de promoción
-              idPresentacion: _selectedPresentation?.id,
+              idPresentacion: presVariante?.id ?? _selectedPresentation?.id,
               presentacionNombre:
+                  presVariante?.presentacion.denominacion ??
                   _selectedPresentation?.presentacion.denominacion,
-              presentacionFactor: _selectedPresentation == null ? null : factorRel,
+              presentacionFactor: factorRel,
             ),
           );
         }
@@ -580,8 +631,10 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
             ubicacionAlmacen: 'Almacén Principal',
             promotionData: activePromotion, // Incluir datos de promoción
             idPresentacion: _selectedPresentation?.id,
-            presentacionNombre: _selectedPresentation?.presentacion.denominacion,
-            presentacionFactor: _selectedPresentation == null ? null : factorRel,
+            presentacionNombre:
+                _selectedPresentation?.presentacion.denominacion,
+            presentacionFactor:
+                _selectedPresentation == null ? null : factorRel,
           ),
         );
       }
@@ -916,8 +969,10 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
                     IconButton(
                       onPressed:
                           quantity > 0
-                              ? () =>
-                                  _updateVariantQuantity(variant, quantity - 1.0)
+                              ? () => _updateVariantQuantity(
+                                variant,
+                                quantity - 1.0,
+                              )
                               : null,
                       icon: const Icon(Icons.remove),
                     ),
@@ -931,8 +986,10 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
                     IconButton(
                       onPressed:
                           quantity < variant.cantidad
-                              ? () =>
-                                  _updateVariantQuantity(variant, quantity + 1.0)
+                              ? () => _updateVariantQuantity(
+                                variant,
+                                quantity + 1.0,
+                              )
                               : null,
                       icon: const Icon(Icons.add),
                     ),
