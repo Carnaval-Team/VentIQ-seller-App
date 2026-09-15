@@ -1135,7 +1135,18 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     }
   }
 
-  bool _isCurrentPresentationFractional() {
+  bool _isCurrentPresentationFractional([ProductVariant? variant]) {
+    if (variant != null) {
+      final idPresVariante =
+          (variant.inventoryMetadata?['id_presentacion'] as num?)?.toInt();
+      if (idPresVariante != null) {
+        final pres = _productPresentations.cast<ProductPresentation?>()
+            .firstWhere((p) => p?.id == idPresVariante, orElse: () => null);
+        if (pres != null) {
+          return pres.presentacion.esFraccionable;
+        }
+      }
+    }
     final productKey = '${currentProduct.id}';
     final selected = _selectedPresentationsByProduct[productKey];
     if (selected != null) {
@@ -2365,8 +2376,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
           ],
           const SizedBox(height: 12),
           // Fila de presentación
-          _buildPresentationSelector(currentProduct),
-          if (_isCurrentPresentationFractional()) ...[
+          _buildPresentationSelector(currentProduct, variant),
+          if (_isCurrentPresentationFractional(variant)) ...[
             const SizedBox(height: 8),
             _buildFractionStepSelector(),
           ],
@@ -2395,7 +2406,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                     InkWell(
                       onTap: () {
                         final step =
-                            _isCurrentPresentationFractional()
+                            _isCurrentPresentationFractional(variant)
                                 ? _fractionStep
                                 : 1.0;
                         setState(() {
@@ -2446,7 +2457,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                     ),
                     InkWell(
                       onTap:
-                          () => _showQuantityDialog(name, quantity.toDouble()),
+                          () => _showQuantityDialog(name, quantity.toDouble(), variant),
                       child: Container(
                         width: 50,
                         height: 36,
@@ -2474,7 +2485,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                     InkWell(
                       onTap: () {
                         final step =
-                            _isCurrentPresentationFractional()
+                            _isCurrentPresentationFractional(variant)
                                 ? _fractionStep
                                 : 1.0;
                         setState(() {
@@ -2543,7 +2554,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   ///   dejar el selector activo crearía dos ejes del mismo dato (presentación
   ///   global vs presentación por variante) y el usuario podría vender "1 Caja"
   ///   con el id_presentacion de la "Bolsa".
-  Widget _buildPresentationSelector(Product product) {
+  Widget _buildPresentationSelector(Product product, [ProductVariant? variant]) {
     final productKey = '${product.id}';
     final selectedPresentationForProduct =
         _selectedPresentationsByProduct[productKey];
@@ -2596,10 +2607,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     String? bloqueadoPorVariante;
 
     if (productoTieneVariantes) {
-      // Priorizar `selectedVariant` (lo que el usuario toca en la card)
+      // Priorizar el `variant` pasado por parámetro (la variante de ESTE card)
       // para que el dropdown refleje la presentación de la variante que
-      // visualmente está activa, no la primera con cantidad del mapa.
-      ProductVariant? varianteActiva = selectedVariant;
+      // visualmente pertenece a este card, no la primera con cantidad del mapa.
+      ProductVariant? varianteActiva = variant ?? selectedVariant;
       final cantActiva =
           varianteActiva != null ? variantQuantities[varianteActiva] ?? 0.0 : 0.0;
       if (cantActiva <= 0) {
@@ -2861,8 +2872,12 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     return total;
   }
 
-  void _showQuantityDialog(String productName, double currentQuantity) {
-    final isFractional = _isCurrentPresentationFractional();
+  void _showQuantityDialog(
+    String productName,
+    double currentQuantity, [
+    ProductVariant? variant,
+  ]) {
+    final isFractional = _isCurrentPresentationFractional(variant);
     final TextEditingController quantityController = TextEditingController(
       text: PriceUtils.formatQuantity(currentQuantity),
     );
