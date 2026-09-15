@@ -10,7 +10,7 @@
     'use strict';
 
     // Datos de contacto en un solo lugar: si cambian, se cambian aquí.
-    const WHATSAPP = '5363464544';
+    const WHATSAPP = '5353765120';
     const EMAIL = 'soporteinventtia@gmail.com';
 
     document.addEventListener('DOMContentLoaded', function () {

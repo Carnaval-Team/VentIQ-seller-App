@@ -7,23 +7,23 @@
 
 :root {
     /* Inventtia Colors - Based on app_colors.dart */
-    --primary: #4A90E2;
-    --primary-dark: #357ABD;
-    --secondary: #6B7280;
+    --primary: #163353;
+    --primary-dark: #0F2438;
+    --secondary: #5B849E;
     --success: #10B981;
-    --warning: #FF6B35;
+    --warning: #C4A35A;
     --error: #EF4444;
-    --background: #F8F9FA;
+    --background: #F7FAFB;
     --surface: #FFFFFF;
-    --text-primary: #1F2937;
-    --text-secondary: #6B7280;
-    --text-light: #9CA3AF;
-    --border: #E5E7EB;
+    --text-primary: #102033;
+    --text-secondary: #3D5366;
+    --text-light: #6B8498;
+    --border: #D1D9E0;
     
     /* Gradients */
     --gradient-primary: linear-gradient(135deg, var(--primary), var(--primary-dark));
     --gradient-success: linear-gradient(135deg, var(--success), #059669);
-    --gradient-hero: linear-gradient(135deg, #4A90E2 0%, #357ABD 50%, #2E6BA8 100%);
+    --gradient-hero: linear-gradient(135deg, #0F2438 0%, #163353 50%, #2A5F8A 100%);
     
     /* Shadows */
     --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
@@ -458,15 +458,15 @@ body {
 }
 
 .catalog-card {
-    border-top: 4px solid #9b59b6;
+    border-top: 4px solid #163353;
 }
 
 .catalog-icon {
-    background: linear-gradient(135deg, #9b59b6, #8e44ad);
+    background: linear-gradient(135deg, #163353, #1E4A6E);
 }
 
 .catalog-card .feature-item i {
-    color: #9b59b6;
+    color: #163353;
 }
 
 .app-header {
@@ -904,11 +904,23 @@ body {
 
 /* Catalog nav button */
 .download-btn.catalog-app {
-    background: linear-gradient(135deg, #9b59b6, #8e44ad);
+    background: linear-gradient(135deg, #163353, #1E4A6E);
     color: white;
 }
 
 .download-btn.catalog-app:hover {
-    background: linear-gradient(135deg, #8e44ad, #7d3c98);
+    background: linear-gradient(135deg, #1E4A6E, #0F2438);
     color: white;
+}
+
+
+.logo-wordmark {
+    width: auto !important;
+    height: 40px !important;
+    border-radius: 8px;
+    object-fit: contain;
+    background: #EFF7F9;
+}
+.nav-logo, .footer-logo {
+    text-decoration: none;
 }

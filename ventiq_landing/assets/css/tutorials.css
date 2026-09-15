@@ -112,12 +112,12 @@
 }
 
 .catalog-category.active {
-    border-color: #9b59b6;
+    border-color: #163353;
     background: linear-gradient(135deg, rgba(155, 89, 182, 0.05), rgba(155, 89, 182, 0.1));
 }
 
 .catalog-category .category-icon {
-    background: linear-gradient(135deg, #9b59b6, #8e44ad);
+    background: linear-gradient(135deg, #163353, #1E4A6E);
 }
 
 .category-card.active .category-icon {
