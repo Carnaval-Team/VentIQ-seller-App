@@ -1,8 +1,50 @@
 {
-  "current_version": "2.4.6",
-  "build": 848,
+  "current_version": "2.5.0",
+  "build": 849,
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.5.0",
+      "date": "2026-09-16",
+      "title": "📦 Vende por unidades aunque solo tengas cajas: rompe bultos con un toque",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Vende unidades sueltas aunque el estante solo tenga cajas",
+          "description": "Si el cliente pide 5 unidades y solo tienes cajas o blisters cerrados, la app te propone abrir el empaque necesario para completar la venta. Nada de \"no hay stock\" cuando la mercancía está ahí: la app ahora entiende lo que hay dentro de cada caja."
+        },
+        {
+          "type": "feature",
+          "title": "La app te avisa antes de abrir cada empaque",
+          "description": "Antes de romper nada, verás exactamente qué se va a abrir y cuántas unidades quedan disponibles después. Tú decides si abrir o cancelar, y el aviso también aparece mientras subes la cantidad, para que nunca haya sorpresas."
+        },
+        {
+          "type": "improvement",
+          "title": "El sobrante no se pierde",
+          "description": "Al abrir una caja, las unidades que no se venden quedan disponibles para el siguiente cliente. El inventario registra la apertura del empaque para que la administración vea exactamente qué pasó con cada bulto."
+        },
+        {
+          "type": "improvement",
+          "title": "El límite de cantidad ahora muestra todo lo que puedes vender",
+          "description": "Ya no te limita el stock suelto: puedes pedir hasta el total disponible sumando los empaques, y la app te guía para completar la venta abriendo lo necesario."
+        },
+        {
+          "type": "fix",
+          "title": "Cobrar la mesa ya no da falsos avisos de falta de stock",
+          "description": "En el flujo de restaurante, los productos ya descontados al pedirlos a la cuenta no vuelven a verificarse al cobrar. Cerrar la nota y enviar la orden es fluido, tanto online como sin conexión."
+        },
+        {
+          "type": "fix",
+          "title": "Trabajar con bultos funciona también sin internet",
+          "description": "El desarme de empaques se evalúa con los datos guardados en el dispositivo cuando estás offline. Al recuperar la conexión, todo se registra en el servidor exactamente igual que una venta online."
+        },
+        {
+          "type": "improvement",
+          "title": "Volver atrás más fácil en mesas",
+          "description": "El detalle de mesa siempre tiene botón de regreso a la grilla de mesas — incluso después de cobrar — y los botones de atrás se ven en blanco en todas las pantallas."
+        }
+      ]
+    },
     {
       "version": "2.4.6",
       "date": "2026-09-12",

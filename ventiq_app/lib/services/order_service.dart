@@ -990,6 +990,10 @@ class OrderService {
           'id_opcion_variante': ci.idOpcionVariante,
         if (ci.skuProducto != null) 'sku_producto': ci.skuProducto,
         if (ci.skuUbicacion != null) 'sku_ubicacion': ci.skuUbicacion,
+        // El item ya descontó inventario al pedirse (fn_pedir_item_cuenta con
+        // origen barra): al cobrar NO vuelve a descontarse. El chequeo de
+        // stock de la preorden debe ignorar este item o contaría doble.
+        'stock_movido': ci.stockMovido,
         // Marcador para que sepamos que esto vino de una cuenta abierta.
         'from_cuenta_item_id': ci.id,
       };

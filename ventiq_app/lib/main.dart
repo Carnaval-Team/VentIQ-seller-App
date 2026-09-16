@@ -100,6 +100,14 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF194B8C)),
+        // Los AppBars de la app son azules: el icono de retroceso (leading
+        // automático de Navigator) hereda el color del theme, y sin esto sale
+        // negro/oscuro sobre el azul en las pantallas que no lo pisan.
+        appBarTheme: const AppBarTheme(
+          foregroundColor: Colors.white,
+          iconTheme: IconThemeData(color: Colors.white),
+          actionsIconTheme: IconThemeData(color: Colors.white),
+        ),
       ),
       builder: (context, child) {
         return OfflineDialogOverlay(

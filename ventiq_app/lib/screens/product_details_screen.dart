@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import '../models/product.dart';
 import '../services/order_service.dart';
@@ -9,6 +11,7 @@ import '../services/currency_service.dart';
 import '../services/preview_rebalanceo_service.dart';
 import '../utils/price_utils.dart';
 import '../utils/presentacion_cadena_local.dart';
+import '../utils/desarme_bulto_local.dart';
 import '../utils/promotion_rules.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/elaborated_product_chip.dart';
@@ -84,6 +87,13 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   final Map<int, double> _customVariantPrices = {};
   AnimationController? _editIconController;
   Animation<double>? _editIconOpacity;
+
+  // Estado para desarmar bultos - FASE 6
+  // Map<int presentacionId, int cantidadDesarmada>
+  final Map<int, int> _bultosDesarmados = {};
+  // Stock simulado offline de cada presentación: {presentacionId: cantidad}
+  final Map<int, double> _stockPresentacionesSimulado = {};
+
   @override
   void initState() {
     super.initState();
@@ -105,7 +115,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     }
 
     // Si el producto no tiene stock, mostrar aviso y volver (excepto elaborados y servicios)
+    // Venta por unidades: con saldo 0 pero bultos desarmables SÍ se puede vender.
     if (widget.product.cantidadReal <= 0 &&
+        _sinStockNiDesarmable &&
         !widget.product.esElaborado &&
         !widget.product.esServicio) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -850,7 +862,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       }
 
       // Verificar si el stock real total (descontando reservas) es <= 0
+      // Venta por unidades: con saldo 0 pero bultos desarmables SÍ se vende.
       if (detailedProduct.cantidadReal <= 0 &&
+          _sinStockNiDesarmable &&
           !detailedProduct.esElaborado &&
           !detailedProduct.esServicio) {
         if (mounted) {
@@ -1476,16 +1490,71 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   }
 
   double get maxQuantityForProduct {
-    return currentProduct.cantidadReal.toDouble();
+    final base = currentProduct.cantidadReal.toDouble();
+
+    // VENTA POR UNIDADES con saldo 0: si la presentación elegida tiene saldo
+    // propio 0 pero hay bultos desarmables, el límite es el máximo servible
+    // (equivalente convertible). Sin cadena o sin saldos locales se conserva
+    // el límite previo: el servidor manda al vender.
+    final idPres = _presentacionElegidaId(currentProduct);
+    final stocks = _stocksPorPresentacionLocal();
+    if (idPres == null || stocks == null || _cadenaPresentaciones().isEmpty) {
+      return base;
+    }
+    final maxServible = DesarmeBultoLocal.maximoServible(
+      cadena: _cadenaPresentaciones(),
+      stocks: stocks,
+      idPresentacionPedida: idPres,
+      saldoPropio: stocks[idPres] ?? 0,
+    );
+    return math.max(base, maxServible);
+  }
+
+  /// ¿No hay stock ni directo ni desarmando bultos?
+  ///
+  /// Compuerta de entrada de la pantalla. Con saldo 0 en la presentación base
+  /// pero bultos desarmables, el producto SÍ es vendible por unidades, así que
+  /// no se muestra "Sin stock". Sin `stockMixto` (cache legacy) conserva el
+  /// criterio previo de `cantidadReal` para no bloquear nada nuevo.
+  bool get _sinStockNiDesarmable {
+    if (currentProduct.cantidadReal > 0) return false;
+    final stocks = _stocksPorPresentacionLocal();
+    if (stocks == null) return true;
+    final cadena = _cadenaPresentaciones();
+    if (cadena.isEmpty) return true;
+    // Alguna presentación con saldo convertible > 0.
+    for (final p in cadena) {
+      if ((stocks[p.idPresentacion] ?? 0) > 0) return false;
+    }
+    return true;
   }
 
   double maxQuantityForVariant(ProductVariant variant) {
-    return variant.cantidadReal.toDouble();
+    final propio = variant.cantidadReal.toDouble();
+
+    // Venta por unidades con saldo 0: el límite sube al máximo convertible
+    // (sumando los bultos de presentaciones mayores). Sin stockMixto o sin
+    // cadena se conserva el límite previo: el servidor manda al vender.
+    final idPresVariante =
+        (variant.inventoryMetadata?['id_presentacion'] as num?)?.toInt();
+    final stocks = _stocksPorPresentacionLocal();
+    final cadena = _cadenaPresentaciones();
+    if (idPresVariante == null || stocks == null || cadena.isEmpty) {
+      return propio;
+    }
+    final maxServible = DesarmeBultoLocal.maximoServible(
+      cadena: cadena,
+      stocks: stocks,
+      idPresentacionPedida: idPresVariante,
+      saldoPropio: stocks[idPresVariante] ?? 0,
+    );
+    return math.max(propio, maxServible);
   }
 
   @override
   Widget build(BuildContext context) {
     if (widget.product.cantidadReal <= 0 &&
+        _sinStockNiDesarmable &&
         !widget.product.esElaborado &&
         !widget.product.esServicio) {
       return const Scaffold(
@@ -2503,9 +2572,15 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                               if (currentProduct.esElaborado ||
                                   currentProduct.esServicio ||
                                   variantQuantities[variant]! + step <=
-                                      variant.cantidadReal) {
+                                      maxQuantityForVariant(variant)) {
                                 variantQuantities[variant] =
                                     variantQuantities[variant]! + step;
+                                _avisarDesarmePendiente(
+                                  variantQuantities[variant]!,
+                                  (variant.inventoryMetadata?['id_presentacion']
+                                          as num?)
+                                      ?.toInt(),
+                                );
                               }
                             }
                           }
@@ -2953,6 +3028,33 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     final double? newQuantity = double.tryParse(quantityText);
     if (newQuantity == null || newQuantity < 0) return;
 
+    // Aviso inmediato: la cantidad elegida excede el saldo propio de la
+    // presentación, así que al vender se abrirán bultos de presentaciones
+    // mayores. Es solo un aviso: la validación real la hace el preview al
+    // agregar (online) o el resolutor local (offline).
+    final stocks = _stocksPorPresentacionLocal();
+    final cadena = _cadenaPresentaciones();
+    if (stocks != null && cadena.isNotEmpty) {
+      final idPres = _presentacionElegidaId(currentProduct);
+      if (idPres != null && newQuantity > (stocks[idPres] ?? 0)) {
+        final nombre = cadena
+            .firstWhere(
+              (p) => p.idPresentacion == idPres,
+              orElse: () => cadena.first,
+            )
+            .nombre;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'No hay suficiente $nombre suelto: se abrirán otras '
+              'presentaciones para completar la venta.',
+            ),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+
     setState(() {
       if (currentProduct.variantes.isEmpty) {
         // Producto sin variantes
@@ -2964,7 +3066,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
             final maxQty =
                 currentProduct.esElaborado || currentProduct.esServicio
                     ? newQuantity
-                    : newQuantity.clamp(0.0, variant.cantidadReal.toDouble());
+                    : newQuantity.clamp(0.0, maxQuantityForVariant(variant));
             variantQuantities[variant] = maxQty;
             break;
           }
@@ -3018,6 +3120,13 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
             selectedVariant = firstVariant;
             // Establecer cantidad inicial de 1 para la variante seleccionada
             variantQuantities[firstVariant] = 1;
+            // Si el saldo propio de la presentación es 0, avisar que ese 1
+            // saldrá de abrir un bulto.
+            _avisarDesarmePendiente(
+              1,
+              (firstVariant.inventoryMetadata?['id_presentacion'] as num?)
+                  ?.toInt(),
+            );
             print(
               '🔄 setState ejecutado - selectedVariant: ${selectedVariant?.nombre}',
             );
@@ -3204,6 +3313,186 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
         return null;
       }
 
+  /// Cadena de presentaciones del producto, ya ordenada y con factores.
+  ///
+  /// Misma construcción que usa `_presentacionElegidaFactorRel`: el `id` de
+  /// `ProductPresentation` es la FILA (`app_dat_producto_presentacion.id`),
+  /// que es lo que guardan tanto `PresentacionLocal.idPresentacion` como el
+  /// ledger (`app_dat_inventario_productos.id_presentacion`).
+  List<PresentacionLocal> _cadenaPresentaciones() {
+    return PresentacionCadenaLocal.resolverDesdeCrudas(
+      _productPresentations
+          .map((p) => {
+                'id': p.id,
+                'cantidad': p.cantidad,
+                'es_base': p.esBase,
+                'presentacion': {
+                  'id': p.idPresentacion,
+                  'denominacion': p.presentacion.denominacion,
+                  'sku_codigo': p.presentacion.skuCodigo,
+                },
+              })
+          .toList(),
+    );
+  }
+
+  /// Saldos locales por presentación para evaluar el desarme sin red.
+  ///
+  /// Fuente principal: las filas de inventario que ya llegan como variantes
+  /// (`inventoryMetadata['id_presentacion']` + `cantidadReal`) y, para
+  /// productos sin variantes, la metadata del producto. `stockMixto` queda de
+  /// respaldo. Si no hay nada, devuelve null y el evaluador no bloquea.
+  Map<int, double>? _stocksPorPresentacionLocal() {
+    final out = <int, double>{};
+
+    for (final v in currentProduct.variantes) {
+      final id = (v.inventoryMetadata?['id_presentacion'] as num?)?.toInt();
+      if (id == null) continue;
+      out[id] = (out[id] ?? 0) + v.cantidadReal.toDouble();
+    }
+
+    if (out.isEmpty) {
+      final meta = currentProduct.inventoryMetadata;
+      final id = (meta?['id_presentacion'] as num?)?.toInt();
+      if (id != null) {
+        out[id] = currentProduct.cantidadReal.toDouble();
+      }
+    }
+
+    if (out.isNotEmpty) return out;
+
+    final mixto = currentProduct.stockMixto;
+    if (mixto == null || mixto.isEmpty) return null;
+    for (final fila in mixto) {
+      final id = (fila['id_presentacion'] as num?)?.toInt();
+      final cant = (fila['cantidad_final'] as num?)?.toDouble() ??
+          (fila['saldo'] as num?)?.toDouble();
+      if (id != null && cant != null) {
+        out[id] = (out[id] ?? 0) + cant;
+      }
+    }
+    return out;
+  }
+
+  /// Aviso offline: no alcanza el stock ni desarmando bultos.
+  ///
+  /// Gemelo de `_avisarImposible` de `PreviewRebalanceoService`, pero con el
+  /// máximo calculado localmente. No usa la preferencia "no preguntar": la
+  /// falta de stock no se silencia.
+  Future<void> _avisarStockInsuficienteOffline(double maximoServible) async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.inventory_2_outlined, color: Colors.red),
+            SizedBox(width: 8),
+            Expanded(child: Text('No hay suficiente')),
+          ],
+        ),
+        content: Text(
+          maximoServible > 0
+              ? 'No alcanza el stock disponible. Como máximo se pueden servir '
+                  '${FormatoPresentacion.cantidad(maximoServible)}.'
+              : 'No alcanza el stock disponible.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Confirmación offline del desarme. `null` si se canceló el diálogo.
+  Future<bool?> _confirmarDesarmeOffline(PlanDesarme plan) async {
+    if (!mounted) return false;
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.unfold_more, color: Colors.orange.shade800),
+            const SizedBox(width: 8),
+            const Expanded(child: Text('¿Desarmar un bulto?')),
+          ],
+        ),
+        content: Text(plan.mensaje),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Desarmar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Plan de desarme para una cantidad y presentación concretas, calculado
+  /// con los saldos locales (las variantes ya traen las filas de inventario).
+  /// Null si alcanza el saldo propio o no hay datos para evaluar.
+  PlanDesarme? _planDesarmePara(double cantidad, int? idPresentacion) {
+    if (idPresentacion == null || cantidad <= 0) return null;
+    final cadena = _cadenaPresentaciones();
+    final stocks = _stocksPorPresentacionLocal();
+    if (cadena.isEmpty || stocks == null) return null;
+    final eval = DesarmeBultoLocal.evaluar(
+      cadena: cadena,
+      stocks: stocks,
+      idPresentacionPedida: idPresentacion,
+      cantidadPedida: cantidad,
+    );
+    return eval.requiereDesarme ? eval.plan : null;
+  }
+
+  /// Texto informativo de qué se va a abrir para servir [cantidad].
+  ///
+  /// Se muestra al pasarce del saldo propio de la presentación — también con
+  /// el 1 por defecto cuando el saldo es 0 — y en el snackbar de éxito.
+  String? _mensajeDesarmePara(double cantidad, int? idPresentacion) {
+    final plan = _planDesarmePara(cantidad, idPresentacion);
+    if (plan == null) return null;
+    return '📦 Se abrirá ${FormatoPresentacion.cantidad(plan.cantidadOrigen)} '
+        '${FormatoPresentacion.plural(plan.origen.nombre, plan.cantidadOrigen)} '
+        '(${FormatoPresentacion.cantidad(plan.cantidadDestino)} '
+        '${FormatoPresentacion.plural(_nombrePresentacionPedida(idPresentacion)!, plan.cantidadDestino)})';
+  }
+
+  String? _nombrePresentacionPedida(int? idPresentacion) {
+    if (idPresentacion == null) return null;
+    for (final p in _cadenaPresentaciones()) {
+      if (p.idPresentacion == idPresentacion) return p.nombre;
+    }
+    return null;
+  }
+
+  /// Líneas "Se abrió X Y" a partir del plan del preview online.
+  List<String> _conversionesDePreview(PreviewRebalanceo preview) {
+    final msg = preview.mensajeUsuario?.toString() ?? '';
+    if (msg.isEmpty) return const [];
+    return ['📦 $msg'];
+  }
+
+  /// Aviso informativo (no bloqueante) de que la cantidad excede el saldo
+  /// propio y se abrirán bultos. Incluye el caso del 1 por defecto con saldo 0.
+  void _avisarDesarmePendiente(double cantidad, int? idPresentacion) {
+    final mensaje = _mensajeDesarmePara(cantidad, idPresentacion);
+    if (mensaje == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(mensaje),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
   Map<String, dynamic> _buildInventoryData(
     Product product,
     ProductVariant? variant,
@@ -3303,6 +3592,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     List<String> addedItems = [];
     // Fase 2: a que cocinas se mandaron los platos, para decirlo en el aviso.
     final Set<String> destinosCocina = {};
+    // Desarme: que empaques se abrieron para servir la venta, para el aviso.
+    final List<String> desarmesAplicados = [];
 
     try {
       // El factor se calcula POR rama (sin variantes) y POR VARIANTE (con
@@ -3332,13 +3623,58 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       if (idPresPreview != null &&
           idUbicPreview != null &&
           cantidadPreview > 0) {
-        final seguir = await PreviewRebalanceoService.confirmarSiHaceFalta(
-          context,
-          idProducto: currentProduct.id,
-          idUbicacion: idUbicPreview,
-          idPresentacion: idPresPreview,
-          cantidad: cantidadPreview,
-        );
+        // ══════════════════════════════════════════════════════════════════
+        // DESARME OFFLINE: `PreviewRebalanceoService` depende de
+        // `fn_preview_rebalanceo` (red). Sin red, el desarme se evalúa
+        // localmente con la cadena cacheada y los saldos de `stockMixto`.
+        // Es solo consulta: al sincronizar, la venta ejecuta el rebalanceo
+        // real en el servidor (`fn_rebalancear_presentaciones`), que es la
+        // autoridad. Aquí solo se avisa al vendedor y se pide confirmación.
+        // ══════════════════════════════════════════════════════════════════
+        final useLocalData =
+            await _userPreferencesService.shouldUseLocalData();
+        var seguir = true;
+
+        if (useLocalData) {
+          final eval = DesarmeBultoLocal.evaluar(
+            cadena: _cadenaPresentaciones(),
+            stocks: _stocksPorPresentacionLocal() ?? const {},
+            idPresentacionPedida: idPresPreview,
+            cantidadPedida: cantidadPreview,
+          );
+
+          if (eval.esImposible) {
+            await _avisarStockInsuficienteOffline(eval.maximoServible);
+            seguir = false;
+          } else if (eval.requiereDesarme) {
+            seguir = await _confirmarDesarmeOffline(eval.plan!) ?? false;
+            if (seguir) {
+              desarmesAplicados.add(
+                '📦 Se abrió ${FormatoPresentacion.cantidad(eval.plan!.cantidadOrigen)} '
+                '${FormatoPresentacion.plural(eval.plan!.origen.nombre, eval.plan!.cantidadOrigen)}',
+              );
+            }
+          }
+        } else {
+          final preview = await PreviewRebalanceoService.consultar(
+            idProducto: currentProduct.id,
+            idUbicacion: idUbicPreview,
+            idPresentacion: idPresPreview,
+            cantidad: cantidadPreview,
+          );
+          seguir = await PreviewRebalanceoService.confirmarSiHaceFalta(
+            context,
+            idProducto: currentProduct.id,
+            idUbicacion: idUbicPreview,
+            idPresentacion: idPresPreview,
+            cantidad: cantidadPreview,
+          );
+          if (seguir && preview.requierePreguntar) {
+            for (final conv in _conversionesDePreview(preview)) {
+              desarmesAplicados.add(conv);
+            }
+          }
+        }
         if (!seguir) return;
       }
 
@@ -3472,6 +3808,19 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                     style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w300,
+                    ),
+                  ),
+                // Desarme: decir QUÉ se abrió para servir la venta, siempre
+                // que haya hecho falta (queda registrado en el servidor).
+                for (final d in desarmesAplicados)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      d,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
               ],

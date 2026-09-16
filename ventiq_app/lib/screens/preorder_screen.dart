@@ -15,6 +15,8 @@ import '../services/bank_sms_service.dart';
 import '../services/server_time_service.dart';
 import '../utils/price_utils.dart';
 import '../utils/navigation_helper.dart';
+import '../utils/desarme_bulto_local.dart';
+import '../utils/presentacion_cadena_local.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/scrolling_text.dart';
@@ -1258,6 +1260,127 @@ class _PreorderScreenState extends State<PreorderScreen> {
     return null;
   }
 
+  /// Cadena de presentaciones y saldos por presentación de un producto desde
+  /// el cache offline, para evaluar el desarme sin red.
+  ///
+  /// Las presentaciones pueden vivir en DOS sitios del cache, según cómo se
+  /// sincronizó: dentro de `detalles_completos.presentaciones` o al nivel del
+  /// producto (`prodData['presentaciones']`, la forma que lee
+  /// `_loadProductPresentations`). Se prueban ambas. Los saldos vienen de
+  /// `detalles_completos.inventario`; si el cache no trae nada utilizable se
+  /// devuelve null y se conserva el problema original de stock.
+  Future<({List<PresentacionLocal> cadena, Map<int, double> stocks})?>
+      _cadenaYStocksOffline(int idProducto) async {
+    try {
+      final offlineData = await _userPreferencesService.getOfflineData();
+      final productsData = offlineData?['products'] as Map<String, dynamic>?;
+      if (productsData == null) return null;
+
+      for (final categoryProducts in productsData.values) {
+        if (categoryProducts is! List) continue;
+        for (final raw in categoryProducts) {
+          if (raw is! Map) continue;
+          final prodData = Map<String, dynamic>.from(raw);
+          final pid = prodData['id'];
+          final id = pid is int ? pid : (pid is num ? pid.toInt() : null);
+          if (id != idProducto) continue;
+
+          // Presentaciones: detalles_completos.presentaciones ?? nivel producto.
+          List<Map<String, dynamic>>? crudas;
+          final detalles = prodData['detalles_completos'];
+          if (detalles is Map) {
+            final d = Map<String, dynamic>.from(detalles);
+            crudas = (d['presentaciones'] as List?)
+                ?.whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList();
+          }
+          crudas ??= (prodData['presentaciones'] as List?)
+              ?.whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
+          if (crudas == null || crudas.isEmpty) return null;
+
+          final cadena = PresentacionCadenaLocal.resolverDesdeCrudas(crudas);
+          if (cadena.isEmpty) return null;
+
+          final stocks = <int, double>{};
+          if (detalles is Map) {
+            final d = Map<String, dynamic>.from(detalles);
+            for (final invRaw in d['inventario'] as List? ?? []) {
+              if (invRaw is! Map) continue;
+              final inv = Map<String, dynamic>.from(invRaw);
+              final pres = inv['presentacion'] is Map
+                  ? Map<String, dynamic>.from(inv['presentacion'] as Map)
+                  : null;
+              final idPres = (pres?['id'] as num?)?.toInt();
+              final qty =
+                  (inv['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
+              if (idPres != null) {
+                stocks[idPres] = (stocks[idPres] ?? 0) + qty;
+              }
+            }
+          }
+
+          return (cadena: cadena, stocks: stocks);
+        }
+      }
+    } catch (e) {
+      print('⚠️ Error leyendo cadena/stocks offline para producto $idProducto: $e');
+    }
+    return null;
+  }
+
+  /// Cadena y saldos por presentación desde el servidor (online), para el
+  /// fallback del chequeo cuando `fn_preview_rebalanceo` no se puede evaluar
+  /// (item sin id_ubicacion/id_presentacion, típico de cuentas de mesa).
+  ///
+  /// Usa `get_detalle_producto`, que ya incluye la fila de la presentación
+  /// base aunque esté en cero (migración get_detalle_producto_incluir_base_cero).
+  Future<({List<PresentacionLocal> cadena, Map<int, double> stocks})?>
+      _cadenaYStocksOnline(int idProducto) async {
+    try {
+      final supabase = Supabase.instance.client;
+      final detalle =
+          await supabase.rpc('get_detalle_producto', params: {
+        'id_producto_param': idProducto,
+      });
+      if (detalle is! Map) return null;
+      final d = Map<String, dynamic>.from(detalle);
+
+      final prod = d['producto'] is Map
+          ? Map<String, dynamic>.from(d['producto'] as Map)
+          : null;
+      final crudas = (prod?['presentaciones'] as List?)
+          ?.whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      if (crudas == null || crudas.isEmpty) return null;
+
+      final cadena = PresentacionCadenaLocal.resolverDesdeCrudas(crudas);
+      if (cadena.isEmpty) return null;
+
+      final stocks = <int, double>{};
+      for (final invRaw in d['inventario'] as List? ?? []) {
+        if (invRaw is! Map) continue;
+        final inv = Map<String, dynamic>.from(invRaw);
+        final pres = inv['presentacion'] is Map
+            ? Map<String, dynamic>.from(inv['presentacion'] as Map)
+            : null;
+        final idPres = (pres?['id'] as num?)?.toInt();
+        final qty = (inv['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
+        if (idPres != null) {
+          stocks[idPres] = (stocks[idPres] ?? 0) + qty;
+        }
+      }
+
+      return (cadena: cadena, stocks: stocks);
+    } catch (e) {
+      print('⚠️ Error leyendo cadena/stocks online para producto $idProducto: $e');
+      return null;
+    }
+  }
+
   /// Verifica disponibilidad de inventario para todos los items de la orden.
   /// Para productos elaborados/servicios, verifica el stock de sus ingredientes.
   /// Para productos normales, verifica directamente en inventario.
@@ -1390,8 +1513,22 @@ class _PreorderScreenState extends State<PreorderScreen> {
           final idVariante = item.inventoryData?['id_variante'] as int?;
           final idPresentacion = item.inventoryData?['id_presentacion'] as int?;
 
+          // Items de cuenta que YA descontaron inventario al pedirse
+          // (fn_pedir_item_cuenta, stock_movido=true): el cobro no vuelve a
+          // mover stock, así que no hay nada que verificar.
+          final stockMovidoAlPedir =
+              item.inventoryData?['stock_movido'] == true;
+          if (stockMovidoAlPedir) {
+            print(
+              '✅ ${item.nombre}: stock ya descontado al pedir (cuenta de mesa), '
+              'se omite verificación de inventario',
+            );
+            continue;
+          }
+
           double stockActual = 0.0;
           String origenStock = 'Supabase';
+          int? idUbicacionResuelta = idUbicacion;
 
           if (isOfflineMode) {
             // OFFLINE: leer desde cache, fallback a cantidadInicial / producto
@@ -1419,7 +1556,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
           } else {
             var query = supabase
                 .from('app_dat_inventario_productos')
-                .select('cantidad_final')
+                .select('cantidad_final, id_ubicacion')
                 .eq('id_producto', idProducto);
 
             if (idUbicacion != null)
@@ -1436,22 +1573,112 @@ class _PreorderScreenState extends State<PreorderScreen> {
             if (response.isNotEmpty) {
               stockActual =
                   (response.first['cantidad_final'] as num?)?.toDouble() ?? 0.0;
+              // Resolución de ubicación idéntica a fn_registrar_venta_v2:
+              // última fila (mayor id) de producto+presentación. Sin esto,
+              // items de mesa sin id_ubicacion no podían evaluar el desarme.
+              idUbicacionResuelta =
+                  (response.first['id_ubicacion'] as num?)?.toInt();
             }
           }
 
           if (stockActual < item.cantidad) {
-            final presentacionInfo =
-                idPresentacion != null
-                    ? ' (Presentación ID: $idPresentacion • $origenStock)'
-                    : ' ($origenStock)';
-            problems.add({
-              'nombre': item.nombre,
-              'cantidad_pedida': item.cantidad,
-              'stock_disponible': stockActual,
-              'diferencia': item.cantidad - stockActual,
-              'ubicacion': item.ubicacionAlmacen,
-              'presentacion': presentacionInfo,
-            });
+            // Desarme de bultos: el saldo propio de la presentación no alcanza,
+            // pero el total convertible (abriendo empaques mayores) sí.
+            // - Online: se consulta fn_preview_rebalanceo (misma regla que
+            //   usará la venta: fn_rebalancear_presentaciones).
+            // - Offline: se evalúa con el resolutor local sobre el cache.
+            // Si la evaluación falla, se conserva el problema original: el
+            // error real lo reportará la venta al sincronizar.
+            var cubreConDesarme = false;
+            var desarmeEvaluado = false;
+
+            if (isOfflineMode) {
+              try {
+                final datos = await _cadenaYStocksOffline(item.producto.id);
+                if (datos != null) {
+                  final eval = DesarmeBultoLocal.evaluar(
+                    cadena: datos.cadena,
+                    stocks: datos.stocks,
+                    idPresentacionPedida: idPresentacion ?? 0,
+                    cantidadPedida: item.cantidad,
+                  );
+                  cubreConDesarme = eval.requiereDesarme || eval.alcanza;
+                  desarmeEvaluado = true;
+                }
+              } catch (e) {
+                print(
+                  '⚠️ Evaluación local de desarme falló para ${item.nombre}: $e',
+                );
+              }
+            } else if (idProducto != null && idUbicacionResuelta != null) {
+              try {
+                final preview = await supabase.rpc(
+                  'fn_preview_rebalanceo',
+                  params: {
+                    'p_id_producto': idProducto,
+                    'p_id_ubicacion': idUbicacionResuelta,
+                    'p_id_presentacion': idPresentacion,
+                    'p_cantidad': item.cantidad,
+                    'p_id_variante': idVariante,
+                    'p_id_opcion_variante':
+                        item.inventoryData?['id_opcion_variante'] as int?,
+                  },
+                );
+                final estrategia = preview is Map
+                    ? preview['estrategia']?.toString()
+                    : null;
+                cubreConDesarme = estrategia == 'abrir';
+                desarmeEvaluado = true;
+                if (cubreConDesarme) {
+                  print(
+                    '📦 ${item.nombre}: saldo propio $stockActual < '
+                    '${item.cantidad} pero el desarme de bultos lo cubre',
+                  );
+                }
+              } catch (e) {
+                print(
+                  '⚠️ fn_preview_rebalanceo falló para ${item.nombre}: $e',
+                );
+              }
+            }
+
+            // Fallback online: el preview no se pudo evaluar (item de cuenta
+            // sin id_ubicacion/id_presentacion, o RPC falló). Se evalúa
+            // localmente con cadena+stocks frescos de get_detalle_producto,
+            // que ya incluye la fila base aunque esté en cero.
+            if (!desarmeEvaluado && idProducto != null && !isOfflineMode) {
+              try {
+                final datos = await _cadenaYStocksOnline(idProducto);
+                if (datos != null) {
+                  final eval = DesarmeBultoLocal.evaluar(
+                    cadena: datos.cadena,
+                    stocks: datos.stocks,
+                    idPresentacionPedida: idPresentacion ?? 0,
+                    cantidadPedida: item.cantidad,
+                  );
+                  cubreConDesarme = eval.requiereDesarme || eval.alcanza;
+                }
+              } catch (e) {
+                print(
+                  '⚠️ Evaluación local (online fallback) falló para ${item.nombre}: $e',
+                );
+              }
+            }
+
+            if (!cubreConDesarme) {
+              final presentacionInfo =
+                  idPresentacion != null
+                      ? ' (Presentación ID: $idPresentacion • $origenStock)'
+                      : ' ($origenStock)';
+              problems.add({
+                'nombre': item.nombre,
+                'cantidad_pedida': item.cantidad,
+                'stock_disponible': stockActual,
+                'diferencia': item.cantidad - stockActual,
+                'ubicacion': item.ubicacionAlmacen,
+                'presentacion': presentacionInfo,
+              });
+            }
           }
         }
       } catch (e) {
