@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dart *)",
+      "Bash(findstr *)",
+      "mcp__supabase__query_logs"
+    ]
+  },
+  "$version": 4
+}
