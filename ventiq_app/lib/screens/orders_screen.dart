@@ -130,7 +130,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     } catch (e) {
       print('❌ Error loading USD rate: $e');
       setState(() {
-        _usdRate = 420.0;
+        _usdRate = 0.0;
         _isLoadingUsdRate = false;
       });
     }
@@ -1300,12 +1300,28 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       discountData['originalTotal'] as double? ?? displayTotal;
                   final saved = discountData['saved'] as double? ?? 0;
                   final label = discountData['label'] as String?;
-                  final double? usdTotal =
-                      _usdRate > 0 ? displayTotal / _usdRate : null;
-                  final usdLabel =
-                      _usdRate > 0
-                          ? 'USD (USD ${_usdRate.toStringAsFixed(0)})'
-                          : 'USD';
+                  final cardPayments =
+                      PriceUtils.normalizePayments(order.pagos);
+                  final cardCurrency =
+                      PriceUtils.paymentDisplayCurrency(cardPayments);
+                  final cardRate = PriceUtils.paymentUsdRate(
+                        cardPayments,
+                        fallbackRate: _usdRate,
+                      ) ??
+                      _usdRate;
+                  final primaryTotalLabel = PriceUtils.formatCupAmountForPayments(
+                    displayTotal,
+                    cardPayments,
+                    fallbackRate: _usdRate,
+                  );
+                  final showSecondary = cardRate > 0;
+                  final secondaryLabel =
+                      cardCurrency == 'USD' ? 'Equivalente CUP' : 'USD';
+                  final secondaryTotal = cardCurrency == 'USD'
+                      ? '${displayTotal.toStringAsFixed(2)} CUP'
+                      : cardRate > 0
+                          ? '${(displayTotal / cardRate).toStringAsFixed(2)} USD'
+                          : 'N/D';
 
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1322,7 +1338,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                             ),
                           ),
                           Text(
-                            '\$${displayTotal.toStringAsFixed(2)}',
+                            primaryTotalLabel,
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
@@ -1337,7 +1353,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       if (hasDiscount) ...[
                         const SizedBox(height: 4),
                         Text(
-                          '$label · Ahorras \$${saved.toStringAsFixed(2)} (Antes \$${originalTotal.toStringAsFixed(2)})',
+                          '$label · Ahorras ${PriceUtils.formatCupAmountForPayments(saved, cardPayments, fallbackRate: _usdRate)} (Antes ${PriceUtils.formatCupAmountForPayments(originalTotal, cardPayments, fallbackRate: _usdRate)})',
                           style: const TextStyle(
                             fontSize: 12,
                             color: Color(0xFF10B981),
@@ -1345,37 +1361,37 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           ),
                         ),
                       ],
-                      const SizedBox(height: 6),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            usdLabel,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          if (_isLoadingUsdRate)
-                            const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          else
+                      if (showSecondary) ...[
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
                             Text(
-                              usdTotal == null
-                                  ? 'N/D'
-                                  : '\$${usdTotal.toStringAsFixed(2)}',
-                              style: const TextStyle(
+                              secondaryLabel,
+                              style: TextStyle(
                                 fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF4A90E2),
+                                color: Colors.grey[600],
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
-                        ],
-                      ),
+                            if (_isLoadingUsdRate)
+                              const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            else
+                              Text(
+                                secondaryTotal,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF4A90E2),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
                     ],
                   );
                 },
@@ -1513,7 +1529,16 @@ class _OrdersScreenState extends State<OrdersScreen> {
     }
   }
 
-  void _showOrderDetails(Order order) {
+  Future<void> _showOrderDetails(Order order) async {
+    if (order.operationId != null) {
+      final payments = await _orderService.getSalePayments(order.operationId!);
+      if (payments.isNotEmpty) {
+        order = order.copyWith(pagos: payments);
+        // Mantener moneda en la lista en memoria (listar_ordenes no la traía).
+        _orderService.applyLocalOrderPagos(order.id, payments);
+      }
+    }
+    if (!mounted) return;
     int paymentBreakdownRefreshKey = 0;
     Order currentOrder = order;
     Future<bool>? isCuentaPorCobrarFuture;
@@ -1545,7 +1570,25 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           .toList();
                   setDetailState(() {
                     if (updated.isNotEmpty) {
-                      currentOrder = updated.first;
+                      final refreshed = updated.first;
+                      // Preferir pagos con moneda (get_sale_payments2) frente
+                      // a listar_ordenes histórico sin moneda/tasa.
+                      final refreshedHasCurrency =
+                          PriceUtils.normalizePayments(refreshed.pagos).any(
+                            (p) =>
+                                (p['moneda'] ?? p['currency']) != null &&
+                                '${p['moneda'] ?? p['currency']}'
+                                    .trim()
+                                    .isNotEmpty,
+                          );
+                      final keepCurrentPagos =
+                          (currentOrder.pagos?.isNotEmpty ?? false) &&
+                          !refreshedHasCurrency;
+                      currentOrder = keepCurrentPagos
+                          ? refreshed.copyWith(pagos: currentOrder.pagos)
+                          : (refreshed.pagos?.isNotEmpty ?? false)
+                              ? refreshed
+                              : refreshed.copyWith(pagos: currentOrder.pagos);
                       isCuentaPorCobrarFuture = _orderService
                           .isVentaPendienteDePago(currentOrder);
                     }
@@ -1565,6 +1608,22 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     discountData['originalTotal'] as double? ?? displayTotal;
                 final saved = discountData['saved'] as double? ?? 0;
                 final label = discountData['label'] as String? ?? '';
+                final detailPayments =
+                    PriceUtils.normalizePayments(order.pagos);
+                final detailCurrency =
+                    PriceUtils.paymentDisplayCurrency(detailPayments);
+                final detailUsdRate =
+                    PriceUtils.paymentUsdRate(
+                      detailPayments,
+                      fallbackRate: _usdRate,
+                    ) ??
+                    _usdRate;
+                String formatDetailAmount(double cupAmount) =>
+                    PriceUtils.formatCupAmountForPayments(
+                      cupAmount,
+                      detailPayments,
+                      fallbackRate: _usdRate,
+                    );
 
                 return Scaffold(
                   backgroundColor: Colors.grey[50],
@@ -1627,7 +1686,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                             ),
                             _buildDetailRowNew(
                               'Total',
-                              '\$${displayTotal.toStringAsFixed(2)}',
+                              formatDetailAmount(displayTotal),
                               valueStyle: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -1637,7 +1696,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                             if (hasDiscount) ...[
                               _buildDetailRowNew(
                                 'Precio original',
-                                '\$${originalTotal.toStringAsFixed(2)}',
+                                formatDetailAmount(originalTotal),
                                 valueStyle: TextStyle(
                                   fontSize: 14,
                                   color: Colors.grey[500],
@@ -1646,7 +1705,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                               ),
                               _buildDetailRowNew(
                                 'Descuento',
-                                '$label  −\$${saved.toStringAsFixed(2)}',
+                                '$label  −${formatDetailAmount(saved)}',
                                 valueStyle: const TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
@@ -2027,7 +2086,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                                         CrossAxisAlignment.end,
                                                     children: [
                                                       Text(
-                                                        '\$${item.subtotal.toStringAsFixed(2)}',
+                                                        formatDetailAmount(
+                                                          item.subtotal,
+                                                        ),
                                                         style: const TextStyle(
                                                           fontSize: 16,
                                                           fontWeight:
@@ -2037,9 +2098,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                                           ),
                                                         ),
                                                       ),
-                                                      if (_usdRate > 0)
+                                                      if (detailUsdRate > 0)
                                                         Text(
-                                                          'USD ${(item.subtotal / _usdRate).toStringAsFixed(2)}',
+                                                          detailCurrency == 'USD'
+                                                              ? '${item.subtotal.toStringAsFixed(2)} CUP'
+                                                              : '${(item.subtotal / detailUsdRate).toStringAsFixed(2)} USD',
                                                           style: TextStyle(
                                                             fontSize: 11,
                                                             color:
@@ -2062,7 +2125,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                                   const SizedBox(width: 4),
                                                   Expanded(
                                                     child: Text(
-                                                      '${PriceUtils.formatQuantity(item.cantidad)} unid. · \$${item.precioUnitario.toStringAsFixed(2)} c/u${_usdRate > 0 ? ' (USD ${(item.precioUnitario / _usdRate).toStringAsFixed(2)} c/u)' : ''} · ${item.ubicacionAlmacen}',
+                                                      '${PriceUtils.formatQuantity(item.cantidad)} unid. · ${formatDetailAmount(item.precioUnitario)} c/u${detailUsdRate > 0 ? detailCurrency == 'USD' ? ' (${item.precioUnitario.toStringAsFixed(2)} CUP c/u)' : ' (${(item.precioUnitario / detailUsdRate).toStringAsFixed(2)} USD c/u)' : ''} · ${item.ubicacionAlmacen}',
                                                       style: TextStyle(
                                                         fontSize: 13,
                                                         color: Colors.grey[600],
@@ -2334,18 +2397,18 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           children: [
                             _buildDetailRow(
                               'Total:',
-                              '\$${displayTotal.toStringAsFixed(2)}',
+                              formatDetailAmount(displayTotal),
                             ),
                             if (hasDiscount) ...[
                               const SizedBox(height: 4),
                               _buildDetailRow(
                                 'Antes:',
-                                '\$${originalTotal.toStringAsFixed(2)}',
+                                formatDetailAmount(originalTotal),
                               ),
                               const SizedBox(height: 2),
                               _buildDetailRow(
                                 'Descuento:',
-                                '$label · -\$${saved.toStringAsFixed(2)}',
+                                '$label · -${formatDetailAmount(saved)}',
                               ),
                             ],
                           ],
@@ -3261,12 +3324,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   List<Map<String, dynamic>> _getLocalPaymentBreakdown(Order order) {
-    final rawPayments = order.pagos;
-    if (rawPayments == null) return [];
-    return rawPayments
-        .whereType<Map>()
-        .map((payment) => Map<String, dynamic>.from(payment))
-        .toList();
+    return PriceUtils.normalizePayments(order.pagos);
   }
 
   Widget _buildPaymentBreakdown(
@@ -3425,15 +3483,33 @@ class _OrdersScreenState extends State<OrdersScreen> {
       );
     }
 
-    final totalPaid = payments.fold<double>(
-      0.0,
-      (sum, payment) => sum + _resolvePaymentAmount(payment),
+    final totalPaidCup = PriceUtils.paymentTotalCup(
+      payments,
+      fallbackRate: _usdRate,
     );
-    final double? usdTotal = _usdRate > 0 ? totalPaid / _usdRate : null;
-    final usdLabel =
-        _usdRate > 0
-            ? 'Total USD (USD ${_usdRate.toStringAsFixed(0)})'
-            : 'Total USD';
+    final usdPaid = PriceUtils.paymentTotalUsd(payments);
+    final primaryCurrency = PriceUtils.paymentDisplayCurrency(payments);
+    final historicalRate = PriceUtils.paymentUsdRate(
+      payments,
+      fallbackRate: _usdRate,
+    );
+    final effectiveRate = historicalRate ?? _usdRate;
+    final primaryTotal = primaryCurrency == 'USD'
+        ? usdPaid
+        : totalPaidCup;
+    final primaryTotalLabel = '${primaryTotal.toStringAsFixed(2)} $primaryCurrency';
+    final secondaryLabel = primaryCurrency == 'USD'
+        ? 'Equivalente CUP'
+        : usdPaid > 0
+            ? 'Pagado en USD'
+            : 'Equivalente USD';
+    final secondaryTotal = primaryCurrency == 'USD'
+        ? '${totalPaidCup.toStringAsFixed(2)} CUP'
+        : usdPaid > 0
+            ? '${usdPaid.toStringAsFixed(2)} USD'
+            : effectiveRate > 0
+                ? '${(totalPaidCup / effectiveRate).toStringAsFixed(2)} USD'
+                : 'N/D';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3494,7 +3570,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      '\$${_resolvePaymentAmount(payment).toStringAsFixed(2)}',
+                      PriceUtils.formatPaymentAmount(payment),
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -3540,7 +3616,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     ),
                   ),
                   Text(
-                    '\$${totalPaid.toStringAsFixed(2)}',
+                    primaryTotalLabel,
                     style: const TextStyle(
                       color: Color(0xFF1F2937),
                       fontWeight: FontWeight.w700,
@@ -3553,13 +3629,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    usdLabel,
+                    secondaryLabel,
                     style: TextStyle(
                       color: Colors.grey[700],
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  if (_isLoadingUsdRate)
+                  if (_isLoadingUsdRate &&
+                      historicalRate == null &&
+                      usdPaid == 0)
                     const SizedBox(
                       width: 16,
                       height: 16,
@@ -3570,9 +3648,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     )
                   else
                     Text(
-                      usdTotal == null
-                          ? 'N/D'
-                          : '\$${usdTotal.toStringAsFixed(2)}',
+                      secondaryTotal,
                       style: const TextStyle(
                         color: Color(0xFF4A90E2),
                         fontWeight: FontWeight.w700,
@@ -5495,8 +5571,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
         '🖨️ Iniciando impresión con PrinterManager para orden ${order.id}',
       );
 
+      var printableOrder = order;
+      if (order.operationId != null) {
+        final payments = await _orderService.getSalePayments(order.operationId!);
+        if (payments.isNotEmpty) {
+          printableOrder = order.copyWith(pagos: payments);
+        }
+      }
       // Usar PrinterManager que maneja automáticamente web vs móvil
-      final result = await _printerManager.printInvoice(context, order);
+      final result = await _printerManager.printInvoice(context, printableOrder);
 
       if (result.success) {
         _showSuccessDialog('¡Factura Impresa!', result.message);
@@ -5607,9 +5690,21 @@ class _OrdersScreenState extends State<OrdersScreen> {
     });
 
     try {
+      final printableOrders = <Order>[];
+      for (final order in ordersToPrint) {
+        if (order.operationId != null) {
+          final payments =
+              await _orderService.getSalePayments(order.operationId!);
+          printableOrders.add(
+            payments.isEmpty ? order : order.copyWith(pagos: payments),
+          );
+        } else {
+          printableOrders.add(order);
+        }
+      }
       final result = await _printerManager.printCustomerReceiptsBatch(
         context,
-        ordersToPrint,
+        printableOrders,
       );
 
       if (result.success) {

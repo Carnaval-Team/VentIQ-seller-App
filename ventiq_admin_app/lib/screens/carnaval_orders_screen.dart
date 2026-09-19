@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import '../models/carnaval_pickup_summary.dart';
 import '../services/carnaval_service.dart';
 import '../services/export_service.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/whatsapp_helper.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/carnaval_order_detail_sheet.dart';
+import '../widgets/carnaval_pickup_products_sheet.dart';
 import 'carnaval_audit_screen.dart';
 import 'carnaval_bitacora_screen.dart';
 import 'carnaval_orders_dashboard_screen.dart';
@@ -41,6 +43,7 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
   bool _isLoading = true;
   bool _isLoadingMore = false;
   bool _isExporting = false;
+  bool _isLoadingPickupProducts = false;
   bool _isAuditing = false;
   bool _hasMore = true;
   int _currentPage = 0;
@@ -634,10 +637,179 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     }
   }
 
+  Future<Set<String>?> _choosePickupStatuses() {
+    final selectedStatuses = _selectedStatus == null
+        ? _allStatuses.toSet()
+        : {_selectedStatus!};
+    return showModalBottomSheet<Set<String>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => SafeArea(
+          child: FractionallySizedBox(
+            heightFactor: 0.85,
+            child: Column(
+              children: [
+                const ListTile(
+                  leading: Icon(Icons.local_shipping_outlined),
+                  title: Text(
+                    'Productos por recoger',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: Text('Selecciona uno o varios estados'),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      TextButton(
+                        onPressed: () => setModalState(
+                          () => selectedStatuses.addAll(_allStatuses),
+                        ),
+                        child: const Text('Seleccionar todos'),
+                      ),
+                      TextButton(
+                        onPressed: () => setModalState(selectedStatuses.clear),
+                        child: const Text('Limpiar'),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: ListView(
+                    children: _allStatuses
+                        .map(
+                          (status) => CheckboxListTile(
+                            value: selectedStatuses.contains(status),
+                            title: Text(status),
+                            onChanged: (selected) => setModalState(() {
+                              if (selected == true) {
+                                selectedStatuses.add(status);
+                              } else {
+                                selectedStatuses.remove(status);
+                              }
+                            }),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: selectedStatuses.isEmpty
+                          ? null
+                          : () => Navigator.pop(
+                              context,
+                              Set<String>.from(selectedStatuses),
+                            ),
+                      icon: const Icon(Icons.inventory_2_outlined),
+                      label: const Text('Ver productos por recoger'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showPickupProducts() async {
+    if (_carnavalStoreId == null || _isLoadingPickupProducts) return;
+    final statuses = await _choosePickupStatuses();
+    if (statuses == null || statuses.isEmpty || !mounted) return;
+    setState(() => _isLoadingPickupProducts = true);
+
+    try {
+      const pageSize = 500;
+      final orderIds = <int>{};
+      for (final status in statuses) {
+        var page = 0;
+        while (true) {
+          final orders = await CarnavalService.getCarnavalOrders(
+            _carnavalStoreId!,
+            _isAdmin,
+            page: page,
+            pageSize: pageSize,
+            statusFilter: status,
+            orderIdFilter: _searchOrderId,
+            dateFrom: _dateFrom,
+            dateTo: _dateTo,
+            filterByStatusDate: _filterByStatusDate,
+            paymentMethodFilter: _selectedPaymentMethod,
+            contabilizadaFilter: _selectedAccountingStatus,
+            ventiqStoreId: _ventiqStoreId,
+          );
+          orderIds.addAll(
+            orders
+                .map((order) => (order['id'] as num?)?.toInt())
+                .whereType<int>(),
+          );
+          if (orders.length < pageSize) break;
+          page++;
+        }
+      }
+
+      final details = await CarnavalService.getOrderDetailsForOrders(
+        orderIds.toList(),
+      );
+      final summary = buildCarnavalPickupSummary(
+        details,
+        excludedProviderId: 177,
+      );
+      if (!mounted) return;
+      _openPickupProductsSheet(summary, orderIds.length);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al cargar productos por recoger: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoadingPickupProducts = false);
+    }
+  }
+
+  void _openPickupProductsSheet(
+    List<CarnavalPickupProvider> summary,
+    int orderCount,
+  ) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) =>
+          CarnavalPickupProductsSheet(summary: summary, orderCount: orderCount),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Órdenes Carnaval')),
+      appBar: AppBar(
+        title: const Text('Órdenes Carnaval'),
+        actions: [
+          IconButton(
+            onPressed: _carnavalStoreId == null || _isLoadingPickupProducts
+                ? null
+                : _showPickupProducts,
+            tooltip: 'Productos por recoger',
+            icon: _isLoadingPickupProducts
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.local_shipping_outlined),
+          ),
+        ],
+      ),
       endDrawer: const AdminDrawer(),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: _orders.isEmpty || _carnavalStoreId == null

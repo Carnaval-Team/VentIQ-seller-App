@@ -1,0 +1,43 @@
+---
+description: Nunca crear tablas sin RLS; incluir sync offline en features de tienda/TPV
+alwaysApply: true
+---
+
+# Supabase: RLS obligatorio + sincronización
+
+## RLS — nunca omitir
+
+Al crear **cualquier** tabla nueva en Postgres/Supabase de este proyecto:
+
+1. **Siempre** `ALTER TABLE ... ENABLE ROW LEVEL SECURITY;` en el mismo script de creación.
+2. **Siempre** definir policies explícitas (SELECT / INSERT / UPDATE / DELETE según el caso). No dejar la tabla “con RLS on y cero policies” (bloquea todo) ni “sin RLS” (expone todo a anon/authenticated).
+3. Preferir acceso acotado por tienda (p. ej. `fn_user_can_access_tienda(id_tienda)` o EXISTS sobre gerente/vendedor/TPV), no `USING (true)` salvo tablas realmente públicas.
+4. Escrituras sensibles (config de tienda, listas de operación): solo **gerente** (y superadmin si aplica). Lectura del TPV: quien tenga acceso a la tienda (vendedor incluido) **o** vía RPC `SECURITY DEFINER` con `check_user_has_access_to_tienda`.
+5. Las RPCs `SECURITY DEFINER` no sustituyen RLS: la tabla debe tener RLS de todas formas.
+6. En el script: `CREATE TABLE` y en las **líneas siguientes** `ENABLE ROW LEVEL SECURITY` (+ `FORCE` si aplica) y las `CREATE POLICY`. No dejar el RLS “al final del archivo” ni en otro script.
+7. No copiar el anti-patrón de tablas legacy sin RLS (`app_dat_mesas`, `app_dat_cocina`, etc.). Código nuevo = RLS siempre.
+
+```sql
+-- ❌ MAL
+CREATE TABLE public.app_dat_foo (...);
+-- (sin ENABLE ROW LEVEL SECURITY)
+
+-- ✅ BIEN
+CREATE TABLE public.app_dat_foo (...);
+ALTER TABLE public.app_dat_foo ENABLE ROW LEVEL SECURITY;
+CREATE POLICY app_dat_foo_select ON public.app_dat_foo
+  FOR SELECT TO authenticated
+  USING (/* acceso por tienda */);
+-- + policies de escritura según rol
+```
+
+## Sincronización (ventiq_app)
+
+Cualquier dato que el vendedor necesite **offline** o en el home del TPV debe entrar en el pipeline de sync, no solo vivir en Supabase:
+
+1. **`StoreConfigService` / `store_config` cache** — flags de `app_dat_configuracion_tienda` (p. ej. `modo_*`) llegan con `select('*')` + `syncStoreConfig` / `AutoSyncService` (`SyncModule.storeConfig`). Hay que cachear también flags sincrónicos nuevos (como `modoRestauranteSync`).
+2. **Tablas satélite** (listas por tienda, p. ej. combustibles servicentro) **no** van solas en `store_config`: hace falta sync dedicado (RPC → SharedPreferences / SQLite) enganchado a `AutoSyncService.syncModules` y a la prep offline (`device_offline_prep_service`).
+3. **Productos / precios / stock** — reutilizar el sync de productos existente; no inventar un segundo catálogo offline.
+4. Al diseñar un modo de operación nuevo: listar qué se descarga en sync, qué se lee solo online, y qué pasa si el modo está ON pero el cache satélite está vacío.
+
+Antes de marcar una feature “lista” en el TPV, verificar: online, offline con cache fresco, y offline con cache vacío/stale.

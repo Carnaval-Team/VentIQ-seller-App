@@ -225,22 +225,50 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
         // El usuario canceló; no continuar con el procesamiento.
         return;
       }
+
+      final tx = transactionNumber.trim();
+      try {
+        final usedBy = await CarnavalService.findOperationWithTransactionNumber(
+          tx,
+        );
+        if (usedBy != null) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'El número de transacción "$tx" ya está en uso '
+                'en la operación #$usedBy. Usa otro.',
+              ),
+              backgroundColor: Colors.red.shade700,
+            ),
+          );
+          return;
+        }
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No se pudo verificar el número de transacción: $e'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+        return;
+      }
     }
 
     await _doAction(() async {
-      final ok = await CarnavalService.updateOrderStatus(
+      if (transactionNumber != null && transactionNumber.trim().isNotEmpty) {
+        final saved = await _appendTransactionToOperationObservations(
+          transactionNumber.trim(),
+        );
+        if (!saved) return false;
+      }
+
+      return CarnavalService.updateOrderStatus(
         _order['id'],
         'Procesando',
         changedBy: by,
       );
-      if (!ok) return false;
-
-      if (transactionNumber != null && transactionNumber.trim().isNotEmpty) {
-        await _appendTransactionToOperationObservations(
-          transactionNumber.trim(),
-        );
-      }
-      return true;
     });
   }
 
@@ -273,17 +301,48 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
     );
   }
 
-  Future<void> _appendTransactionToOperationObservations(
+  /// Guarda el número en observaciones. Devuelve false si está duplicado o falla.
+  Future<bool> _appendTransactionToOperationObservations(
     String transactionNumber,
   ) async {
     try {
       final orderId = _order['id'] as int?;
-      if (orderId == null) return;
+      if (orderId == null) return false;
 
       final opId = await CarnavalService.getVentiqOperationId(orderId);
       if (opId == null) {
         print('⚠️ No se encontró operación VentIQ para orden #$orderId');
-        return;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'No se encontró la operación VentIQ para guardar '
+                'el número de transacción.',
+              ),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return false;
+      }
+
+      final usedBy = await CarnavalService.findOperationWithTransactionNumber(
+        transactionNumber,
+        excludeOperationId: opId,
+      );
+      if (usedBy != null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'El número de transacción "$transactionNumber" ya está en uso '
+                'en la operación #$usedBy. Usa otro.',
+              ),
+              backgroundColor: Colors.red.shade700,
+            ),
+          );
+        }
+        return false;
       }
 
       final response = await Supabase.instance.client
@@ -301,8 +360,18 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
           .update({'observaciones': newObs})
           .eq('id', opId);
       print('✅ Número de transacción agregado a observaciones de op. $opId');
+      return true;
     } catch (e) {
       print('❌ Error agregando número de transacción a observaciones: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al guardar el número de transacción: $e'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
+      return false;
     }
   }
 

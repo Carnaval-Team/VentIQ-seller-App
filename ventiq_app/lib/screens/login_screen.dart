@@ -6,6 +6,7 @@ import '../services/user_preferences_service.dart';
 import '../services/seller_service.dart';
 import '../services/promotion_service.dart';
 import '../services/store_config_service.dart';
+import '../services/servicentro_service.dart';
 import '../services/settings_integration_service.dart';
 import '../services/auto_sync_service.dart';
 import '../services/connectivity_service.dart';
@@ -368,6 +369,17 @@ class _LoginScreenState extends State<LoginScreen> {
               }
             } catch (e) {
               print('❌ Error cargando configuración de tienda: $e');
+            }
+
+            // Modo / lista servicentro del TPV de sesión
+            try {
+              final idTpv = await _userPreferencesService.getIdTpv();
+              if (idTpv != null) {
+                await ServicentroService.syncForTpv(idTpv);
+              }
+            } catch (e) {
+              print('⚠️ Sync servicentro TPV en login: $e');
+              await ServicentroService.primeCache();
             }
 
             // Cachear nombre/logo de tienda para impresión offline

@@ -941,6 +941,65 @@ class SalesService {
     }
   }
 
+  /// Una fila por turno de `app_dat_caja_turno` (apertura en el rango).
+  /// Usado por el tab TPVs del admin: no agrega varios turnos del mismo TPV.
+  static Future<List<SalesVendorReport>> getSalesVendorReportByTurno({
+    DateTime? fechaDesde,
+    DateTime? fechaHasta,
+    String? uuidUsuario,
+    int? storeId,
+  }) async {
+    try {
+      final userPrefs = UserPreferencesService();
+      final idTienda = storeId ?? await userPrefs.getIdTienda();
+      if (idTienda == null) {
+        print('Error: No se pudo obtener el ID de tienda');
+        return [];
+      }
+
+      final params = <String, dynamic>{
+        'p_id_tienda': idTienda,
+      };
+      if (fechaDesde != null) {
+        params['p_fecha_desde'] = fechaDesde.toIso8601String().split('T')[0];
+      }
+      if (fechaHasta != null) {
+        params['p_fecha_hasta'] = fechaHasta.toIso8601String().split('T')[0];
+      }
+      if (uuidUsuario != null) {
+        params['p_uuid_usuario'] = uuidUsuario;
+      }
+
+      print('Calling fn_reporte_ventas_por_turno with: $params');
+      final response = await _supabase.rpc(
+        'fn_reporte_ventas_por_turno',
+        params: params,
+      );
+
+      if (response == null) {
+        print('No data received from fn_reporte_ventas_por_turno');
+        return [];
+      }
+
+      final reports = <SalesVendorReport>[];
+      for (final item in response) {
+        try {
+          reports.add(
+            SalesVendorReport.fromJson(Map<String, dynamic>.from(item as Map)),
+          );
+        } catch (e) {
+          print('Error parsing turno report item: $e');
+          print('Item data: $item');
+        }
+      }
+      print('Successfully parsed ${reports.length} turno sales reports');
+      return reports;
+    } catch (e) {
+      print('Error in getSalesVendorReportByTurno: $e');
+      return [];
+    }
+  }
+
   static Future<List<VendorOrder>> getVendorOrders({
     required DateTime fechaDesde,
     required DateTime fechaHasta,

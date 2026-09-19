@@ -22,6 +22,7 @@ import 'screens/sales_screen.dart';
 import 'screens/tpv_prices_screen.dart';
 import 'screens/tpv_management_screen.dart';
 import 'screens/cocinas_management_screen.dart';
+import 'screens/servicentro_management_screen.dart';
 import 'screens/promotions_screen.dart';
 import 'screens/marketing_dashboard_screen.dart';
 import 'screens/analytics_screen.dart';
@@ -57,6 +58,7 @@ import 'screens/wapi_notifications_screen.dart';
 import 'screens/interacciones_clientes_screen.dart';
 import 'screens/precios_productos_screen.dart';
 import 'screens/carnaval_orders_screen.dart';
+import 'screens/carnaval_provider_dashboard_screen.dart';
 import 'screens/hr/hr_dashboard_screen.dart';
 import 'screens/hr/hr_checkin_screen.dart';
 import 'screens/hr/hr_checkout_screen.dart';
@@ -210,6 +212,21 @@ class MyApp extends StatelessWidget {
         '/tpv-prices': (context) => const TpvPricesScreen(),
         '/tpv-management': (context) => const TpvManagementScreen(),
         '/cocinas-management': (context) => const CocinasManagementScreen(),
+        '/servicentro-management': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          if (args is Map) {
+            final id = args['idTpv'];
+            final idTpv = id is int ? id : int.tryParse('$id');
+            if (idTpv != null) {
+              return ServicentroManagementScreen(
+                idTpv: idTpv,
+                tpvNombre: args['tpvNombre']?.toString(),
+              );
+            }
+          }
+          // Sin TPV: volver a gestión de TPVs
+          return const TpvManagementScreen();
+        },
         '/financial': (context) => const FinancialScreen(),
         '/financial-setup': (context) => const FinancialSetupScreen(),
         '/financial-dashboard': (context) => const FinancialDashboardScreen(),
@@ -250,6 +267,8 @@ class MyApp extends StatelessWidget {
         '/wifi-printers': (context) => const WiFiPrintersScreen(),
         '/interacciones-clientes': (context) => const InteraccionesClientesScreen(),
         '/carnaval-orders': (context) => const CarnavalOrdersScreen(),
+        '/carnaval-provider-dashboard': (context) =>
+            const CarnavalProviderDashboardScreen(),
         '/hr-dashboard': (context) => const HRDashboardScreen(),
         '/hr-checkin': (context) => const HRCheckinScreen(),
         '/hr-checkout': (context) => const HRCheckoutScreen(),

@@ -232,21 +232,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
       // Agregar al inicio de la lista para que aparezca primero
       final methodsWithSpecial = [pagoRegularEfectivo, ...paymentMethods];
 
-      // "Pago Pendiente" (cuenta por cobrar): solo si la tienda lo permite
-      // para vendedores, o si quien vende es gerente/supervisor.
-      try {
-        final idTienda = await _userPreferencesService.getIdTienda();
-        final isAdminSession =
-            await _userPreferencesService.isInventoryOnlySession();
-        final vendedoresPuedenCrearCxc = (idTienda != null && !isOfflineModeEnabled)
-            ? await StoreConfigService.getVendedoresPuedenCrearCxc(idTienda)
-            : false;
-        if (isAdminSession || vendedoresPuedenCrearCxc) {
-          methodsWithSpecial.add(pm.PaymentMethod.pagoPendiente());
-        }
-      } catch (e) {
-        print('⚠️ No se pudo verificar permiso de pago pendiente: $e');
-      }
+      // Temporalmente oculto: "Pago Pendiente" (cuenta por cobrar).
+      // if (isAdminSession || vendedoresPuedenCrearCxc) {
+      //   methodsWithSpecial.add(pm.PaymentMethod.pagoPendiente());
+      // }
 
       setState(() {
         _paymentMethods = methodsWithSpecial;

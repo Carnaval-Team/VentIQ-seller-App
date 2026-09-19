@@ -8,6 +8,7 @@ import '../services/store_config_service.dart';
 import 'store_config_dialog.dart';
 import 'product_sync_sheet.dart';
 import 'product_sales_dialog.dart';
+import '../screens/carnaval_provider_dashboard_screen.dart';
 
 class CarnavalTabView extends StatefulWidget {
   const CarnavalTabView({super.key});
@@ -1224,9 +1225,34 @@ class _CarnavalTabViewState extends State<CarnavalTabView> {
     return actualTienda != _storeId;
   }
 
+  void _openDashboard() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const CarnavalProviderDashboardScreen(),
+      ),
+    );
+  }
+
   Widget _buildQuickActions() {
     return Column(
       children: [
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _openDashboard,
+            icon: const Icon(Icons.dashboard_outlined, size: 18),
+            label: const Text('Dashboard de estadísticas'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.primary,
+              side: BorderSide(color: AppColors.primary),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
         SizedBox(
           width: double.infinity,
           child: OutlinedButton.icon(

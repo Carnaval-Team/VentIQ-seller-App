@@ -8,6 +8,7 @@ import '../services/update_service.dart';
 import '../services/subscription_guard_service.dart';
 import '../services/connectivity_service.dart';
 import '../services/smart_offline_manager.dart';
+import '../services/servicentro_service.dart';
 import '../utils/navigation_helper.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -60,14 +61,14 @@ class _SplashScreenState extends State<SplashScreen> {
             await SubscriptionGuardService().hasActiveSubscription();
 
         if (mounted) {
-          final inventoryOnly =
-              await _userPreferencesService.isInventoryOnlySession();
-          final home = !hasLicense
-              ? '/subscription-detail'
-              : inventoryOnly
-                  ? '/admin-home'
-                  : '/categories';
-          Navigator.of(context).pushReplacementNamed(home);
+          if (!hasLicense) {
+            Navigator.of(context).pushReplacementNamed('/subscription-detail');
+          } else {
+            await ServicentroService.primeCache();
+            final home = await NavigationHelper.homeRoute();
+            if (!mounted) return;
+            Navigator.of(context).pushReplacementNamed(home);
+          }
           if (hasLicense && !fullOfflineReady) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               _checkForUpdatesAfterNavigation();
@@ -153,9 +154,24 @@ class _SplashScreenState extends State<SplashScreen> {
             .hasActiveSubscription(forceRefresh: true);
 
         if (mounted) {
-          Navigator.of(context).pushReplacementNamed(
-            hasLicense ? '/categories' : '/subscription-detail',
-          );
+          if (!hasLicense) {
+            Navigator.of(context)
+                .pushReplacementNamed('/subscription-detail');
+          } else {
+            await ServicentroService.primeCache();
+            // Tras auto-login, refrescar flags del TPV si hay red.
+            try {
+              final idTpv = await _userPreferencesService.getIdTpv();
+              if (idTpv != null) {
+                await ServicentroService.syncForTpv(idTpv);
+              }
+            } catch (_) {
+              await ServicentroService.primeCache();
+            }
+            final destino = await NavigationHelper.homeRoute();
+            if (!mounted) return;
+            Navigator.of(context).pushReplacementNamed(destino);
+          }
           if (hasLicense) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               _checkForUpdatesAfterNavigation();

@@ -4,6 +4,7 @@ import '../models/payment_method.dart';
 import '../models/mesa_cuenta.dart';
 import '../models/pedido_resultado.dart';
 import '../utils/promotion_rules.dart';
+import '../utils/price_utils.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
 import 'mesa_cuenta_service.dart';
@@ -36,6 +37,15 @@ class OrderService {
     if (idx == -1) return false;
     if (_orders[idx].status == newStatus) return false;
     _orders[idx] = _orders[idx].copyWith(status: newStatus);
+    return true;
+  }
+
+  bool applyLocalOrderPagos(String orderId, List<Map<String, dynamic>> payments) {
+    final idx = _orders.indexWhere((o) => o.id == orderId);
+    if (idx == -1) return false;
+    _orders[idx] = _orders[idx].copyWith(
+      pagos: PriceUtils.normalizePayments(payments),
+    );
     return true;
   }
 
@@ -1071,9 +1081,10 @@ class OrderService {
         if (pendingOrder['synced'] == true) return false;
         final pendingId = pendingOrder['id']?.toString();
         final pendingOperationId = pendingOrder['id_operacion'];
-        final pendingDisplay = pendingOperationId is num
-            ? 'ORD-${pendingOperationId.toInt()}'
-            : null;
+        final pendingDisplay =
+            pendingOperationId is num
+                ? 'ORD-${pendingOperationId.toInt()}'
+                : null;
         return pendingId == orderId || pendingDisplay == orderId;
       });
 
@@ -1206,7 +1217,7 @@ class OrderService {
       print('Respuesta get_sale_payments2: $response');
 
       if (response is List) {
-        return List<Map<String, dynamic>>.from(response);
+        return PriceUtils.normalizePayments(response);
       } else {
         print('Respuesta no es una lista: ${response.runtimeType}');
         return [];
@@ -1546,8 +1557,31 @@ class OrderService {
       Map<int, double> paymentsByMethod = {};
       // Mapa para rastrear el tipo de pago (1 o 2) para cada método de pago
       Map<int, int> paymentTypeByMethod = {};
+      final paymentCurrencyByMethod = <int, String>{};
+      final paymentRateByMethod = <int, double?>{};
 
-      for (final item in order.items) {
+      for (final rawPayment in order.pagos ?? const <dynamic>[]) {
+        if (rawPayment is! Map) continue;
+        final payment = Map<String, dynamic>.from(rawPayment);
+        final methodId = (payment['id_medio_pago'] as num?)?.toInt();
+        final amount = (payment['monto'] as num?)?.toDouble();
+        if (methodId == null || amount == null) continue;
+        paymentsByMethod[methodId] = amount;
+        paymentTypeByMethod[methodId] =
+            (payment['tipo_pago'] as num?)?.toInt() ?? (methodId == 1 ? 1 : 2);
+        final currency =
+            payment['moneda']?.toString().toUpperCase() == 'USD'
+                ? 'USD'
+                : 'CUP';
+        paymentCurrencyByMethod[methodId] = currency;
+        paymentRateByMethod[methodId] =
+            currency == 'USD'
+                ? (payment['tasa_usd'] as num?)?.toDouble()
+                : null;
+      }
+
+      for (final item
+          in paymentsByMethod.isEmpty ? order.items : <OrderItem>[]) {
         if (item.paymentMethod != null) {
           // "Pago Pendiente" (cuenta por cobrar): no genera fila en
           // app_dat_pago_venta. El monto queda como saldo pendiente (ver
@@ -1623,6 +1657,8 @@ class OrderService {
           'id_medio_pago': entry.key,
           'monto': entry.value,
           'tipo_pago': paymentTypeByMethod[entry.key] ?? 1, // Agregar tipo_pago
+          'moneda': paymentCurrencyByMethod[entry.key] ?? 'CUP',
+          'tasa_usd': paymentRateByMethod[entry.key],
           'referencia_pago':
               'Pago Inventtia Caja - ${DateTime.now().millisecondsSinceEpoch}',
         });
@@ -2313,9 +2349,9 @@ class OrderService {
           paymentMethod: 'Efectivo', // Valor por defecto
           notas: supabaseOrder['observaciones'] ?? '',
           operationId: supabaseOrder['id_operacion'],
-          pagos:
-              supabaseOrder['detalles']['pagos']
-                  as List<dynamic>?, // ✅ Agregar campo pagos
+          pagos: PriceUtils.normalizePayments(
+            supabaseOrder['detalles']?['pagos'],
+          ),
           descuento: descuento,
           sellerName: supabaseOrder['usuario_nombre']?.toString(),
           tpvName: supabaseOrder['tpv_nombre']?.toString(),
@@ -2472,11 +2508,9 @@ class OrderService {
               orderData['buyerPhone']?.toString(),
           notas: orderData['notas']?.toString(),
           operationId: opId,
-          pagos:
-              (orderData['pagos'] ?? orderData['desglose_pagos'])
-                  as List<
-                    dynamic
-                  >?, // ✅ Agregar campo pagos para órdenes offline
+          pagos: PriceUtils.normalizePayments(
+            orderData['pagos'] ?? orderData['desglose_pagos'],
+          ),
         );
 
         _orders.add(order);

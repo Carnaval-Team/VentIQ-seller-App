@@ -19,7 +19,10 @@ class ProductDetailService {
   /// `offline_data['products']` (misma forma que get_detalle_producto), usando
   /// el mismo parser `_transformToProduct`. Así los flujos de venta (Fluido,
   /// paquetería, órdenes) funcionan sin conexión con variantes/inventario.
-  Future<Product> getProductDetail(int productId) async {
+  Future<Product> getProductDetail(
+    int productId, {
+    double? fallbackStock,
+  }) async {
     try {
       final isOffline = await _userPrefs.shouldUseLocalData();
       if (isOffline) {
@@ -30,9 +33,7 @@ class ProductDetailService {
         }
         // Sin detalles completos en cache: lanzar para que el llamador caiga a
         // su fallback (producto básico) en vez de intentar la red.
-        throw Exception(
-          'Sin detalles offline para el producto $productId',
-        );
+        throw Exception('Sin detalles offline para el producto $productId');
       }
 
       debugPrint('🔍 Obteniendo detalles del producto ID: $productId');
@@ -49,7 +50,7 @@ class ProductDetailService {
       debugPrint('📦 Respuesta de detalles recibida');
 
       // Transform Supabase response to Product model
-      return _transformToProduct(response);
+      return _transformToProduct(response, fallbackStock: fallbackStock);
     } catch (e, stackTrace) {
       debugPrint('❌ Error obteniendo detalles del producto: $e');
       debugPrint('📍 Stack trace completo:\n$stackTrace');
@@ -75,8 +76,7 @@ class ProductDetailService {
 
         final detalle = map['detalles_completos'];
         if (detalle is Map) {
-          final fallback =
-              (map['cantidad'] as num?)?.toDouble();
+          final fallback = (map['cantidad'] as num?)?.toDouble();
           return _transformToProduct(
             Map<String, dynamic>.from(detalle),
             fallbackStock: fallback,
@@ -179,18 +179,23 @@ class ProductDetailService {
     final variants = _transformInventoryToVariants(inventoryData, precioActual);
 
     // Calculate total stock from all variants
-    int totalStock = 0;
-    int totalReservadoCarnaval = 0;
+    double totalStock = 0;
+    double totalReservadoCarnaval = 0;
+    double totalEnOrdenesCarnaval = 0;
     Map<String, dynamic>? productInventoryMetadata;
 
     if (variants.isNotEmpty) {
-      totalStock = variants.fold(
+      totalStock = variants.fold<double>(
         0,
-        (sum, variant) => sum + variant.cantidad.toInt(),
+        (sum, variant) => sum + variant.cantidad.toDouble(),
       );
-      totalReservadoCarnaval = variants.fold(
+      totalReservadoCarnaval = variants.fold<double>(
         0,
-        (sum, variant) => sum + variant.reservadoCarnaval.toInt(),
+        (sum, variant) => sum + variant.reservadoCarnaval.toDouble(),
+      );
+      totalEnOrdenesCarnaval = variants.fold<double>(
+        0,
+        (sum, variant) => sum + variant.enOrdenesCarnaval.toDouble(),
       );
     } else {
       // If no variants, use inventory data for the product itself
@@ -203,7 +208,7 @@ class ProductDetailService {
       }
       if (firstInventory != null) {
         totalStock =
-            (firstInventory['cantidad_disponible'] as num?)?.toInt() ?? 0;
+            (firstInventory['cantidad_disponible'] as num?)?.toDouble() ?? 0;
 
         // Store inventory metadata for products without variants
         productInventoryMetadata = _extractInventoryMetadata(firstInventory);
@@ -220,7 +225,7 @@ class ProductDetailService {
       debugPrint(
         '📦 Usando stock del listado ($fallbackStock) — inventario vacío/filtrado',
       );
-      totalStock = fallbackStock.round();
+      totalStock = fallbackStock;
     }
 
     // Generate product image URL from multimedias or fallback
@@ -281,6 +286,7 @@ class ProductDetailService {
       variantes: variants,
       inventoryMetadata: productInventoryMetadata,
       reservadoCarnaval: totalReservadoCarnaval,
+      enOrdenesCarnaval: totalEnOrdenesCarnaval,
     );
   }
 
@@ -297,16 +303,20 @@ class ProductDetailService {
       final item = Map<String, dynamic>.from(raw);
 
       // Extract variant information
-      final variante = item['variante'] is Map
-          ? Map<String, dynamic>.from(item['variante'] as Map)
-          : null;
-      final presentacion = item['presentacion'] is Map
-          ? Map<String, dynamic>.from(item['presentacion'] as Map)
-          : null;
+      final variante =
+          item['variante'] is Map
+              ? Map<String, dynamic>.from(item['variante'] as Map)
+              : null;
+      final presentacion =
+          item['presentacion'] is Map
+              ? Map<String, dynamic>.from(item['presentacion'] as Map)
+              : null;
       final cantidadDisponible =
-          (item['cantidad_disponible'] as num?)?.toInt() ?? 0;
+          (item['cantidad_disponible'] as num?)?.toDouble() ?? 0;
       final reservadoCarnaval =
-          (item['reservado_carnaval'] as num?)?.toInt() ?? 0;
+          (item['reservado_carnaval'] as num?)?.toDouble() ?? 0;
+      final enOrdenesCarnaval =
+          (item['en_ordenes_carnaval'] as num?)?.toDouble() ?? 0;
 
       String variantName = 'Variante ${i + 1}';
       String variantDescription = '';
@@ -361,6 +371,7 @@ class ProductDetailService {
               variantDescription.isNotEmpty ? variantDescription : null,
           inventoryMetadata: variantInventoryMetadata,
           reservadoCarnaval: reservadoCarnaval,
+          enOrdenesCarnaval: enOrdenesCarnaval,
         ),
       );
     }
@@ -372,49 +383,59 @@ class ProductDetailService {
   Map<String, dynamic> _extractInventoryMetadata(
     Map<String, dynamic> inventoryItem,
   ) {
-    final variante = inventoryItem['variante'] is Map
-        ? Map<String, dynamic>.from(inventoryItem['variante'] as Map)
-        : null;
-    final presentacion = inventoryItem['presentacion'] is Map
-        ? Map<String, dynamic>.from(inventoryItem['presentacion'] as Map)
-        : null;
-    final ubicacion = inventoryItem['ubicacion'] is Map
-        ? Map<String, dynamic>.from(inventoryItem['ubicacion'] as Map)
-        : null;
+    final variante =
+        inventoryItem['variante'] is Map
+            ? Map<String, dynamic>.from(inventoryItem['variante'] as Map)
+            : null;
+    final presentacion =
+        inventoryItem['presentacion'] is Map
+            ? Map<String, dynamic>.from(inventoryItem['presentacion'] as Map)
+            : null;
+    final ubicacion =
+        inventoryItem['ubicacion'] is Map
+            ? Map<String, dynamic>.from(inventoryItem['ubicacion'] as Map)
+            : null;
 
     return {
       'id_inventario': inventoryItem['id_inventario'],
       'id_variante': variante?['id'],
       'id_opcion_variante': variante?['opcion']?['id'],
       'id_presentacion': presentacion?['id'],
-      'id_ubicacion':
-          inventoryItem['id_ubicacion'] ?? ubicacion?['id'],
+      'id_ubicacion': inventoryItem['id_ubicacion'] ?? ubicacion?['id'],
+      'id_almacen': ubicacion?['almacen']?['id'],
       'sku_producto': inventoryItem['sku_producto'],
       'sku_ubicacion':
           inventoryItem['sku_ubicacion'] ?? ubicacion?['sku_codigo'],
       'cantidad_disponible': inventoryItem['cantidad_disponible'],
-      'ubicacion_nombre': (() {
-        for (final v in [
-          inventoryItem['ubicacion_nombre'],
-          inventoryItem['denominacion_ubicacion'],
-          inventoryItem['ubicacion_label'],
-          ubicacion?['denominacion'],
-        ]) {
-          final s = v?.toString();
-          if (s != null && s.isNotEmpty) return s;
-        }
-        return null;
-      })(),
-      'almacen_nombre': (() {
-        for (final v in [
-          inventoryItem['almacen_nombre'],
-          ubicacion?['almacen']?['denominacion'],
-        ]) {
-          final s = v?.toString();
-          if (s != null && s.isNotEmpty) return s;
-        }
-        return null;
-      })(),
+      'presentacion_nombre': presentacion?['denominacion']?.toString(),
+      // En get_detalle_producto, `presentacion.cantidad` es el factor de la
+      // presentación respecto a la unidad base (misma idea que factor_rel).
+      'presentacion_factor_rel':
+          (presentacion?['cantidad'] as num?)?.toDouble() ?? 1.0,
+      'ubicacion_nombre':
+          (() {
+            for (final v in [
+              inventoryItem['ubicacion_nombre'],
+              inventoryItem['denominacion_ubicacion'],
+              inventoryItem['ubicacion_label'],
+              ubicacion?['denominacion'],
+            ]) {
+              final s = v?.toString();
+              if (s != null && s.isNotEmpty) return s;
+            }
+            return null;
+          })(),
+      'almacen_nombre':
+          (() {
+            for (final v in [
+              inventoryItem['almacen_nombre'],
+              ubicacion?['almacen']?['denominacion'],
+            ]) {
+              final s = v?.toString();
+              if (s != null && s.isNotEmpty) return s;
+            }
+            return null;
+          })(),
     };
   }
 
@@ -431,7 +452,9 @@ class ProductDetailService {
     }
 
     try {
-      debugPrint('🔍 Verificando si producto $productId es elaborado o servicio...');
+      debugPrint(
+        '🔍 Verificando si producto $productId es elaborado o servicio...',
+      );
 
       final response =
           await _supabase
@@ -442,12 +465,16 @@ class ProductDetailService {
 
       final isElaborated = response['es_elaborado'] ?? false;
       final isServicio = response['es_servicio'] ?? false;
-      debugPrint('🔍 Producto $productId - es_elaborado: $isElaborated, es_servicio: $isServicio');
+      debugPrint(
+        '🔍 Producto $productId - es_elaborado: $isElaborated, es_servicio: $isServicio',
+      );
       debugPrint('🔍 Respuesta completa: $response');
 
       return isElaborated || isServicio;
     } catch (e) {
-      debugPrint('❌ Error verificando si producto $productId es elaborado/servicio: $e');
+      debugPrint(
+        '❌ Error verificando si producto $productId es elaborado/servicio: $e',
+      );
       return false;
     }
   }

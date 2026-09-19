@@ -33,11 +33,15 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   List<OrderItem> _productosVendidos = [];
   List<Order> _ordenesVendidas = [];
   double _totalVentas = 0.0;
+  double _totalVentasCup = 0.0;
+  double _totalVentasUsd = 0.0;
   double _totalProductos = 0.0;
   double _totalEgresado = 0.0; // Cambio: era _totalCosto
   double _totalEfectivoReal = 0.0; // Cambio: era _totalDescuentos
-  double _totalEfectivo = 0.0; // Ventas pagadas en efectivo
-  double _totalTransferencia = 0.0; // Ventas pagadas con transferencia/digital
+  double _totalEfectivo = 0.0; // Ventas efectivo en CUP
+  double _totalEfectivoUsd = 0.0; // Ventas efectivo en USD
+  double _totalTransferencia = 0.0; // Transferencias en CUP
+  double _totalTransferenciaUsd = 0.0; // Transferencias en USD
   Map<String, double> _totalesPorMedioPago = {};
   bool _isLoading = true;
   bool _hasActiveTurno = false;
@@ -47,6 +51,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   double _totalEgresos = 0.0;
   double _egresosEfectivo = 0.0;
   double _egresosTransferencias = 0.0;
+  double _egresosEfectivoUsd = 0.0;
+  double _egresosTransferenciasUsd = 0.0;
 
   // USD rate data
   double _usdRate = 0.0;
@@ -65,20 +71,27 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     return double.tryParse(value.toString()) ?? 0.0;
   }
 
-  /// Calcula el desglose de pagos (efectivo/transferencia) y el total de ventas
-  /// a partir de las órdenes locales. Soporta órdenes con pagos mixtos.
+  /// Calcula el desglose de pagos (efectivo/transferencia × CUP/USD).
   Future<
     ({
-      double efectivo,
-      double transferencia,
+      double efectivoCup,
+      double efectivoUsd,
+      double transferenciaCup,
+      double transferenciaUsd,
+      double totalCup,
+      double totalUsd,
       double total,
       int productos,
       Map<String, double> porMedio,
     })
   >
   _calculatePaymentBreakdownFromOrders(List<Order> orders) async {
-    double efectivo = 0.0;
-    double transferencia = 0.0;
+    double efectivoCup = 0.0;
+    double efectivoUsd = 0.0;
+    double transferenciaCup = 0.0;
+    double transferenciaUsd = 0.0;
+    double totalCup = 0.0;
+    double totalUsd = 0.0;
     double total = 0.0;
     int productos = 0;
     final porMedio = <String, double>{};
@@ -98,100 +111,119 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         (sum, item) => sum + item.cantidad.toInt(),
       );
 
-      double efectivoOrden = 0.0;
-      double transferenciaOrden = 0.0;
-      double pendienteOrden = 0.0;
+      double clasificadoCup = 0.0;
       final pagos = order.pagos;
 
       if (pagos != null && pagos.isNotEmpty) {
-        for (final pago in pagos) {
-          if (pago is! Map) continue;
-          final monto = _parseDouble(
-            pago['monto'] ??
-                pago['monto_pago'] ??
-                pago['monto_total'] ??
-                pago['monto_entrega'] ??
-                pago['total'],
-          );
-          final idMedioPago = int.tryParse(
-            '${pago['id_medio_pago'] ?? pago['medio_pago_id'] ?? ''}',
-          );
-          final esPendiente = idMedioPago == PaymentMethod.pagoPendienteId;
-          final esEfectivo =
-              !esPendiente &&
-              (pago['es_efectivo'] == true ||
-                  pago['medio_pago_es_efectivo'] == true ||
-                  idMedioPago == 1 ||
-                  idMedioPago == 999);
-          final esDigital =
-              !esPendiente &&
-              (pago['es_digital'] == true ||
-                  pago['medio_pago_es_digital'] == true);
+        for (final raw in pagos) {
+          final pago = PriceUtils.asPaymentMap(raw);
+          if (pago == null) continue;
 
-          final nombreMedio =
-              (pago['medio_pago_denominacion'] ??
-                      pago['medio_pago_nombre'] ??
-                      pago['denominacion'] ??
-                      pago['metodo_pago'] ??
-                      pago['medio_pago'])
-                  ?.toString()
-                  .trim();
-          final etiqueta =
-              esPendiente
-                  ? 'Cuenta por cobrar'
-                  : nombreMedio != null && nombreMedio.isNotEmpty
-                  ? nombreMedio
-                  : esEfectivo
-                  ? 'Efectivo'
-                  : esDigital
-                  ? 'Transferencia/Digital'
-                  : 'Otro medio de pago';
+          final moneda = PriceUtils.paymentCurrency(pago);
+          final montoNativo = PriceUtils.paymentAmount(pago);
+          final montoCup = PriceUtils.paymentCupEquivalent(
+            pago,
+            fallbackRate: _usdRate > 0 ? _usdRate : null,
+          );
+          final nombre = PriceUtils.paymentMethodName(pago);
+          final etiqueta = PriceUtils.paymentIsPending(pago)
+              ? 'Cuenta por cobrar ($moneda)'
+              : '$nombre ($moneda)';
+
           porMedio.update(
             etiqueta,
-            (value) => value + monto,
-            ifAbsent: () => monto,
+            (value) => value + montoNativo,
+            ifAbsent: () => montoNativo,
           );
 
-          if (esPendiente) {
-            pendienteOrden += monto;
-          } else if (esEfectivo) {
-            efectivoOrden += monto;
+          if (moneda == 'USD') {
+            totalUsd += montoNativo;
           } else {
-            transferenciaOrden += monto;
+            totalCup += montoNativo;
           }
+
+          if (PriceUtils.paymentIsPending(pago)) {
+            clasificadoCup += montoCup;
+            continue;
+          }
+
+          if (PriceUtils.paymentIsCash(pago)) {
+            if (moneda == 'USD') {
+              efectivoUsd += montoNativo;
+            } else {
+              efectivoCup += montoNativo;
+            }
+          } else {
+            if (moneda == 'USD') {
+              transferenciaUsd += montoNativo;
+            } else {
+              transferenciaCup += montoNativo;
+            }
+          }
+          clasificadoCup += montoCup;
         }
       }
 
-      final montoSinClasificar =
-          order.total - efectivoOrden - transferenciaOrden - pendienteOrden;
+      final montoSinClasificar = order.total - clasificadoCup;
       if (montoSinClasificar > 0.01) {
         final esCuentaPorCobrar = await _orderService.isVentaPendienteDePago(
           order,
         );
-        final etiqueta = esCuentaPorCobrar ? 'Cuenta por cobrar' : 'Efectivo';
+        final etiqueta =
+            esCuentaPorCobrar ? 'Cuenta por cobrar (CUP)' : 'Efectivo (CUP)';
         porMedio.update(
           etiqueta,
           (value) => value + montoSinClasificar,
           ifAbsent: () => montoSinClasificar,
         );
-        if (esCuentaPorCobrar) {
-          pendienteOrden += montoSinClasificar;
-        } else {
-          efectivoOrden += montoSinClasificar;
+        totalCup += montoSinClasificar;
+        if (!esCuentaPorCobrar) {
+          efectivoCup += montoSinClasificar;
         }
       }
-
-      efectivo += efectivoOrden;
-      transferencia += transferenciaOrden;
     }
 
     return (
-      efectivo: efectivo,
-      transferencia: transferencia,
+      efectivoCup: efectivoCup,
+      efectivoUsd: efectivoUsd,
+      transferenciaCup: transferenciaCup,
+      transferenciaUsd: transferenciaUsd,
+      totalCup: totalCup,
+      totalUsd: totalUsd,
       total: total,
       productos: productos,
       porMedio: porMedio,
     );
+  }
+
+  void _applyPaymentBreakdown(
+    ({
+      double efectivoCup,
+      double efectivoUsd,
+      double transferenciaCup,
+      double transferenciaUsd,
+      double totalCup,
+      double totalUsd,
+      double total,
+      int productos,
+      Map<String, double> porMedio,
+    }) breakdown,
+  ) {
+    _totalVentas = breakdown.total;
+    _totalVentasCup = breakdown.totalCup;
+    _totalVentasUsd = breakdown.totalUsd;
+    _totalProductos = breakdown.productos.toDouble();
+    _totalEfectivo = breakdown.efectivoCup;
+    _totalEfectivoUsd = breakdown.efectivoUsd;
+    _totalTransferencia = breakdown.transferenciaCup;
+    _totalTransferenciaUsd = breakdown.transferenciaUsd;
+    _totalesPorMedioPago = breakdown.porMedio;
+    _totalEfectivoReal = breakdown.efectivoCup - _egresosEfectivo;
+  }
+
+  /// Siempre muestra CUP y USD en el resumen (aunque alguno sea 0).
+  String _formatCupUsdAmount(double cup, double usd) {
+    return '\$${cup.toStringAsFixed(0)} CUP\n\$${usd.toStringAsFixed(2)} USD';
   }
 
   Future<void> _initializeData() async {
@@ -226,7 +258,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     } catch (e) {
       print('❌ Error loading USD rate: $e');
       setState(() {
-        _usdRate = 420.0; // Default fallback rate
+        _usdRate = 0.0;
         _isLoadingUsdRate = false;
       });
     }
@@ -339,19 +371,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           setState(() {
             _productosVendidos = productosVendidos;
             _ordenesVendidas = ordenesVendidas;
-
-            _totalVentas = breakdown.total;
-            _totalProductos = breakdown.productos.toDouble();
-
-            _totalEfectivo = breakdown.efectivo;
-            _totalTransferencia = breakdown.transferencia;
-            _totalesPorMedioPago = breakdown.porMedio;
-
-            // Efectivo real en caja: ventas en efectivo menos egresos en efectivo
-            _totalEfectivoReal = breakdown.efectivo - _egresosEfectivo;
-
+            _applyPaymentBreakdown(breakdown);
             _totalEgresado = _totalEgresos;
-
             _isLoading = false;
           });
 
@@ -361,10 +382,16 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           print('Órdenes cargadas: ${orders.length}');
           print('Órdenes completadas: ${ordenesVendidas.length}');
           print('Productos vendidos: ${productosVendidos.length}');
-          print('Efectivo: \$${_totalEfectivo.toStringAsFixed(2)}');
-          print('Transferencia: \$${_totalTransferencia.toStringAsFixed(2)}');
           print(
-            'Efectivo Real: \$${_totalEfectivoReal.toStringAsFixed(2)} (descontando egresos efectivo)',
+            'Efectivo CUP: \$${_totalEfectivo.toStringAsFixed(2)} | '
+            'USD: \$${_totalEfectivoUsd.toStringAsFixed(2)}',
+          );
+          print(
+            'Transferencia CUP: \$${_totalTransferencia.toStringAsFixed(2)} | '
+            'USD: \$${_totalTransferenciaUsd.toStringAsFixed(2)}',
+          );
+          print(
+            'Efectivo Real CUP: \$${_totalEfectivoReal.toStringAsFixed(2)}',
           );
         }
       }
@@ -397,13 +424,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       setState(() {
         _productosVendidos = productosVendidos;
         _ordenesVendidas = ordenesVendidas;
-        _totalVentas = breakdown.total;
-        _totalProductos = breakdown.productos.toDouble();
-        _totalEfectivo = breakdown.efectivo;
-        _totalTransferencia = breakdown.transferencia;
-        _totalesPorMedioPago = breakdown.porMedio;
+        _applyPaymentBreakdown(breakdown);
         _totalEgresado = _totalEgresos;
-        _totalEfectivoReal = breakdown.efectivo - _egresosEfectivo;
         _isLoading = false;
       });
     }
@@ -584,7 +606,12 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                                 Expanded(
                                   child: _buildClickableSummaryCard(
                                     'Total Egresado',
-                                    _egresosEfectivo.toStringAsFixed(0),
+                                    _formatCupUsdAmount(
+                                      _egresosEfectivo +
+                                          _egresosTransferencias,
+                                      _egresosEfectivoUsd +
+                                          _egresosTransferenciasUsd,
+                                    ),
                                     Icons.attach_money,
                                     const Color.fromARGB(255, 160, 22, 22),
                                     onTap: _showEgresosList,
@@ -594,7 +621,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                                 Expanded(
                                   child: _buildClickableSummaryCard(
                                     'Total Ventas',
-                                    '\$${_totalVentas.toStringAsFixed(0)}',
+                                    _formatCupUsdAmount(
+                                      _totalVentasCup,
+                                      _totalVentasUsd,
+                                    ),
                                     Icons.attach_money,
                                     Colors.green,
                                     onTap: _showAllOrders,
@@ -607,8 +637,11 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                               children: [
                                 Expanded(
                                   child: _buildClickableSummaryCard(
-                                    'Total Transferencia',
-                                    '\$${_totalTransferencia.toStringAsFixed(0)}',
+                                    'Transferencia',
+                                    _formatCupUsdAmount(
+                                      _totalTransferencia,
+                                      _totalTransferenciaUsd,
+                                    ),
                                     Icons.credit_card,
                                     Colors.orange,
                                     onTap: _showTransferOrders,
@@ -618,7 +651,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                                 Expanded(
                                   child: _buildClickableSummaryCard(
                                     'Efectivo Real',
-                                    '\$${_totalEfectivoReal.toStringAsFixed(0)}',
+                                    _formatCupUsdAmount(
+                                      _totalEfectivo - _egresosEfectivo,
+                                      _totalEfectivoUsd - _egresosEfectivoUsd,
+                                    ),
                                     Icons.account_balance_wallet,
                                     Colors.green,
                                     onTap: _showCashOrders,
@@ -626,6 +662,56 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                                 ),
                               ],
                             ),
+                            if (_totalesPorMedioPago.isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  'Por medio / moneda',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey[700],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              ...(_totalesPorMedioPago.entries.toList()
+                                    ..sort(
+                                      (a, b) => a.key.toLowerCase().compareTo(
+                                        b.key.toLowerCase(),
+                                      ),
+                                    ))
+                                  .map(
+                                    (e) => Padding(
+                                      padding: const EdgeInsets.only(bottom: 4),
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              e.key,
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                color: Color(0xFF374151),
+                                              ),
+                                            ),
+                                          ),
+                                          Text(
+                                            e.key.contains('(USD)')
+                                                ? '\$${e.value.toStringAsFixed(2)} USD'
+                                                : '\$${e.value.toStringAsFixed(0)} CUP',
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                            ],
                           ],
                         ),
                       ),
@@ -756,7 +842,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
             Text(
               value,
               style: TextStyle(
-                fontSize: 18,
+                fontSize: value.contains('\n') ? 13 : 18,
                 fontWeight: FontWeight.bold,
                 color: color,
               ),
@@ -1764,13 +1850,16 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                             'Total Productos: ${PriceUtils.formatQuantity(_totalProductos)}',
                           ),
                           Text(
-                            'Total Ventas: \$${_totalVentas.toStringAsFixed(0)}',
+                            'Total Ventas: ${_formatCupUsdAmount(_totalVentasCup, _totalVentasUsd).replaceAll('\n', ' · ')}',
                           ),
                           Text(
-                            'Total Egresado: \$${_totalEgresado.toStringAsFixed(0)}',
+                            'Total Egresado: ${_formatCupUsdAmount(_egresosEfectivo + _egresosTransferencias, _egresosEfectivoUsd + _egresosTransferenciasUsd).replaceAll('\n', ' · ')}',
                           ),
                           Text(
-                            'Efectivo Real: \$${_totalEfectivoReal.toStringAsFixed(0)}',
+                            'Efectivo Real: ${_formatCupUsdAmount(_totalEfectivo - _egresosEfectivo, _totalEfectivoUsd - _egresosEfectivoUsd).replaceAll('\n', ' · ')}',
+                          ),
+                          Text(
+                            'Transferencia: ${_formatCupUsdAmount(_totalTransferencia, _totalTransferenciaUsd).replaceAll('\n', ' · ')}',
                           ),
                         ],
                       ),
@@ -1862,7 +1951,11 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         styles: PosStyles(align: PosAlign.left),
       );
       bytes += generator.text(
-        'Total Ventas: \$${_totalVentas.toStringAsFixed(0)}',
+        'Total Ventas CUP: \$${_totalVentasCup.toStringAsFixed(0)}',
+        styles: PosStyles(align: PosAlign.left),
+      );
+      bytes += generator.text(
+        'Total Ventas USD: \$${_totalVentasUsd.toStringAsFixed(2)}',
         styles: PosStyles(align: PosAlign.left),
       );
       final mediosPago =
@@ -1870,17 +1963,34 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
             (a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()),
           );
       for (final medio in mediosPago) {
+        final suffix = medio.key.contains('(USD)') ? ' USD' : ' CUP';
         bytes += generator.text(
-          '${medio.key}: \$${medio.value.toStringAsFixed(0)}',
+          '${medio.key}: \$${medio.value.toStringAsFixed(medio.key.contains('(USD)') ? 2 : 0)}$suffix',
           styles: PosStyles(align: PosAlign.left),
         );
       }
       bytes += generator.text(
-        'Total Egresado: \$${_totalEgresado.toStringAsFixed(0)}',
+        'Egresado CUP: \$${(_egresosEfectivo + _egresosTransferencias).toStringAsFixed(0)}',
         styles: PosStyles(align: PosAlign.left),
       );
       bytes += generator.text(
-        'Efectivo Real: \$${_totalEfectivoReal.toStringAsFixed(0)}',
+        'Egresado USD: \$${(_egresosEfectivoUsd + _egresosTransferenciasUsd).toStringAsFixed(2)}',
+        styles: PosStyles(align: PosAlign.left),
+      );
+      bytes += generator.text(
+        'Efectivo Real CUP: \$${(_totalEfectivo - _egresosEfectivo).toStringAsFixed(0)}',
+        styles: PosStyles(align: PosAlign.left),
+      );
+      bytes += generator.text(
+        'Efectivo Real USD: \$${(_totalEfectivoUsd - _egresosEfectivoUsd).toStringAsFixed(2)}',
+        styles: PosStyles(align: PosAlign.left),
+      );
+      bytes += generator.text(
+        'Transferencia CUP: \$${_totalTransferencia.toStringAsFixed(0)}',
+        styles: PosStyles(align: PosAlign.left),
+      );
+      bytes += generator.text(
+        'Transferencia USD: \$${_totalTransferenciaUsd.toStringAsFixed(2)}',
         styles: PosStyles(align: PosAlign.left),
       );
       bytes += generator.emptyLines(1);
@@ -2054,19 +2164,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         setState(() {
           _productosVendidos = productosVendidos;
           _ordenesVendidas = ordenesVendidas;
-
-          _totalVentas = breakdown.total;
-          _totalProductos = breakdown.productos.toDouble();
-
-          _totalEfectivo = breakdown.efectivo;
-          _totalTransferencia = breakdown.transferencia;
-          _totalesPorMedioPago = breakdown.porMedio;
-
-          // Efectivo real en caja: ventas en efectivo menos egresos en efectivo
-          _totalEfectivoReal = breakdown.efectivo - _egresosEfectivo;
-
+          _applyPaymentBreakdown(breakdown);
           _totalEgresado = _totalEgresos;
-
           _isLoading = false;
         });
 
@@ -2080,7 +2179,13 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           '  - Total Egresado: $_totalEgresado (efectivo: $_egresosEfectivo, digital: $_egresosTransferencias)',
         );
         print(
-          '  - Efectivo Real: $_totalEfectivoReal (descontando egresos efectivo)',
+          '  - Efectivo CUP: $_totalEfectivo | USD: $_totalEfectivoUsd',
+        );
+        print(
+          '  - Transfer CUP: $_totalTransferencia | USD: $_totalTransferenciaUsd',
+        );
+        print(
+          '  - Efectivo Real CUP: $_totalEfectivoReal',
         );
 
         // Mostrar información de órdenes offline si las hay
@@ -2127,16 +2232,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       setState(() {
         _productosVendidos = productosVendidos;
         _ordenesVendidas = ordenesVendidas;
-        _totalVentas = breakdown.total;
-        _totalProductos = breakdown.productos.toDouble();
-
-        _totalEfectivo = breakdown.efectivo;
-        _totalTransferencia = breakdown.transferencia;
-        _totalesPorMedioPago = breakdown.porMedio;
-
-        _totalEfectivoReal = breakdown.efectivo - _egresosEfectivo;
+        _applyPaymentBreakdown(breakdown);
         _totalEgresado = _totalEgresos;
-
         _isLoading = false;
       });
 
@@ -2145,6 +2242,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       print('  - Productos Vendidos: $_totalProductos');
       print('  - Órdenes completadas: ${ordenesVendidas.length}');
       print('  - Items vendidos: ${productosVendidos.length}');
+      print(
+        '  - Efectivo CUP: $_totalEfectivo | USD: $_totalEfectivoUsd',
+      );
     } catch (e) {
       print('❌ Error en cálculo local fallback: $e');
       setState(() {

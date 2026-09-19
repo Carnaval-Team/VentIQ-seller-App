@@ -509,6 +509,7 @@ class TurnoService {
   /// (mostrar mensaje y NO crear cierre offline).
   static Future<TurnoOperationResult> cerrarTurnoDetailed({
     required double efectivoReal,
+    double? efectivoRealUsd,
     required List<Map<String, dynamic>> productos,
     String? observaciones,
   }) async {
@@ -547,10 +548,13 @@ class TurnoService {
       print('  - Observaciones: $observaciones');
 
       final response = await _supabase.rpc(
-        'fn_cerrar_turno_tpv',
+        efectivoRealUsd == null
+            ? 'fn_cerrar_turno_tpv'
+            : 'fn_cerrar_turno_tpv_usd',
         params: {
           'p_id_tpv': idTpvInt,
           'p_efectivo_real': efectivoReal,
+          if (efectivoRealUsd != null) 'p_efectivo_real_usd': efectivoRealUsd,
           'p_usuario': usuarioParaCierre,
           'p_productos': productos.isNotEmpty ? productos : null,
           'p_observaciones': observaciones,
@@ -692,6 +696,7 @@ class TurnoService {
   /// Registra apertura de turno usando la función v3 con manejo de inventario y observaciones
   static Future<Map<String, dynamic>> registrarAperturaTurno({
     required double efectivoInicial,
+    double? efectivoInicialUsd,
     required int idTpv,
     required int idVendedor,
     required String usuario,
@@ -710,9 +715,13 @@ class TurnoService {
       print('  - Observaciones: ${observaciones ?? "Sin observaciones"}');
 
       final response = await _supabase.rpc(
-        'registrar_apertura_turno_v3',
+        efectivoInicialUsd == null
+            ? 'registrar_apertura_turno_v3'
+            : 'registrar_apertura_turno_usd',
         params: {
           'p_efectivo_inicial': efectivoInicial,
+          if (efectivoInicialUsd != null)
+            'p_efectivo_inicial_usd': efectivoInicialUsd,
           'p_id_tpv': idTpv,
           'p_id_vendedor': idVendedor,
           'p_usuario': usuario,

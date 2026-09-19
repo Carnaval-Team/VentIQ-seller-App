@@ -18,6 +18,7 @@ import '../services/auto_sync_service.dart';
 import '../services/connectivity_service.dart';
 import '../services/server_time_service.dart';
 import '../utils/navigation_helper.dart';
+import '../utils/price_utils.dart';
 import '../widgets/cash_count_dialog.dart';
 
 class CierreScreen extends StatefulWidget {
@@ -30,6 +31,7 @@ class CierreScreen extends StatefulWidget {
 class _CierreScreenState extends State<CierreScreen> {
   final _formKey = GlobalKey<FormState>();
   final _montoFinalController = TextEditingController();
+  final _montoFinalUsdController = TextEditingController(text: '0');
   final _observacionesController = TextEditingController();
   final OrderService _orderService = OrderService();
   final UserPreferencesService _userPrefs = UserPreferencesService();
@@ -72,6 +74,9 @@ class _CierreScreenState extends State<CierreScreen> {
   double _totalEfectivo = 0.0;
   double _totalTransferencias = 0.0;
   double _efectivoEsperado = 0.0;
+  double _efectivoUsdEsperado = 0.0;
+  double _efectivoInicialUsd = 0.0;
+  double _totalEfectivoUsd = 0.0;
   // FASE 3 presentaciones: `num`, no `int`. La RPC v2 devuelve
   // `productos_vendidos` como numeric porque la original lo casteaba a integer
   // y REDONDEABA (tres lineas de 0,5 kg daban 2). Si el Dart lo volviera a
@@ -326,14 +331,18 @@ class _CierreScreenState extends State<CierreScreen> {
   ({
     double ventas,
     double efectivo,
+    double efectivoUsd,
     double transferencia,
+    double transferenciaUsd,
     num productos,
     int operaciones,
   })
   _calculateClosureTotalsFromOrders(List<Order> orders) {
     double ventas = 0.0;
     double efectivo = 0.0;
+    double efectivoUsd = 0.0;
     double transferencia = 0.0;
+    double transferenciaUsd = 0.0;
     // FASE 3 presentaciones: `num`, no `int`. Antes se acumulaba con
     // `item.cantidad.toInt()`, que TRUNCA cada linea por separado: media
     // libra (0,5) sumaba 0, y tres lineas de 0,5 kg daban 0 en vez de 1,5.
@@ -358,59 +367,57 @@ class _CierreScreenState extends State<CierreScreen> {
         (sum, item) => sum + item.cantidad,
       );
 
-      double efectivoOrden = 0.0;
-      double transferenciaOrden = 0.0;
+      double efectivoOrdenCup = 0.0;
+      double transferenciaOrdenCup = 0.0;
       final pagos = order.pagos;
 
       if (pagos != null && pagos.isNotEmpty) {
-        for (final pago in pagos) {
-          if (pago is! Map) continue;
-          final monto = _parseDouble(
-            pago['monto'] ??
-                pago['monto_pago'] ??
-                pago['monto_total'] ??
-                pago['monto_entrega'] ??
-                pago['total'],
-          );
-          final esEfectivo =
-              pago['es_efectivo'] == true ||
-              pago['medio_pago_es_efectivo'] == true ||
-              pago['id_medio_pago'] == 1 ||
-              pago['medio_pago_id'] == 1;
-          final esDigital =
-              pago['es_digital'] == true ||
-              pago['medio_pago_es_digital'] == true;
+        for (final raw in pagos) {
+          final pago = PriceUtils.asPaymentMap(raw);
+          if (pago == null) continue;
+          if (PriceUtils.paymentIsPending(pago)) continue;
 
-          if (esEfectivo) {
-            efectivoOrden += monto;
-          } else if (esDigital) {
-            transferenciaOrden += monto;
+          final moneda = PriceUtils.paymentCurrency(pago);
+          final montoNativo = PriceUtils.paymentAmount(pago);
+          final montoCup = PriceUtils.paymentCupEquivalent(pago);
+
+          if (PriceUtils.paymentIsCash(pago)) {
+            if (moneda == 'USD') {
+              efectivoUsd += montoNativo;
+            } else {
+              efectivo += montoNativo;
+            }
+            efectivoOrdenCup += montoCup;
           } else {
-            transferenciaOrden += monto;
+            if (moneda == 'USD') {
+              transferenciaUsd += montoNativo;
+            } else {
+              transferencia += montoNativo;
+            }
+            transferenciaOrdenCup += montoCup;
           }
         }
       }
 
       // Fallback solo para órdenes offline sin pagos desglosados.
       if (order.isOfflineOrder &&
-          efectivoOrden + transferenciaOrden == 0 &&
+          efectivoOrdenCup + transferenciaOrdenCup == 0 &&
           order.total > 0) {
         final method = (order.paymentMethod ?? '').toLowerCase();
         if (method.contains('efectivo') || method.contains('cash')) {
-          efectivoOrden = order.total;
+          efectivo += order.total;
         } else {
-          transferenciaOrden = order.total;
+          transferencia += order.total;
         }
       }
-
-      efectivo += efectivoOrden;
-      transferencia += transferenciaOrden;
     }
 
     return (
       ventas: ventas,
       efectivo: efectivo,
+      efectivoUsd: efectivoUsd,
       transferencia: transferencia,
+      transferenciaUsd: transferenciaUsd,
       productos: productos,
       operaciones: operaciones,
     );
@@ -546,6 +553,17 @@ class _CierreScreenState extends State<CierreScreen> {
         _efectivoEsperado =
             (data['efectivo_esperado'] ?? _montoInicialCaja + _totalEfectivo)
                 .toDouble();
+        _efectivoInicialUsd =
+            (data['efectivo_inicial_usd'] ?? _efectivoInicialUsd).toDouble();
+        _totalEfectivoUsd =
+            (data['efectivo_usd'] ??
+                    data['ventas_usd_efectivo'] ??
+                    _totalEfectivoUsd)
+                .toDouble();
+        _efectivoUsdEsperado =
+            (data['efectivo_usd_esperado'] ??
+                    _efectivoInicialUsd + _totalEfectivoUsd)
+                .toDouble();
         _conciliacionEstado =
             data['conciliacion_estado']?.toString() ?? 'Pendiente';
         _efectivoRealAjustado =
@@ -615,6 +633,18 @@ class _CierreScreenState extends State<CierreScreen> {
           _efectivoEsperado =
               (resumenCierre['efectivo_esperado'] ??
                       _montoInicialCaja + _totalEfectivo)
+                  .toDouble();
+          _efectivoInicialUsd =
+              (resumenCierre['efectivo_inicial_usd'] ?? _efectivoInicialUsd)
+                  .toDouble();
+          _totalEfectivoUsd =
+              (resumenCierre['efectivo_usd'] ??
+                      resumenCierre['ventas_usd_efectivo'] ??
+                      _totalEfectivoUsd)
+                  .toDouble();
+          _efectivoUsdEsperado =
+              (resumenCierre['efectivo_usd_esperado'] ??
+                      _efectivoInicialUsd + _totalEfectivoUsd)
                   .toDouble();
           _conciliacionEstado =
               resumenCierre['conciliacion_estado'] ?? 'Pendiente';
@@ -741,6 +771,7 @@ class _CierreScreenState extends State<CierreScreen> {
   @override
   void dispose() {
     _montoFinalController.dispose();
+    _montoFinalUsdController.dispose();
     _observacionesController.dispose();
     _inventorySaveTimer?.cancel();
     // Dispose inventory controllers
@@ -1523,6 +1554,7 @@ class _CierreScreenState extends State<CierreScreen> {
       if (orders.isNotEmpty) {
         _ventasTotales = totals.ventas;
         _totalEfectivo = totals.efectivo;
+        _totalEfectivoUsd = totals.efectivoUsd;
         _totalTransferencias = totals.transferencia;
         _productosVendidos = totals.productos;
         _operacionesTotales = totals.operaciones;
@@ -1530,6 +1562,7 @@ class _CierreScreenState extends State<CierreScreen> {
             totals.operaciones > 0 ? totals.ventas / totals.operaciones : 0.0;
         // Recalcular efectivo esperado con los valores reales de este turno.
         _efectivoEsperado = _montoInicialCaja + _totalEfectivo;
+        _efectivoUsdEsperado = _efectivoInicialUsd + _totalEfectivoUsd;
       }
       _ordenesAbiertas = pendientes.length;
       _ordenesPendientes = pendientes;
@@ -1696,20 +1729,25 @@ class _CierreScreenState extends State<CierreScreen> {
                       ),
                       const SizedBox(height: 8),
                       _buildInfoRow(
-                        'Total efectivo:',
+                        'Total efectivo CUP:',
                         '\$${_totalEfectivo.toStringAsFixed(2)} (${_porcentajeEfectivo.toStringAsFixed(1)}%)',
                       ),
+                      if (_totalEfectivoUsd > 0.005)
+                        _buildInfoRow(
+                          'Total efectivo USD:',
+                          '\$${_totalEfectivoUsd.toStringAsFixed(2)} USD',
+                        ),
                       _buildInfoRow(
                         'Transferencias/Otros:',
                         '\$${_totalTransferencias.toStringAsFixed(2)} (${_porcentajeOtros.toStringAsFixed(1)}%)',
                       ),
                       _buildInfoRow(
-                        'Efectivo esperado inicial:',
-                        '\$${_efectivoEsperado.toStringAsFixed(2)}',
+                        'Efectivo esperado CUP:',
+                        '\$${montoEsperado.toStringAsFixed(2)}',
                       ),
                       _buildInfoRow(
-                        'Efectivo esperado final:',
-                        '\$${montoEsperado.toStringAsFixed(2)}',
+                        'Efectivo esperado USD:',
+                        '\$${_efectivoUsdEsperado.toStringAsFixed(2)} USD',
                       ),
 
                       // Show expenses breakdown if there are any
@@ -1942,7 +1980,9 @@ class _CierreScreenState extends State<CierreScreen> {
                         ),
                       ],
                       decoration: InputDecoration(
-                        labelText: 'Monto final (\$)',
+                        labelText: 'Efectivo real CUP',
+                        helperText:
+                            'Debe haber: \$${montoEsperado.toStringAsFixed(2)} CUP',
                         prefixIcon: const Icon(Icons.attach_money),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
@@ -1966,11 +2006,44 @@ class _CierreScreenState extends State<CierreScreen> {
                         setState(() {}); // Para actualizar la diferencia
                       },
                     ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _montoFinalUsdController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(
+                          RegExp(r'^\d+\.?\d{0,2}'),
+                        ),
+                      ],
+                      decoration: InputDecoration(
+                        labelText: 'Efectivo real USD',
+                        helperText:
+                            'Debe haber: \$${_efectivoUsdEsperado.toStringAsFixed(2)} USD',
+                        prefixIcon: const Icon(Icons.attach_money),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      validator: (value) {
+                        final monto = double.tryParse(value ?? '0');
+                        if (monto == null || monto < 0) {
+                          return 'Ingrese un monto USD válido';
+                        }
+                        return null;
+                      },
+                      onChanged: (_) => setState(() {}),
+                    ),
 
                     // Mostrar diferencia si hay monto ingresado
                     if (_montoFinalController.text.isNotEmpty) ...[
                       const SizedBox(height: 12),
                       _buildDiferencia(montoEsperado),
+                    ],
+                    if (_montoFinalUsdController.text.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      _buildDiferenciaUsd(_efectivoUsdEsperado),
                     ],
                   ],
                 ),
@@ -2239,27 +2312,61 @@ class _CierreScreenState extends State<CierreScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: isPositive ? Colors.green[50] : Colors.red[50],
+        color: isPositive ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: isPositive ? Colors.green[300]! : Colors.red[300]!,
+          color: isPositive ? Colors.green : Colors.red,
         ),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
-            'Diferencia:',
+            'Diferencia CUP:',
             style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w600,
               color: isPositive ? Colors.green[700] : Colors.red[700],
             ),
           ),
           Text(
             '${isPositive ? '+' : ''}\$${diferencia.toStringAsFixed(2)}',
             style: TextStyle(
-              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: isPositive ? Colors.green[700] : Colors.red[700],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDiferenciaUsd(double montoEsperadoUsd) {
+    final montoFinal = double.tryParse(_montoFinalUsdController.text) ?? 0.0;
+    final diferencia = montoFinal - montoEsperadoUsd;
+    final isPositive = diferencia >= 0;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isPositive ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isPositive ? Colors.green : Colors.red,
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            'Diferencia USD:',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: isPositive ? Colors.green[700] : Colors.red[700],
+            ),
+          ),
+          Text(
+            '${isPositive ? '+' : ''}\$${diferencia.toStringAsFixed(2)} USD',
+            style: TextStyle(
               fontWeight: FontWeight.bold,
               color: isPositive ? Colors.green[700] : Colors.red[700],
             ),
@@ -2594,6 +2701,9 @@ class _CierreScreenState extends State<CierreScreen> {
     final montoFinal = double.parse(_montoFinalController.text.trim());
     final montoEsperado = _montoInicialCaja + _totalEfectivo - _egresosEfectivo;
     final diferencia = montoFinal - montoEsperado;
+    final montoFinalUsd =
+        double.tryParse(_montoFinalUsdController.text.trim()) ?? 0.0;
+    final diferenciaUsd = montoFinalUsd - _efectivoUsdEsperado;
 
     final currentPendingOrders =
         (await _ordersOfOpenTurno())
@@ -2647,9 +2757,12 @@ class _CierreScreenState extends State<CierreScreen> {
       }
     }
 
-    // Mostrar confirmación si hay diferencia significativa
-    if (diferencia.abs() > 0.01) {
-      final confirmar = await _showDiferenciaDialog(diferencia);
+    // Mostrar confirmación si hay diferencia significativa CUP o USD
+    if (diferencia.abs() > 0.01 || diferenciaUsd.abs() > 0.01) {
+      final confirmar = await _showDiferenciaDialog(
+        diferencia,
+        diferenciaUsd: diferenciaUsd,
+      );
       if (!confirmar) return;
     }
 
@@ -2851,6 +2964,7 @@ class _CierreScreenState extends State<CierreScreen> {
 
         final result = await TurnoService.cerrarTurnoDetailed(
           efectivoReal: montoFinal,
+          efectivoRealUsd: double.tryParse(_montoFinalUsdController.text) ?? 0,
           productos: productCounts ?? [],
           observaciones:
               observacionesFinales.isEmpty ? null : observacionesFinales,
@@ -2958,14 +3072,30 @@ class _CierreScreenState extends State<CierreScreen> {
     }
   }
 
-  Future<bool> _showDiferenciaDialog(double diferencia) async {
+  Future<bool> _showDiferenciaDialog(
+    double diferencia, {
+    double diferenciaUsd = 0,
+  }) async {
+    final parts = <String>[];
+    if (diferencia.abs() > 0.01) {
+      parts.add(
+        'CUP: \$${diferencia.toStringAsFixed(2)}',
+      );
+    }
+    if (diferenciaUsd.abs() > 0.01) {
+      parts.add(
+        'USD: \$${diferenciaUsd.toStringAsFixed(2)}',
+      );
+    }
     final result = await showDialog<bool>(
       context: context,
       builder:
           (context) => AlertDialog(
             title: const Text('Diferencia en Caja'),
             content: Text(
-              'Hay una diferencia de \$${diferencia.toStringAsFixed(2)} entre el monto esperado y el contado.\n\n¿Desea continuar con el cierre?',
+              'Hay diferencia entre lo esperado y lo contado:\n\n'
+              '${parts.join('\n')}\n\n'
+              '¿Desea continuar con el cierre?',
             ),
             actions: [
               TextButton(
@@ -3060,6 +3190,7 @@ class _CierreScreenState extends State<CierreScreen> {
       'efectivo_esperado': _efectivoEsperado - _egresosEfectivo,
       'efectivo_final': efectivoFinal,
       'efectivo_real': efectivoFinal,
+      'efectivo_real_usd': double.tryParse(_montoFinalUsdController.text) ?? 0,
       'estado_turno': 2,
       'diferencia': diferencia,
       'fecha_apertura': _fechaAperturaTurno?.toIso8601String(),
@@ -3166,6 +3297,7 @@ class _CierreScreenState extends State<CierreScreen> {
         'efectivo_esperado': _efectivoEsperado - _egresosEfectivo,
         'efectivo_final': efectivoFinal,
         'efectivo_real': efectivoFinal,
+        'efectivo_real_usd': double.tryParse(_montoFinalUsdController.text) ?? 0,
         'estado_turno': 2,
         'diferencia': diferencia,
         'fecha_apertura': openTurno['fecha_apertura'],

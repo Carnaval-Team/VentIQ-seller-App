@@ -5,6 +5,10 @@
 -- excluyendo canceladas/devueltas:
 --   - Carnaval status Cancelado / Devuelto
 --   - Inventtia estado actual 3 Devuelta, 4 Cancelada, 5 Anulada
+--
+-- price / precio_usd: precios de tienda Inventtia (app_dat_precio_venta),
+-- NO el precio cobrado en Carnaval. Así el listado de órdenes suma igual
+-- que el resumen a pagar al proveedor.
 -- =============================================================================
 
 DROP FUNCTION IF EXISTS public.fn_pago_proveedores_carnaval_lineas(
@@ -44,14 +48,23 @@ AS $$
     COALESCE(p.name, 'Sin nombre')::TEXT,
     p.image::TEXT,
     COALESCE(od.quantity, 0)::INTEGER,
-    COALESCE(od.price, 0)::DOUBLE PRECISION,
-    COALESCE(od.precio_usd, 1)::DOUBLE PRECISION,
-    COALESCE(od.precio_euro, 1)::DOUBLE PRECISION,
+    COALESCE(pv.precio_venta_cup, 0)::DOUBLE PRECISION AS price,
+    COALESCE(pv.precio_venta_usd, 0)::DOUBLE PRECISION AS precio_usd,
+    COALESCE(od.precio_euro, 0)::DOUBLE PRECISION,
     COALESCE(od.transferencia, FALSE),
     o.created_at::DATE
   FROM carnavalapp."OrderDetails" od
   JOIN carnavalapp."Orders" o ON o.id = od.order_id
   LEFT JOIN carnavalapp."Productos" p ON p.id = od.product_id
+  LEFT JOIN public.app_dat_producto ap
+    ON ap.id_vendedor_app = od.product_id
+  LEFT JOIN LATERAL (
+    SELECT pv2.precio_venta_cup, pv2.precio_venta_usd
+    FROM public.app_dat_precio_venta pv2
+    WHERE pv2.id_producto = ap.id
+    ORDER BY pv2.created_at DESC NULLS LAST, pv2.id DESC
+    LIMIT 1
+  ) pv ON TRUE
   WHERE o.created_at >= p_fecha_desde
     AND o.created_at <= p_fecha_hasta
     AND o.status NOT IN ('Cancelado', 'Cancelada', 'Devuelto', 'Devuelta')
@@ -80,7 +93,7 @@ $$;
 COMMENT ON FUNCTION public.fn_pago_proveedores_carnaval_lineas(
   DATE, DATE, BIGINT
 ) IS
-  'Líneas de pago a proveedores: órdenes Carnaval creadas en el rango, excluyendo canceladas y devueltas (Carnaval e Inventtia).';
+  'Líneas de pago a proveedores con precios Inventtia (precio_venta_cup), excluyendo canceladas/devueltas.';
 
 GRANT EXECUTE ON FUNCTION public.fn_pago_proveedores_carnaval_lineas(
   DATE, DATE, BIGINT

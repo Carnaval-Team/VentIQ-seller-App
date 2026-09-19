@@ -57,9 +57,17 @@ class SupplierPdfGenerator {
       ),
     );
 
+    final fileNameDateFormat = DateFormat('yyyy-MM-dd');
+    final safeSupplierName = supplier.name
+        .trim()
+        .replaceAll(RegExp(r'[^\w\s-]'), '')
+        .replaceAll(' ', '_');
+    final fileName =
+        'Pago_${safeSupplierName}_${fileNameDateFormat.format(fechaInicio)}_${fileNameDateFormat.format(fechaFin)}.pdf';
+
     await Printing.layoutPdf(
       onLayout: (format) async => pdf.save(),
-      name: 'Pago_${supplier.name.replaceAll(' ', '_')}.pdf',
+      name: fileName,
     );
   }
 

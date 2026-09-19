@@ -7,6 +7,7 @@ import '../services/auto_sync_service.dart';
 import '../services/connectivity_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
+import '../services/servicentro_service.dart';
 import '../services/comanda_service.dart';
 import '../services/sales_mode_service.dart';
 import '../utils/global_navigator.dart';
@@ -184,6 +185,7 @@ class _AppDrawerState extends State<AppDrawer> {
   bool _isLoading = true;
   String _appVersion = 'Cargando...';
   bool _modoRestaurante = false;
+  bool _modoServicentro = false;
   bool _tieneCocinas = false;
   bool _isSuperAdmin = false;
   bool _canManageInventory = false;
@@ -244,21 +246,22 @@ class _AppDrawerState extends State<AppDrawer> {
     }
   }
 
-  /// Carga el flag modo_restaurante desde el cache de StoreConfig.
-  /// Se ejecuta en paralelo con los demás loads — el primer render del drawer
-  /// es con modo=false, pero el rebuild llega muy rápido y la entrada aparece.
+  /// Carga flags de modo (restaurante tienda / servicentro TPV) desde cache.
   Future<void> _loadModoRestaurante() async {
     try {
       final config = await StoreConfigService.getStoreConfigFromCache();
-      final value = config?['modo_restaurante'] ?? false;
-      if (mounted && value != _modoRestaurante) {
-        setState(() => _modoRestaurante = value);
+      final restaurante = config?['modo_restaurante'] ?? false;
+      final servicentro = ServicentroService.modoServicentroSync;
+      if (mounted &&
+          (restaurante != _modoRestaurante ||
+              servicentro != _modoServicentro)) {
+        setState(() {
+          _modoRestaurante = restaurante;
+          _modoServicentro = servicentro;
+        });
       }
 
-      // La entrada de Cocina depende de que el usuario tenga cocinas
-      // asignadas, no del modo restaurante: un cocinero no maneja mesas.
-      // El backend decide el alcance (fn_cocinas_del_usuario).
-      if (value == true) {
+      if (restaurante == true) {
         final cocinas = await ComandaService().listarMisCocinas();
         if (mounted && cocinas.isNotEmpty != _tieneCocinas) {
           setState(() => _tieneCocinas = cocinas.isNotEmpty);
@@ -505,81 +508,100 @@ class _AppDrawerState extends State<AppDrawer> {
                     const Divider(height: 1),
                   ],
                 ] else ...[
-                  // Modo restaurante: el item de mesas va primero como entrada
-                  // principal de la operación. La "Venta de Productos" se
-                  // mantiene debajo (útil para venta de mostrador puntual).
-                  if (_modoRestaurante) ...[
+                  // Servicentro: solo combustibles (sin catálogo / mesas).
+                  if (_modoServicentro) ...[
                     _buildDrawerItem(
                       context,
-                      icon: Icons.table_restaurant,
-                      title: 'Mesas y Comensales',
-                      subtitle: 'Gestionar mesas y cuentas abiertas',
+                      icon: Icons.local_gas_station,
+                      title: 'Combustibles',
+                      subtitle: 'Venta de servicentro',
                       onTap: () {
                         Navigator.pop(context);
-                        // Volver al flujo de mesas: si veníamos de una venta
-                        // de mostrador puntual, ese contexto termina aquí.
-                        SalesModeService.salirDeMostrador();
                         Navigator.pushNamedAndRemoveUntil(
                           context,
-                          '/mesas',
+                          '/servicentro',
+                          (route) => false,
+                        );
+                      },
+                    ),
+                    const Divider(height: 1),
+                  ] else ...[
+                    // Modo restaurante: el item de mesas va primero como entrada
+                    // principal de la operación. La "Venta de Productos" se
+                    // mantiene debajo (útil para venta de mostrador puntual).
+                    if (_modoRestaurante) ...[
+                      _buildDrawerItem(
+                        context,
+                        icon: Icons.table_restaurant,
+                        title: 'Mesas y Comensales',
+                        subtitle: 'Gestionar mesas y cuentas abiertas',
+                        onTap: () {
+                          Navigator.pop(context);
+                          // Volver al flujo de mesas: si veníamos de una venta
+                          // de mostrador puntual, ese contexto termina aquí.
+                          SalesModeService.salirDeMostrador();
+                          Navigator.pushNamedAndRemoveUntil(
+                            context,
+                            '/mesas',
+                            (route) => false,
+                          );
+                        },
+                      ),
+                      const Divider(height: 1),
+                    ],
+
+                    // Cocina (KDS). Solo si el usuario tiene cocinas asignadas:
+                    // un vendedor sin cocina no debe verla, y un cocinero la ve
+                    // aunque no maneje mesas.
+                    if (_tieneCocinas) ...[
+                      _buildDrawerItem(
+                        context,
+                        icon: Icons.soup_kitchen_outlined,
+                        title: 'Cocina',
+                        subtitle: 'Comandas pendientes de preparar',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.pushNamed(context, '/kds');
+                        },
+                      ),
+                      const Divider(height: 1),
+                      _buildDrawerItem(
+                        context,
+                        icon: Icons.outdoor_grill_outlined,
+                        title: 'Produccion',
+                        subtitle: 'Tandas y porciones preparadas',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.pushNamed(context, '/produccion');
+                        },
+                      ),
+                      const Divider(height: 1),
+                    ],
+
+                    _buildDrawerItem(
+                      context,
+                      icon: Icons.shopping_cart,
+                      title:
+                          _modoRestaurante
+                              ? 'Venta de Mostrador'
+                              : 'Venta de Productos',
+                      subtitle: 'Ir al catálogo de productos',
+                      onTap: () {
+                        Navigator.pop(context);
+                        // Venta de mostrador = venta normal: no hay mesa ni
+                        // comensal, así que el flujo vuelve a ser preorden local
+                        // + checkout que pide cliente. No-op si la tienda no
+                        // está en modo restaurante.
+                        SalesModeService.activarMostrador();
+                        Navigator.pushNamedAndRemoveUntil(
+                          context,
+                          '/categories',
                           (route) => false,
                         );
                       },
                     ),
                     const Divider(height: 1),
                   ],
-
-                  // Cocina (KDS). Solo si el usuario tiene cocinas asignadas:
-                  // un vendedor sin cocina no debe verla, y un cocinero la ve
-                  // aunque no maneje mesas.
-                  if (_tieneCocinas) ...[
-                    _buildDrawerItem(
-                      context,
-                      icon: Icons.soup_kitchen_outlined,
-                      title: 'Cocina',
-                      subtitle: 'Comandas pendientes de preparar',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.pushNamed(context, '/kds');
-                      },
-                    ),
-                    const Divider(height: 1),
-                    _buildDrawerItem(
-                      context,
-                      icon: Icons.outdoor_grill_outlined,
-                      title: 'Produccion',
-                      subtitle: 'Tandas y porciones preparadas',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.pushNamed(context, '/produccion');
-                      },
-                    ),
-                    const Divider(height: 1),
-                  ],
-
-                  _buildDrawerItem(
-                    context,
-                    icon: Icons.shopping_cart,
-                    title:
-                        _modoRestaurante
-                            ? 'Venta de Mostrador'
-                            : 'Venta de Productos',
-                    subtitle: 'Ir al catálogo de productos',
-                    onTap: () {
-                      Navigator.pop(context);
-                      // Venta de mostrador = venta normal: no hay mesa ni
-                      // comensal, así que el flujo vuelve a ser preorden local
-                      // + checkout que pide cliente. No-op si la tienda no
-                      // está en modo restaurante.
-                      SalesModeService.activarMostrador();
-                      Navigator.pushNamedAndRemoveUntil(
-                        context,
-                        '/categories',
-                        (route) => false,
-                      );
-                    },
-                  ),
-                  const Divider(height: 1),
 
                   _buildDrawerItem(
                     context,

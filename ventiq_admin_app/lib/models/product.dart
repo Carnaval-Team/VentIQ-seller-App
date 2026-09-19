@@ -29,6 +29,7 @@ class Product {
   final bool esInventariable;
   final bool esPorLotes;
   final bool esServicio;
+  final bool esCombustible;
   final double precioVenta;
   final int stockDisponible;
   final bool tieneStock;
@@ -94,6 +95,7 @@ class Product {
     this.esInventariable = true,
     this.esPorLotes = false,
     this.esServicio = false,
+    this.esCombustible = false,
     this.precioVenta = 0.0,
     this.stockDisponible = 0,
     this.tieneStock = false,
@@ -158,6 +160,7 @@ class Product {
       esInventariable: json['es_inventariable'] ?? true,
       esPorLotes: json['es_por_lotes'] ?? false,
       esServicio: json['es_servicio'] ?? false,
+      esCombustible: json['es_combustible'] ?? false,
       precioVenta: json['precioVenta'] ?? 0.0,
       stockDisponible: json['stockDisponible'] ?? 0,
       tieneStock: json['tieneStock'] ?? false,
@@ -301,6 +304,8 @@ class Product {
     bool? esComprable,
     bool? esInventariable,
     bool? esPorLotes,
+    bool? esServicio,
+    bool? esCombustible,
     double? precioVenta,
     int? stockDisponible,
     bool? tieneStock,
@@ -357,6 +362,8 @@ class Product {
       esComprable: esComprable ?? this.esComprable,
       esInventariable: esInventariable ?? this.esInventariable,
       esPorLotes: esPorLotes ?? this.esPorLotes,
+      esServicio: esServicio ?? this.esServicio,
+      esCombustible: esCombustible ?? this.esCombustible,
       precioVenta: precioVenta ?? this.precioVenta,
       stockDisponible: stockDisponible ?? this.stockDisponible,
       tieneStock: tieneStock ?? this.tieneStock,

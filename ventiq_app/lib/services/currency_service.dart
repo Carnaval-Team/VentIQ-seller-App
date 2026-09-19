@@ -96,10 +96,17 @@ class CurrencyService {
 
       double usdRate;
       if (usdRateData.isNotEmpty) {
-        usdRate = (usdRateData['tasa'] as num?)?.toDouble() ?? 420.0;
+        usdRate = (usdRateData['tasa'] as num?)?.toDouble() ?? 0.0;
       } else {
-        print('⚠️ No USD rate found in database, using cached/default');
+        print('⚠️ No USD rate found in database, using cached rate');
         usdRate = await userPreferencesService.getCambioCupUsd();
+      }
+      if (usdRate <= 0) {
+        usdRate = await userPreferencesService.getCambioCupUsd();
+      }
+      if (usdRate <= 0) {
+        print('⚠️ Sin tasa USD válida (ni DB ni cache)');
+        return 0.0;
       }
 
       // Guardar el tipo de cambio en el store

@@ -406,6 +406,34 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   },
                 ),
 
+                // Servicentro se configura por TPV (Gestión de TPVs → menú).
+                FutureBuilder<UserRole>(
+                  future: PermissionsService().getUserRole(),
+                  builder: (context, snapshot) {
+                    if (snapshot.data != UserRole.gerente) {
+                      return const SizedBox.shrink();
+                    }
+                    return Column(
+                      children: [
+                        _buildDrawerItem(
+                          context,
+                          icon: Icons.local_gas_station,
+                          title: 'Servicentro',
+                          subtitle: 'Configurar por TPV',
+                          onTap: () {
+                            Navigator.pop(context);
+                            NavigationGuard.navigateWithPermission(
+                              context,
+                              '/tpv-management',
+                            );
+                          },
+                        ),
+                        const Divider(height: 1),
+                      ],
+                    );
+                  },
+                ),
+
                 // Marketing (solo Gerente)
                 FutureBuilder<bool>(
                   future: NavigationGuard.canNavigate(

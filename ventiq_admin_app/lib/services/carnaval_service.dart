@@ -1464,6 +1464,25 @@ class CarnavalService {
     }
   }
 
+  static Future<List<Map<String, dynamic>>> getOrderDetailsForOrders(
+    List<int> orderIds,
+  ) async {
+    if (orderIds.isEmpty) return [];
+
+    final details = <Map<String, dynamic>>[];
+    for (final orderIdChunk in _chunkList(orderIds, 200)) {
+      final response = await _supabase
+          .schema('carnavalapp')
+          .from('OrderDetails')
+          .select(
+            'order_id, quantity, extra, Productos(id, name, proveedor, proveedores(id, name))',
+          )
+          .inFilter('order_id', orderIdChunk);
+      details.addAll(List<Map<String, dynamic>>.from(response));
+    }
+    return details;
+  }
+
   /// Calcula el total esperado de cada orden a partir de sus OrderDetails.
   /// Usado por la auditoría de totales del listado de órdenes Carnaval.
   static Future<Map<int, double>> getExpectedOrderTotals(
@@ -2442,6 +2461,45 @@ class CarnavalService {
     }
   }
 
+  /// Busca si un número de transacción de transferencia ya está en
+  /// `app_dat_operaciones.observaciones` (formato
+  /// `Número de transacción: …`). Devuelve el id de la operación que lo usa,
+  /// o null si está libre.
+  static Future<int?> findOperationWithTransactionNumber(
+    String transactionNumber, {
+    int? excludeOperationId,
+  }) async {
+    final tx = transactionNumber.trim();
+    if (tx.isEmpty) return null;
+
+    try {
+      final rows = await _supabase
+          .from('app_dat_operaciones')
+          .select('id, observaciones')
+          .ilike('observaciones', '%Número de transacción%')
+          .ilike('observaciones', '%$tx%');
+
+      final pattern = RegExp(
+        r'N[uú]mero de transacci[oó]n:\s*' +
+            RegExp.escape(tx) +
+            r'(?:\s*(?:\r?\n|$))',
+        caseSensitive: false,
+      );
+
+      for (final row in List<Map<String, dynamic>>.from(rows as List)) {
+        final id = row['id'] as int?;
+        if (id == null) continue;
+        if (excludeOperationId != null && id == excludeOperationId) continue;
+        final obs = row['observaciones']?.toString() ?? '';
+        if (pattern.hasMatch(obs)) return id;
+      }
+      return null;
+    } catch (e) {
+      print('❌ Error buscando número de transacción: $e');
+      rethrow;
+    }
+  }
+
   /// Obtiene una orden por ID
   static Future<Map<String, dynamic>?> getOrderById(int orderId) async {
     try {
@@ -2708,6 +2766,31 @@ class CarnavalService {
       print('❌ Error en auditoría Carnaval ↔ Inventtia: $e');
       print(st);
       rethrow;
+    }
+  }
+
+  /// Dashboard del proveedor: órdenes de Carnaval con productos de la tienda,
+  /// recalculando el monto con el precio histórico de Inventtia.
+  static Future<Map<String, dynamic>> getProviderDashboard({
+    required int storeId,
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    try {
+      final response = await _supabase.rpc(
+        'fn_dashboard_carnaval_proveedor',
+        params: {
+          'p_id_tienda': storeId,
+          'p_fecha_desde': from.toIso8601String().split('T')[0],
+          'p_fecha_hasta': to.toIso8601String().split('T')[0],
+        },
+      );
+      if (response == null) {
+        return {'error': 'No se pudo cargar el dashboard'};
+      }
+      return Map<String, dynamic>.from(response as Map);
+    } catch (e) {
+      return {'error': e.toString()};
     }
   }
 

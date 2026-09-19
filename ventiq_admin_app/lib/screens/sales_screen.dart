@@ -55,9 +55,7 @@ class _SalesScreenState extends State<SalesScreen>
   bool _isExportingProductHistory = false;
   bool _isPdfFabExpanded = false;
   String _selectedTPV = 'Todos';
-  // Tab TPVs: si es true, el reporte de vendedores se extiende hasta el cierre
-  // del turno cuando este cerró después de la fecha_hasta (o hasta ahora si sigue abierto).
-  bool _tpvHastaCierreTurno = false;
+  // Tab TPVs: reporte por turno (fn_reporte_ventas_por_turno).
 
   /// Criterio de fecha para ventas de productos (tab Tiempo Real):
   /// 'creacion' = o.created_at | 'completado' = eo.created_at del estado 2
@@ -549,6 +547,23 @@ class _SalesScreenState extends State<SalesScreen>
         setState(() => _isGeneratingPdf = false);
       }
     }
+  }
+
+  List<VendorOrder> _filterOrdersForVendorTurno(
+    List<VendorOrder> orders,
+    SalesVendorReport vendor,
+  ) {
+    if (!vendor.esPorTurno) return orders;
+    final start = vendor.periodoInicio;
+    final end = vendor.periodoFin;
+    return orders.where((order) {
+      final fecha = order.fechaOperacion;
+      if (fecha.isBefore(start) || fecha.isAfter(end)) return false;
+      if (vendor.idTpv != null && vendor.idTpv! > 0) {
+        return order.idTpv == vendor.idTpv;
+      }
+      return true;
+    }).toList();
   }
 
   bool _isVendorOrderCompleted(VendorOrder order) {
@@ -1940,36 +1955,24 @@ class _SalesScreenState extends State<SalesScreen>
     });
 
     try {
-      final reports = await SalesService.getSalesVendorReport(
+      final reports = await SalesService.getSalesVendorReportByTurno(
         fechaDesde: _startDate,
         fechaHasta: _endDate,
-        hastaCierreTurno: _tpvHastaCierreTurno,
       );
 
-      // Load egresos for each vendor
       final List<SalesVendorReport> reportsWithEgresos = [];
       for (final report in reports) {
         final totalEgresos = await SalesService.getTotalEgresosByVendor(
-          fechaInicio: _startDate,
-          fechaFin: _endDate,
+          fechaInicio: report.periodoInicio,
+          fechaFin: report.periodoFin,
           uuidUsuario: report.uuidUsuario,
         );
 
-        final updatedReport = report.copyWith(totalEgresos: totalEgresos);
-        reportsWithEgresos.add(updatedReport);
+        reportsWithEgresos.add(report.copyWith(totalEgresos: totalEgresos));
       }
 
-      // Filtrar vendedores que tengan ventas reales (productos > 0 o dinero > 0)
-      final filteredReports = reportsWithEgresos
-          .where(
-            (report) =>
-                report.totalProductosVendidos > 0 ||
-                report.totalDineroGeneral > 0,
-          )
-          .toList();
-
       setState(() {
-        _vendorReports = filteredReports;
+        _vendorReports = reportsWithEgresos;
         _isLoadingVendors = false;
       });
     } catch (e) {
@@ -2284,7 +2287,7 @@ class _SalesScreenState extends State<SalesScreen>
               child: Padding(
                 padding: EdgeInsets.all(32),
                 child: Text(
-                  'No hay datos de vendedores para el período seleccionado',
+                  'No hay turnos de TPV para el período seleccionado',
                   style: TextStyle(color: AppColors.textSecondary),
                 ),
               ),
@@ -5799,6 +5802,15 @@ class _SalesScreenState extends State<SalesScreen>
   Widget _buildVendorCard(SalesVendorReport vendor) {
     final statusColor = _getVendorStatusColor(vendor.status);
     final statusIcon = _getVendorStatusIcon(vendor.status);
+    final turnoLabel = vendor.esPorTurno
+        ? '${vendor.turnoAbierto ? 'Turno abierto' : 'Turno cerrado'}'
+            '${vendor.tpvNombre != null ? ' · ${vendor.tpvNombre}' : ''}'
+        : null;
+    final turnoRango = vendor.esPorTurno
+        ? '${_formatDateTime(vendor.periodoInicio)}'
+            ' → '
+            '${vendor.fechaCierre != null ? _formatDateTime(vendor.fechaCierre!) : 'en curso'}'
+        : null;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -5810,7 +5822,10 @@ class _SalesScreenState extends State<SalesScreen>
       child: ExpansionTile(
         leading: CircleAvatar(
           backgroundColor: statusColor.withOpacity(0.1),
-          child: Icon(Icons.person, color: statusColor),
+          child: Icon(
+            vendor.esPorTurno ? Icons.point_of_sale : Icons.person,
+            color: statusColor,
+          ),
         ),
         title: Text(
           vendor.nombreCompleto,
@@ -5819,6 +5834,23 @@ class _SalesScreenState extends State<SalesScreen>
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (turnoLabel != null)
+              Text(
+                turnoLabel,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary,
+                ),
+              ),
+            if (turnoRango != null)
+              Text(
+                turnoRango,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
+                ),
+              ),
             Text(
               '${vendor.totalVentas} ventas • \$${vendor.totalDineroGeneral.toStringAsFixed(2)}',
             ),
@@ -5837,6 +5869,30 @@ class _SalesScreenState extends State<SalesScreen>
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
+                if (vendor.esPorTurno) ...[
+                  _buildVendorDetailRow(
+                    'TPV',
+                    vendor.tpvNombre ?? 'TPV #${vendor.idTpv}',
+                    AppColors.primary,
+                  ),
+                  _buildVendorDetailRow(
+                    'Turno #${vendor.idTurno}',
+                    vendor.turnoAbierto ? 'Abierto' : 'Cerrado',
+                    vendor.turnoAbierto ? AppColors.success : AppColors.textSecondary,
+                  ),
+                  _buildVendorDetailRow(
+                    'Apertura',
+                    _formatDateTime(vendor.periodoInicio),
+                    AppColors.textSecondary,
+                  ),
+                  _buildVendorDetailRow(
+                    'Cierre',
+                    vendor.fechaCierre != null
+                        ? _formatDateTime(vendor.fechaCierre!)
+                        : 'En curso',
+                    AppColors.textSecondary,
+                  ),
+                ],
                 _buildVendorDetailRow(
                   'Efectivo en Caja',
                   '\$${(vendor.totalDineroEfectivo - vendor.totalEgresos).toStringAsFixed(2)}',
@@ -5854,12 +5910,16 @@ class _SalesScreenState extends State<SalesScreen>
                 ),
                 _buildVendorDetailRow(
                   'Primera venta',
-                  _formatDateTime(vendor.primeraVenta),
+                  vendor.totalVentas > 0
+                      ? _formatDateTime(vendor.primeraVenta)
+                      : '—',
                   AppColors.textSecondary,
                 ),
                 _buildVendorDetailRow(
                   'Última venta',
-                  _formatDateTime(vendor.ultimaVenta),
+                  vendor.totalVentas > 0
+                      ? _formatDateTime(vendor.ultimaVenta)
+                      : '—',
                   AppColors.textSecondary,
                 ),
                 _buildVendorDetailRow(
@@ -6323,16 +6383,6 @@ class _SalesScreenState extends State<SalesScreen>
         );
       });
 
-      // Solo en el tab de TPVs (índice lógico 1) preguntamos si se debe mostrar
-      // hasta el cierre del turno. En cualquier otro tab se mantiene el
-      // comportamiento actual (false).
-      if (_logicalTabIndex == 1) {
-        final mostrarHastaCierre = await _askMostrarHastaCierreTurno();
-        _tpvHastaCierreTurno = mostrarHastaCierre;
-      } else {
-        _tpvHastaCierreTurno = false;
-      }
-
       // Reload data with new date range
       _loadProductSalesData(); // encadena _loadSupplierReports internamente
       _loadVendorReports();
@@ -6340,38 +6390,11 @@ class _SalesScreenState extends State<SalesScreen>
     }
   }
 
-  /// Muestra un diálogo Sí/No preguntando si el reporte de TPVs debe extenderse
-  /// hasta el cierre del turno. Devuelve true si el usuario elige "Sí".
-  Future<bool> _askMostrarHastaCierreTurno() async {
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Mostrar hasta el cierre de turno'),
-        content: const Text(
-          '¿Desea incluir las ventas hasta el cierre del turno cuando este '
-          'cerró después de la fecha final seleccionada (o hasta ahora si el '
-          'turno sigue abierto)?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('No'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Sí'),
-          ),
-        ],
-      ),
-    );
-    return result ?? false;
-  }
-
   void _showVendorEgresosDetail(SalesVendorReport vendor) async {
     try {
       final deliveries = await SalesService.getCashDeliveries(
-        fechaInicio: _startDate,
-        fechaFin: _endDate,
+        fechaInicio: vendor.periodoInicio,
+        fechaFin: vendor.periodoFin,
         uuidUsuario: vendor.uuidUsuario,
       );
 
@@ -6477,12 +6500,12 @@ class _SalesScreenState extends State<SalesScreen>
 
   void _showVendorOrdersDetail(SalesVendorReport vendor) async {
     try {
-      final dateRange = _getDateRange();
-      final orders = await SalesService.getVendorOrders(
-        fechaDesde: dateRange['start']!,
-        fechaHasta: dateRange['end']!,
+      final ordersRaw = await SalesService.getVendorOrders(
+        fechaDesde: vendor.periodoInicio,
+        fechaHasta: vendor.periodoFin,
         uuidUsuario: vendor.uuidUsuario,
       );
+      final orders = _filterOrdersForVendorTurno(ordersRaw, vendor);
 
       if (!mounted) return;
 
@@ -7673,23 +7696,21 @@ class _SalesScreenState extends State<SalesScreen>
 
   void _showVendorOrdenesPendientesDetail(SalesVendorReport vendor) async {
     try {
-      final dateRange = _getDateRange();
-
       // Llamar al método getVendorOrders con id_estado_param = 1 para órdenes pendientes
       final response = await Supabase.instance.client.rpc(
         'listar_ordenes',
         params: {
           'con_inventario_param': false,
-          'fecha_desde_param': dateRange['start']!.toIso8601String().split(
+          'fecha_desde_param': vendor.periodoInicio.toIso8601String().split(
             'T',
           )[0],
-          'fecha_hasta_param': dateRange['end']!.toIso8601String().split(
+          'fecha_hasta_param': vendor.periodoFin.toIso8601String().split(
             'T',
           )[0],
           'id_estado_param': 1, // Solo órdenes pendientes
           'id_tienda_param': await UserPreferencesService().getIdTienda(),
           'id_tipo_operacion_param': null,
-          'id_tpv_param': null,
+          'id_tpv_param': vendor.idTpv,
           'id_usuario_param': vendor.uuidUsuario,
           'limite_param': null,
           'pagina_param': null,
@@ -8613,12 +8634,12 @@ class _SalesScreenState extends State<SalesScreen>
 
   void _showVendorTransferenciasDetail(SalesVendorReport vendor) async {
     try {
-      final dateRange = _getDateRange();
-      final orders = await SalesService.getVendorOrders(
-        fechaDesde: dateRange['start']!,
-        fechaHasta: dateRange['end']!,
+      final ordersRaw = await SalesService.getVendorOrders(
+        fechaDesde: vendor.periodoInicio,
+        fechaHasta: vendor.periodoFin,
         uuidUsuario: vendor.uuidUsuario,
       );
+      final orders = _filterOrdersForVendorTurno(ordersRaw, vendor);
 
       if (!mounted) return;
 

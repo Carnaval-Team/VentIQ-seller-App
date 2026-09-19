@@ -599,8 +599,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
 
     try {
       // Verificar si el modo offline / full-offline está activado
-      final useLocalData =
-          await _userPreferencesService.shouldUseLocalData();
+      final useLocalData = await _userPreferencesService.shouldUseLocalData();
 
       Product detailedProduct;
 
@@ -640,8 +639,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
               final productoInfoRaw = detalles['producto'];
               if (productoInfoRaw is! Map) continue;
               final productoInfo = Map<String, dynamic>.from(productoInfoRaw);
-              final inventarioList =
-                  List<dynamic>.from(detalles['inventario'] as List? ?? []);
+              final inventarioList = List<dynamic>.from(
+                detalles['inventario'] as List? ?? [],
+              );
 
               // Crear variantes desde el inventario (igual que en modo normal)
               final variantes = <ProductVariant>[];
@@ -653,33 +653,42 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                 if (itemRaw is! Map) continue;
                 final item = Map<String, dynamic>.from(itemRaw);
 
-                final varianteData = item['variante'] is Map
-                    ? Map<String, dynamic>.from(item['variante'] as Map)
-                    : null;
-                final presentacionData = item['presentacion'] is Map
-                    ? Map<String, dynamic>.from(item['presentacion'] as Map)
-                    : null;
-                final ubicacionData = item['ubicacion'] is Map
-                    ? Map<String, dynamic>.from(item['ubicacion'] as Map)
-                    : null;
+                final varianteData =
+                    item['variante'] is Map
+                        ? Map<String, dynamic>.from(item['variante'] as Map)
+                        : null;
+                final presentacionData =
+                    item['presentacion'] is Map
+                        ? Map<String, dynamic>.from(item['presentacion'] as Map)
+                        : null;
+                final ubicacionData =
+                    item['ubicacion'] is Map
+                        ? Map<String, dynamic>.from(item['ubicacion'] as Map)
+                        : null;
                 final cantidadDisponible =
                     (item['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
                 final reservadoCarnavalItem =
-                    (item['reservado_carnaval'] as num?)?.toInt() ?? 0;
+                    (item['reservado_carnaval'] as num?)?.toDouble() ?? 0;
+                final enOrdenesCarnavalItem =
+                    (item['en_ordenes_carnaval'] as num?)?.toDouble() ?? 0;
 
                 // Construir nombre de variante (igual que en ProductDetailService)
                 String variantName = 'Variante ${i + 1}';
                 String variantDescription = '';
 
                 if (varianteData != null) {
-                  final opcion = varianteData['opcion'] is Map
-                      ? Map<String, dynamic>.from(varianteData['opcion'] as Map)
-                      : null;
-                  final atributo = varianteData['atributo'] is Map
-                      ? Map<String, dynamic>.from(
-                          varianteData['atributo'] as Map,
-                        )
-                      : null;
+                  final opcion =
+                      varianteData['opcion'] is Map
+                          ? Map<String, dynamic>.from(
+                            varianteData['opcion'] as Map,
+                          )
+                          : null;
+                  final atributo =
+                      varianteData['atributo'] is Map
+                          ? Map<String, dynamic>.from(
+                            varianteData['atributo'] as Map,
+                          )
+                          : null;
 
                   if (opcion != null && atributo != null) {
                     final valor = opcion['valor'] as String? ?? '';
@@ -718,11 +727,12 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                 }
 
                 // Extraer metadata de inventario (igual que en modo normal)
-                final almacenData = ubicacionData?['almacen'] is Map
-                    ? Map<String, dynamic>.from(
-                        ubicacionData!['almacen'] as Map,
-                      )
-                    : null;
+                final almacenData =
+                    ubicacionData?['almacen'] is Map
+                        ? Map<String, dynamic>.from(
+                          ubicacionData!['almacen'] as Map,
+                        )
+                        : null;
                 final inventoryMetadata = {
                   'id_inventario': item['id_inventario'],
                   'id_variante': varianteData?['id'],
@@ -735,28 +745,30 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                   'sku_producto': item['sku_producto'],
                   'sku_ubicacion': ubicacionData?['sku_codigo'],
                   'cantidad_disponible': cantidadDisponible,
-                  'ubicacion_nombre': (() {
-                    for (final v in [
-                      item['ubicacion_nombre'],
-                      item['denominacion_ubicacion'],
-                      item['ubicacion_label'],
-                      ubicacionData?['denominacion'],
-                    ]) {
-                      final s = v?.toString();
-                      if (s != null && s.isNotEmpty) return s;
-                    }
-                    return null;
-                  })(),
-                  'almacen_nombre': (() {
-                    for (final v in [
-                      item['almacen_nombre'],
-                      almacenData?['denominacion'],
-                    ]) {
-                      final s = v?.toString();
-                      if (s != null && s.isNotEmpty) return s;
-                    }
-                    return null;
-                  })(),
+                  'ubicacion_nombre':
+                      (() {
+                        for (final v in [
+                          item['ubicacion_nombre'],
+                          item['denominacion_ubicacion'],
+                          item['ubicacion_label'],
+                          ubicacionData?['denominacion'],
+                        ]) {
+                          final s = v?.toString();
+                          if (s != null && s.isNotEmpty) return s;
+                        }
+                        return null;
+                      })(),
+                  'almacen_nombre':
+                      (() {
+                        for (final v in [
+                          item['almacen_nombre'],
+                          almacenData?['denominacion'],
+                        ]) {
+                          final s = v?.toString();
+                          if (s != null && s.isNotEmpty) return s;
+                        }
+                        return null;
+                      })(),
                 };
 
                 variantes.add(
@@ -771,14 +783,17 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                             : null,
                     inventoryMetadata: inventoryMetadata,
                     reservadoCarnaval: reservadoCarnavalItem,
+                    enOrdenesCarnaval: enOrdenesCarnavalItem,
                   ),
                 );
               }
 
               final categoriaRaw = productoInfo['categoria'];
-              final categoriaNombre = categoriaRaw is Map
-                  ? (categoriaRaw['denominacion'] as String? ?? 'Sin categoría')
-                  : 'Sin categoría';
+              final categoriaNombre =
+                  categoriaRaw is Map
+                      ? (categoriaRaw['denominacion'] as String? ??
+                          'Sin categoría')
+                      : 'Sin categoría';
 
               // Stock: preferir suma de inventario; si viene vacío (sync admin
               // sin almacenes de vendedor), usar cantidad del listado cacheado.
@@ -789,12 +804,16 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
               });
               final cachedCantidad =
                   (productData['cantidad'] as num?)?.toDouble() ??
-                      widget.product.cantidad.toDouble();
-              final totalCantidad = invSum > 0 ? invSum : cachedCantidad;
-              final totalReservado = variantes.fold<int>(
+                  widget.product.cantidad.toDouble();
+              final totalReservado = variantes.fold<double>(
                 0,
-                (sum, v) => sum + v.reservadoCarnaval.toInt(),
+                (sum, v) => sum + v.reservadoCarnaval.toDouble(),
               );
+              final totalEnOrdenes = variantes.fold<double>(
+                0,
+                (sum, v) => sum + v.enOrdenesCarnaval.toDouble(),
+              );
+              final totalCantidad = invSum > 0 ? invSum : cachedCantidad;
 
               foundProduct = Product(
                 id: (productoInfo['id'] as num).toInt(),
@@ -817,6 +836,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                 esServicio: productoInfo['es_servicio'] as bool? ?? false,
                 variantes: variantes,
                 reservadoCarnaval: totalReservado,
+                enOrdenesCarnaval: totalEnOrdenes,
               );
 
               print('✅ Detalles del producto cargados desde cache offline');
@@ -845,6 +865,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
         print('🌐 Modo online - Cargando detalles desde Supabase...');
         detailedProduct = await _productDetailService.getProductDetail(
           widget.product.id,
+          fallbackStock: widget.product.cantidadReal.toDouble(),
         );
         print('✅ Detalles del producto cargados desde Supabase');
       }
@@ -914,8 +935,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
 
   void _loadPromotionData() async {
     try {
-      final useLocalData =
-          await _userPreferencesService.shouldUseLocalData();
+      final useLocalData = await _userPreferencesService.shouldUseLocalData();
 
       Map<String, dynamic>? globalPromotion;
       List<Map<String, dynamic>>? productPromotions;
@@ -983,7 +1003,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     } catch (e) {
       print('❌ Error loading USD rate: $e');
       setState(() {
-        _usdRate = 420.0; // Default fallback rate
+        _usdRate = 0.0;
         _isLoadingUsdRate = false;
       });
     }
@@ -1001,13 +1021,14 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       );
 
       // Verificar si el modo offline / full-offline está activado
-      final useLocalData =
-          await _userPreferencesService.shouldUseLocalData();
+      final useLocalData = await _userPreferencesService.shouldUseLocalData();
 
       List<ProductPresentation> presentations = [];
 
       if (useLocalData) {
-        print('🔌 Offline/full-offline - Cargando presentaciones desde cache...');
+        print(
+          '🔌 Offline/full-offline - Cargando presentaciones desde cache...',
+        );
 
         // Cargar datos offline
         final offlineData = await _userPreferencesService.getOfflineData();
@@ -1034,18 +1055,20 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
             }
 
             if (productData != null && productData['presentaciones'] != null) {
-              final presentationsData =
-                  List<dynamic>.from(productData['presentaciones'] as List);
+              final presentationsData = List<dynamic>.from(
+                productData['presentaciones'] as List,
+              );
 
               // Convertir los datos a ProductPresentation
-              presentations = presentationsData
-                  .whereType<Map>()
-                  .map(
-                    (item) => ProductPresentation.fromJson(
-                      Map<String, dynamic>.from(item),
-                    ),
-                  )
-                  .toList();
+              presentations =
+                  presentationsData
+                      .whereType<Map>()
+                      .map(
+                        (item) => ProductPresentation.fromJson(
+                          Map<String, dynamic>.from(item),
+                        ),
+                      )
+                      .toList();
 
               print(
                 '✅ ${presentations.length} presentaciones cargadas desde cache offline',
@@ -2021,11 +2044,33 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                         border: Border.all(color: Colors.orange[300]!),
                       ),
                       child: Text(
-                        'Res: ${_getLocationReservadoCarnaval(variants)}',
+                        'Carritos: ${_getLocationReservadoCarnaval(variants)}',
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w600,
                           color: Colors.orange[800],
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (_getLocationEnOrdenesCarnaval(variants) > 0) ...[
+                    const SizedBox(width: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.blue[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.blue[300]!),
+                      ),
+                      child: Text(
+                        'Órdenes: ${_getLocationEnOrdenesCarnaval(variants)}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.blue[800],
                         ),
                       ),
                     ),
@@ -2938,6 +2983,13 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     );
   }
 
+  num _getLocationEnOrdenesCarnaval(List<ProductVariant> variants) {
+    return variants.fold<num>(
+      0,
+      (sum, variant) => sum + variant.enOrdenesCarnaval,
+    );
+  }
+
   bool _hasValidProductImage(String? url) {
     if (url == null || url.trim().isEmpty) return false;
     if (url.contains('unsplash.com')) return false;
@@ -3025,16 +3077,18 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
 
     final cadena = PresentacionCadenaLocal.resolverDesdeCrudas(
       _productPresentations
-          .map((p) => {
-                'id': p.id,
-                'cantidad': p.cantidad,
-                'es_base': p.esBase,
-                'presentacion': {
-                  'id': p.idPresentacion,
-                  'denominacion': p.presentacion.denominacion,
-                  'sku_codigo': p.presentacion.skuCodigo,
-                },
-              })
+          .map(
+            (p) => {
+              'id': p.id,
+              'cantidad': p.cantidad,
+              'es_base': p.esBase,
+              'presentacion': {
+                'id': p.idPresentacion,
+                'denominacion': p.presentacion.denominacion,
+                'sku_codigo': p.presentacion.skuCodigo,
+              },
+            },
+          )
           .toList(),
     );
 
@@ -3091,7 +3145,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       //
       // Fallback al inventario cuando el producto no tiene presentaciones
       // cargadas (offline sin caché): el servidor resuelve la base.
-      'id_presentacion': _presentacionElegidaId(product) ??
+      'id_presentacion':
+          _presentacionElegidaId(product) ??
           inventoryMetadata['id_presentacion'],
       // Nombre y factor relativo de la presentación elegida, para que
       // `OrderService` los congele en el `OrderItem`. Van por aquí porque
@@ -3117,7 +3172,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     destinos.add(r.cocinaNombre ?? 'cocina');
   }
 
-  void _addToCart() async {    final orderService = OrderService();
+  void _addToCart() async {
+    final orderService = OrderService();
 
     // Verificar configuración de tienda antes de agregar productos
     try {
@@ -3161,9 +3217,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       final invPreview = _buildInventoryData(currentProduct, null);
       final idPresPreview = (invPreview['id_presentacion'] as num?)?.toInt();
       final idUbicPreview = (invPreview['id_ubicacion'] as num?)?.toInt();
-      final cantidadPreview = currentProduct.variantes.isEmpty
-          ? selectedQuantity
-          : variantQuantities.values.fold<double>(0, (s, v) => s + v);
+      final cantidadPreview =
+          currentProduct.variantes.isEmpty
+              ? selectedQuantity
+              : variantQuantities.values.fold<double>(0, (s, v) => s + v);
 
       if (idPresPreview != null &&
           idUbicPreview != null &&

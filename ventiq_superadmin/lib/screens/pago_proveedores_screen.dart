@@ -792,7 +792,7 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen> {
                 ? null
                 : _buildCurrencyChip(
                   'CUP',
-                  supplier.totalCup,
+                  totalToPay,
                   AppColors.primary,
                 ),
         onExpansionChanged: (expanded) {

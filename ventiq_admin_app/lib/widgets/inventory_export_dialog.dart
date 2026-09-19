@@ -42,6 +42,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
 
   // Opciones de filtrado
   bool _includeZeroStock = false; // Incluir productos con stock cero
+  bool _soloCompletadasEnPeriodo = false; // Solo ops completadas en el período
 
   @override
   void initState() {
@@ -133,6 +134,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
           fechaDesde: _selectedDate,
           fechaHasta: _selectedDateTo,
           includeZero: _includeZeroStock,
+          soloCompletadasEnPeriodo: _soloCompletadasEnPeriodo,
         );
       } else {
         inventoryData = await InventoryService.getInventarioSimple(
@@ -939,6 +941,34 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                             activeColor: AppColors.primary,
                             contentPadding: EdgeInsets.zero,
                           ),
+
+                          if (_selectedReportType == 'movimientos') ...[
+                            const SizedBox(height: 8),
+                            CheckboxListTile(
+                              title: const Text(
+                                'Solo operaciones completadas en el período',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              subtitle: const Text(
+                                'Contar solo movimientos de operaciones que alcanzaron estado completada dentro del rango de fechas',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              value: _soloCompletadasEnPeriodo,
+                              onChanged: (value) {
+                                setState(() {
+                                  _soloCompletadasEnPeriodo = value ?? false;
+                                });
+                              },
+                              activeColor: AppColors.primary,
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ],
                         ],
                       ),
                     ),

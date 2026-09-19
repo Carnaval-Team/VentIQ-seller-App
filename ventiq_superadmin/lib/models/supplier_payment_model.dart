@@ -101,8 +101,8 @@ class OrderPaymentDetail {
     required this.createdAt,
     required this.total,
     required this.isTransfer,
-    this.cashPct = 5,
-    this.transferPct = 15,
+    this.cashPct = 0,
+    this.transferPct = 0,
     required this.products,
   });
 
@@ -110,6 +110,8 @@ class OrderPaymentDetail {
 
   double discountAmount() => total * (_appliedPct / 100);
 
+  /// Con precios Inventtia el total a pagar es el total de la orden
+  /// (sin descontar markup Carnaval).
   double totalToPay() => total - discountAmount();
 }
 

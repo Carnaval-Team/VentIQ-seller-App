@@ -11,6 +11,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/order.dart';
 import '../services/currency_service.dart';
+import '../services/servicentro_service.dart';
 import '../services/store_config_service.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/price_utils.dart';
@@ -1143,23 +1144,59 @@ class BluetoothPrinterService {
       styles: PosStyles(align: PosAlign.center),
     );
 
-    // Products compactos
+    final ticketPayments = PriceUtils.normalizePayments(order.pagos);
+    String ticketMoney(double cupAmount) => PriceUtils.formatTicketMoney(
+      cupAmount,
+      ticketPayments,
+      fallbackRate: usdRate,
+    );
+
+    // Products compactos (servicentro: 1 ítem → cantidad/nombre grandes y separados)
     double subtotal = 0;
+    final servicentroTicket = ServicentroService.modoServicentroSync &&
+        order.items.length == 1;
     for (var item in order.items) {
       double itemTotal = item.cantidad * item.precioUnitario;
       subtotal += itemTotal;
 
-      // Nombre del producto en una línea
       String prodName = item.producto.denominacion;
-      if (prodName.length > 28) prodName = prodName.substring(0, 25) + '...';
-      bytes += generator.text(
-        '${PriceUtils.formatQuantity(item.cantidad)}x $prodName',
-        styles: PosStyles(align: PosAlign.left),
-      );
-      bytes += generator.text(
-        '  \$${item.precioUnitario.toStringAsFixed(0)} = \$${itemTotal.toStringAsFixed(0)}',
-        styles: PosStyles(align: PosAlign.right),
-      );
+      if (servicentroTicket) {
+        bytes += generator.emptyLines(1);
+        bytes += generator.text(
+          PriceUtils.formatQuantity(item.cantidad),
+          styles: const PosStyles(
+            align: PosAlign.center,
+            bold: true,
+            height: PosTextSize.size2,
+            width: PosTextSize.size2,
+          ),
+        );
+        bytes += generator.emptyLines(1);
+        bytes += generator.text(
+          prodName,
+          styles: const PosStyles(
+            align: PosAlign.center,
+            bold: true,
+            height: PosTextSize.size2,
+            width: PosTextSize.size1,
+          ),
+        );
+        bytes += generator.emptyLines(1);
+        bytes += generator.text(
+          ticketMoney(itemTotal),
+          styles: const PosStyles(align: PosAlign.center),
+        );
+      } else {
+        if (prodName.length > 28) prodName = '${prodName.substring(0, 25)}...';
+        bytes += generator.text(
+          '${PriceUtils.formatQuantity(item.cantidad)}x $prodName',
+          styles: const PosStyles(align: PosAlign.left),
+        );
+        bytes += generator.text(
+          '  ${ticketMoney(item.precioUnitario)} = ${ticketMoney(itemTotal)}',
+          styles: const PosStyles(align: PosAlign.right),
+        );
+      }
     }
 
     // Totals compactos
@@ -1174,32 +1211,23 @@ class BluetoothPrinterService {
       final double montoDescontado = ((order.descuento!['monto_descontado'] ?? 0) as num).toDouble();
       if (montoDescontado > 0) {
         bytes += generator.text(
-          'Subtotal: \$${montoReal.toStringAsFixed(0)}',
+          'Subtotal: ${ticketMoney(montoReal)}',
           styles: PosStyles(align: PosAlign.right),
         );
         bytes += generator.text(
-          'Descuento: -\$${montoDescontado.toStringAsFixed(0)}',
+          'Descuento: -${ticketMoney(montoDescontado)}',
           styles: PosStyles(align: PosAlign.right),
         );
       }
     }
 
     bytes += generator.text(
-      'TOTAL: \$${order.total.toStringAsFixed(0)}',
+      'TOTAL: ${ticketMoney(order.total)}',
       styles: PosStyles(align: PosAlign.right, bold: true),
     );
-    if (usdRate != null && usdRate > 0) {
-      final usdTotal = order.total / usdRate;
-      bytes += generator.text(
-        'USD (${usdRate.toStringAsFixed(0)}): \$${usdTotal.toStringAsFixed(2)}',
-        styles: PosStyles(align: PosAlign.right, bold: true),
-      );
-    }
 
     // Forma de pago (según config global de tienda)
-    if (showPaymentMethod) {
-      bytes += _addPaymentMethodSummary(generator, order);
-    }
+    bytes += _addPaymentMethodSummary(generator, order);
 
     // Footer: solo en la factura del cliente.
     // `row()` (forma de pago) deja un área de impresión estrecha y el
@@ -1225,12 +1253,21 @@ class BluetoothPrinterService {
   /// quedó cobrada la venta.
   List<int> _addPaymentMethodSummary(Generator generator, Order order) {
     final Map<String, double> totalsByMethod = {};
-    for (final item in order.items) {
-      final method = item.paymentMethod;
-      if (method == null) continue;
-      final itemTotal = item.cantidad * item.precioUnitario;
-      totalsByMethod[method.displayName] =
-          (totalsByMethod[method.displayName] ?? 0.0) + itemTotal;
+    for (final payment in PriceUtils.normalizePayments(order.pagos)) {
+      final method = PriceUtils.paymentMethodName(payment);
+      final currency = PriceUtils.paymentCurrency(payment);
+      final amount = PriceUtils.paymentAmount(payment);
+      final key = '$method ($currency)';
+      totalsByMethod[key] = (totalsByMethod[key] ?? 0.0) + amount;
+    }
+    if (totalsByMethod.isEmpty) {
+      for (final item in order.items) {
+        final method = item.paymentMethod;
+        if (method == null) continue;
+        final itemTotal = item.cantidad * item.precioUnitario;
+        totalsByMethod['${method.displayName} (CUP)'] =
+            (totalsByMethod['${method.displayName} (CUP)'] ?? 0.0) + itemTotal;
+      }
     }
 
     if (totalsByMethod.isEmpty) return [];
@@ -1247,6 +1284,7 @@ class BluetoothPrinterService {
     for (final entry in totalsByMethod.entries) {
       var label = entry.key;
       if (label.length > 20) label = '${label.substring(0, 20)}...';
+      final isUsd = entry.key.endsWith('(USD)');
       bytes += generator.row([
         PosColumn(
           text: label,
@@ -1254,7 +1292,11 @@ class BluetoothPrinterService {
           styles: PosStyles(align: PosAlign.left),
         ),
         PosColumn(
-          text: '\$${entry.value.toStringAsFixed(0)}',
+          text: isUsd
+              ? '${entry.value.toStringAsFixed(2)} USD'
+              : entry.value >= 100
+                  ? '${entry.value.toStringAsFixed(0)} CUP'
+                  : '${entry.value.toStringAsFixed(2)} CUP',
           width: 4,
           styles: PosStyles(align: PosAlign.right),
         ),
@@ -1369,13 +1411,6 @@ class BluetoothPrinterService {
       'TOT: ${order.distinctItemCount} prod - \$${order.total.toStringAsFixed(0)}',
       styles: PosStyles(align: PosAlign.left, bold: true),
     );
-    if (usdRate != null && usdRate > 0) {
-      final usdTotal = order.total / usdRate;
-      bytes += generator.text(
-        'USD (${usdRate.toStringAsFixed(0)}): \$${usdTotal.toStringAsFixed(2)}',
-        styles: PosStyles(align: PosAlign.left, bold: true),
-      );
-    }
 
     // Footer compacto
     bytes += generator.text(

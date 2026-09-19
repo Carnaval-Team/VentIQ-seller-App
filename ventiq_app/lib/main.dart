@@ -20,6 +20,7 @@ import 'screens/subscription_detail_screen.dart';
 import 'screens/wifi_printers_screen.dart';
 import 'screens/default_order_items_screen.dart';
 import 'screens/mesas_screen.dart';
+import 'screens/servicentro_screen.dart';
 import 'screens/mesa_detail_screen.dart';
 import 'screens/cuenta_mesa_screen.dart';
 import 'screens/kds_screen.dart';
@@ -45,6 +46,7 @@ import 'screens/offline_user_switch_screen.dart';
 import 'services/auth_service.dart';
 import 'services/user_preferences_service.dart';
 import 'services/store_config_service.dart';
+import 'services/servicentro_service.dart';
 import 'services/offline_database_service.dart';
 import 'services/server_time_service.dart';
 import 'utils/platform_utils.dart';
@@ -73,6 +75,7 @@ void main() async {
   // Pre-cargar el flag modo_restaurante en cache sincrónico para que el
   // NavigationHelper pueda decidir el destino del botón Home sin Future.
   await StoreConfigService.primeModoRestauranteCache();
+  await ServicentroService.primeCache();
 
   // Cargar el último desfasaje de reloj conocido contra el servidor (se
   // corrige de nuevo cada vez que hay una petición de red exitosa) para que
@@ -149,6 +152,7 @@ class MyApp extends StatelessWidget {
         '/default-order-items': (context) =>
             const DefaultOrderItemsScreen(),
         '/mesas': (context) => const MesasScreen(),
+        '/servicentro': (context) => const ServicentroScreen(),
         '/kds': (context) => const KdsScreen(),
         '/produccion': (context) => const ProduccionScreen(),
         '/mesa-detail': (context) {

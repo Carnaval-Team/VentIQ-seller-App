@@ -200,7 +200,7 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
     } catch (e) {
       print('❌ Error loading USD rate: $e');
       setState(() {
-        _usdRate = 420.0;
+        _usdRate = 0.0;
         _isLoadingUsdRate = false;
       });
     }
@@ -507,14 +507,28 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
                                   color: const Color(0xFF4A90E2),
                                 ),
                               ),
-                              title: Text(
-                                product.denominacion,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF2C3E50),
-                                ),
+                              title: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      product.denominacion,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF2C3E50),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '\$${PriceUtils.formatDiscountPrice(product.precio)}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF4A90E2),
+                                    ),
+                                  ),
+                                ],
                               ),
                               subtitle: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -544,53 +558,30 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
                                       color: Colors.grey,
                                     ),
                                   ),
-                                ],
-                              ),
-                              trailing: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Text(
-                                    '\$${PriceUtils.formatDiscountPrice(product.precio)}',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: Color(0xFF4A90E2),
-                                    ),
-                                  ),
                                   const SizedBox(height: 4),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color:
-                                          (product.cantidad > 0
-                                              ? Colors.green[50]
-                                              : Colors.red[50]) ??
-                                          Colors.grey[100],
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(
-                                        color:
-                                            (product.cantidad > 0
-                                                ? Colors.green[300]
-                                                : Colors.red[300]) ??
-                                            Colors.grey,
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 4,
+                                    children: [
+                                      _buildSearchStockChip(
+                                        product.cantidadReal > 0
+                                            ? 'Stock: ${product.cantidadReal}'
+                                            : 'Sin stock',
+                                        product.cantidadReal > 0
+                                            ? Colors.green
+                                            : Colors.red,
                                       ),
-                                    ),
-                                    child: Text(
-                                      product.cantidad > 0
-                                          ? 'Stock: ${product.cantidad}'
-                                          : 'Sin stock',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color:
-                                            product.cantidad > 0
-                                                ? Colors.green[700]
-                                                : Colors.red[700],
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
+                                      if (product.reservadoCarnaval > 0)
+                                        _buildSearchStockChip(
+                                          'En carritos: ${product.reservadoCarnaval}',
+                                          Colors.orange,
+                                        ),
+                                      if (product.enOrdenesCarnaval > 0)
+                                        _buildSearchStockChip(
+                                          'En órdenes: ${product.enOrdenesCarnaval}',
+                                          Colors.blue,
+                                        ),
+                                    ],
                                   ),
                                 ],
                               ),
@@ -671,6 +662,25 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
     if (screenWidth > 900) return 4;
     if (screenWidth > 600) return 3;
     return 2;
+  }
+
+  Widget _buildSearchStockChip(String label, MaterialColor color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color[50],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color[300]!),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          color: color[800],
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
   }
 
   @override

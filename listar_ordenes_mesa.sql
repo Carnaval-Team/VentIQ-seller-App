@@ -268,13 +268,18 @@ BEGIN
     'pagos', (
         SELECT jsonb_agg(jsonb_build_object(
             'medio_pago', mp.denominacion,
+            'id_medio_pago', mp.id,
+            'monto', pv.monto,
             'total', pv.monto,
-            'total_sin_descuento',pv.importe_sin_descuento,
+            'total_sin_descuento', pv.importe_sin_descuento,
             'referencia_pago', pv.referencia_pago,
             'fecha_pago', pv.fecha_pago,
             'es_digital', mp.es_digital,
             'es_efectivo', mp.es_efectivo,
-            'tipo_pago',pv.tipo_pago
+            'tipo_pago', pv.tipo_pago,
+            'moneda', COALESCE(NULLIF(upper(trim(pv.moneda)), ''), 'CUP'),
+            'tasa_usd', pv.tasa_usd,
+            'monto_cup_equivalente', pv.monto_cup_equivalente
         ))
         FROM app_dat_operacion_venta ov
         JOIN app_dat_pago_venta pv ON ov.id_operacion = pv.id_operacion_venta
