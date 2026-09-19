@@ -270,13 +270,10 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
     try {
       switch (action) {
         case 'qr':
-          await WapiQrDialog.show(context,
-              idSesion: s.id, nombreBot: s.nombre);
-          break;
         case 'restart':
-          await _service.sessionAction(s.id, 'restart');
-          ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Bot reiniciándose…')));
+          // Reconectar de verdad: arranca el engine en el server WAPI
+          // (/restart → fallback /start) y sólo entonces muestra el QR.
+          await _reconnectAndShowQr(s);
           break;
         case 'logout':
           await _service.sessionAction(s.id, 'logout');
@@ -324,6 +321,44 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
           ],
         ),
       );
+
+  /// Reconexión real de una sesión/bot:
+  ///   1. Arranca el engine en el server WAPI (restart → fallback /start).
+  ///   2. Espera unos segundos: el QR tarda un poco en generarse tras el start.
+  ///   3. Abre el diálogo de QR con polling hasta CONNECTED.
+  Future<void> _reconnectAndShowQr(WapiSession s) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      final status = await _service.sessionAction(s.id, 'restart');
+      // El engine tarda en levantar y generar el QR; sin esta pausa el
+      // diálogo pediría /qr demasiado pronto y vería "sin QR aún".
+      await Future.delayed(const Duration(seconds: 3));
+      if (!mounted) return;
+      Navigator.of(context).pop(); // cerrar loading
+
+      if (status == WapiStatus.connected) {
+        // El server reutilizó la credencial previa: no hace falta QR.
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          backgroundColor: AppColors.success,
+          content: Text('✅ El bot ya está conectado.'),
+        ));
+      } else {
+        await WapiQrDialog.show(context,
+            idSesion: s.id, nombreBot: s.nombre);
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop(); // cerrar loading
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('No se pudo reconectar: $e'),
+            backgroundColor: Colors.red));
+      }
+    }
+  }
 
   Future<void> _showDetails(WapiSession s) {
     return showDialog(

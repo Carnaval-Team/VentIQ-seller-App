@@ -45,8 +45,55 @@ class Product {
   /// True cuando no aplica control de disponibilidad (servicios).
   final bool ilimitado;
 
+  // ── Presentaciones / inventario (Fase 2 stock mixto) ────────────────────
+  // Viene del payload de `fn_catalogo_stock_mixto_v3` (columnas
+  // `stock_texto`, `stock_equivalente_base`, `stock_mixto`).
+  // `stockTexto` es el desglose legible ("13 Cajas + 3 Unidades") y
+  // `stockEquivalenteBase` el total en unidades base — el verdadero saldo de
+  // venta. `stockMixto` expone la lista de filas con su presentación.
+
+  /// Desglose legible del stock ("13 Cajas + 3 Unidades"). Null si el backend
+  /// no lo envía (catálogos legacy / offline).
+  final String? stockTexto;
+
+  /// Stock total en unidades base (suma ponderada por presentación). Null si el
+  /// backend no lo envía.
+  final num? stockEquivalenteBase;
+
+  /// Lista de filas de inventario con su presentación: [{id_presentacion,
+  /// presentacion, cantidad_final, ...}]. Null si el backend no lo envía.
+  final List<Map<String, dynamic>>? stockMixto;
+
   /// Este plato se prepara en una cocina, no se toma de la barra.
   bool get vaACocina => idCocina != null;
+
+  /// Etiqueta de stock para las tarjetas del listado.
+  ///
+  /// FASE 2 stock mixto: si el backend envía `stockTexto` (del desglose) se
+  /// muestra el equivalente base (`stockEquivalenteBase`) y, cuando hay mas de
+  /// una presentacion, el desglose en gris. Si no viene (catálogo legacy /
+  /// offline), cae al comportamiento anterior: `cantidadReal` cruda.
+  String stockLabel() {
+    final equiv = stockEquivalenteBase;
+    final texto = stockTexto;
+
+    if (equiv != null && equiv > 0) {
+      final n =
+          equiv is int
+              ? equiv
+              : (equiv == equiv.roundToDouble() ? equiv.toInt() : equiv);
+      final base =
+          'Stock: ${n is int ? n.toString() : equiv.toStringAsFixed(2)}';
+      if (texto != null && texto.isNotEmpty) return '$base\n$texto';
+      return base;
+    }
+    if (cantidadReal > 0) return 'Stock: $cantidadReal';
+    return 'Agotado';
+  }
+
+  /// Stock real descontando reservas de Carnaval
+  num get cantidadReal =>
+      (cantidad - reservadoCarnaval).clamp(0, double.infinity);
 
   /// Se produce por lotes: la disponibilidad son porciones ya hechas.
   bool get esPorTanda => modoElaboracion == 'por_tanda';
@@ -106,6 +153,11 @@ class Product {
     this.impresoraCocina,
     this.modoElaboracion,
     this.ilimitado = false,
+    // Stock mixto (fn_catalogo_stock_mixto_v3): null si el backend no los envía
+    // (catálogos legacy / offline), para que el resto del código siga igual.
+    this.stockTexto,
+    this.stockEquivalenteBase,
+    this.stockMixto,
   });
 
   factory Product.fromJson(Map<String, dynamic> json) {
@@ -141,6 +193,13 @@ class Product {
       impresoraCocina: json['impresora'] as String?,
       modoElaboracion: json['modo_elaboracion'] as String?,
       ilimitado: json['ilimitado'] ?? false,
+      // Stock mixto (nombres de la RPC fn_catalogo_stock_mixto_v3).
+      stockTexto: json['stock_texto'] as String?,
+      stockEquivalenteBase: json['stock_equivalente_base'] as num?,
+      stockMixto:
+          (json['stock_mixto'] as List<dynamic>?)
+              ?.map((e) => Map<String, dynamic>.from(e as Map))
+              .toList(),
     );
   }
 
@@ -176,6 +235,11 @@ class Product {
       'impresora': impresoraCocina,
       'modo_elaboracion': modoElaboracion,
       'ilimitado': ilimitado,
+      // Stock mixto (persistencia offline): pueden venir null del backend
+      // legacy; si persistimos null el lector los trata como "no enviados".
+      'stock_texto': stockTexto,
+      'stock_equivalente_base': stockEquivalenteBase,
+      'stock_mixto': stockMixto,
     };
   }
 }

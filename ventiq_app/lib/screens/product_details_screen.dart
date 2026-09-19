@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import '../models/product.dart';
 import '../services/order_service.dart';
@@ -9,6 +11,7 @@ import '../services/currency_service.dart';
 import '../services/preview_rebalanceo_service.dart';
 import '../utils/price_utils.dart';
 import '../utils/presentacion_cadena_local.dart';
+import '../utils/desarme_bulto_local.dart';
 import '../utils/promotion_rules.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/elaborated_product_chip.dart';
@@ -84,6 +87,13 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   final Map<int, double> _customVariantPrices = {};
   AnimationController? _editIconController;
   Animation<double>? _editIconOpacity;
+
+  // Estado para desarmar bultos - FASE 6
+  // Map<int presentacionId, int cantidadDesarmada>
+  final Map<int, int> _bultosDesarmados = {};
+  // Stock simulado offline de cada presentación: {presentacionId: cantidad}
+  final Map<int, double> _stockPresentacionesSimulado = {};
+
   @override
   void initState() {
     super.initState();
@@ -105,7 +115,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     }
 
     // Si el producto no tiene stock, mostrar aviso y volver (excepto elaborados y servicios)
+    // Venta por unidades: con saldo 0 pero bultos desarmables SÍ se puede vender.
     if (widget.product.cantidadReal <= 0 &&
+        _sinStockNiDesarmable &&
         !widget.product.esElaborado &&
         !widget.product.esServicio) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -871,7 +883,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       }
 
       // Verificar si el stock real total (descontando reservas) es <= 0
+      // Venta por unidades: con saldo 0 pero bultos desarmables SÍ se vende.
       if (detailedProduct.cantidadReal <= 0 &&
+          _sinStockNiDesarmable &&
           !detailedProduct.esElaborado &&
           !detailedProduct.esServicio) {
         if (mounted) {
@@ -1158,7 +1172,18 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     }
   }
 
-  bool _isCurrentPresentationFractional() {
+  bool _isCurrentPresentationFractional([ProductVariant? variant]) {
+    if (variant != null) {
+      final idPresVariante =
+          (variant.inventoryMetadata?['id_presentacion'] as num?)?.toInt();
+      if (idPresVariante != null) {
+        final pres = _productPresentations.cast<ProductPresentation?>()
+            .firstWhere((p) => p?.id == idPresVariante, orElse: () => null);
+        if (pres != null) {
+          return pres.presentacion.esFraccionable;
+        }
+      }
+    }
     final productKey = '${currentProduct.id}';
     final selected = _selectedPresentationsByProduct[productKey];
     if (selected != null) {
@@ -1476,6 +1501,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
           finalPrice,
           quantity,
           currentProduct,
+          variant, // FASE 4: factor POR VARIANTE, no global
         );
       }
     }
@@ -1487,16 +1513,71 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   }
 
   double get maxQuantityForProduct {
-    return currentProduct.cantidadReal.toDouble();
+    final base = currentProduct.cantidadReal.toDouble();
+
+    // VENTA POR UNIDADES con saldo 0: si la presentación elegida tiene saldo
+    // propio 0 pero hay bultos desarmables, el límite es el máximo servible
+    // (equivalente convertible). Sin cadena o sin saldos locales se conserva
+    // el límite previo: el servidor manda al vender.
+    final idPres = _presentacionElegidaId(currentProduct);
+    final stocks = _stocksPorPresentacionLocal();
+    if (idPres == null || stocks == null || _cadenaPresentaciones().isEmpty) {
+      return base;
+    }
+    final maxServible = DesarmeBultoLocal.maximoServible(
+      cadena: _cadenaPresentaciones(),
+      stocks: stocks,
+      idPresentacionPedida: idPres,
+      saldoPropio: stocks[idPres] ?? 0,
+    );
+    return math.max(base, maxServible);
+  }
+
+  /// ¿No hay stock ni directo ni desarmando bultos?
+  ///
+  /// Compuerta de entrada de la pantalla. Con saldo 0 en la presentación base
+  /// pero bultos desarmables, el producto SÍ es vendible por unidades, así que
+  /// no se muestra "Sin stock". Sin `stockMixto` (cache legacy) conserva el
+  /// criterio previo de `cantidadReal` para no bloquear nada nuevo.
+  bool get _sinStockNiDesarmable {
+    if (currentProduct.cantidadReal > 0) return false;
+    final stocks = _stocksPorPresentacionLocal();
+    if (stocks == null) return true;
+    final cadena = _cadenaPresentaciones();
+    if (cadena.isEmpty) return true;
+    // Alguna presentación con saldo convertible > 0.
+    for (final p in cadena) {
+      if ((stocks[p.idPresentacion] ?? 0) > 0) return false;
+    }
+    return true;
   }
 
   double maxQuantityForVariant(ProductVariant variant) {
-    return variant.cantidadReal.toDouble();
+    final propio = variant.cantidadReal.toDouble();
+
+    // Venta por unidades con saldo 0: el límite sube al máximo convertible
+    // (sumando los bultos de presentaciones mayores). Sin stockMixto o sin
+    // cadena se conserva el límite previo: el servidor manda al vender.
+    final idPresVariante =
+        (variant.inventoryMetadata?['id_presentacion'] as num?)?.toInt();
+    final stocks = _stocksPorPresentacionLocal();
+    final cadena = _cadenaPresentaciones();
+    if (idPresVariante == null || stocks == null || cadena.isEmpty) {
+      return propio;
+    }
+    final maxServible = DesarmeBultoLocal.maximoServible(
+      cadena: cadena,
+      stocks: stocks,
+      idPresentacionPedida: idPresVariante,
+      saldoPropio: stocks[idPresVariante] ?? 0,
+    );
+    return math.max(propio, maxServible);
   }
 
   @override
   Widget build(BuildContext context) {
     if (widget.product.cantidadReal <= 0 &&
+        _sinStockNiDesarmable &&
         !widget.product.esElaborado &&
         !widget.product.esServicio) {
       return const Scaffold(
@@ -1869,6 +1950,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                                     ),
                                     _getLocationName(currentProduct, entry.key),
                                     isVariant: true,
+                                    variant: entry.key, // FASE 4: factor POR VARIANTE
                                     originalPrice: _getOriginalBasePrice(
                                       currentProduct,
                                       entry.key,
@@ -2259,6 +2341,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     String ubicacion, {
     bool isVariant = false,
     double? originalPrice,
+    ProductVariant? variant,
   }) {
     final locationColor = _getLocationColor(ubicacion);
     final originalPriceValue = originalPrice;
@@ -2316,7 +2399,12 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  '\$${_calculateTotalPriceWithPresentation(finalPrice, quantity, currentProduct).toStringAsFixed(2)}',
+                  '\$${_calculateTotalPriceWithPresentation(
+                    finalPrice,
+                    quantity,
+                    currentProduct,
+                    variant, // FASE 4: factor POR VARIANTE
+                  ).toStringAsFixed(2)}',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
@@ -2402,8 +2490,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
           ],
           const SizedBox(height: 12),
           // Fila de presentación
-          _buildPresentationSelector(currentProduct),
-          if (_isCurrentPresentationFractional()) ...[
+          _buildPresentationSelector(currentProduct, variant),
+          if (_isCurrentPresentationFractional(variant)) ...[
             const SizedBox(height: 8),
             _buildFractionStepSelector(),
           ],
@@ -2432,7 +2520,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                     InkWell(
                       onTap: () {
                         final step =
-                            _isCurrentPresentationFractional()
+                            _isCurrentPresentationFractional(variant)
                                 ? _fractionStep
                                 : 1.0;
                         setState(() {
@@ -2441,16 +2529,15 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                               selectedQuantity = (selectedQuantity - step)
                                   .clamp(0.0, double.infinity);
                           } else {
-                            // Buscar la variante correspondiente
-                            for (var variant in currentProduct.variantes) {
-                              if (name.contains(variant.nombre)) {
-                                if (variantQuantities[variant]! > 0) {
-                                  variantQuantities[variant] =
-                                      (variantQuantities[variant]! - step)
-                                          .clamp(0.0, double.infinity);
-                                }
-                                break;
-                              }
+                            // Buscar la variante correspondiente POR IDENTIDAD
+                            // (entry.key), no por nombre.contains(...). Un
+                            // nombre es prefijo del otro ("Variante 1" contiene
+                            // a "1") y el string matching agarrava la equivocada.
+                            if (variant != null &&
+                                variantQuantities[variant]! > 0) {
+                              variantQuantities[variant] =
+                                  (variantQuantities[variant]! - step)
+                                      .clamp(0.0, double.infinity);
                             }
                           }
                         });
@@ -2484,7 +2571,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                     ),
                     InkWell(
                       onTap:
-                          () => _showQuantityDialog(name, quantity.toDouble()),
+                          () => _showQuantityDialog(name, quantity.toDouble(), variant),
                       child: Container(
                         width: 50,
                         height: 36,
@@ -2512,7 +2599,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                     InkWell(
                       onTap: () {
                         final step =
-                            _isCurrentPresentationFractional()
+                            _isCurrentPresentationFractional(variant)
                                 ? _fractionStep
                                 : 1.0;
                         setState(() {
@@ -2524,18 +2611,21 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                                     maxQuantityForProduct)
                               selectedQuantity += step;
                           } else {
-                            // Buscar la variante correspondiente
-                            for (var variant in currentProduct.variantes) {
-                              if (name.contains(variant.nombre)) {
-                                // Si es elaborado o servicio, no limitar cantidad; si no, usar límite de stock
-                                if (currentProduct.esElaborado ||
-                                    currentProduct.esServicio ||
-                                    variantQuantities[variant]! + step <=
-                                        variant.cantidadReal) {
-                                  variantQuantities[variant] =
-                                      variantQuantities[variant]! + step;
-                                }
-                                break;
+                            // Ver la nota arriba del `-`: busqueda POR
+                            // IDENTIDAD, no por nombre.contains.
+                            if (variant != null) {
+                              if (currentProduct.esElaborado ||
+                                  currentProduct.esServicio ||
+                                  variantQuantities[variant]! + step <=
+                                      maxQuantityForVariant(variant)) {
+                                variantQuantities[variant] =
+                                    variantQuantities[variant]! + step;
+                                _avisarDesarmePendiente(
+                                  variantQuantities[variant]!,
+                                  (variant.inventoryMetadata?['id_presentacion']
+                                          as num?)
+                                      ?.toInt(),
+                                );
                               }
                             }
                           }
@@ -2572,14 +2662,24 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     );
   }
 
-  /// Construir selector de presentaciones para un producto
-  Widget _buildPresentationSelector(Product product) {
-    // Obtener la presentación seleccionada para este producto específico
+  /// Construir selector de presentaciones para un producto.
+  ///
+  /// - Productos SIN variantes: el usuario elige libremente la presentación
+  ///   del dropdown. El factor real (`cantidad / cantidad_base`) se resuelve en
+  ///   `_getPresentationConversionFactor` vía `PresentacionCadenaLocal`.
+  ///
+  /// - Productos CON variantes: **el dropdown no se oculta**, se muestra
+  ///   **bloqueado** a la presentación de la variante que el usuario marcó.
+  ///   Cada variante ya viene con su `id_presentacion` de la fila de inventario;
+  ///   dejar el selector activo crearía dos ejes del mismo dato (presentación
+  ///   global vs presentación por variante) y el usuario podría vender "1 Caja"
+  ///   con el id_presentacion de la "Bolsa".
+  Widget _buildPresentationSelector(Product product, [ProductVariant? variant]) {
     final productKey = '${product.id}';
     final selectedPresentationForProduct =
         _selectedPresentationsByProduct[productKey];
+    final productoTieneVariantes = product.variantes.isNotEmpty;
 
-    // Si no hay presentaciones cargadas, mostrar presentación por defecto
     if (_productPresentations.isEmpty) {
       return Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -2619,6 +2719,41 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       );
     }
 
+    // Para productos con variantes, el dropdown se BLOQUEA a la presentación
+    // de la variante seleccionada (no al del selector global). `onChanged`
+    // no hace nada: el usuario cambia de variante, no de presentación.
+    ProductPresentation? displayValue = selectedPresentationForProduct;
+    bool onChangedEnabled = false;
+    String? bloqueadoPorVariante;
+
+    if (productoTieneVariantes) {
+      // Priorizar el `variant` pasado por parámetro (la variante de ESTE card)
+      // para que el dropdown refleje la presentación de la variante que
+      // visualmente pertenece a este card, no la primera con cantidad del mapa.
+      ProductVariant? varianteActiva = variant ?? selectedVariant;
+      final cantActiva =
+          varianteActiva != null ? variantQuantities[varianteActiva] ?? 0.0 : 0.0;
+      if (cantActiva <= 0) {
+        varianteActiva = _varianteConCantidad();
+      }
+      if (varianteActiva != null) {
+        final idPres = (varianteActiva.inventoryMetadata?['id_presentacion']
+                as num?)
+            ?.toInt();
+        if (idPres != null) {
+          final presVariante =
+              _productPresentations.cast<ProductPresentation?>().firstWhere(
+            (p) => p?.id == idPres,
+            orElse: () => null,
+          );
+          if (presVariante != null) {
+            displayValue = presVariante;
+            bloqueadoPorVariante = presVariante.presentacion.denominacion;
+          }
+        }
+      }
+    }
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -2630,18 +2765,21 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
             color: Colors.grey[800],
           ),
         ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey[300]!, width: 1),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<ProductPresentation>(
-              value: selectedPresentationForProduct,
-              isDense: true,
-              items:
-                  _productPresentations.map((presentation) {
+        // Expanded para que el dropdown ocupe el espacio disponible entre
+        // el label y el candado, en lugar de contraerse al ancho natural y
+        // verse visualmente "abajo-centro" con el candado separado a la derecha.
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey[300]!, width: 1),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<ProductPresentation>(
+                value: displayValue,
+                isDense: true,
+                items: _productPresentations.map((presentation) {
                     return DropdownMenuItem<ProductPresentation>(
                       value: presentation,
                       child: Row(
@@ -2659,66 +2797,155 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                             '${presentation.presentacion.denominacion} (${presentation.cantidad})',
                             style: TextStyle(
                               fontSize: 13,
-                              fontWeight:
-                                  presentation.esBase
-                                      ? FontWeight.w600
-                                      : FontWeight.w500,
-                              color:
-                                  presentation.esBase
-                                      ? Colors.orange[700]
-                                      : Colors.grey[700],
+                              fontWeight: presentation.esBase
+                                  ? FontWeight.w600
+                                  : FontWeight.w500,
+                              color: presentation.esBase
+                                  ? Colors.orange[700]
+                                  : Colors.grey[700],
                             ),
                           ),
                         ],
                       ),
                     );
                   }).toList(),
-              onChanged: (ProductPresentation? newPresentation) {
-                setState(() {
-                  _selectedPresentationsByProduct[productKey] = newPresentation;
-                  debugPrint(
-                    '🔄 Presentación cambiada para producto ${product.id}: ${newPresentation?.presentacion.denominacion} (Factor: ${newPresentation?.cantidad})',
-                  );
-                });
-              },
+                onChanged: onChangedEnabled
+                    ? (ProductPresentation? newPresentation) {
+                        setState(() {
+                          _selectedPresentationsByProduct[productKey] =
+                              newPresentation;
+                          debugPrint(
+                            '🔄 Presentación cambiada para producto '
+                            '${product.id}: ${newPresentation?.presentacion.denominacion}',
+                          );
+                        });
+                      }
+                    : null, // BLOQUEADO: variante activa, no se cambia aquí.
+              ),
             ),
           ),
         ),
+        if (bloqueadoPorVariante != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: Tooltip(
+              message: 'Presentación de la variante seleccionada. '
+                  'Cambie de variante para cambiar la presentación.',
+              child: const Icon(
+                Icons.lock,
+                size: 14,
+                color: Colors.grey,
+              ),
+            ),
+          ),
       ],
     );
   }
 
-  /// Obtener el factor de conversión de la presentación seleccionada para un producto
-  double _getPresentationConversionFactor(Product product) {
-    final productKey = '${product.id}';
-    final selectedPresentation = _selectedPresentationsByProduct[productKey];
-
-    if (selectedPresentation != null) {
-      debugPrint(
-        '📊 Factor de conversión para producto ${product.id}: ${selectedPresentation.cantidad} (${selectedPresentation.presentacion.denominacion})',
-      );
-      return selectedPresentation.cantidad;
+  /// Primera variante con cantidad > 0, usada para bloquear el dropdown cuando
+  /// el producto tiene variantes. Si ninguna variante tiene cantidad, devuelve
+  /// la primera (el dropdown se muestra sobre la base, igual que antes del
+  /// cierre de presentaciones).
+  ProductVariant? _varianteConCantidad() {
+    for (final e in variantQuantities.entries) {
+      if (e.value > 0) return e.key;
     }
-
-    // Si no hay presentación seleccionada, usar presentación por defecto (1.0)
-    debugPrint(
-      '📊 Usando factor de conversión por defecto: 1.0 para producto ${product.id}',
-    );
-    return 1.0;
+    if (currentProduct.variantes.isNotEmpty) {
+      return currentProduct.variantes.first;
+    }
+    return null;
   }
 
-  /// Calcular el precio total considerando la presentación seleccionada
+  /// Factor RELATIVO A LA BASE de la presentación elegida para `product`.
+  ///
+  /// **No** es `presentation.cantidad` a secas: `cantidad` es el número de
+  /// unidades base por empaquetado, pero la base NO siempre es x1 (131 filas
+  /// `es_base` tienen cantidad 12/24/30). Usar `cantidad` cruda multiplica
+  /// por el factor de la base dos veces en esos productos.
+  ///
+  /// El factor relativo correcto es `cantidad / cantidad_de_la_base`, que
+  /// `PresentacionCadenaLocal` ya calcula replicando `fn_presentaciones_producto`.
+  /// Este método delega en `_presentacionElegidaFactorRel` (que ya usa esa
+  /// cadena) en vez de duplicar la lógica.
+  ///
+  /// - Para productos sin variantes: factor de la presentación elegida.
+  /// - Para productos con variantes: **cada variante trae su propia fila de
+  ///   inventario** con su `id_presentacion`; el factor se resuelve por
+  ///   variante, no compartido. Si la variante no expone presentación, cae a 1.
+  double _getPresentationConversionFactor(Product product,
+      [ProductVariant? variant]) {
+    final factor = _factorRelSeleccionado(product, variant);
+    debugPrint(
+      '📊 Factor de conversión para producto ${product.id}'
+      '${variant != null ? ' (variante ${variant.id})' : ''}: $factor',
+    );
+    return factor;
+  }
+
+  /// Resuelve el `factorRel` de la presentación elegida.
+  ///
+  /// - Sin variante: el selector global de la pantalla (`_presentacionElegidaFactorRel`).
+  /// - Con variante: el `id_presentacion` de su `inventoryMetadata`, buscado
+  ///   en la cadena que se cargó para el producto. Si la variante no lo
+  ///   expone, cae al selector global y luego a 1.0.
+  double _factorRelSeleccionado(Product product, [ProductVariant? variant]) {
+    if (variant != null) {
+      final idPresVariante =
+          (variant.inventoryMetadata?['id_presentacion'] as num?)?.toInt();
+      if (idPresVariante != null) {
+        final f = _factorRelDeCadena(product, idPresVariante);
+        if (f != null) {
+          return f;
+        }
+      }
+    }
+    return _presentacionElegidaFactorRel(product) ?? 1.0;
+  }
+
+  /// Busca el `factorRel` de un `id_presentacion` (fila
+  /// `app_dat_producto_presentacion.id`) en la cadena cargada. El `id` de
+  /// `ProductPresentation` es precisamente esa fila (ver el comentario de
+  /// `_presentacionElegidaId`).
+  double? _factorRelDeCadena(Product product, int idFilaPresentacion) {
+    final crudas = _productPresentations
+        .map((p) => {
+              'id': p.id,
+              'cantidad': p.cantidad,
+              'es_base': p.esBase,
+              'presentacion': {
+                'id': p.idPresentacion,
+                'denominacion': p.presentacion.denominacion,
+                'sku_codigo': p.presentacion.skuCodigo,
+              },
+            })
+        .toList();
+    final cadena = PresentacionCadenaLocal.resolverDesdeCrudas(crudas);
+    for (final p in cadena) {
+      if (p.idPresentacion == idFilaPresentacion) return p.factorRel;
+    }
+    return null;
+  }
+
+  /// Calcular el precio total considerando la presentación seleccionada.
+  ///
+  /// [variant] es necesario para productos con variantes: cada variante lleva
+  /// su propia presentación (fila de inventario distinta), así que el factor se
+  /// resuelve por variante, no global. Si se omite, usa la del selector global
+  /// (caso de productos sin variantes).
   double _calculateTotalPriceWithPresentation(
     double basePrice,
     double quantity,
-    Product product,
-  ) {
-    final conversionFactor = _getPresentationConversionFactor(product);
+    Product product, [
+    ProductVariant? variant,
+  ]) {
+    final conversionFactor =
+        _getPresentationConversionFactor(product, variant);
     final unitPrice = basePrice * conversionFactor;
     final rawTotal = unitPrice * quantity;
     final totalPrice = rawTotal;
 
-    debugPrint('💰 Cálculo precio para producto ${product.id}:');
+    debugPrint('💰 Cálculo precio para producto ${product.id}'
+        '${variant != null ? ' (variante ${variant.id})' : ''}:');
     debugPrint('   - Precio base: \$${basePrice.toStringAsFixed(2)}');
     debugPrint('   - Factor conversión: ${conversionFactor}');
     debugPrint('   - Precio unitario: \$${unitPrice.toStringAsFixed(2)}');
@@ -2746,19 +2973,18 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   double _getTotalEquivalentUnits() {
     double total = 0.0;
     if (currentProduct.variantes.isEmpty) {
-      // Producto sin variantes
-      final conversionFactor = _getPresentationConversionFactor(currentProduct);
-      total = selectedQuantity * conversionFactor;
+      // Producto sin variantes: factor de la presentación elegida en el selector.
+      total = selectedQuantity * _getPresentationConversionFactor(currentProduct);
     } else {
-      // Producto con variantes
-      for (var entry in variantQuantities.entries) {
+      // Producto con variantes: CADA variante lleva su propia presentación
+      // (fila de inventario distinta). Antes se aplicaba un solo factor del
+      // producto a todas las variantes, lo que daba equivalentes falsos cuando
+      // cada variante está en una presentación distinta (ej. "Variante 1 -
+      // Caja" + "Variante 2 - Blister").
+      for (final entry in variantQuantities.entries) {
         final quantity = entry.value;
-
-        // Buscar el producto correspondiente a esta variante para obtener su factor de conversión
-        final conversionFactor = _getPresentationConversionFactor(
-          currentProduct,
-        );
-        total += quantity * conversionFactor;
+        final factor = _getPresentationConversionFactor(currentProduct, entry.key);
+        total += quantity * factor;
       }
     }
 
@@ -2766,8 +2992,12 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     return total;
   }
 
-  void _showQuantityDialog(String productName, double currentQuantity) {
-    final isFractional = _isCurrentPresentationFractional();
+  void _showQuantityDialog(
+    String productName,
+    double currentQuantity, [
+    ProductVariant? variant,
+  ]) {
+    final isFractional = _isCurrentPresentationFractional(variant);
     final TextEditingController quantityController = TextEditingController(
       text: PriceUtils.formatQuantity(currentQuantity),
     );
@@ -2843,6 +3073,33 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     final double? newQuantity = double.tryParse(quantityText);
     if (newQuantity == null || newQuantity < 0) return;
 
+    // Aviso inmediato: la cantidad elegida excede el saldo propio de la
+    // presentación, así que al vender se abrirán bultos de presentaciones
+    // mayores. Es solo un aviso: la validación real la hace el preview al
+    // agregar (online) o el resolutor local (offline).
+    final stocks = _stocksPorPresentacionLocal();
+    final cadena = _cadenaPresentaciones();
+    if (stocks != null && cadena.isNotEmpty) {
+      final idPres = _presentacionElegidaId(currentProduct);
+      if (idPres != null && newQuantity > (stocks[idPres] ?? 0)) {
+        final nombre = cadena
+            .firstWhere(
+              (p) => p.idPresentacion == idPres,
+              orElse: () => cadena.first,
+            )
+            .nombre;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'No hay suficiente $nombre suelto: se abrirán otras '
+              'presentaciones para completar la venta.',
+            ),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+
     setState(() {
       if (currentProduct.variantes.isEmpty) {
         // Producto sin variantes
@@ -2854,7 +3111,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
             final maxQty =
                 currentProduct.esElaborado || currentProduct.esServicio
                     ? newQuantity
-                    : newQuantity.clamp(0.0, variant.cantidadReal.toDouble());
+                    : newQuantity.clamp(0.0, maxQuantityForVariant(variant));
             variantQuantities[variant] = maxQty;
             break;
           }
@@ -2908,6 +3165,13 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
             selectedVariant = firstVariant;
             // Establecer cantidad inicial de 1 para la variante seleccionada
             variantQuantities[firstVariant] = 1;
+            // Si el saldo propio de la presentación es 0, avisar que ese 1
+            // saldrá de abrir un bulto.
+            _avisarDesarmePendiente(
+              1,
+              (firstVariant.inventoryMetadata?['id_presentacion'] as num?)
+                  ?.toInt(),
+            );
             print(
               '🔄 setState ejecutado - selectedVariant: ${selectedVariant?.nombre}',
             );
@@ -3092,10 +3356,195 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
           .toList(),
     );
 
-    for (final p in cadena) {
-      if (p.idPresentacion == elegida.id) return p.factorRel;
+    // Match por `id` = fila de `app_dat_producto_presentacion` (11197, 11198...).
+        // `PresentacionCadenaLocal.idPresentacion` guarda `raw['id']`, o sea la FILA,
+        // y el ledger (`app_dat_inventario_productos.id_presentacion`) tambien usa la
+        // fila — verificado en produccion con el producto 11007. NO comparar contra
+        // `idPresentacion` (el nomenclador 1=Unidad/3=Caja): no coincide nunca.
+        for (final p in cadena) {
+          if (p.idPresentacion == elegida.id) return p.factorRel;
+        }
+        return null;
+      }
+
+  /// Cadena de presentaciones del producto, ya ordenada y con factores.
+  ///
+  /// Misma construcción que usa `_presentacionElegidaFactorRel`: el `id` de
+  /// `ProductPresentation` es la FILA (`app_dat_producto_presentacion.id`),
+  /// que es lo que guardan tanto `PresentacionLocal.idPresentacion` como el
+  /// ledger (`app_dat_inventario_productos.id_presentacion`).
+  List<PresentacionLocal> _cadenaPresentaciones() {
+    return PresentacionCadenaLocal.resolverDesdeCrudas(
+      _productPresentations
+          .map((p) => {
+                'id': p.id,
+                'cantidad': p.cantidad,
+                'es_base': p.esBase,
+                'presentacion': {
+                  'id': p.idPresentacion,
+                  'denominacion': p.presentacion.denominacion,
+                  'sku_codigo': p.presentacion.skuCodigo,
+                },
+              })
+          .toList(),
+    );
+  }
+
+  /// Saldos locales por presentación para evaluar el desarme sin red.
+  ///
+  /// Fuente principal: las filas de inventario que ya llegan como variantes
+  /// (`inventoryMetadata['id_presentacion']` + `cantidadReal`) y, para
+  /// productos sin variantes, la metadata del producto. `stockMixto` queda de
+  /// respaldo. Si no hay nada, devuelve null y el evaluador no bloquea.
+  Map<int, double>? _stocksPorPresentacionLocal() {
+    final out = <int, double>{};
+
+    for (final v in currentProduct.variantes) {
+      final id = (v.inventoryMetadata?['id_presentacion'] as num?)?.toInt();
+      if (id == null) continue;
+      out[id] = (out[id] ?? 0) + v.cantidadReal.toDouble();
+    }
+
+    if (out.isEmpty) {
+      final meta = currentProduct.inventoryMetadata;
+      final id = (meta?['id_presentacion'] as num?)?.toInt();
+      if (id != null) {
+        out[id] = currentProduct.cantidadReal.toDouble();
+      }
+    }
+
+    if (out.isNotEmpty) return out;
+
+    final mixto = currentProduct.stockMixto;
+    if (mixto == null || mixto.isEmpty) return null;
+    for (final fila in mixto) {
+      final id = (fila['id_presentacion'] as num?)?.toInt();
+      final cant = (fila['cantidad_final'] as num?)?.toDouble() ??
+          (fila['saldo'] as num?)?.toDouble();
+      if (id != null && cant != null) {
+        out[id] = (out[id] ?? 0) + cant;
+      }
+    }
+    return out;
+  }
+
+  /// Aviso offline: no alcanza el stock ni desarmando bultos.
+  ///
+  /// Gemelo de `_avisarImposible` de `PreviewRebalanceoService`, pero con el
+  /// máximo calculado localmente. No usa la preferencia "no preguntar": la
+  /// falta de stock no se silencia.
+  Future<void> _avisarStockInsuficienteOffline(double maximoServible) async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.inventory_2_outlined, color: Colors.red),
+            SizedBox(width: 8),
+            Expanded(child: Text('No hay suficiente')),
+          ],
+        ),
+        content: Text(
+          maximoServible > 0
+              ? 'No alcanza el stock disponible. Como máximo se pueden servir '
+                  '${FormatoPresentacion.cantidad(maximoServible)}.'
+              : 'No alcanza el stock disponible.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Confirmación offline del desarme. `null` si se canceló el diálogo.
+  Future<bool?> _confirmarDesarmeOffline(PlanDesarme plan) async {
+    if (!mounted) return false;
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.unfold_more, color: Colors.orange.shade800),
+            const SizedBox(width: 8),
+            const Expanded(child: Text('¿Desarmar un bulto?')),
+          ],
+        ),
+        content: Text(plan.mensaje),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Desarmar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Plan de desarme para una cantidad y presentación concretas, calculado
+  /// con los saldos locales (las variantes ya traen las filas de inventario).
+  /// Null si alcanza el saldo propio o no hay datos para evaluar.
+  PlanDesarme? _planDesarmePara(double cantidad, int? idPresentacion) {
+    if (idPresentacion == null || cantidad <= 0) return null;
+    final cadena = _cadenaPresentaciones();
+    final stocks = _stocksPorPresentacionLocal();
+    if (cadena.isEmpty || stocks == null) return null;
+    final eval = DesarmeBultoLocal.evaluar(
+      cadena: cadena,
+      stocks: stocks,
+      idPresentacionPedida: idPresentacion,
+      cantidadPedida: cantidad,
+    );
+    return eval.requiereDesarme ? eval.plan : null;
+  }
+
+  /// Texto informativo de qué se va a abrir para servir [cantidad].
+  ///
+  /// Se muestra al pasarce del saldo propio de la presentación — también con
+  /// el 1 por defecto cuando el saldo es 0 — y en el snackbar de éxito.
+  String? _mensajeDesarmePara(double cantidad, int? idPresentacion) {
+    final plan = _planDesarmePara(cantidad, idPresentacion);
+    if (plan == null) return null;
+    return '📦 Se abrirá ${FormatoPresentacion.cantidad(plan.cantidadOrigen)} '
+        '${FormatoPresentacion.plural(plan.origen.nombre, plan.cantidadOrigen)} '
+        '(${FormatoPresentacion.cantidad(plan.cantidadDestino)} '
+        '${FormatoPresentacion.plural(_nombrePresentacionPedida(idPresentacion)!, plan.cantidadDestino)})';
+  }
+
+  String? _nombrePresentacionPedida(int? idPresentacion) {
+    if (idPresentacion == null) return null;
+    for (final p in _cadenaPresentaciones()) {
+      if (p.idPresentacion == idPresentacion) return p.nombre;
     }
     return null;
+  }
+
+  /// Líneas "Se abrió X Y" a partir del plan del preview online.
+  List<String> _conversionesDePreview(PreviewRebalanceo preview) {
+    final msg = preview.mensajeUsuario?.toString() ?? '';
+    if (msg.isEmpty) return const [];
+    return ['📦 $msg'];
+  }
+
+  /// Aviso informativo (no bloqueante) de que la cantidad excede el saldo
+  /// propio y se abrirán bultos. Incluye el caso del 1 por defecto con saldo 0.
+  void _avisarDesarmePendiente(double cantidad, int? idPresentacion) {
+    final mensaje = _mensajeDesarmePara(cantidad, idPresentacion);
+    if (mensaje == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(mensaje),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   Map<String, dynamic> _buildInventoryData(
@@ -3199,8 +3648,14 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     List<String> addedItems = [];
     // Fase 2: a que cocinas se mandaron los platos, para decirlo en el aviso.
     final Set<String> destinosCocina = {};
+    // Desarme: que empaques se abrieron para servir la venta, para el aviso.
+    final List<String> desarmesAplicados = [];
 
     try {
+      // El factor se calcula POR rama (sin variantes) y POR VARIANTE (con
+      // variantes): cada variante puede estar en una presentación distinta, por
+      // eso no se puede extrapolar un solo `conversionFactor` del producto a
+      // todas las variantes. Ver comentario FASE 4 arriba.
       final conversionFactor = _getPresentationConversionFactor(currentProduct);
 
       // ══════════════════════════════════════════════════════════════════════
@@ -3225,13 +3680,58 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       if (idPresPreview != null &&
           idUbicPreview != null &&
           cantidadPreview > 0) {
-        final seguir = await PreviewRebalanceoService.confirmarSiHaceFalta(
-          context,
-          idProducto: currentProduct.id,
-          idUbicacion: idUbicPreview,
-          idPresentacion: idPresPreview,
-          cantidad: cantidadPreview,
-        );
+        // ══════════════════════════════════════════════════════════════════
+        // DESARME OFFLINE: `PreviewRebalanceoService` depende de
+        // `fn_preview_rebalanceo` (red). Sin red, el desarme se evalúa
+        // localmente con la cadena cacheada y los saldos de `stockMixto`.
+        // Es solo consulta: al sincronizar, la venta ejecuta el rebalanceo
+        // real en el servidor (`fn_rebalancear_presentaciones`), que es la
+        // autoridad. Aquí solo se avisa al vendedor y se pide confirmación.
+        // ══════════════════════════════════════════════════════════════════
+        final useLocalData =
+            await _userPreferencesService.shouldUseLocalData();
+        var seguir = true;
+
+        if (useLocalData) {
+          final eval = DesarmeBultoLocal.evaluar(
+            cadena: _cadenaPresentaciones(),
+            stocks: _stocksPorPresentacionLocal() ?? const {},
+            idPresentacionPedida: idPresPreview,
+            cantidadPedida: cantidadPreview,
+          );
+
+          if (eval.esImposible) {
+            await _avisarStockInsuficienteOffline(eval.maximoServible);
+            seguir = false;
+          } else if (eval.requiereDesarme) {
+            seguir = await _confirmarDesarmeOffline(eval.plan!) ?? false;
+            if (seguir) {
+              desarmesAplicados.add(
+                '📦 Se abrió ${FormatoPresentacion.cantidad(eval.plan!.cantidadOrigen)} '
+                '${FormatoPresentacion.plural(eval.plan!.origen.nombre, eval.plan!.cantidadOrigen)}',
+              );
+            }
+          }
+        } else {
+          final preview = await PreviewRebalanceoService.consultar(
+            idProducto: currentProduct.id,
+            idUbicacion: idUbicPreview,
+            idPresentacion: idPresPreview,
+            cantidad: cantidadPreview,
+          );
+          seguir = await PreviewRebalanceoService.confirmarSiHaceFalta(
+            context,
+            idProducto: currentProduct.id,
+            idUbicacion: idUbicPreview,
+            idPresentacion: idPresPreview,
+            cantidad: cantidadPreview,
+          );
+          if (seguir && preview.requierePreguntar) {
+            for (final conv in _conversionesDePreview(preview)) {
+              desarmesAplicados.add(conv);
+            }
+          }
+        }
         if (!seguir) return;
       }
 
@@ -3291,11 +3791,15 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
             final discountPrice = _calculateDiscountPrice(basePrice);
             final finalPrice = discountPrice ?? basePrice;
             // FASE 4: igual que la rama sin variantes — cantidad en la
-            // presentación elegida, precio × factor. Ver el comentario largo
-            // arriba.
-            final cantidadEnPresentacion = entry.value;
-            final precioPorPresentacion = finalPrice * conversionFactor;
-            final precioBasePorPresentacion = basePrice * conversionFactor;
+              // presentación elegida, precio × factor. Ver el comentario largo
+              // arriba. Pero aquí el factor es POR VARIANTE: cada una lleva su
+              // propia presentación (fila de inventario distinta), así que no se
+              // reusa el `conversionFactor` global del try{} encima.
+              final cantidadEnPresentacion = entry.value;
+              final factorVariante =
+                  _getPresentationConversionFactor(currentProduct, entry.key);
+              final precioPorPresentacion = finalPrice * factorVariante;
+              final precioBasePorPresentacion = basePrice * factorVariante;
 
             await orderService.addItemToCurrentOrder(
               producto: currentProduct,
@@ -3361,6 +3865,19 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                     style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w300,
+                    ),
+                  ),
+                // Desarme: decir QUÉ se abrió para servir la venta, siempre
+                // que haya hecho falta (queda registrado en el servidor).
+                for (final d in desarmesAplicados)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      d,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
               ],

@@ -45,7 +45,7 @@ class ProductService {
       // Call the RPC function to get products by category
       final response = await withNetworkRetry(
         () => _supabase.rpc(
-          'get_productos_by_categoria_tpv_search_meta',
+          'get_productos_by_categoria_tpv_search_meta_v3',
           params: {
             'id_categoria_param': categoryId,
             'id_tienda_param': idTienda,
@@ -205,7 +205,7 @@ class ProductService {
 
       final response = await withNetworkRetry(
         () => _supabase.rpc(
-          'get_productos_by_categoria_tpv_search_meta',
+          'get_productos_by_categoria_tpv_search_meta_v3',
           params: {
             'id_categoria_param': categoryId,
             'id_tienda_param': idTienda,
@@ -370,7 +370,29 @@ class ProductService {
       impresoraCocina: metadata?['impresora'] as String?,
       modoElaboracion: metadata?['modo_elaboracion'] as String?,
       ilimitado: metadata?['ilimitado'] as bool? ?? false,
+      // Stock mixto (fn_catalogo_stock_mixto_v3): el metadata ahora lleva
+      // `stock_texto`, `stock_equivalente_base` y `stock_filas`.
+      // `cantidad` sigue siendo la suma cruda (153 en la cerveza); para
+      // mostrar el stock real al vendedor usen `stockEquivalenteBase`.
+      stockTexto: metadata?['stock_texto'] as String?,
+      stockEquivalenteBase: metadata?['stock_equivalente_base'] as num?,
+      // `stock_filas` en el metadata puede venir como jsonb array (varias filas)
+      // o como object escalar (una sola fila → postgrest lo deserializa a
+      // `Map`), y como entero 0 cuando la v3 devuelve `v_filas` vacío en otros
+      // productos. Normalizamos los tres casos a siempre List<Map>.
+      stockMixto: _asListMap(metadata?['stock_filas']),
     );
+  }
+
+  /// Normaliza `stock_filas` (jsonb array | object | int 0) a List<Map>.
+  List<Map<String, dynamic>> _asListMap(dynamic raw) {
+    if (raw is List) {
+      return raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    if (raw is Map) {
+      return [Map<String, dynamic>.from(raw)];
+    }
+    return [];
   }
 
   /// Generate a random product image from Unsplash based on product name

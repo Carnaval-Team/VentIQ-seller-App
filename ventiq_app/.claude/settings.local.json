@@ -9,7 +9,8 @@
       "mcp__supabase__execute_sql",
       "Bash(flutter *)",
       "Bash(sed \"s/.rpc\\('//\")",
-      "Bash(dart analyze *)"
+      "Bash(dart analyze *)",
+      "Read(//c/Users/cesar/Documents/VentIQ-seller-App/**)"
     ]
   },
   "enabledMcpjsonServers": [

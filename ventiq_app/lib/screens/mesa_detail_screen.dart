@@ -193,6 +193,23 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
         backgroundColor: const Color(0xFF4A90E2),
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
+        // El detalle puede quedar como raíz del stack (p. ej. tras cobrar, el
+        // checkout limpia hasta /mesas y aquí no llega por push): el back
+        // siempre lleva a la grilla de mesas.
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () {
+            if (!Navigator.of(context).canPop()) {
+              Navigator.pushNamedAndRemoveUntil(
+                context,
+                '/mesas',
+                (route) => false,
+              );
+              return;
+            }
+            Navigator.of(context).pop();
+          },
+        ),
         title: Text(
           _mesa != null ? 'Mesa ${_mesa!.numero}' : 'Mesa',
           style: const TextStyle(

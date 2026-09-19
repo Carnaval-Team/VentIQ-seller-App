@@ -717,6 +717,137 @@ Las dos funciones nuevas usan `SECURITY INVOKER`, `SET search_path = ''`, objeto
 
 ---
 
+## Catalogo del vendedor con stock mixto (2026-09-14)
+
+Punto de partida real: el catalogo del vendedor mostraba **153** para la
+"Cerveza cristal" de la tienda 223 (producto 11007), que es la **suma fisica
+cruda** de Cajon x30 (13) + Caja x24 (48) + Blister x6 (73) + Unidad x1 (19).
+El equivalente base real es **1999**. Ni 153 ni 1999 son "unidades": 153 no
+significa nada y 1999 es un numero de dinero/rotacion, no de almacen.
+
+La raiz es la misma en las dos pantallas que reporto el usuario, y es de
+lectura, no de escritura:
+
+- La RPC del catalogo sumaba `SUM(ip.cantidad_final)` sin filtrar ni ponderar
+  por presentacion (la clave del ledger es (producto, variante, opcion,
+  ubicacion, presentacion), pero el `SUM` la ignora).
+- `ProductVariant` **no lleva campo de presentacion**: la presentacion se
+  concatena al nombre ("Variante 2 - Caja") y queda solo en
+  `inventoryMetadata['id_presentacion']`. Por eso la ficha pone un selector de
+  presentacion **global del producto** que compite con las variantes, que ya
+  vienen cada una con SU presentacion: dos ejes del mismo dato.
+
+**Alcance medido:** 8.899 productos con cadena, **96 multipresentacion** y **61**
+con stock mixto. Se diseña para esos 96 sin mover nada en los 8.800 restantes.
+
+### Paso 1 · SQL del catalogo — **APLICADO**
+
+`presentaciones_inventario/43_catalogo_stock_mixto_v3.sql` + tests en el `44`.
+
+- [x] `fn_catalogo_stock_meta(producto, almacen)` — payload jsonb de stock ya en
+      formato de UI, una llamada por producto. `stock_desglose` ordenado de mayor
+      a menor empaque, `stock_texto` («13 Cajones + 48 Cajas + 73 Blisteres +
+      19 Unidades»), `stock_texto_corto`, `stock_equivalente_base`,
+      `stock_total_fisico`, `stock_filas`, `stock_n_presentaciones`,
+      `stock_mixto`, `stock_con_variantes`. Reutiliza
+      `fn_stock_saldos_presentacion` + `fn_formatear_stock_mixto` (los mismos
+      helpers que las apps ya replican en Dart, asi que el texto coincide).
+- [x] `get_productos_by_categoria_tpv_search_meta_v3` — **mismas 18 columnas**,
+      mismas 4 claves de metadata de antes mas las 9 nuevas. Los dos modos de la
+      viva (producto de contacto, catalogo normal) replicados. Orden de
+      parametros identico para que la migracion en Dart sea de una linea.
+- [x] `get_productos_by_categoria_tpv_v2` — la hermana sin metadata (casa
+      matriz). Arregla un bug **real y vivo**: el `LEFT JOIN app_dat_precio_venta`
+      sin desempatar devolvia el mismo producto N veces cuando tiene varias filas
+      de precio activo. Medido: **3.496 productos con mas de un precio activo,
+      hasta 25 filas en uno solo**. La viva lo sufre hoy.
+- [x] **No-regresion** (tienda 223, viva vs v3): 8 filas = 8 filas, **0
+      diferencias** en `stock_disponible`, `tiene_stock`, `precio_venta`,
+      `denominacion` y las 4 claves de metadata. Contrato de claves: 4 -> 13.
+- [x] **Decision de contrato:** `stock_disponible` y `tiene_stock` NO cambian de
+      valor. Poner el equivalente base ahi habria roto la semantica del nombre,
+      movido el precio a otra unidad, y hecho que dos fallbacks encadenados en
+      Dart (`invSum > 0 ? invSum : cachedCantidad`) devolvieran cosas de dos
+      unidades distintas. Los numeros nuevos viajan **solo en el metadata**.
+- [x] Seguridad: `SECURITY DEFINER` + `SET search_path = ''` + guarda de tienda +
+      ACL solo `authenticated` (verificado con `aclexplode`). Aislamiento entre
+      tiendas probado.
+- [x] **Pitfall cazado en el ensayo:** `SET search_path = ''` con una guarda que
+      resuelve tablas sin calificar da **42P01**. Se corrige con
+      `set_config('search_path','public, pg_catalog',false)` **antes** de la
+      guarda. Sin eso la primera version fallaba en el **100 %** de las llamadas.
+
+### Paso 2 · Ficha de producto — **CÓDIGO HECHO** (falta build en dispositivo)
+
+Archivos: `ventiq_app/lib/screens/product_details_screen.dart`,
+`ventiq_app/lib/widgets/fluid_product_details_widget.dart`.
+
+- [x] **`_getPresentationConversionFactor` ya no usa `cantidad` cruda.** Ahora
+      resuelve el `factorRel` real (`cantidad / cantidad_de_la_base`) vía
+      `PresentacionCadenaLocal`, que replica `fn_presentaciones_producto`. Antes
+      multiplicaba por el factor de la base dos veces en los **131 productos**
+      cuya base tiene factor != 1 (ej. 7069 "Cerveza Cristal lata", Unidad x48).
+- [x] **Factor POR VARIANTE, no global.** `_getTotalEquivalentUnits`,
+      `_calculateTotalPriceWithPresentation`, el getter `totalPrice` y el preview
+      de cada item reciben ahora la variante y usan el `id_presentacion` de SU
+      fila de inventario. Antes un producto con "Variante 1 - Caja" y "Variante 2
+      - Blister" aplicaba un solo factor a las dos.
+- [x] **Dropdown bloqueado a la variante en productos con variantes.** No se
+      oculta: muestra la presentación de la variante activa, con `onChanged:
+      null` y un candado con tooltip. El usuario cambia de variante, no de
+      presentación. En productos sin variantes el dropdown sigue libre y su
+      factor sale del mismo helper.
+- [x] **Botones +/- por identidad, no por `name.contains(...)`.** Buscaban la
+      variante por substring del nombre; "Variante 1" es prefijo de "Variante 10"
+      y ajustaban la cantidad de la variante equivocada. Ahora usan la variante
+      que ya recibe el builder.
+- [x] **Modo fluido (`fluid_product_details_widget.dart`) alineado:** mismo
+      `factorRelSeleccionado` corregido (usaba `_selectedPresentation.cantidad`),
+      factor por variante en `_getTotalEquivalentUnits` y en `_createOrderItems`,
+      y la presentación que se congela en el `OrderItem` es la de la variante.
+- [x] `dart analyze`: **0 errores** en los dos archivos. Lo que queda son
+      `info`/`warning` preexistentes (withOpacity, avoid_print, campos sin usar
+      que ya estaban así).
+- [x] **Pitfall que cace al revisar:** `PresentacionLocal.idPresentacion` es la
+      **FILA** de `app_dat_producto_presentacion` (11197, 11198...), no el
+      nomenclador (1=Unidad, 3=Caja). Verificado en produccion: el ledger guarda
+      esa misma fila y `get_detalle_producto` devuelve `pp.id` en
+      `presentacion.id`. Hice un "fix" que comparaba nomenclador contra fila
+      (nunca coincidia) y lo revertí al ver los datos reales del producto 11007.
+- [ ] **Falta:** build real en dispositivo (`flutter run`) para ver el dropdown
+      bloqueado en un producto multipresentación con variantes, y confirmar en
+      el carrito que "1 Caja" viaja con su id de Caja.
+
+### Paso 3 · Listado del vendedor (lo que reportaste como punto 1)
+
+- [x] **Paso 3 · Listado del vendedor.**
+      - [x] `Product` gana `stockTexto`, `stockEquivalenteBase`, `stockMixto`
+            (model, fromJson, toJson). El payload `get_detalle_producto` del
+            `product_detail_service` usa el mismo `inventoryMetadata`: si la v3
+            ya esta en producción, el detalle también recibe el desglose.
+      - [x] `ProductService` apunta los dos `rpc(...)`:
+            `get_productos_by_categoria_tpv_search_meta_v3` y lee
+            `stock_texto` / `stock_equivalente_base` / `stock_filas` del
+            `metadata`.
+      - [x] Las dos tarjetas del listado dejan de usar la suma cruda
+            (`cantidadReal`=153) y pasan a `Product.stockLabel()`:
+            equivalente base como `Stock: N` + desglose en gris cuando hay
+            varias presentaciones. Cae a `cantidadReal` cuando el backend no
+            envía metadata (offline / legacy).
+      - [x] `dart analyze`: 0 errores en los 5 archivos tocados.
+- [ ] **Paso 4** Rutas hermanas de venta que faltan: cuenta de mesa
+      (`mesa_cuenta_service`) y venta por acuerdo. El modo fluido ya quedo
+      alineado en el Paso 2.
+- [ ] **Paso 5** Cierre: `venta_total_screen` / `sales_monitor_fab` /
+      `cierre_screen` a `fn_resumen_diario_cierre_v2` (el SQL ya esta aplicado
+      desde el `30`; falta el Dart).
+
+**Regla de UI (de `REFERENCIA_INDUSTRIA_PRESENTACIONES.md`):** la cantidad nunca
+va desnuda. Siempre `{cantidad} {presentacion}` y, al lado, el equivalente base
+en gris. Como maximo 3-4 presentaciones visibles por producto.
+
+---
+
 ## Referencias
 
 - Schema: [VentiQ.sql](../VentiQ.sql)
