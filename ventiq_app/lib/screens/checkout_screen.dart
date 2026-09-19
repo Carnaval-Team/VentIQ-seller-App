@@ -70,6 +70,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Map<String, dynamic>? _globalPromotionData;
   double _usdRate = 0.0;
   bool _isLoadingUsdRate = false;
+  final Map<int, String> _paymentCurrencyByMethodId = {};
 
   // ===== Confirmación de pago por SMS (PAGOxMOVIL) =====
   final BankSmsService _bankSmsService = BankSmsService();
@@ -96,8 +97,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   /// `true` si algún producto de la orden se paga por transferencia.
-  bool get _tieneTransferencia => widget.order.items
-      .any((item) => item.paymentMethod?.esTransferencia ?? false);
+  bool get _tieneTransferencia => widget.order.items.any(
+    (item) => item.paymentMethod?.esTransferencia ?? false,
+  );
 
   /// Monto que debe casar el SMS: solo la parte por transferencia.
   /// Si todo es transferencia, coincide con [finalTotal].
@@ -132,8 +134,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   /// y, si lo encuentra, lo marca como confirmado en la UI.
   Future<void> _tryMatchPending() async {
     if (_confirmedPayment != null) return;
-    final match =
-        await _bankSmsService.findMatchingPayment(transferExpectedAmount);
+    final match = await _bankSmsService.findMatchingPayment(
+      transferExpectedAmount,
+    );
     if (match == null || !mounted) return;
     setState(() {
       _confirmedPayment = match;
@@ -186,8 +189,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       );
       final status = (resp is Map) ? resp['status'] : null;
       if (status == 'success') {
-        print('✅ Pago SMS ${payment.nroTransaccionBanco} vinculado a op '
-            '$operationId');
+        print(
+          '✅ Pago SMS ${payment.nroTransaccionBanco} vinculado a op '
+          '$operationId',
+        );
       } else {
         print('⚠️ fn_confirmar_pago_sms devolvió: $resp');
       }
@@ -206,15 +211,23 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     try {
       final rate = await CurrencyService.getUsdRate();
       setState(() {
-        _usdRate = rate;
+        _usdRate = rate > 0 ? rate : 0.0;
         _isLoadingUsdRate = false;
       });
     } catch (e) {
       print('❌ Error loading USD rate: $e');
-      setState(() {
-        _usdRate = 420.0;
-        _isLoadingUsdRate = false;
-      });
+      try {
+        final cached = await UserPreferencesService().getCambioCupUsd();
+        setState(() {
+          _usdRate = cached > 0 ? cached : 0.0;
+          _isLoadingUsdRate = false;
+        });
+      } catch (_) {
+        setState(() {
+          _usdRate = 0.0;
+          _isLoadingUsdRate = false;
+        });
+      }
     }
   }
 
@@ -462,6 +475,31 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   double get finalTotal => totalAfterPromo;
 
+  bool get _displayTotalsInUsd {
+    final methodIds =
+        widget.order.items
+            .where((item) => !(item.paymentMethod?.esPagoPendiente ?? false))
+            .map((item) {
+              final id = item.paymentMethod?.id;
+              return id == 999 ? 1 : id;
+            })
+            .whereType<int>()
+            .toSet();
+    return methodIds.isNotEmpty &&
+        _usdRate > 0 &&
+        methodIds.every(
+          (id) => (_paymentCurrencyByMethodId[id] ?? 'CUP') == 'USD',
+        );
+  }
+
+  double _displayAmount(double cupAmount) =>
+      _displayTotalsInUsd ? cupAmount / _usdRate : cupAmount;
+
+  String _formatCheckoutAmount(double cupAmount) {
+    final currency = _displayTotalsInUsd ? 'USD' : 'CUP';
+    return '${_displayAmount(cupAmount).toStringAsFixed(2)} $currency';
+  }
+
   // Calculate payment breakdown from individual product payment methods
   Map<String, double> get paymentBreakdown {
     Map<String, double> breakdown = {};
@@ -475,6 +513,32 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
 
     return breakdown;
+  }
+
+  List<Map<String, dynamic>> get _currencyPaymentLines {
+    final grouped = <int, Map<String, dynamic>>{};
+    for (final item in widget.order.items) {
+      final method = item.paymentMethod;
+      if (method == null || method.esPagoPendiente) continue;
+      final methodId = method.id == 999 ? 1 : method.id;
+      final currency = _paymentCurrencyByMethodId[methodId] ?? 'CUP';
+      final cupAmount = _calculateItemPrice(item);
+      final line = grouped.putIfAbsent(
+        methodId,
+        () => {
+          'id_medio_pago': methodId,
+          'denominacion': method.denominacion,
+          'monto': 0.0,
+          'moneda': currency,
+          'tasa_usd': currency == 'USD' ? _usdRate : null,
+          'tipo_pago': methodId == 1 && method.id != 999 ? 1 : 2,
+        },
+      );
+      line['monto'] =
+          (line['monto'] as double) +
+          (currency == 'USD' ? cupAmount / _usdRate : cupAmount);
+    }
+    return grouped.values.toList();
   }
 
   @override
@@ -564,7 +628,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 style: TextStyle(fontSize: 14, color: Colors.grey[600]),
               ),
               Text(
-                '\$${subtotal.toStringAsFixed(2)}',
+                _formatCheckoutAmount(subtotal),
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -646,7 +710,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   ),
                 ),
                 Text(
-                  '-\$${PriceUtils.formatDiscountPrice(_promoDiscount)}',
+                  '-${_formatCheckoutAmount(_promoDiscount)}',
                   style: const TextStyle(
                     fontSize: 14,
                     color: Colors.green,
@@ -777,7 +841,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               final methodName = entry.key;
               final amount = entry.value;
               final icon = _getPaymentMethodIcon(methodName);
-
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(
@@ -798,7 +861,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       ],
                     ),
                     Text(
-                      '\$${amount.toStringAsFixed(2)}',
+                      '${amount.toStringAsFixed(2)} CUP',
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -823,7 +886,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   ),
                 ),
                 Text(
-                  '\$${breakdown.values.fold(0.0, (sum, amount) => sum + amount).toStringAsFixed(2)}',
+                  _formatCheckoutAmount(
+                    breakdown.values.fold(0.0, (sum, amount) => sum + amount),
+                  ),
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
@@ -1048,8 +1113,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   /// `true` si algún producto de la orden se paga con "Pago Pendiente"
   /// (cuenta por cobrar).
   bool get _tienePagoPendiente => widget.order.items.any(
-        (item) => item.paymentMethod?.esPagoPendiente ?? false,
-      );
+    (item) => item.paymentMethod?.esPagoPendiente ?? false,
+  );
 
   Widget _buildBuyerInfoSection() {
     final tienePagoPendiente = _tienePagoPendiente;
@@ -1066,9 +1131,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: tienePagoPendiente
-              ? const Color(0xFFF59E0B)
-              : Colors.grey[300]!,
+          color:
+              tienePagoPendiente ? const Color(0xFFF59E0B) : Colors.grey[300]!,
           width: tienePagoPendiente ? 1.5 : 1,
         ),
       ),
@@ -1105,10 +1169,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     child: Text(
                       'Esta venta queda como cuenta por cobrar. Selecciona un '
                       'cliente existente o crea uno nuevo.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.brown[800],
-                      ),
+                      style: TextStyle(fontSize: 12, color: Colors.brown[800]),
                     ),
                   ),
                 ],
@@ -1125,12 +1186,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.check_circle, color: Colors.green[700], size: 18),
+                    Icon(
+                      Icons.check_circle,
+                      color: Colors.green[700],
+                      size: 18,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         'Cliente existente: ${_buyerNameController.text}',
-                        style: TextStyle(fontSize: 13, color: Colors.green[900]),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.green[900],
+                        ),
                       ),
                     ),
                     TextButton(
@@ -1166,9 +1234,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             controller: _buyerNameController,
             enabled: _selectedExistingClientId == null,
             decoration: InputDecoration(
-              labelText: _selectedExistingClientId != null
-                  ? 'Nombre completo (cliente seleccionado)'
-                  : tienePagoPendiente
+              labelText:
+                  _selectedExistingClientId != null
+                      ? 'Nombre completo (cliente seleccionado)'
+                      : tienePagoPendiente
                       ? 'O escribe el nombre para crear un cliente nuevo *'
                       : 'Nombre completo *',
               border: OutlineInputBorder(
@@ -1219,9 +1288,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final selected = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
-      builder: (context) => _ClientPickerSheet(
-        initialQuery: _buyerNameController.text.trim(),
-      ),
+      builder:
+          (context) => _ClientPickerSheet(
+            initialQuery: _buyerNameController.text.trim(),
+          ),
     );
     if (selected == null || !mounted) return;
 
@@ -1297,11 +1367,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Widget _buildFinalTotalSection() {
-    final double? usdTotal = _usdRate > 0 ? finalTotal / _usdRate : null;
-    final usdLabel =
-        _usdRate > 0
-            ? 'Total USD (USD ${_usdRate.toStringAsFixed(0)})'
-            : 'Total USD';
+    final hasRate = _usdRate > 0;
+    final secondaryLabel =
+        _displayTotalsInUsd
+            ? 'Equivalente CUP'
+            : hasRate
+            ? 'Equivalente USD (1 USD = ${_usdRate.toStringAsFixed(2)} CUP)'
+            : 'Equivalente USD';
+    final secondaryAmount =
+        _displayTotalsInUsd
+            ? '${finalTotal.toStringAsFixed(2)} CUP'
+            : hasRate
+            ? '${(finalTotal / _usdRate).toStringAsFixed(2)} USD'
+            : 'N/D';
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1317,7 +1395,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             children: [
               const Text('Subtotal:', style: TextStyle(fontSize: 14)),
               Text(
-                '\$${subtotal.toStringAsFixed(2)}',
+                _formatCheckoutAmount(subtotal),
                 style: const TextStyle(fontSize: 14),
               ),
             ],
@@ -1332,7 +1410,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   style: TextStyle(fontSize: 14, color: Colors.green),
                 ),
                 Text(
-                  '-\$${PriceUtils.formatDiscountPrice(_promoDiscount)}',
+                  '-${_formatCheckoutAmount(_promoDiscount)}',
                   style: const TextStyle(fontSize: 14, color: Colors.green),
                 ),
               ],
@@ -1351,7 +1429,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
               ),
               Text(
-                '\$${PriceUtils.formatDiscountPrice(finalTotal)}',
+                _formatCheckoutAmount(finalTotal),
                 style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
@@ -1365,7 +1443,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                usdLabel,
+                secondaryLabel,
                 style: TextStyle(
                   fontSize: 13,
                   color: Colors.grey[700],
@@ -1380,7 +1458,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 )
               else
                 Text(
-                  usdTotal == null ? 'N/D' : '\$${usdTotal.toStringAsFixed(2)}',
+                  secondaryAmount,
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
@@ -1633,8 +1711,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       if (!await folder.exists()) {
         await folder.create(recursive: true);
       }
-      final ext =
-          (_fotoOperacionMime?.contains('png') == true) ? 'png' : 'jpg';
+      final ext = (_fotoOperacionMime?.contains('png') == true) ? 'png' : 'jpg';
       final file = File(p.join(folder.path, '$orderId.$ext'));
       await file.writeAsBytes(bytes, flush: true);
       print('📷 Foto offline guardada en ${file.path}');
@@ -1735,7 +1812,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return 'Debes ingresar el nombre del cliente para una venta a pago pendiente';
     }
 
-    final isOffline = widget.order.isOfflineOrder ||
+    final isOffline =
+        widget.order.isOfflineOrder ||
         await _userPreferencesService.shouldStayFullyOffline() ||
         await _userPreferencesService.isOfflineModeEnabled();
     if (isOffline) {
@@ -1748,21 +1826,23 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     try {
       Map<String, dynamic>? existing;
       if (_selectedExistingClientId != null) {
-        existing = await Supabase.instance.client
-            .from('app_dat_cliente_cxc')
-            .select('bloqueado_cxc')
-            .eq('id', _selectedExistingClientId!)
-            .maybeSingle();
+        existing =
+            await Supabase.instance.client
+                .from('app_dat_cliente_cxc')
+                .select('bloqueado_cxc')
+                .eq('id', _selectedExistingClientId!)
+                .maybeSingle();
       } else {
         final idTienda = await _userPreferencesService.getIdTienda();
         final clientCode = _generateClientCode(buyerName);
         if (idTienda != null) {
-          existing = await Supabase.instance.client
-              .from('app_dat_cliente_cxc')
-              .select('bloqueado_cxc')
-              .eq('id_tienda', idTienda)
-              .eq('codigo_cliente', clientCode)
-              .maybeSingle();
+          existing =
+              await Supabase.instance.client
+                  .from('app_dat_cliente_cxc')
+                  .select('bloqueado_cxc')
+                  .eq('id_tienda', idTienda)
+                  .eq('codigo_cliente', clientCode)
+                  .maybeSingle();
         }
       }
       if (existing != null && existing['bloqueado_cxc'] == true) {
@@ -1894,6 +1974,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return;
     }
 
+    final usesUsd = _paymentCurrencyByMethodId.values.contains('USD');
+    if (usesUsd && _usdRate <= 0) {
+      _showErrorMessage(
+        'No hay una tasa USD válida. Sincroniza la tienda o cobra en CUP.',
+      );
+      return;
+    }
+
     final tienePagoPendiente = widget.order.items.any(
       (item) => item.paymentMethod?.esPagoPendiente ?? false,
     );
@@ -1915,7 +2003,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       final buyerName = _buyerNameController.text.trim();
       final buyerPhone = _buyerPhoneController.text.trim();
-      final isOffline = widget.order.isOfflineOrder ||
+      final isOffline =
+          widget.order.isOfflineOrder ||
           await _userPreferencesService.shouldStayFullyOffline() ||
           await _userPreferencesService.isOfflineModeEnabled();
 
@@ -1998,25 +2087,34 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         );
 
         // Agrupar por método de pago
-        final paymentMethodId =
-            item.paymentMethod?.id.toString() ?? 'sin_metodo';
+        final rawMethodId = item.paymentMethod?.id;
+        final normalizedMethodId = rawMethodId == 999 ? 1 : rawMethodId;
+        final paymentMethodId = normalizedMethodId?.toString() ?? 'sin_metodo';
+        final currency =
+            normalizedMethodId == null
+                ? 'CUP'
+                : (_paymentCurrencyByMethodId[normalizedMethodId] ?? 'CUP');
         if (!paymentBreakdown.containsKey(paymentMethodId)) {
           paymentBreakdown[paymentMethodId] = {
-            'id_medio_pago': item.paymentMethod?.id,
+            'id_medio_pago': normalizedMethodId,
             'denominacion': item.paymentMethod?.denominacion ?? 'Sin método',
             'monto': 0.0,
+            'moneda': currency,
+            'tasa_usd': currency == 'USD' ? _usdRate : null,
             'es_digital': item.paymentMethod?.esDigital ?? false,
             'es_efectivo': item.paymentMethod?.esEfectivo ?? false,
           };
         }
         paymentBreakdown[paymentMethodId]!['monto'] =
-            (paymentBreakdown[paymentMethodId]!['monto'] as double) + itemTotal;
+            (paymentBreakdown[paymentMethodId]!['monto'] as double) +
+            (currency == 'USD' ? itemTotal / _usdRate : itemTotal);
       }
 
       final total = subtotal - totalDescuentos;
 
       final openTurno = await _userPreferencesService.getOfflineTurno();
-      final localTurnoId = openTurno?['local_id']?.toString() ??
+      final localTurnoId =
+          openTurno?['local_id']?.toString() ??
           openTurno?['local_turno_id']?.toString();
 
       // Hora corregida contra el servidor (ver ServerTimeService) para que
@@ -2108,14 +2206,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         final localPath = await _persistOfflineOperationPhoto(offlineOrderId);
         if (localPath != null) {
           orderData['foto_operacion_local_path'] = localPath;
-          orderData['foto_operacion_mime'] =
-              _fotoOperacionMime ?? 'image/jpeg';
+          orderData['foto_operacion_mime'] = _fotoOperacionMime ?? 'image/jpeg';
         } else if (kIsWeb) {
           // Fallback web: base64 en la orden pendiente
-          orderData['foto_operacion_base64'] =
-              base64Encode(_fotoOperacionBytes!);
-          orderData['foto_operacion_mime'] =
-              _fotoOperacionMime ?? 'image/jpeg';
+          orderData['foto_operacion_base64'] = base64Encode(
+            _fotoOperacionBytes!,
+          );
+          orderData['foto_operacion_mime'] = _fotoOperacionMime ?? 'image/jpeg';
         }
       }
 
@@ -2167,7 +2264,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             item.cantidad,
             inventoryId: inventoryId,
             locationId: locationId,
-            presentationId: item.idPresentacion ??
+            presentationId:
+                item.idPresentacion ??
                 (inventoryMetadata['id_presentacion'] as num?)?.toInt(),
           );
         } else {
@@ -2225,6 +2323,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           arguments: idMesaOffline,
         );
       } else {
+        // Servicentro y mostrador: abrir órdenes con el detalle de la venta.
         Navigator.pushNamedAndRemoveUntil(
           context,
           '/orders',
@@ -2285,7 +2384,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'finalTotal': finalTotal,
         'originalTotal': subtotal,
         'idCliente': idCliente, // Agregar ID del cliente al orderData
-        'idClienteCxc': idClienteCxc, // Cliente de Cuentas por Cobrar (independiente)
+        'idClienteCxc':
+            idClienteCxc, // Cliente de Cuentas por Cobrar (independiente)
         'idMesa': _mesaSeleccionada?.id, // ID de mesa en modo restaurante
         'paymentBreakdown': breakdown, // Add payment breakdown
         'fotoOperacionUrl': fotoOperacionUrl,
@@ -2302,6 +2402,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ? _extraContactsController.text.trim()
                 : null,
         paymentMethod: 'Múltiples métodos',
+        pagos: _currencyPaymentLines,
         idMesa: _mesaSeleccionada?.id,
         mesaNumero: _mesaSeleccionada?.numero,
       );
@@ -2354,6 +2455,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           if (createdOrderId != null) {
             _orderService.updateOrderIdInCache(updatedOrder.id, createdOrderId);
           }
+          // Servicentro y mostrador: abrir órdenes + detalle de la venta.
           Navigator.pushNamedAndRemoveUntil(
             context,
             '/orders',
@@ -2800,7 +2902,9 @@ class _ClientPickerSheetState extends State<_ClientPickerSheet> {
       // 2) Resto de clientes CxC de la tienda (con o sin deuda).
       var builder = Supabase.instance.client
           .from('app_dat_cliente_cxc')
-          .select('id, nombre_completo, telefono, codigo_cliente, bloqueado_cxc')
+          .select(
+            'id, nombre_completo, telefono, codigo_cliente, bloqueado_cxc',
+          )
           .eq('id_tienda', idTienda);
       if (q.isNotEmpty) {
         builder = builder.or(
@@ -2811,18 +2915,13 @@ class _ClientPickerSheetState extends State<_ClientPickerSheet> {
           .order('nombre_completo', ascending: true)
           .limit(50);
 
-      final merged = <Map<String, dynamic>>[
-        ...deudoresById.values,
-      ];
+      final merged = <Map<String, dynamic>>[...deudoresById.values];
       for (final raw in response) {
         final row = Map<String, dynamic>.from(raw as Map);
         final id = (row['id'] as num?)?.toInt();
         if (id == null) continue;
         if (deudoresById.containsKey(id)) continue;
-        merged.add({
-          ...row,
-          'tiene_deuda': false,
-        });
+        merged.add({...row, 'tiene_deuda': false});
       }
 
       if (!mounted) return;
@@ -2874,88 +2973,85 @@ class _ClientPickerSheetState extends State<_ClientPickerSheet> {
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: () =>
-                    Navigator.pop(context, {'createNew': true}),
+                onPressed: () => Navigator.pop(context, {'createNew': true}),
                 icon: const Icon(Icons.person_add_alt_1),
                 label: const Text('Crear nuevo cliente con este nombre'),
               ),
             ),
             const SizedBox(height: 8),
             Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _error != null
+              child:
+                  _isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _error != null
                       ? Center(child: Text(_error!))
                       : _results.isEmpty
-                          ? const Center(
-                              child: Text('Sin resultados. Crea un cliente nuevo.'),
-                            )
-                          : ListView.builder(
-                              itemCount: _results.length,
-                              itemBuilder: (context, index) {
-                                final cliente = _results[index];
-                                final bloqueado =
-                                    cliente['bloqueado_cxc'] == true;
-                                final tieneDeuda =
-                                    cliente['tiene_deuda'] == true;
-                                final saldo =
-                                    (cliente['saldo_pendiente'] as num?)
-                                        ?.toDouble();
-                                final telefono =
-                                    cliente['telefono']?.toString();
-                                String subtitle;
-                                if (bloqueado) {
-                                  subtitle =
-                                      'Bloqueado para cuentas por cobrar';
-                                } else if (tieneDeuda &&
-                                    saldo != null &&
-                                    saldo > 0) {
-                                  subtitle =
-                                      'Deuda: \$${saldo.toStringAsFixed(2)}'
-                                      '${telefono != null && telefono.isNotEmpty ? ' · $telefono' : ''}';
-                                } else {
-                                  subtitle =
-                                      telefono != null && telefono.isNotEmpty
-                                          ? telefono
-                                          : 'Sin teléfono';
-                                }
-                                return ListTile(
-                                  leading: CircleAvatar(
-                                    backgroundColor: bloqueado
-                                        ? Colors.red[50]
+                      ? const Center(
+                        child: Text('Sin resultados. Crea un cliente nuevo.'),
+                      )
+                      : ListView.builder(
+                        itemCount: _results.length,
+                        itemBuilder: (context, index) {
+                          final cliente = _results[index];
+                          final bloqueado = cliente['bloqueado_cxc'] == true;
+                          final tieneDeuda = cliente['tiene_deuda'] == true;
+                          final saldo =
+                              (cliente['saldo_pendiente'] as num?)?.toDouble();
+                          final telefono = cliente['telefono']?.toString();
+                          String subtitle;
+                          if (bloqueado) {
+                            subtitle = 'Bloqueado para cuentas por cobrar';
+                          } else if (tieneDeuda && saldo != null && saldo > 0) {
+                            subtitle =
+                                'Deuda: \$${saldo.toStringAsFixed(2)}'
+                                '${telefono != null && telefono.isNotEmpty ? ' · $telefono' : ''}';
+                          } else {
+                            subtitle =
+                                telefono != null && telefono.isNotEmpty
+                                    ? telefono
+                                    : 'Sin teléfono';
+                          }
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor:
+                                  bloqueado
+                                      ? Colors.red[50]
+                                      : tieneDeuda
+                                      ? Colors.orange.withOpacity(0.15)
+                                      : const Color(
+                                        0xFF4A90E2,
+                                      ).withOpacity(0.1),
+                              child: Icon(
+                                tieneDeuda
+                                    ? Icons.account_balance_wallet
+                                    : Icons.person,
+                                color:
+                                    bloqueado
+                                        ? Colors.red
                                         : tieneDeuda
-                                        ? Colors.orange.withOpacity(0.15)
-                                        : const Color(0xFF4A90E2)
-                                            .withOpacity(0.1),
-                                    child: Icon(
-                                      tieneDeuda
-                                          ? Icons.account_balance_wallet
-                                          : Icons.person,
-                                      color: bloqueado
-                                          ? Colors.red
-                                          : tieneDeuda
-                                          ? Colors.orange[800]
-                                          : const Color(0xFF4A90E2),
-                                    ),
-                                  ),
-                                  title: Text(
-                                    cliente['nombre_completo']?.toString() ??
-                                        'Sin nombre',
-                                  ),
-                                  subtitle: Text(
-                                    subtitle,
-                                    style: TextStyle(
-                                      color: bloqueado
-                                          ? Colors.red
-                                          : tieneDeuda
-                                          ? Colors.orange[900]
-                                          : null,
-                                    ),
-                                  ),
-                                  onTap: () => Navigator.pop(context, cliente),
-                                );
-                              },
+                                        ? Colors.orange[800]
+                                        : const Color(0xFF4A90E2),
+                              ),
                             ),
+                            title: Text(
+                              cliente['nombre_completo']?.toString() ??
+                                  'Sin nombre',
+                            ),
+                            subtitle: Text(
+                              subtitle,
+                              style: TextStyle(
+                                color:
+                                    bloqueado
+                                        ? Colors.red
+                                        : tieneDeuda
+                                        ? Colors.orange[900]
+                                        : null,
+                              ),
+                            ),
+                            onTap: () => Navigator.pop(context, cliente),
+                          );
+                        },
+                      ),
             ),
           ],
         ),

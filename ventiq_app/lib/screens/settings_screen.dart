@@ -3473,7 +3473,8 @@ class _SettingsScreenState extends State<SettingsScreen>
         SyncModule.egresos,
         SyncModule.orders,
         SyncModule.shiftWorkers,
-        SyncModule.defaultCashFund,
+        // SyncModule.defaultCashFund es opcional: se descarga si existe, pero
+        // no bloquea la activación offline si la tienda aún no lo configura.
       };
       var syncSucceeded = false;
       final wasOffline = await _userPreferencesService.isOfflineModeEnabled();

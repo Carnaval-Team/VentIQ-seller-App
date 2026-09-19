@@ -770,6 +770,8 @@ class ProductService {
 
         esServicio: json['es_servicio'] ?? false,
 
+        esCombustible: json['es_combustible'] ?? false,
+
         stockDisponible: json['stock_disponible'] ?? 0,
 
         tieneStock: (json['stock_disponible'] ?? 0) > 0,
@@ -2201,6 +2203,8 @@ class ProductService {
 
             es_elaborado,
 
+            es_combustible,
+
             um,
 
             created_at,
@@ -2439,6 +2443,8 @@ class ProductService {
         esPorLotes: productData['es_por_lotes'] ?? false,
 
         esServicio: productData['es_servicio'] ?? false,
+
+        esCombustible: productData['es_combustible'] ?? false,
 
         precioVenta:
             precioVenta, // Precio de venta obtenido de app_dat_precio_venta

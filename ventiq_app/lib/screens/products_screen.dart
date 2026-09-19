@@ -137,7 +137,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
     } catch (e) {
       print('❌ Error loading USD rate: $e');
       setState(() {
-        _usdRate = 420.0; // Default fallback rate
+        _usdRate = 0.0;
         _isLoadingUsdRate = false;
       });
     }

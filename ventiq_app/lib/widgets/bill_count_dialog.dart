@@ -41,7 +41,7 @@ class _BillCountDialogState extends State<BillCountDialog> {
   Map<int, int> _billCounts = {};
   double _totalAmount = 0.0;
   double _remainingAmount = 0.0;
-  double _cambioCupUsd = 420.0;
+  double _cambioCupUsd = 0.0;
   bool _isLoading = true;
 
   /// Objetivo del conteo: efectivo de la orden (o total si no se pasó override).
@@ -76,7 +76,7 @@ class _BillCountDialogState extends State<BillCountDialog> {
     } catch (e) {
       print('❌ Error cargando tipo de cambio: $e');
       setState(() {
-        _cambioCupUsd = 420.0;
+        _cambioCupUsd = 0.0;
       });
     }
   }

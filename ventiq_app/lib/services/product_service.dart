@@ -313,6 +313,15 @@ class ProductService {
   /// Convert Supabase product response to Product model
   Product _convertSupabaseToProduct(Map<String, dynamic> data) {
     final metadata = data['metadata'] as Map<String, dynamic>?;
+    final reservadoCarnaval =
+        (metadata?['reservado_carnaval'] as num?) ??
+        (data['reservado_carnaval'] as num?) ??
+        0;
+    final stockDisponible = (data['stock_disponible'] as num?) ?? 0;
+    final enOrdenesCarnaval =
+        (metadata?['en_ordenes_carnaval'] as num?) ??
+        (data['en_ordenes_carnaval'] as num?) ??
+        0;
 
     return Product(
       id: data['id_producto'] as int? ?? 0,
@@ -328,7 +337,7 @@ class ProductService {
           0.0,
       cantidad:
           data['tiene_stock']
-              ? (data['stock_disponible'] as num?) ?? 0
+              ? stockDisponible
               : 0, // Preserve original type (int or double)
       esRefrigerado: data['es_refrigerado'] as bool? ?? false,
       esFragil: data['es_fragil'] as bool? ?? false,
@@ -351,10 +360,8 @@ class ProductService {
               : data['es_paquete'] as bool? ?? false,
       categoria: data['categoria_nombre'] as String? ?? 'Sin categoría',
       variantes: [], // Empty variants for now
-      reservadoCarnaval:
-          (metadata != null && metadata['reservado_carnaval'] != null)
-              ? metadata['reservado_carnaval'] as num
-              : 0,
+      reservadoCarnaval: reservadoCarnaval,
+      enOrdenesCarnaval: enOrdenesCarnaval,
       // Datos de cocina: solo vienen de fn_productos_cocina_tpv. Un producto
       // de barra los deja en null y se comporta igual que siempre.
       idCocina: (metadata?['id_cocina'] as num?)?.toInt(),

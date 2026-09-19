@@ -195,6 +195,14 @@ class SalesVendorReport {
   final DateTime ultimaVenta;
   final double totalEgresos;
 
+  /// Presente cuando el reporte viene de `fn_reporte_ventas_por_turno`.
+  final int? idTurno;
+  final int? idTpv;
+  final String? tpvNombre;
+  final int? estadoTurno;
+  final DateTime? fechaApertura;
+  final DateTime? fechaCierre;
+
   SalesVendorReport({
     required this.uuidUsuario,
     required this.nombres,
@@ -210,28 +218,65 @@ class SalesVendorReport {
     required this.primeraVenta,
     required this.ultimaVenta,
     this.totalEgresos = 0.0,
+    this.idTurno,
+    this.idTpv,
+    this.tpvNombre,
+    this.estadoTurno,
+    this.fechaApertura,
+    this.fechaCierre,
   });
 
+  bool get esPorTurno => idTurno != null;
+
+  /// Ventana del turno (o primera/última venta si no hay turno).
+  DateTime get periodoInicio => fechaApertura ?? primeraVenta;
+  DateTime get periodoFin => fechaCierre ?? ultimaVenta;
+
+  bool get turnoAbierto => estadoTurno == 1;
+
   factory SalesVendorReport.fromJson(Map<String, dynamic> json) {
+    DateTime? parseDt(dynamic value) {
+      if (value == null) return null;
+      return DateTime.tryParse(value.toString());
+    }
+
+    final primera =
+        parseDt(json['primera_venta']) ??
+        parseDt(json['fecha_apertura']) ??
+        DateTime.now();
+    final ultima =
+        parseDt(json['ultima_venta']) ??
+        parseDt(json['fecha_cierre']) ??
+        parseDt(json['fecha_apertura']) ??
+        DateTime.now();
+
     return SalesVendorReport(
-      uuidUsuario: json['uuid_usuario'] ?? '',
+      uuidUsuario: json['uuid_usuario']?.toString() ?? '',
       nombres: json['nombres'] ?? '',
       apellidos: json['apellidos'] ?? '',
       nombreCompleto: json['nombre_completo'] ?? '',
-      totalVentas: json['total_ventas'] ?? 0,
-      totalProductosVendidos: (json['total_productos_vendidos'] ?? 0.0).toDouble(),
+      totalVentas: (json['total_ventas'] as num?)?.toInt() ?? 0,
+      totalProductosVendidos:
+          (json['total_productos_vendidos'] ?? 0.0).toDouble(),
       totalDineroEfectivo: (json['total_dinero_efectivo'] ?? 0.0).toDouble(),
-      totalDineroTransferencia: (json['total_dinero_transferencia'] ?? 0.0).toDouble(),
+      totalDineroTransferencia:
+          (json['total_dinero_transferencia'] ?? 0.0).toDouble(),
       totalDineroGeneral: (json['total_dinero_general'] ?? 0.0).toDouble(),
       totalImporteVentas: (json['total_importe_ventas'] ?? 0.0).toDouble(),
-      productosDiferentesVendidos: json['productos_diferentes_vendidos'] ?? 0,
-      primeraVenta: DateTime.parse(json['primera_venta'] ?? DateTime.now().toIso8601String()),
-      ultimaVenta: DateTime.parse(json['ultima_venta'] ?? DateTime.now().toIso8601String()),
+      productosDiferentesVendidos:
+          (json['productos_diferentes_vendidos'] as num?)?.toInt() ?? 0,
+      primeraVenta: primera,
+      ultimaVenta: ultima,
       totalEgresos: (json['total_egresos'] ?? 0.0).toDouble(),
+      idTurno: (json['id_turno'] as num?)?.toInt(),
+      idTpv: (json['id_tpv'] as num?)?.toInt(),
+      tpvNombre: json['tpv_nombre']?.toString(),
+      estadoTurno: (json['estado_turno'] as num?)?.toInt(),
+      fechaApertura: parseDt(json['fecha_apertura']),
+      fechaCierre: parseDt(json['fecha_cierre']),
     );
   }
 
-  // Helper method to create a copy with updated egresos
   SalesVendorReport copyWith({double? totalEgresos}) {
     return SalesVendorReport(
       uuidUsuario: uuidUsuario,
@@ -248,21 +293,28 @@ class SalesVendorReport {
       primeraVenta: primeraVenta,
       ultimaVenta: ultimaVenta,
       totalEgresos: totalEgresos ?? this.totalEgresos,
+      idTurno: idTurno,
+      idTpv: idTpv,
+      tpvNombre: tpvNombre,
+      estadoTurno: estadoTurno,
+      fechaApertura: fechaApertura,
+      fechaCierre: fechaCierre,
     );
   }
 
-  // Helper method to determine if vendor is active (has sales today)
   bool get isActiveToday {
     final today = DateTime.now();
     final todayStart = DateTime(today.year, today.month, today.day);
+    if (turnoAbierto) return true;
     return ultimaVenta.isAfter(todayStart);
   }
 
-  // Helper method to get status based on activity
   String get status {
-    if (isActiveToday) {
+    if (turnoAbierto || isActiveToday) {
       return 'activo';
-    } else if (ultimaVenta.isAfter(DateTime.now().subtract(const Duration(days: 7)))) {
+    } else if (ultimaVenta.isAfter(
+      DateTime.now().subtract(const Duration(days: 7)),
+    )) {
       return 'reciente';
     } else {
       return 'inactivo';

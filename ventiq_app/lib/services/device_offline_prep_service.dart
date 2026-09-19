@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'admin_access_service.dart';
 import 'auth_service.dart';
 import 'auto_sync_service.dart';
+import 'currency_service.dart';
 import 'settings_integration_service.dart';
 import 'smart_offline_manager.dart';
 import 'store_config_service.dart';
@@ -103,6 +104,7 @@ class DeviceOfflinePrepService {
 
     late final SyncResult result;
     try {
+      await CurrencyService.getUsdRate();
       result = await _autoSync.syncModules(prepModules);
     } finally {
       // Si el dispositivo ya estaba en full offline, reactivar el flag

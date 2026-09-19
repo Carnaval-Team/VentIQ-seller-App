@@ -254,7 +254,9 @@
     transition: color var(--v2-dur-fast) var(--v2-ease-out);
 }
 
-.v2-nav-links a:hover { color: var(--v2-text); }
+@media (hover: hover) and (pointer: fine) {
+  .v2-nav-links a:hover { color: var(--v2-text); }
+}
 
 .v2-nav-cta {
     display: inline-flex;
@@ -277,8 +279,10 @@
 }
 
 .v2-nav-cta i { color: #ffffff; }
-.v2-nav-cta:hover { transform: translateY(-1px); box-shadow: 0 14px 32px -10px rgba(22, 51, 83, 0.7), inset 0 1px 0 rgba(255,255,255,0.22); }
 .v2-nav-cta:active { transform: translateY(0); }
+@media (hover: hover) and (pointer: fine) {
+  .v2-nav-cta:hover { transform: translateY(-1px); box-shadow: 0 14px 32px -10px rgba(22, 51, 83, 0.7), inset 0 1px 0 rgba(255,255,255,0.22); }
+}
 
 .v2-burger {
     display: none;
@@ -445,9 +449,11 @@
     transition: opacity var(--v2-dur-base) var(--v2-ease-out);
 }
 
-.v2-btn-primary:hover { transform: translateY(-2px); }
-.v2-btn-primary:hover::before { opacity: 1; }
 .v2-btn-primary:active { transform: translateY(0); }
+@media (hover: hover) and (pointer: fine) {
+  .v2-btn-primary:hover { transform: translateY(-2px); }
+  .v2-btn-primary:hover::before { opacity: 1; }
+}
 
 .v2-btn-ghost {
     color: var(--v2-text);
@@ -456,17 +462,22 @@
     box-shadow: var(--v2-sh-xs);
 }
 
-.v2-btn-ghost:hover {
+@media (hover: hover) and (pointer: fine) {
+  .v2-btn-ghost:hover {
     transform: translateY(-2px);
     background: var(--v2-surface-2);
     box-shadow: var(--v2-sh-sm);
+  }
 }
+.v2-btn-ghost:active { transform: translateY(0); }
 
 .v2-btn .v2-btn-arrow {
     display: inline-block;
     transition: transform var(--v2-dur-base) var(--v2-ease-out);
 }
-.v2-btn:hover .v2-btn-arrow { transform: translateX(3px); }
+@media (hover: hover) and (pointer: fine) {
+  .v2-btn:hover .v2-btn-arrow { transform: translateX(3px); }
+}
 
 /* Hero visual: just centers the phone, no stage wrapper anymore */
 .v2-hero-visual {
@@ -560,7 +571,7 @@
 .v2-stack-card {
     position: sticky;
     top: 88px;
-    min-height: 78vh;
+    min-height: min(78vh, 800px);
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
     gap: clamp(28px, 4vw, 64px);
@@ -574,6 +585,31 @@
     overflow: hidden;
     transform-origin: center top;
     will-change: transform, opacity;
+}
+
+/* Compact the stacked cards when the viewport is short so content isn't clipped */
+@media (max-height: 780px) and (min-width: 881px) {
+    .v2-stack-card {
+        min-height: min(82vh, 760px);
+        padding: 28px 36px;
+        gap: 32px;
+    }
+    .v2-stack-card h3 { font-size: clamp(22px, 2.4vw, 32px); }
+    .v2-stack-card p { font-size: 15px; margin-bottom: 18px; }
+    .v2-stack-features { gap: 10px 16px; margin-bottom: 22px; }
+    .v2-stack-features li { font-size: 13.5px; }
+    .v2-stack-features i { width: 24px; height: 24px; font-size: 11px; }
+    .v2-stack-visual { aspect-ratio: 3 / 4; }
+    .v2-stack-visual .v2-phone { max-width: 260px; }
+}
+
+/* Very short viewport: abandon sticky stacking so all content is readable */
+@media (max-height: 720px) and (min-width: 881px) {
+    .v2-stack-card {
+        position: relative;
+        top: auto;
+        min-height: auto;
+    }
 }
 
 @media (max-width: 880px) {
@@ -723,10 +759,12 @@
     isolation: isolate;
 }
 
-.v2-tile:hover {
+@media (hover: hover) and (pointer: fine) {
+  .v2-tile:hover {
     transform: translateY(-3px);
     box-shadow: var(--v2-sh-md);
     border-color: var(--v2-border-strong);
+  }
 }
 
 .v2-tile h4 {
@@ -1266,7 +1304,9 @@
 
 .v2-footer ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .v2-footer ul a { color: rgba(255,255,255,0.62); font-size: 14.5px; transition: color var(--v2-dur-fast); }
-.v2-footer ul a:hover { color: #fff; }
+@media (hover: hover) and (pointer: fine) {
+  .v2-footer ul a:hover { color: #fff; }
+}
 
 .v2-footer-tag {
     color: rgba(255,255,255,0.62);
@@ -1288,7 +1328,9 @@
 }
 
 .v2-footer-bottom a { color: inherit; transition: color var(--v2-dur-fast); }
-.v2-footer-bottom a:hover { color: #fff; }
+@media (hover: hover) and (pointer: fine) {
+  .v2-footer-bottom a:hover { color: #fff; }
+}
 
 /* ---------- 11. REVEAL ANIMATIONS (CSS fallback) ---------- */
 .v2-reveal {
@@ -1317,10 +1359,17 @@
     position: fixed;
     inset: 0;
     z-index: 90;
-    display: none;
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity var(--v2-dur-base) var(--v2-ease-out), visibility var(--v2-dur-base);
+    pointer-events: none;
 }
 
-.v2-drawer.is-open { display: block; }
+.v2-drawer.is-open {
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+}
 
 .v2-drawer-scrim {
     position: absolute;
@@ -1328,8 +1377,11 @@
     background: rgba(6, 7, 15, 0.6);
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
-    animation: v2-fade-in var(--v2-dur-base) var(--v2-ease-out);
+    opacity: 0;
+    transition: opacity var(--v2-dur-base) var(--v2-ease-out);
 }
+
+.v2-drawer.is-open .v2-drawer-scrim { opacity: 1; }
 
 .v2-drawer-panel {
     position: absolute;
@@ -1345,8 +1397,11 @@
     flex-direction: column;
     gap: 8px;
     overflow-y: auto;
-    animation: v2-slide-in var(--v2-dur-base) var(--v2-ease-out);
+    transform: translateX(100%);
+    transition: transform var(--v2-dur-base) var(--v2-ease-out);
 }
+
+.v2-drawer.is-open .v2-drawer-panel { transform: translateX(0); }
 
 .v2-drawer-top {
     display: flex;
@@ -1375,24 +1430,11 @@
     border-bottom: 1px solid var(--v2-border);
 }
 
-.v2-drawer-panel a:not(.v2-btn):not(.v2-brand):hover { color: var(--v2-accent); }
+@media (hover: hover) and (pointer: fine) {
+  .v2-drawer-panel a:not(.v2-btn):not(.v2-brand):hover { color: var(--v2-accent); }
+}
 
 .v2-drawer-panel .v2-btn { margin-top: 20px; justify-content: center; }
-
-@keyframes v2-fade-in {
-    from { opacity: 0; }
-    to   { opacity: 1; }
-}
-
-@keyframes v2-slide-in {
-    from { transform: translateX(100%); }
-    to   { transform: translateX(0); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .v2-drawer-scrim,
-    .v2-drawer-panel { animation: none; }
-}
 
 /* Bloquea el scroll del fondo con el drawer abierto */
 body.v2-no-scroll { overflow: hidden; }
@@ -1588,6 +1630,11 @@ body.v2-no-scroll { overflow: hidden; }
 
 @media (max-width: 540px) {
     .v2-phone { max-width: 260px; }
+    .v2-stack-visual.v2-stack-visual-phone,
+    .v2-carnaval-visual-phone {
+        min-height: auto;
+        padding: 8px 0;
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1668,3 +1715,66 @@ body.v2-no-scroll { overflow: hidden; }
 /* Tile backgrounds get a touch more opacity to read clearly above aurora */
 .v2-tile { backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
 .v2-stack-card { backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
+
+/* =========================================================
+   15. MOBILE-NATIVE BASELINE
+   ========================================================= */
+
+html {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+}
+
+/* Fast, responsive taps on all controls */
+.v2 button,
+.v2 a,
+.v2 [role="button"],
+.v2-btn,
+.v2-burger,
+.v2-nav-cta,
+.v2-drawer-close,
+.v2-drawer-panel a {
+    touch-action: manipulation;
+    -webkit-touch-callout: none;
+}
+
+/* Avoid text selection on controls while keeping content selectable */
+.v2 button,
+.v2 [role="button"],
+.v2-btn,
+.v2-burger,
+.v2-nav-cta,
+.v2-drawer-close,
+.v2-drawer-panel a:not([href^="http"]) {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* Fixed nav respects safe-area insets */
+.v2-nav {
+    padding-top: env(safe-area-inset-top, 0px);
+    height: calc(68px + env(safe-area-inset-top, 0px));
+}
+
+/* Drawer panel respects safe-area insets */
+.v2-drawer-panel {
+    padding-top: calc(22px + env(safe-area-inset-top, 0px));
+    padding-bottom: calc(32px + env(safe-area-inset-bottom, 0px));
+}
+
+/* Drawer panel scroll containment */
+.v2-drawer-panel {
+    overscroll-behavior: contain;
+}
+
+/* Phone float animation is gentler on small screens */
+@media (max-width: 540px) {
+    .v2-phone {
+        animation: v2-phone-float-mobile 7s var(--v2-ease-in-out) infinite;
+    }
+    @keyframes v2-phone-float-mobile {
+        0%   { transform: translateY(0) rotate(-0.5deg); }
+        50%  { transform: translateY(-6px) rotate(0.5deg); }
+        100% { transform: translateY(0) rotate(-0.5deg); }
+    }
+}

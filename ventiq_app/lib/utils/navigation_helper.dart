@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/mesa_cuenta.dart';
 import '../services/mesa_cuenta_service.dart';
 import '../services/sales_mode_service.dart';
+import '../services/servicentro_service.dart';
 import '../services/user_preferences_service.dart';
 
 /// Helper centralizado para decisiones de navegación que dependen de banderas
@@ -10,22 +11,14 @@ import '../services/user_preferences_service.dart';
 class NavigationHelper {
   NavigationHelper._();
 
-  /// Destino home según rol de sesión y modo restaurante.
+  /// Destino home según rol de sesión y modo de operación.
   ///
   /// Orden de prioridad:
   ///  1. Gerente/supervisor (solo gestión) → `/admin-home`.
-  ///  2. **Personal de cocina** (jefe o cocinero) → `/kds`. Su trabajo es la
-  ///     pantalla de cocina; el catálogo de venta no le sirve de nada y le
-  ///     obligaba a abrir el drawer en cada arranque.
-  ///  3. Modo restaurante → `/mesas`.
-  ///  4. Resto → `/categories`.
-  ///
-  /// El orden importa: un gerente que además tenga cocinas asignadas sigue
-  /// yendo a administración, porque su rol de entrada es la gestión de la
-  /// tienda. Solo va al KDS quien entra *por* su rol de cocina.
-  ///
-  /// Durante una venta de mostrador el Home es `/categories`: el vendedor está
-  /// en una venta normal y sacarlo a `/mesas` le rompe el flujo.
+  ///  2. Personal de cocina → `/kds`.
+  ///  3. Modo servicentro → `/servicentro` (excluyente con restaurante).
+  ///  4. Modo restaurante → `/mesas`.
+  ///  5. Resto → `/categories`.
   static Future<String> homeRoute() async {
     final prefs = UserPreferencesService();
 
@@ -33,6 +26,9 @@ class NavigationHelper {
     if (inventoryOnly) return '/admin-home';
 
     if (await prefs.isCocinaSession()) return '/kds';
+
+    // Modo por TPV de sesión (no por tienda).
+    if (ServicentroService.modoServicentroSync) return '/servicentro';
 
     return SalesModeService.flujoMesaActivo ? '/mesas' : '/categories';
   }

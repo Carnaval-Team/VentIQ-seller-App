@@ -177,7 +177,9 @@ BEGIN
             AND COALESCE(ii.id_ubicacion, 0) = COALESCE(ifin.id_ubicacion, 0)
         )
     ),
-    -- Movimientos de inventario en el rango/ubicación, para identificar operaciones
+    -- Movimientos de inventario en el rango/ubicación, para identificar operaciones.
+    -- El id_operacion se reconstruye desde las líneas de recepción/extracción/control/conversión
+    -- vinculadas a cada fila de app_dat_inventario_productos.
     movimientos_inventario AS (
         SELECT DISTINCT
             i.id_producto,
@@ -185,12 +187,25 @@ BEGIN
             COALESCE(i.id_opcion_variante, 0) as id_opcion_variante,
             COALESCE(i.id_presentacion, 0) as id_presentacion,
             i.id_ubicacion,
-            i.id_operacion
+            COALESCE(rp.id_operacion, ep.id_operacion, cp.id_operacion, cvp.id_operacion) as id_operacion
         FROM app_dat_inventario_productos i
         INNER JOIN ubicaciones_filtro uf ON i.id_ubicacion = uf.id_ubicacion
-        WHERE i.id_operacion IS NOT NULL
+        LEFT JOIN app_dat_recepcion_productos rp ON i.id_recepcion = rp.id
+        LEFT JOIN app_dat_extraccion_productos ep ON i.id_extraccion = ep.id
+        LEFT JOIN app_dat_control_productos cp ON i.id_control = cp.id
+        LEFT JOIN app_dat_conversion_presentacion cvp ON i.id_conversion = cvp.id
+        WHERE COALESCE(rp.id_operacion, ep.id_operacion, cp.id_operacion, cvp.id_operacion) IS NOT NULL
           AND (v_fecha_hasta_ts IS NULL OR i.created_at <= v_fecha_hasta_ts)
           AND (v_fecha_desde_ts IS NULL OR i.created_at >= v_fecha_desde_ts)
+    ),
+    -- Último estado registrado de cada operación
+    ultimo_estado_operacion AS (
+        SELECT DISTINCT ON (eo.id_operacion)
+            eo.id_operacion,
+            eo.estado,
+            eo.created_at
+        FROM app_dat_estado_operacion eo
+        ORDER BY eo.id_operacion, eo.created_at DESC, eo.id DESC
     ),
     -- Operaciones asociadas a los movimientos, con su estado actual
     operaciones_movimientos AS (
@@ -201,10 +216,10 @@ BEGIN
             mi.id_presentacion,
             mi.id_ubicacion,
             mi.id_operacion,
-            COALESCE(eo.estado, 0) as estado
+            COALESCE(ueo.estado, 0) as estado
         FROM movimientos_inventario mi
         INNER JOIN app_dat_operaciones o ON mi.id_operacion = o.id
-        LEFT JOIN app_dat_estado_operacion eo ON o.id = eo.id_operacion
+        LEFT JOIN ultimo_estado_operacion ueo ON o.id = ueo.id_operacion
     ),
     -- Entradas del periodo: recepciones completadas vinculadas a movimientos de inventario
     entradas_periodo AS (
@@ -286,8 +301,8 @@ BEGIN
             SUM(ep.cantidad) AS reservado
         FROM app_dat_extraccion_productos ep
         INNER JOIN app_dat_operaciones o ON ep.id_operacion = o.id
-        INNER JOIN app_dat_estado_operacion eo ON o.id = eo.id_operacion
-        WHERE eo.estado = 1
+        INNER JOIN ultimo_estado_operacion ueo ON o.id = ueo.id_operacion
+        WHERE ueo.estado = 1
         GROUP BY ep.id_producto, COALESCE(ep.id_variante, 0), COALESCE(ep.id_opcion_variante, 0), COALESCE(ep.id_presentacion, 0), ep.id_ubicacion
     ),
     -- Pendientes de entrada: recepciones en operaciones con estado = 1
@@ -301,8 +316,8 @@ BEGIN
             SUM(rp.cantidad) AS cantidad_pendiente_entrada
         FROM app_dat_recepcion_productos rp
         INNER JOIN app_dat_operaciones o ON rp.id_operacion = o.id
-        INNER JOIN app_dat_estado_operacion eo ON o.id = eo.id_operacion
-        WHERE eo.estado = 1
+        INNER JOIN ultimo_estado_operacion ueo ON o.id = ueo.id_operacion
+        WHERE ueo.estado = 1
         GROUP BY rp.id_producto, COALESCE(rp.id_variante, 0), COALESCE(rp.id_opcion_variante, 0), COALESCE(rp.id_presentacion, 0), rp.id_ubicacion
     ),
     costo_promedio_productos AS (

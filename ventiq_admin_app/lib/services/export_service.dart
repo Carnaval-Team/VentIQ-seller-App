@@ -2951,12 +2951,12 @@ class ExportService {
           p['producto_denominacion'] as String? ??
           p['denominacion'] as String? ??
           'N/A';
-      
+
       // Presentación (nueva en v3)
       final presentacion = p['denominacion_presentacion'] as String?;
       final unidades = (p['presentacion_unidades'] as num?)?.toInt() ?? 1;
       final esBase = p['es_presentacion_base'] as bool? ?? true;
-      
+
       // Construir nombre completo: "Producto (Presentación x Unid.)"
       String nombre = nombreBase;
       if (presentacion != null && !esBase) {
@@ -2964,7 +2964,7 @@ class ExportService {
       } else if (presentacion != null && esBase && unidades > 1) {
         nombre = '$nombreBase ($presentacion x$unidades)';
       }
-      
+
       final sku = p['producto_sku'] as String? ?? p['sku'] as String? ?? '';
       final qty = (p['cantidad_propuesta'] as num?)?.toDouble() ?? 0;
       final costoCup = (p['precio_costo_cup'] as num?)?.toDouble() ?? 0;
@@ -3521,6 +3521,204 @@ class ExportService {
     final encoded = book.encode();
     if (encoded == null) throw Exception('No se pudo generar el archivo Excel');
     return Uint8List.fromList(encoded);
+  }
+
+  Future<void> exportCarnavalPickupProducts({
+    required BuildContext context,
+    required List<Map<String, dynamic>> rows,
+    required int orderCount,
+    required ExportFormat format,
+    String? providerName,
+    bool groupByProvider = false,
+  }) async {
+    final now = DateTime.now();
+    final stamp = DateFormat('yyyyMMdd_HHmmss').format(now);
+    final providerSuffix = providerName == null
+        ? ''
+        : '_${_cleanFileName(providerName)}';
+    final fileName =
+        'Productos_Recoger_Carnaval${providerSuffix}_$stamp.${format.extension}';
+    final bytes = format == ExportFormat.pdf
+        ? await _generateCarnavalPickupProductsPdf(
+            rows,
+            orderCount,
+            now,
+            providerName,
+            groupByProvider,
+          )
+        : _generateCarnavalPickupProductsExcel(rows, orderCount, now);
+    final mimeType = format == ExportFormat.pdf
+        ? 'application/pdf'
+        : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+    if (kIsWeb) {
+      _downloadFileWeb(bytes, fileName, mimeType);
+    } else {
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}/$fileName');
+      await file.writeAsBytes(bytes);
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: mimeType)],
+        subject: 'Productos por recoger - Carnaval',
+        text:
+            'Productos por recoger exportados el ${DateFormat('dd/MM/yyyy HH:mm').format(now)}',
+      );
+    }
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${format.displayName} generado exitosamente'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    }
+  }
+
+  Future<Uint8List> _generateCarnavalPickupProductsPdf(
+    List<Map<String, dynamic>> rows,
+    int orderCount,
+    DateTime generatedAt,
+    String? providerName,
+    bool groupByProvider,
+  ) async {
+    final regularFont = await _getRegularFont();
+    final boldFont = await _getBoldFont();
+    final pdf = pw.Document();
+    final rowsByProvider = <String, List<Map<String, dynamic>>>{};
+    for (final row in rows) {
+      final provider = row['proveedor']?.toString() ?? 'Sin tienda';
+      rowsByProvider.putIfAbsent(provider, () => []).add(row);
+    }
+
+    pw.Widget buildTable(
+      List<Map<String, dynamic>> tableRows, {
+      required bool showProvider,
+    }) {
+      return pw.TableHelper.fromTextArray(
+        headers: showProvider
+            ? const ['Proveedor', 'Orden', 'Producto', 'Cantidad']
+            : const ['Orden', 'Producto', 'Cantidad'],
+        data: tableRows.map((row) {
+          final values = [
+            row['orden']?.toString() ?? '-',
+            row['producto']?.toString() ?? '-',
+            _formatCarnavalPickupQuantity(row['cantidad']),
+          ];
+          return showProvider
+              ? [row['proveedor']?.toString() ?? '-', ...values]
+              : values;
+        }).toList(),
+        headerStyle: pw.TextStyle(
+          font: boldFont,
+          fontSize: 9,
+          color: PdfColors.white,
+        ),
+        cellStyle: pw.TextStyle(font: regularFont, fontSize: 9),
+        headerDecoration: const pw.BoxDecoration(color: PdfColors.indigo700),
+        cellAlignments: showProvider
+            ? {1: pw.Alignment.center, 3: pw.Alignment.centerRight}
+            : {0: pw.Alignment.center, 2: pw.Alignment.centerRight},
+        border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+      );
+    }
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(28),
+        theme: pw.ThemeData.withFont(base: regularFont, bold: boldFont),
+        header: (_) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(
+              providerName == null
+                  ? 'Productos por recoger - Carnaval'
+                  : 'Productos por recoger - $providerName',
+              style: pw.TextStyle(font: boldFont, fontSize: 18),
+            ),
+            pw.Text(
+              '$orderCount órdenes · ${DateFormat('dd/MM/yyyy HH:mm').format(generatedAt)}',
+              style: pw.TextStyle(
+                font: regularFont,
+                fontSize: 9,
+                color: PdfColors.grey700,
+              ),
+            ),
+            pw.SizedBox(height: 12),
+          ],
+        ),
+        footer: (context) => pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(
+            'Página ${context.pageNumber} de ${context.pagesCount}',
+            style: pw.TextStyle(font: regularFont, fontSize: 8),
+          ),
+        ),
+        build: (_) => groupByProvider
+            ? [
+                for (final entry in rowsByProvider.entries) ...[
+                  pw.Text(
+                    entry.key,
+                    style: pw.TextStyle(font: boldFont, fontSize: 13),
+                  ),
+                  pw.SizedBox(height: 6),
+                  buildTable(entry.value, showProvider: false),
+                  pw.SizedBox(height: 18),
+                ],
+              ]
+            : [buildTable(rows, showProvider: true)],
+      ),
+    );
+    return pdf.save();
+  }
+
+  Uint8List _generateCarnavalPickupProductsExcel(
+    List<Map<String, dynamic>> rows,
+    int orderCount,
+    DateTime generatedAt,
+  ) {
+    final book = Excel.createExcel();
+    final defaultSheet = book.getDefaultSheet();
+    if (defaultSheet != null) book.rename(defaultSheet, 'Productos a recoger');
+    final sheet = book['Productos a recoger'];
+    sheet.setColumnWidth(0, 28);
+    sheet.setColumnWidth(1, 14);
+    sheet.setColumnWidth(2, 32);
+    sheet.setColumnWidth(3, 14);
+    sheet.appendRow([
+      TextCellValue('Productos por recoger - Carnaval'),
+      TextCellValue(
+        'Generado: ${DateFormat('dd/MM/yyyy HH:mm').format(generatedAt)}',
+      ),
+    ]);
+    sheet.appendRow([TextCellValue('Órdenes incluidas: $orderCount')]);
+    sheet.appendRow([]);
+    sheet.appendRow([
+      TextCellValue('Proveedor'),
+      TextCellValue('Orden'),
+      TextCellValue('Producto'),
+      TextCellValue('Cantidad'),
+    ]);
+    for (final row in rows) {
+      sheet.appendRow([
+        TextCellValue(row['proveedor']?.toString() ?? '-'),
+        IntCellValue((row['orden'] as num?)?.toInt() ?? 0),
+        TextCellValue(row['producto']?.toString() ?? '-'),
+        DoubleCellValue((row['cantidad'] as num?)?.toDouble() ?? 0),
+      ]);
+    }
+
+    final encoded = book.encode();
+    if (encoded == null) throw Exception('No se pudo generar el archivo Excel');
+    return Uint8List.fromList(encoded);
+  }
+
+  String _formatCarnavalPickupQuantity(dynamic value) {
+    final quantity = (value as num?)?.toDouble() ?? 0;
+    return quantity == quantity.truncateToDouble()
+        ? quantity.toInt().toString()
+        : quantity.toStringAsFixed(2);
   }
 
   /// Helper para construir una fila de información en PDF

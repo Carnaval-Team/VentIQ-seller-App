@@ -145,11 +145,13 @@ BEGIN
             ),
             'cantidad_disponible', ip.cantidad_final,
             'reservado_carnaval', COALESCE(
-                (SELECT SUM(cart.quantity)
+                (SELECT SUM(od.quantity)
                  FROM public.relation_products_carnaval rpc
-                 JOIN carnavalapp."Carrito" cart ON cart.product_id = rpc.id_producto_carnaval
+                 JOIN carnavalapp."OrderDetails" od ON od.product_id = rpc.id_producto_carnaval
+                 JOIN carnavalapp."Orders" o ON o.id = od.order_id
                  WHERE rpc.id_producto = ip.id_producto
-                 AND rpc.id_ubicacion = ip.id_ubicacion
+                   AND rpc.id_ubicacion = ip.id_ubicacion
+                   AND o.status IN ('Nuevo', 'Procesando', 'Asignado')
                 ), 0),
             'ultima_actualizacion', ip.created_at,
             'proveedor', CASE 

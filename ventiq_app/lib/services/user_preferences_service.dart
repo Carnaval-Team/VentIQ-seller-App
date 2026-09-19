@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/promotion_rules.dart';
+import '../utils/price_utils.dart';
 import '../utils/uuid_generator.dart';
 import 'admin_access_service.dart';
 import 'order_service.dart';
@@ -97,6 +98,8 @@ class UserPreferencesService {
       'egresos_cache'; // Cache de egresos para modo offline
   static const String _storeConfigKey =
       'store_config'; // Configuración de la tienda
+  static const String _servicentroProductosKey = 'servicentro_productos';
+  static const String _tpvServicentroFlagsKey = 'tpv_servicentro_flags';
   static const String _storePrintNameKey = 'store_print_name';
   static const String _storePrintLogoUrlKey = 'store_print_logo_url';
   static const String _storePrintLogoBytesKey = 'store_print_logo_bytes';
@@ -1953,7 +1956,9 @@ class UserPreferencesService {
                   inv['ubicacion'] is Map
                       ? Map<String, dynamic>.from(inv['ubicacion'] as Map)
                       : null;
-              return ubicacion?['id'] == locationId;
+              final flatId = (inv['id_ubicacion'] as num?)?.toInt();
+              final nestedId = (ubicacion?['id'] as num?)?.toInt();
+              return flatId == locationId || nestedId == locationId;
             }
 
             // Con presentación pedida y sin variante/ubicación, llegar aquí ya
@@ -2741,7 +2746,8 @@ class UserPreferencesService {
       } else {
         for (final p in desglose) {
           if (p is! Map) continue;
-          final monto = (p['monto'] as num?)?.toDouble() ?? 0.0;
+          final payment = Map<String, dynamic>.from(p);
+          final monto = PriceUtils.paymentCupEquivalent(payment);
           final esEfectivo = p['es_efectivo'] == true;
           final esDigital = p['es_digital'] == true;
           if (esEfectivo || (!esDigital && !esEfectivo)) {
@@ -4035,6 +4041,8 @@ class UserPreferencesService {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_storeConfigKey);
+      await prefs.remove(_servicentroProductosKey);
+      await prefs.remove(_tpvServicentroFlagsKey);
       await prefs.remove(_storePrintNameKey);
       await prefs.remove(_storePrintLogoUrlKey);
       await prefs.remove(_storePrintLogoBytesKey);
@@ -4042,6 +4050,124 @@ class UserPreferencesService {
     } catch (e) {
       print('❌ Error limpiando configuración de tienda: $e');
     }
+  }
+
+  /// Guardar lista de combustibles servicentro (cache offline, scoped por TPV)
+  Future<void> saveServicentroProductos(
+    List<Map<String, dynamic>> items, {
+    required int idTpv,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _servicentroProductosKey,
+        jsonEncode({
+          'id_tpv': idTpv,
+          'synced_at': DateTime.now().toIso8601String(),
+          'productos': items,
+        }),
+      );
+    } catch (e) {
+      print('❌ Error guardando combustibles servicentro: $e');
+    }
+  }
+
+  /// Flags de modo servicentro del TPV de sesión
+  Future<void> saveTpvServicentroFlags({
+    required int idTpv,
+    required bool modo,
+    required int columnas,
+    String? tpvNombre,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _tpvServicentroFlagsKey,
+        jsonEncode({
+          'id_tpv': idTpv,
+          'modo': modo,
+          'columnas': columnas,
+          if (tpvNombre != null && tpvNombre.trim().isNotEmpty)
+            'tpv_nombre': tpvNombre.trim(),
+          'synced_at': DateTime.now().toIso8601String(),
+        }),
+      );
+    } catch (e) {
+      print('❌ Error guardando flags servicentro TPV: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>?> getTpvServicentroFlags() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_tpvServicentroFlagsKey);
+      if (raw == null) return null;
+      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    } catch (e) {
+      print('❌ Error leyendo flags servicentro TPV: $e');
+      return null;
+    }
+  }
+
+  /// Obtener cache de combustibles. Si [idTpv] no coincide, retorna null
+  /// (evita mostrar lista de otro TPV tras cambio de sesión).
+  Future<Map<String, dynamic>?> getServicentroProductosCache({
+    int? idTpv,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_servicentroProductosKey);
+      if (raw == null) return null;
+      final decoded = jsonDecode(raw);
+
+      // Formato nuevo: { id_tpv, synced_at, productos }
+      if (decoded is Map) {
+        final mapa = Map<String, dynamic>.from(decoded);
+        final cachedTpv = (mapa['id_tpv'] as num?)?.toInt();
+        if (idTpv != null && cachedTpv != null && cachedTpv != idTpv) {
+          return null;
+        }
+        final productos = mapa['productos'];
+        if (productos is! List) return null;
+        return {
+          'id_tpv': cachedTpv,
+          'synced_at': mapa['synced_at']?.toString(),
+          'productos': productos
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList(),
+        };
+      }
+
+      // Legacy: lista plana (sin id_tpv)
+      if (decoded is List) {
+        if (idTpv != null) {
+          // Sin TPV en cache: no es fiable tras migración por TPV
+          return null;
+        }
+        return {
+          'id_tpv': null,
+          'synced_at': null,
+          'productos': decoded
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList(),
+        };
+      }
+      return null;
+    } catch (e) {
+      print('❌ Error leyendo combustibles servicentro: $e');
+      return null;
+    }
+  }
+
+  /// Obtener lista de combustibles servicentro desde cache
+  Future<List<Map<String, dynamic>>?> getServicentroProductos({
+    int? idTpv,
+  }) async {
+    final cache = await getServicentroProductosCache(idTpv: idTpv);
+    if (cache == null) return null;
+    return (cache['productos'] as List).cast<Map<String, dynamic>>();
   }
 
   /// Guardar nombre/logo de tienda para impresión offline
@@ -4688,18 +4814,16 @@ class UserPreferencesService {
       final prefs = await SharedPreferences.getInstance();
       final cambio = prefs.getDouble(_cambioCupUsdKey);
 
-      if (cambio != null) {
+      if (cambio != null && cambio > 0) {
         print('💱 Tipo de cambio CUP-USD desde cache: $cambio');
         return cambio;
       } else {
-        print(
-          '⚠️ No hay tipo de cambio CUP-USD en cache, usando default: 420.0',
-        );
-        return 420.0; // Valor por defecto
+        print('⚠️ No hay tipo de cambio CUP-USD en cache');
+        return 0.0; // Sin tasa cacheada: no inventar fallback
       }
     } catch (e) {
       print('❌ Error obteniendo tipo de cambio CUP-USD: $e');
-      return 420.0; // Valor por defecto
+      return 0.0;
     }
   }
 

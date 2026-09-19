@@ -69,13 +69,16 @@
                         io.unobserve(e.target);
                     }
                 });
-            }, { threshold: 0.18, rootMargin: '0px 0px -60px 0px' });
+            }, {
+                threshold: window.matchMedia('(max-width: 540px)').matches ? 0.08 : 0.14,
+                rootMargin: window.matchMedia('(max-width: 540px)').matches ? '0px 0px -24px 0px' : '0px 0px -48px 0px',
+            });
             revealEls.forEach(el => io.observe(el));
         }
     }
 
-    // ---------- 3. Magnetic CTAs ----------
-    if (!REDUCE) {
+    // ---------- 3. Magnetic CTAs (mouse only) ----------
+    if (!REDUCE && window.matchMedia('(pointer: fine)').matches) {
         const magnets = document.querySelectorAll('[data-magnetic]');
         magnets.forEach((el) => {
             const strength = parseFloat(el.dataset.magnetic || '0.28');
@@ -137,14 +140,17 @@
         lenis.on('scroll', ScrollTrigger.update);
 
         // ---------- Sticky-stack (canonical skeleton, Section 5.A) ----------
+        // Skip on small/short screens: CSS already stacks cards vertically and pinning
+        // fights the natural document flow on phones/tablets or short desktop viewports.
         const cards = gsap.utils.toArray('.v2-stack-card');
-        cards.forEach((card, i) => {
+        const enableStickyStack = !window.matchMedia('(max-width: 880px)').matches &&
+                                  !window.matchMedia('(max-height: 720px)').matches;
+        if (enableStickyStack) cards.forEach((card, i) => {
             if (i === cards.length - 1) return;
             ScrollTrigger.create({
                 trigger: card,
-                start: 'top top+=88',     // account for fixed nav (64–80px)
-                endTrigger: cards[cards.length - 1],
-                end: 'top top+=88',
+                start: 'top top+=120',    // give more breathing room below the nav
+                end: '+=130%',            // longer pin duration so users can read before the next card overlaps
                 pin: true,
                 pinSpacing: false,
             });

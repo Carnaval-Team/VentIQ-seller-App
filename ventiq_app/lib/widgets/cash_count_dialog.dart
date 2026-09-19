@@ -18,7 +18,7 @@ class CashCountDialog extends StatefulWidget {
 
 class _CashCountDialogState extends State<CashCountDialog> {
   bool _isLoading = true;
-  double _cambioCupUsd = 420.0;
+  double _cambioCupUsd = 0.0;
   final List<String> _currencies = [];
   String? _selectedCurrency;
 

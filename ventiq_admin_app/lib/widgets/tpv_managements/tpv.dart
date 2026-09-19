@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../services/tpv_service.dart';
 import '../../config/app_colors.dart';
 import '../../screens/tpv_prices_screen.dart';
+import '../../screens/servicentro_management_screen.dart';
 import 'tpv_details.dart';
 import '../../utils/navigation_guard.dart';
 
@@ -270,6 +271,16 @@ class _TpvListWidgetState extends State<TpvListWidget> {
                           ),
                         ),
                         const PopupMenuItem(
+                          value: 'servicentro',
+                          child: Row(
+                            children: [
+                              Icon(Icons.local_gas_station, size: 20),
+                              SizedBox(width: 8),
+                              Text('Servicentro'),
+                            ],
+                          ),
+                        ),
+                        const PopupMenuItem(
                           value: 'stats',
                           child: Row(
                             children: [
@@ -436,6 +447,20 @@ class _TpvListWidgetState extends State<TpvListWidget> {
                       tpv['id'] is int
                           ? tpv['id']
                           : int.parse(tpv['id'].toString()),
+                ),
+          ),
+        );
+        break;
+      case 'servicentro':
+        final idTpv =
+            tpv['id'] is int ? tpv['id'] as int : int.parse(tpv['id'].toString());
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder:
+                (context) => ServicentroManagementScreen(
+                  idTpv: idTpv,
+                  tpvNombre: tpv['denominacion']?.toString(),
                 ),
           ),
         );

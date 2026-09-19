@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/order.dart';
 import '../services/currency_service.dart';
+import '../services/servicentro_service.dart';
 import '../services/store_config_service.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/price_utils.dart';
@@ -419,6 +420,28 @@ class WebPrinterServiceImpl {
     }
   }
 
+  String _paymentSummaryHtml(Order order) {
+    final payments = PriceUtils.normalizePayments(order.pagos);
+    if (payments.isNotEmpty) {
+      return payments.map((payment) {
+        final method = PriceUtils.paymentMethodName(payment);
+        return '<div class="info-line">PAGO: $method — ${PriceUtils.formatPaymentAmount(payment)}</div>';
+      }).join();
+    }
+    final totals = <String, double>{};
+    for (final item in order.items) {
+      final method = item.paymentMethod;
+      if (method == null) continue;
+      totals[method.displayName] =
+          (totals[method.displayName] ?? 0) + item.subtotal;
+    }
+    if (totals.isEmpty) return '';
+    return totals.entries
+        .map((entry) =>
+            '<div class="info-line">PAGO: ${entry.key} — ${entry.value.toStringAsFixed(2)} CUP</div>')
+        .join();
+  }
+
   /// Genera el HTML del ticket del cliente para impresión
   Future<String> _generateCustomerTicketHtml(
     Order order, {
@@ -426,7 +449,7 @@ class WebPrinterServiceImpl {
   }) async {
     final storeInfo = await _getStorePrintInfo();
     final usdRate = await _getUsdRateForPrint();
-    final showPaymentMethod = await _shouldShowPaymentMethodOnTicket();
+    final paymentSummaryHtml = _paymentSummaryHtml(order);
     final storeName = storeInfo.name;
     final headerLogoHtml =
         storeInfo.logoDataUrl != null
@@ -445,13 +468,29 @@ class WebPrinterServiceImpl {
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
     // Generar filas de productos (formato igual al Bluetooth)
+    final ticketPayments = PriceUtils.normalizePayments(order.pagos);
+    String ticketMoney(double cupAmount) => PriceUtils.formatTicketMoney(
+      cupAmount,
+      ticketPayments,
+      fallbackRate: usdRate,
+    );
+
+    final servicentroTicket = ServicentroService.modoServicentroSync &&
+        order.items.length == 1;
     final productRows = order.items
         .where((item) => item.subtotal > 0)
         .map((item) {
           final itemTotal = item.cantidad * item.precioUnitario;
+          if (servicentroTicket) {
+            return '''
+        <div class="sc-qty">${PriceUtils.formatQuantity(item.cantidad)}</div>
+        <div class="sc-name">${item.nombre}</div>
+        <div class="sc-price">${ticketMoney(itemTotal)}</div>
+          ''';
+          }
           return '''
         <div class="product-line">${PriceUtils.formatQuantity(item.cantidad)}x ${item.nombre}</div>
-        <div class="product-price">\$${item.precioUnitario.toStringAsFixed(0)} c/u = \$${itemTotal.toStringAsFixed(0)}</div>
+        <div class="product-price">${ticketMoney(item.precioUnitario)} c/u = ${ticketMoney(itemTotal)}</div>
           ''';
         })
         .join('');
@@ -461,11 +500,6 @@ class WebPrinterServiceImpl {
             ? '<div class="copy-label">$copyLabel</div>'
             : '';
 
-    final usdTotalLine =
-        usdRate != null && usdRate > 0
-            ? '<div class="total-line">USD (${usdRate.toStringAsFixed(0)}): \$${(order.total / usdRate).toStringAsFixed(2)}</div>'
-            : '';
-
     // Líneas de descuento si existe
     String discountHtml = '';
     if (order.descuento != null) {
@@ -473,8 +507,8 @@ class WebPrinterServiceImpl {
       final double montoDescontado = ((order.descuento!['monto_descontado'] ?? 0) as num).toDouble();
       if (montoDescontado > 0) {
         discountHtml = '''
-        <div class="total-line">SUBTOTAL: \$${montoReal.toStringAsFixed(0)}</div>
-        <div class="total-line" style="color:#e53e3e;">DESCUENTO: -\$${montoDescontado.toStringAsFixed(0)}</div>
+        <div class="total-line">SUBTOTAL: ${ticketMoney(montoReal)}</div>
+        <div class="total-line" style="color:#e53e3e;">DESCUENTO: -${ticketMoney(montoDescontado)}</div>
         ''';
       }
     }
@@ -593,6 +627,24 @@ class WebPrinterServiceImpl {
             text-align: right;
             margin: 2px 0;
         }
+        .sc-qty {
+            text-align: center;
+            font-size: 1.85em;
+            font-weight: bold;
+            margin: 14px 0 10px 0;
+            line-height: 1.2;
+        }
+        .sc-name {
+            text-align: center;
+            font-size: 1.35em;
+            font-weight: bold;
+            margin: 10px 0 14px 0;
+            line-height: 1.25;
+        }
+        .sc-price {
+            text-align: center;
+            margin: 8px 0 12px 0;
+        }
         .totals-section {
             margin: 15px 0;
         }
@@ -636,7 +688,7 @@ class WebPrinterServiceImpl {
         ${order.buyerName != null && order.buyerName!.isNotEmpty ? '<div class="info-line">CLIENTE: ${order.buyerName}</div>' : ''}
         ${order.buyerPhone != null && order.buyerPhone!.isNotEmpty ? '<div class="info-line">TELEFONO: ${order.buyerPhone}</div>' : ''}
         <div class="info-line">FECHA: $dateStr $timeStr</div>
-        ${showPaymentMethod ? '<div class="info-line">PAGO: ${order.paymentMethod ?? 'Completado'}</div>' : ''}
+        $paymentSummaryHtml
     </div>
 
     <div class="products-header">PRODUCTOS:</div>
@@ -647,8 +699,7 @@ class WebPrinterServiceImpl {
     <div class="totals-section">
         <div class="separator">--------------------------------</div>
         $discountHtml
-        <div class="final-total">TOTAL: \$${order.total.toStringAsFixed(0)}</div>
-        $usdTotalLine
+        <div class="final-total">TOTAL: ${ticketMoney(order.total)}</div>
     </div>
 
     $thanksHtml
@@ -683,7 +734,6 @@ class WebPrinterServiceImpl {
   Future<String> _generateCustomerTicketsBatchHtml(List<Order> orders) async {
     final storeInfo = await _getStorePrintInfo();
     final usdRate = await _getUsdRateForPrint();
-    final showPaymentMethod = await _shouldShowPaymentMethodOnTicket();
     final loggedInUserName = await _getLoggedInUserName();
     final storeName = storeInfo.name;
     final headerLogoHtml =
@@ -699,10 +749,20 @@ class WebPrinterServiceImpl {
 
     final ticketsHtml = orders
         .map((order) {
+          final paymentSummaryHtml = _paymentSummaryHtml(order);
+          final servicentroTicket = ServicentroService.modoServicentroSync &&
+              order.items.length == 1;
           final productRows = order.items
               .where((item) => item.subtotal > 0)
               .map((item) {
                 final itemTotal = item.cantidad * item.precioUnitario;
+                if (servicentroTicket) {
+                  return '''
+        <div class="sc-qty">${PriceUtils.formatQuantity(item.cantidad)}</div>
+        <div class="sc-name">${item.nombre}</div>
+        <div class="sc-price">\$${item.precioUnitario.toStringAsFixed(0)} = \$${itemTotal.toStringAsFixed(0)}</div>
+          ''';
+                }
                 return '''
         <div class="product-line">${PriceUtils.formatQuantity(item.cantidad)}x ${item.nombre}</div>
         <div class="product-price">\$${item.precioUnitario.toStringAsFixed(0)} c/u = \$${itemTotal.toStringAsFixed(0)}</div>
@@ -719,11 +779,6 @@ class WebPrinterServiceImpl {
           final vendorHtml =
               displayVendor.isNotEmpty
                   ? '<div class="info-line">VENDEDOR: $displayVendor</div>'
-                  : '';
-
-          final usdTotalLine =
-              usdRate != null && usdRate > 0
-                  ? '<div class="total-line">USD (${usdRate.toStringAsFixed(0)}): \$${(order.total / usdRate).toStringAsFixed(2)}</div>'
                   : '';
 
           // Líneas de descuento si existe
@@ -753,7 +808,7 @@ class WebPrinterServiceImpl {
         ${order.buyerName != null && order.buyerName!.isNotEmpty ? '<div class="info-line">CLIENTE: ${order.buyerName}</div>' : ''}
         ${order.buyerPhone != null && order.buyerPhone!.isNotEmpty ? '<div class="info-line">TELEFONO: ${order.buyerPhone}</div>' : ''}
         <div class="info-line">FECHA: $dateStr $timeStr</div>
-        ${showPaymentMethod ? '<div class="info-line">PAGO: ${order.paymentMethod ?? 'Completado'}</div>' : ''}
+        $paymentSummaryHtml
       </div>
 
       <div class="products-header">PRODUCTOS:</div>
@@ -765,7 +820,6 @@ class WebPrinterServiceImpl {
         <div class="separator">--------------------------------</div>
         $batchDiscountHtml
         <div class="final-total">TOTAL: \$${order.total.toStringAsFixed(0)}</div>
-        $usdTotalLine
       </div>
 
       <div class="footer">
@@ -856,6 +910,24 @@ class WebPrinterServiceImpl {
         .product-price {
             text-align: right;
             margin: 2px 0;
+        }
+        .sc-qty {
+            text-align: center;
+            font-size: 1.85em;
+            font-weight: bold;
+            margin: 14px 0 10px 0;
+            line-height: 1.2;
+        }
+        .sc-name {
+            text-align: center;
+            font-size: 1.35em;
+            font-weight: bold;
+            margin: 10px 0 14px 0;
+            line-height: 1.25;
+        }
+        .sc-price {
+            text-align: center;
+            margin: 8px 0 12px 0;
         }
         .totals-section {
             margin: 15px 0;
@@ -953,11 +1025,6 @@ class WebPrinterServiceImpl {
           ''';
         })
         .join('');
-
-    final usdTotalLine =
-        usdRate != null && usdRate > 0
-            ? '<div class="total-line">USD (${usdRate.toStringAsFixed(0)}): \$${(order.total / usdRate).toStringAsFixed(2)}</div>'
-            : '';
 
     return '''
 <!DOCTYPE html>
@@ -1102,7 +1169,6 @@ class WebPrinterServiceImpl {
         <div class="separator">--------------------------------</div>
         <div class="total-line">TOTAL PRODUCTOS: ${order.distinctItemCount}</div>
         <div class="total-line">VALOR TOTAL: \$${order.total.toStringAsFixed(0)}</div>
-        $usdTotalLine
     </div>
 
     <div class="footer">

@@ -160,10 +160,12 @@ BEGIN
             'es_elaborado', p.es_elaborado,
             'es_servicio', p.es_servicio,
             'reservado_carnaval', COALESCE(
-                (SELECT SUM(cart.quantity)
+                (SELECT SUM(od.quantity)
                  FROM public.relation_products_carnaval rpc
-                 JOIN carnavalapp."Carrito" cart ON cart.product_id = rpc.id_producto_carnaval
+                 JOIN carnavalapp."OrderDetails" od ON od.product_id = rpc.id_producto_carnaval
+                 JOIN carnavalapp."Orders" o ON o.id = od.order_id
                  WHERE rpc.id_producto = p.id
+                   AND o.status IN ('Nuevo', 'Procesando', 'Asignado')
                 ), 0)
         ) AS metadata
     FROM 

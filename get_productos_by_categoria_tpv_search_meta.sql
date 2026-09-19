@@ -177,12 +177,27 @@ BEGIN
             'es_elaborado', p.es_elaborado,
             'es_servicio', p.es_servicio,
             'es_paquete', p.es_paquete,
-            'reservado_carnaval', COALESCE(
-                (SELECT SUM(cart.quantity)
-                 FROM public.relation_products_carnaval rpc
-                 JOIN carnavalapp."Carrito" cart ON cart.product_id = rpc.id_producto_carnaval
-                 WHERE rpc.id_producto = p.id
-                ), 0)
+            'reservado_carnaval',
+                COALESCE(
+                    (SELECT SUM(ca.quantity)
+                     FROM carnavalapp."Carrito" ca
+                     WHERE ca.product_id IN (
+                         SELECT DISTINCT rpc.id_producto_carnaval
+                         FROM public.relation_products_carnaval rpc
+                         WHERE rpc.id_producto = p.id
+                     )),
+                    0
+                ),
+            'en_ordenes_carnaval',
+                COALESCE(
+                    (SELECT SUM(od.quantity)
+                     FROM public.relation_products_carnaval rpc
+                     JOIN carnavalapp."OrderDetails" od ON od.product_id = rpc.id_producto_carnaval
+                     JOIN carnavalapp."Orders" o ON o.id = od.order_id
+                     WHERE rpc.id_producto = p.id
+                       AND o.status IN ('Nuevo', 'Nueva', 'Procesando', 'Asignado', 'Pendiente de Pago')),
+                    0
+                )
         ) AS metadata
     FROM
         app_dat_producto p

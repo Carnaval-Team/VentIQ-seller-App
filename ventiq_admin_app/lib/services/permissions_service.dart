@@ -612,6 +612,8 @@ class PermissionsService {
       UserRole.supervisor,
       UserRole.auditor,
     ],
+    // Servicentro: config de combustibles (gerente).
+    '/servicentro-management': [UserRole.gerente],
 
     // Recursos Humanos (Gerente, Supervisor y Recursos Humanos)
     '/hr-dashboard': [

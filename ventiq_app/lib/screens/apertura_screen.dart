@@ -28,6 +28,7 @@ class _AperturaScreenState extends State<AperturaScreen>
     with RouteAware, WidgetsBindingObserver {
   final _formKey = GlobalKey<FormState>();
   final _montoInicialController = TextEditingController();
+  final _montoInicialUsdController = TextEditingController(text: '0');
   final _observacionesController = TextEditingController();
   final UserPreferencesService _userPrefs = UserPreferencesService();
   final NotificationService _notificationService = NotificationService();
@@ -103,6 +104,7 @@ class _AperturaScreenState extends State<AperturaScreen>
       c.dispose();
     }
     _montoInicialController.dispose();
+    _montoInicialUsdController.dispose();
     _observacionesController.dispose();
     super.dispose();
   }
@@ -1400,6 +1402,33 @@ class _AperturaScreenState extends State<AperturaScreen>
                                 return null;
                               },
                             ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: _montoInicialUsdController,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(
+                                  RegExp(r'^\d+\.?\d{0,2}'),
+                                ),
+                              ],
+                              decoration: InputDecoration(
+                                labelText: 'Efectivo inicial USD (opcional)',
+                                prefixIcon: const Icon(Icons.attach_money),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              validator: (value) {
+                                final monto = double.tryParse(value ?? '0');
+                                if (monto == null || monto < 0) {
+                                  return 'Ingrese un monto USD válido';
+                                }
+                                return null;
+                              },
+                            ),
                           ],
                         ),
                       ),
@@ -1946,6 +1975,8 @@ class _AperturaScreenState extends State<AperturaScreen>
         print('🔌 Modo offline - Creando apertura offline...');
         await _createOfflineApertura(
           efectivoInicial: double.parse(_montoInicialController.text),
+          efectivoInicialUsd:
+              double.tryParse(_montoInicialUsdController.text) ?? 0,
           idTpv: tpvId,
           idVendedor: sellerId,
           usuario: userUuid,
@@ -1957,6 +1988,8 @@ class _AperturaScreenState extends State<AperturaScreen>
         // Usar el nuevo método del TurnoService
         final result = await TurnoService.registrarAperturaTurno(
           efectivoInicial: double.parse(_montoInicialController.text),
+          efectivoInicialUsd:
+              double.tryParse(_montoInicialUsdController.text) ?? 0,
           idTpv: tpvId,
           idVendedor: sellerId,
           usuario: userUuid,
@@ -2474,6 +2507,7 @@ class _AperturaScreenState extends State<AperturaScreen>
   /// Crear apertura offline
   Future<void> _createOfflineApertura({
     required double efectivoInicial,
+    required double efectivoInicialUsd,
     required int idTpv,
     required int idVendedor,
     required String usuario,
@@ -2502,6 +2536,7 @@ class _AperturaScreenState extends State<AperturaScreen>
         'tipo_operacion': 'apertura',
         'origen_apertura': 'offline',
         'efectivo_inicial': efectivoInicial,
+        'efectivo_inicial_usd': efectivoInicialUsd,
         'fecha_apertura': nowServerCorrected.toIso8601String(),
         'observaciones': observaciones ?? '',
         'maneja_inventario': _manejaInventario,

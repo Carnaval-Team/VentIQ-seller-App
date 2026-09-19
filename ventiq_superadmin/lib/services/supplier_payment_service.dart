@@ -48,15 +48,61 @@ class SupplierPaymentService {
     return null;
   }
 
-  /// Carga los porcentajes de recargo aplicables a cada proveedor (tienda)
-  /// usando la configuración de `app_dat_precio_general_tienda` con el piso
-  /// global de `precio_global_productos_carnaval`.
+  /// Precio de tienda Inventtia (`precio_venta_cup` / `precio_venta_usd`)
+  /// indexado por id de producto Carnaval (`app_dat_producto.id_vendedor_app`).
+  static Future<Map<int, ({double cup, double usd})>>
+      _loadInventtiaPricesByCarnavalProductIds(Set<int> carnavalProductIds) async {
+    if (carnavalProductIds.isEmpty) return {};
+
+    final products = await _supabase
+        .from('app_dat_producto')
+        .select('id, id_vendedor_app')
+        .inFilter('id_vendedor_app', carnavalProductIds.toList());
+
+    final inventtiaIdByCarnaval = <int, int>{};
+    final inventtiaIds = <int>{};
+    for (final row in List<Map<String, dynamic>>.from(products as List)) {
+      final carnavalId = _asInt(row['id_vendedor_app']);
+      final inventtiaId = _asInt(row['id']);
+      if (carnavalId == null || inventtiaId == null) continue;
+      inventtiaIdByCarnaval[carnavalId] = inventtiaId;
+      inventtiaIds.add(inventtiaId);
+    }
+    if (inventtiaIds.isEmpty) return {};
+
+    final priceRows = await _supabase
+        .from('app_dat_precio_venta')
+        .select('id, id_producto, precio_venta_cup, precio_venta_usd, created_at')
+        .inFilter('id_producto', inventtiaIds.toList())
+        .order('created_at', ascending: false);
+
+    final latestByInventtia = <int, ({double cup, double usd})>{};
+    for (final row in List<Map<String, dynamic>>.from(priceRows as List)) {
+      final inventtiaId = _asInt(row['id_producto']);
+      if (inventtiaId == null || latestByInventtia.containsKey(inventtiaId)) {
+        continue;
+      }
+      latestByInventtia[inventtiaId] = (
+        cup: (row['precio_venta_cup'] as num?)?.toDouble() ?? 0.0,
+        usd: (row['precio_venta_usd'] as num?)?.toDouble() ?? 0.0,
+      );
+    }
+
+    final result = <int, ({double cup, double usd})>{};
+    inventtiaIdByCarnaval.forEach((carnavalId, inventtiaId) {
+      final price = latestByInventtia[inventtiaId];
+      if (price != null) {
+        result[carnavalId] = price;
+      }
+    });
+    return result;
+  }
+
+  /// % de markup Carnaval por proveedor — solo fallback si no hay precio Inventtia.
   static Future<Map<int, ({double cashPct, double transferPct})>> _loadStorePricing(
     Set<int> carnavalProviderIds,
   ) async {
-    if (carnavalProviderIds.isEmpty) {
-      return {};
-    }
+    if (carnavalProviderIds.isEmpty) return {};
 
     final globalResponse = await _supabase
         .from('precio_global_productos_carnaval')
@@ -81,6 +127,13 @@ class SupplierPaymentService {
       if (providerId != null && tiendaId != null) {
         tiendaIdsByProvider[providerId] = tiendaId;
       }
+    }
+
+    if (tiendaIdsByProvider.isEmpty) {
+      return {
+        for (final id in carnavalProviderIds)
+          id: (cashPct: floorCash, transferPct: floorTransfer),
+      };
     }
 
     final pricingResponse = await _supabase
@@ -149,25 +202,20 @@ class SupplierPaymentService {
         fechaFin: fechaFin,
       );
 
-      final carnavalProviderIds =
-          lines.map((order) => _asInt(order['proveedor']) ?? 3).toSet();
-      final pricingByProvider = await _loadStorePricing(carnavalProviderIds);
-
       final Map<int, Map<String, dynamic>> supplierTotals = {};
+      final Map<int, Set<int>> orderIdsBySupplier = {};
 
       for (final order in lines) {
         final proveedorId = _asInt(order['proveedor']) ?? 3;
-        final price = (order['price'] as num?)?.toDouble() ?? 0.0;
+        final orderId = _asInt(order['order_id']);
         final quantity = _asInt(order['quantity']) ?? 0;
-        final precioUsd = (order['precio_usd'] as num?)?.toDouble() ?? 1.0;
-        final precioEuro = (order['precio_euro'] as num?)?.toDouble() ?? 1.0;
+        final price = (order['price'] as num?)?.toDouble() ?? 0.0;
+        final precioUsd = (order['precio_usd'] as num?)?.toDouble() ?? 0.0;
+        final precioEuro = (order['precio_euro'] as num?)?.toDouble() ?? 0.0;
         final isTransfer = order['transferencia'] as bool? ?? false;
 
+        // Montos Inventtia (ya resueltos en _fetchPaymentLines).
         final totalRow = price * quantity;
-        final pricing = pricingByProvider[proveedorId] ??
-            (cashPct: 0.0, transferPct: 0.0);
-        final pct = isTransfer ? pricing.transferPct : pricing.cashPct;
-        final netRow = totalRow * (1 - pct / 100);
 
         supplierTotals.putIfAbsent(proveedorId, () {
           return {
@@ -178,9 +226,12 @@ class SupplierPaymentService {
             'total_transfer': 0.0,
             'net_cash': 0.0,
             'net_transfer': 0.0,
-            'total_orders': 0,
           };
         });
+        orderIdsBySupplier.putIfAbsent(proveedorId, () => <int>{});
+        if (orderId != null) {
+          orderIdsBySupplier[proveedorId]!.add(orderId);
+        }
 
         supplierTotals[proveedorId]!['total_cup'] += totalRow;
         supplierTotals[proveedorId]!['total_usd'] += precioUsd * quantity;
@@ -188,13 +239,11 @@ class SupplierPaymentService {
 
         if (isTransfer) {
           supplierTotals[proveedorId]!['total_transfer'] += totalRow;
-          supplierTotals[proveedorId]!['net_transfer'] += netRow;
+          supplierTotals[proveedorId]!['net_transfer'] += totalRow;
         } else {
           supplierTotals[proveedorId]!['total_cash'] += totalRow;
-          supplierTotals[proveedorId]!['net_cash'] += netRow;
+          supplierTotals[proveedorId]!['net_cash'] += totalRow;
         }
-
-        supplierTotals[proveedorId]!['total_orders'] += 1;
       }
 
       final proveedorIds = supplierTotals.keys.toList();
@@ -234,7 +283,7 @@ class SupplierPaymentService {
             totalTransfer: totals['total_transfer'] as double,
             netCash: totals['net_cash'] as double,
             netTransfer: totals['net_transfer'] as double,
-            totalOrders: totals['total_orders'] as int,
+            totalOrders: orderIdsBySupplier[id]?.length ?? 0,
           ),
         );
       }
@@ -263,10 +312,6 @@ class SupplierPaymentService {
         fechaFin: fechaFin,
         proveedorId: proveedorId,
       );
-
-      final pricingByProvider = await _loadStorePricing({proveedorId});
-      final pricing = pricingByProvider[proveedorId] ??
-          (cashPct: 0.0, transferPct: 0.0);
 
       final Map<int, OrderPaymentDetail> ordersMap = {};
       final Map<int, List<ProductPaymentDetail>> orderProductsMap = {};
@@ -299,8 +344,8 @@ class SupplierPaymentService {
                 DateTime.now(),
             total: 0.0,
             isTransfer: isTransfer,
-            cashPct: pricing.cashPct,
-            transferPct: pricing.transferPct,
+            cashPct: 0,
+            transferPct: 0,
             products: [],
           );
         }
@@ -313,8 +358,8 @@ class SupplierPaymentService {
           createdAt: currentOrder.createdAt,
           total: currentOrder.total + product.subtotal,
           isTransfer: isTransfer,
-          cashPct: currentOrder.cashPct,
-          transferPct: currentOrder.transferPct,
+          cashPct: 0,
+          transferPct: 0,
           products: [],
         );
       }
@@ -328,8 +373,8 @@ class SupplierPaymentService {
             createdAt: orderBase.createdAt,
             total: orderBase.total,
             isTransfer: orderBase.isTransfer,
-            cashPct: orderBase.cashPct,
-            transferPct: orderBase.transferPct,
+            cashPct: 0,
+            transferPct: 0,
             products: orderProductsMap[orderId]!,
           ),
         );
@@ -401,7 +446,21 @@ class SupplierPaymentService {
         details.map((d) => _asInt(d['order_id'])).whereType<int>().toSet();
     final excluded = await _inventtiaExcludedLines(orderIds);
 
+    final productIds = details
+        .map((d) => _asInt(d['product_id']))
+        .whereType<int>()
+        .toSet();
+    final inventtiaPrices =
+        await _loadInventtiaPricesByCarnavalProductIds(productIds);
+
+    final providerIds = details
+        .map((d) => _asInt(d['proveedor']))
+        .whereType<int>()
+        .toSet();
+    final pricingByProvider = await _loadStorePricing(providerIds);
+
     final result = <Map<String, dynamic>>[];
+    var missingInventtiaPrice = 0;
     for (final detail in details) {
       final orderId = _asInt(detail['order_id']);
       final detailProveedor = _asInt(detail['proveedor']);
@@ -416,22 +475,53 @@ class SupplierPaymentService {
 
       final order = _asMap(detail['Orders']);
       final product = _asMap(detail['Productos']);
+      final productId = _asInt(detail['product_id']);
+      final inventtia = productId != null ? inventtiaPrices[productId] : null;
+      final carnavalPrice = (detail['price'] as num?)?.toDouble() ?? 0.0;
+      final isTransfer = detail['transferencia'] as bool? ?? false;
+
+      double inventtiaCup = inventtia?.cup ?? 0.0;
+      double inventtiaUsd = inventtia?.usd ?? 0.0;
+
+      // Sin vínculo Inventtia: aproximar quitando el markup Carnaval.
+      if (inventtiaCup <= 0 && carnavalPrice > 0) {
+        missingInventtiaPrice++;
+        final pricing = detailProveedor != null
+            ? pricingByProvider[detailProveedor]
+            : null;
+        final pct = isTransfer
+            ? (pricing?.transferPct ?? 0.0)
+            : (pricing?.cashPct ?? 0.0);
+        inventtiaCup = pct > 0 && pct < 100
+            ? carnavalPrice / (1 + pct / 100)
+            : carnavalPrice;
+      }
+
       result.add({
         'order_id': orderId,
         'proveedor': detailProveedor,
-        'product_id': _asInt(detail['product_id']),
+        'product_id': productId,
         'product_name': product?['name'] ?? 'Sin nombre',
         'product_image': product?['image'],
         'quantity': _asInt(detail['quantity']) ?? 0,
-        'price': (detail['price'] as num?)?.toDouble() ?? 0.0,
-        'precio_usd': (detail['precio_usd'] as num?)?.toDouble() ?? 1.0,
-        'precio_euro': (detail['precio_euro'] as num?)?.toDouble() ?? 1.0,
-        'transferencia': detail['transferencia'] as bool? ?? false,
+        'price': inventtiaCup,
+        'precio_usd': inventtiaUsd > 0
+            ? inventtiaUsd
+            : ((detail['precio_usd'] as num?)?.toDouble() ?? 0.0),
+        'precio_euro': (detail['precio_euro'] as num?)?.toDouble() ?? 0.0,
+        'transferencia': isTransfer,
         'fecha_creacion': order?['created_at'],
       });
     }
 
-    debugPrint('✅ ${result.length} líneas (creadas, no canceladas/devueltas)');
+    if (missingInventtiaPrice > 0) {
+      debugPrint(
+        '⚠️ $missingInventtiaPrice líneas sin precio Inventtia (fallback sin markup)',
+      );
+    }
+    debugPrint(
+      '✅ ${result.length} líneas con precio Inventtia (creadas, no canceladas/devueltas)',
+    );
     return result;
   }
 

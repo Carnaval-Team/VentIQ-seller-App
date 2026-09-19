@@ -371,7 +371,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
         _usdRate = await CurrencyService.getUsdRate();
       } catch (e) {
         debugPrint('⚠️ Error cargando tasa USD: $e');
-        _usdRate = 420.0;
+        _usdRate = 0.0;
       }
 
       // En modo offline puede no haber detalles completos del producto; caer al

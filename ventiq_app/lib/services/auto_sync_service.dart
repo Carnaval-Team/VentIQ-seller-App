@@ -11,6 +11,7 @@ import '../models/payment_method.dart' as pm;
 import 'turno_service.dart';
 import 'reauthentication_service.dart';
 import 'store_config_service.dart';
+import 'servicentro_service.dart';
 import 'shift_workers_service.dart';
 import 'promotion_service.dart';
 import 'product_detail_service.dart';
@@ -1110,6 +1111,7 @@ class AutoSyncService {
             ? aperturaUsuarioForce
             : (entry['usuario'] ?? cierreData['usuario']));
     final efectivoFinal = cierreData['efectivo_final'] ?? 0.0;
+    final efectivoFinalUsd = cierreData['efectivo_real_usd'];
     final observaciones = cierreData['observaciones'] as String?;
     final productos =
         (cierreData['productos'] as List<dynamic>? ?? [])
@@ -1122,11 +1124,15 @@ class AutoSyncService {
 
     try {
       final resp = await Supabase.instance.client.rpc(
-        'fn_cerrar_turno_offline',
+        efectivoFinalUsd == null
+            ? 'fn_cerrar_turno_offline'
+            : 'fn_cerrar_turno_offline_usd',
         params: {
           'p_client_uuid': clientUuid,
           'p_id_tpv': serverIdTpv,
           'p_efectivo_real': efectivoFinal,
+          if (efectivoFinalUsd != null)
+            'p_efectivo_real_usd': efectivoFinalUsd,
           'p_usuario': usuario,
           'p_productos': productos,
           'p_observaciones': observaciones,
@@ -1350,6 +1356,8 @@ class AutoSyncService {
 
     final efectivoInicial =
         (aperturaData['efectivo_inicial'] as num?)?.toDouble() ?? 0.0;
+    final efectivoInicialUsd =
+        (aperturaData['efectivo_inicial_usd'] as num?)?.toDouble();
     final usuario = await _ensureEntryHasUsuario(entry, aperturaData, localId);
     if (usuario == null) return null;
     final manejaInventario =
@@ -1372,6 +1380,8 @@ class AutoSyncService {
       final params = <String, dynamic>{
         'p_client_uuid': clientUuid,
         'p_efectivo_inicial': efectivoInicial,
+        if (efectivoInicialUsd != null)
+          'p_efectivo_inicial_usd': efectivoInicialUsd,
         'p_id_tpv': idTpv,
         'p_id_vendedor': idVendedor,
         'p_usuario': usuario,
@@ -1383,7 +1393,9 @@ class AutoSyncService {
         params['p_fecha_apertura'] = fechaApertura;
       }
       final resp = await Supabase.instance.client.rpc(
-        'fn_apertura_turno_offline',
+        efectivoInicialUsd == null
+            ? 'fn_apertura_turno_offline'
+            : 'fn_apertura_turno_offline_usd',
         params: params,
       );
       final map = _asRpcMap(resp);
@@ -1455,6 +1467,7 @@ class AutoSyncService {
         );
         final result = await TurnoService.registrarAperturaTurno(
           efectivoInicial: efectivoInicial,
+          efectivoInicialUsd: efectivoInicialUsd,
           idTpv: idTpv,
           idVendedor: idVendedor,
           usuario: usuario,
@@ -2132,6 +2145,8 @@ class AutoSyncService {
     final usuario = usuarioRaw?.toString();
     final efectivoFinal =
         (cierreData['efectivo_final'] as num?)?.toDouble() ?? 0.0;
+    final efectivoFinalUsd =
+        (cierreData['efectivo_real_usd'] as num?)?.toDouble();
     final observaciones = cierreData['observaciones'] as String?;
     var productosRaw = cierreData['productos'] as List<dynamic>? ?? [];
     var productos =
@@ -2230,6 +2245,8 @@ class AutoSyncService {
         'p_client_uuid': clientUuid,
         'p_id_tpv': idTpv,
         'p_efectivo_real': efectivoFinal,
+        if (efectivoFinalUsd != null)
+          'p_efectivo_real_usd': efectivoFinalUsd,
         'p_usuario': usuario,
         'p_productos': productos,
         'p_observaciones': observaciones,
@@ -2243,7 +2260,9 @@ class AutoSyncService {
         'withFecha=$withFecha params=${{...params, 'p_productos': '(${productos.length} items)'}}',
       );
       final resp = await Supabase.instance.client.rpc(
-        'fn_cerrar_turno_offline',
+        efectivoFinalUsd == null
+            ? 'fn_cerrar_turno_offline'
+            : 'fn_cerrar_turno_offline_usd',
         params: params,
       );
       cierreRespMap = _asRpcMap(resp);
@@ -2259,6 +2278,7 @@ class AutoSyncService {
       try {
         final result = await TurnoService.cerrarTurnoDetailed(
           efectivoReal: efectivoFinal,
+          efectivoRealUsd: efectivoFinalUsd,
           productos: productos,
           observaciones: observaciones,
         );
@@ -2359,6 +2379,8 @@ class AutoSyncService {
                 .update({
                   'estado': 2,
                   'efectivo_real': efectivoFinal,
+                  if (efectivoFinalUsd != null)
+                    'efectivo_real_usd': efectivoFinalUsd,
                   'fecha_cierre':
                       cierreData['fecha_cierre'] ??
                       DateTime.now().toUtc().toIso8601String(),
@@ -2829,10 +2851,18 @@ class AutoSyncService {
         // FASE 3 presentaciones: v2. La original devolvia productos_vendidos
         // como integer y REDONDEABA las ventas fraccionadas. La original sigue
         // viva para las apps sin actualizar.
-        final resumenCierreResponse = await Supabase.instance.client.rpc(
-          'fn_resumen_diario_cierre_v2',
-          params: {'id_tpv_param': idTpv, 'id_usuario_param': userID},
-        );
+        dynamic resumenCierreResponse;
+        try {
+          resumenCierreResponse = await Supabase.instance.client.rpc(
+            'fn_resumen_diario_cierre_v3',
+            params: {'id_tpv_param': idTpv, 'id_usuario_param': userID},
+          );
+        } catch (_) {
+          resumenCierreResponse = await Supabase.instance.client.rpc(
+            'fn_resumen_diario_cierre_v2',
+            params: {'id_tpv_param': idTpv, 'id_usuario_param': userID},
+          );
+        }
 
         if (resumenCierreResponse != null) {
           Map<String, dynamic> resumenCierre;
@@ -3638,9 +3668,16 @@ class AutoSyncService {
   List<Map<String, dynamic>> _pagosParaSincronizar(
     Map<String, dynamic> orderData,
   ) {
-    final aggregated = <int, Map<String, dynamic>>{};
+    final aggregated = <String, Map<String, dynamic>>{};
 
-    void addPago(int? rawId, num? montoRaw, {int? tipoPago}) {
+    void addPago(
+      int? rawId,
+      num? montoRaw, {
+      int? tipoPago,
+      String? moneda,
+      num? tasaUsd,
+      String? denominacion,
+    }) {
       if (rawId == null || rawId == pm.PaymentMethod.pagoPendienteId) return;
       final monto = montoRaw?.toDouble() ?? 0;
       if (monto <= 0) return;
@@ -3654,15 +3691,29 @@ class AutoSyncService {
         tipo = tipoPago ?? 2;
       }
 
-      final existing = aggregated[id];
+      final normalizedCurrency = moneda?.toUpperCase() == 'USD' ? 'USD' : 'CUP';
+      final rate = normalizedCurrency == 'USD' ? tasaUsd?.toDouble() : null;
+      final key = '$id|$normalizedCurrency';
+      final existing = aggregated[key];
       if (existing == null) {
-        aggregated[id] = {
+        aggregated[key] = {
           'id_medio_pago': id,
           'monto': monto,
           'tipo_pago': tipo,
+          'moneda': normalizedCurrency,
+          'tasa_usd': rate,
+          'monto_cup_equivalente':
+              normalizedCurrency == 'USD' && rate != null
+                  ? monto * rate
+                  : monto,
+          if (denominacion != null) 'denominacion': denominacion,
         };
       } else {
         existing['monto'] = (existing['monto'] as double) + monto;
+        existing['monto_cup_equivalente'] =
+            normalizedCurrency == 'USD' && rate != null
+                ? (existing['monto'] as double) * rate
+                : existing['monto'];
         if (tipo == 2) existing['tipo_pago'] = 2;
       }
     }
@@ -3676,6 +3727,9 @@ class AutoSyncService {
           _asInt(p['id_medio_pago']),
           p['monto'] as num?,
           tipoPago: _asInt(p['tipo_pago']),
+          moneda: p['moneda']?.toString(),
+          tasaUsd: p['tasa_usd'] as num?,
+          denominacion: p['denominacion']?.toString(),
         );
       }
     }
@@ -3862,6 +3916,15 @@ class AutoSyncService {
     await _persistPendingOrderSyncKeys(orderData);
 
     final pagos = _pagosParaSincronizar(orderData);
+    final usdSinTasa = pagos.any(
+      (pago) => pago['moneda'] == 'USD' &&
+          ((pago['tasa_usd'] as num?)?.toDouble() ?? 0) <= 0,
+    );
+    if (usdSinTasa) {
+      throw Exception(
+        'La venta offline ${orderData['id']} contiene pagos USD sin tasa válida',
+      );
+    }
     final requierePago = pagos.isNotEmpty || _ventaRequierePagoVenta(orderData);
     if (requierePago && pagos.isEmpty) {
       throw Exception(
@@ -4183,6 +4246,11 @@ class AutoSyncService {
         'id_medio_pago': id,
         'monto': paymentData['monto'],
         'tipo_pago': tipo,
+        'moneda': paymentData['moneda'] ?? 'CUP',
+        'tasa_usd': paymentData['tasa_usd'],
+        'monto_cup_equivalente': paymentData['monto_cup_equivalente'],
+        if (paymentData['denominacion'] != null)
+          'denominacion': paymentData['denominacion'],
         'referencia_pago':
             paymentData['referencia_pago'] ?? 'Pago Offline - $refBase',
       });
@@ -4652,6 +4720,17 @@ class AutoSyncService {
       if (success) {
         print('✅ Configuración de tienda sincronizada exitosamente');
 
+        // Lista satélite de combustibles (modo servicentro)
+        try {
+          final idTpv = await _userPreferencesService.getIdTpv();
+          await ServicentroService.syncProductos(
+            idTienda: idTienda,
+            idTpv: idTpv,
+          );
+        } catch (e) {
+          print('⚠️ Sync combustibles servicentro (no bloqueante): $e');
+        }
+
         // Renovar licencia firmada junto con la config (obligatorio para offline)
         try {
           print('🔐 Renovando licencia firmada...');
@@ -5093,7 +5172,14 @@ class AutoSyncService {
                   .eq('es_predeterminada_fondo_caja', true)
                   .maybeSingle();
           if (account == null) {
-            throw Exception('No hay una cuenta predeterminada activa');
+            print(
+              '⚠️ Módulo defaultCashFund: no hay cuenta predeterminada activa. '
+              'Se omite sin bloquear el resto del sync.',
+            );
+            // Guardar null explícitamente para limpiar cache si existía una
+            // cuenta anterior y ahora está desactivada/elimina.
+            syncedData['default_cash_fund'] = null;
+            return;
           }
           syncedData['default_cash_fund'] = account;
         },

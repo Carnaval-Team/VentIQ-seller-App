@@ -1,8 +1,20 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-HVE9907KZB"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'G-HVE9907KZB');
+    </script>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F7FAFB">
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0C1A2A">
     <title>Inventtia · Software a medida, servicios IT y productos propios</title>
     <meta name="description" content="Inventtia es una empresa de software: desarrollo a medida, hosting, soporte técnico y productos propios de gestión (punto de venta, inventario, catálogo, reservas y más).">
     <meta name="keywords" content="inventtia, empresa de software, desarrollo de software a medida, servicios IT, hosting, soporte técnico, punto de venta, inventario, catálogo en línea, inventtia goreserva, apps android, aplicaciones web">
@@ -57,9 +69,12 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/style.css">
 
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="assets/css/premium-v2.css">
+    <link rel="stylesheet" href="assets/css/premium-v3.css">
 </head>
 <body class="v2">
+
+    <!-- Scroll progress indicator -->
+    <div class="v2-scroll-progress" aria-hidden="true"></div>
 
     <!-- AURORA BACKGROUND (PS3 XMB style) -->
     <div class="v2-aurora" data-aurora aria-hidden="true">
@@ -76,7 +91,8 @@
             </a>
 
             <div class="v2-nav-links">
-                <a href="sales.html">Servicios</a>
+                <a href="#empresa">Nosotros</a>
+                <a href="#servicios">Servicios</a>
                 <a href="#apps">Productos</a>
                 <a href="#flow">GoReserva</a>
                 <a href="tutorials.html">Tutoriales</a>
@@ -106,7 +122,8 @@
                     <i class="fas fa-xmark" aria-hidden="true"></i>
                 </button>
             </div>
-            <a href="sales.html">Servicios</a>
+            <a href="#empresa">Nosotros</a>
+            <a href="#servicios">Servicios</a>
             <a href="#apps">Productos</a>
             <a href="#flow">GoReserva</a>
             <a href="#carnaval">Carnaval</a>
@@ -129,7 +146,7 @@
                         Empresa de software · productos propios · servicios IT
                     </span>
 
-                    <h1 class="v2-balance" data-hero-in>
+                    <h1 class="v2-balance">
                         Software que <em>opera</em><br>
                         en el mundo real.
                     </h1>
@@ -139,12 +156,12 @@
                     </p>
 
                     <div class="v2-hero-actions" data-hero-in>
-                        <a href="sales.html" class="v2-btn v2-btn-primary" data-magnetic="0.32">
-                            Ver servicios
+                        <a href="#empresa" class="v2-btn v2-btn-primary" data-magnetic="0.32">
+                            Conócenos
                             <span class="v2-btn-arrow" aria-hidden="true">→</span>
                         </a>
-                        <a href="#apps" class="v2-btn v2-btn-ghost">
-                            Ver productos
+                        <a href="#servicios" class="v2-btn v2-btn-ghost">
+                            Servicios y productos
                         </a>
                     </div>
                 </div>
@@ -169,17 +186,88 @@
 
             <!-- Trust strip: UNDER the hero, not inside -->
             <div class="v2-hero-trust v2-reveal">
-                <div class="v2-trust-label">Qué hacemos</div>
+                <div class="v2-trust-label">Por qué Inventtia</div>
                 <div class="v2-trust-row">
-                    <span><i class="fas fa-code" aria-hidden="true"></i> &nbsp; Software a medida</span>
-                    <span><i class="fas fa-cubes" aria-hidden="true"></i> &nbsp; Productos propios</span>
-                    <span><i class="fas fa-server" aria-hidden="true"></i> &nbsp; Hosting</span>
-                    <span><i class="fas fa-headset" aria-hidden="true"></i> &nbsp; Soporte IT</span>
-                    <span><i class="fas fa-mobile-alt" aria-hidden="true"></i> &nbsp; Web · Android · Desktop</span>
+                    <span><i class="fas fa-rocket" aria-hidden="true"></i> &nbsp; Desde 2019</span>
+                    <span><i class="fas fa-users" aria-hidden="true"></i> &nbsp; Equipo local</span>
+                    <span><i class="fas fa-shield-alt" aria-hidden="true"></i> &nbsp; Datos seguros</span>
+                    <span><i class="fas fa-handshake" aria-hidden="true"></i> &nbsp; Soporte humano</span>
+                    <span><i class="fas fa-code-branch" aria-hidden="true"></i> &nbsp; Tecnología propia</span>
                 </div>
             </div>
         </div>
     </header>
+
+    <!-- EMPRESA -->
+    <section id="empresa" class="v2-section" aria-labelledby="empresa-h">
+        <div class="v2-shell">
+            <div class="v2-about-intro v2-reveal">
+                <h2 id="empresa-h" class="v2-h v2-balance">
+                    Una empresa de software que <em>construye</em> y <em>opera</em>.
+                </h2>
+                <p class="v2-lede">
+                    Inventtia nace de resolver problemas reales de negocios. Diseñamos, desarrollamos y mantenemos sistemas de gestión que funcionan todos los días: puntos de venta, inventarios, catálogos en línea, reservas y servicios IT.
+                </p>
+            </div>
+
+            <div class="v2-about-grid">
+                <article class="v2-about-card v2-reveal">
+                    <div class="v2-about-icon"><i class="fas fa-compass" aria-hidden="true"></i></div>
+                    <h3>Propósito claro</h3>
+                    <p>La tecnología debe servir al negocio, no complicarlo. Cada producto y servicio que ofrecemos responde a una necesidad real que hemos visto en el campo.</p>
+                </article>
+
+                <article class="v2-about-card v2-reveal">
+                    <div class="v2-about-icon"><i class="fas fa-wrench" aria-hidden="true"></i></div>
+                    <h3>De la idea al mantenimiento</h3>
+                    <p>No entregamos y nos olvidamos. Acompañamos el lanzamiento, formamos a los equipos y resolvemos lo que surja después.</p>
+                </article>
+
+                <article class="v2-about-card v2-reveal">
+                    <div class="v2-about-icon"><i class="fas fa-globe" aria-hidden="true"></i></div>
+                    <h3>Hecho para el contexto local</h3>
+                    <p>Entendemos la infraestructura, los pagos y las operaciones del mercado. Por eso nuestros sistemas funcionan donde otros no llegan.</p>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    <!-- SERVICIOS -->
+    <section id="servicios" class="v2-section v2-section-dark" aria-labelledby="servicios-h">
+        <div class="v2-shell">
+            <div class="v2-section-header v2-reveal">
+                <h2 id="servicios-h" class="v2-h v2-balance">Servicios <em>IT</em> a tu medida</h2>
+                <p class="v2-lede">Además de nuestros productos propios, acompañamos a otros negocios con desarrollo, infraestructura y soporte técnico.</p>
+            </div>
+
+            <div class="v2-service-grid">
+                <article class="v2-service-card v2-reveal">
+                    <div class="v2-service-icon"><i class="fas fa-laptop-code" aria-hidden="true"></i></div>
+                    <h3>Desarrollo a medida</h3>
+                    <p>Web, Android, desktop y backends. Desde un primer prototipo hasta un sistema en producción.</p>
+                </article>
+
+                <article class="v2-service-card v2-reveal">
+                    <div class="v2-service-icon"><i class="fas fa-cloud" aria-hidden="true"></i></div>
+                    <h3>Hosting y soporte</h3>
+                    <p>Infraestructura administrada, respaldos y atención técnica continua para que tu sistema esté disponible.</p>
+                </article>
+
+                <article class="v2-service-card v2-reveal">
+                    <div class="v2-service-icon"><i class="fas fa-cogs" aria-hidden="true"></i></div>
+                    <h3>Integración y migración</h3>
+                    <p>Conectamos herramientas existentes y migramos datos sin perder el histórico ni parar la operación.</p>
+                </article>
+            </div>
+
+            <div class="v2-service-cta v2-reveal">
+                <a href="sales.html" class="v2-btn v2-btn-primary" data-magnetic="0.28">
+                    Ver todos los servicios
+                    <span class="v2-btn-arrow" aria-hidden="true">→</span>
+                </a>
+            </div>
+        </div>
+    </section>
 
     <!-- PRODUCT: sticky-stack -->
     <!-- Section "apps" -->
@@ -559,6 +647,6 @@
     <script src="assets/js/supabase.min.js" defer></script>
     <script src="assets/js/tracking.js" defer></script>
     <script src="assets/js/aurora-bg.js" defer></script>
-    <script src="assets/js/premium-v2.js" defer></script>
+    <script src="assets/js/premium-v3.js" defer></script>
 </body>
 </html>

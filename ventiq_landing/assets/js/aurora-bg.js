@@ -16,7 +16,8 @@
     const ctx = canvas.getContext('2d', { alpha: true });
     if (!ctx) return;
 
-    const DPR = Math.min(window.devicePixelRatio || 1, 2);
+    const IS_MOBILE = window.matchMedia('(max-width: 640px)').matches;
+    const DPR = Math.min(window.devicePixelRatio || 1, IS_MOBILE ? 1 : 2);
     let W = 0, H = 0;
 
     function resize() {
@@ -52,7 +53,7 @@
 
     function drawBand(band, time) {
         const y0 = H * band.yBase;
-        const step = 8; // pixel step along x — coarse enough to be fast, smooth via curves
+        const step = IS_MOBILE ? 14 : 8; // coarser on mobile to save GPU/CPU
         ctx.beginPath();
         ctx.moveTo(-step, H + 10);
 

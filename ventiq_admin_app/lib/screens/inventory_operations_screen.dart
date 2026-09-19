@@ -77,8 +77,9 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
   void _setCurrentMonthRange() {
     final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
     _fechaDesde = DateTime(now.year, now.month, 1);
-    _fechaHasta = DateTime(now.year, now.month + 1, 0);
+    _fechaHasta = today;
   }
 
   @override
@@ -585,9 +586,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
   void _setCurrentMonth() {
     final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
     setState(() {
       _fechaDesde = DateTime(now.year, now.month, 1);
-      _fechaHasta = DateTime(now.year, now.month + 1, 0); // Último día del mes
+      _fechaHasta = today; // Hasta hoy, no el final del mes futuro
     });
 
     // Auto-aplicar el filtro
@@ -618,24 +620,35 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     try {
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
+
+      // Asegurar que el rango inicial no supere lastDate (hoy),
+      // por ejemplo cuando "Este mes" abarca días futuros.
+      final initialStart = _fechaDesde != null
+          ? DateTime(
+              _fechaDesde!.year,
+              _fechaDesde!.month,
+              _fechaDesde!.day,
+            )
+          : today;
+      final initialEndRaw = _fechaHasta != null
+          ? DateTime(
+              _fechaHasta!.year,
+              _fechaHasta!.month,
+              _fechaHasta!.day,
+            )
+          : today;
+      final initialEnd =
+          initialEndRaw.isAfter(today) ? today : initialEndRaw;
+      final initialRange = DateTimeRange(
+        start: initialStart.isAfter(initialEnd) ? initialEnd : initialStart,
+        end: initialEnd,
+      );
+
       final DateTimeRange? picked = await showDateRangePicker(
         context: context,
         firstDate: DateTime(2020),
         lastDate: today,
-        initialDateRange: _fechaDesde != null && _fechaHasta != null
-            ? DateTimeRange(
-                start: DateTime(
-                  _fechaDesde!.year,
-                  _fechaDesde!.month,
-                  _fechaDesde!.day,
-                ),
-                end: DateTime(
-                  _fechaHasta!.year,
-                  _fechaHasta!.month,
-                  _fechaHasta!.day,
-                ),
-              )
-            : DateTimeRange(start: today, end: today),
+        initialDateRange: initialRange,
         helpText: 'Seleccionar rango de fechas',
         cancelText: 'Cancelar',
         confirmText: 'Confirmar',
@@ -2867,21 +2880,6 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
     addRow('Operador:', operation['usuario_nombre']);
     if (_isVentaOperation(operation)) {
-      addRow(
-        'Contabilización:',
-        operation['contabilizada'] == true
-            ? 'Contabilizada'
-            : 'No contabilizada',
-      );
-      addRow('Contabilizada por:', operation['contabilizada_por_nombre']);
-      final accountingAt = operation['contabilizada_at']?.toString();
-      if (accountingAt != null) {
-        final parsed = DateTime.tryParse(accountingAt);
-        addRow(
-          'Cambio de contabilización:',
-          parsed == null ? accountingAt : _formatDateTime(parsed),
-        );
-      }
       final methods = operation['medios_pago'];
       if (methods is List) {
         addRow(

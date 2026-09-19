@@ -5,7 +5,7 @@ Objetivo: presentar qué es Inventtia y las ventajas que trae para el negocio
 conozca el producto). Listos para copiar y pegar en WhatsApp (el `*texto*`
 se muestra en negrita).
 
-**CTA único:** inventtia.com · WhatsApp +53 63464544
+**CTA único:** inventtia.com · WhatsApp +53 53765120
 
 ---
 
@@ -74,7 +74,7 @@ Si alguna vez te ha pasado esto en tu negocio:
 • *Inventtia Gestión* — inventario, precios, ventas y personal en un solo lugar
 
 Conócenos: inventtia.com
-Escríbenos: +53 63464544
+Escríbenos: +53 537654120
 ```
 
 ---

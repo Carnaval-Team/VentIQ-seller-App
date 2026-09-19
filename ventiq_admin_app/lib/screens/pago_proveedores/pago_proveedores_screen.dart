@@ -1,10 +1,16 @@
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
+import 'package:cross_file/cross_file.dart';
 import '../../config/app_colors.dart';
 import '../../models/pago_proveedores.dart';
 import '../../models/supplier.dart';
@@ -362,6 +368,62 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen>
     );
   }
 
+  // ==================== COMPARTIR ARCHIVOS POR WHATSAPP ====================
+
+  Future<void> _compartirArchivoWhatsApp(
+    BuildContext context,
+    FacturaFotoProveedor foto,
+  ) async {
+    try {
+      final url = foto.fotoUrl;
+      if (url.isEmpty) {
+        throw 'La URL del archivo está vacía';
+      }
+
+      if (kIsWeb) {
+        // En web no podemos escribir un archivo temporal; abrimos WhatsApp Web
+        // con el enlace para que el usuario lo adjunte manualmente.
+        final mensaje = Uri.encodeComponent('Archivo de factura: $url');
+        final uri = Uri.parse('https://wa.me/?text=$mensaje');
+        if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+          throw 'No se pudo abrir WhatsApp Web';
+        }
+        return;
+      }
+
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode != 200) {
+        throw 'No se pudo descargar el archivo (${response.statusCode})';
+      }
+
+      final tempDir = await getTemporaryDirectory();
+      final extension = _extensionFromMime(foto.mimeType);
+      final fileName =
+          'factura_${foto.id ?? DateTime.now().millisecondsSinceEpoch}.$extension';
+      final file = File('${tempDir.path}/$fileName');
+      await file.writeAsBytes(response.bodyBytes);
+
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: foto.mimeType, name: fileName)],
+        text: 'Archivo de factura',
+      );
+    } catch (e) {
+      if (context.mounted) {
+        _showError('Error al compartir: $e');
+      }
+    }
+  }
+
+  String _extensionFromMime(String? mimeType) {
+    if (mimeType == null || mimeType.isEmpty) return 'file';
+    if (mimeType.contains('pdf')) return 'pdf';
+    if (mimeType.contains('image/')) {
+      final ext = mimeType.split('/').last;
+      return ext == 'jpeg' ? 'jpg' : ext;
+    }
+    return 'file';
+  }
+
   // ==================== GESTIÓN DE FOTOS (MÚLTIPLES PÁGINAS) ====================
 
   void _showGestionFotosDialog(ProveedorFactura factura) {
@@ -512,6 +574,30 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen>
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 11,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              Positioned(
+                                top: 4,
+                                left: 4,
+                                child: GestureDetector(
+                                  onTap: () => _compartirArchivoWhatsApp(
+                                    context,
+                                    foto,
+                                  ),
+                                  child: Container(
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFF25D366),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Padding(
+                                      padding: EdgeInsets.all(4),
+                                      child: Icon(
+                                        Icons.share,
+                                        color: Colors.white,
+                                        size: 18,
+                                      ),
                                     ),
                                   ),
                                 ),

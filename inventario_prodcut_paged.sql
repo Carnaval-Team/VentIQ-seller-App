@@ -192,10 +192,12 @@ BEGIN
         SELECT
             rpc.id_producto,
             rpc.id_ubicacion,
-            SUM(cart.quantity) AS reservado
+            SUM(od.quantity) AS reservado
         FROM public.relation_products_carnaval rpc
-        JOIN carnavalapp."Carrito" cart ON cart.product_id = rpc.id_producto_carnaval
+        JOIN carnavalapp."OrderDetails" od ON od.product_id = rpc.id_producto_carnaval
+        JOIN carnavalapp."Orders" o ON o.id = od.order_id
         WHERE rpc.id_producto IN (SELECT base.id_producto FROM base)
+          AND o.status IN ('Nuevo', 'Procesando', 'Asignado')
         GROUP BY rpc.id_producto, rpc.id_ubicacion
     ),
     enriched AS (

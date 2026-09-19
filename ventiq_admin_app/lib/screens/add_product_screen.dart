@@ -218,6 +218,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
   bool _esServicio = false;
 
+  bool _esCombustible = false;
+
   List<Map<String, dynamic>> _ingredientes = [];
 
   double _costoProduccionCalculado = 0.0;
@@ -383,6 +385,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
       _esElaborado = widget.product!.esElaborado ?? false;
 
       _esServicio = widget.product!.esServicio ?? false;
+
+      _esCombustible = widget.product!.esCombustible;
 
       _esPaquete = widget.product!.esPaquete ?? false;
 
@@ -1760,6 +1764,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
     _esElaborado = false;
 
     _esServicio = false;
+
+    _esCombustible = false;
 
     _esRefrigerado = false;
 
@@ -4556,6 +4562,28 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
                 ),
 
+                CheckboxListTile(
+
+                  title: const Text('Es combustible'),
+
+                  subtitle: const Text(
+
+                    'Puede usarse en modo servicentro (gasolina, diesel, etc.)',
+
+                  ),
+
+                  value: _esCombustible,
+
+                  onChanged:
+
+                      (value) => setState(() {
+
+                        _esCombustible = value ?? false;
+
+                      }),
+
+                ),
+
                 // Sección de ingredientes para productos elaborados
 
                 if (_esElaborado || _esServicio) ...[
@@ -5262,6 +5290,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
       'es_servicio': _esServicio,
 
+      'es_combustible': _esCombustible,
+
       'es_por_lotes': _esPorLotes,
 
       'es_paquete': _esPaquete,
@@ -5617,6 +5647,32 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
 
     print('✅ Producto creado exitosamente con ID: $productId');
+
+
+
+    // insert_producto_completo_v3 no persiste es_combustible: actualizar aparte.
+
+    if (_esCombustible) {
+
+      try {
+
+        await _supabase
+
+            .from('app_dat_producto')
+
+            .update({'es_combustible': true})
+
+            .eq('id', productId);
+
+        print('✅ Campo es_combustible actualizado a TRUE');
+
+      } catch (e) {
+
+        print('❌ ERROR al actualizar es_combustible: $e');
+
+      }
+
+    }
 
 
 
@@ -6255,6 +6311,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
       'es_elaborado': _esElaborado,
 
       'es_servicio': _esServicio,
+
+      'es_combustible': _esCombustible,
 
       'es_por_lotes': _esPorLotes,
 

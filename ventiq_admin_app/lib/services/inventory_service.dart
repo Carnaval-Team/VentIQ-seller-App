@@ -2236,9 +2236,14 @@ class InventoryService {
     DateTime? fechaHasta,
     DateTime? fechaDesde,
     bool includeZero = false,
+    bool soloCompletadasEnPeriodo = false,
   }) async {
     try {
-      print('🔍 Calling obtener_reporte_inventario_completo5 with params:');
+      final rpcName = soloCompletadasEnPeriodo
+          ? 'obtener_reporte_inventario_completo5_completadas_en_periodo'
+          : 'obtener_reporte_inventario_completo5';
+
+      print('🔍 Calling $rpcName with params:');
       print('  - idAlmacen: $idAlmacen');
       print('  - idTienda: $idTienda');
       print('  - fechaDesde: ${fechaDesde?.toIso8601String().split('T')[0]}');
@@ -2246,9 +2251,10 @@ class InventoryService {
         '  - fechaHasta: ${fechaHasta != null ? '${fechaHasta.toIso8601String().split('T')[0]} 23:59:59' : null}',
       );
       print('  - includeZero: $includeZero');
+      print('  - soloCompletadasEnPeriodo: $soloCompletadasEnPeriodo');
 
       final response = await _supabase.rpc(
-        'obtener_reporte_inventario_completo5',
+        rpcName,
         params: {
           'p_id_tienda': idTienda,
           'p_fecha_desde': fechaDesde?.toIso8601String().split('T')[0],
