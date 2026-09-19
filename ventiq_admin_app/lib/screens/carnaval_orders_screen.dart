@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/carnaval_service.dart';
 import '../services/export_service.dart';
 import '../services/user_preferences_service.dart';
@@ -273,24 +274,64 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     final enriched = await Future.wait(
       orders.map((order) async {
         final result = Map<String, dynamic>.from(order);
-        final userId = result['user_id'] as int?;
-        if (userId == null) return result;
+        final userId = (result['user_id'] as num?)?.toInt();
 
-        final direccionInfo = await CarnavalService.getLastUserDireccion(
-          userId,
+        // En recogida no hay destino a domicilio que resolver.
+        if (CarnavalService.isMetodoRecogida(
+          result['metodo_entrega']?.toString(),
+        )) {
+          return result;
+        }
+
+        // Se resuelve la dirección DESTINADA por la orden (direccion_id o
+        // cruce user_id + direccion), nunca la última del usuario: ésa puede
+        // ser de otro envío y mostraría una ubicación equivocada.
+        final direccionInfo = await CarnavalService.getOrderDireccion(
+          result['direccion']?.toString() ?? '',
+          userId: userId,
+          direccionId: (result['direccion_id'] as num?)?.toInt(),
         );
-        // Solo nombres de ubicación. NUNCA addAll: Direcciones.id pisa
+        // Solo nombres/coordenadas. NUNCA addAll: Direcciones.id pisa
         // Orders.id y hace que el estado parezca de otra orden al cruzar con BD.
         if (direccionInfo != null) {
           final provincia = direccionInfo['provincia_nombre'];
           final municipio = direccionInfo['municipio_nombre'];
+          final coordenadas = direccionInfo['coordenadas'];
           if (provincia != null) result['provincia_nombre'] = provincia;
           if (municipio != null) result['municipio_nombre'] = municipio;
+          if (coordenadas != null) result['coordenadas'] = coordenadas;
         }
         return result;
       }),
     );
     return enriched;
+  }
+
+  /// Abre la ubicación de la orden en el mapa del sistema.
+  Future<void> _openMapa(String coordenadas) async {
+    final parts = coordenadas.split(',');
+    if (parts.length != 2) return;
+    final lat = double.tryParse(parts[0].trim());
+    final lng = double.tryParse(parts[1].trim());
+    if (lat == null || lng == null) return;
+
+    final uri = Uri.parse(
+      'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
+    );
+    try {
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo abrir el mapa')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo abrir el mapa: $e')),
+        );
+      }
+    }
   }
 
   Color _statusColor(String? status) {
@@ -1219,6 +1260,12 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     final ubicacionMunicipio =
         destMunicipio ?? order['municipio_nombre']?.toString();
     final ubicacionProvincia = destProvincia;
+    // Coordenadas del destino resueltas desde `Direcciones` al enriquecer.
+    final coordenadasRaw = order['coordenadas']?.toString().trim();
+    final coordenadas =
+        (coordenadasRaw != null && coordenadasRaw.contains(','))
+        ? coordenadasRaw
+        : null;
 
     String dateStr = '-';
     if (createdAt != null) {
@@ -1337,6 +1384,21 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
                         style: TextStyle(fontSize: 12, color: Colors.grey[700]),
                       ),
                     ),
+                    if (coordenadas != null) ...[
+                      const SizedBox(width: 4),
+                      InkWell(
+                        onTap: () => _openMapa(coordenadas),
+                        borderRadius: BorderRadius.circular(4),
+                        child: const Padding(
+                          padding: EdgeInsets.all(2),
+                          child: Icon(
+                            Icons.map_outlined,
+                            size: 16,
+                            color: Colors.indigo,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ],

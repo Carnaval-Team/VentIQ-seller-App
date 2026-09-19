@@ -3,7 +3,8 @@
     "allow": [
       "Bash(dart *)",
       "Bash(findstr *)",
-      "mcp__supabase__query_logs"
+      "mcp__supabase__query_logs",
+      "mcp__supabase__execute_sql"
     ]
   },
   "$version": 4
