@@ -1,6 +1,7 @@
 /* =========================================================
-   INVENTTIA · Premium v2 motion layer
-   Lenis smooth scroll · GSAP reveals · magnetic CTAs
+   INVENTTIA · Premium v3 motion layer
+   Lenis smooth scroll · GSAP reveals · magnetic CTAs ·
+   scroll progress · mouse spotlight · 3D phone tilt · word reveals
    All gated by prefers-reduced-motion.
    ========================================================= */
 
@@ -77,6 +78,26 @@
         }
     }
 
+    // ---------- 2b. Scroll progress bar ----------
+    const progressBar = document.querySelector('.v2-scroll-progress');
+    if (progressBar) {
+        const updateProgress = () => {
+            const h = document.documentElement;
+            const total = h.scrollHeight - h.clientHeight;
+            const pct = total > 0 ? (h.scrollTop / total) * 100 : 0;
+            progressBar.style.width = `${Math.min(pct, 100)}%`;
+        };
+        window.addEventListener('scroll', updateProgress, { passive: true });
+        updateProgress();
+    }
+
+    // ---------- 2c. Hero word reveal ----------
+    const heroHeadline = document.querySelector('.v2-hero h1');
+    if (heroHeadline && !REDUCE) {
+        splitTextIntoWords(heroHeadline);
+        requestAnimationFrame(() => heroHeadline.classList.add('is-revealed'));
+    }
+
     // ---------- 3. Magnetic CTAs (mouse only) ----------
     if (!REDUCE && window.matchMedia('(pointer: fine)').matches) {
         const magnets = document.querySelectorAll('[data-magnetic]');
@@ -108,6 +129,12 @@
             el.addEventListener('pointermove', onMove);
             el.addEventListener('pointerleave', onLeave);
         });
+    }
+
+    // ---------- 3b. Mouse spotlight + 3D phone tilt (mouse only) ----------
+    if (!REDUCE && window.matchMedia('(pointer: fine)').matches) {
+        initSpotlight();
+        initPhoneTilt();
     }
 
     // ---------- 4. Lenis + GSAP (lazy-load, only if !reduced) ----------
@@ -216,6 +243,78 @@
             s.onload = resolve;
             s.onerror = reject;
             document.head.appendChild(s);
+        });
+    }
+
+    function splitTextIntoWords(el) {
+        const children = Array.from(el.childNodes);
+        el.innerHTML = '';
+        children.forEach((node) => {
+            if (node.nodeType === Node.TEXT_NODE) {
+                node.textContent.split(/(\s+)/).forEach((piece) => {
+                    if (!piece.trim()) {
+                        el.appendChild(document.createTextNode(piece));
+                        return;
+                    }
+                    const span = document.createElement('span');
+                    span.className = 'word';
+                    const inner = document.createElement('span');
+                    inner.className = 'word-inner';
+                    inner.textContent = piece;
+                    span.appendChild(inner);
+                    el.appendChild(span);
+                });
+            } else if (node.nodeType === Node.ELEMENT_NODE) {
+                const clone = node.cloneNode(true);
+                el.appendChild(clone);
+            }
+        });
+    }
+
+    function initSpotlight() {
+        const selectors = '.v2-stack-card, .v2-tile, .v2-carnaval, .v2-flow';
+        document.querySelectorAll(selectors).forEach((card) => {
+            const onMove = (e) => {
+                const rect = card.getBoundingClientRect();
+                const x = ((e.clientX - rect.left) / rect.width) * 100;
+                const y = ((e.clientY - rect.top) / rect.height) * 100;
+                card.style.setProperty('--mouse-x', `${x}%`);
+                card.style.setProperty('--mouse-y', `${y}%`);
+            };
+            card.addEventListener('pointermove', onMove);
+        });
+    }
+
+    function initPhoneTilt() {
+        document.querySelectorAll('.v2-phone').forEach((phone) => {
+            phone.setAttribute('data-tilt', '');
+            const parent = phone.closest('.v2-hero-visual, .v2-stack-visual, .v2-carnaval-visual-phone, .v2-flow-visual');
+            if (!parent) return;
+            parent.style.perspective = '1200px';
+
+            let raf = null;
+            let rx = 0, ry = 0, cx = 0, cy = 0;
+            const onMove = (e) => {
+                const rect = parent.getBoundingClientRect();
+                const x = (e.clientX - rect.left) / rect.width - 0.5;
+                const y = (e.clientY - rect.top) / rect.height - 0.5;
+                ry = x * 12;   // rotateY
+                rx = -y * 12;  // rotateX
+                if (!raf) raf = requestAnimationFrame(tick);
+            };
+            const onLeave = () => { rx = 0; ry = 0; if (!raf) raf = requestAnimationFrame(tick); };
+            const tick = () => {
+                cx += (rx - cx) * 0.12;
+                cy += (ry - cy) * 0.12;
+                phone.style.transform = `rotateX(${cy.toFixed(2)}deg) rotateY(${cx.toFixed(2)}deg)`;
+                if (Math.abs(rx - cx) > 0.05 || Math.abs(ry - cy) > 0.05) {
+                    raf = requestAnimationFrame(tick);
+                } else {
+                    raf = null;
+                }
+            };
+            parent.addEventListener('pointermove', onMove);
+            parent.addEventListener('pointerleave', onLeave);
         });
     }
 })();
