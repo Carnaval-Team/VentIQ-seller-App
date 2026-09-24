@@ -1,8 +1,35 @@
 {
-  "current_version": "2.5.0",
-  "build": 849,
+  "current_version": "2.6.0",
+  "build": 850,
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.6.0",
+      "date": "2026-09-19",
+      "title": "Stock más preciso, servicentro y cobros más simples",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Nuevo modo de venta para servicentros",
+          "description": "El vendedor puede registrar despachos de combustible, seleccionar el producto configurado y capturar la cantidad con un flujo adaptado al trabajo diario del servicentro, tanto en la navegación como en la preparación offline."
+        },
+        {
+          "type": "feature",
+          "title": "Stock mixto y apertura de bultos más completa",
+          "description": "El catálogo y el detalle reconocen cajas, paquetes y unidades como un solo stock equivalente. Al vender unidades, la app calcula cuánto puede servirse, propone abrir los bultos necesarios y conserva el sobrante disponible."
+        },
+        {
+          "type": "improvement",
+          "title": "Disponibilidad de Carnaval explicada con claridad",
+          "description": "La búsqueda y el detalle muestran por separado el stock realmente vendible, las cantidades que los clientes mantienen en sus carritos y las cantidades que ya están en órdenes activas. Solo los carritos reducen la disponibilidad; las órdenes se muestran como información."
+        },
+        {
+          "type": "improvement",
+          "title": "Pagos, turnos y sincronización offline más consistentes",
+          "description": "Se reforzó el registro del desglose de pagos por moneda, la recuperación de turnos y el intercambio de ventas, egresos y configuraciones cuando la conexión se interrumpe y regresa."
+        }
+      ]
+    },
     {
       "version": "2.5.0",
       "date": "2026-09-16",

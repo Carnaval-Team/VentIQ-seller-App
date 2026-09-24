@@ -1,9 +1,53 @@
 {
-  "current_version": "2.8.8",
-  "build": 288,
+  "current_version": "2.9.1",
+  "build": 290,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.9.1",
+      "date": "2026-09-20",
+      "title": "Ajustes menores",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Reporte de TPVs por turno",
+          "description": "El tab de TPVs muestra cada turno de caja por separado. Las ventas y los detalles de cada turno se filtran por el rango de id de operación entre la apertura y el cierre, evitando que las fechas incluyan ventas de otro turno."
+        }
+      ]
+    },
+    {
+      "version": "2.9.0",
+      "date": "2026-09-19",
+      "title": "Servicentros, recogida Carnaval y control de inventario por presentaciones",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Administración completa del modo servicentro",
+          "description": "Las tiendas pueden configurar los combustibles y productos usados por el TPV de servicentro, controlar permisos y preparar la información necesaria para el trabajo online y offline."
+        },
+        {
+          "type": "feature",
+          "title": "Dashboard de rendimiento para proveedores Carnaval",
+          "description": "Los proveedores disponen de un panel con órdenes, productos vendidos, montos, estados, medios de pago, evolución diaria y productos destacados dentro del período seleccionado."
+        },
+        {
+          "type": "feature",
+          "title": "Inventario y consignación por presentaciones",
+          "description": "Las recepciones, transferencias, extracciones, ajustes y envíos de consignación manejan cantidades mixtas por cajas, paquetes y unidades, conservando equivalencias, costos y saldos físicos."
+        },
+        {
+          "type": "feature",
+          "title": "Cumplimiento físico y nuevos controles de depósitos",
+          "description": "Se incorporan indicadores de cumplimiento físico del inventario y una administración más completa de bancos, depósitos y tipos de extracción, con formularios y validaciones más claros."
+        },
+        {
+          "type": "improvement",
+          "title": "Reportes y exportaciones administrativas ampliadas",
+          "description": "Los reportes de ventas, turnos, inventario y pagos a proveedores incluyen más información, nuevos filtros y salidas PDF o Excel adaptadas a los flujos recientes."
+        }
+      ]
+    },
     {
       "version": "2.8.8",
       "date": "2026-09-10",

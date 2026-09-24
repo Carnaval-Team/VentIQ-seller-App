@@ -4042,7 +4042,7 @@ class InventoryService {
         final enPedidos = _asDouble(row['en_pedidos']);
         final entregando = _asDouble(row['entregando']);
         result[prodId] = StockBreakdown(
-          enAlmacen: baseByProduct[prodId]!,
+          enAlmacen: baseByProduct[prodId]! + enPedidos,
           enPedidos: enPedidos,
           entregando: entregando,
         );

@@ -234,6 +234,51 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen>
     }
   }
 
+  Future<void> _confirmEliminarFactura(ProveedorFactura factura) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Eliminar factura'),
+        content: Text(
+          '¿Eliminar la factura #${factura.numeroFactura} '
+          'de ${_currencyFmt.format(factura.valor)}?\n\n'
+          'El valor se devolverá al saldo disponible y quedará '
+          'registrado en el historial de saldo.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('No'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sí, eliminar'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true || !mounted) return;
+
+    try {
+      await _service.eliminarFactura(
+        idProveedor: _idProveedor!,
+        idFactura: factura.id!,
+      );
+      await _loadSaldoData();
+      _showSuccess(
+        'Factura #${factura.numeroFactura} eliminada. '
+        'Saldo devuelto: ${_currencyFmt.format(factura.valor)}',
+      );
+    } catch (e) {
+      _showError('$e');
+    }
+  }
+
   Widget? _buildCancelarPagoButton(HistorialSaldoProveedor h) {
     if (!h.esRecarga) return null;
     return IconButton(
@@ -2856,6 +2901,18 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen>
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
+                ),
+                const SizedBox(width: 4),
+                IconButton(
+                  tooltip: 'Eliminar factura',
+                  icon: Icon(
+                    Icons.delete_outline,
+                    color: Colors.red.shade700,
+                    size: 20,
+                  ),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => _confirmEliminarFactura(factura),
                 ),
               ],
             ),

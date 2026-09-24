@@ -135,8 +135,8 @@ class ProductSalesReport {
     String? cantidadFormateada,
     this.nPresentaciones = 0,
     this.nPreciosDistintos = 1,
-  })  : equivUnidadesBase = equivUnidadesBase ?? totalVendido,
-        cantidadFormateada = cantidadFormateada ?? '';
+  }) : equivUnidadesBase = equivUnidadesBase ?? totalVendido,
+       cantidadFormateada = cantidadFormateada ?? '';
 
   factory ProductSalesReport.fromJson(Map<String, dynamic> json) {
     // El jsonb llega como List<dynamic> de Map; con la v4 la clave no viene.
@@ -810,6 +810,7 @@ class SalesService {
     required DateTime fechaInicio,
     required DateTime fechaFin,
     String? uuidUsuario,
+    int? turnoId,
   }) async {
     try {
       print('Calling fn_listar_entregas_por_fechas_usuario with:');
@@ -855,7 +856,9 @@ class SalesService {
         }
       }
 
-      print('Successfully parsed ${deliveries.length} cash deliveries');
+      if (turnoId != null) {
+        return deliveries.where((d) => d.idTurno == turnoId).toList();
+      }
       return deliveries;
     } catch (e) {
       print('Error in getCashDeliveries: $e');
@@ -957,9 +960,7 @@ class SalesService {
         return [];
       }
 
-      final params = <String, dynamic>{
-        'p_id_tienda': idTienda,
-      };
+      final params = <String, dynamic>{'p_id_tienda': idTienda};
       if (fechaDesde != null) {
         params['p_fecha_desde'] = fechaDesde.toIso8601String().split('T')[0];
       }
@@ -1004,6 +1005,8 @@ class SalesService {
     required DateTime fechaDesde,
     required DateTime fechaHasta,
     required String uuidUsuario,
+    int? idOperacionDesde,
+    int? idOperacionHasta,
   }) async {
     try {
       // Get store ID from preferences
@@ -1067,6 +1070,15 @@ class SalesService {
         }
       }
 
+      if (idOperacionDesde != null || idOperacionHasta != null) {
+        return orders.where((order) {
+          final id = order.idOperacion;
+          if (idOperacionDesde != null && id < idOperacionDesde) return false;
+          if (idOperacionHasta != null && id > idOperacionHasta) return false;
+          return true;
+        }).toList();
+      }
+
       return orders;
     } catch (e) {
       print('Error in getVendorOrders: $e');
@@ -1078,12 +1090,14 @@ class SalesService {
     required DateTime fechaInicio,
     required DateTime fechaFin,
     required String uuidUsuario,
+    int? turnoId,
   }) async {
     try {
       final deliveries = await getCashDeliveries(
         fechaInicio: fechaInicio,
         fechaFin: fechaFin,
         uuidUsuario: uuidUsuario,
+        turnoId: turnoId,
       );
 
       double totalEgresos = 0.0;
