@@ -48,54 +48,71 @@ class SupplierPaymentService {
     return null;
   }
 
-  /// Precio de tienda Inventtia (`precio_venta_cup` / `precio_venta_usd`)
-  /// indexado por id de producto Carnaval (`app_dat_producto.id_vendedor_app`).
-  static Future<Map<int, ({double cup, double usd})>>
-      _loadInventtiaPricesByCarnavalProductIds(Set<int> carnavalProductIds) async {
-    if (carnavalProductIds.isEmpty) return {};
+  /// Precio real histórico desde `app_dat_extraccion_productos` indexados por `orderId_carnavalProductId`.
+  static Future<Map<String, double>> _loadExtractionPricesByOrders(
+    Set<int> orderIds,
+    Set<int> carnavalProductIds,
+  ) async {
+    if (orderIds.isEmpty || carnavalProductIds.isEmpty) return {};
 
     final products = await _supabase
         .from('app_dat_producto')
         .select('id, id_vendedor_app')
         .inFilter('id_vendedor_app', carnavalProductIds.toList());
 
-    final inventtiaIdByCarnaval = <int, int>{};
+    final inventtiaToCarnaval = <int, int>{};
     final inventtiaIds = <int>{};
     for (final row in List<Map<String, dynamic>>.from(products as List)) {
       final carnavalId = _asInt(row['id_vendedor_app']);
       final inventtiaId = _asInt(row['id']);
       if (carnavalId == null || inventtiaId == null) continue;
-      inventtiaIdByCarnaval[carnavalId] = inventtiaId;
+      inventtiaToCarnaval[inventtiaId] = carnavalId;
       inventtiaIds.add(inventtiaId);
     }
     if (inventtiaIds.isEmpty) return {};
 
-    final priceRows = await _supabase
-        .from('app_dat_precio_venta')
-        .select('id, id_producto, precio_venta_cup, precio_venta_usd, created_at')
-        .inFilter('id_producto', inventtiaIds.toList())
-        .order('created_at', ascending: false);
+    final ops = await _supabase
+        .from('app_dat_operaciones')
+        .select('id, id_carnaval_order')
+        .inFilter('id_carnaval_order', orderIds.toList());
 
-    final latestByInventtia = <int, ({double cup, double usd})>{};
-    for (final row in List<Map<String, dynamic>>.from(priceRows as List)) {
-      final inventtiaId = _asInt(row['id_producto']);
-      if (inventtiaId == null || latestByInventtia.containsKey(inventtiaId)) {
-        continue;
+    final opRows = List<Map<String, dynamic>>.from(ops as List);
+    if (opRows.isEmpty) return {};
+
+    final opIdToOrder = <int, int>{};
+    final opIds = <int>[];
+    for (final row in opRows) {
+      final opId = _asInt(row['id']);
+      final orderId = _asInt(row['id_carnaval_order']);
+      if (opId != null && orderId != null) {
+        opIdToOrder[opId] = orderId;
+        opIds.add(opId);
       }
-      latestByInventtia[inventtiaId] = (
-        cup: (row['precio_venta_cup'] as num?)?.toDouble() ?? 0.0,
-        usd: (row['precio_venta_usd'] as num?)?.toDouble() ?? 0.0,
-      );
+    }
+    if (opIds.isEmpty) return {};
+
+    final extractions = await _supabase
+        .from('app_dat_extraccion_productos')
+        .select('id_operacion, id_producto, precio_unitario')
+        .inFilter('id_operacion', opIds)
+        .inFilter('id_producto', inventtiaIds.toList());
+
+    final priceMap = <String, double>{};
+    for (final row in List<Map<String, dynamic>>.from(extractions as List)) {
+      final opId = _asInt(row['id_operacion']);
+      final inventtiaId = _asInt(row['id_producto']);
+      final precio = (row['precio_unitario'] as num?)?.toDouble();
+
+      if (opId == null || inventtiaId == null || precio == null) continue;
+      final orderId = opIdToOrder[opId];
+      final carnavalId = inventtiaToCarnaval[inventtiaId];
+
+      if (orderId != null && carnavalId != null) {
+        priceMap['${orderId}_$carnavalId'] = precio;
+      }
     }
 
-    final result = <int, ({double cup, double usd})>{};
-    inventtiaIdByCarnaval.forEach((carnavalId, inventtiaId) {
-      final price = latestByInventtia[inventtiaId];
-      if (price != null) {
-        result[carnavalId] = price;
-      }
-    });
-    return result;
+    return priceMap;
   }
 
   /// % de markup Carnaval por proveedor — solo fallback si no hay precio Inventtia.
@@ -450,8 +467,8 @@ class SupplierPaymentService {
         .map((d) => _asInt(d['product_id']))
         .whereType<int>()
         .toSet();
-    final inventtiaPrices =
-        await _loadInventtiaPricesByCarnavalProductIds(productIds);
+    final extractionPrices =
+        await _loadExtractionPricesByOrders(orderIds, productIds);
 
     final providerIds = details
         .map((d) => _asInt(d['proveedor']))
@@ -460,10 +477,11 @@ class SupplierPaymentService {
     final pricingByProvider = await _loadStorePricing(providerIds);
 
     final result = <Map<String, dynamic>>[];
-    var missingInventtiaPrice = 0;
+    var missingExtractionPrice = 0;
     for (final detail in details) {
       final orderId = _asInt(detail['order_id']);
       final detailProveedor = _asInt(detail['proveedor']);
+      final productId = _asInt(detail['product_id']);
       if (orderId == null) continue;
 
       final isExcluded = excluded.any((e) {
@@ -475,24 +493,22 @@ class SupplierPaymentService {
 
       final order = _asMap(detail['Orders']);
       final product = _asMap(detail['Productos']);
-      final productId = _asInt(detail['product_id']);
-      final inventtia = productId != null ? inventtiaPrices[productId] : null;
+      
+      final extractionKey = '${orderId}_$productId';
+      double unitPrice = productId != null ? (extractionPrices[extractionKey] ?? 0.0) : 0.0;
       final carnavalPrice = (detail['price'] as num?)?.toDouble() ?? 0.0;
       final isTransfer = detail['transferencia'] as bool? ?? false;
 
-      double inventtiaCup = inventtia?.cup ?? 0.0;
-      double inventtiaUsd = inventtia?.usd ?? 0.0;
-
-      // Sin vínculo Inventtia: aproximar quitando el markup Carnaval.
-      if (inventtiaCup <= 0 && carnavalPrice > 0) {
-        missingInventtiaPrice++;
+      // Sin vínculo de extracción histórica: usar fallback por markup
+      if (unitPrice <= 0 && carnavalPrice > 0) {
+        missingExtractionPrice++;
         final pricing = detailProveedor != null
             ? pricingByProvider[detailProveedor]
             : null;
         final pct = isTransfer
             ? (pricing?.transferPct ?? 0.0)
             : (pricing?.cashPct ?? 0.0);
-        inventtiaCup = pct > 0 && pct < 100
+        unitPrice = pct > 0 && pct < 100
             ? carnavalPrice / (1 + pct / 100)
             : carnavalPrice;
       }
@@ -504,23 +520,21 @@ class SupplierPaymentService {
         'product_name': product?['name'] ?? 'Sin nombre',
         'product_image': product?['image'],
         'quantity': _asInt(detail['quantity']) ?? 0,
-        'price': inventtiaCup,
-        'precio_usd': inventtiaUsd > 0
-            ? inventtiaUsd
-            : ((detail['precio_usd'] as num?)?.toDouble() ?? 0.0),
+        'price': unitPrice,
+        'precio_usd': (detail['precio_usd'] as num?)?.toDouble() ?? 0.0,
         'precio_euro': (detail['precio_euro'] as num?)?.toDouble() ?? 0.0,
         'transferencia': isTransfer,
         'fecha_creacion': order?['created_at'],
       });
     }
 
-    if (missingInventtiaPrice > 0) {
+    if (missingExtractionPrice > 0) {
       debugPrint(
-        '⚠️ $missingInventtiaPrice líneas sin precio Inventtia (fallback sin markup)',
+        '⚠️ $missingExtractionPrice líneas sin precio histórico de extracción (fallback sin markup)',
       );
     }
     debugPrint(
-      '✅ ${result.length} líneas con precio Inventtia (creadas, no canceladas/devueltas)',
+      '✅ ${result.length} líneas procesadas con precio histórico de extracción',
     );
     return result;
   }
