@@ -91,7 +91,12 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
     final futures = await Future.wait([
       detailsFuture,
       if (userId != null) CarnavalService.getOrderUserInfo(userId),
-      if (userId != null) CarnavalService.getLastUserDireccion(userId),
+      if (userId != null)
+        CarnavalService.getOrderDireccion(
+          (_order['direccion'] as String? ?? ''),
+          userId: userId,
+          direccionId: (_order['direccion_id'] as num?)?.toInt(),
+        ),
       if (resolvedOrderId != null)
         CarnavalService.getVentiqOperationId(resolvedOrderId),
       if (resolvedOrderId != null)

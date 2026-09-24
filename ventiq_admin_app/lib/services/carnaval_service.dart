@@ -2259,73 +2259,99 @@ class CarnavalService {
     }
   }
 
-  /// Obtiene provincia y municipio de una dirección por su texto o id.
-  /// Solo devuelve nombres de ubicación (nunca `id`), para no pisar
-  /// campos de `Orders` al enriquecer la lista.
+  /// Normaliza el texto de una dirección para emparejar `Direcciones.address`
+  /// con `Orders.direccion`: en la tabla hay mayúsculas distintas y espacios
+  /// sobrantes al final, así que comparar en SQL por igualdad falla.
+  static String _normalizarDireccion(Object? value) => (value ?? '')
+      .toString()
+      .toLowerCase()
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+
+  /// Obtiene provincia, municipio y coordenadas de LA dirección a la que fue
+  /// destinado el envío. El vínculo correcto es `Orders.direccion_id` y, si
+  /// está vacío, el cruce `Orders.user_id` + `Orders.direccion` contra
+  /// `Direcciones.user_id` + `Direcciones.address`.
   ///
-  /// [direccionText] puede ser el texto de la dirección o el id de la fila
-  /// en `carnavalapp.Direcciones`. Si se proporciona [userId] se filtra por
-  /// usuario para evitar cruzar direcciones de distintos perfiles.
+  /// Nunca se usa la última dirección del usuario: puede pertenecer a otro
+  /// envío y mostraría una ubicación equivocada. Solo devuelve nombres de
+  /// ubicación y coordenadas (nunca `id`), para no pisar campos de `Orders`.
   static Future<Map<String, dynamic>?> getOrderDireccion(
     String direccionText, {
     int? userId,
+    int? direccionId,
   }) async {
     try {
       final trimmed = direccionText.trim();
-      if (trimmed.isEmpty) return null;
+      Map<String, dynamic>? dirResponse;
 
-      var query = _supabase
-          .schema('carnavalapp')
-          .from('Direcciones')
-          .select('id, address, provincia, municipio, user_id');
-
-      // Primero intentamos resolver por id si el campo es numérico.
-      final idDir = int.tryParse(trimmed);
-      if (idDir != null) {
-        query = query.eq('id', idDir);
-      } else {
-        query = query.ilike('address', trimmed);
+      if (direccionId != null) {
+        dirResponse = await _supabase
+            .schema('carnavalapp')
+            .from('Direcciones')
+            .select('id, address, provincia, municipio, coordenadas')
+            .eq('id', direccionId)
+            .maybeSingle();
       }
 
-      if (userId != null) {
-        query = query.eq('user_id', userId);
-      }
+      if (dirResponse == null && trimmed.isNotEmpty) {
+        // El id de la dirección puede venir como texto en `Orders.direccion`.
+        final idDir = int.tryParse(trimmed);
+        if (idDir != null) {
+          dirResponse = await _supabase
+              .schema('carnavalapp')
+              .from('Direcciones')
+              .select('id, address, provincia, municipio, coordenadas')
+              .eq('id', idDir)
+              .maybeSingle();
+        } else if (userId != null) {
+          final rows = await _supabase
+              .schema('carnavalapp')
+              .from('Direcciones')
+              .select('id, address, provincia, municipio, coordenadas')
+              .eq('user_id', userId);
 
-      final dirResponse = await query
-          .order('created_at', ascending: false)
-          .limit(1)
-          .maybeSingle();
+          final target = _normalizarDireccion(trimmed);
+          final candidatos = rows
+              .where((row) => _normalizarDireccion(row['address']) == target)
+              .toList();
+          // Si el mismo texto se repite, se prefiere la fila que ya tiene
+          // ubicación completa y, en empate, la más reciente.
+          candidatos.sort((a, b) {
+            final aOk = a['provincia'] != null && a['municipio'] != null;
+            final bOk = b['provincia'] != null && b['municipio'] != null;
+            if (aOk != bOk) return aOk ? -1 : 1;
+            final aId = (a['id'] as num?)?.toInt() ?? 0;
+            final bId = (b['id'] as num?)?.toInt() ?? 0;
+            return bId.compareTo(aId);
+          });
+          if (candidatos.isNotEmpty) dirResponse = candidatos.first;
+        }
+      }
 
       if (dirResponse == null) {
         // Fallback: si el texto de la dirección ya incluye provincia/municipio
         // (formato "calle, municipio, provincia" usado p. ej. en paquetería),
         // extraerlos directamente sin consultar la tabla.
-        final parsed = _parseDireccionConcatenada(trimmed);
-        return parsed;
+        return _parseDireccionConcatenada(trimmed);
       }
 
       final result = <String, dynamic>{'address': dirResponse['address']};
-      final provinciaId = dirResponse['provincia'];
-      final municipioId = dirResponse['municipio'];
+      final coordenadas = dirResponse['coordenadas']?.toString().trim();
+      if (coordenadas != null && coordenadas.isNotEmpty) {
+        result['coordenadas'] = coordenadas;
+      }
+      final provinciaId = (dirResponse['provincia'] as num?)?.toInt();
+      final municipioId = (dirResponse['municipio'] as num?)?.toInt();
 
       if (provinciaId != null) {
-        final prov = await _supabase
-            .schema('carnavalapp')
-            .from('Provincias')
-            .select('nombre')
-            .eq('id', provinciaId)
-            .maybeSingle();
-        result['provincia_nombre'] = prov?['nombre'];
+        final nombres = await _getProvinciasNombres();
+        result['provincia_nombre'] = nombres[provinciaId];
       }
 
       if (municipioId != null) {
-        final mun = await _supabase
-            .schema('carnavalapp')
-            .from('municipios')
-            .select('municipio')
-            .eq('id', municipioId)
-            .maybeSingle();
-        result['municipio_nombre'] = mun?['municipio'];
+        final nombres = await _getMunicipiosNombres();
+        result['municipio_nombre'] = nombres[municipioId];
       }
 
       return result;
@@ -2333,6 +2359,46 @@ class CarnavalService {
       print('❌ Error al obtener dirección: $e');
       return null;
     }
+  }
+
+  // `Provincias` y `municipios` son tablas pequeñas y casi estáticas. Se
+  // resuelven los nombres en memoria para no lanzar dos consultas por cada
+  // orden de la lista (que puede traer 20 filas).
+  static Map<int, String>? _provinciasNombres;
+  static Map<int, String>? _municipiosNombres;
+
+  static Future<Map<int, String>> _getProvinciasNombres() async {
+    final cached = _provinciasNombres;
+    if (cached != null) return cached;
+    final rows = await _supabase
+        .schema('carnavalapp')
+        .from('Provincias')
+        .select('id, nombre');
+    final map = <int, String>{};
+    for (final row in rows) {
+      final id = (row['id'] as num?)?.toInt();
+      final nombre = row['nombre']?.toString();
+      if (id != null && nombre != null) map[id] = nombre;
+    }
+    _provinciasNombres = map;
+    return map;
+  }
+
+  static Future<Map<int, String>> _getMunicipiosNombres() async {
+    final cached = _municipiosNombres;
+    if (cached != null) return cached;
+    final rows = await _supabase
+        .schema('carnavalapp')
+        .from('municipios')
+        .select('id, municipio');
+    final map = <int, String>{};
+    for (final row in rows) {
+      final id = (row['id'] as num?)?.toInt();
+      final nombre = row['municipio']?.toString();
+      if (id != null && nombre != null) map[id] = nombre;
+    }
+    _municipiosNombres = map;
+    return map;
   }
 
   /// Obtiene la última dirección registrada de un usuario en
