@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/supplier_payment_model.dart';
 
+double supplierBasePrice(double extractionPrice) => extractionPrice / 1.12;
+
 class _ExcludedInventtiaLine {
   final int orderId;
   final int? proveedorId;
@@ -116,16 +118,16 @@ class SupplierPaymentService {
   }
 
   /// % de markup Carnaval por proveedor — solo fallback si no hay precio Inventtia.
-  static Future<Map<int, ({double cashPct, double transferPct})>> _loadStorePricing(
-    Set<int> carnavalProviderIds,
-  ) async {
+  static Future<Map<int, ({double cashPct, double transferPct})>>
+  _loadStorePricing(Set<int> carnavalProviderIds) async {
     if (carnavalProviderIds.isEmpty) return {};
 
-    final globalResponse = await _supabase
-        .from('precio_global_productos_carnaval')
-        .select('porciento_efectivo, porciento_transferencia')
-        .limit(1)
-        .maybeSingle();
+    final globalResponse =
+        await _supabase
+            .from('precio_global_productos_carnaval')
+            .select('porciento_efectivo, porciento_transferencia')
+            .limit(1)
+            .maybeSingle();
 
     final floorCash =
         (globalResponse?['porciento_efectivo'] as num?)?.toDouble() ?? 0.0;
@@ -165,11 +167,10 @@ class SupplierPaymentService {
       final tiendaId = _asInt(row['id_tienda']);
       if (tiendaId == null) continue;
       configsByTienda[tiendaId] = {
-        'cash':
-            (row['precio_venta_carnaval'] as num?)?.toDouble() ?? floorCash,
+        'cash': (row['precio_venta_carnaval'] as num?)?.toDouble() ?? floorCash,
         'transfer':
             (row['precio_venta_carnaval_transferencia'] as num?)?.toDouble() ??
-                floorTransfer,
+            floorTransfer,
       };
     }
 
@@ -356,7 +357,8 @@ class SupplierPaymentService {
 
           ordersMap[orderId] = OrderPaymentDetail(
             orderId: orderId,
-            createdAt: _asDate(item['fecha_creacion']) ??
+            createdAt:
+                _asDate(item['fecha_creacion']) ??
                 _asDate(item['fecha_completado']) ??
                 DateTime.now(),
             total: 0.0,
@@ -446,11 +448,7 @@ class SupplierPaymentService {
           ''')
         .gte('Orders.created_at', fromDate)
         .lte('Orders.created_at', toDate)
-        .not(
-          'Orders.status',
-          'in',
-          '(Cancelado,Cancelada,Devuelto,Devuelta)',
-        );
+        .not('Orders.status', 'in', '(Cancelado,Cancelada,Devuelto,Devuelta)');
 
     if (proveedorId != null) {
       query = query.eq('proveedor', proveedorId);
@@ -463,17 +461,15 @@ class SupplierPaymentService {
         details.map((d) => _asInt(d['order_id'])).whereType<int>().toSet();
     final excluded = await _inventtiaExcludedLines(orderIds);
 
-    final productIds = details
-        .map((d) => _asInt(d['product_id']))
-        .whereType<int>()
-        .toSet();
-    final extractionPrices =
-        await _loadExtractionPricesByOrders(orderIds, productIds);
+    final productIds =
+        details.map((d) => _asInt(d['product_id'])).whereType<int>().toSet();
+    final extractionPrices = await _loadExtractionPricesByOrders(
+      orderIds,
+      productIds,
+    );
 
-    final providerIds = details
-        .map((d) => _asInt(d['proveedor']))
-        .whereType<int>()
-        .toSet();
+    final providerIds =
+        details.map((d) => _asInt(d['proveedor'])).whereType<int>().toSet();
     final pricingByProvider = await _loadStorePricing(providerIds);
 
     final result = <Map<String, dynamic>>[];
@@ -493,24 +489,28 @@ class SupplierPaymentService {
 
       final order = _asMap(detail['Orders']);
       final product = _asMap(detail['Productos']);
-      
+
       final extractionKey = '${orderId}_$productId';
-      double unitPrice = productId != null ? (extractionPrices[extractionKey] ?? 0.0) : 0.0;
+      final extractionPrice =
+          productId != null ? extractionPrices[extractionKey] : null;
+      double unitPrice =
+          extractionPrice != null ? supplierBasePrice(extractionPrice) : 0.0;
       final carnavalPrice = (detail['price'] as num?)?.toDouble() ?? 0.0;
       final isTransfer = detail['transferencia'] as bool? ?? false;
 
       // Sin vínculo de extracción histórica: usar fallback por markup
       if (unitPrice <= 0 && carnavalPrice > 0) {
         missingExtractionPrice++;
-        final pricing = detailProveedor != null
-            ? pricingByProvider[detailProveedor]
-            : null;
-        final pct = isTransfer
-            ? (pricing?.transferPct ?? 0.0)
-            : (pricing?.cashPct ?? 0.0);
-        unitPrice = pct > 0 && pct < 100
-            ? carnavalPrice / (1 + pct / 100)
-            : carnavalPrice;
+        final pricing =
+            detailProveedor != null ? pricingByProvider[detailProveedor] : null;
+        final pct =
+            isTransfer
+                ? (pricing?.transferPct ?? 0.0)
+                : (pricing?.cashPct ?? 0.0);
+        unitPrice =
+            pct > 0 && pct < 100
+                ? carnavalPrice / (1 + pct / 100)
+                : carnavalPrice;
       }
 
       result.add({
@@ -552,14 +552,11 @@ class SupplierPaymentService {
     final opRows = List<Map<String, dynamic>>.from(ops as List);
     if (opRows.isEmpty) return [];
 
-    final opIds =
-        opRows.map((r) => _asInt(r['id'])).whereType<int>().toSet();
+    final opIds = opRows.map((r) => _asInt(r['id'])).whereType<int>().toSet();
     final latestByOp = await _latestEstadoByOperacion(opIds);
 
-    final tiendaIds = opRows
-        .map((r) => _asInt(r['id_tienda']))
-        .whereType<int>()
-        .toSet();
+    final tiendaIds =
+        opRows.map((r) => _asInt(r['id_tienda'])).whereType<int>().toSet();
     final proveedorByTienda = await _proveedorByTienda(tiendaIds);
 
     final excluded = <_ExcludedInventtiaLine>[];
@@ -584,7 +581,7 @@ class SupplierPaymentService {
   }
 
   static Future<Map<int, ({int estado, DateTime createdAt})>>
-      _latestEstadoByOperacion(Set<int> operacionIds) async {
+  _latestEstadoByOperacion(Set<int> operacionIds) async {
     if (operacionIds.isEmpty) return {};
 
     final rows = await _supabase
@@ -599,10 +596,7 @@ class SupplierPaymentService {
       final estado = _asInt(row['estado']);
       final createdAt = _asDate(row['created_at']);
       if (opId == null || estado == null || createdAt == null) continue;
-      latest.putIfAbsent(
-        opId,
-        () => (estado: estado, createdAt: createdAt),
-      );
+      latest.putIfAbsent(opId, () => (estado: estado, createdAt: createdAt));
     }
     return latest;
   }

@@ -31,7 +31,7 @@ class _CarnavalTabViewState extends State<CarnavalTabView> {
   // Sanity-check de integridad: mapa id_producto local -> id_tienda real.
   // Si un producto sincronizado pertenece a una tienda distinta a `_storeId`,
   // lo marcamos como inconsistente en el render y deshabilitamos las
-  // acciones (toggle de destacado, abrir diálogo de ventas) para que el
+  // acciones (toggle de visibilidad, abrir diálogo de ventas) para que el
   // usuario lo resincronice en vez de generar más datos cruzados.
   Map<int, int> _productStoreMap = {};
 
@@ -855,45 +855,47 @@ class _CarnavalTabViewState extends State<CarnavalTabView> {
                             children: [
                               Tooltip(
                                 message: isInconsistent
-                                    ? 'Producto inconsistente — re-sincroniza antes de destacar'
-                                    : !isActive
-                                        ? 'Activa el producto para destacarlo'
-                                        : (product['destacado'] == true
-                                            ? 'Destacado'
-                                            : 'No destacado'),
+                                    ? 'Producto inconsistente — re-sincroniza antes de cambiar visibilidad'
+                                    : (product['status'] == true
+                                        ? 'Visible en Carnaval'
+                                        : 'Oculto en Carnaval'),
                                 child: Icon(
-                                  Icons.star,
+                                  product['status'] == true && !isInconsistent
+                                      ? Icons.visibility
+                                      : Icons.visibility_off,
                                   size: 16,
-                                  color: product['destacado'] == true &&
-                                          isActive &&
+                                  color: product['status'] == true &&
                                           !isInconsistent
-                                      ? Colors.amber
+                                      ? AppColors.primary
                                       : Colors.grey.shade300,
                                 ),
                               ),
                               Switch(
-                                value: isActive &&
-                                    !isInconsistent &&
-                                    product['destacado'] == true,
-                                activeColor: Colors.amber,
-                                onChanged: (!isActive || isInconsistent)
+                                value: !isInconsistent &&
+                                    product['status'] == true,
+                                activeThumbColor: AppColors.primary,
+                                onChanged: isInconsistent
                                     ? null
                                     : (value) async {
-                                        final success = await CarnavalService
-                                            .updateProductDestacado(
-                                          carnavalProductId: product['id'],
-                                          destacado: value,
-                                        );
+                                        final success = value
+                                            ? await CarnavalService
+                                                .showProductInCarnaval(
+                                                  product['id'],
+                                                )
+                                            : await CarnavalService
+                                                .hideProductFromCarnaval(
+                                                  product['id'],
+                                                );
                                         if (success) {
                                           setState(() {
-                                            product['destacado'] = value;
+                                            product['status'] = value;
                                           });
                                         } else if (mounted) {
                                           ScaffoldMessenger.of(context)
                                               .showSnackBar(
                                             const SnackBar(
                                               content: Text(
-                                                'Error al actualizar destacado',
+                                                'Error al actualizar visibilidad en Carnaval',
                                               ),
                                               backgroundColor: Colors.red,
                                             ),
