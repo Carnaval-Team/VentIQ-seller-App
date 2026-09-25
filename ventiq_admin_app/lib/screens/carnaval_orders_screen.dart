@@ -246,6 +246,7 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
         .toList();
     final info = await CarnavalService.getCarnavalOrdersAccountingInfo(
       orderIds,
+      ventiqStoreId: _ventiqStoreId,
     );
     return orders.map((order) {
       final enriched = Map<String, dynamic>.from(order);
@@ -257,7 +258,9 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
   }
 
   Future<void> _setAccountingStatus(Map<String, dynamic> order) async {
-    final operationId = (order['operation_id'] as num?)?.toInt();
+    final orderId = (order['id'] as num?)?.toInt();
+    final operationId = (order['operation_id'] as num?)?.toInt() ??
+        (orderId == null ? null : _ventiqOps[orderId]);
     if (operationId == null || _updatingAccountingIds.contains(operationId)) {
       return;
     }
@@ -267,6 +270,7 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       await CarnavalService.updateCarnavalOrderAccountingStatus(
         operationId: operationId,
         contabilizada: newValue,
+        ventiqStoreId: _ventiqStoreId,
       );
       if (!mounted) return;
       await _loadOrders();
@@ -404,6 +408,7 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
         order: order,
         isAdmin: _isAdmin,
         carnavalStoreId: _carnavalStoreId!,
+        ventiqStoreId: _ventiqStoreId,
         onOrderUpdated: _loadOrders,
       ),
     );
@@ -1642,7 +1647,7 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     final usuario = order['Usuarios'] as Map<String, dynamic>?;
     final clienteName = usuario?['name'] as String? ?? '';
     final clientePhone = usuario?['telefono'] as String? ?? '';
-    final ventiqOpId =
+    final int? ventiqOpId =
         (order['operation_id'] as num?)?.toInt() ?? _ventiqOps[orderId];
     final contabilizada = order['contabilizada'] == true;
     final isCash = metodoPago.toLowerCase() == 'efectivo';

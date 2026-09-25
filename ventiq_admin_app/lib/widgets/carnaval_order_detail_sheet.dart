@@ -14,6 +14,7 @@ class CarnavalOrderDetailSheet extends StatefulWidget {
   final Map<String, dynamic> order;
   final bool isAdmin;
   final int carnavalStoreId;
+  final int? ventiqStoreId;
   final VoidCallback onOrderUpdated;
 
   const CarnavalOrderDetailSheet({
@@ -21,6 +22,7 @@ class CarnavalOrderDetailSheet extends StatefulWidget {
     required this.order,
     required this.isAdmin,
     required this.carnavalStoreId,
+    this.ventiqStoreId,
     required this.onOrderUpdated,
   }) : super(key: key);
 
@@ -135,7 +137,10 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
     if (ventiqOpId != null) {
       final results = await Future.wait([
         CarnavalService.getVentiqEstadoHistory(ventiqOpId),
-        CarnavalService.getOperationAccountingHistory(ventiqOpId),
+        CarnavalService.getOperationAccountingHistory(
+          ventiqOpId,
+          ventiqStoreId: widget.ventiqStoreId,
+        ),
       ]);
       if (mounted) {
         setState(() {

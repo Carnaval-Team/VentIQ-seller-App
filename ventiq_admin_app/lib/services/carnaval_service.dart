@@ -2470,12 +2470,17 @@ class CarnavalService {
   }
 
   static Future<Map<int, Map<String, dynamic>>> getCarnavalOrdersAccountingInfo(
-    List<int> orderIds,
-  ) async {
+    List<int> orderIds, {
+    int? ventiqStoreId,
+  }) async {
     if (orderIds.isEmpty) return {};
+    final params = <String, dynamic>{'p_order_ids': orderIds};
+    if (ventiqStoreId != null) {
+      params['p_id_tienda'] = ventiqStoreId;
+    }
     final response = await _supabase.rpc(
       'fn_info_contabilizacion_ordenes_carnaval',
-      params: {'p_order_ids': orderIds},
+      params: params,
     );
     final result = <int, Map<String, dynamic>>{};
     for (final row in List<Map<String, dynamic>>.from(response as List)) {
@@ -2486,11 +2491,16 @@ class CarnavalService {
   }
 
   static Future<List<Map<String, dynamic>>> getOperationAccountingHistory(
-    int operationId,
-  ) async {
+    int operationId, {
+    int? ventiqStoreId,
+  }) async {
+    final params = <String, dynamic>{'p_id_operacion': operationId};
+    if (ventiqStoreId != null) {
+      params['p_id_tienda'] = ventiqStoreId;
+    }
     final response = await _supabase.rpc(
       'fn_historial_contabilizacion_operacion',
-      params: {'p_id_operacion': operationId},
+      params: params,
     );
     final rows = List<Map<String, dynamic>>.from(response as List);
     final uniqueById = <int, Map<String, dynamic>>{};
@@ -2504,20 +2514,28 @@ class CarnavalService {
   static Future<void> updateCarnavalOrderAccountingStatus({
     required int operationId,
     required bool contabilizada,
+    int? ventiqStoreId,
   }) async {
+    final params = <String, dynamic>{
+      'p_id_operacion': operationId,
+      'p_contabilizada': contabilizada,
+    };
+    if (ventiqStoreId != null) {
+      params['p_id_tienda'] = ventiqStoreId;
+    }
     await _supabase.rpc(
       'fn_actualizar_operacion_contabilizada',
-      params: {'p_id_operacion': operationId, 'p_contabilizada': contabilizada},
+      params: params,
     );
   }
 
-  /// Obtiene el ID de operación VentIQ asociada a una orden de Carnaval
+  /// Obtiene el ID de operación VentIQ asociada a una orden de Carnaval.
   static Future<int?> getVentiqOperationId(int carnavalOrderId) async {
     try {
       final response = await _supabase
           .from('app_dat_operaciones')
           .select('id')
-          .ilike('observaciones', '%Venta desde orden $carnavalOrderId%')
+          .eq('observaciones', 'Venta desde orden $carnavalOrderId')
           .limit(1)
           .maybeSingle();
       return response?['id'] as int?;
