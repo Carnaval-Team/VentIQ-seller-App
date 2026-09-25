@@ -45,6 +45,8 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
   bool _isLoadingMore = false;
   bool _isExporting = false;
   bool _isLoadingPickupProducts = false;
+  bool _isBulkAssignMode = false;
+  bool _isBulkAssigning = false;
   bool _isAuditing = false;
   bool _hasMore = true;
   int _currentPage = 0;
@@ -65,6 +67,7 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
   bool? _selectedAccountingStatus;
   bool _filtersExpanded = true;
   final Set<int> _updatingAccountingIds = {};
+  final Set<int> _selectedOrderIds = {};
 
   @override
   void initState() {
@@ -189,6 +192,14 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       _orders = enrichedOrders;
       _hasMore = orders.length == _pageSize;
       _isLoading = false;
+      // Tras recargar, dropear IDs que ya no estén en la lista visible.
+      if (_isBulkAssignMode) {
+        final visibleIds = enrichedOrders
+            .map((o) => (o['id'] as num?)?.toInt())
+            .whereType<int>()
+            .toSet();
+        _selectedOrderIds.removeWhere((id) => !visibleIds.contains(id));
+      }
     });
     _loadVentiqOps(orders);
     _ensureRepartidores(orders);
@@ -830,12 +841,226 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     );
   }
 
+  bool _canBulkAssign(Map<String, dynamic> order) {
+    if (!_isAdmin || CarnavalService.isMetodoRecogida(order['metodo_entrega']?.toString())) {
+      return false;
+    }
+    return const {'Nuevo', 'Procesando', 'Asignado', 'Entregando'}.contains(
+      order['status']?.toString(),
+    );
+  }
+
+  void _toggleBulkOrder(Map<String, dynamic> order) {
+    if (!_canBulkAssign(order)) return;
+    final orderId = (order['id'] as num?)?.toInt();
+    if (orderId == null) return;
+    setState(() {
+      if (!_selectedOrderIds.add(orderId)) _selectedOrderIds.remove(orderId);
+    });
+  }
+
+  void _cancelBulkAssign() {
+    setState(() {
+      _isBulkAssignMode = false;
+      _selectedOrderIds.clear();
+    });
+  }
+
+  Future<int?> _showBulkRepartidorPicker() async {
+    final repartidores = await CarnavalService.getRepartidores();
+    if (!mounted) return null;
+    if (repartidores.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No hay repartidores disponibles')),
+      );
+      return null;
+    }
+    return showModalBottomSheet<int>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: FractionallySizedBox(
+          heightFactor: 0.7,
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.delivery_dining),
+                title: const Text(
+                  'Seleccionar repartidor',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: Text(
+                  'Se asignará a ${_selectedOrderIds.length} órdenes',
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: repartidores.length,
+                  itemBuilder: (context, index) {
+                    final repartidor = repartidores[index];
+                    final id = (repartidor['id'] as num?)?.toInt();
+                    final nombre =
+                        repartidor['nombre']?.toString().trim().isNotEmpty == true
+                        ? repartidor['nombre'].toString().trim()
+                        : 'Repartidor #$id';
+                    final telefono = CarnavalService.formatRepartidorTelefono(
+                      repartidor['telefono'],
+                    );
+                    return ListTile(
+                      leading: const CircleAvatar(
+                        child: Icon(Icons.delivery_dining),
+                      ),
+                      title: Text(nombre),
+                      subtitle: telefono == null ? null : Text(telefono),
+                      enabled: id != null,
+                      onTap: id == null ? null : () => Navigator.pop(context, id),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleBulkAssignButton() async {
+    if (_isBulkAssigning) return;
+    if (!_isBulkAssignMode) {
+      setState(() {
+        _isBulkAssignMode = true;
+        _selectedOrderIds.clear();
+      });
+      return;
+    }
+    if (_selectedOrderIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Selecciona al menos una orden')),
+      );
+      return;
+    }
+
+    final selectedOrders = _orders
+        .where(
+          (order) => _selectedOrderIds.contains(
+            (order['id'] as num?)?.toInt(),
+          ),
+        )
+        .toList();
+    final deliveringCount = selectedOrders
+        .where((order) => order['status'] == 'Entregando')
+        .length;
+    if (deliveringCount > 0) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Reasignar órdenes en entrega'),
+          content: Text(
+            '$deliveringCount ${deliveringCount == 1 ? 'orden está' : 'órdenes están'} en entrega y volverán al estado "Asignado". ¿Continuar?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Continuar'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+
+    final repartidorId = await _showBulkRepartidorPicker();
+    if (repartidorId == null || !mounted) return;
+    setState(() => _isBulkAssigning = true);
+    try {
+      final changedBy = await UserPreferencesService().getAdminName();
+      final results = await Future.wait(
+        selectedOrders.map((order) {
+          final orderId = (order['id'] as num).toInt();
+          final hasRepartidor = order['repartidor'] != null;
+          if (hasRepartidor) {
+            return CarnavalService.reassignDelivery(
+              orderId,
+              repartidorId,
+              resetToAsignado: order['status'] == 'Entregando',
+              changedBy: changedBy,
+            );
+          }
+          return CarnavalService.assignDelivery(
+            orderId,
+            repartidorId,
+            metodoEntrega: order['metodo_entrega']?.toString() ?? 'Domicilio',
+            changedBy: changedBy,
+          );
+        }),
+      );
+      final updatedCount = results.where((result) => result).length;
+      if (!mounted) return;
+      _cancelBulkAssign();
+      await _loadOrders();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            updatedCount == selectedOrders.length
+                ? '$updatedCount órdenes asignadas correctamente'
+                : '$updatedCount de ${selectedOrders.length} órdenes actualizadas',
+          ),
+          backgroundColor: updatedCount == selectedOrders.length
+              ? Colors.green
+              : Colors.orange,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isBulkAssigning = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Órdenes Carnaval'),
         actions: [
+          if (_isAdmin)
+            IconButton(
+              onPressed: _isBulkAssigning ? null : _handleBulkAssignButton,
+              tooltip: _isBulkAssignMode
+                  ? 'Asignar ${_selectedOrderIds.length} órdenes'
+                  : 'Asignar varias órdenes',
+              icon: _isBulkAssigning
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Badge(
+                      isLabelVisible:
+                          _isBulkAssignMode && _selectedOrderIds.isNotEmpty,
+                      label: Text('${_selectedOrderIds.length}'),
+                      child: Icon(
+                        _isBulkAssignMode
+                            ? Icons.check_circle_outline
+                            : Icons.playlist_add_check,
+                      ),
+                    ),
+            ),
+          if (_isAdmin && _isBulkAssignMode)
+            IconButton(
+              onPressed: _isBulkAssigning ? null : _cancelBulkAssign,
+              tooltip: 'Cancelar selección',
+              icon: const Icon(Icons.close),
+            ),
           IconButton(
             onPressed: _carnavalStoreId == null || _isLoadingPickupProducts
                 ? null
@@ -884,6 +1109,25 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
             )
           : Column(
               children: [
+                if (_isBulkAssignMode)
+                  Material(
+                    color: Colors.purple.withValues(alpha: 0.08),
+                    child: ListTile(
+                      leading: const Icon(
+                        Icons.playlist_add_check,
+                        color: Colors.purple,
+                      ),
+                      title: Text(
+                        _selectedOrderIds.isEmpty
+                            ? 'Selecciona las órdenes'
+                            : '${_selectedOrderIds.length} órdenes seleccionadas',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: const Text(
+                        'Toca el botón superior nuevamente para asignar o reasignar',
+                      ),
+                    ),
+                  ),
                 ListTile(
                   leading: const Icon(Icons.filter_alt_outlined),
                   title: const Text('Filtros'),
@@ -1371,6 +1615,10 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
     final totalEuro = (order['totalEuro'] as num?)?.toDouble();
     final createdAt = order['created_at'] as String?;
     final orderId = order['id'];
+    final orderIdInt = (orderId as num?)?.toInt();
+    final canBulkAssign = _canBulkAssign(order);
+    final isSelected =
+        orderIdInt != null && _selectedOrderIds.contains(orderIdInt);
     final metodoEntrega = order['metodo_entrega'] as String? ?? '-';
     final metodoPago = order['metodo_pago'] as String? ?? '-';
     final proveedorId = order['proveedor_id'];
@@ -1448,24 +1696,68 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       }
     }
 
+    final BorderSide cardSide;
+    if (_isBulkAssignMode && isSelected) {
+      cardSide = const BorderSide(color: Colors.purple, width: 2);
+    } else if (isPaqueteria) {
+      cardSide = const BorderSide(color: Colors.blue, width: 2);
+    } else {
+      cardSide = BorderSide.none;
+    }
+
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
+      color: _isBulkAssignMode && isSelected
+          ? Colors.purple.withValues(alpha: 0.06)
+          : null,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: isPaqueteria
-            ? const BorderSide(color: Colors.blue, width: 2)
-            : BorderSide.none,
+        side: cardSide,
       ),
       child: InkWell(
-        onTap: () => _openOrderDetail(order),
+        onTap: () {
+          if (_isBulkAssignMode) {
+            if (canBulkAssign) {
+              _toggleBulkOrder(order);
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Solo se pueden asignar órdenes de domicilio en Nuevo, Procesando, Asignado o Entregando',
+                  ),
+                ),
+              );
+            }
+            return;
+          }
+          _openOrderDetail(order);
+        },
         borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+        child: Opacity(
+          opacity: _isBulkAssignMode && !canBulkAssign ? 0.45 : 1,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               Row(
                 children: [
+                  if (_isBulkAssignMode) ...[
+                    Icon(
+                      isSelected
+                          ? Icons.check_circle
+                          : (canBulkAssign
+                                ? Icons.radio_button_unchecked
+                                : Icons.block),
+                      color: isSelected
+                          ? Colors.purple
+                          : (canBulkAssign
+                                ? Colors.grey
+                                : Colors.grey.shade400),
+                      size: 22,
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   if (isPaqueteria) ...[
                     const Icon(
                       Icons.local_shipping_outlined,
@@ -1921,6 +2213,7 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
               ),
             ],
           ),
+        ),
         ),
       ),
     );

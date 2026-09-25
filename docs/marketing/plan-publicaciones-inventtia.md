@@ -1,6 +1,7 @@
 # Plan de publicaciones Inventtia
 
-**CTA único:** inventtia.com · WhatsApp +53 63464544  
+**CTA único:** inventtia.com · WhatsApp +53 53765120  
+**Servicios IT:** inventtia.com/sales.html  
 **Mercado:** abierto (sin limitar geografía en el copy)  
 **Play Store:** aún no — todo lleva a inventtia.com  
 **Muévete:** solo viajes de pasajeros; no promocionar fletes hasta que esté listo.
@@ -65,7 +66,7 @@ Pedir y ofrecer viajes con mapa, precio y seguimiento. Pasajeros y conductores. 
 
 Con Inventtia Caja cobras en el mostrador (efectivo, transferencia, multi-moneda) y con Inventtia Gestión ves ventas, inventario y costos en tiempo real.
 
-Más info en inventtia.com · WhatsApp +53 63464544
+Más info en inventtia.com · WhatsApp +53 53765120
 
 ---
 
@@ -73,7 +74,7 @@ Más info en inventtia.com · WhatsApp +53 63464544
 
 El modo offline de Inventtia Caja guarda tus ventas y las sincroniza cuando vuelves. Ideal para locales con señal inestable.
 
-inventtia.com · +53 63464544
+inventtia.com · +53 53765120
 
 ---
 
@@ -83,7 +84,7 @@ inventtia.com · +53 63464544
 
 Inventtia GoReservas organiza cupos por día. El cliente reserva desde el móvil; tú confirmas o marcas consumido desde el panel.
 
-inventtia.com · +53 63464544
+inventtia.com · +53 53765120
 
 ---
 
@@ -93,7 +94,17 @@ inventtia.com · +53 63464544
 
 Inventtia Muévete: pide origen y destino, recibe ofertas de conductores y sigue el trayecto. Simple para pasajeros y conductores.
 
-inventtia.com · +53 63464544
+inventtia.com · +53 53765120
+
+---
+
+### Servicios IT
+
+**Software a medida sin sorpresas al final.**
+
+En Inventtia partimos el proyecto en hitos: alcance escrito, entregable que puedes probar y pago solo cuando apruebas ese tramo. También hosting, instalación y soporte.
+
+inventtia.com/sales.html · +53 53765120
 
 ---
 
@@ -109,7 +120,7 @@ Si tienes tienda o punto de venta:
 • *Inventtia Gestión* — inventario, precios, ventas, personal
 
 Toda la info: inventtia.com
-WhatsApp: +53 63464544
+WhatsApp: +53 53765120
 
 ¿Te mando un video corto o agendamos demo?
 ```
@@ -125,7 +136,7 @@ Hola 👋
 ✓ Precios y reportes claros
 
 inventtia.com
-+53 63464544
++53 53765120
 
 ¿Gestionas reservas a mano hoy?
 ```
@@ -141,10 +152,32 @@ Hola 👋
 • Seguimiento del trayecto
 
 Más detalle: inventtia.com
-WhatsApp: +53 63464544
+WhatsApp: +53 53765120
 
 ¿Eres pasajero o conductor?
 ```
+
+### Servicios IT
+
+```
+Hola 👋
+
+Además de nuestras apps, en *Inventtia* ofrecemos *servicios IT*:
+• Desarrollo a medida (web, desktop, Android, iOS) por hitos
+• Instalación y despliegue de aplicaciones
+• Hosting e infraestructura gestionada
+• Instalación de sistemas operativos
+• Soporte y mantenimiento (propios o de terceros)
+
+Trabajo con alcance escrito y pago contra hito aprobado.
+
+📱 inventtia.com/sales.html
+💬 +53 53765120
+
+¿Quieres un presupuesto?
+```
+
+Más variantes (corta, por dolor, solo desarrollo/hosting/soporte): [`mensajes-whatsapp-difusion.md`](./mensajes-whatsapp-difusion.md) sección B.
 
 ---
 
@@ -155,13 +188,13 @@ WhatsApp: +53 63464544
 | Posts Facebook | 12+ |
 | Difusiones WhatsApp | 12+ |
 | CTA web | inventtia.com |
-| CTA WhatsApp | +53 63464544 |
+| CTA WhatsApp | +53 53765120 |
 
 ---
 
 ## Vistas sugeridas para Facebook
 
-Recomendación: imágenes de **1200 x 630 px** para feed y **1080 x 1080 px** para carrusel. Siempre incluir el logo de Inventtia en una esquina, el CTA `inventtia.com · WhatsApp +53 63464544` y evitar el nombre VentIQ.
+Recomendación: imágenes de **1200 x 630 px** para feed y **1080 x 1080 px** para carrusel. Siempre incluir el logo de Inventtia en una esquina, el CTA `inventtia.com · WhatsApp +53 53765120` y evitar el nombre VentIQ.
 
 ### 1. Caja + Gestión — "Tu caja no cuadra… otra vez"
 - **Formato:** 1200x630 px, layout split screen.
@@ -209,4 +242,5 @@ Para los posts más cortos del calendario, usar **carrusel 1080x1080 px** de 2-3
 
 ## Relacionado
 
+- [`mensajes-whatsapp-difusion.md`](./mensajes-whatsapp-difusion.md) — difusión WhatsApp: productos (A) y servicios IT (B)
 - Posts centrados en problema + captura de UI: [`publicaciones-problema-ui.md`](./publicaciones-problema-ui.md)

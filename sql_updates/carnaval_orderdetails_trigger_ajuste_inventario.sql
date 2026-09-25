@@ -590,6 +590,9 @@ BEGIN
             -- La VENTA original queda con la cantidad y el dinero REALES.
             -- Nunca se borra la línea: id_extraccion es ON DELETE CASCADE y
             -- borrarla se llevaría el historial de inventario por delante.
+            -- Puede quedar en 0 (devolución/eliminación completa): requiere
+            -- fix_extraccion_cantidad_permite_cero.sql, que relaja
+            -- chk_extraccion_cantidad_positiva a cantidad >= 0.
             -- -------------------------------------------------------------
             v_linea_cant_new := GREATEST(
                 0,

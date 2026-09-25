@@ -41,6 +41,7 @@ import 'screens/ingresos_distribucion_screen.dart';
 import 'screens/carnaval_dashboard_screen.dart';
 import 'screens/carnaval_store_pricing_screen.dart';
 import 'screens/carnaval_store_products_screen.dart';
+import 'screens/carnaval_geo_admin_screen.dart';
 import 'screens/roles_screen.dart';
 import 'widgets/route_guard.dart';
 import 'services/auth_service.dart';
@@ -224,6 +225,10 @@ class VentIQSuperAdminApp extends StatelessWidget {
         '/carnaval-productos-tienda': (context) => const RouteGuard(
               route: '/carnaval-productos-tienda',
               child: CarnavalStoreProductsScreen(),
+            ),
+        '/carnaval-geo': (context) => const RouteGuard(
+              route: '/carnaval-geo',
+              child: CarnavalGeoAdminScreen(),
             ),
         '/roles': (context) => const RouteGuard(
               route: '/roles',

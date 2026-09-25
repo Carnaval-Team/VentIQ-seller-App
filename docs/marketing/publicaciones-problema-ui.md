@@ -1,4 +1,4 @@
-# Publicaciones problema + UI — prompts para IA de imagen
+﻿# Publicaciones problema + UI — prompts para IA de imagen
 
 Documento listo para **copiar y pegar** en una IA generativa de imagen (ChatGPT/DALL·E, Gemini, Ideogram, Midjourney, etc.) **junto con capturas reales** de las apps.
 
@@ -8,7 +8,7 @@ Documento listo para **copiar y pegar** en una IA generativa de imagen (ChatGPT/
 3. Copia el bloque **PROMPT COMPLETO** del post y pégalo en el mismo mensaje.
 4. Publica el copy del post con la imagen generada.
 
-**CTA fijo (texto del post):** inventtia.com · WhatsApp +53 63464544  
+**CTA fijo (texto del post):** inventtia.com · WhatsApp +53 53765120  
 **Regla:** 1 problema = 1 imagen. El titular habla del dolor; la captura real es la prueba visual.
 
 **Qué debe hacer la IA (importante)**  
@@ -88,7 +88,7 @@ Badge del producto. CTA inventtia.com abajo. Sin collage, sin purple AI.
 >
 > Muchos negocios cobran todo el día… y al final no saben si faltó efectivo, sobró, o alguien se equivocó. Inventtia Caja abre turno, registra cobros y cierra con totales claros: efectivo, transferencia y egresos.
 >
-> Prueba Inventtia Caja → inventtia.com · WhatsApp +53 63464544
+> Prueba Inventtia Caja → inventtia.com · WhatsApp +53 53765120
 
 **Captura a adjuntar:** cierre de turno / cierre de caja (totales visibles).
 
@@ -121,7 +121,7 @@ EVITAR: inventar otra UI, collage, purple gradients, neon, stickers, emojis, log
 >
 > Cuando se cae la conexión, el cuaderno vuelve… y después nadie reconcilia bien. Inventtia Caja sigue vendiendo offline y sincroniza cuando vuelve la red.
 >
-> Sigue cobrando aunque falle internet → inventtia.com · WhatsApp +53 63464544
+> Sigue cobrando aunque falle internet → inventtia.com · WhatsApp +53 53765120
 
 **Captura a adjuntar:** catálogo o venta con modo offline / sin conexión visible.
 
@@ -149,7 +149,7 @@ EVITAR: inventar otra UI, iconos de error rojo grandes, collage, purple AI look,
 >
 > En el mostrador el problema no es vender: es registrar bien cómo te pagaron. Inventtia Caja cierra la orden con el método correcto y deja el historial limpio.
 >
-> Cobra ordenado → inventtia.com · WhatsApp +53 63464544
+> Cobra ordenado → inventtia.com · WhatsApp +53 53765120
 
 **Captura a adjuntar:** checkout / finalizar cobro con métodos de pago.
 
@@ -177,7 +177,7 @@ EVITAR: inventar otra UI, collage, purple glow, stickers, tapar botones de pago.
 >
 > Pedidos a medias, tickets perdidos y “yo pensé que ya se cobró”. Inventtia Caja concentra preórdenes y órdenes en un solo flujo: tomar, cobrar, consultar.
 >
-> Ordena tu mostrador → inventtia.com · WhatsApp +53 63464544
+> Ordena tu mostrador → inventtia.com · WhatsApp +53 53765120
 
 **Captura a adjuntar:** lista de órdenes / preórdenes.
 
@@ -205,7 +205,7 @@ EVITAR: rediseñar la app, collage de cocina + POS, purple UI, stickers encima d
 >
 > El POS tiene que ser más rápido que el papel. Inventtia Caja organiza el catálogo por categorías para armar y cobrar sin fricción.
 >
-> Vende más rápido → inventtia.com · WhatsApp +53 63464544
+> Vende más rápido → inventtia.com · WhatsApp +53 53765120
 
 **Captura a adjuntar:** catálogo por categorías.
 
@@ -233,7 +233,7 @@ EVITAR: inventar otra UI, collage, purple theme, stickers encima del grid.
 >
 > Empezar el día sin registrar fondo de caja es invitar al descuadre. Inventtia Caja abre turno con efectivo inicial y responsables claros.
 >
-> Abre tu turno bien → inventtia.com · WhatsApp +53 63464544
+> Abre tu turno bien → inventtia.com · WhatsApp +53 53765120
 
 **Captura a adjuntar:** apertura de caja / abrir turno.
 
@@ -265,7 +265,7 @@ Preferible captura **web/desktop**. Adjunta la screenshot real de Gestión.
 >
 > Dueños que “sienten” que el mes fue bueno… hasta que faltan pagos. Inventtia Gestión te muestra ventas y panorama del negocio para decidir con datos.
 >
-> Mira tu negocio completo → inventtia.com · WhatsApp +53 63464544
+> Mira tu negocio completo → inventtia.com · WhatsApp +53 53765120
 
 **Captura a adjuntar:** dashboard / inicio con KPIs.
 
@@ -293,7 +293,7 @@ EVITAR: inventar otro dashboard, purple cliché, collage, tapar números.
 >
 > Faltantes, sobrestock y compras a ciegas cuestan caro. Inventtia Gestión centraliza stock, movimientos y salud del almacén.
 >
-> Controla tu inventario → inventtia.com · WhatsApp +53 63464544
+> Controla tu inventario → inventtia.com · WhatsApp +53 53765120
 
 **Captura a adjuntar:** inventario / stock.
 
@@ -321,7 +321,7 @@ EVITAR: inventar otra UI, collage, purple UI, stickers.
 >
 > Precios desactualizados = margen perdido o clientes molestos. Inventtia Gestión actualiza costo y precio de venta para que Caja cobre lo correcto.
 >
-> Alinea precios y caja → inventtia.com · WhatsApp +53 63464544
+> Alinea precios y caja → inventtia.com · WhatsApp +53 53765120
 
 **Captura a adjuntar:** gestión de precios (costo / precio de venta).
 
@@ -348,7 +348,7 @@ EVITAR: inventar otra UI, collage de WhatsApp + Excel + papel, purple theme.
 >
 > Entradas, salidas y transferencias sin registro se vuelven pelea. Inventtia Gestión deja el rastro de operaciones de inventario.
 >
-> Audita tu almacén → inventtia.com · WhatsApp +53 63464544
+> Audita tu almacén → inventtia.com · WhatsApp +53 53765120
 
 **Captura a adjuntar:** operaciones de inventario (movimientos).
 
@@ -374,7 +374,7 @@ EVITAR: inventar otra UI, collage, purple UI, fotos de almacén sin software.
 >
 > Sin monitoreo, no sabes qué TPV vende, qué horario peina o qué se frena. Inventtia Gestión concentra el seguimiento de ventas.
 >
-> Analiza tus ventas → inventtia.com · WhatsApp +53 63464544
+> Analiza tus ventas → inventtia.com · WhatsApp +53 53765120
 
 **Captura a adjuntar:** monitoreo / análisis de ventas.
 
@@ -400,7 +400,7 @@ EVITAR: inventar otra UI, collage Caja+Gestión forzado, purple charts.
 >
 > Gastos, costos y resultados necesitan un lugar. Inventtia Gestión te da el módulo financiero para ver el dinero con orden.
 >
-> Ordena tus finanzas → inventtia.com · WhatsApp +53 63464544
+> Ordena tus finanzas → inventtia.com · WhatsApp +53 53765120
 
 **Captura a adjuntar:** módulo financiero / resumen de dinero.
 
@@ -429,7 +429,7 @@ EVITAR: inventar otra UI, billetes reales como único foco, purple fintech clich
 >
 > Clínicas, salones y talleres pierden dinero por choques de horario. Inventtia GoReservas reserva cupos con capacidad real.
 >
-> Agenda sin choques → inventtia.com · WhatsApp +53 63464544
+> Agenda sin choques → inventtia.com · WhatsApp +53 53765120
 
 **Captura a adjuntar:** agenda / reservas del día.
 
@@ -456,7 +456,7 @@ EVITAR: inventar otra agenda, papel como hero, purple calendar UI, collage.
 >
 > Inventtia Muévete conecta pasajero y conductor desde el mapa: origen, destino y oferta clara.
 >
-> Pide o conduce → inventtia.com · WhatsApp +53 63464544
+> Pide o conduce → inventtia.com · WhatsApp +53 53765120
 
 **Captura a adjuntar:** mapa de solicitud de viaje (pasajero).
 
@@ -484,7 +484,7 @@ EVITAR: inventar otra app, camiones/fletes, purple map glow, stickers de descuen
 >
 > Un solo ecosistema Inventtia: el mostrador cobra; el dueño ve ventas, inventario y números.
 >
-> inventtia.com · WhatsApp +53 63464544
+> inventtia.com · WhatsApp +53 53765120
 
 **Capturas a adjuntar:** (1) Inventtia Caja — checkout o venta · (2) Inventtia Gestión — dashboard.
 

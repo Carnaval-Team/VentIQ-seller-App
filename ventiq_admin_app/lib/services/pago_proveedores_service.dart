@@ -790,6 +790,59 @@ class PagoProveedoresService {
     }
   }
 
+  /// Elimina una factura y devuelve su valor al saldo disponible.
+  /// La devolución queda registrada en prv_hist_saldo ('devolucion_factura')
+  /// como constancia del borrado; el historial de estados y las fotos caen
+  /// por ON DELETE CASCADE junto con la factura.
+  Future<void> eliminarFactura({
+    required int idProveedor,
+    required int idFactura,
+  }) async {
+    try {
+      final storeId = await _userPrefs.getIdTienda();
+      if (storeId == null) throw Exception('No se pudo obtener ID de tienda');
+
+      final facturaRow = await _supabase
+          .from('prv_dat_factura')
+          .select('id, numero_factura, valor')
+          .eq('id', idFactura)
+          .eq('idtienda', storeId)
+          .eq('id_proveedor', idProveedor)
+          .maybeSingle();
+      if (facturaRow == null) {
+        throw Exception('No se encontró la factura a eliminar');
+      }
+
+      final valor = (facturaRow['valor'] as num).toDouble();
+      final numeroFactura = facturaRow['numero_factura']?.toString() ?? '';
+
+      await _supabase
+          .from('prv_dat_factura')
+          .delete()
+          .eq('id', idFactura)
+          .eq('idtienda', storeId)
+          .eq('id_proveedor', idProveedor);
+
+      final saldoActual = await getSaldoDisponible(idProveedor);
+      await _upsertSaldo(
+        storeId,
+        idProveedor,
+        saldoActual + valor,
+        saldoActual,
+        'devolucion_factura',
+        'Factura #$numeroFactura eliminada: +\$${valor.toStringAsFixed(2)}',
+      );
+
+      print(
+        '✅ Factura #$numeroFactura eliminada (proveedor $idProveedor). '
+        'Saldo devuelto: \$${valor.toStringAsFixed(2)}',
+      );
+    } catch (e) {
+      print('❌ Error eliminando factura proveedor: $e');
+      rethrow;
+    }
+  }
+
   Future<void> actualizarFotoFactura(int idFactura, String fotoUrl) async {
     try {
       await _supabase

@@ -120,10 +120,6 @@ class Product {
     return n.toStringAsFixed(2);
   }
 
-  /// Stock real descontando reservas de Carnaval
-  num get cantidadReal =>
-      (cantidad - reservadoCarnaval).clamp(0, double.infinity);
-
   Product({
     required this.id,
     required this.denominacion,

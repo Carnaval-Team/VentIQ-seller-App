@@ -1812,17 +1812,19 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
       Navigator.of(context).pop();
 
       final items = summaries
-          .where((s) => s.stock.equivalenteBase > 0)
+          .map((s) {
+            final b = breakdowns[s.idProducto];
+            final realStock = b?.enAlmacen ?? s.cantidadTotalEnAlmacen;
+            return (summary: s, breakdown: b, realStock: realStock);
+          })
+          .where((item) => item.realStock > 0)
           .toList();
       items.sort(
-        (a, b) => a.productoNombre.toLowerCase().compareTo(
-          b.productoNombre.toLowerCase(),
+        (a, b) => a.summary.productoNombre.toLowerCase().compareTo(
+          b.summary.productoNombre.toLowerCase(),
         ),
       );
-      final totalStock = items.fold<double>(
-        0,
-        (total, item) => total + item.stock.equivalenteBase,
-      );
+      final totalStock = items.fold<double>(0, (s, i) => s + i.realStock);
 
       showDialog(
         context: context,
@@ -1848,7 +1850,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '${items.length} productos · ${StockMixtoFormatter.cantidad(totalStock)} unidades base equivalentes',
+                        '${items.length} productos · ${totalStock.toStringAsFixed(0)} unidades en almacén',
                         style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
@@ -1861,37 +1863,30 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                           shrinkWrap: true,
                           itemCount: items.length,
                           itemBuilder: (context, index) {
-                            final summary = items[index];
-                            final breakdown = breakdowns[summary.idProducto];
-                            final equivalent = summary.stock.equivalenteBase;
-                            final color = equivalent <= 0
+                            final s = items[index].summary;
+                            final b = items[index].breakdown;
+                            final realStock = items[index].realStock;
+                            final color = realStock <= 0
                                 ? AppColors.error
-                                : equivalent <= 10
+                                : realStock <= 10
                                 ? AppColors.warning
                                 : AppColors.success;
-                            final logistics = breakdown?.logisticsStatus;
-                            final logisticsText = [
-                              if (logistics?.tienePedidos == true)
-                                'Pedidos pendientes',
-                              if (logistics?.tieneEntregas == true)
-                                'Entregas en curso',
-                            ].join(' · ');
                             return ListTile(
                               dense: true,
                               title: Text(
-                                summary.productoNombre,
+                                s.productoNombre,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),
                               subtitle: Text(
-                                logisticsText.isEmpty
-                                    ? summary.stock.texto
-                                    : '${summary.stock.texto}\n$logisticsText',
+                                b != null
+                                    ? 'En almacén: ${realStock.toStringAsFixed(0)}  |  En pedidos: ${b.enPedidos.toStringAsFixed(0)}  |  Entregando: ${b.entregando.toStringAsFixed(0)}'
+                                    : 'En almacén: ${realStock.toStringAsFixed(0)}',
                                 style: const TextStyle(fontSize: 12),
                               ),
                               trailing: Text(
-                                '${StockMixtoFormatter.cantidad(equivalent)} base',
+                                realStock.toStringAsFixed(0),
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   color: color,
