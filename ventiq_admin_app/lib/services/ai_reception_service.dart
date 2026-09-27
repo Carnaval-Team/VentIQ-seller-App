@@ -85,47 +85,18 @@ class AiReceptionService {
     // Construct prompt
     final fullPrompt = _buildFullPrompt(prompt, prodJson, motJson, locJson);
 
-    final requestBody = config.applyAuthToBody(
-      config.isMuleRouter
-          ? {
-            'model': config.model,
-            'messages': [
-              {
-                'role': 'system',
-                'content': 'You are a smart inventory assistant.',
-              },
-              {'role': 'user', 'content': fullPrompt},
-            ],
-          }
-          : {
-            'contents': [
-              {
-                'role': 'user',
-                'parts': [
-                  {'text': fullPrompt},
-                ],
-              },
-            ],
-            'generationConfig': {
-              'temperature': 0.0,
-              'maxOutputTokens': 2500,
-              'response_mime_type': 'application/json',
-            },
-          },
+    final requestBody = config.buildChatBody(
+      systemPrompt: 'You are a smart inventory assistant.',
+      userPrompt: fullPrompt,
+      temperature: 0.0,
+      maxTokens: 2500,
     );
 
-    final uri = config.buildUri(endpoint: 'generateContent');
-    final headers = config.buildHeaders();
+    final data = await config.sendChatRequest(
+      requestBody: requestBody,
+      timeout: const Duration(seconds: 55),
+    );
 
-    final response = await http
-        .post(uri, headers: headers, body: jsonEncode(requestBody))
-        .timeout(const Duration(seconds: 50));
-
-    if (response.statusCode != 200) {
-      throw Exception('Error en IA (${response.statusCode}): ${response.body}');
-    }
-
-    final data = jsonDecode(response.body);
     final text = _extractResponseText(data);
     final jsonText = _extractJson(text);
     final parsed = jsonDecode(jsonText);
@@ -225,15 +196,11 @@ Output JSON:
   }
 
   String _extractResponseText(dynamic data) {
-    if (data is Map<String, dynamic>) {
-      final choices = data['choices'];
-      if (choices is List && choices.isNotEmpty)
-        return choices.first['message']['content'].toString();
-      final candidates = data['candidates'];
-      if (candidates is List && candidates.isNotEmpty)
-        return candidates.first['content']['parts'].first['text'].toString();
+    final text = AssistantModelConfig.extractResponseText(data);
+    if (text.isEmpty) {
+      throw Exception('Formato de respuesta IA desconocido');
     }
-    throw Exception('Formato de respuesta IA desconocido');
+    return text;
   }
 
   String _extractJson(String text) {

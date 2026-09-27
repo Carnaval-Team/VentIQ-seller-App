@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AssistantModelConfig {
@@ -34,8 +37,10 @@ class AssistantModelConfig {
   Uri buildUri({required String endpoint}) {
     final cleanedUrl =
         url.endsWith('/') ? url.substring(0, url.length - 1) : url;
+    // Anthropic (/v1/messages) y OpenAI (chat/completions) usan la URL tal cual.
+    // Solo Gemini necesita el sufijo /model:endpoint.
     final resolvedUrl =
-        (_shouldIncludeModelInBody || isMuleRouter)
+        (_shouldIncludeModelInBody || isMuleRouter || isAnthropic)
             ? cleanedUrl
             : '$cleanedUrl/$model:$endpoint';
     final baseUri = Uri.parse(resolvedUrl);
@@ -91,6 +96,176 @@ class AssistantModelConfig {
   bool get isGemini =>
       url.toLowerCase().contains('generativelanguage.googleapis.com');
   bool get isMuleRouter => url.toLowerCase().contains('mulerouter.ai');
+
+  /// Proveedor con formato Anthropic Messages API (system aparte + content[]).
+  /// Ej: https://api.justwoker.icu/v1/messages
+  bool get isAnthropic => url.toLowerCase().contains('/v1/messages');
+
+  /// Proveedor OpenAI-compatible (chat/completions), incluye MuleRouter.
+  bool get isChatCompletions => _shouldIncludeModelInBody || isMuleRouter;
+
+  /// Construye el cuerpo del request adaptado al proveedor configurado.
+  ///
+  /// Unifica la lógica que antes estaba duplicada (y hardcodeada a MuleRouter/
+  /// Gemini) en cada servicio de IA. Recibe el [systemPrompt] y el
+  /// [userPrompt] y arma el JSON correcto para Anthropic, OpenAI o Gemini.
+  Map<String, dynamic> buildChatBody({
+    required String systemPrompt,
+    required String userPrompt,
+    double temperature = 0.3,
+    int maxTokens = 1400,
+    bool jsonResponse = true,
+    List<Map<String, String>> history = const [],
+  }) {
+    if (isAnthropic) {
+      final messages = <Map<String, dynamic>>[
+        for (final h in history)
+          {'role': h['role'], 'content': h['content'] ?? ''},
+        {'role': 'user', 'content': userPrompt},
+      ];
+      return applyAuthToBody({
+        'model': model,
+        'max_tokens': maxTokens,
+        'system': systemPrompt,
+        'messages': messages,
+      });
+    }
+
+    if (isChatCompletions) {
+      return applyAuthToBody({
+        'model': model,
+        'temperature': temperature,
+        'max_tokens': maxTokens,
+        'messages': [
+          {'role': 'system', 'content': systemPrompt},
+          for (final h in history)
+            {'role': h['role'], 'content': h['content'] ?? ''},
+          {'role': 'user', 'content': userPrompt},
+        ],
+      });
+    }
+
+    // Gemini generateContent.
+    return applyAuthToBody({
+      'contents': [
+        {
+          'role': 'user',
+          'parts': [
+            {'text': '$systemPrompt\n\n$userPrompt'},
+          ],
+        },
+      ],
+      'generationConfig': {
+        'temperature': temperature,
+        'maxOutputTokens': maxTokens,
+        if (jsonResponse) 'response_mime_type': 'application/json',
+      },
+    });
+  }
+
+  /// Extrae el texto de la respuesta del LLM, soportando los tres formatos:
+  /// Anthropic (content[] con posibles bloques 'thinking'), OpenAI (choices[])
+  /// y Gemini (candidates[]).
+  static String extractResponseText(dynamic data) {
+    if (data is! Map) return '';
+
+    // Anthropic: { content: [{type:'text', text:'...'}, {type:'thinking',...}] }
+    final content = data['content'];
+    if (content is List && content.isNotEmpty) {
+      final textos = <String>[];
+      for (final b in content) {
+        if (b is Map && b['type'] == 'text' && b['text'] is String) {
+          textos.add(b['text'] as String);
+        }
+      }
+      if (textos.isNotEmpty) return textos.join('\n');
+    }
+
+    // OpenAI / chat.completions: { choices: [{ message: { content } }] }
+    final choices = data['choices'];
+    if (choices is List && choices.isNotEmpty) {
+      final message = choices.first['message'];
+      if (message is Map && message['content'] != null) {
+        return message['content'].toString();
+      }
+    }
+
+    // Gemini: { candidates: [{ content: { parts: [{ text }] } }] }
+    final candidates = data['candidates'];
+    if (candidates is List && candidates.isNotEmpty) {
+      final cont = candidates.first['content'];
+      if (cont is Map) {
+        final parts = cont['parts'];
+        if (parts is List && parts.isNotEmpty && parts.first['text'] != null) {
+          return parts.first['text'].toString();
+        }
+      }
+    }
+
+    return '';
+  }
+
+  /// Realiza el POST al LLM con reintentos automáticos ante fallos transitorios
+  /// (timeouts, 429, 5xx). Devuelve el body decodificado (Map).
+  ///
+  /// Lanza excepción si tras [maxRetries] intentos sigue fallando.
+  Future<Map<String, dynamic>> sendChatRequest({
+    required Map<String, dynamic> requestBody,
+    Duration timeout = const Duration(seconds: 45),
+    int maxRetries = 2,
+  }) async {
+    final uri = buildUri(endpoint: 'generateContent');
+    final headers = buildHeaders();
+    final payload = jsonEncode(requestBody);
+
+    Object? lastError;
+    for (var intento = 0; intento <= maxRetries; intento++) {
+      try {
+        final response = await http
+            .post(uri, headers: headers, body: payload)
+            .timeout(timeout);
+
+        // Reintentar en errores transitorios del servidor / rate limit.
+        if (response.statusCode == 429 ||
+            (response.statusCode >= 500 && response.statusCode < 600)) {
+          lastError = Exception(
+            'IA status ${response.statusCode}: ${response.body}',
+          );
+          if (intento < maxRetries) {
+            await Future.delayed(Duration(milliseconds: 600 * (intento + 1)));
+            continue;
+          }
+          throw lastError;
+        }
+
+        if (response.statusCode != 200) {
+          throw Exception(
+            'Error en IA (${response.statusCode}): ${response.body}',
+          );
+        }
+
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) return decoded;
+        return {'raw': decoded};
+      } catch (e) {
+        lastError = e;
+        // Reintentar solo ante timeouts / errores de red.
+        final msg = e.toString().toLowerCase();
+        final transitorio = msg.contains('timeout') ||
+            msg.contains('timed out') ||
+            msg.contains('socket') ||
+            msg.contains('connection') ||
+            msg.contains('status 5') ||
+            msg.contains('status 429');
+        if (intento < maxRetries && transitorio) {
+          await Future.delayed(Duration(milliseconds: 600 * (intento + 1)));
+          continue;
+        }
+        rethrow;
+      }
+    }
+    throw lastError ?? Exception('Error desconocido al contactar la IA.');
+  }
 
   String _resolveParamName() {
     if (_normalizedParamKey == 'key') {

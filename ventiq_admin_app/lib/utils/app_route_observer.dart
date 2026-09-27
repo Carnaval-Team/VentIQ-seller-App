@@ -18,6 +18,14 @@ class AppRouteObserver extends NavigatorObserver {
 
   Route<dynamic>? _currentRoute;
 
+  /// Notifica a widgets externos (ej: el botón flotante del asistente IA)
+  /// cuando cambia la ruta visible, para mostrarse u ocultarse.
+  final ValueNotifier<String?> routeNameNotifier = ValueNotifier<String?>(null);
+
+  void _notify() {
+    routeNameNotifier.value = currentRouteName;
+  }
+
   /// Nombre de la ruta actualmente visible (null antes del primer push).
   String? get currentRouteName => _currentRoute?.settings.name;
 
@@ -26,6 +34,7 @@ class AppRouteObserver extends NavigatorObserver {
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     _currentRoute = route;
+    _notify();
   }
 
   @override
@@ -33,6 +42,7 @@ class AppRouteObserver extends NavigatorObserver {
     if (oldRoute == null || identical(oldRoute, _currentRoute)) {
       _currentRoute = newRoute;
     }
+    _notify();
   }
 
   @override
@@ -40,6 +50,7 @@ class AppRouteObserver extends NavigatorObserver {
     if (identical(route, _currentRoute)) {
       _currentRoute = previousRoute;
     }
+    _notify();
   }
 
   @override
@@ -49,5 +60,6 @@ class AppRouteObserver extends NavigatorObserver {
     if (identical(route, _currentRoute)) {
       _currentRoute = previousRoute;
     }
+    _notify();
   }
 }

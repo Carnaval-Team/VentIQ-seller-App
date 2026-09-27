@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/gemini_config.dart';
 import 'permissions_service.dart';
@@ -133,7 +134,12 @@ class AdminAiAssistantService {
     ];
   }
 
-  /// Ask a question to the AI assistant
+  /// Ask a question to the AI assistant.
+  ///
+  /// Usa el edge function `ai-assistant` (RAG con embeddings gte-small +
+  /// base de conocimiento en Supabase). El edge function corre con el JWT del
+  /// usuario (solo lectura, sin acciones destructivas). Si el edge function
+  /// falla, cae al método local basado en el knowledge JSON empaquetado.
   Future<AdminAiAssistantResponse> askQuestion({
     required String question,
     required List<Map<String, String>> conversationHistory,
@@ -143,6 +149,62 @@ class AdminAiAssistantService {
       throw Exception(validationError);
     }
 
+    try {
+      return await _askViaEdgeFunction(
+        question: question,
+        conversationHistory: conversationHistory,
+      );
+    } catch (e) {
+      // Fallback: si el edge function no responde, usar el método local.
+      print('⚠️ ai-assistant edge function falló, usando fallback local: $e');
+      return _askViaDirectLlm(
+        question: question,
+        conversationHistory: conversationHistory,
+      );
+    }
+  }
+
+  /// Llama al edge function `ai-assistant` desplegado en Supabase.
+  Future<AdminAiAssistantResponse> _askViaEdgeFunction({
+    required String question,
+    required List<Map<String, String>> conversationHistory,
+  }) async {
+    final supabase = Supabase.instance.client;
+
+    // El historial que espera el edge function: {role, content} con role
+    // 'user' | 'assistant'. Excluimos el ultimo turno si ya es la pregunta.
+    final history = conversationHistory
+        .where((m) => m['role'] == 'user' || m['role'] == 'assistant')
+        .map((m) => {'role': m['role'], 'content': m['content'] ?? ''})
+        .toList();
+
+    final response = await supabase.functions
+        .invoke(
+          'ai-assistant',
+          body: {'question': question, 'history': history},
+        )
+        .timeout(const Duration(seconds: 45));
+
+    final data = response.data;
+    if (data is! Map) {
+      throw Exception('Respuesta del asistente inválida (edge).');
+    }
+    final map = Map<String, dynamic>.from(data);
+
+    if (map['ok'] != true) {
+      final err = (map['error'] ?? 'error_desconocido').toString();
+      throw Exception('Edge function error: $err');
+    }
+
+    return AdminAiAssistantResponse.fromJson(map);
+  }
+
+  /// Método de respaldo: llama directamente al LLM configurado en
+  /// config_asistant_model usando el knowledge JSON empaquetado (sin RAG).
+  Future<AdminAiAssistantResponse> _askViaDirectLlm({
+    required String question,
+    required List<Map<String, String>> conversationHistory,
+  }) async {
     final config = await GeminiConfig.load();
     if (!config.hasApiKey) {
       throw Exception(

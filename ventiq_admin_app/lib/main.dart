@@ -77,6 +77,7 @@ import 'screens/depositos_bancarios/bancos_screen.dart';
 import 'screens/depositos_bancarios/tipos_extraccion_screen.dart';
 import 'utils/app_route_observer.dart';
 import 'widgets_home/widget_background_scheduler.dart';
+import 'widgets/ai_assistant_overlay.dart';
 
 /// Navigator global: lo necesita HomeWidgetLauncher para navegar cuando la app
 /// se abre desde un widget de la pantalla de inicio.
@@ -109,6 +110,13 @@ class MyApp extends StatelessWidget {
       // Recuerda la ruta visible: evita que un widget re-navegue a la pantalla
       // en la que ya estamos.
       navigatorObservers: [AppRouteObserver.instance],
+      // Botón flotante de ayuda (asistente IA) visible en toda la app.
+      builder: (context, child) {
+        return AiAssistantOverlay(
+          navigatorKey: appNavigatorKey,
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       // Configuración específica para web deployment
       // useInheritedMediaQuery: true,
       theme: ThemeData(

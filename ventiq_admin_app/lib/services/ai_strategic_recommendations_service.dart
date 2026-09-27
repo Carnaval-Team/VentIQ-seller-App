@@ -93,48 +93,19 @@ class AiStrategicRecommendationsService {
       bcgAnalysis: bcgAnalysis,
     );
 
-    final requestBody = config.applyAuthToBody(
-      config.isMuleRouter
-          ? {
-              'model': config.model,
-              'messages': [
-                {
-                  'role': 'system',
-                  'content':
-                      'Eres un analista estratégico de retail. Devuelves solo JSON válido con recomendaciones accionables basadas en los datos del dashboard.',
-                },
-                {'role': 'user', 'content': prompt},
-              ],
-            }
-          : {
-              'contents': [
-                {
-                  'role': 'user',
-                  'parts': [
-                    {'text': prompt},
-                  ],
-                },
-              ],
-              'generationConfig': {
-                'temperature': 0.3,
-                'maxOutputTokens': 2000,
-                'response_mime_type': 'application/json',
-              },
-            },
+    final requestBody = config.buildChatBody(
+      systemPrompt:
+          'Eres un analista estratégico de retail. Devuelves solo JSON válido con recomendaciones accionables basadas en los datos del dashboard.',
+      userPrompt: prompt,
+      temperature: 0.3,
+      maxTokens: 2000,
     );
 
-    final uri = config.buildUri(endpoint: 'generateContent');
-    final headers = config.buildHeaders();
+    final data = await config.sendChatRequest(
+      requestBody: requestBody,
+      timeout: const Duration(seconds: 120),
+    );
 
-    final response = await http
-        .post(uri, headers: headers, body: jsonEncode(requestBody))
-        .timeout(const Duration(seconds: 120));
-
-    if (response.statusCode != 200) {
-      throw Exception('Error en IA (${response.statusCode}): ${response.body}');
-    }
-
-    final data = jsonDecode(response.body);
     final text = _extractResponseText(data);
     final jsonText = _extractJson(text);
     final parsed = jsonDecode(jsonText);
@@ -267,41 +238,9 @@ Devuelve SOLO un JSON válido con esta estructura exacta (sin texto adicional, s
   }
 
   String _extractResponseText(dynamic data) {
-    if (data is! Map<String, dynamic>) return '';
-
-    final candidates = data['candidates'];
-    if (candidates is List && candidates.isNotEmpty) {
-      final first = candidates.first;
-      if (first is Map<String, dynamic>) {
-        final content = first['content'];
-        if (content is Map<String, dynamic>) {
-          final parts = content['parts'];
-          if (parts is List && parts.isNotEmpty) {
-            final part = parts.first;
-            if (part is Map<String, dynamic>) {
-              final text = part['text'];
-              if (text is String) return text;
-            }
-          }
-        }
-      }
-    }
-
-    final choices = data['choices'];
-    if (choices is List && choices.isNotEmpty) {
-      final first = choices.first;
-      if (first is Map<String, dynamic>) {
-        final message = first['message'];
-        if (message is Map<String, dynamic>) {
-          final content = message['content'];
-          if (content is String) return content;
-        }
-        final text = first['text'];
-        if (text is String) return text;
-      }
-    }
-
-    return '';
+    // Usa el parser unificado que soporta Anthropic (content[]), OpenAI
+    // (choices[]) y Gemini (candidates[]).
+    return AssistantModelConfig.extractResponseText(data);
   }
 
   String _extractJson(String text) {

@@ -132,46 +132,18 @@ class SalesAnalystService {
 
     final prompt = _buildPrompt(question, context);
 
-    final requestBody = config.applyAuthToBody(
-      config.isMuleRouter
-          ? {
-            'model': config.model,
-            'messages': [
-              {'role': 'system', 'content': 'You are a helpful assistant.'},
-              {'role': 'user', 'content': prompt},
-            ],
-          }
-          : {
-            'contents': [
-              {
-                'role': 'user',
-                'parts': [
-                  {'text': prompt},
-                ],
-              },
-            ],
-            'generationConfig': {
-              'temperature': 0.35,
-              'maxOutputTokens': 1400,
-              'response_mime_type': 'application/json',
-            },
-          },
+    final requestBody = config.buildChatBody(
+      systemPrompt: 'You are a helpful assistant.',
+      userPrompt: prompt,
+      temperature: 0.35,
+      maxTokens: 1400,
     );
 
-    final uri = config.buildUri(endpoint: 'generateContent');
-    final headers = config.buildHeaders();
+    final data = await config.sendChatRequest(
+      requestBody: requestBody,
+      timeout: const Duration(seconds: 45),
+    );
 
-    final response = await http
-        .post(uri, headers: headers, body: jsonEncode(requestBody))
-        .timeout(const Duration(seconds: 40));
-
-    if (response.statusCode != 200) {
-      throw Exception(
-        'Error en Gemini (${response.statusCode}): ${response.body}',
-      );
-    }
-
-    final data = jsonDecode(response.body);
     final text = _extractResponseText(data);
     final jsonText = _extractJson(text);
     final parsed = jsonDecode(jsonText);
@@ -234,34 +206,11 @@ $question''';
   }
 
   String _extractResponseText(dynamic data) {
-    if (data is Map<String, dynamic>) {
-      final choices = data['choices'];
-      if (choices is List && choices.isNotEmpty) {
-        final message = choices.first['message'];
-        if (message is Map<String, dynamic>) {
-          final content = message['content'];
-          if (content != null) {
-            return content.toString();
-          }
-        }
-      }
-
-      final candidates = data['candidates'];
-      if (candidates is List && candidates.isNotEmpty) {
-        final content = candidates.first['content'];
-        if (content is Map<String, dynamic>) {
-          final parts = content['parts'];
-          if (parts is List && parts.isNotEmpty) {
-            final text = parts.first['text'];
-            if (text != null) {
-              return text.toString();
-            }
-          }
-        }
-      }
+    final text = AssistantModelConfig.extractResponseText(data);
+    if (text.isEmpty) {
+      throw Exception('Respuesta de IA vacía o inválida.');
     }
-
-    throw Exception('Respuesta de IA vacía o inválida.');
+    return text;
   }
 
   String _extractJson(String text) {

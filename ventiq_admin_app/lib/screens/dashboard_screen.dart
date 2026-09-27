@@ -20,7 +20,7 @@ import '../services/store_selector_service.dart';
 import '../utils/subscription_protection_mixin.dart';
 import '../utils/navigation_guard.dart';
 import '../widgets/consignaciones_widget.dart';
-import '../widgets/admin_ai_assistant_sheet.dart';
+
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -552,12 +552,8 @@ class _DashboardScreenState extends State<DashboardScreen>
           currentRoute: '/dashboard',
           onTap: _onBottomNavTap,
         ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () => AdminAiAssistantSheet.show(context),
-          backgroundColor: AppColors.primary,
-          tooltip: 'Asistente de ayuda',
-          child: const Icon(Icons.support_agent, color: Colors.white),
-        ),
+        // El botón del asistente ahora es global (AiAssistantOverlay en main),
+        // por eso ya no se define aquí para evitar duplicarlo.
       ),
     );
   }
