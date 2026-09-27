@@ -1,9 +1,31 @@
 {
-  "current_version": "2.9.1",
-  "build": 290,
+  "current_version": "2.9.2",
+  "build": 291,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.9.2",
+      "date": "2026-09-27",
+      "title": "🤖 Tu asistente de ayuda dentro de la app, ahora más listo",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Pregúntale a la app cómo hacer las cosas",
+          "description": "El asistente de ayuda te responde con tus propias palabras y te explica paso a paso cómo usar cada parte de Inventtia. Si lo que buscas está en otra pantalla, te ofrece un botón para ir directo, sin dar vueltas por el menú."
+        },
+        {
+          "type": "improvement",
+          "title": "Ahora conoce muchas más áreas de tu negocio",
+          "description": "Ampliamos lo que el asistente sabe: además del inventario y las ventas, ahora te guía en Recursos Humanos, cocinas, servicentro, consignaciones, cuentas por cobrar, notificaciones a clientes por WhatsApp, pago a proveedores, fondo de caja y más. Sus respuestas también se adaptan a tu rol, para mostrarte solo lo que te corresponde."
+        },
+        {
+          "type": "fix",
+          "title": "Más personal puede registrar motivos de extracción",
+          "description": "Al sacar productos del inventario, algunos usuarios recibían un aviso de permisos que les impedía elegir el motivo de la extracción. Ya está resuelto: el listado de motivos vuelve a abrirse con normalidad para el personal autorizado."
+        }
+      ]
+    },
     {
       "version": "2.9.1",
       "date": "2026-09-20",
