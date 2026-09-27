@@ -34,6 +34,8 @@ class _CarnavalTabViewState extends State<CarnavalTabView> {
   // acciones (toggle de visibilidad, abrir diálogo de ventas) para que el
   // usuario lo resincronice en vez de generar más datos cruzados.
   Map<int, int> _productStoreMap = {};
+  // Categorías donde el usuario expandió los productos sin stock.
+  final Set<String> _categoriesShowingOutOfStock = {};
 
   @override
   void initState() {
@@ -701,8 +703,56 @@ class _CarnavalTabViewState extends State<CarnavalTabView> {
                   entry.key,
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
-                children:
-                    entry.value.map((product) {
+                children: _buildCategoryChildren(entry.key, entry.value),
+              ),
+            );
+          }),
+      ],
+    );
+  }
+
+  bool _hasStock(Map<String, dynamic> product) =>
+      ((product['stock'] as num?) ?? 0) > 0;
+
+  List<Widget> _buildCategoryChildren(
+    String category,
+    List<Map<String, dynamic>> products,
+  ) {
+    final withStock = products.where(_hasStock).toList();
+    final withoutStock = products.where((p) => !_hasStock(p)).toList();
+    final showOut = _categoriesShowingOutOfStock.contains(category);
+    return [
+      ...withStock.map(_buildSyncedProductTile),
+      if (withoutStock.isNotEmpty)
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () {
+              setState(() {
+                if (showOut) {
+                  _categoriesShowingOutOfStock.remove(category);
+                } else {
+                  _categoriesShowingOutOfStock.add(category);
+                }
+              });
+            },
+            icon: Icon(
+              showOut ? Icons.expand_less : Icons.expand_more,
+              size: 18,
+            ),
+            label: Text(
+              showOut
+                  ? 'Ocultar productos sin stock'
+                  : 'Mostrar sin stock (${withoutStock.length})',
+              style: const TextStyle(fontSize: 13),
+            ),
+          ),
+        ),
+      if (showOut) ...withoutStock.map(_buildSyncedProductTile),
+    ];
+  }
+
+  Widget _buildSyncedProductTile(Map<String, dynamic> product) {
                       final isActive = product['status'] == true;
                       // Sanity-check: marcar productos cuyo id_producto local
                       // apunta a otra tienda. No deshabilita el tile (el
@@ -907,12 +957,6 @@ class _CarnavalTabViewState extends State<CarnavalTabView> {
                           ),
                         ),
                       );
-                    }).toList(),
-              ),
-            );
-          }),
-      ],
-    );
   }
 
   Widget _buildTpvAssignmentSection() {
