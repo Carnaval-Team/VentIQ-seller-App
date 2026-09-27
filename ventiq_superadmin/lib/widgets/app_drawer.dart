@@ -230,6 +230,17 @@ class AppDrawer extends StatelessWidget {
                 ),
                 _buildMenuSection(
                   context,
+                  title: 'Marketing',
+                  items: [
+                    _DrawerItem(
+                      icon: Icons.image_outlined,
+                      title: 'Banners inicio',
+                      route: '/banners-inicio',
+                    ),
+                  ],
+                ),
+                _buildMenuSection(
+                  context,
                   title: 'Sistema',
                   items: [
                     _DrawerItem(
@@ -403,6 +414,7 @@ class AppDrawer extends StatelessWidget {
                 item.route == '/carnaval-dashboard' ||
                 item.route == '/carnaval-precios-tiendas' ||
                 item.route == '/carnaval-productos-tienda' ||
+                item.route == '/banners-inicio' ||
                 item.route == '/roles') {
               Navigator.of(context).pushReplacementNamed(item.route);
             } else {
