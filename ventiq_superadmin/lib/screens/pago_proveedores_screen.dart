@@ -816,34 +816,8 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen> {
               child: Column(
                 children: [
                   _buildPaymentRow(
-                    'Efectivo',
-                    supplier.netCash,
-                  ),
-                  const Divider(),
-                  _buildPaymentRow(
-                    'Transferencia',
-                    supplier.netTransfer,
-                  ),
-                  const Divider(thickness: 2),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'TOTAL A PAGAR',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                      Text(
-                        '\$${numberFormat.format(totalToPay)}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                          color: AppColors.success,
-                        ),
-                      ),
-                    ],
+                    'Monto a pagar',
+                    totalToPay,
                   ),
                 ],
               ),
@@ -946,15 +920,9 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen> {
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: ExpansionTile(
         title: Text('Orden #${order.orderId}'),
-        subtitle: Row(
-          children: [
-            Text(
-              dateFormat.format(order.createdAt),
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-            ),
-            const SizedBox(width: 8),
-            _buildPaymentMethodChip(order.isTransfer),
-          ],
+        subtitle: Text(
+          dateFormat.format(order.createdAt),
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
         ),
         trailing: Text(
           '\$${numberFormat.format(order.total)}',
@@ -990,36 +958,6 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen> {
                 ),
               );
             },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPaymentMethodChip(bool isTransfer) {
-    final color = isTransfer ? Colors.blue : Colors.green;
-    final label = isTransfer ? 'Transferencia' : 'Efectivo';
-    final icon = isTransfer ? Icons.credit_card : Icons.money;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 12, color: color),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
           ),
         ],
       ),

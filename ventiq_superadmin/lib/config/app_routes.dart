@@ -11,6 +11,7 @@ class AppRoutes {
   // Rutas publicas / siempre accesibles
   static const String login = '/login';
   static const String dashboard = '/dashboard';
+  static const String homeBanners = '/banners-inicio';
 
   // Rutas protegidas agrupadas
   static const List<AppRoute> protected = [
@@ -45,6 +46,7 @@ class AppRoutes {
     AppRoute(route: '/carnaval-dashboard', label: 'Info de Carnaval', group: 'Carnaval'),
     AppRoute(route: '/carnaval-precios-tiendas', label: 'Recargos Carnaval por Tienda', group: 'Carnaval'),
     AppRoute(route: '/carnaval-productos-tienda', label: 'Productos por Tienda en Carnaval', group: 'Carnaval'),
+    AppRoute(route: '/banners-inicio', label: 'Banners inicio', group: 'Marketing'),
     AppRoute(route: '/roles', label: 'Gestión de Roles', group: 'Sistema'),
     AppRoute(route: '/configuracion', label: 'Configuración', group: 'Sistema'),
   ];

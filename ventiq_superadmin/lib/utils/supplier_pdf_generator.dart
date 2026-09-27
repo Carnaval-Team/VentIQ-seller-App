@@ -118,72 +118,26 @@ class SupplierPdfGenerator {
         borderRadius: pw.BorderRadius.circular(8),
         color: PdfColors.grey50,
       ),
-      child: pw.Column(
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
-          _buildSummaryRow(
-            'Efectivo',
-            supplier.netCash,
-            numberFormat,
+          pw.Text(
+            'MONTO A PAGAR',
+            style: pw.TextStyle(
+              fontSize: 14,
+              fontWeight: pw.FontWeight.bold,
+            ),
           ),
-          pw.Padding(
-            padding: const pw.EdgeInsets.symmetric(vertical: 5),
-            child: pw.Divider(color: PdfColors.grey300),
-          ),
-          _buildSummaryRow(
-            'Transferencia',
-            supplier.netTransfer,
-            numberFormat,
-          ),
-          pw.Padding(
-            padding: const pw.EdgeInsets.symmetric(vertical: 5),
-            child: pw.Divider(thickness: 2, color: PdfColors.blueGrey),
-          ),
-          pw.Row(
-            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-            children: [
-              pw.Text(
-                'TOTAL A PAGAR',
-                style: pw.TextStyle(
-                  fontSize: 14,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-              pw.Text(
-                '\$${numberFormat.format(totalToPay)}',
-                style: pw.TextStyle(
-                  fontSize: 18,
-                  fontWeight: pw.FontWeight.bold,
-                  color: PdfColors.green700,
-                ),
-              ),
-            ],
+          pw.Text(
+            '\$${numberFormat.format(totalToPay)}',
+            style: pw.TextStyle(
+              fontSize: 18,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColors.green700,
+            ),
           ),
         ],
       ),
-    );
-  }
-
-  static pw.Widget _buildSummaryRow(
-    String label,
-    double amount,
-    NumberFormat numberFormat,
-  ) {
-    return pw.Row(
-      children: [
-        pw.Expanded(
-          child: pw.Text(
-            label,
-            style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-          ),
-        ),
-        pw.Text(
-          '\$${numberFormat.format(amount)}',
-          style: pw.TextStyle(
-            fontWeight: pw.FontWeight.bold,
-            fontSize: 12,
-          ),
-        ),
-      ],
     );
   }
 
@@ -197,22 +151,9 @@ class SupplierPdfGenerator {
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
-          pw.Row(
-            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-            children: [
-              pw.Text(
-                'Orden #${order.orderId} - ${dateFormat.format(order.createdAt)}',
-                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-              ),
-              pw.Text(
-                order.isTransfer ? 'Transferencia' : 'Efectivo',
-                style: pw.TextStyle(
-                  fontSize: 10,
-                  color:
-                      order.isTransfer ? PdfColors.blue700 : PdfColors.green700,
-                ),
-              ),
-            ],
+          pw.Text(
+            'Orden #${order.orderId} - ${dateFormat.format(order.createdAt)}',
+            style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
           ),
           pw.SizedBox(height: 5),
           ...order.products.map(

@@ -17,10 +17,66 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
   bool _isLoading = true;
   int _selectedTabIndex = 0;
 
+  int? _configAdminId;
+  bool _configStatus = false;
+  bool _isSavingStatus = false;
+
   @override
   void initState() {
     super.initState();
     _loadPlanes();
+    _loadConfigStatus();
+  }
+
+  Future<void> _loadConfigStatus() async {
+    try {
+      final rows = await _supabase
+          .schema('carnavalapp')
+          .from('configuraciones_admin')
+          .select('id, status')
+          .order('id', ascending: false)
+          .limit(1);
+      if (rows.isNotEmpty && mounted) {
+        setState(() {
+          _configAdminId = rows.first['id'] as int?;
+          _configStatus = rows.first['status'] == true;
+        });
+      }
+    } catch (e) {
+      print('Error cargando status de configuraciones_admin: $e');
+    }
+  }
+
+  Future<void> _toggleConfigStatus(bool value) async {
+    if (_configAdminId == null || _isSavingStatus) return;
+    setState(() {
+      _configStatus = value;
+      _isSavingStatus = true;
+    });
+    try {
+      await _supabase
+          .schema('carnavalapp')
+          .from('configuraciones_admin')
+          .update({'status': value})
+          .eq('id', _configAdminId!);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(value ? 'Status activado' : 'Status desactivado'),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error actualizando status: $e');
+      if (mounted) {
+        setState(() => _configStatus = !value);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error actualizando status: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSavingStatus = false);
+    }
   }
 
   Future<void> _loadPlanes() async {
@@ -355,6 +411,36 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Card(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    child: SwitchListTile(
+                      title: const Text(
+                        'Status (configuraciones_admin)',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: const Text(
+                        'Activa o desactiva el parámetro status de la app Carnaval',
+                      ),
+                      value: _configStatus,
+                      onChanged: _configAdminId == null || _isSavingStatus
+                          ? null
+                          : _toggleConfigStatus,
+                      secondary: _isSavingStatus
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(
+                              _configStatus
+                                  ? Icons.toggle_on
+                                  : Icons.toggle_off,
+                              color: _configStatus
+                                  ? AppColors.success
+                                  : AppColors.textSecondary,
+                            ),
+                    ),
+                  ),
                   Text(
                     'Gestión de Planes de Suscripción',
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
