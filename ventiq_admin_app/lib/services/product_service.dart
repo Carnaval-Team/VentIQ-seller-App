@@ -3409,6 +3409,15 @@ class ProductService {
     }
   }
 
+  /// Sube una imagen de producto al storage y devuelve su URL pública.
+  /// Wrapper público de [_uploadProductImage] para usarse desde las pantallas.
+  static Future<String?> uploadProductMedia(
+    Uint8List imageBytes,
+    String fileName,
+  ) {
+    return _uploadProductImage(imageBytes, fileName);
+  }
+
   /// Sube una imagen al bucket de Supabase Storage para productos
 
   static Future<String?> _uploadProductImage(

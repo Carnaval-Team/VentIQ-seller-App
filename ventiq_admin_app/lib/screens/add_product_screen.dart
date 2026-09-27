@@ -22,6 +22,8 @@ import '../services/barcode_service.dart';
 
 import '../services/presentacion_editable_service.dart';
 
+import '../services/image_picker_service.dart';
+
 import 'barcode_scanner_screen.dart';
 
 
@@ -244,6 +246,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
   List<Map<String, dynamic>> _multimedias = [];
 
+  // URL de la imagen principal del producto (columna app_dat_producto.imagen).
+  // La primera imagen que se sube en multimedia se usa como principal.
+  String? _imagenPrincipalUrl;
+
+  // Indica si se está subiendo una imagen a storage en este momento.
+  bool _subiendoMultimedia = false;
+
   List<Map<String, dynamic>> _presentacionesAdicionales =
 
       []; // Additional presentations list
@@ -422,7 +431,20 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
       _etiquetas = widget.product!.etiquetas ?? [];
 
-      _multimedias = widget.product!.multimedias ?? [];
+      // Normalizar multimedias existentes a {'media': url}. El backend guarda la
+      // columna `media`; versiones viejas de esta pantalla usaban {'url': ...}.
+      _multimedias = (widget.product!.multimedias ?? [])
+          .map<Map<String, dynamic>>((m) {
+            final url = (m['media'] ?? m['url'] ?? '').toString();
+            return {'media': url};
+          })
+          .where((m) => (m['media'] as String).isNotEmpty)
+          .toList();
+
+      // La imagen principal es la del producto (columna imagen).
+      _imagenPrincipalUrl = (widget.product!.imageUrl.isNotEmpty)
+          ? widget.product!.imageUrl
+          : null;
 
 
 
@@ -5350,7 +5372,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
     if (_multimedias.isNotEmpty) {
 
-      multimediasData = _multimedias.map((media) => {'media': media}).toList();
+      // La RPC espera [{'media': '<url>'}]. Cada item ya guarda la URL en 'media'.
+      multimediasData = _multimedias
+          .map((m) => {'media': (m['media'] ?? m['url'] ?? '').toString()})
+          .where((m) => (m['media'] as String).isNotEmpty)
+          .toList();
 
     }
 
@@ -5647,6 +5673,30 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
 
     print('✅ Producto creado exitosamente con ID: $productId');
+
+
+
+    // Imagen principal: la primera imagen de multimedia (o la marcada) se guarda
+    // en app_dat_producto.imagen, que es la que se usa para listar productos.
+
+    if (_imagenPrincipalUrl != null && _imagenPrincipalUrl!.isNotEmpty) {
+
+      try {
+
+        await _supabase
+            .from('app_dat_producto')
+            .update({'imagen': _imagenPrincipalUrl})
+            .eq('id', productId);
+
+        print('✅ Imagen principal guardada: $_imagenPrincipalUrl');
+
+      } catch (e) {
+
+        print('❌ ERROR al guardar imagen principal: $e');
+
+      }
+
+    }
 
 
 
@@ -6402,6 +6452,14 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
 
 
+      // Actualizar etiquetas y multimedia (reemplazo completo).
+
+      await _updateEtiquetas(productId);
+
+      await _updateMultimedias(productId);
+
+
+
       // Actualizar precio de venta
 
       await _updatePrecioVenta(productId);
@@ -6992,6 +7050,61 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
 
 
+
+  // Reemplaza por completo las etiquetas del producto (borra e inserta).
+  Future<void> _updateEtiquetas(int productId) async {
+    try {
+      await _supabase
+          .from('app_dat_producto_etiquetas')
+          .delete()
+          .eq('id_producto', productId);
+
+      if (_etiquetas.isNotEmpty) {
+        final data = _etiquetas
+            .map((e) => {'id_producto': productId, 'etiqueta': e})
+            .toList();
+        await _supabase.from('app_dat_producto_etiquetas').insert(data);
+      }
+      print('✅ Etiquetas actualizadas: ${_etiquetas.length}');
+    } catch (e) {
+      print('❌ Error actualizando etiquetas: $e');
+    }
+  }
+
+  // Reemplaza por completo las multimedias del producto y sincroniza la imagen
+  // principal (app_dat_producto.imagen).
+  Future<void> _updateMultimedias(int productId) async {
+    try {
+      await _supabase
+          .from('app_dat_producto_multimedias')
+          .delete()
+          .eq('id_producto', productId);
+
+      if (_multimedias.isNotEmpty) {
+        final data = _multimedias
+            .map((m) => {
+                  'id_producto': productId,
+                  'media': (m['media'] ?? m['url'] ?? '').toString(),
+                })
+            .where((m) => (m['media'] as String).isNotEmpty)
+            .toList();
+        if (data.isNotEmpty) {
+          await _supabase.from('app_dat_producto_multimedias').insert(data);
+        }
+      }
+
+      // Sincronizar imagen principal.
+      await _supabase
+          .from('app_dat_producto')
+          .update({'imagen': _imagenPrincipalUrl ?? ''})
+          .eq('id', productId);
+
+      print('✅ Multimedia actualizada: ${_multimedias.length}, '
+          'principal: $_imagenPrincipalUrl');
+    } catch (e) {
+      print('❌ Error actualizando multimedia: $e');
+    }
+  }
 
   Future<void> _updateSubcategorias(int productId) async {
 
@@ -8327,6 +8440,24 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
 
 
+  // Paleta estable para las etiquetas: el mismo texto siempre da el mismo color.
+  static const List<Color> _tagPalette = [
+    Color(0xFF194B8C), // azul
+    Color(0xFF10B981), // verde
+    Color(0xFFFF6B35), // naranja
+    Color(0xFF8B5CF6), // violeta
+    Color(0xFFEC4899), // rosa
+    Color(0xFF0EA5E9), // celeste
+    Color(0xFFF59E0B), // ambar
+    Color(0xFF14B8A6), // teal
+  ];
+
+  Color _colorForTag(String tag) {
+    if (tag.isEmpty) return _tagPalette.first;
+    final hash = tag.codeUnits.fold<int>(0, (prev, c) => prev + c);
+    return _tagPalette[hash % _tagPalette.length];
+  }
+
   Widget _buildTagsSection() {
 
     return Card(
@@ -8405,18 +8536,50 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
                     _etiquetas.map((etiqueta) {
 
-                      return Chip(
+                      final color = _colorForTag(etiqueta);
 
-                        label: Text(etiqueta),
-
-                        deleteIcon: const Icon(Icons.close, size: 18),
-
-                        onDeleted: () {
-
-                          setState(() => _etiquetas.remove(etiqueta));
-
-                        },
-
+                      return Container(
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: color.withOpacity(0.5)),
+                        ),
+                        padding: const EdgeInsets.only(
+                          left: 12,
+                          right: 4,
+                          top: 4,
+                          bottom: 4,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.label, size: 16, color: color),
+                            const SizedBox(width: 6),
+                            Text(
+                              etiqueta,
+                              style: TextStyle(
+                                color: color,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(width: 2),
+                            InkWell(
+                              borderRadius: BorderRadius.circular(20),
+                              onTap: () {
+                                setState(() => _etiquetas.remove(etiqueta));
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.all(4),
+                                child: Icon(
+                                  Icons.close,
+                                  size: 15,
+                                  color: color.withOpacity(0.8),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       );
 
                     }).toList(),
@@ -8473,11 +8636,17 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
                 TextButton.icon(
 
-                  onPressed: _addMultimedia,
+                  onPressed: _subiendoMultimedia ? null : _addMultimedia,
 
-                  icon: const Icon(Icons.add_photo_alternate),
+                  icon: _subiendoMultimedia
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.add_photo_alternate),
 
-                  label: const Text('Agregar'),
+                  label: Text(_subiendoMultimedia ? 'Subiendo...' : 'Agregar'),
 
                 ),
 
@@ -8499,34 +8668,107 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
             else
 
-              Column(
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: List.generate(_multimedias.length, (index) {
+                  final media = _multimedias[index];
+                  final url = (media['media'] ?? media['url'] ?? '').toString();
+                  final esPrincipal = url == _imagenPrincipalUrl;
 
-                children:
+                  return Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          width: 110,
+                          height: 110,
+                          color: AppColors.surfaceVariant,
+                          child: url.isEmpty
+                              ? const Icon(Icons.broken_image,
+                                  color: AppColors.textLight)
+                              : Image.network(
+                                  url,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => const Icon(
+                                    Icons.broken_image,
+                                    color: AppColors.textLight,
+                                  ),
+                                  loadingBuilder: (ctx, child, progress) {
+                                    if (progress == null) return child;
+                                    return const Center(
+                                      child: SizedBox(
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+                      ),
 
-                    _multimedias.map((media) {
-
-                      return ListTile(
-
-                        leading: const Icon(Icons.image),
-
-                        title: Text(media['url']),
-
-                        trailing: IconButton(
-
-                          icon: const Icon(Icons.delete, color: Colors.red),
-
-                          onPressed: () {
-
-                            setState(() => _multimedias.remove(media));
-
-                          },
-
+                      // Badge de imagen principal.
+                      if (esPrincipal)
+                        Positioned(
+                          left: 4,
+                          top: 4,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.star, size: 12, color: Colors.white),
+                                SizedBox(width: 2),
+                                Text(
+                                  'Principal',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
 
-                      );
-
-                    }).toList(),
-
+                      // Acciones: marcar principal / eliminar.
+                      Positioned(
+                        right: 2,
+                        top: 2,
+                        child: Column(
+                          children: [
+                            _mediaActionButton(
+                              icon: Icons.delete,
+                              color: Colors.red,
+                              onTap: () => _removeMultimedia(index),
+                            ),
+                            if (!esPrincipal) ...[
+                              const SizedBox(height: 4),
+                              _mediaActionButton(
+                                icon: Icons.star_border,
+                                color: AppColors.primary,
+                                onTap: () => setState(
+                                  () => _imagenPrincipalUrl = url,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                }),
               ),
 
           ],
@@ -9323,72 +9565,83 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
 
 
-  void _addMultimedia() {
-
-    showDialog(
-
-      context: context,
-
-      builder: (context) {
-
-        final controller = TextEditingController();
-
-        return AlertDialog(
-
-          title: const Text('Agregar Multimedia'),
-
-          content: TextField(
-
-            controller: controller,
-
-            decoration: const InputDecoration(
-
-              labelText: 'URL de imagen',
-
-              hintText: 'https://ejemplo.com/imagen.jpg',
-
-            ),
-
-            autofocus: true,
-
-          ),
-
-          actions: [
-
-            TextButton(
-
-              onPressed: () => Navigator.pop(context),
-
-              child: const Text('Cancelar'),
-
-            ),
-
-            ElevatedButton(
-
-              onPressed: () {
-
-                if (controller.text.isNotEmpty) {
-
-                  setState(() => _multimedias.add({'url': controller.text}));
-
-                  Navigator.pop(context);
-
-                }
-
-              },
-
-              child: const Text('Agregar'),
-
-            ),
-
-          ],
-
-        );
-
-      },
-
+  // Botón de acción flotante para cada miniatura de multimedia.
+  Widget _mediaActionButton({
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.9),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, size: 18, color: color),
+      ),
     );
+  }
 
+  // Elimina una imagen del listado. Si era la principal, reasigna a la primera
+  // que quede (o null si no queda ninguna).
+  void _removeMultimedia(int index) {
+    setState(() {
+      final removed = (_multimedias[index]['media'] ??
+              _multimedias[index]['url'] ??
+              '')
+          .toString();
+      _multimedias.removeAt(index);
+      if (removed == _imagenPrincipalUrl) {
+        _imagenPrincipalUrl = _multimedias.isNotEmpty
+            ? (_multimedias.first['media'] ?? _multimedias.first['url'] ?? '')
+                .toString()
+            : null;
+      }
+    });
+  }
+
+  // Selecciona una imagen del dispositivo, la sube al storage y la agrega a la
+  // lista de multimedia. La primera imagen se marca como principal.
+  Future<void> _addMultimedia() async {
+    try {
+      final picked = await ImagePickerService.pickImage(context: context);
+      if (picked == null) return;
+
+      setState(() => _subiendoMultimedia = true);
+
+      final fileName = picked.fileName.isNotEmpty
+          ? picked.fileName
+          : 'product_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+      final url = await ProductService.uploadProductMedia(
+        picked.bytes,
+        fileName,
+      );
+
+      if (url == null) {
+        if (mounted) {
+          _showErrorSnackBar('No se pudo subir la imagen. Intenta de nuevo.');
+        }
+        return;
+      }
+
+      setState(() {
+        _multimedias.add({'media': url});
+        // La primera imagen subida se usa como imagen principal del producto.
+        _imagenPrincipalUrl ??= url;
+      });
+    } catch (e) {
+      if (mounted) {
+        _showErrorSnackBar('Error al subir la imagen: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _subiendoMultimedia = false);
+      }
+    }
   }
 
 
