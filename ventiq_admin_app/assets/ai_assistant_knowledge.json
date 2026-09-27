@@ -1,25 +1,28 @@
 {
-  "version": "1.0.0",
+  "version": "2.0.0",
   "welcome_messages": {
-    "gerente": "Hola! Soy tu asistente de Inventtia Gestión. Como Gerente, tienes acceso completo a todas las funciones del sistema. Puedo ayudarte con productos, inventario, ventas, finanzas, marketing, CRM y configuracion de tu tienda. Que necesitas hacer hoy?",
-    "supervisor": "Bienvenido! Soy tu asistente de Inventtia Gestión. Como Supervisor, puedes gestionar productos, inventario, ventas y trabajadores. Te guio paso a paso en cualquier proceso. En que puedo ayudarte?",
-    "auditor": "Hola! Soy tu asistente de Inventtia Gestión. Como Auditor, tienes acceso a visualizar informes financieros, inventario, ventas y metricas del negocio. Que informacion necesitas consultar?",
-    "almacenero": "Bienvenido! Soy tu asistente de Inventtia Gestión. Como Almacenero, puedes gestionar recepciones de mercancia, transferencias entre almacenes y consultar el inventario de tu zona. Como puedo ayudarte?"
+    "gerente": "Hola! Soy tu asistente de Inventtia Gestión. Como Gerente tienes acceso completo: productos, inventario, ventas, finanzas, marketing, CRM, recursos humanos, pagos y configuración. Qué necesitas hacer hoy?",
+    "supervisor": "Bienvenido! Soy tu asistente de Inventtia Gestión. Como Supervisor puedes gestionar productos, inventario, ventas, cuentas por cobrar y trabajadores. Te guío paso a paso. En qué puedo ayudarte?",
+    "auditor": "Hola! Soy tu asistente de Inventtia Gestión. Como Auditor puedes consultar informes financieros, inventario, ventas y métricas del negocio. Qué información necesitas revisar?",
+    "almacenero": "Bienvenido! Soy tu asistente de Inventtia Gestión. Como Almacenero puedes registrar recepciones, transferencias entre almacenes y consultar el stock de tu zona. Cómo puedo ayudarte?"
   },
   "modules": {
     "productos": {
       "name": "Productos",
-      "description": "Gestion completa del catalogo de productos: crear, editar, categorizar, asignar precios por TPV y generar con IA.",
+      "description": "Gestión completa del catálogo: crear, editar, categorizar, revisar precios y costos, importar por Excel y analizar el rendimiento del catálogo. La entrada 'Productos' del menú abre el Dashboard de Productos.",
       "icon": "inventory_2",
       "routes": {
+        "dashboard": "/products-dashboard",
         "list": "/products",
         "add": "/add-product",
         "detail": "/product-detail",
         "categories": "/categories",
-        "tpv_prices": "/tpv-prices"
+        "tpv_prices": "/tpv-prices",
+        "prices_review": "/precios-productos",
+        "excel_import": "/excel-import"
       },
       "permissions": {
-        "view": ["gerente", "supervisor", "auditor", "almacenero"],
+        "view": ["gerente", "supervisor"],
         "create": ["gerente"],
         "edit": ["gerente", "supervisor"],
         "delete": ["gerente"]
@@ -30,224 +33,160 @@
           "name": "Crear un producto",
           "route": "/add-product",
           "steps": [
-            "Abre el menu lateral tocando el icono de hamburguesa",
-            "Selecciona 'Productos' en el menu",
-            "Toca el boton '+' o 'Agregar Producto'",
-            "Completa el formulario: nombre, descripcion, precio base, categoria",
-            "Opcionalmente, agrega una imagen del producto",
-            "Toca 'Guardar' para crear el producto"
+            "Abre 'Productos' en el menú lateral (se abre el Dashboard de Productos).",
+            "Toca el botón + o entra a la lista de productos y usa 'Agregar producto'.",
+            "Completa nombre, categoría, unidad de medida, precio de venta y costo.",
+            "Asigna imagen y define si es elaborado, servicio o inventariable.",
+            "Guarda; el producto queda disponible para venta y para asignar stock."
           ],
-          "tips": [
-            "Puedes usar el generador de IA para crear productos automaticamente desde una imagen",
-            "Los precios se pueden personalizar por cada TPV despues de crear el producto"
-          ]
+          "tips": ["Solo el Gerente puede crear productos.", "Si es elaborado, define su ficha de costos en Costos de producción."]
         },
         {
-          "id": "crear_producto_ia",
-          "name": "Crear producto con IA",
-          "route": "/add-product",
+          "id": "revisar_precios",
+          "name": "Revisar y ajustar precios",
+          "route": "/precios-productos",
           "steps": [
-            "Ve a la pantalla de agregar producto",
-            "Toca el boton 'Generar con IA' o el icono de varita magica",
-            "Sube una imagen del producto o describe el producto",
-            "La IA analizara y sugerira nombre, descripcion, categoria y precio",
-            "Revisa y ajusta los datos generados",
-            "Guarda el producto"
+            "Ve a Productos y abre 'Precios de productos' (/precios-productos).",
+            "Filtra por categoría o busca el producto que quieras revisar.",
+            "Compara precio de venta vs costo para ver el margen.",
+            "Edita el precio donde haga falta y guarda los cambios."
           ],
-          "tips": [
-            "La IA funciona mejor con imagenes claras del producto",
-            "Puedes editar cualquier campo sugerido antes de guardar"
-          ]
+          "tips": ["Los precios por TPV se gestionan en 'Precios TPV' (/tpv-prices)."]
         },
         {
-          "id": "editar_producto",
-          "name": "Editar un producto existente",
-          "route": "/product-detail",
+          "id": "importar_excel",
+          "name": "Importar productos desde Excel",
+          "route": "/excel-import",
           "steps": [
-            "Ve a 'Productos' desde el menu lateral",
-            "Busca el producto usando el buscador o navega por la lista",
-            "Toca el producto para ver sus detalles",
-            "Toca el boton 'Editar' o el icono de lapiz",
-            "Modifica los campos necesarios",
-            "Guarda los cambios"
+            "Entra a 'Importar Excel' (/excel-import).",
+            "Descarga la plantilla y llénala con tus productos.",
+            "Sube el archivo y revisa la vista previa de validación.",
+            "Confirma la importación para crear/actualizar en lote."
           ],
-          "tips": [
-            "Puedes usar el escaner de codigo de barras para encontrar productos rapidamente"
-          ]
+          "tips": ["Revisa los errores de la vista previa antes de confirmar."]
         },
         {
-          "id": "gestionar_categorias",
-          "name": "Gestionar categorias",
+          "id": "categorias",
+          "name": "Gestionar categorías",
           "route": "/categories",
           "steps": [
-            "Ve a 'Productos' > 'Categorias' desde el menu",
-            "Veras la lista de categorias existentes",
-            "Para crear una nueva, toca el boton '+'",
-            "Ingresa el nombre de la categoria",
-            "Opcionalmente, asigna un color o icono",
-            "Guarda la categoria"
+            "Abre 'Categorías' (/categories).",
+            "Crea, edita o reordena categorías y subcategorías.",
+            "Asigna productos a la categoría correspondiente."
           ],
-          "tips": [
-            "Organizar bien las categorias facilita la busqueda de productos"
-          ]
-        },
-        {
-          "id": "precios_por_tpv",
-          "name": "Configurar precios por TPV",
-          "route": "/tpv-prices",
-          "steps": [
-            "Ve a 'Productos' > 'Precios por TPV'",
-            "Selecciona el TPV (punto de venta) que deseas configurar",
-            "Veras la lista de productos con sus precios actuales",
-            "Modifica el precio de cada producto para ese TPV",
-            "Guarda los cambios"
-          ],
-          "tips": [
-            "Los precios por TPV permiten tener precios diferentes en cada caja o sucursal"
-          ]
+          "tips": ["Una buena categorización mejora los reportes y el análisis del catálogo."]
         }
       ]
     },
     "inventario": {
       "name": "Inventario",
-      "description": "Control de stock, movimientos de mercancia, ajustes, transferencias y historial de operaciones.",
+      "description": "Consulta y control del stock. La pantalla de Inventario tiene pestañas (Dashboard, Stock, Movimientos, Almacenes) y un botón flotante (+) para operaciones: recepción, extracción, transferencia y ajuste. No hay pantallas separadas por URL; todo ocurre dentro de /inventory.",
       "icon": "warehouse",
       "routes": {
-        "main": "/inventory",
-        "operations": "/inventory-operations",
-        "reception": "/inventory-reception",
-        "extraction": "/inventory-extraction",
-        "transfer": "/inventory-transfer",
-        "adjustment": "/inventory-adjustment",
-        "history": "/inventory-history"
+        "inventory": "/inventory"
       },
       "permissions": {
         "view": ["gerente", "supervisor", "auditor", "almacenero"],
-        "reception": ["gerente", "almacenero"],
-        "extraction": ["gerente"],
-        "transfer": ["gerente", "almacenero"],
-        "adjustment": ["gerente", "supervisor"]
+        "create": ["gerente", "supervisor", "almacenero"],
+        "edit": ["gerente", "supervisor"],
+        "delete": ["gerente"]
       },
       "features": [
         {
-          "id": "recepcion_mercancia",
-          "name": "Registrar recepcion de mercancia",
-          "route": "/inventory-reception",
+          "id": "consultar_stock",
+          "name": "Consultar el stock actual",
+          "route": "/inventory",
           "steps": [
-            "Ve a 'Inventario' > 'Operaciones' desde el menu",
-            "Selecciona 'Recepcion de Mercancia'",
-            "Selecciona el almacen destino",
-            "Agrega los productos recibidos (puedes escanear codigos)",
-            "Indica la cantidad de cada producto",
-            "Opcionalmente, asocia un proveedor y numero de factura",
-            "Confirma la recepcion"
+            "Abre 'Inventario' en el menú lateral.",
+            "Ve a la pestaña 'Stock' para ver existencias por producto y almacén.",
+            "Usa la búsqueda y los filtros para encontrar un producto o zona.",
+            "Revisa la pestaña 'Dashboard' para indicadores generales (stock bajo, valor de inventario)."
           ],
-          "tips": [
-            "Puedes usar el asistente de IA para procesar facturas automaticamente",
-            "La recepcion actualiza automaticamente el stock del almacen"
-          ]
+          "tips": ["Los productos con stock bajo aparecen resaltados en el Dashboard de inventario."]
+        },
+        {
+          "id": "registrar_recepcion",
+          "name": "Registrar una recepción de mercancía",
+          "route": "/inventory",
+          "steps": [
+            "En 'Inventario', toca el botón flotante (+).",
+            "Elige la operación 'Recepción'.",
+            "Selecciona el almacén/zona de destino y el proveedor si aplica.",
+            "Agrega los productos y las cantidades recibidas.",
+            "Confirma; el stock se incrementa y queda registrado el movimiento."
+          ],
+          "tips": ["El Almacenero puede registrar recepciones de su zona."]
         },
         {
           "id": "transferir_stock",
           "name": "Transferir stock entre almacenes",
-          "route": "/inventory-transfer",
+          "route": "/inventory",
           "steps": [
-            "Ve a 'Inventario' > 'Operaciones'",
-            "Selecciona 'Transferencia de Stock'",
-            "Elige el almacen de origen",
-            "Elige el almacen de destino",
-            "Selecciona los productos a transferir",
-            "Indica las cantidades",
-            "Confirma la transferencia"
+            "En 'Inventario', toca el botón flotante (+) y elige 'Transferencia'.",
+            "Selecciona el almacén origen y el almacén destino.",
+            "Agrega los productos y las cantidades a mover.",
+            "Confirma la transferencia."
           ],
-          "tips": [
-            "Las transferencias quedan registradas en el historial de movimientos"
-          ]
+          "tips": ["Revisa la pestaña 'Movimientos' para auditar transferencias recientes."]
         },
         {
-          "id": "ajuste_inventario",
-          "name": "Realizar ajuste de inventario",
-          "route": "/inventory-adjustment",
+          "id": "ajuste_extraccion",
+          "name": "Registrar ajuste o extracción",
+          "route": "/inventory",
           "steps": [
-            "Ve a 'Inventario' > 'Operaciones'",
-            "Selecciona 'Ajuste de Inventario'",
-            "Selecciona el almacen",
-            "Busca el producto a ajustar",
-            "Indica la cantidad correcta (real) que hay fisicamente",
-            "Agrega un motivo del ajuste",
-            "Confirma el ajuste"
+            "En 'Inventario', toca el botón flotante (+).",
+            "Elige 'Extracción' (salida) o 'Ajuste' (corrección de conteo).",
+            "Indica producto, cantidad y motivo.",
+            "Confirma; el movimiento queda en el historial."
           ],
-          "tips": [
-            "Los ajustes son importantes para mantener el inventario sincronizado con la realidad",
-            "Siempre documenta el motivo del ajuste para auditorias"
-          ]
-        },
-        {
-          "id": "ver_historial",
-          "name": "Ver historial de movimientos",
-          "route": "/inventory-history",
-          "steps": [
-            "Ve a 'Inventario' > 'Historial'",
-            "Puedes filtrar por fecha, tipo de operacion o almacen",
-            "Cada movimiento muestra: fecha, producto, cantidad, tipo y usuario"
-          ],
-          "tips": [
-            "El historial es util para rastrear discrepancias en el inventario"
-          ]
+          "tips": ["Usa 'Ajuste' tras un inventario físico para cuadrar diferencias."]
         }
       ]
     },
     "ventas": {
       "name": "Ventas",
-      "description": "Visualizacion de ventas realizadas, reportes, estadisticas y gestion de promociones.",
+      "description": "Seguimiento de las ventas del negocio: operaciones registradas, métricas por período, análisis por TPV/vendedor y gestión de promociones. La entrada 'Ventas' del menú abre /sales.",
       "icon": "point_of_sale",
       "routes": {
-        "main": "/sales",
+        "sales": "/sales",
         "promotions": "/promotions"
       },
       "permissions": {
-        "view": ["gerente", "supervisor", "auditor"],
-        "promotions": ["gerente", "auditor"]
+        "view": ["gerente", "supervisor"],
+        "create": ["gerente"],
+        "edit": ["gerente", "supervisor"],
+        "delete": ["gerente"]
       },
       "features": [
         {
           "id": "ver_ventas",
-          "name": "Ver historial de ventas",
+          "name": "Consultar las ventas",
           "route": "/sales",
           "steps": [
-            "Ve a 'Ventas' desde el menu lateral",
-            "Veras las ventas del dia actual por defecto",
-            "Usa los filtros para cambiar el rango de fechas",
-            "Puedes filtrar por TPV, vendedor o metodo de pago",
-            "Toca una venta para ver su detalle"
+            "Abre 'Ventas' en el menú lateral.",
+            "Selecciona el rango de fechas que quieras analizar.",
+            "Revisa el total vendido, el número de operaciones y el desglose por TPV.",
+            "Toca una venta para ver su detalle."
           ],
-          "tips": [
-            "Puedes exportar las ventas a Excel o PDF"
-          ]
+          "tips": ["Cruza esta información con Finanzas para conciliar ingresos."]
         },
         {
           "id": "crear_promocion",
-          "name": "Crear una promocion",
+          "name": "Crear una promoción",
           "route": "/promotions",
           "steps": [
-            "Ve a 'Ventas' > 'Promociones'",
-            "Toca el boton '+' para crear una nueva promocion",
-            "Elige el tipo: descuento porcentual, monto fijo, 2x1, etc.",
-            "Selecciona los productos o categorias que aplican",
-            "Define las fechas de vigencia",
-            "Opcionalmente, establece condiciones (compra minima, etc.)",
-            "Activa y guarda la promocion"
+            "Abre 'Promociones' (/promotions).",
+            "Toca agregar una nueva promoción.",
+            "Define el tipo (descuento, precio especial), los productos y la vigencia.",
+            "Guarda; la promoción se aplicará según las condiciones definidas."
           ],
-          "tips": [
-            "Las promociones se aplican automaticamente en el TPV",
-            "Puedes programar promociones para fechas futuras"
-          ]
+          "tips": ["Revisa las fechas de vigencia para que la promoción se active cuando esperas."]
         }
       ]
     },
     "almacenes": {
       "name": "Almacenes",
-      "description": "Gestion de almacenes, zonas (layouts) y TPVs de la tienda.",
+      "description": "Administración de los almacenes y zonas físicas del negocio: crear almacenes, definir sus zonas y consultar su configuración. La entrada 'Almacenes' del menú abre /warehouse.",
       "icon": "store",
       "routes": {
         "list": "/warehouse",
@@ -255,492 +194,683 @@
       },
       "permissions": {
         "view": ["gerente", "supervisor", "auditor", "almacenero"],
-        "create": ["gerente"]
+        "create": ["gerente"],
+        "edit": ["gerente"],
+        "delete": ["gerente"]
       },
       "features": [
         {
-          "id": "ver_almacenes",
-          "name": "Ver almacenes",
-          "route": "/warehouse",
-          "steps": [
-            "Ve a 'Almacenes' desde el menu lateral",
-            "Veras la lista de almacenes de tu tienda",
-            "Cada almacen muestra sus zonas y TPVs asociados",
-            "Toca un almacen para ver su detalle"
-          ],
-          "tips": [
-            "Los almaceneros solo pueden ver su almacen asignado"
-          ]
-        },
-        {
           "id": "crear_almacen",
-          "name": "Crear un nuevo almacen",
+          "name": "Crear un almacén",
           "route": "/add-warehouse",
           "steps": [
-            "Ve a 'Almacenes' desde el menu",
-            "Toca el boton '+' o 'Agregar Almacen'",
-            "Ingresa el nombre del almacen",
-            "Opcionalmente, agrega la direccion",
-            "Crea al menos una zona (layout) dentro del almacen",
-            "Guarda el almacen"
+            "Abre 'Almacenes' (/warehouse) y usa 'Agregar almacén'.",
+            "Define el nombre, la ubicación y las zonas internas.",
+            "Guarda; el almacén queda disponible para recibir y mover stock."
           ],
-          "tips": [
-            "Cada almacen debe tener al menos una zona para poder registrar inventario"
-          ]
+          "tips": ["Organiza las zonas según cómo trabajas físicamente el inventario."]
         }
       ]
     },
     "finanzas": {
       "name": "Finanzas",
-      "description": "Dashboard financiero, reportes de ingresos/gastos, costos de produccion y tasas de cambio.",
+      "description": "Control financiero del negocio: dashboard de ingresos/egresos, informes, registro de gastos, configuración financiera y costos de producción. La entrada 'Finanzas' del menú abre /financial (solo Gerente).",
       "icon": "account_balance",
       "routes": {
+        "financial": "/financial",
         "dashboard": "/financial-dashboard",
         "reports": "/financial-reports",
         "expenses": "/financial-expenses",
         "setup": "/financial-setup",
-        "production_costs": "/production-costs",
-        "exchange_rates": "/exchange-rates"
+        "production_costs": "/restaurant-costs"
       },
       "permissions": {
         "view": ["gerente", "auditor"],
-        "edit": ["gerente"]
+        "create": ["gerente"],
+        "edit": ["gerente"],
+        "delete": ["gerente"]
       },
       "features": [
         {
-          "id": "ver_dashboard_financiero",
-          "name": "Ver dashboard financiero",
+          "id": "ver_finanzas",
+          "name": "Ver el estado financiero",
           "route": "/financial-dashboard",
           "steps": [
-            "Ve a 'Finanzas' desde el menu lateral",
-            "Selecciona 'Dashboard' o entra directamente",
-            "Veras un resumen de ingresos, gastos y margen de ganancia",
-            "Usa los filtros de periodo para analizar diferentes rangos"
+            "Abre 'Finanzas' en el menú lateral.",
+            "Consulta el dashboard: ingresos, egresos y balance del período.",
+            "Entra a 'Informes' para ver detalle por categoría o fecha."
           ],
-          "tips": [
-            "El dashboard se actualiza automaticamente con cada venta"
-          ]
+          "tips": ["Los auditores pueden consultar Finanzas en modo lectura."]
         },
         {
           "id": "registrar_gasto",
           "name": "Registrar un gasto",
           "route": "/financial-expenses",
           "steps": [
-            "Ve a 'Finanzas' > 'Gastos'",
-            "Toca el boton '+' para agregar un gasto",
-            "Selecciona la categoria del gasto",
-            "Ingresa el monto y descripcion",
-            "Opcionalmente, adjunta un comprobante",
-            "Guarda el gasto"
+            "En Finanzas, abre 'Gastos' (/financial-expenses).",
+            "Agrega un nuevo gasto con su categoría, monto y fecha.",
+            "Guarda; el gasto se refleja en el balance."
           ],
-          "tips": [
-            "Registrar gastos permite calcular correctamente el margen de ganancia"
-          ]
+          "tips": ["Categoriza bien los gastos para que los informes sean útiles."]
         },
         {
-          "id": "configurar_tasas",
-          "name": "Configurar tasas de cambio",
-          "route": "/exchange-rates",
+          "id": "costos_produccion",
+          "name": "Definir costos de producción",
+          "route": "/restaurant-costs",
           "steps": [
-            "Ve a 'Finanzas' > 'Tasas de Cambio'",
-            "Veras las monedas configuradas y sus tasas actuales",
-            "Modifica la tasa de cambio USD segun el mercado",
-            "Guarda los cambios"
+            "Abre 'Costos de producción' (/restaurant-costs).",
+            "Selecciona el producto elaborado.",
+            "Define su ficha técnica: ingredientes, cantidades y costo unitario.",
+            "Guarda; el costo calculado alimenta el margen del producto."
           ],
-          "tips": [
-            "Las tasas de cambio afectan como se muestran los precios y reportes"
-          ]
+          "tips": ["Útil en modo restaurante para saber cuánto cuesta cada plato elaborado."]
         }
       ]
     },
     "crm": {
-      "name": "CRM y Clientes",
-      "description": "Gestion de clientes, historial de compras, segmentacion y analisis de relaciones comerciales.",
+      "name": "CRM Empresarial",
+      "description": "Gestión de clientes y relaciones comerciales: base de clientes, análisis, relaciones empresariales e interacciones. La entrada 'CRM Empresarial' del menú abre /crm-dashboard (solo Gerente).",
       "icon": "people",
       "routes": {
         "dashboard": "/crm-dashboard",
         "analytics": "/crm-analytics",
-        "relationships": "/crm-relationships",
-        "customers": "/customers"
+        "relationships": "/relationships",
+        "customers": "/customers",
+        "interacciones": "/interacciones-clientes"
       },
       "permissions": {
-        "view": ["gerente", "auditor"],
-        "edit": ["gerente"]
+        "view": ["gerente"],
+        "create": ["gerente"],
+        "edit": ["gerente"],
+        "delete": ["gerente"]
       },
       "features": [
         {
-          "id": "ver_clientes",
-          "name": "Ver lista de clientes",
+          "id": "gestionar_clientes",
+          "name": "Gestionar clientes",
           "route": "/customers",
           "steps": [
-            "Ve a 'CRM' > 'Clientes' desde el menu",
-            "Veras la lista de clientes registrados",
-            "Usa el buscador para encontrar clientes especificos",
-            "Toca un cliente para ver su historial de compras"
+            "Abre 'CRM Empresarial' (/crm-dashboard) y entra a Clientes (/customers).",
+            "Crea o edita un cliente con sus datos de contacto.",
+            "Registra interacciones en 'Interacciones' (/interacciones-clientes).",
+            "Consulta relaciones empresariales en 'Relaciones' (/relationships)."
           ],
-          "tips": [
-            "Los clientes se registran automaticamente con cada venta si proporcionan datos"
-          ]
+          "tips": ["Un CRM ordenado ayuda a las cuentas por cobrar y a las ventas por convenio."]
         },
         {
-          "id": "analisis_crm",
-          "name": "Ver analisis de CRM",
+          "id": "analitica_crm",
+          "name": "Analizar clientes",
           "route": "/crm-analytics",
           "steps": [
-            "Ve a 'CRM' > 'Analiticas'",
-            "Veras metricas como: clientes recurrentes, frecuencia de compra, ticket promedio",
-            "Puedes filtrar por periodo o segmento de clientes"
+            "En CRM, abre 'Analítica' (/crm-analytics).",
+            "Revisa métricas de clientes, segmentos y comportamiento.",
+            "Usa los hallazgos para campañas de marketing o fidelización."
           ],
-          "tips": [
-            "Usa estas metricas para identificar tus mejores clientes"
-          ]
+          "tips": ["Combina con Marketing para acciones dirigidas por segmento."]
         }
       ]
     },
     "marketing": {
       "name": "Marketing",
-      "description": "Campanas de marketing, comunicaciones a clientes, programas de fidelidad y segmentacion.",
+      "description": "Herramientas de marketing y fidelización: campañas, comunicaciones, segmentos, programa de lealtad y análisis. La entrada 'Marketing' del menú abre /marketing-dashboard (solo Gerente).",
       "icon": "campaign",
       "routes": {
         "dashboard": "/marketing-dashboard",
         "campaigns": "/campaigns",
         "communications": "/communications",
         "segments": "/segments",
-        "loyalty": "/loyalty"
+        "loyalty": "/loyalty",
+        "analytics": "/analytics"
       },
       "permissions": {
         "view": ["gerente"],
-        "edit": ["gerente"]
+        "create": ["gerente"],
+        "edit": ["gerente"],
+        "delete": ["gerente"]
       },
       "features": [
         {
           "id": "crear_campana",
-          "name": "Crear campana de marketing",
+          "name": "Crear una campaña",
           "route": "/campaigns",
           "steps": [
-            "Ve a 'Marketing' > 'Campanas'",
-            "Toca '+' para crear una nueva campana",
-            "Define el nombre y objetivo de la campana",
-            "Selecciona el publico objetivo (segmento de clientes)",
-            "Elige el canal: SMS, email, notificacion push",
-            "Redacta el mensaje",
-            "Programa o envía inmediatamente"
+            "Abre 'Marketing' (/marketing-dashboard) y entra a 'Campañas' (/campaigns).",
+            "Crea una campaña, define el segmento objetivo y el mensaje.",
+            "Programa su envío y actívala.",
+            "Mide resultados en 'Análisis' (/analytics)."
           ],
-          "tips": [
-            "Las campanas segmentadas tienen mejor tasa de respuesta"
-          ]
+          "tips": ["Define segmentos en /segments antes de lanzar la campaña."]
         },
         {
-          "id": "programa_fidelidad",
-          "name": "Configurar programa de fidelidad",
+          "id": "fidelizacion",
+          "name": "Configurar fidelización",
           "route": "/loyalty",
           "steps": [
-            "Ve a 'Marketing' > 'Fidelidad'",
-            "Configura las reglas de acumulacion de puntos",
-            "Define las recompensas canjeables",
-            "Activa el programa"
+            "En Marketing, abre 'Lealtad' (/loyalty).",
+            "Define el programa de puntos o beneficios.",
+            "Asócialo a los clientes o segmentos deseados y actívalo."
           ],
-          "tips": [
-            "Los programas de fidelidad aumentan la retencion de clientes"
-          ]
+          "tips": ["La fidelización funciona mejor con un CRM bien mantenido."]
         }
       ]
     },
     "proveedores": {
       "name": "Proveedores",
-      "description": "Gestion de proveedores, historial de compras y reportes de abastecimiento.",
+      "description": "Directorio y gestión de proveedores: alta, edición, detalle y reportes de compras/entregas. La entrada del menú abre /suppliers.",
       "icon": "local_shipping",
       "routes": {
         "list": "/suppliers",
         "add": "/add-supplier",
+        "edit": "/edit-supplier",
         "detail": "/supplier-detail",
-        "reports": "/supplier-reports"
+        "reports": "/supplier-reports",
+        "excel_import": "/excel-import"
       },
       "permissions": {
-        "view": ["gerente", "supervisor", "auditor"],
+        "view": ["gerente", "supervisor"],
         "create": ["gerente"],
-        "edit": ["gerente"]
+        "edit": ["gerente"],
+        "delete": ["gerente"]
       },
       "features": [
         {
-          "id": "registrar_proveedor",
+          "id": "crear_proveedor",
           "name": "Registrar un proveedor",
           "route": "/add-supplier",
           "steps": [
-            "Ve a 'Proveedores' desde el menu",
-            "Toca '+' para agregar un proveedor",
-            "Ingresa los datos: nombre, contacto, telefono, email",
-            "Opcionalmente, agrega direccion y notas",
-            "Guarda el proveedor"
+            "Abre 'Proveedores' (/suppliers) y usa 'Agregar proveedor'.",
+            "Completa nombre, contacto y condiciones de compra.",
+            "Guarda; el proveedor queda disponible para recepciones y pagos."
           ],
-          "tips": [
-            "Asociar proveedores a las recepciones facilita el seguimiento de compras"
-          ]
+          "tips": ["Asocia el proveedor a las recepciones para rastrear las compras."]
         },
         {
-          "id": "ver_reportes_proveedor",
+          "id": "reportes_proveedor",
           "name": "Ver reportes de proveedores",
           "route": "/supplier-reports",
           "steps": [
-            "Ve a 'Proveedores' > 'Reportes'",
-            "Selecciona el proveedor a analizar",
-            "Veras: total comprado, productos mas comprados, historial de pedidos"
+            "En Proveedores, abre 'Reportes' (/supplier-reports).",
+            "Filtra por proveedor y período.",
+            "Revisa compras, entregas y saldos."
           ],
-          "tips": [
-            "Usa estos reportes para negociar mejores precios con proveedores frecuentes"
-          ]
+          "tips": ["Cruza con 'Pago a proveedores' para ver lo pendiente de pagar."]
         }
       ]
     },
     "trabajadores": {
       "name": "Trabajadores",
-      "description": "Gestion de personal, asignacion de roles y permisos por tienda.",
+      "description": "Gestión del personal operativo y asignación a puntos de venta (TPV): crear trabajadores, definir roles y vincularlos a un TPV. La entrada 'Trabajadores' del menú abre /workers.",
       "icon": "badge",
       "routes": {
         "list": "/workers",
         "tpv_management": "/tpv-management"
       },
       "permissions": {
-        "view": ["gerente", "supervisor", "auditor"],
-        "edit": ["gerente"]
+        "view": ["gerente", "supervisor", "auditor", "rrhh"],
+        "create": ["gerente", "supervisor"],
+        "edit": ["gerente", "supervisor"],
+        "delete": ["gerente"]
       },
       "features": [
         {
-          "id": "ver_trabajadores",
-          "name": "Ver lista de trabajadores",
+          "id": "crear_trabajador",
+          "name": "Registrar un trabajador",
           "route": "/workers",
           "steps": [
-            "Ve a 'Trabajadores' desde el menu",
-            "Veras la lista de empleados de la tienda",
-            "Cada trabajador muestra su rol y almacen asignado",
-            "Toca un trabajador para ver o editar sus datos"
+            "Abre 'Trabajadores' (/workers).",
+            "Agrega un nuevo trabajador con sus datos y rol (vendedor, supervisor, almacenero, etc.).",
+            "Asígnalo al TPV correspondiente desde 'Gestión de TPV' (/tpv-management).",
+            "Guarda; el trabajador podrá operar según su rol."
           ],
-          "tips": [
-            "Los roles determinan a que pantallas puede acceder cada trabajador"
-          ]
+          "tips": ["El rol define qué puede hacer cada persona en la app."]
+        }
+      ]
+    },
+    "recursos_humanos": {
+      "name": "Recursos Humanos",
+      "description": "Módulo de RRHH (requiere plan Pro): asistencia (check-in/check-out), historial de asistencia, configuración de trabajadores y reporte de salarios. La entrada 'Recursos Humanos' del menú abre /hr-dashboard.",
+      "icon": "groups",
+      "routes": {
+        "dashboard": "/hr-dashboard",
+        "checkin": "/hr-checkin",
+        "checkout": "/hr-checkout",
+        "salary_report": "/hr-salary-report",
+        "worker_config": "/hr-worker-config",
+        "attendance_history": "/hr-attendance-history"
+      },
+      "permissions": {
+        "view": ["gerente", "supervisor", "rrhh"],
+        "create": ["gerente", "supervisor", "rrhh"],
+        "edit": ["gerente", "rrhh"],
+        "delete": ["gerente"]
+      },
+      "features": [
+        {
+          "id": "registrar_asistencia",
+          "name": "Registrar entrada y salida",
+          "route": "/hr-checkin",
+          "steps": [
+            "Abre 'Recursos Humanos' (/hr-dashboard).",
+            "Usa 'Check-in' (/hr-checkin) para registrar la entrada del trabajador.",
+            "Al terminar la jornada, usa 'Check-out' (/hr-checkout).",
+            "Consulta el 'Historial de asistencia' (/hr-attendance-history) cuando lo necesites."
+          ],
+          "tips": ["La asistencia alimenta el cálculo de salarios."]
         },
         {
-          "id": "gestionar_tpvs",
-          "name": "Gestionar TPVs y cajas",
+          "id": "config_salario",
+          "name": "Configurar el salario de un trabajador",
+          "route": "/hr-worker-config",
+          "steps": [
+            "En RRHH, abre 'Configuración de trabajador' (/hr-worker-config).",
+            "Selecciona al trabajador.",
+            "Define la modalidad de pago: por hora o por día.",
+            "Guarda; el reporte de salarios usará esta configuración."
+          ],
+          "tips": ["Un 'día' trabajado no equivale automáticamente a 8h/24h: se paga según la modalidad definida."]
+        },
+        {
+          "id": "reporte_salarios",
+          "name": "Ver el reporte de salarios",
+          "route": "/hr-salary-report",
+          "steps": [
+            "En RRHH, abre 'Reporte de salarios' (/hr-salary-report).",
+            "Selecciona el período.",
+            "Revisa el cálculo por trabajador según asistencia y modalidad."
+          ],
+          "tips": ["Requiere plan Pro; verifica antes que la asistencia esté registrada."]
+        }
+      ]
+    },
+    "cocinas": {
+      "name": "Cocinas",
+      "description": "Gestión de cocinas para negocios en modo restaurante: administrar las estaciones de cocina y su relación con los productos elaborados. Solo aparece en el menú si el negocio opera en modo restaurante. La entrada abre /cocinas-management.",
+      "icon": "restaurant",
+      "routes": {
+        "management": "/cocinas-management"
+      },
+      "permissions": {
+        "view": ["gerente", "supervisor"],
+        "create": ["gerente"],
+        "edit": ["gerente", "supervisor"],
+        "delete": ["gerente"]
+      },
+      "features": [
+        {
+          "id": "gestionar_cocinas",
+          "name": "Gestionar cocinas",
+          "route": "/cocinas-management",
+          "steps": [
+            "Abre 'Cocinas' en el menú lateral (visible solo en modo restaurante).",
+            "Crea o edita las estaciones de cocina.",
+            "Asocia los productos elaborados a la cocina que los prepara.",
+            "Guarda los cambios."
+          ],
+          "tips": ["Los costos de los elaborados se definen en Finanzas > Costos de producción."]
+        }
+      ]
+    },
+    "servicentro": {
+      "name": "Servicentro",
+      "description": "Módulo para servicentros/estaciones: se gestiona por cada TPV. Desde 'Gestión de TPV' se accede a la administración del servicentro de un punto concreto. Solo disponible para Gerente.",
+      "icon": "local_gas_station",
+      "routes": {
+        "tpv_management": "/tpv-management",
+        "management": "/servicentro-management"
+      },
+      "permissions": {
+        "view": ["gerente"],
+        "create": ["gerente"],
+        "edit": ["gerente"],
+        "delete": ["gerente"]
+      },
+      "features": [
+        {
+          "id": "gestionar_servicentro",
+          "name": "Gestionar un servicentro",
           "route": "/tpv-management",
           "steps": [
-            "Ve a 'Trabajadores' > 'Gestion de TPVs'",
-            "Veras los TPVs (cajas) configurados",
-            "Puedes crear, editar o desactivar TPVs",
-            "Asigna vendedores a cada TPV"
+            "Abre 'Servicentro' en el menú (o entra por 'Gestión de TPV', /tpv-management).",
+            "Selecciona el TPV/punto que quieres administrar.",
+            "Configura los surtidores, productos y parámetros del servicentro.",
+            "Guarda los cambios."
           ],
-          "tips": [
-            "Cada TPV puede tener precios diferentes para los productos"
-          ]
+          "tips": ["La administración del servicentro es por TPV, no global."]
+        }
+      ]
+    },
+    "consignaciones": {
+      "name": "Consignaciones",
+      "description": "Gestión de mercancía en consignación: productos entregados por/para terceros que se liquidan al venderse. La entrada 'Consignaciones' del menú abre /consignacion.",
+      "icon": "handshake",
+      "routes": {
+        "consignacion": "/consignacion"
+      },
+      "permissions": {
+        "view": ["gerente", "supervisor", "auditor", "almacenero"],
+        "create": ["gerente", "supervisor"],
+        "edit": ["gerente", "supervisor"],
+        "delete": ["gerente"]
+      },
+      "features": [
+        {
+          "id": "gestionar_consignacion",
+          "name": "Registrar y liquidar consignaciones",
+          "route": "/consignacion",
+          "steps": [
+            "Abre 'Consignaciones' (/consignacion).",
+            "Registra la mercancía recibida en consignación con su proveedor.",
+            "A medida que se vende, revisa lo pendiente de liquidar.",
+            "Realiza la liquidación con el tercero según lo vendido."
+          ],
+          "tips": ["La consignación no es compra: solo se paga lo que se vende."]
+        }
+      ]
+    },
+    "cuentas_por_cobrar": {
+      "name": "Cuentas por Cobrar",
+      "description": "Control de lo que los clientes deben al negocio (ventas a crédito, por convenio o consignación). La entrada 'Cuentas por Cobrar' del menú abre /cuentas-por-cobrar.",
+      "icon": "request_quote",
+      "routes": {
+        "cuentas": "/cuentas-por-cobrar",
+        "sale_by_agreement": "/sale-by-agreement"
+      },
+      "permissions": {
+        "view": ["gerente", "supervisor"],
+        "create": ["gerente", "supervisor"],
+        "edit": ["gerente", "supervisor"],
+        "delete": ["gerente"]
+      },
+      "features": [
+        {
+          "id": "ver_cuentas",
+          "name": "Consultar y cobrar cuentas pendientes",
+          "route": "/cuentas-por-cobrar",
+          "steps": [
+            "Abre 'Cuentas por Cobrar' (/cuentas-por-cobrar).",
+            "Revisa los saldos pendientes por cliente.",
+            "Registra los cobros/abonos que se vayan recibiendo.",
+            "El saldo se actualiza automáticamente."
+          ],
+          "tips": ["Las ventas por convenio (/sale-by-agreement) generan cuentas por cobrar."]
+        }
+      ]
+    },
+    "notificacion_clientes": {
+      "name": "Notificación a Clientes",
+      "description": "Envío de notificaciones/mensajes a clientes por WhatsApp API (WAPI). La entrada 'Notificación a Clientes' del menú abre /wapi-notifications. Disponible para todos los roles con acceso a la tienda.",
+      "icon": "notifications_active",
+      "routes": {
+        "wapi": "/wapi-notifications"
+      },
+      "permissions": {
+        "view": ["gerente", "supervisor", "auditor", "almacenero"],
+        "create": ["gerente", "supervisor"],
+        "edit": ["gerente", "supervisor"],
+        "delete": ["gerente"]
+      },
+      "features": [
+        {
+          "id": "enviar_notificacion",
+          "name": "Enviar una notificación a clientes",
+          "route": "/wapi-notifications",
+          "steps": [
+            "Abre 'Notificación a Clientes' (/wapi-notifications).",
+            "Selecciona los clientes o el segmento destinatario.",
+            "Redacta o elige la plantilla del mensaje.",
+            "Envía; el mensaje se despacha por WhatsApp API."
+          ],
+          "tips": ["El acceso a este módulo depende de los permisos de la tienda (RLS), no solo del rol."]
+        }
+      ]
+    },
+    "pago_proveedores": {
+      "name": "Pago a Proveedores",
+      "description": "Registro y seguimiento de los pagos realizados a proveedores, con estados y monedas configurables. La entrada 'Pago a proveedores' del menú abre /pago-proveedores.",
+      "icon": "payments",
+      "routes": {
+        "pagos": "/pago-proveedores",
+        "estados": "/pago-proveedores-estados",
+        "monedas": "/pago-proveedores-monedas"
+      },
+      "permissions": {
+        "view": ["gerente", "supervisor", "auditor", "almacenero"],
+        "create": ["gerente", "supervisor"],
+        "edit": ["gerente", "supervisor"],
+        "delete": ["gerente"]
+      },
+      "features": [
+        {
+          "id": "registrar_pago_proveedor",
+          "name": "Registrar un pago a proveedor",
+          "route": "/pago-proveedores",
+          "steps": [
+            "Abre 'Pago a proveedores' (/pago-proveedores).",
+            "Selecciona el proveedor y el pago a registrar.",
+            "Indica monto, moneda y estado del pago.",
+            "Guarda; el pago queda con su estado para seguimiento."
+          ],
+          "tips": ["Configura los estados y monedas desde sus pantallas propias antes de operar."]
+        }
+      ]
+    },
+    "fondo_caja": {
+      "name": "Fondo de Caja",
+      "description": "Gestión de depósitos bancarios y extracciones del fondo de caja, con estados, monedas, bancos y tipos de extracción configurables. La entrada 'Fondo de Caja' del menú abre /depositos-bancarios.",
+      "icon": "savings",
+      "routes": {
+        "depositos": "/depositos-bancarios",
+        "estados": "/depositos-estados",
+        "monedas": "/depositos-monedas",
+        "bancos": "/depositos-bancos",
+        "tipos_extraccion": "/depositos-tipos-extraccion"
+      },
+      "permissions": {
+        "view": ["gerente", "supervisor", "auditor", "almacenero"],
+        "create": ["gerente", "supervisor"],
+        "edit": ["gerente", "supervisor"],
+        "delete": ["gerente"]
+      },
+      "features": [
+        {
+          "id": "registrar_deposito",
+          "name": "Registrar un depósito bancario",
+          "route": "/depositos-bancarios",
+          "steps": [
+            "Abre 'Fondo de Caja' (/depositos-bancarios).",
+            "Registra el depósito: banco, monto, moneda y estado.",
+            "Guarda; el movimiento queda para conciliación."
+          ],
+          "tips": ["Configura bancos, monedas, estados y tipos de extracción en sus pantallas antes de registrar."]
+        }
+      ]
+    },
+    "carnaval": {
+      "name": "Órdenes Carnaval",
+      "description": "Gestión de órdenes del sistema Carnaval. Solo aparece en el menú si el negocio está sincronizado con Carnaval. La entrada 'Órdenes Carnaval' del menú abre /carnaval-orders.",
+      "icon": "celebration",
+      "routes": {
+        "orders": "/carnaval-orders",
+        "provider_dashboard": "/carnaval-provider-dashboard"
+      },
+      "permissions": {
+        "view": ["gerente", "supervisor"],
+        "create": ["gerente", "supervisor"],
+        "edit": ["gerente", "supervisor"],
+        "delete": ["gerente"]
+      },
+      "features": [
+        {
+          "id": "gestionar_ordenes_carnaval",
+          "name": "Gestionar órdenes Carnaval",
+          "route": "/carnaval-orders",
+          "steps": [
+            "Abre 'Órdenes Carnaval' (/carnaval-orders) (visible solo si hay sincronización con Carnaval).",
+            "Revisa las órdenes recibidas y su estado.",
+            "Procesa o actualiza cada orden según corresponda."
+          ],
+          "tips": ["Si no ves esta opción, el negocio no está sincronizado con Carnaval."]
         }
       ]
     },
     "configuracion": {
-      "name": "Configuracion",
-      "description": "Ajustes generales de la tienda, impresoras, notificaciones y preferencias del sistema.",
+      "name": "Configuración",
+      "description": "Ajustes del negocio y la aplicación: preferencias de la tienda, impresoras WiFi y opciones generales. La entrada 'Configuración' del menú abre /settings (solo Gerente).",
       "icon": "settings",
       "routes": {
-        "main": "/settings",
-        "store": "/store-settings",
-        "printers": "/printer-settings",
-        "notifications": "/notification-settings"
+        "settings": "/settings",
+        "printers": "/wifi-printers"
       },
       "permissions": {
-        "view": ["gerente", "supervisor"],
-        "edit": ["gerente"]
+        "view": ["gerente"],
+        "create": ["gerente"],
+        "edit": ["gerente"],
+        "delete": ["gerente"]
       },
       "features": [
         {
-          "id": "configurar_impresora",
-          "name": "Configurar impresora termica",
-          "route": "/printer-settings",
+          "id": "ajustes_negocio",
+          "name": "Ajustar la configuración del negocio",
+          "route": "/settings",
           "steps": [
-            "Ve a 'Configuracion' > 'Impresoras'",
-            "Asegurate de tener Bluetooth activado",
-            "Toca 'Buscar impresoras'",
-            "Selecciona tu impresora de la lista",
-            "Haz una impresion de prueba"
+            "Abre 'Configuración' (/settings).",
+            "Revisa y ajusta las preferencias del negocio y de la app.",
+            "Guarda los cambios."
           ],
-          "tips": [
-            "Las impresoras termicas Bluetooth se usan para tickets y recibos"
-          ]
+          "tips": ["Solo el Gerente puede cambiar la configuración."]
         },
         {
-          "id": "datos_tienda",
-          "name": "Editar datos de la tienda",
-          "route": "/store-settings",
+          "id": "config_impresora",
+          "name": "Configurar una impresora WiFi",
+          "route": "/wifi-printers",
           "steps": [
-            "Ve a 'Configuracion' > 'Datos de la Tienda'",
-            "Puedes editar: nombre, direccion, telefono, logo",
-            "Estos datos aparecen en los tickets y reportes"
+            "En Configuración, abre 'Impresoras WiFi' (/wifi-printers).",
+            "Agrega la impresora indicando su IP/red.",
+            "Haz una impresión de prueba.",
+            "Guarda; la impresora queda lista para tickets."
           ],
-          "tips": [
-            "Manten actualizados los datos para que los tickets sean correctos"
-          ]
+          "tips": ["La impresora y el dispositivo deben estar en la misma red WiFi."]
         }
       ]
     }
   },
   "faqs": [
     {
-      "id": "faq_1",
-      "question": "Como puedo crear un producto?",
-      "answer": "Ve al menu lateral, selecciona 'Productos' y luego toca el boton '+'. Completa el formulario con nombre, precio y categoria. Tambien puedes usar el generador de IA para crear productos desde imagenes.",
+      "question": "Cómo creo un producto?",
+      "answer": "Abre 'Productos' en el menú (se abre el Dashboard de Productos), toca + o entra a la lista y usa 'Agregar producto'. Completa nombre, categoría, precio y costo, y guarda. Solo el Gerente puede crear productos.",
       "route": "/add-product",
       "roles": ["gerente"]
     },
     {
-      "id": "faq_2",
-      "question": "Como registro una recepcion de mercancia?",
-      "answer": "Ve a 'Inventario' > 'Operaciones' > 'Recepcion de Mercancia'. Selecciona el almacen destino, agrega los productos con sus cantidades y confirma la recepcion.",
-      "route": "/inventory-reception",
-      "roles": ["gerente", "almacenero"]
+      "question": "Cómo registro una recepción de mercancía?",
+      "answer": "Entra a 'Inventario', toca el botón flotante (+) y elige 'Recepción'. Selecciona la zona de destino, agrega los productos y las cantidades, y confirma. El stock se incrementa automáticamente.",
+      "route": "/inventory",
+      "roles": ["gerente", "supervisor", "almacenero"]
     },
     {
-      "id": "faq_3",
-      "question": "Como transfiero productos entre almacenes?",
-      "answer": "Ve a 'Inventario' > 'Operaciones' > 'Transferencia'. Selecciona almacen origen, almacen destino, los productos y cantidades a transferir.",
-      "route": "/inventory-transfer",
-      "roles": ["gerente", "almacenero"]
+      "question": "Cómo transfiero stock entre almacenes?",
+      "answer": "En 'Inventario', toca el botón flotante (+) y elige 'Transferencia'. Selecciona almacén origen y destino, agrega los productos y confirma. Puedes auditar el movimiento en la pestaña 'Movimientos'.",
+      "route": "/inventory",
+      "roles": ["gerente", "supervisor", "almacenero"]
     },
     {
-      "id": "faq_4",
-      "question": "Como veo las ventas del dia?",
-      "answer": "Ve a 'Ventas' desde el menu lateral. Por defecto veras las ventas de hoy. Puedes usar los filtros para cambiar el rango de fechas o filtrar por vendedor.",
-      "route": "/sales",
-      "roles": ["gerente", "supervisor", "auditor"]
+      "question": "Dónde reviso los precios y márgenes?",
+      "answer": "En Productos, abre 'Precios de productos' (/precios-productos) para revisar precio de venta vs costo. Los precios específicos por punto de venta se ajustan en 'Precios TPV' (/tpv-prices).",
+      "route": "/precios-productos",
+      "roles": ["gerente", "supervisor"]
     },
     {
-      "id": "faq_5",
-      "question": "Como creo una promocion o descuento?",
-      "answer": "Ve a 'Ventas' > 'Promociones'. Toca '+' para crear una nueva. Elige el tipo de descuento, selecciona productos, define fechas de vigencia y activa la promocion.",
-      "route": "/promotions",
+      "question": "Cómo importo productos desde Excel?",
+      "answer": "Abre 'Importar Excel' (/excel-import), descarga la plantilla, llénala, súbela y revisa la vista previa de validación antes de confirmar la importación en lote.",
+      "route": "/excel-import",
       "roles": ["gerente"]
     },
     {
-      "id": "faq_6",
-      "question": "Como cambio el precio de un producto?",
-      "answer": "Ve a 'Productos', busca el producto y tocalo para ver sus detalles. Luego toca 'Editar' y modifica el precio. Para precios diferentes por TPV, usa 'Precios por TPV'.",
-      "route": "/products",
+      "question": "Cómo veo las ventas del día?",
+      "answer": "Abre 'Ventas' (/sales), selecciona el rango de fechas y revisa el total vendido, las operaciones y el desglose por TPV. Toca una venta para ver su detalle.",
+      "route": "/sales",
       "roles": ["gerente", "supervisor"]
     },
     {
-      "id": "faq_7",
-      "question": "Como veo el stock de un producto?",
-      "answer": "Ve a 'Productos' y busca el producto. En la vista de detalle veras el stock disponible en cada almacen. Tambien puedes ver el stock global en 'Inventario'.",
-      "route": "/products",
-      "roles": ["gerente", "supervisor", "auditor", "almacenero"]
-    },
-    {
-      "id": "faq_8",
-      "question": "Como configuro la impresora de tickets?",
-      "answer": "Ve a 'Configuracion' > 'Impresoras'. Activa Bluetooth, toca 'Buscar impresoras', selecciona tu impresora y haz una prueba de impresion.",
-      "route": "/printer-settings",
-      "roles": ["gerente", "supervisor"]
-    },
-    {
-      "id": "faq_9",
-      "question": "Como registro un gasto?",
-      "answer": "Ve a 'Finanzas' > 'Gastos'. Toca '+', selecciona la categoria, ingresa el monto y descripcion, y guarda el gasto.",
+      "question": "Cómo registro un gasto?",
+      "answer": "En Finanzas, abre 'Gastos' (/financial-expenses), agrega el gasto con su categoría, monto y fecha, y guarda. Se reflejará en el balance financiero.",
       "route": "/financial-expenses",
       "roles": ["gerente"]
     },
     {
-      "id": "faq_10",
-      "question": "Como veo los reportes de ventas?",
-      "answer": "Ve a 'Ventas' desde el menu. Puedes filtrar por fechas, exportar a Excel o PDF, y ver graficos de tendencias en el Dashboard.",
-      "route": "/sales",
-      "roles": ["gerente", "supervisor", "auditor"]
+      "question": "Cómo funciona el registro de asistencia (RRHH)?",
+      "answer": "En 'Recursos Humanos' (/hr-dashboard) usa Check-in (/hr-checkin) para la entrada y Check-out (/hr-checkout) para la salida. El historial está en /hr-attendance-history y alimenta el reporte de salarios. Requiere plan Pro.",
+      "route": "/hr-dashboard",
+      "roles": ["gerente", "supervisor", "rrhh"]
+    },
+    {
+      "question": "Cómo cobro a un cliente que me debe?",
+      "answer": "Abre 'Cuentas por Cobrar' (/cuentas-por-cobrar), revisa el saldo del cliente y registra el cobro o abono recibido. El saldo se actualiza automáticamente.",
+      "route": "/cuentas-por-cobrar",
+      "roles": ["gerente", "supervisor"]
+    },
+    {
+      "question": "Cómo envío una notificación por WhatsApp a mis clientes?",
+      "answer": "Abre 'Notificación a Clientes' (/wapi-notifications), selecciona los clientes o segmento, elige o redacta el mensaje y envía. El acceso depende de los permisos de la tienda.",
+      "route": "/wapi-notifications",
+      "roles": ["gerente", "supervisor"]
+    },
+    {
+      "question": "No veo la opción Cocinas / Órdenes Carnaval, por qué?",
+      "answer": "'Cocinas' solo aparece si el negocio opera en modo restaurante, y 'Órdenes Carnaval' solo si el negocio está sincronizado con Carnaval. Si no las ves, esas condiciones no se cumplen para tu negocio.",
+      "route": null,
+      "roles": ["gerente", "supervisor"]
+    },
+    {
+      "question": "Cómo configuro una impresora?",
+      "answer": "En 'Configuración' (/settings) abre 'Impresoras WiFi' (/wifi-printers), agrega la impresora con su IP, haz una prueba de impresión y guarda. La impresora y el dispositivo deben estar en la misma red WiFi.",
+      "route": "/wifi-printers",
+      "roles": ["gerente"]
     }
   ],
   "glossary": {
-    "TPV": {
-      "term": "TPV (Terminal Punto de Venta)",
-      "definition": "Es una caja o punto de venta donde se realizan las transacciones con clientes. Cada TPV puede tener precios diferentes y un vendedor asignado."
-    },
-    "SKU": {
-      "term": "SKU (Stock Keeping Unit)",
-      "definition": "Codigo unico que identifica a cada producto. Puede ser el codigo de barras o un codigo interno asignado por la tienda."
-    },
-    "Layout": {
-      "term": "Layout (Zona)",
-      "definition": "Division fisica dentro de un almacen. Por ejemplo: estanteria A, zona fria, bodega trasera. Ayuda a organizar donde se ubica cada producto."
-    },
-    "Stock": {
-      "term": "Stock",
-      "definition": "Cantidad de unidades disponibles de un producto en inventario."
-    },
-    "Recepcion": {
-      "term": "Recepcion de Mercancia",
-      "definition": "Proceso de registrar productos que llegan al almacen, ya sea de un proveedor o de otra fuente."
-    },
-    "Transferencia": {
-      "term": "Transferencia de Stock",
-      "definition": "Movimiento de productos de un almacen a otro dentro de la misma tienda."
-    },
-    "Ajuste": {
-      "term": "Ajuste de Inventario",
-      "definition": "Correccion del stock cuando hay diferencia entre el inventario del sistema y el conteo fisico real."
-    },
-    "Margen": {
-      "term": "Margen de Ganancia",
-      "definition": "Diferencia entre el precio de venta y el costo del producto. Se puede expresar en porcentaje o valor absoluto."
-    },
-    "Consignacion": {
-      "term": "Consignacion",
-      "definition": "Modalidad donde un proveedor deja productos en la tienda y solo se paga por lo vendido."
-    },
-    "CRM": {
-      "term": "CRM (Customer Relationship Management)",
-      "definition": "Sistema de gestion de relaciones con clientes. Permite registrar datos de clientes, historial de compras y preferencias."
-    }
+    "tpv": { "term": "TPV", "definition": "Terminal/Punto de Venta. Es cada punto donde se registran ventas; los trabajadores se asignan a un TPV y hay precios y configuración por TPV." },
+    "elaborado": { "term": "Producto elaborado", "definition": "Producto que se produce combinando otros (ej. un plato). Su costo se calcula desde su ficha de producción en Costos de producción." },
+    "consignacion": { "term": "Consignación", "definition": "Mercancía recibida de un tercero que solo se paga cuando se vende; no es una compra en firme." },
+    "cuenta_por_cobrar": { "term": "Cuenta por cobrar", "definition": "Dinero que un cliente debe al negocio, típicamente por ventas a crédito o por convenio." },
+    "recepcion": { "term": "Recepción", "definition": "Operación de inventario que registra la entrada de mercancía y aumenta el stock." },
+    "transferencia": { "term": "Transferencia", "definition": "Movimiento de stock de un almacén/zona a otro dentro del mismo negocio." },
+    "ajuste": { "term": "Ajuste", "definition": "Corrección del stock para cuadrar el conteo del sistema con el conteo físico." },
+    "wapi": { "term": "WAPI", "definition": "Integración de WhatsApp API usada para enviar notificaciones y mensajes a clientes." },
+    "fondo_caja": { "term": "Fondo de caja", "definition": "Control de depósitos bancarios y extracciones de efectivo del negocio." },
+    "modo_restaurante": { "term": "Modo restaurante", "definition": "Configuración del negocio que habilita cocinas y productos elaborados con ficha de costos." },
+    "plan_pro": { "term": "Plan Pro", "definition": "Nivel de suscripción que habilita módulos avanzados como Recursos Humanos." }
   },
   "role_descriptions": {
-    "gerente": {
-      "name": "Gerente",
-      "description": "Acceso completo a todas las funciones del sistema. Puede crear, editar y eliminar cualquier dato, gestionar trabajadores y configurar la tienda.",
-      "can_access": ["productos", "inventario", "ventas", "almacenes", "finanzas", "crm", "marketing", "proveedores", "trabajadores", "configuracion"]
-    },
-    "supervisor": {
-      "name": "Supervisor",
-      "description": "Puede gestionar productos, inventario y ventas. No tiene acceso a finanzas ni marketing. Puede ver trabajadores pero no modificarlos.",
-      "can_access": ["productos", "inventario", "ventas", "almacenes", "proveedores", "trabajadores"]
-    },
-    "auditor": {
-      "name": "Auditor",
-      "description": "Acceso de solo lectura a la mayoria de modulos. Puede ver reportes financieros, ventas e inventario para auditorias, pero no puede modificar datos.",
-      "can_access": ["productos", "inventario", "ventas", "almacenes", "finanzas", "crm", "proveedores", "trabajadores"]
-    },
-    "almacenero": {
-      "name": "Almacenero",
-      "description": "Acceso limitado al almacen asignado. Puede registrar recepciones, transferencias y consultar inventario de su zona. No tiene acceso a ventas ni finanzas.",
-      "can_access": ["productos", "inventario", "almacenes"]
-    }
+    "gerente": "Acceso completo al negocio: productos, inventario, ventas, finanzas, marketing, CRM, recursos humanos, pagos, fondo de caja y configuración. Puede crear, editar y eliminar en todos los módulos.",
+    "supervisor": "Gestiona la operación diaria: productos, inventario, ventas, cuentas por cobrar, consignaciones, trabajadores y notificaciones a clientes. No accede a finanzas ni configuración del negocio.",
+    "auditor": "Perfil de consulta: revisa informes financieros, inventario, ventas y métricas en modo lectura. No modifica datos.",
+    "almacenero": "Opera el inventario de su zona: recepciones, transferencias, extracciones y consulta de stock. No accede a ventas, finanzas ni configuración.",
+    "rrhh": "Perfil de Recursos Humanos: gestiona asistencia, configuración de trabajadores y reporte de salarios (requiere plan Pro)."
   },
   "suggested_questions": {
     "gerente": [
-      "Como creo un producto?",
-      "Como veo las ventas de hoy?",
-      "Como registro un gasto?",
-      "Como creo una promocion?"
+      "Cómo creo un producto nuevo?",
+      "Dónde reviso el estado financiero del negocio?",
+      "Cómo configuro los salarios en Recursos Humanos?",
+      "Cómo lanzo una campaña de marketing?"
     ],
     "supervisor": [
-      "Como veo el inventario?",
-      "Como edito un producto?",
-      "Como veo las ventas?",
-      "Donde veo los trabajadores?"
+      "Cómo registro una recepción de mercancía?",
+      "Cómo cobro una cuenta pendiente de un cliente?",
+      "Cómo veo las ventas del período?",
+      "Cómo transfiero stock entre almacenes?"
     ],
     "auditor": [
-      "Como veo los reportes financieros?",
-      "Como exporto las ventas?",
-      "Como veo el historial de inventario?",
-      "Como analizo las metricas?"
+      "Dónde consulto los informes financieros?",
+      "Cómo reviso el valor del inventario?",
+      "Dónde veo las métricas de ventas?"
     ],
     "almacenero": [
-      "Como registro una recepcion?",
-      "Como hago una transferencia?",
-      "Como veo el stock de mi almacen?",
-      "Como busco un producto?"
+      "Cómo registro una recepción?",
+      "Cómo transfiero stock a otro almacén?",
+      "Cómo consulto el stock de mi zona?",
+      "Cómo hago un ajuste de inventario?"
     ]
   }
 }
