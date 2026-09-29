@@ -5099,11 +5099,41 @@ class _SyncDialogState extends State<_SyncDialog> {
       // Intentar obtener el ID de operación del orderData si está disponible
       int? operationId = orderData?['_operation_id'];
 
-      // Si no tenemos el ID guardado, intentar extraerlo del orderId
-      if (operationId == null) {
-        if (orderId.startsWith('ORD-')) {
-          operationId = int.tryParse(orderId.replaceAll('ORD-', ''));
+      // ¿La orden fue creada offline? Su id local es ORD-{millisecondsSinceEpoch}
+      // y NO corresponde a un id_operacion real. Buscarla en pending_orders para
+      // usar su id_operacion del servidor (si ya se sincronizó la venta).
+      Map<String, dynamic>? matchedPending;
+      final pendingOrders =
+          await widget.userPreferencesService.getPendingOrders();
+      for (final pendingOrder in pendingOrders) {
+        final pendingId = pendingOrder['id']?.toString();
+        final rawPOp =
+            pendingOrder['id_operacion'] ?? pendingOrder['_operation_id'];
+        final pOp =
+            rawPOp is int
+                ? rawPOp
+                : (rawPOp is num ? rawPOp.toInt() : int.tryParse('$rawPOp'));
+        final pDisplay = pOp != null ? 'ORD-$pOp' : null;
+        if (pendingId == orderId || pDisplay == orderId) {
+          matchedPending = pendingOrder;
+          if (operationId == null) operationId = pOp;
+          break;
         }
+      }
+
+      if (matchedPending != null) {
+        // Orden creada offline: si aún no tiene id_operacion real, el estado
+        // viaja con la propia venta al subirla. No fabricar un id desde ORD-.
+        if (operationId == null) {
+          print(
+            'ℹ️ Orden offline $orderId aún sin id_operacion real - '
+            'el estado se aplicará al sincronizar la venta',
+          );
+          return;
+        }
+      } else if (operationId == null && orderId.startsWith('ORD-')) {
+        // Orden creada online: su id ES ORD-{id_operacion} real.
+        operationId = int.tryParse(orderId.replaceAll('ORD-', ''));
       }
 
       if (operationId == null) {
