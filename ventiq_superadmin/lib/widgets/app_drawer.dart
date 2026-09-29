@@ -124,6 +124,11 @@ class AppDrawer extends StatelessWidget {
                       route: '/usuarios',
                     ),
                     _DrawerItem(
+                      icon: Icons.block,
+                      title: 'Usuarios bloqueados',
+                      route: '/usuarios-bloqueados',
+                    ),
+                    _DrawerItem(
                       icon: Icons.lock_reset,
                       title: 'Cambio de Contraseñas',
                       route: '/usuarios/passwords',
@@ -396,6 +401,7 @@ class AppDrawer extends StatelessWidget {
                 item.route == '/tiendas' ||
                 item.route == '/tiendas-catalogo' ||
                 item.route == '/usuarios' ||
+                item.route == '/usuarios-bloqueados' ||
                 item.route == '/administradores' ||
                 item.route == '/trabajadores' ||
                 item.route == '/licencias' ||

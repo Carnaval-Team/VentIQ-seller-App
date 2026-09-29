@@ -30,6 +30,7 @@ class AppRoutes {
     AppRoute(route: '/configuracion', label: 'Planes / Configuración', group: 'Licencias'),
     AppRoute(route: '/agentes', label: 'Agentes', group: 'Licencias'),
     AppRoute(route: '/usuarios', label: 'Gestión de Usuarios', group: 'Usuarios'),
+    AppRoute(route: '/usuarios-bloqueados', label: 'Usuarios bloqueados', group: 'Usuarios'),
     AppRoute(route: '/control-flota', label: 'Control de Flota', group: 'Operaciones'),
     AppRoute(route: '/movimientos', label: 'Movimientos en tiempo real', group: 'Operaciones'),
     AppRoute(route: '/muevete/dashboard', label: 'Panel Muévete', group: 'Muévete'),

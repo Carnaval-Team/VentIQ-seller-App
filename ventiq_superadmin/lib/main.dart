@@ -9,6 +9,7 @@ import 'screens/dashboard_screen.dart';
 import 'screens/tiendas_screen.dart';
 import 'screens/tiendas_catalogo_screen.dart';
 import 'screens/usuarios_screen.dart';
+import 'screens/usuarios_bloqueados_screen.dart';
 import 'screens/administradores_screen.dart';
 import 'screens/almacenes_screen.dart';
 import 'screens/tpvs_screen.dart';
@@ -97,6 +98,10 @@ class VentIQSuperAdminApp extends StatelessWidget {
         '/usuarios': (context) => const RouteGuard(
               route: '/usuarios',
               child: UsuariosScreen(),
+            ),
+        '/usuarios-bloqueados': (context) => const RouteGuard(
+              route: '/usuarios-bloqueados',
+              child: UsuariosBloqueadosScreen(),
             ),
         '/administradores': (context) => const RouteGuard(
               route: '/administradores',
