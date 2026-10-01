@@ -1598,6 +1598,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 Future<void> reloadOrderAfterEdit() async {
                   await _loadOrdersFromSupabase();
                   refreshOrderData();
+                  refreshPaymentBreakdown();
                 }
 
                 final discountData = _getDiscountData(order);
@@ -7428,12 +7429,15 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
       );
     }
 
+    final sorted = List<OrderItem>.from(_items)
+      ..sort((a, b) => a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase()));
+
     return ListView.separated(
       controller: ctrl,
       padding: const EdgeInsets.all(16),
       separatorBuilder: (_, __) => const Divider(height: 1),
-      itemCount: _items.length,
-      itemBuilder: (_, i) => _buildItemTile(_items[i]),
+      itemCount: sorted.length,
+      itemBuilder: (_, i) => _buildItemTile(sorted[i]),
     );
   }
 
