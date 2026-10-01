@@ -13,13 +13,11 @@ void main() {
           'ordenes_completadas': 2,
           'productos_vendidos': 7.5,
           'monto_total': 1250.75,
+          'total_ingresado': 900.50,
           'ticket_promedio': 416.92,
         },
         'por_estado': [
-          {'status': 'Completado', 'count': 2},
-        ],
-        'por_metodo_pago': [
-          {'metodo_pago': 'Efectivo', 'ordenes_count': 3, 'monto': 1250.75},
+          {'status': 'Completado', 'count': 2, 'monto': 900.50},
         ],
         'evolucion_diaria': [
           {
@@ -30,7 +28,7 @@ void main() {
           },
         ],
         'top_productos': [
-          {'id': 9, 'nombre': 'Producto', 'cantidad': 7.5, 'monto': 1250.75},
+          {'id': 9, 'status': 'Completado', 'nombre': 'Producto', 'cantidad': 7.5, 'monto': 1250.75},
         ],
       });
 
@@ -40,8 +38,10 @@ void main() {
       expect(data.hasta, DateTime(2026, 9, 17));
       expect(data.resumen.ordenesCount, 3);
       expect(data.resumen.montoTotal, 1250.75);
+      expect(data.resumen.totalIngresado, 900.50);
       expect(data.porEstado.single.status, 'Completado');
-      expect(data.porMetodoPago.single.metodoPago, 'Efectivo');
+      expect(data.porEstado.single.monto, 900.50);
+      expect(data.topProductos.single.status, 'Completado');
       expect(data.evolucionDiaria.single.fecha, '2026-09-17');
       expect(data.topProductos.single.nombre, 'Producto');
     });
@@ -55,7 +55,6 @@ void main() {
       expect(data.error, 'Tienda no sincronizada con Carnaval App');
       expect(data.resumen.ordenesCount, 0);
       expect(data.porEstado, isEmpty);
-      expect(data.porMetodoPago, isEmpty);
       expect(data.evolucionDiaria, isEmpty);
       expect(data.topProductos, isEmpty);
     });

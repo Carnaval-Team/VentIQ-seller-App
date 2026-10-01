@@ -3,6 +3,7 @@ class CarnavalProviderResumen {
   final int ordenesCompletadas;
   final double productosVendidos;
   final double montoTotal;
+  final double totalIngresado;
   final double ticketPromedio;
 
   CarnavalProviderResumen({
@@ -10,6 +11,7 @@ class CarnavalProviderResumen {
     required this.ordenesCompletadas,
     required this.productosVendidos,
     required this.montoTotal,
+    required this.totalIngresado,
     required this.ticketPromedio,
   });
 
@@ -19,6 +21,7 @@ class CarnavalProviderResumen {
       ordenesCompletadas: (json['ordenes_completadas'] as num?)?.toInt() ?? 0,
       productosVendidos: (json['productos_vendidos'] as num?)?.toDouble() ?? 0,
       montoTotal: (json['monto_total'] as num?)?.toDouble() ?? 0,
+      totalIngresado: (json['total_ingresado'] as num?)?.toDouble() ?? 0,
       ticketPromedio: (json['ticket_promedio'] as num?)?.toDouble() ?? 0,
     );
   }
@@ -27,32 +30,18 @@ class CarnavalProviderResumen {
 class CarnavalProviderEstado {
   final String status;
   final int count;
+  final double monto;
 
-  CarnavalProviderEstado({required this.status, required this.count});
+  CarnavalProviderEstado({
+    required this.status,
+    required this.count,
+    required this.monto,
+  });
 
   factory CarnavalProviderEstado.fromJson(Map<String, dynamic> json) {
     return CarnavalProviderEstado(
       status: (json['status'] as String?) ?? 'Desconocido',
       count: (json['count'] as num?)?.toInt() ?? 0,
-    );
-  }
-}
-
-class CarnavalProviderMetodoPago {
-  final String metodoPago;
-  final int ordenesCount;
-  final double monto;
-
-  CarnavalProviderMetodoPago({
-    required this.metodoPago,
-    required this.ordenesCount,
-    required this.monto,
-  });
-
-  factory CarnavalProviderMetodoPago.fromJson(Map<String, dynamic> json) {
-    return CarnavalProviderMetodoPago(
-      metodoPago: (json['metodo_pago'] as String?) ?? 'Otro',
-      ordenesCount: (json['ordenes_count'] as num?)?.toInt() ?? 0,
       monto: (json['monto'] as num?)?.toDouble() ?? 0,
     );
   }
@@ -83,12 +72,14 @@ class CarnavalProviderDia {
 
 class CarnavalProviderTopProducto {
   final int id;
+  final String status;
   final String nombre;
   final double cantidad;
   final double monto;
 
   CarnavalProviderTopProducto({
     required this.id,
+    required this.status,
     required this.nombre,
     required this.cantidad,
     required this.monto,
@@ -97,6 +88,7 @@ class CarnavalProviderTopProducto {
   factory CarnavalProviderTopProducto.fromJson(Map<String, dynamic> json) {
     return CarnavalProviderTopProducto(
       id: (json['id'] as num?)?.toInt() ?? 0,
+      status: (json['status'] as String?) ?? '',
       nombre: (json['nombre'] as String?) ?? 'Producto sin nombre',
       cantidad: (json['cantidad'] as num?)?.toDouble() ?? 0,
       monto: (json['monto'] as num?)?.toDouble() ?? 0,
@@ -110,7 +102,6 @@ class CarnavalProviderDashboardData {
   final DateTime? hasta;
   final CarnavalProviderResumen resumen;
   final List<CarnavalProviderEstado> porEstado;
-  final List<CarnavalProviderMetodoPago> porMetodoPago;
   final List<CarnavalProviderDia> evolucionDiaria;
   final List<CarnavalProviderTopProducto> topProductos;
   final String? error;
@@ -121,7 +112,6 @@ class CarnavalProviderDashboardData {
     this.hasta,
     required this.resumen,
     required this.porEstado,
-    required this.porMetodoPago,
     required this.evolucionDiaria,
     required this.topProductos,
     this.error,
@@ -134,7 +124,6 @@ class CarnavalProviderDashboardData {
       return CarnavalProviderDashboardData(
         resumen: CarnavalProviderResumen.fromJson({}),
         porEstado: const [],
-        porMetodoPago: const [],
         evolucionDiaria: const [],
         topProductos: const [],
         error: json['error'] as String?,
@@ -156,11 +145,6 @@ class CarnavalProviderDashboardData {
       ),
       porEstado: (json['por_estado'] as List?)
               ?.map((e) => CarnavalProviderEstado.fromJson(
-                  (e as Map).cast<String, dynamic>()))
-              .toList() ??
-          const [],
-      porMetodoPago: (json['por_metodo_pago'] as List?)
-              ?.map((e) => CarnavalProviderMetodoPago.fromJson(
                   (e as Map).cast<String, dynamic>()))
               .toList() ??
           const [],

@@ -20,6 +20,17 @@ class _CarnavalProviderDashboardScreenState
   CarnavalProviderDashboardData? _data;
   late DateTime _fromDate;
   late DateTime _toDate;
+  String _selectedStatus = 'Completado';
+
+  /// Estado efectivamente aplicado al filtro: el seleccionado si existe en
+  /// los datos, si no el primero disponible (o 'Completado' si no hay datos).
+  String get _effectiveStatus {
+    final estados = _data?.porEstado ?? const [];
+    if (estados.any((e) => e.status == _selectedStatus)) {
+      return _selectedStatus;
+    }
+    return estados.isNotEmpty ? estados.first.status : _selectedStatus;
+  }
 
   @override
   void initState() {
@@ -112,7 +123,7 @@ class _CarnavalProviderDashboardScreenState
                           const SizedBox(height: 24),
                           _buildPorEstado(),
                           const SizedBox(height: 24),
-                          _buildPorMetodoPago(),
+                          _buildTotalIngresado(),
                           const SizedBox(height: 24),
                           _buildTopProductos(),
                         ],
@@ -369,66 +380,72 @@ class _CarnavalProviderDashboardScreenState
             spacing: 8,
             runSpacing: 8,
             children: estados
-                .map((e) => _buildTagCard(e.status, '${e.count}', _statusColor(e.status)))
+                .map((e) => _buildTagCard(
+                      e.status,
+                      '${e.count}',
+                      _statusColor(e.status),
+                      selected: e.status == _effectiveStatus,
+                      onTap: () =>
+                          setState(() => _selectedStatus = e.status),
+                    ))
                 .toList(),
           ),
       ],
     );
   }
 
-  Widget _buildPorMetodoPago() {
-    final metodos = _data!.porMetodoPago;
+  Widget _buildTotalIngresado() {
+    final status = _effectiveStatus;
+    final total = _data!.porEstado
+        .where((e) => e.status == status)
+        .map((e) => e.monto)
+        .fold<double>(0, (a, b) => a + b);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Métodos de pago',
+          'Total ingresado',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
-        if (metodos.isEmpty)
-          const Text('Sin datos')
-        else
-          ...metodos.map((m) => Card(
-                margin: const EdgeInsets.only(bottom: 8),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(m.metodoPago,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w600)),
-                            Text('${m.ordenesCount} órdenes',
-                                style: const TextStyle(
-                                    fontSize: 12, color: Colors.grey)),
-                          ],
-                        ),
-                      ),
-                      Text(
-                        _fmtMoney(m.monto),
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 16),
-                      ),
-                    ],
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Órdenes "$status" (precio Inventtia)',
+                    style:
+                        const TextStyle(fontSize: 13, color: Colors.grey),
                   ),
                 ),
-              )),
+                Text(
+                  _fmtMoney(total),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 20,
+                    color: Colors.green,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
 
   Widget _buildTopProductos() {
-    final productos = _data!.topProductos;
+    final status = _effectiveStatus;
+    final productos =
+        _data!.topProductos.where((p) => p.status == status).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Top productos',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        Text(
+          'Productos en órdenes "$status"',
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
         if (productos.isEmpty)
@@ -469,26 +486,44 @@ class _CarnavalProviderDashboardScreenState
     );
   }
 
-  Widget _buildTagCard(String label, String value, Color color) {
+  Widget _buildTagCard(
+    String label,
+    String value,
+    Color color, {
+    bool selected = false,
+    VoidCallback? onTap,
+  }) {
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-            ),
-            const SizedBox(width: 8),
-            Text(value,
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(width: 6),
-            Text(label,
-                style: const TextStyle(fontSize: 12, color: Colors.grey)),
-          ],
+      shape: selected
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: color, width: 2),
+            )
+          : null,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration:
+                    BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 8),
+              Text(value,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(width: 6),
+              Text(label,
+                  style:
+                      const TextStyle(fontSize: 12, color: Colors.grey)),
+            ],
+          ),
         ),
       ),
     );

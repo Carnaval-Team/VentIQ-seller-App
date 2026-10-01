@@ -114,12 +114,16 @@ BEGIN
         SELECT
             COUNT(DISTINCT order_id)                                        AS ordenes_count,
             COUNT(DISTINCT CASE WHEN status = 'Completado' THEN order_id END) AS ordenes_completadas,
-            SUM(cantidad)                                                   AS productos_vendidos,
-            SUM(monto)                                                      AS monto_total
+            -- Solo lo vendido (Completado), valorado al precio Inventtia.
+            SUM(cantidad) FILTER (WHERE status = 'Completado')              AS productos_vendidos,
+            SUM(monto) FILTER (WHERE status = 'Completado')                 AS monto_total
         FROM detalles_calculados
     ),
     por_estado AS (
-        SELECT status, COUNT(DISTINCT order_id) AS count
+        SELECT
+            status,
+            COUNT(DISTINCT order_id) AS count,
+            SUM(monto)               AS monto
         FROM detalles_calculados
         GROUP BY status
         ORDER BY count DESC
@@ -144,15 +148,23 @@ BEGIN
         ORDER BY order_date::DATE
     ),
     top_productos AS (
-        SELECT
-            c.id_producto_local AS id,
-            (SELECT p.denominacion FROM public.app_dat_producto p WHERE p.id = c.id_producto_local LIMIT 1) AS nombre,
-            SUM(c.cantidad)     AS cantidad,
-            SUM(c.monto)        AS monto
-        FROM detalles_calculados c
-        GROUP BY c.id_producto_local
-        ORDER BY monto DESC
-        LIMIT 10
+        -- Top 10 por cada estado; la app filtra según el estado seleccionado.
+        SELECT id, status, nombre, cantidad, monto
+        FROM (
+            SELECT
+                c.id_producto_local AS id,
+                c.status,
+                (SELECT p.denominacion FROM public.app_dat_producto p WHERE p.id = c.id_producto_local LIMIT 1) AS nombre,
+                SUM(c.cantidad)     AS cantidad,
+                SUM(c.monto)        AS monto,
+                ROW_NUMBER() OVER (
+                    PARTITION BY c.status
+                    ORDER BY SUM(c.monto) DESC
+                ) AS rn
+            FROM detalles_calculados c
+            GROUP BY c.id_producto_local, c.status
+        ) ranked
+        WHERE rn <= 10
     )
     SELECT jsonb_build_object(
         'id_proveedor_carnaval', v_id_proveedor,
@@ -163,11 +175,12 @@ BEGIN
             'ordenes_completadas', r.ordenes_completadas,
             'productos_vendidos',  r.productos_vendidos,
             'monto_total',         ROUND(r.monto_total, 2),
-            'ticket_promedio',     CASE WHEN r.ordenes_count > 0 THEN ROUND(r.monto_total / r.ordenes_count, 2) ELSE 0 END
+            'ticket_promedio',     CASE WHEN r.ordenes_completadas > 0 THEN ROUND(r.monto_total / r.ordenes_completadas, 2) ELSE 0 END
         ) FROM resumen r),
         'por_estado', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
             'status', pe.status,
-            'count',  pe.count
+            'count',  pe.count,
+            'monto',  ROUND(pe.monto, 2)
         )), '[]'::jsonb) FROM por_estado pe),
         'por_metodo_pago', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
             'metodo_pago',   pm.metodo_pago,
@@ -182,6 +195,7 @@ BEGIN
         )), '[]'::jsonb) FROM evolucion e),
         'top_productos', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
             'id',      tp.id,
+            'status',  tp.status,
             'nombre',  tp.nombre,
             'cantidad', tp.cantidad,
             'monto',   ROUND(tp.monto, 2)
