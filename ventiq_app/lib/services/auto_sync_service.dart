@@ -3475,26 +3475,47 @@ class AutoSyncService {
     for (final op in statusOps) {
       try {
         final orderId = op['order_id']?.toString() ?? '';
-        final rawOp = op['id_operacion'];
-        int? operationId =
-            rawOp is int
-                ? rawOp
-                : (rawOp is num ? rawOp.toInt() : int.tryParse('$rawOp'));
-        operationId ??= int.tryParse(
-          orderId.replaceFirst(RegExp(r'^ORD-'), ''),
-        );
-        if (operationId == null) {
-          for (final pendingOrder in pendingOrders) {
-            if (pendingOrder['id']?.toString() != orderId) continue;
-            operationId = _asInt(
-              pendingOrder['id_operacion'] ?? pendingOrder['_operation_id'],
-            );
+        int? operationId = _asInt(op['id_operacion']);
+
+        // ¿La orden fue creada offline (existe en pending_orders)? Su id local
+        // es ORD-{millisecondsSinceEpoch}, NO un id_operacion real, por lo que
+        // NUNCA se debe derivar el id_operacion quitando el prefijo ORD-.
+        Map<String, dynamic>? matchedPending;
+        for (final pendingOrder in pendingOrders) {
+          final pendingId = pendingOrder['id']?.toString();
+          final pOp = _asInt(
+            pendingOrder['id_operacion'] ?? pendingOrder['_operation_id'],
+          );
+          final pDisplay = pOp != null ? 'ORD-$pOp' : null;
+          if (pendingId == orderId || pDisplay == orderId) {
+            matchedPending = pendingOrder;
             break;
           }
         }
 
+        if (matchedPending != null) {
+          // Orden creada offline: el estado ya viaja con la propia venta
+          // (pending_orders.estado se aplica al subirla). Solo se aplica el
+          // cambio por RPC si ya tiene un id_operacion real del servidor.
+          operationId ??= _asInt(
+            matchedPending['id_operacion'] ?? matchedPending['_operation_id'],
+          );
+          if (operationId == null) {
+            // Aún no sincronizada: reintentar en el próximo pase (tras subir la
+            // venta). No fabricar un id_operacion desde el id local.
+            remaining.add(Map<String, dynamic>.from(op));
+            continue;
+          }
+        } else {
+          // Orden creada online: su id ES ORD-{id_operacion} real.
+          operationId ??= int.tryParse(
+            orderId.replaceFirst(RegExp(r'^ORD-'), ''),
+          );
+        }
+
         if (operationId == null) {
-          // Orden 100% local: el estado viaja con pending_orders al subirla.
+          // Orden 100% local sin id de operación: el estado viaja con
+          // pending_orders al subirla.
           remaining.add(Map<String, dynamic>.from(op));
           continue;
         }

@@ -244,6 +244,11 @@ class AuthService {
     final admin = _currentSuperAdmin;
     if (admin == null) return false;
 
+    // Acceso total: un superadmin nivel 1 ve todas las rutas protegidas,
+    // tenga o no una lista explicita de permisos (asi las rutas nuevas no
+    // quedan ocultas hasta re-guardar permisos).
+    if (admin.nivelAcceso == 1) return true;
+
     // Legacy fallback: acceso total
     if (admin.rol == null && admin.nivelAcceso == 1) return true;
 
