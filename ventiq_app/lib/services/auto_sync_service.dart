@@ -4158,9 +4158,9 @@ class AutoSyncService {
           .getPublicUrl(path);
 
       await Supabase.instance.client
-          .from('app_dat_operaciones')
+          .from('app_dat_operacion_venta')
           .update({'foto_operacion_url': url})
-          .eq('id', operationId);
+          .eq('id_operacion', operationId);
 
       // Limpiar archivo local
       if (localPath != null) {

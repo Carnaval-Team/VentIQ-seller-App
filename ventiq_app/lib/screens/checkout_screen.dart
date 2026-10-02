@@ -589,7 +589,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               ],
               if (_solicitarImagenOperacion) ...[
                 const SizedBox(height: 20),
-                _buildOperationPhotoSection(),
+                if (widget.order.isOfflineOrder)
+                  _buildOfflinePhotoNotice()
+                else
+                  _buildOperationPhotoSection(),
               ],
               const SizedBox(height: 20),
               _buildCreateOrderButton(),
@@ -1620,6 +1623,30 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
+  Widget _buildOfflinePhotoNotice() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.orange.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.orange.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.wifi_off_rounded, color: Colors.orange),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text(
+              'En modo offline no se puede gestionar la imagen de la operación. '
+              'La orden se creará sin foto.',
+              style: TextStyle(fontSize: 13, color: Color(0xFF78350F)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _pickOperationPhoto() async {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
@@ -1960,7 +1987,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return;
     }
 
-    if (_solicitarImagenOperacion && _fotoOperacionBytes == null) {
+    if (_solicitarImagenOperacion &&
+        !widget.order.isOfflineOrder &&
+        _fotoOperacionBytes == null) {
       _showErrorMessage('Debes adjuntar una foto para crear la operación');
       return;
     }
@@ -2008,13 +2037,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           await _userPreferencesService.shouldStayFullyOffline() ||
           await _userPreferencesService.isOfflineModeEnabled();
 
-      if (_solicitarImagenOperacion && _fotoOperacionBytes == null) {
+      if (_solicitarImagenOperacion && !isOffline && _fotoOperacionBytes == null) {
         throw StateError('Debes adjuntar una foto para crear la operación');
       }
 
-      // Online: subir ya. Offline: se guarda en disco y se sube al sincronizar.
+      // Online: subir ya. Offline: se omite la foto (no se puede gestionar).
       String? fotoOperacionUrl;
-      if (_solicitarImagenOperacion && !isOffline) {
+      if (_solicitarImagenOperacion && !isOffline && _fotoOperacionBytes != null) {
         fotoOperacionUrl = await _uploadOperationPhoto();
         if (fotoOperacionUrl == null) {
           throw StateError('No se pudo subir la foto de la operación');

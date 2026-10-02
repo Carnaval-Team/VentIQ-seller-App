@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:share_plus/share_plus.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/order.dart';
 import '../models/payment_method.dart';
@@ -65,6 +66,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   double _usdRate = 0.0;
   bool _isLoadingUsdRate = false;
   bool _isOfflineMode = false;
+  bool _solicitarImagenOperacion = false;
   bool _isShowSkuEnabled = false;
   List<Map<String, dynamic>> _defaultOrderItems = [];
 
@@ -84,6 +86,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         _loadPrintPendingPermission(),
         _loadSellerModificationsPermission(),
         _loadRememberPrinterPermission(),
+        _loadSolicitarImagenOperacion(),
       ]);
       if (widget.autoOpenOrderId != null) {
         _autoOpenOrder(widget.autoOpenOrderId!);
@@ -210,6 +213,23 @@ class _OrdersScreenState extends State<OrdersScreen> {
       print('🖨️ guardar_impresora_por_defecto: $allow');
     } catch (e) {
       print('❌ Error al cargar guardar_impresora_por_defecto: $e');
+    }
+  }
+
+  Future<void> _loadSolicitarImagenOperacion() async {
+    try {
+      final storeId = await _userPreferencesService.getIdTienda();
+      if (storeId == null) return;
+      final value = await StoreConfigService.getSolicitarImagenOperacion(
+        storeId,
+      );
+      if (mounted) {
+        setState(() {
+          _solicitarImagenOperacion = value;
+        });
+      }
+    } catch (e) {
+      print('❌ Error cargando solicitar_imagen_operacion: $e');
     }
   }
 
@@ -1540,6 +1560,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     }
     if (!mounted) return;
     int paymentBreakdownRefreshKey = 0;
+    int operationPhotoRefreshKey = 0;
     Order currentOrder = order;
     Future<bool>? isCuentaPorCobrarFuture;
 
@@ -1867,7 +1888,18 @@ class _OrdersScreenState extends State<OrdersScreen> {
                               const SizedBox(height: 8),
                             ],
                             if (order.operationId != null)
-                              _buildOperationPhotoDetail(order.operationId!),
+                              _buildOperationPhotoDetail(
+                                order.operationId!,
+                                refreshKey: operationPhotoRefreshKey,
+                                canEdit:
+                                    _solicitarImagenOperacion &&
+                                    !_isOfflineMode,
+                                onPhotoChanged: () {
+                                  setDetailState(() {
+                                    operationPhotoRefreshKey += 1;
+                                  });
+                                },
+                              ),
                             if (order.buyerName == null &&
                                 order.buyerPhone == null)
                               Padding(
@@ -2434,8 +2466,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
     ).then((_) => setState(() {}));
   }
 
-  Widget _buildOperationPhotoDetail(int operationId) {
+  Widget _buildOperationPhotoDetail(
+    int operationId, {
+    int refreshKey = 0,
+    bool canEdit = false,
+    VoidCallback? onPhotoChanged,
+  }) {
     return FutureBuilder<Map<String, dynamic>?>(
+      key: ValueKey('op-photo-$operationId-$refreshKey'),
       future:
           Supabase.instance.client
               .from('app_dat_operacion_venta')
@@ -2444,36 +2482,215 @@ class _OrdersScreenState extends State<OrdersScreen> {
               .maybeSingle(),
       builder: (context, snapshot) {
         final url = snapshot.data?['foto_operacion_url'] as String?;
-        if (url == null || url.isEmpty) return const SizedBox.shrink();
+        final hasPhoto = url != null && url.isNotEmpty;
+
+        // Sin foto y sin edición habilitada: no mostrar nada
+        if (!hasPhoto && !canEdit) return const SizedBox.shrink();
+
+        // Sin foto pero con edición: mostrar botón para agregar
+        if (!hasPhoto && canEdit) {
+          return Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: OutlinedButton.icon(
+              onPressed: () => _pickAndUploadOperationPhoto(
+                operationId,
+                onPhotoChanged: onPhotoChanged,
+              ),
+              icon: const Icon(Icons.add_a_photo_outlined, size: 18),
+              label: const Text('Agregar foto de la operación'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF0EA5E9),
+                side: const BorderSide(color: Color(0xFF0EA5E9)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          );
+        }
+
+        // Con foto: mostrar imagen + acciones de edición si aplica
+        final photoUrl = url!;
         return Padding(
           padding: const EdgeInsets.only(top: 8),
-          child: InkWell(
-            onTap:
-                () => showDialog<void>(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              InkWell(
+                onTap: () => showDialog<void>(
                   context: context,
-                  builder:
-                      (dialogContext) => Dialog(
-                        child: InteractiveViewer(child: Image.network(url)),
-                      ),
+                  builder: (dialogContext) => Dialog(
+                    child: InteractiveViewer(child: Image.network(photoUrl)),
+                  ),
                 ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                url,
-                height: 160,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder:
-                    (_, __, ___) => const ListTile(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    photoUrl,
+                    height: 160,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const ListTile(
                       leading: Icon(Icons.broken_image_outlined),
                       title: Text('No se pudo cargar la foto de la operación'),
                     ),
+                  ),
+                ),
               ),
-            ),
+              if (canEdit)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton.icon(
+                        onPressed: () => _pickAndUploadOperationPhoto(
+                          operationId,
+                          onPhotoChanged: onPhotoChanged,
+                        ),
+                        icon: const Icon(Icons.edit_outlined, size: 16),
+                        label: const Text('Cambiar'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFF0EA5E9),
+                          textStyle: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      TextButton.icon(
+                        onPressed: () => _deleteOperationPhoto(
+                          operationId,
+                          onPhotoChanged: onPhotoChanged,
+                        ),
+                        icon: const Icon(Icons.delete_outline, size: 16),
+                        label: const Text('Eliminar'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.red[400],
+                          textStyle: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
           ),
         );
       },
     );
+  }
+
+  Future<void> _pickAndUploadOperationPhoto(
+    int operationId, {
+    VoidCallback? onPhotoChanged,
+  }) async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Tomar foto'),
+              onTap: () => Navigator.pop(sheetContext, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Elegir de la galería'),
+              onTap: () => Navigator.pop(sheetContext, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: source,
+        imageQuality: 80,
+        maxWidth: 1400,
+      );
+      if (picked == null || !mounted) return;
+
+      final bytes = await picked.readAsBytes();
+      final mime = picked.mimeType ?? 'image/jpeg';
+      final ext = mime.contains('png') ? 'png' : 'jpg';
+      final storagePath =
+          'operaciones/${operationId}_${DateTime.now().millisecondsSinceEpoch}.$ext';
+
+      await Supabase.instance.client.storage
+          .from('productos')
+          .uploadBinary(
+            storagePath,
+            bytes,
+            fileOptions: FileOptions(contentType: mime),
+          );
+      final publicUrl = Supabase.instance.client.storage
+          .from('productos')
+          .getPublicUrl(storagePath);
+
+      await Supabase.instance.client
+          .from('app_dat_operacion_venta')
+          .update({'foto_operacion_url': publicUrl})
+          .eq('id_operacion', operationId);
+
+      onPhotoChanged?.call();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al subir la foto: $e'),
+            backgroundColor: Colors.red[700],
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteOperationPhoto(
+    int operationId, {
+    VoidCallback? onPhotoChanged,
+  }) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Eliminar foto'),
+        content: const Text(
+          '¿Estás seguro de que deseas eliminar la foto de esta operación?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await Supabase.instance.client
+          .from('app_dat_operacion_venta')
+          .update({'foto_operacion_url': null})
+          .eq('id_operacion', operationId);
+
+      onPhotoChanged?.call();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al eliminar la foto: $e'),
+            backgroundColor: Colors.red[700],
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildDetailSection({

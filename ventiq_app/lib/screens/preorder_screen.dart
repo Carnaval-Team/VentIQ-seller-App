@@ -1114,7 +1114,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
 
     if (useOfflinePath) {
       // MODO OFFLINE / FULL OFFLINE: sin servidor
-      if (noSolicitarCliente && !solicitarImagenOperacion && !tienePagoPendiente) {
+      // En offline la foto de operación no se puede gestionar, se ignora el requisito.
+      if (noSolicitarCliente && !tienePagoPendiente) {
         print(
           '🔌 Modo offline + no_solicitar_cliente - Creando orden localmente',
         );
