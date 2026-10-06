@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>TurnoCuba — Reserva tu turno y evita las filas</title>
+<!-- Google Fonts: Plus Jakarta Sans & Inter -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@600;700;800&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS CDN -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              indigo: '#3B4A7E',
+              'indigo-dark': '#2C3654',
+              'indigo-light': '#3E4E80',
+              cyan: '#1FA8B8',
+              'cyan-dark': '#168A98',
+              coral: '#FF4D5E',
+              amber: '#F5A623',
+              green: '#16A34A',
+              bg: '#F3F5F9',
+              card: '#FFFFFF',
+              border: '#E6E9F0',
+              textPrimary: '#1E2433',
+              textSecondary: '#6B7280',
+            }
+          },
+          fontFamily: {
+            display: ['"Plus Jakarta Sans"', 'sans-serif'],
+            sans: ['Inter', 'sans-serif'],
+          },
+          boxShadow: {
+            'soft': '0 4px 16px rgba(43, 58, 103, 0.08)',
+            'float': '0 10px 25px -5px rgba(43, 58, 103, 0.12), 0 8px 10px -6px rgba(43, 58, 103, 0.08)',
+            'nav': '0 -4px 16px rgba(43, 58, 103, 0.06)',
+          },
+          borderRadius: {
+            '20': '20px',
+            '18': '18px',
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    /* Custom scrollbar hiding for slick horizontal rails */
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    
+    body {
+      background-color: #0f1422; /* Outer device viewport background */
+      font-family: 'Inter', sans-serif;
+      color: #1E2433;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Pulse & shine animations */
+    @keyframes shine {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(200%); }
+    }
+    .animate-shine {
+      animation: shine 3.5s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="flex justify-center items-start min-h-screen p-0 sm:py-6 bg-slate-900 selection:bg-[#1FA8B8]/20">
+<!-- Mobile Screen Container (390px x auto-scrollable) -->
+<div class="w-full max-w-[390px] min-h-screen bg-[#F3F5F9] shadow-2xl relative flex flex-col overflow-hidden text-[#1E2433]">
+<!-- ========================================== -->
+<!-- [0] TOP BAR (Indigo Gradient + Safe Area) -->
+<!-- ========================================== -->
+<header class="relative bg-gradient-to-b from-[#2C3654] to-[#3E4E80] text-white pt-12 pb-14 px-4 shadow-sm">
+<!-- iOS Status Bar Simulation -->
+<div class="absolute top-2 left-0 right-0 px-6 flex justify-between items-center text-xs font-semibold text-white/90 tracking-tight">
+<span>9:41</span>
+<div class="flex items-center space-x-1.5 text-white/90">
+<svg class="w-3.5 h-3.5" fill="currentColor" viewbox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9 0 2.12.74 4.07 1.97 5.61L4.35 18.25A.996.996 0 005.1 20h13.8a.996.996 0 00.75-1.75l-.62-.64C20.26 16.07 21 14.12 21 12c0-4.97-4.03-9-9-9z"></path></svg>
+<svg class="w-3 h-3" fill="currentColor" viewbox="0 0 24 24"><path d="M12 4C7.31 4 3.07 5.9 0 8.98L12 21 24 8.98A16.88 16.88 0 0012 4z"></path></svg>
+<div class="w-5 h-2.5 border border-white/80 rounded-sm p-0.5 flex items-center">
+<div class="h-full w-full bg-white rounded-xs"></div>
+</div>
+</div>
+</div>
+<!-- Top Row: Greeting & Badged Profile -->
+<div class="flex items-center justify-between mt-2">
+<div>
+<span class="text-[10px] font-bold tracking-[0.2em] text-[#1FA8B8] uppercase block mb-0.5">EXPLORA</span>
+<h1 class="text-xl font-display font-extrabold tracking-tight flex items-center gap-1.5 text-white">
+            Hola, María <span class="text-lg">👋</span>
+</h1>
+<p class="text-xs text-slate-200 font-medium">¿Qué agendamos hoy en Cuba?</p>
+</div>
+<div class="flex items-center space-x-2.5">
+<!-- Notification Bell with Red Badge -->
+<button class="relative w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 transition-all flex items-center justify-center backdrop-blur-md border border-white/15">
+<svg class="w-5 h-5 text-white stroke-[1.75]" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+<span class="absolute top-2 right-2 w-2.5 h-2.5 bg-[#FF4D5E] border-2 border-[#2C3654] rounded-full"></span>
+</button>
+<!-- User Avatar -->
+<div class="w-10 h-10 rounded-full ring-2 ring-[#1FA8B8] overflow-hidden bg-slate-700 active:scale-95 transition-all shadow-md">
+<img alt="María Avatar" class="w-full h-full object-cover" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+</div>
+</div>
+</div>
+<!-- Location Pill Button -->
+<div class="mt-3.5">
+<button class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 active:bg-white/20 border border-white/20 backdrop-blur-sm text-xs text-white font-medium transition-all shadow-sm">
+<svg class="w-3.5 h-3.5 text-[#1FA8B8]" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24">
+<path d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" stroke-linecap="round" stroke-linejoin="round"></path>
+<path d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+<span class="font-semibold text-white tracking-tight">Santa Clara, Villa Clara</span>
+<svg class="w-3 h-3 text-white/70" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24">
+<path d="M19.5 8.25l-7.5 7.5-7.5-7.5" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</button>
+</div>
+</header>
+<!-- Main Content Area -->
+<main class="flex-1 pb-28 space-y-6">
+<!-- ========================================== -->
+<!-- [1] SEARCH HERO (Elevated White Card) -->
+<!-- ========================================== -->
+<div class="-mt-8 px-4 relative z-20">
+<div class="bg-white rounded-[20px] p-3 shadow-float border border-[#E6E9F0]">
+<!-- Input Bar -->
+<div class="flex items-center bg-[#F3F5F9] rounded-xl px-3 py-2.5 transition-all focus-within:ring-2 focus-within:ring-[#1FA8B8]/30 focus-within:bg-white border border-transparent focus-within:border-[#1FA8B8]">
+<svg class="w-4 h-4 text-[#6B7280] mr-2 flex-shrink-0 stroke-[2]" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+<input class="w-full bg-transparent text-xs text-[#1E2433] placeholder-[#6B7280] outline-none font-medium" placeholder="Buscar servicio, local o categoría…" type="text"/>
+<!-- Mic icon -->
+<button class="p-1 text-[#6B7280] hover:text-[#1FA8B8] transition-colors">
+<svg class="w-4 h-4 stroke-[1.75]" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15a3 3 0 003-3V6a3 3 0 00-3-3 3 3 0 00-3 3v6a3 3 0 003 3z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</button>
+<div class="h-4 w-px bg-[#E6E9F0] mx-1.5"></div>
+<!-- Filter Slider Button -->
+<button class="p-1 text-[#3B4A7E] hover:text-[#1FA8B8] transition-colors flex items-center justify-center">
+<svg class="w-4 h-4 stroke-[1.75]" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</button>
+</div>
+<!-- Quick Context Chips -->
+<div class="flex items-center gap-1.5 mt-2.5 overflow-x-auto no-scrollbar pt-0.5">
+<button class="px-2.5 py-1 rounded-full bg-[#F3F5F9] hover:bg-[#E6E9F0] text-[11px] font-semibold text-[#1E2433] whitespace-nowrap transition-colors flex items-center gap-1 border border-[#E6E9F0]/70">
+<span>📍</span> Cerca de mí
+            </button>
+<button class="px-2.5 py-1 rounded-full bg-[#16A34A]/10 text-[#16A34A] text-[11px] font-semibold whitespace-nowrap transition-colors flex items-center gap-1 border border-[#16A34A]/20">
+<span class="w-1.5 h-1.5 rounded-full bg-[#16A34A] animate-pulse"></span> Abierto ahora
+            </button>
+<button class="px-2.5 py-1 rounded-full bg-[#F5A623]/10 text-[#B4750B] text-[11px] font-semibold whitespace-nowrap transition-colors flex items-center gap-1 border border-[#F5A623]/30">
+<span>⭐</span> Mejor valorados
+            </button>
+</div>
+</div>
+</div>
+<!-- ========================================== -->
+<!-- [2] CATEGORY CHIPS (Horizontal Scroll Nav) -->
+<!-- ========================================== -->
+<section class="space-y-1.5">
+<div class="px-4 flex items-center justify-between">
+<span class="text-[11px] font-bold text-[#6B7280] uppercase tracking-wider">Categorías Principales</span>
+<span class="text-[11px] font-semibold text-[#1FA8B8]">Desliza ›</span>
+</div>
+<div class="flex items-center gap-2 overflow-x-auto no-scrollbar px-4 py-1">
+<!-- Active: Todas -->
+<button class="px-3.5 py-2 rounded-full bg-[#3B4A7E] text-white text-xs font-semibold whitespace-nowrap shadow-sm flex items-center gap-1.5 active:scale-95 transition-transform flex-shrink-0">
+<svg class="w-3.5 h-3.5 text-[#1FA8B8]" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            Todas
+          </button>
+<!-- Belleza -->
+<button class="px-3.5 py-2 rounded-full bg-white border border-[#E6E9F0] text-[#1E2433] hover:border-[#3B4A7E] text-xs font-semibold whitespace-nowrap shadow-soft flex items-center gap-1.5 active:scale-95 transition-all flex-shrink-0">
+<span>✨</span> Belleza
+          </button>
+<!-- Uñas -->
+<button class="px-3.5 py-2 rounded-full bg-white border border-[#E6E9F0] text-[#1E2433] hover:border-[#3B4A7E] text-xs font-semibold whitespace-nowrap shadow-soft flex items-center gap-1.5 active:scale-95 transition-all flex-shrink-0">
+<span>💅</span> Uñas
+          </button>
+<!-- Cejas & Pestañas -->
+<button class="px-3.5 py-2 rounded-full bg-white border border-[#E6E9F0] text-[#1E2433] hover:border-[#3B4A7E] text-xs font-semibold whitespace-nowrap shadow-soft flex items-center gap-1.5 active:scale-95 transition-all flex-shrink-0">
+<span>👁️</span> Cejas &amp; Pestañas
+          </button>
+<!-- Transporte -->
+<button class="px-3.5 py-2 rounded-full bg-white border border-[#E6E9F0] text-[#1E2433] hover:border-[#3B4A7E] text-xs font-semibold whitespace-nowrap shadow-soft flex items-center gap-1.5 active:scale-95 transition-all flex-shrink-0">
+<span>🚕</span> Transporte
+          </button>
+<!-- Salud -->
+<button class="px-3.5 py-2 rounded-full bg-white border border-[#E6E9F0] text-[#1E2433] hover:border-[#3B4A7E] text-xs font-semibold whitespace-nowrap shadow-soft flex items-center gap-1.5 active:scale-95 transition-all flex-shrink-0">
+<span>🩺</span> Salud
+          </button>
+<!-- Hogar -->
+<button class="px-3.5 py-2 rounded-full bg-white border border-[#E6E9F0] text-[#1E2433] hover:border-[#3B4A7E] text-xs font-semibold whitespace-nowrap shadow-soft flex items-center gap-1.5 active:scale-95 transition-all flex-shrink-0">
+<span>🔧</span> Hogar
+          </button>
+<!-- Mascotas -->
+<button class="px-3.5 py-2 rounded-full bg-white border border-[#E6E9F0] text-[#1E2433] hover:border-[#3B4A7E] text-xs font-semibold whitespace-nowrap shadow-soft flex items-center gap-1.5 active:scale-95 transition-all flex-shrink-0">
+<span>🐾</span> Mascotas
+          </button>
+</div>
+</section>
+<!-- ========================================== -->
+<!-- [3] THEMATIC COLLECTIONS GRID (2 Columns) -->
+<!-- ========================================== -->
+<section class="px-4">
+<div class="flex items-center justify-between mb-2.5">
+<div>
+<h2 class="font-display font-bold text-base text-[#1E2433] tracking-tight">Colecciones Destacadas</h2>
+<p class="text-[11px] text-[#6B7280]">Experiencias curadas para ti</p>
+</div>
+<span class="text-xs font-semibold text-[#1FA8B8] hover:underline cursor-pointer">Explorar</span>
+</div>
+<div class="grid grid-cols-2 gap-2.5">
+<!-- Card 1: Pack Novia -->
+<div class="relative h-28 rounded-18 overflow-hidden shadow-soft group cursor-pointer active:scale-[0.98] transition-all">
+<img alt="Pack Novia" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent flex flex-col justify-end p-2.5 text-white">
+<span class="font-display font-bold text-xs tracking-tight leading-tight drop-shadow-sm">Pack Novia 💍</span>
+<span class="text-[10px] text-white/80 font-medium">12 servicios</span>
+</div>
+</div>
+<!-- Card 2: Self-care Sunday -->
+<div class="relative h-28 rounded-18 overflow-hidden shadow-soft group cursor-pointer active:scale-[0.98] transition-all">
+<img alt="Self-care Sunday" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent flex flex-col justify-end p-2.5 text-white">
+<span class="font-display font-bold text-xs tracking-tight leading-tight drop-shadow-sm">Self-care Sunday 🧖‍♀️</span>
+<span class="text-[10px] text-white/80 font-medium">8 servicios</span>
+</div>
+</div>
+<!-- Card 3: Ruta & Transporte -->
+<div class="relative h-28 rounded-18 overflow-hidden shadow-soft group cursor-pointer active:scale-[0.98] transition-all">
+<img alt="Ruta &amp; Transporte" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent flex flex-col justify-end p-2.5 text-white">
+<span class="font-display font-bold text-xs tracking-tight leading-tight drop-shadow-sm">Ruta &amp; Transporte 🚌</span>
+<span class="text-[10px] text-white/80 font-medium">5 locales</span>
+</div>
+</div>
+<!-- Card 4: Ofertas del día -->
+<div class="relative h-28 rounded-18 overflow-hidden shadow-soft group cursor-pointer active:scale-[0.98] transition-all">
+<img alt="Ofertas del día" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+<div class="absolute inset-0 bg-gradient-to-t from-[#2C3654]/90 via-[#3B4A7E]/50 to-transparent flex flex-col justify-end p-2.5 text-white">
+<div class="flex items-center gap-1">
+<span class="font-display font-bold text-xs tracking-tight leading-tight text-white drop-shadow-sm">Ofertas del día ⚡</span>
+</div>
+<span class="text-[10px] text-[#FF4D5E] font-extrabold bg-white/95 px-1.5 py-0.5 rounded-full w-max mt-0.5 shadow-sm">20% hasta 23:59</span>
+</div>
+</div>
+</div>
+</section>
+<!-- ========================================== -->
+<!-- [4] PROMO CAROUSEL (~180px Horizontal Snap) -->
+<!-- ========================================== -->
+<section class="space-y-2">
+<div class="px-4 flex items-center justify-between">
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-[#1FA8B8]"></span>
+<span class="text-[11px] font-bold text-[#6B7280] uppercase tracking-wider">Espacio Patrocinado</span>
+</div>
+<span class="text-[10px] font-semibold bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full">Anuncio</span>
+</div>
+<!-- Snap Carousel Rail -->
+<div class="flex overflow-x-auto no-scrollbar snap-x snap-mandatory px-4 gap-3">
+<!-- Slide 1 (Active Featured) -->
+<div class="w-[320px] flex-shrink-0 snap-center relative h-[180px] rounded-20 overflow-hidden shadow-float border border-[#E6E9F0] group cursor-pointer">
+<img alt="Ceji - Lifting de Cejas" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+<!-- Left Scrim Gradient -->
+<div class="absolute inset-0 bg-gradient-to-r from-[#1E2433]/95 via-[#1E2433]/70 to-transparent p-4 flex flex-col justify-between text-white">
+<!-- Top Badges -->
+<div class="flex items-center justify-between">
+<span class="px-2 py-0.5 rounded-full bg-white/20 backdrop-blur-md border border-white/30 text-[9px] font-bold tracking-wider uppercase text-white">PATROCINADO</span>
+<span class="px-2 py-0.5 rounded-full bg-[#FF4D5E] text-[10px] font-extrabold text-white shadow-sm">-20% OFF</span>
+</div>
+<!-- Content -->
+<div class="my-auto pr-8">
+<h3 class="font-display font-extrabold text-sm text-white leading-tight">Ceji — Lifting de Cejas</h3>
+<p class="text-[11px] text-white/90 font-medium mt-0.5">Primera sesión con 20% OFF</p>
+<div class="flex items-center gap-2 mt-1">
+<span class="text-xs font-bold text-[#1FA8B8] bg-[#1FA8B8]/15 px-1.5 py-0.5 rounded-md">Desde $12</span>
+<span class="text-[10px] text-white/80">★ 4.9 · 1.2 km</span>
+</div>
+</div>
+<!-- CTA Button -->
+<div class="flex items-center justify-between pt-1">
+<button class="px-3 py-1.5 bg-white text-[#1E2433] rounded-full text-[11px] font-bold shadow-md hover:bg-slate-100 active:scale-95 transition-all flex items-center gap-1">
+<span>Ver local</span>
+<span class="text-[#1FA8B8]">→</span>
+</button>
+<span class="text-[10px] text-white/70 font-medium">Santa Clara</span>
+</div>
+</div>
+</div>
+<!-- Slide 2 (Peeking Promo) -->
+<div class="w-[320px] flex-shrink-0 snap-center relative h-[180px] rounded-20 overflow-hidden shadow-float border border-[#E6E9F0] group cursor-pointer opacity-95">
+<img alt="Carnaval Transporte" class="w-full h-full object-cover" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+<div class="absolute inset-0 bg-gradient-to-r from-[#2C3654]/95 via-[#2C3654]/75 to-transparent p-4 flex flex-col justify-between text-white">
+<div class="flex items-center justify-between">
+<span class="px-2 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-[9px] font-bold uppercase">PATROCINADO</span>
+<span class="px-2 py-0.5 rounded-full bg-[#1FA8B8] text-[10px] font-extrabold text-white">CONFORT</span>
+</div>
+<div class="my-auto pr-8">
+<h3 class="font-display font-extrabold text-sm text-white">Carnaval — Rutas Directas</h3>
+<p class="text-[11px] text-white/90">Viajes intermunicipales con A/C</p>
+<div class="flex items-center gap-2 mt-1">
+<span class="text-xs font-bold text-white bg-white/20 px-1.5 py-0.5 rounded-md">Desde $5</span>
+<span class="text-[10px] text-white/80">★ 4.8 · Villa Clara</span>
+</div>
+</div>
+<div>
+<button class="px-3 py-1.5 bg-white text-[#1E2433] rounded-full text-[11px] font-bold shadow-md flex items-center gap-1">
+<span>Ver horarios</span>
+<span class="text-[#1FA8B8]">→</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Carousel Page Dots -->
+<div class="flex justify-center items-center gap-1.5 pt-1">
+<span class="w-5 h-1.5 rounded-full bg-[#1FA8B8] transition-all"></span>
+<span class="w-1.5 h-1.5 rounded-full bg-[#E6E9F0]"></span>
+<span class="w-1.5 h-1.5 rounded-full bg-[#E6E9F0]"></span>
+</div>
+</section>
+<!-- ========================================== -->
+<!-- [5] FLASH DEALS ROW (Urgency Countdown) -->
+<!-- ========================================== -->
+<section class="space-y-2.5">
+<div class="px-4 flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="text-base">⚡</span>
+<div>
+<h2 class="font-display font-bold text-sm text-[#1E2433] leading-none">Ofertas relámpago</h2>
+<span class="text-[10px] text-[#6B7280]">Cupos limitados por turno</span>
+</div>
+<!-- Live Countdown Chip -->
+<div class="ml-1 px-2 py-0.5 rounded-full bg-[#FF4D5E]/10 border border-[#FF4D5E]/20 text-[#FF4D5E] text-[10px] font-bold flex items-center gap-1">
+<span>⏱</span>
+<span class="tracking-wider font-mono">04:12:39</span>
+</div>
+</div>
+<span class="text-xs font-semibold text-[#1FA8B8] hover:underline cursor-pointer">Ver todas ›</span>
+</div>
+<!-- Flash Deals Cards Rail -->
+<div class="flex overflow-x-auto no-scrollbar px-4 gap-3">
+<!-- Flash Item 1 -->
+<div class="w-[145px] flex-shrink-0 bg-white rounded-18 p-2 shadow-soft border border-[#E6E9F0] flex flex-col justify-between relative group cursor-pointer active:scale-95 transition-all">
+<!-- Corner Ribbon -->
+<span class="absolute top-2 left-2 z-10 px-1.5 py-0.5 bg-[#FF4D5E] text-white text-[9px] font-extrabold rounded-md shadow-sm">-35%</span>
+<div class="w-full h-24 rounded-xl overflow-hidden bg-slate-100 relative mb-1.5">
+<img alt="Esmaltado Semipermanente" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+</div>
+<div>
+<h3 class="font-bold text-xs text-[#1E2433] leading-tight line-clamp-1">Semipermanente Pro</h3>
+<p class="text-[11px] font-semibold text-[#1FA8B8] truncate">Ceji Studio</p>
+<div class="flex items-baseline gap-1.5 mt-1">
+<span class="text-[11px] text-[#6B7280] line-through">$14</span>
+<span class="text-xs font-extrabold text-[#FF4D5E]">$9</span>
+</div>
+<!-- Progress Bar -->
+<div class="mt-1.5">
+<div class="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+<div class="bg-[#FF4D5E] h-full rounded-full" style="width: 75%"></div>
+</div>
+<span class="text-[9px] font-semibold text-[#6B7280] mt-0.5 block">Quedan 3 cupos</span>
+</div>
+</div>
+</div>
+<!-- Flash Item 2 -->
+<div class="w-[145px] flex-shrink-0 bg-white rounded-18 p-2 shadow-soft border border-[#E6E9F0] flex flex-col justify-between relative group cursor-pointer active:scale-95 transition-all">
+<span class="absolute top-2 left-2 z-10 px-1.5 py-0.5 bg-[#FF4D5E] text-white text-[9px] font-extrabold rounded-md shadow-sm">-40%</span>
+<div class="w-full h-24 rounded-xl overflow-hidden bg-slate-100 relative mb-1.5">
+<img alt="Laminado Cejas" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+</div>
+<div>
+<h3 class="font-bold text-xs text-[#1E2433] leading-tight line-clamp-1">Laminado Cejas</h3>
+<p class="text-[11px] font-semibold text-[#1FA8B8] truncate">Bella Cuba</p>
+<div class="flex items-baseline gap-1.5 mt-1">
+<span class="text-[11px] text-[#6B7280] line-through">$18</span>
+<span class="text-xs font-extrabold text-[#FF4D5E]">$11</span>
+</div>
+<div class="mt-1.5">
+<div class="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+<div class="bg-[#FF4D5E] h-full rounded-full" style="width: 85%"></div>
+</div>
+<span class="text-[9px] font-semibold text-[#6B7280] mt-0.5 block">Queda 1 cupo</span>
+</div>
+</div>
+</div>
+<!-- Flash Item 3 -->
+<div class="w-[145px] flex-shrink-0 bg-white rounded-18 p-2 shadow-soft border border-[#E6E9F0] flex flex-col justify-between relative group cursor-pointer active:scale-95 transition-all">
+<span class="absolute top-2 left-2 z-10 px-1.5 py-0.5 bg-[#FF4D5E] text-white text-[9px] font-extrabold rounded-md shadow-sm">-25%</span>
+<div class="w-full h-24 rounded-xl overflow-hidden bg-slate-100 relative mb-1.5">
+<img alt="Auto Clásico Tour" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+</div>
+<div>
+<h3 class="font-bold text-xs text-[#1E2433] leading-tight line-clamp-1">Viaje Express A/C</h3>
+<p class="text-[11px] font-semibold text-[#1FA8B8] truncate">Carnaval Autos</p>
+<div class="flex items-baseline gap-1.5 mt-1">
+<span class="text-[11px] text-[#6B7280] line-through">$20</span>
+<span class="text-xs font-extrabold text-[#FF4D5E]">$15</span>
+</div>
+<div class="mt-1.5">
+<div class="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+<div class="bg-[#FF4D5E] h-full rounded-full" style="width: 50%"></div>
+</div>
+<span class="text-[9px] font-semibold text-[#6B7280] mt-0.5 block">Quedan 4 cupos</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- ========================================== -->
+<!-- [6] RECOMMENDED FOR YOU (Personalized) -->
+<!-- ========================================== -->
+<section class="space-y-2.5">
+<div class="px-4 flex items-center justify-between">
+<div>
+<div class="flex items-center gap-1.5">
+<span class="text-base">✨</span>
+<h2 class="font-display font-bold text-sm text-[#1E2433] leading-none">Recomendado para ti</h2>
+</div>
+<p class="text-[10px] text-[#6B7280] mt-0.5">Según tus gustos y tu zona en Santa Clara</p>
+</div>
+<span class="text-xs font-semibold text-[#1FA8B8] hover:underline cursor-pointer">Personalizar ›</span>
+</div>
+<!-- Personalized Scroll Cards -->
+<div class="flex overflow-x-auto no-scrollbar px-4 gap-3">
+<!-- Rec Item 1 -->
+<div class="w-[155px] flex-shrink-0 bg-white rounded-18 p-2.5 shadow-soft border border-[#E6E9F0] flex flex-col justify-between relative group cursor-pointer active:scale-95 transition-all">
+<!-- Heart toggle button -->
+<button class="absolute top-3 right-3 z-10 w-7 h-7 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center shadow-sm text-[#1FA8B8] hover:scale-110 active:scale-90 transition-transform">
+<svg class="w-4 h-4 fill-[#1FA8B8]" viewbox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path></svg>
+</button>
+<!-- Teal badge -->
+<span class="absolute top-3 left-3 z-10 px-1.5 py-0.5 bg-[#1FA8B8] text-white text-[8px] font-extrabold tracking-wider rounded uppercase shadow-sm">PARA TI</span>
+<div class="w-full h-24 rounded-xl overflow-hidden bg-slate-100 mb-2">
+<img alt="Arreglo de Uñas" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+</div>
+<div>
+<h3 class="font-bold text-xs text-[#1E2433] leading-tight line-clamp-2">Arreglo de Uñas Acrílicas</h3>
+<p class="text-[11px] font-semibold text-[#1FA8B8] flex items-center gap-1 mt-1 truncate">
+<svg class="w-3 h-3 text-[#1FA8B8] flex-shrink-0" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+                Ceji
+              </p>
+<div class="flex items-center justify-between text-[10px] text-[#6B7280] mt-1.5">
+<span class="text-[#F5A623] font-bold">★ 4.9 <span class="text-[#6B7280] font-normal">(128)</span></span>
+<span>1.2 km</span>
+</div>
+<div class="mt-2 pt-1 border-t border-[#E6E9F0]/60 flex items-center justify-between">
+<span class="text-[11px] font-extrabold text-[#3B4A7E]">Desde $8</span>
+<span class="text-[10px] font-bold text-[#1FA8B8]">Agendar</span>
+</div>
+</div>
+</div>
+<!-- Rec Item 2 -->
+<div class="w-[155px] flex-shrink-0 bg-white rounded-18 p-2.5 shadow-soft border border-[#E6E9F0] flex flex-col justify-between relative group cursor-pointer active:scale-95 transition-all">
+<button class="absolute top-3 right-3 z-10 w-7 h-7 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center shadow-sm text-slate-400 hover:text-[#1FA8B8] transition-colors">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+<div class="w-full h-24 rounded-xl overflow-hidden bg-slate-100 mb-2">
+<img alt="Depilación Cejas" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+</div>
+<div>
+<h3 class="font-bold text-xs text-[#1E2433] leading-tight line-clamp-2">Depilación y Perfilado</h3>
+<p class="text-[11px] font-semibold text-[#1FA8B8] flex items-center gap-1 mt-1 truncate">
+<svg class="w-3 h-3 text-[#1FA8B8] flex-shrink-0" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+                Ceji
+              </p>
+<div class="flex items-center justify-between text-[10px] text-[#6B7280] mt-1.5">
+<span class="text-[#F5A623] font-bold">★ 4.8 <span class="text-[#6B7280] font-normal">(94)</span></span>
+<span>1.2 km</span>
+</div>
+<div class="mt-2 pt-1 border-t border-[#E6E9F0]/60 flex items-center justify-between">
+<span class="text-[11px] font-extrabold text-[#3B4A7E]">Desde $6</span>
+<span class="text-[10px] font-bold text-[#1FA8B8]">Agendar</span>
+</div>
+</div>
+</div>
+<!-- Rec Item 3 -->
+<div class="w-[155px] flex-shrink-0 bg-white rounded-18 p-2.5 shadow-soft border border-[#E6E9F0] flex flex-col justify-between relative group cursor-pointer active:scale-95 transition-all">
+<button class="absolute top-3 right-3 z-10 w-7 h-7 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center shadow-sm text-slate-400 hover:text-[#1FA8B8] transition-colors">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+<div class="w-full h-24 rounded-xl overflow-hidden bg-slate-100 mb-2">
+<img alt="Carnaval Tienda" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+</div>
+<div>
+<h3 class="font-bold text-xs text-[#1E2433] leading-tight line-clamp-2">Alquiler de Asientos Confort</h3>
+<p class="text-[11px] font-semibold text-[#1FA8B8] flex items-center gap-1 mt-1 truncate">
+<svg class="w-3 h-3 text-[#1FA8B8] flex-shrink-0" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+                Carnaval Tienda
+              </p>
+<div class="flex items-center justify-between text-[10px] text-[#6B7280] mt-1.5">
+<span class="text-[#F5A623] font-bold">★ 4.7 <span class="text-[#6B7280] font-normal">(63)</span></span>
+<span>2.4 km</span>
+</div>
+<div class="mt-2 pt-1 border-t border-[#E6E9F0]/60 flex items-center justify-between">
+<span class="text-[11px] font-extrabold text-[#3B4A7E]">Desde $10</span>
+<span class="text-[10px] font-bold text-[#1FA8B8]">Agendar</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- ========================================== -->
+<!-- [7] ESTABLECIMIENTOS POPULARES (Large Cards) -->
+<!-- ========================================== -->
+<section class="px-4 space-y-3">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-1.5">
+<span class="text-base">🏆</span>
+<div>
+<h2 class="font-display font-bold text-base text-[#1E2433] leading-none">Establecimientos populares</h2>
+<span class="text-[10px] text-[#6B7280]">Los negocios más reservados esta semana</span>
+</div>
+</div>
+<span class="text-xs font-semibold text-[#1FA8B8] hover:underline cursor-pointer">Ver todos ›</span>
+</div>
+<!-- Big Card 1: Ceji -->
+<article class="bg-white rounded-20 overflow-hidden shadow-soft border border-[#E6E9F0] group">
+<!-- Cover Image (~140px) -->
+<div class="relative h-[140px] w-full bg-slate-200 overflow-hidden">
+<img alt="Ceji Salon" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20"></div>
+<!-- Open badge top right -->
+<div class="absolute top-3 right-3 px-2 py-0.5 rounded-full bg-white/90 backdrop-blur-md flex items-center gap-1 shadow-sm">
+<span class="w-2 h-2 rounded-full bg-[#16A34A] animate-pulse"></span>
+<span class="text-[10px] font-bold text-[#16A34A]">Abierto ahora</span>
+</div>
+</div>
+<!-- Card Content with Floating Circular Logo -->
+<div class="p-3.5 pt-0 relative">
+<!-- Floating Logo -->
+<div class="-mt-6 mb-2 flex items-end justify-between">
+<div class="w-14 h-14 rounded-full border-2 border-white bg-white shadow-md overflow-hidden ring-2 ring-[#3B4A7E]/20">
+<img alt="Ceji Logo" class="w-full h-full object-cover" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+</div>
+<!-- Share / Save mini action -->
+<button class="text-slate-400 hover:text-[#1FA8B8] p-1.5 rounded-full hover:bg-slate-50 transition-colors">
+<svg class="w-5 h-5 stroke-[1.75]" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+</div>
+<!-- Title & Verified Check -->
+<div class="flex items-center gap-1.5">
+<h3 class="font-display font-extrabold text-base text-[#1E2433] leading-snug">Ceji</h3>
+<svg class="w-4 h-4 text-[#1FA8B8] fill-[#1FA8B8]" viewbox="0 0 24 24"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm-1.9 14.7l-4.1-4.1 1.4-1.4 2.7 2.7 6.4-6.4 1.4 1.4-7.8 7.8z"></path></svg>
+</div>
+<p class="text-xs text-[#6B7280] font-medium mt-0.5">Belleza · Santa Clara (Centro Histórico)</p>
+<!-- Rating Row -->
+<div class="flex items-center gap-2 mt-2 text-xs">
+<div class="flex items-center text-[#F5A623] font-bold">
+<span>★ 4.9</span>
+<span class="text-[#6B7280] font-normal ml-1">(342 reseñas)</span>
+</div>
+<span class="text-slate-300">•</span>
+<span class="text-[#6B7280]">1.2 km de ti</span>
+</div>
+<!-- Tags Row -->
+<div class="flex flex-wrap gap-1.5 mt-2.5">
+<span class="px-2 py-0.5 rounded-full bg-[#F3F5F9] text-[#1E2433] text-[10px] font-semibold">📶 Wi-Fi</span>
+<span class="px-2 py-0.5 rounded-full bg-[#F3F5F9] text-[#1E2433] text-[10px] font-semibold">💳 Pago online</span>
+<span class="px-2 py-0.5 rounded-full bg-[#16A34A]/10 text-[#16A34A] text-[10px] font-bold">⚡ Sin filas garantizado</span>
+</div>
+<!-- CTAs: Indigo Full Button + Ghost Directions -->
+<div class="grid grid-cols-5 gap-2 mt-3.5">
+<button class="col-span-4 py-2.5 px-3 bg-[#3B4A7E] hover:bg-[#2C3654] active:scale-[0.98] text-white rounded-12 text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5">
+<span>Reservar turno</span>
+<span class="text-[#1FA8B8]">→</span>
+</button>
+<button class="col-span-1 py-2.5 bg-[#F3F5F9] hover:bg-[#E6E9F0] active:scale-95 text-[#3B4A7E] rounded-12 transition-all flex items-center justify-center border border-[#E6E9F0]" title="Cómo llegar">
+<svg class="w-4 h-4 stroke-[2]" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" stroke-linecap="round" stroke-linejoin="round"></path><path d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+</div>
+</div>
+</article>
+<!-- Big Card 2: Carnaval Transportación -->
+<article class="bg-white rounded-20 overflow-hidden shadow-soft border border-[#E6E9F0] group">
+<div class="relative h-[140px] w-full bg-slate-200 overflow-hidden">
+<img alt="Carnaval Transportacion" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20"></div>
+<div class="absolute top-3 right-3 px-2 py-0.5 rounded-full bg-white/90 backdrop-blur-md flex items-center gap-1 shadow-sm">
+<span class="w-2 h-2 rounded-full bg-[#16A34A] animate-pulse"></span>
+<span class="text-[10px] font-bold text-[#16A34A]">Salidas hoy</span>
+</div>
+</div>
+<div class="p-3.5 pt-0 relative">
+<div class="-mt-6 mb-2 flex items-end justify-between">
+<div class="w-14 h-14 rounded-full border-2 border-white bg-white shadow-md overflow-hidden ring-2 ring-[#3B4A7E]/20 flex items-center justify-center bg-slate-800 text-white font-bold text-xs">
+<span class="text-[#1FA8B8]">CT</span>
+</div>
+<button class="text-slate-400 hover:text-[#1FA8B8] p-1.5 rounded-full hover:bg-slate-50 transition-colors">
+<svg class="w-5 h-5 stroke-[1.75]" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+</div>
+<div class="flex items-center gap-1.5">
+<h3 class="font-display font-extrabold text-base text-[#1E2433] leading-snug">Carnaval Transportación</h3>
+<svg class="w-4 h-4 text-[#1FA8B8] fill-[#1FA8B8]" viewbox="0 0 24 24"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm-1.9 14.7l-4.1-4.1 1.4-1.4 2.7 2.7 6.4-6.4 1.4 1.4-7.8 7.8z"></path></svg>
+</div>
+<p class="text-xs text-[#6B7280] font-medium mt-0.5">Transporte Intermunicipal · Villa Clara</p>
+<div class="flex items-center gap-2 mt-2 text-xs">
+<div class="flex items-center text-[#F5A623] font-bold">
+<span>★ 4.8</span>
+<span class="text-[#6B7280] font-normal ml-1">(215 reseñas)</span>
+</div>
+<span class="text-slate-300">•</span>
+<span class="text-[#6B7280]">Terminal Central</span>
+</div>
+<div class="flex flex-wrap gap-1.5 mt-2.5">
+<span class="px-2 py-0.5 rounded-full bg-[#F3F5F9] text-[#1E2433] text-[10px] font-semibold">❄️ Aire Acondicionado</span>
+<span class="px-2 py-0.5 rounded-full bg-[#F3F5F9] text-[#1E2433] text-[10px] font-semibold">🎟️ Asiento seguro</span>
+<span class="px-2 py-0.5 rounded-full bg-[#3B4A7E]/10 text-[#3B4A7E] text-[10px] font-bold">Puntualidad</span>
+</div>
+<div class="grid grid-cols-5 gap-2 mt-3.5">
+<button class="col-span-4 py-2.5 px-3 bg-[#3B4A7E] hover:bg-[#2C3654] active:scale-[0.98] text-white rounded-12 text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5">
+<span>Reservar turno</span>
+<span class="text-[#1FA8B8]">→</span>
+</button>
+<button class="col-span-1 py-2.5 bg-[#F3F5F9] hover:bg-[#E6E9F0] active:scale-95 text-[#3B4A7E] rounded-12 transition-all flex items-center justify-center border border-[#E6E9F0]">
+<svg class="w-4 h-4 stroke-[2]" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" stroke-linecap="round" stroke-linejoin="round"></path><path d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+</div>
+</div>
+</article>
+</section>
+<!-- ========================================== -->
+<!-- [8] SERVICIOS POPULARES (Small Row Cards) -->
+<!-- ========================================== -->
+<section class="px-4 space-y-2.5">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-1.5">
+<span class="text-base">📈</span>
+<div>
+<h2 class="font-display font-bold text-sm text-[#1E2433] leading-none">Servicios populares esta semana</h2>
+<span class="text-[10px] text-[#6B7280]">Tendencias más solicitadas</span>
+</div>
+</div>
+<span class="text-xs font-semibold text-[#1FA8B8] hover:underline cursor-pointer">Ver todos ›</span>
+</div>
+<div class="space-y-2">
+<!-- Row 1 (Rank 1) -->
+<div class="bg-white rounded-18 p-2.5 shadow-soft border border-[#E6E9F0] flex items-center justify-between hover:border-[#1FA8B8]/50 active:scale-[0.99] transition-all cursor-pointer">
+<div class="flex items-center gap-2.5">
+<!-- Rank badge + 56px thumbnail -->
+<div class="relative w-14 h-14 rounded-12 overflow-hidden flex-shrink-0 bg-slate-100">
+<img alt="Corte y Peinado" class="w-full h-full object-cover" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+<span class="absolute top-0.5 left-0.5 w-4 h-4 bg-[#3B4A7E] text-white text-[9px] font-extrabold rounded-md flex items-center justify-center">1</span>
+</div>
+<div>
+<h4 class="font-display font-bold text-xs text-[#1E2433] leading-tight">Corte &amp; Styling Premium</h4>
+<p class="text-[11px] font-semibold text-[#1FA8B8]">Ceji Studio</p>
+<div class="flex items-center gap-2 text-[10px] text-[#6B7280] mt-0.5">
+<span>⏱ 30 min</span>
+<span>•</span>
+<span>1.2 km</span>
+</div>
+</div>
+</div>
+<div class="text-right flex items-center gap-1.5">
+<div>
+<span class="text-xs font-extrabold text-[#1E2433] block">$10</span>
+<span class="text-[9px] text-[#16A34A] font-semibold">Hoy libre</span>
+</div>
+<svg class="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M8.25 4.5l7.5 7.5-7.5 7.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</div>
+</div>
+<!-- Row 2 (Rank 2) -->
+<div class="bg-white rounded-18 p-2.5 shadow-soft border border-[#E6E9F0] flex items-center justify-between hover:border-[#1FA8B8]/50 active:scale-[0.99] transition-all cursor-pointer">
+<div class="flex items-center gap-2.5">
+<div class="relative w-14 h-14 rounded-12 overflow-hidden flex-shrink-0 bg-slate-100">
+<img alt="Manicura Rusa" class="w-full h-full object-cover" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+<span class="absolute top-0.5 left-0.5 w-4 h-4 bg-[#3B4A7E] text-white text-[9px] font-extrabold rounded-md flex items-center justify-center">2</span>
+</div>
+<div>
+<h4 class="font-display font-bold text-xs text-[#1E2433] leading-tight">Manicura Rusa Combinada</h4>
+<p class="text-[11px] font-semibold text-[#1FA8B8]">Glow Nails Santa Clara</p>
+<div class="flex items-center gap-2 text-[10px] text-[#6B7280] mt-0.5">
+<span>⏱ 45 min</span>
+<span>•</span>
+<span>0.8 km</span>
+</div>
+</div>
+</div>
+<div class="text-right flex items-center gap-1.5">
+<div>
+<span class="text-xs font-extrabold text-[#1E2433] block">$12</span>
+<span class="text-[9px] text-[#16A34A] font-semibold">Turno 3:00pm</span>
+</div>
+<svg class="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M8.25 4.5l7.5 7.5-7.5 7.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</div>
+</div>
+<!-- Row 3 (Rank 3) -->
+<div class="bg-white rounded-18 p-2.5 shadow-soft border border-[#E6E9F0] flex items-center justify-between hover:border-[#1FA8B8]/50 active:scale-[0.99] transition-all cursor-pointer">
+<div class="flex items-center gap-2.5">
+<div class="relative w-14 h-14 rounded-12 overflow-hidden flex-shrink-0 bg-slate-100">
+<img alt="Ruta Santa Clara - Cienfuegos" class="w-full h-full object-cover" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+<span class="absolute top-0.5 left-0.5 w-4 h-4 bg-[#3B4A7E] text-white text-[9px] font-extrabold rounded-md flex items-center justify-center">3</span>
+</div>
+<div>
+<h4 class="font-display font-bold text-xs text-[#1E2433] leading-tight">Asiento Santa Clara - Cienfuegos</h4>
+<p class="text-[11px] font-semibold text-[#1FA8B8]">Carnaval Transportación</p>
+<div class="flex items-center gap-2 text-[10px] text-[#6B7280] mt-0.5">
+<span>⏱ Salida 10:00 AM</span>
+<span>•</span>
+<span>A/C</span>
+</div>
+</div>
+</div>
+<div class="text-right flex items-center gap-1.5">
+<div>
+<span class="text-xs font-extrabold text-[#1E2433] block">$7</span>
+<span class="text-[9px] text-[#FF4D5E] font-semibold">2 asientos</span>
+</div>
+<svg class="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M8.25 4.5l7.5 7.5-7.5 7.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</div>
+</div>
+</div>
+</section>
+<!-- ========================================== -->
+<!-- [9] SOCIAL PROOF — REVIEW OF THE DAY -->
+<!-- ========================================== -->
+<section class="px-4">
+<div class="bg-gradient-to-br from-[#3B4A7E]/5 via-[#1FA8B8]/5 to-white rounded-20 p-4 border border-[#3B4A7E]/15 shadow-soft relative overflow-hidden">
+<!-- Subtle watermark icon -->
+<div class="absolute -right-3 -bottom-3 text-[#3B4A7E]/10 pointer-events-none">
+<svg class="w-24 h-24" fill="currentColor" viewbox="0 0 24 24"><path d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983zm-14.017 0v-7.391c0-5.704 3.748-9.57 9-10.609l.996 2.151c-2.433.917-3.996 3.638-3.996 5.849h3.983v10h-9.983z"></path></svg>
+</div>
+<div class="flex items-center justify-between mb-2">
+<div class="flex text-[#F5A623] text-xs gap-0.5">
+<span>★</span><span>★</span><span>★</span><span>★</span><span>★</span>
+</div>
+<span class="text-[10px] font-bold text-[#3B4A7E] tracking-wider uppercase">Reseña verificada del día</span>
+</div>
+<p class="text-xs text-[#1E2433] italic font-medium leading-relaxed mb-3">
+            “Reservé en 2 minutos y cero filas. El lifting de cejas quedó perfecto y me atendieron a la hora exacta en Santa Clara.”
+          </p>
+<div class="flex items-center justify-between pt-2 border-t border-[#E6E9F0]/80">
+<div class="flex items-center gap-2">
+<img alt="Yamilet R." class="w-7 h-7 rounded-full object-cover ring-1 ring-[#1FA8B8]" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+<div>
+<div class="flex items-center gap-1">
+<span class="text-xs font-bold text-[#1E2433]">Yamilet R.</span>
+<svg class="w-3 h-3 text-[#1FA8B8] fill-[#1FA8B8]" viewbox="0 0 24 24"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm-1.9 14.7l-4.1-4.1 1.4-1.4 2.7 2.7 6.4-6.4 1.4 1.4-7.8 7.8z"></path></svg>
+</div>
+<span class="text-[10px] text-[#6B7280]">Cliente en <strong class="text-[#1FA8B8]">Ceji</strong></span>
+</div>
+</div>
+<span class="text-[10px] font-semibold text-[#1FA8B8] hover:underline cursor-pointer">Ver más reseñas ›</span>
+</div>
+</div>
+</section>
+<!-- ========================================== -->
+<!-- [10] LOYALTY / FIRST-BOOKING BANNER -->
+<!-- ========================================== -->
+<section class="px-4">
+<div class="relative overflow-hidden bg-gradient-to-r from-[#2C3654] via-[#3B4A7E] to-[#1FA8B8] rounded-20 p-4 text-white shadow-float">
+<!-- Animated shine effect sweep -->
+<div class="absolute inset-0 w-1/2 h-full bg-gradient-to-r from-transparent via-white/15 to-transparent -skew-x-12 animate-shine pointer-events-none"></div>
+<div class="flex items-start justify-between relative z-10">
+<div class="max-w-[70%]">
+<div class="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[#1FA8B8] bg-white/10 px-2 py-0.5 rounded-full w-max mb-1.5 backdrop-blur-sm">
+<span>🎁</span> Beneficio de bienvenida
+              </div>
+<h3 class="font-display font-extrabold text-sm text-white leading-tight">
+                Tu primera reserva tiene -20% 🎁
+              </h3>
+<p class="text-[11px] text-white/80 font-normal mt-1 leading-snug">
+                Suma puntos en cada turno y canjéalos en tus locales favoritos de Cuba.
+              </p>
+<button class="mt-3 px-3.5 py-1.5 bg-white text-[#2C3654] font-bold text-xs rounded-full shadow-md hover:bg-slate-100 active:scale-95 transition-all">
+                Activar beneficio
+              </button>
+</div>
+<!-- Present / Reward Graphic icon -->
+<div class="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20 shadow-inner flex-shrink-0">
+<span class="text-3xl">🎉</span>
+</div>
+</div>
+</div>
+</section>
+<!-- ========================================== -->
+<!-- [11] HOW IT WORKS (Onboarding Trust) -->
+<!-- ========================================== -->
+<section class="px-4 space-y-2">
+<div class="text-center">
+<span class="text-[10px] font-bold tracking-widest text-[#6B7280] uppercase">Rápido y Seguro</span>
+<h3 class="font-display font-bold text-xs text-[#1E2433]">Reserva en 3 simples pasos</h3>
+</div>
+<div class="grid grid-cols-3 gap-2 text-center pt-1">
+<!-- Step 1 -->
+<div class="bg-white rounded-18 p-2.5 shadow-soft border border-[#E6E9F0] flex flex-col items-center">
+<div class="w-7 h-7 rounded-full bg-[#3B4A7E]/10 text-[#3B4A7E] font-bold text-xs flex items-center justify-center mb-1.5">
+              1
+            </div>
+<h4 class="font-bold text-[11px] text-[#1E2433] leading-tight">Elige servicio</h4>
+<p class="text-[9px] text-[#6B7280] mt-0.5 leading-tight">Explora locales o categorías</p>
+</div>
+<!-- Step 2 -->
+<div class="bg-white rounded-18 p-2.5 shadow-soft border border-[#E6E9F0] flex flex-col items-center">
+<div class="w-7 h-7 rounded-full bg-[#1FA8B8]/15 text-[#1FA8B8] font-bold text-xs flex items-center justify-center mb-1.5">
+              2
+            </div>
+<h4 class="font-bold text-[11px] text-[#1E2433] leading-tight">Reserva tu hora</h4>
+<p class="text-[9px] text-[#6B7280] mt-0.5 leading-tight">Turno confirmado al instante</p>
+</div>
+<!-- Step 3 -->
+<div class="bg-white rounded-18 p-2.5 shadow-soft border border-[#E6E9F0] flex flex-col items-center">
+<div class="w-7 h-7 rounded-full bg-[#16A34A]/15 text-[#16A34A] font-bold text-xs flex items-center justify-center mb-1.5">
+              3
+            </div>
+<h4 class="font-bold text-[11px] text-[#1E2433] leading-tight">Llega sin filas</h4>
+<p class="text-[9px] text-[#6B7280] mt-0.5 leading-tight">Atención directa garantizada</p>
+</div>
+</div>
+</section>
+<!-- ========================================== -->
+<!-- [12] FOOTER TEASERS -->
+<!-- ========================================== -->
+<footer class="px-4 pt-2 pb-6 text-center space-y-3">
+<div class="flex items-center justify-center gap-3 text-xs font-semibold text-[#1FA8B8]">
+<a class="hover:underline" href="#">Ver todos los servicios ›</a>
+<span class="text-slate-300">•</span>
+<a class="hover:underline text-[#3B4A7E]" href="#">Publica tu negocio ›</a>
+</div>
+<p class="text-[10px] text-[#6B7280]">
+          © 2025 TurnoCuba. Hecho con ❤️ para la comunidad de Cuba.
+        </p>
+</footer>
+</main>
+<!-- ========================================== -->
+<!-- FLOATING TOAST SIMULATION (Above Bottom Bar) -->
+<!-- ========================================== -->
+<div class="fixed bottom-20 left-1/2 -translate-x-1/2 w-[350px] max-w-[90%] z-40">
+<div class="bg-[#1E2433]/95 backdrop-blur-md text-white rounded-full px-4 py-2 shadow-2xl flex items-center justify-between border border-white/10 text-xs">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-[#16A34A] animate-ping"></span>
+<span class="font-medium text-[11px]">Turno reservado en <strong>Ceji</strong> para las 3:00 PM</span>
+</div>
+<span class="text-[#1FA8B8] font-bold text-[11px] cursor-pointer ml-2">Ver ✓</span>
+</div>
+</div>
+<!-- ========================================== -->
+<!-- FIXED BOTTOM NAVIGATION BAR -->
+<!-- ========================================== -->
+<nav class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[390px] bg-white border-t border-[#E6E9F0] px-4 py-2 shadow-nav z-50 flex items-center justify-around">
+<!-- Tab 1: Servicios (ACTIVE) -->
+<button class="flex flex-col items-center gap-0.5 relative group">
+<div class="w-10 h-7 rounded-full bg-[#3B4A7E]/10 flex items-center justify-center text-[#3B4A7E] transition-all">
+<svg class="w-5 h-5 stroke-[2]" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</div>
+<span class="text-[11px] font-bold text-[#3B4A7E]">Servicios</span>
+</button>
+<!-- Tab 2: Mis Listas -->
+<button class="flex flex-col items-center gap-0.5 text-[#6B7280] hover:text-[#3B4A7E] transition-colors">
+<div class="w-10 h-7 flex items-center justify-center">
+<svg class="w-5 h-5 stroke-[1.75]" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</div>
+<span class="text-[11px] font-medium">Mis Listas</span>
+</button>
+<!-- Tab 3: Reservas (with Coral Badge '2') -->
+<button class="flex flex-col items-center gap-0.5 text-[#6B7280] hover:text-[#3B4A7E] transition-colors relative">
+<div class="w-10 h-7 flex items-center justify-center relative">
+<svg class="w-5 h-5 stroke-[1.75]" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+<!-- Coral Badge 2 -->
+<span class="absolute top-0 right-1 w-4 h-4 bg-[#FF4D5E] text-white text-[9px] font-extrabold rounded-full flex items-center justify-center border-2 border-white">2</span>
+</div>
+<span class="text-[11px] font-medium">Reservas</span>
+</button>
+<!-- Tab 4: Perfil -->
+<button class="flex flex-col items-center gap-0.5 text-[#6B7280] hover:text-[#3B4A7E] transition-colors">
+<div class="w-10 h-7 flex items-center justify-center">
+<svg class="w-5 h-5 stroke-[1.75]" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</div>
+<span class="text-[11px] font-medium">Perfil</span>
+</button>
+</nav>
+</div>
+</body>
+</html>

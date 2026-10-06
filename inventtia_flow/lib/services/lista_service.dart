@@ -19,7 +19,7 @@ class ListaService {
     String? terceroTelefono,
   }) async {
     final res = await _supabase.schema(_schema).rpc(
-      'cliente_entrar_sala_espera',
+      'cliente_entrar_sala_espera_cola', // Updated function name
       params: {
         'p_uuid_usuario': uuidUsuario,
         'p_id_local_servicio': idLocalServicio,
