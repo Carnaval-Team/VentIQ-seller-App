@@ -8,6 +8,7 @@ import '../providers/entidad_provider.dart';
 import '../services/auth_service.dart';
 import '../services/update_service.dart';
 import 'catalogo_screen.dart';
+import 'home_client_screen.dart';
 import 'mis_listas_screen.dart';
 import 'mis_tickets_screen.dart';
 import 'perfil_screen.dart';
@@ -27,6 +28,8 @@ class _HomeShellState extends State<HomeShell> {
   bool _redirectingToLogin = false;
 
   // GlobalKeys para poder llamar reload() en las pantallas con IndexedStack
+  final GlobalKey<HomeClientScreenState> _homeKey =
+      GlobalKey<HomeClientScreenState>();
   final GlobalKey<CatalogoScreenState> _catalogoKey =
       GlobalKey<CatalogoScreenState>();
   final GlobalKey<MisListasScreenState> _misListasKey =
@@ -39,24 +42,20 @@ class _HomeShellState extends State<HomeShell> {
   late final List<Widget> _screensVendedor;
   late final List<Widget> _screensVendedorAdmin;
 
-  // Índice de tab → tipo de pantalla a refrescar
-  // Admin:           0=Catalogo 1=MisListas 2=MisTickets 3=Gestion 4=Perfil
-  // No admin:        0=Catalogo 1=MisListas 2=MisTickets 3=Perfil
-  // Vendedor:        0=Catalogo 1=MisListas 2=MisTickets 3=Vendedor 4=Perfil
-  // Admin+Vendedor:  0=Catalogo 1=MisListas 2=MisTickets 3=Gestion 4=Vendedor 5=Perfil
+  // Índice de tab → tipo de pantalla a refrescar.
+  // Cliente: 0=Home 1=Catálogo 2=MisListas 3=MisTickets 4=Perfil.
+  // Admin y vendedor conservan sus índices/flujo actuales.
   static const int _idxListasAdmin = 1;
   static const int _idxTicketsAdmin = 2;
-  static const int _idxListasNoAdmin = 1;
-  static const int _idxTicketsNoAdmin = 2;
+  static const int _idxListasNoAdmin = 2;
+  static const int _idxTicketsNoAdmin = 3;
 
   @override
   void initState() {
     super.initState();
-    _screens = [
-      const GestionScreen(),
-      const PerfilScreen(),
-    ];
+    _screens = [const GestionScreen(), const PerfilScreen()];
     _screensNoAdmin = [
+      HomeClientScreen(key: _homeKey),
       CatalogoScreen(key: _catalogoKey),
       MisListasScreen(key: _misListasKey),
       MisTicketsScreen(key: _misTicketsKey),
@@ -71,7 +70,7 @@ class _HomeShellState extends State<HomeShell> {
       const GestionScreen(),
       const PerfilScreen(),
     ];
-    
+
     // Load entities immediately to prevent UI flash
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadInitialData();
@@ -110,8 +109,9 @@ class _HomeShellState extends State<HomeShell> {
       final prefs = await SharedPreferences.getInstance();
       final lastTs = prefs.getInt(_lastUpdateDialogKey);
       if (lastTs == null) return true;
-      final diff = DateTime.now()
-          .difference(DateTime.fromMillisecondsSinceEpoch(lastTs));
+      final diff = DateTime.now().difference(
+        DateTime.fromMillisecondsSinceEpoch(lastTs),
+      );
       return diff.inHours >= _updateDialogIntervalHours;
     } catch (_) {
       return true;
@@ -122,7 +122,9 @@ class _HomeShellState extends State<HomeShell> {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt(
-          _lastUpdateDialogKey, DateTime.now().millisecondsSinceEpoch);
+        _lastUpdateDialogKey,
+        DateTime.now().millisecondsSinceEpoch,
+      );
     } catch (_) {}
   }
 
@@ -147,8 +149,7 @@ class _HomeShellState extends State<HomeShell> {
   void _showUpdateAvailableDialog(Map<String, dynamic> updateInfo) {
     if (!mounted) return;
     final bool isObligatory = updateInfo['obligatoria'] ?? false;
-    final String newVersion =
-        updateInfo['version_disponible'] ?? 'Desconocida';
+    final String newVersion = updateInfo['version_disponible'] ?? 'Desconocida';
     final String currentVersion =
         updateInfo['current_version'] ?? 'Desconocida';
 
@@ -160,12 +161,15 @@ class _HomeShellState extends State<HomeShell> {
       builder: (ctx) => WillPopScope(
         onWillPop: () async => !isObligatory,
         child: AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           title: Row(
             children: [
               Icon(
-                isObligatory ? Icons.warning_amber_rounded : Icons.system_update,
+                isObligatory
+                    ? Icons.warning_amber_rounded
+                    : Icons.system_update,
                 color: isObligatory ? Colors.orange : AppTheme.primary,
                 size: 26,
               ),
@@ -176,7 +180,9 @@ class _HomeShellState extends State<HomeShell> {
                       ? 'Actualización obligatoria'
                       : 'Nueva versión disponible',
                   style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.bold),
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 2,
                 ),
@@ -188,19 +194,25 @@ class _HomeShellState extends State<HomeShell> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _UpdateInfoRow(
-                  label: 'Versión disponible', value: newVersion, highlight: true),
+                label: 'Versión disponible',
+                value: newVersion,
+                highlight: true,
+              ),
               const SizedBox(height: 6),
-              _UpdateInfoRow(
-                  label: 'Versión actual', value: currentVersion),
+              _UpdateInfoRow(label: 'Versión actual', value: currentVersion),
               const SizedBox(height: 16),
               Text(
                 isObligatory
                     ? 'Esta actualización es obligatoria y debe instalarse para continuar usando la aplicación.'
                     : 'Se recomienda actualizar para obtener las últimas mejoras y correcciones.',
                 style: TextStyle(
-                  color: isObligatory ? Colors.orange.shade800 : AppTheme.textSecondary,
+                  color: isObligatory
+                      ? Colors.orange.shade800
+                      : AppTheme.textSecondary,
                   fontSize: 13,
-                  fontWeight: isObligatory ? FontWeight.w500 : FontWeight.normal,
+                  fontWeight: isObligatory
+                      ? FontWeight.w500
+                      : FontWeight.normal,
                 ),
               ),
             ],
@@ -216,11 +228,13 @@ class _HomeShellState extends State<HomeShell> {
               label: const Text('Descargar'),
               onPressed: () => _downloadUpdate(ctx),
               style: ElevatedButton.styleFrom(
-                backgroundColor:
-                    isObligatory ? Colors.orange : AppTheme.primary,
+                backgroundColor: isObligatory
+                    ? Colors.orange
+                    : AppTheme.primary,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
           ],
@@ -233,8 +247,7 @@ class _HomeShellState extends State<HomeShell> {
     final Uri url = Uri.parse(UpdateService.downloadUrl);
     bool launched = false;
     try {
-      launched =
-          await launchUrl(url, mode: LaunchMode.externalApplication);
+      launched = await launchUrl(url, mode: LaunchMode.externalApplication);
     } catch (_) {}
     if (!launched) {
       try {
@@ -273,7 +286,9 @@ class _HomeShellState extends State<HomeShell> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('No se pudo abrir el enlace automáticamente.\nCópialo y ábrelo en tu navegador:'),
+            const Text(
+              'No se pudo abrir el enlace automáticamente.\nCópialo y ábrelo en tu navegador:',
+            ),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(10),
@@ -306,7 +321,8 @@ class _HomeShellState extends State<HomeShell> {
     if (!isAdmin) {
       final idxListas = _idxListasNoAdmin;
       final idxTickets = _idxTicketsNoAdmin;
-      if (i == 0) _catalogoKey.currentState?.reload();
+      if (i == 0) _homeKey.currentState?.reload();
+      if (i == 1) _catalogoKey.currentState?.reload();
       if (i == idxListas) _misListasKey.currentState?.reload();
       if (i == idxTickets) _misTicketsKey.currentState?.reload();
     }
@@ -327,20 +343,12 @@ class _HomeShellState extends State<HomeShell> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _redirectToLoginIfSignedOut();
       });
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     // Show loading indicator during initial data loading
     if (_isInitialLoading || entidadProvider.isLoading) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     final List<Widget> screens;
@@ -369,8 +377,10 @@ class _HomeShellState extends State<HomeShell> {
           if (isAdmin && isVendedor)
             const NavigationDestination(
               icon: Icon(Icons.confirmation_number_outlined),
-              selectedIcon:
-                  Icon(Icons.confirmation_number, color: AppTheme.primary),
+              selectedIcon: Icon(
+                Icons.confirmation_number,
+                color: AppTheme.primary,
+              ),
               label: 'Reservas',
             ),
           if (isAdmin)
@@ -378,6 +388,12 @@ class _HomeShellState extends State<HomeShell> {
               icon: Icon(Icons.business_outlined),
               selectedIcon: Icon(Icons.business, color: AppTheme.primary),
               label: 'Admin',
+            ),
+          if (!isAdmin && !isVendedor)
+            const NavigationDestination(
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home_rounded, color: AppTheme.primary),
+              label: 'Inicio',
             ),
           if (!isAdmin && !isVendedor)
             const NavigationDestination(
@@ -392,10 +408,12 @@ class _HomeShellState extends State<HomeShell> {
               label: 'Mis Listas',
             ),
           if (!isAdmin)
-            const NavigationDestination(
-              icon: Icon(Icons.confirmation_number_outlined),
-              selectedIcon:
-                  Icon(Icons.confirmation_number, color: AppTheme.primary),
+            NavigationDestination(
+              icon: _ReservationNavIcon(showBadge: !isVendedor),
+              selectedIcon: _ReservationNavIcon(
+                showBadge: !isVendedor,
+                selected: true,
+              ),
               label: 'Reservas',
             ),
           const NavigationDestination(
@@ -405,6 +423,49 @@ class _HomeShellState extends State<HomeShell> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ReservationNavIcon extends StatelessWidget {
+  final bool showBadge;
+  final bool selected;
+
+  const _ReservationNavIcon({this.showBadge = false, this.selected = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Icon(
+          selected
+              ? Icons.confirmation_number
+              : Icons.confirmation_number_outlined,
+          color: selected ? AppTheme.primary : null,
+        ),
+        if (showBadge)
+          Positioned(
+            right: -8,
+            top: -7,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              decoration: BoxDecoration(
+                color: AppTheme.error,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.white, width: 1.5),
+              ),
+              child: const Text(
+                '2',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -427,16 +488,14 @@ class _UpdateInfoRow extends StatelessWidget {
       children: [
         Text(
           '$label: ',
-          style: const TextStyle(
-              fontSize: 13, color: AppTheme.textSecondary),
+          style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
         ),
         Flexible(
           child: Text(
             value,
             style: TextStyle(
               fontSize: highlight ? 15 : 13,
-              fontWeight:
-                  highlight ? FontWeight.bold : FontWeight.w500,
+              fontWeight: highlight ? FontWeight.bold : FontWeight.w500,
               color: highlight ? AppTheme.primary : AppTheme.textPrimary,
             ),
           ),

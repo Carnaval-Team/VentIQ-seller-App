@@ -1,30 +1,46 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:inventtia_flow/main.dart';
+import 'package:inventtia_flow/services/home_catalog_service.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  test(
+    'el feed del Home pagina sus resultados sin repetir elementos',
+    () async {
+      await HomeCatalogService.clearCache();
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+      final firstPage = await HomeCatalogService.fetchPage(
+        page: 1,
+        pageSize: 4,
+      );
+      final secondPage = await HomeCatalogService.fetchPage(
+        page: 2,
+        pageSize: 4,
+      );
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+      expect(firstPage.items, isNotEmpty);
+      expect(secondPage.items, isNotEmpty);
+      expect(
+        firstPage.items
+            .map((item) => item.id)
+            .toSet()
+            .intersection(secondPage.items.map((item) => item.id).toSet()),
+        isEmpty,
+      );
+      expect(
+        firstPage.items.first.priceLabel,
+        contains(firstPage.items.first.currency),
+      );
+    },
+  );
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+  test('los filtros de catálogo mantienen el contrato de página', () async {
+    final page = await HomeCatalogService.fetchPage(
+      page: 1,
+      pageSize: 3,
+      category: 'Uñas',
+    );
+
+    expect(page.items, isNotEmpty);
+    expect(page.items.every((item) => item.category == 'Uñas'), isTrue);
   });
 }
