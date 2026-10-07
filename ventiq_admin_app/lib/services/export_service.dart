@@ -1376,6 +1376,7 @@ class ExportService {
     bool includeDescripcion = false,
     bool includePrecios = false,
     bool includeReservado = false,
+    bool includePresentacion = false,
     bool includeValorInventarioCosto = false,
   }) async {
     try {
@@ -1399,6 +1400,7 @@ class ExportService {
           includeDescripcion: includeDescripcion,
           includePrecios: includePrecios,
           includeReservado: includeReservado,
+          includePresentacion: includePresentacion,
           includeValorInventarioCosto: includeValorInventarioCosto,
         );
         mimeType =
@@ -1514,6 +1516,7 @@ class ExportService {
                       includeDescripcion: includeDescripcion,
                       includePrecios: includePrecios,
                       includeReservado: includeReservado,
+                      includePresentacion: includePresentacion,
                       includeValorInventarioCosto: includeValorInventarioCosto,
                     ),
                   );
@@ -1686,9 +1689,14 @@ class ExportService {
 
       // Clave de deduplicación: producto + presentación + variante
       final idProducto = item['id_producto']?.toString() ?? '';
-      final idPres = item['inv_id_presentacion']?.toString() ?? '0';
-      final idVar = item['inv_id_variante']?.toString() ?? '0';
-      final dedupKey = '${idProducto}_${idPres}_$idVar';
+      final idPres = (item['id_presentacion'] ?? item['inv_id_presentacion'])
+              ?.toString() ??
+          '0';
+      final idVar = (item['id_variante'] ?? item['inv_id_variante'])
+              ?.toString() ??
+          '0';
+      final idOpc = item['id_opcion_variante']?.toString() ?? '0';
+      final dedupKey = '${idProducto}_${idPres}_${idVar}_$idOpc';
 
       grouped.putIfAbsent(almacen, () => {});
       grouped[almacen]!.putIfAbsent(ubicacion, () => {});
@@ -1760,14 +1768,26 @@ class ExportService {
         ventasPeriodo:
             double.tryParse(item['ventas_periodo']?.toString() ?? '0') ?? 0,
         stockDisponible:
-            double.tryParse(item['stock_disponible']?.toString() ?? '0') ?? 0,
+            double.tryParse(
+                  item['stock_disponible']?.toString() ??
+                      item['cantidad_final']?.toString() ??
+                      '0',
+                ) ??
+                0,
         stockReservado:
-            double.tryParse(item['stock_reservado']?.toString() ?? '0') ?? 0,
+            double.tryParse(
+                  item['stock_reservado']?.toString() ??
+                      item['cantidad_reservada']?.toString() ??
+                      '0',
+                ) ??
+                0,
         stockDisponibleAjustado:
             double.tryParse(
-              item['stock_disponible_ajustado']?.toString() ?? '0',
-            ) ??
-            0,
+                  item['stock_disponible_ajustado']?.toString() ??
+                      item['cantidad_final']?.toString() ??
+                      '0',
+                ) ??
+                0,
         esVendible:
             item['es_vendible'] == true ||
             item['es_vendible']?.toString().toLowerCase() == 'true',
@@ -1806,6 +1826,7 @@ class ExportService {
     bool includeDescripcion = false,
     bool includePrecios = false,
     bool includeReservado = false,
+    bool includePresentacion = false,
     bool includeValorInventarioCosto = false,
   }) async {
     final excel = Excel.createExcel();
@@ -1849,6 +1870,7 @@ class ExportService {
           includeDescripcion: includeDescripcion,
           includePrecios: includePrecios,
           includeReservado: includeReservado,
+          includePresentacion: includePresentacion,
           includeValorInventarioCosto: includeValorInventarioCosto,
         );
       }
@@ -2049,10 +2071,12 @@ class ExportService {
     bool includePrecios = false,
     bool includeReservado = false,
     bool includeValorInventarioCosto = false,
+    bool includePresentacion = false,
   }) {
     // Crear lista de encabezados dinámicamente
     final headers = <String>['Nombre'];
 
+    if (includePresentacion) headers.add('Presentación');
     if (includeSku) headers.add('SKU');
     if (includeNombreCorto) headers.add('Nombre Corto');
     if (includeMarca) headers.add('Marca');
@@ -2068,7 +2092,7 @@ class ExportService {
         'Entradas',
         'Extracciones',
         'Ventas',
-        'Reservados Pend.',
+        'Pendiente',
         'Cant. Final',
       ]);
     }
@@ -2095,6 +2119,11 @@ class ExportService {
     // Configurar anchos de columna dinámicamente
     sheet.setColumnWidth(0, 30); // Nombre del Producto
     int currentCol = 1;
+
+    if (includePresentacion) {
+      sheet.setColumnWidth(currentCol, 20); // Presentación
+      currentCol++;
+    }
 
     if (includeSku) {
       sheet.setColumnWidth(currentCol, 15); // SKU
@@ -2186,9 +2215,13 @@ class ExportService {
     for (final product in products) {
       final rowData = <String>[product.nombreProducto];
 
+      if (includePresentacion) {
+        rowData.add(product.presentacion);
+      }
+
       // Agregar columnas adicionales si están habilitadas
       if (includeSku) {
-        rowData.add(product.skuProducto ?? '');
+        rowData.add(product.skuProducto);
       }
       if (includeNombreCorto) {
         rowData.add(product.denominacionCorta ?? '');
@@ -2210,7 +2243,11 @@ class ExportService {
         String reservadoStr = '0.0';
         if (rawData != null) {
           final raw = rawData.firstWhere(
-            (r) => r['id_producto'] == product.idProducto,
+            (r) =>
+                r['id_producto'] == product.idProducto &&
+                (r['id_presentacion'] ?? 0) ==
+                    (product.idPresentacion ?? 0) &&
+                (r['id_ubicacion'] ?? 0) == product.idUbicacion,
             orElse: () => {},
           );
           reservadoStr =
@@ -2231,7 +2268,11 @@ class ExportService {
 
       if (includePrecios && rawData != null) {
         final raw = rawData.firstWhere(
-          (r) => r['id_producto'] == product.idProducto,
+          (r) =>
+              r['id_producto'] == product.idProducto &&
+              (r['id_presentacion'] ?? 0) ==
+                  (product.idPresentacion ?? 0) &&
+              (r['id_ubicacion'] ?? 0) == product.idUbicacion,
           orElse: () => {},
         );
         final _fmt2 = (dynamic v) =>
@@ -2361,6 +2402,7 @@ class ExportService {
     bool includeDescripcion = false,
     bool includePrecios = false,
     bool includeReservado = false,
+    bool includePresentacion = false,
     bool includeValorInventarioCosto = false,
   }) {
     // Crear lista de encabezados dinámicamente
@@ -2370,6 +2412,12 @@ class ExportService {
     };
 
     int columnIndex = 1;
+
+    if (includePresentacion) {
+      headers.add('Presentación');
+      columnWidths[columnIndex] = const pw.FlexColumnWidth(1.2);
+      columnIndex++;
+    }
 
     if (includeSku) {
       headers.add('SKU');
@@ -2407,7 +2455,7 @@ class ExportService {
         'Entradas',
         'Extracc.',
         'Ventas',
-        'Reservado',
+        'Pendiente',
         'Cant. Fin',
       ]);
     }
@@ -2456,6 +2504,10 @@ class ExportService {
       final rowData = <String>[
         producto['nombre_producto']?.toString() ?? 'Sin nombre',
       ];
+
+      if (includePresentacion) {
+        rowData.add(producto['presentacion']?.toString() ?? '');
+      }
 
       // Agregar columnas adicionales si están habilitadas
       if (includeSku) {

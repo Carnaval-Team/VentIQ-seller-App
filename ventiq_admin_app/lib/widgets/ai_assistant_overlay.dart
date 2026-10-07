@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../config/app_colors.dart';
 import '../utils/app_route_observer.dart';
@@ -40,7 +41,15 @@ class _AiAssistantOverlayState extends State<AiAssistantOverlay> {
   }
 
   void _onRouteChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    } else {
+      setState(() {});
+    }
   }
 
   bool get _visible {

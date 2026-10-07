@@ -2165,7 +2165,7 @@ class InventoryService {
     }
   }
 
-  /// Obtiene inventario simple para exportación
+  /// Obtiene inventario simple para exportación (usa el RPC unificado).
   static Future<List<Map<String, dynamic>>> getInventarioSimple({
     int? idAlmacen,
     int? idTienda,
@@ -2175,7 +2175,7 @@ class InventoryService {
   }) async {
     try {
       print(
-        '🔍 Calling obtener_reporte_inventario_completo_con_ceros with params:',
+        '🔍 Calling obtener_reporte_inventario_export with params:',
       );
       print('  - idAlmacen: $idAlmacen');
       print('  - idTienda: $idTienda');
@@ -2186,7 +2186,7 @@ class InventoryService {
       print('  - includeZero: $includeZero');
 
       final response = await _supabase.rpc(
-        'obtener_reporte_inventario_completo4',
+        'obtener_reporte_inventario_export',
         params: {
           'p_id_tienda': idTienda,
           'p_fecha_desde': fechaDesde?.toIso8601String().split('T')[0],
@@ -2195,6 +2195,7 @@ class InventoryService {
               : null,
           'p_id_almacen': idAlmacen,
           'p_include_zero': includeZero,
+          'p_solo_completadas_en_periodo': false,
         },
       );
 
@@ -2229,7 +2230,7 @@ class InventoryService {
     }
   }
 
-  /// Obtiene inventario basado en movimientos (v5) para exportación
+  /// Obtiene inventario basado en movimientos para exportación (RPC unificado).
   static Future<List<Map<String, dynamic>>> getInventarioMovimientos({
     int? idAlmacen,
     int? idTienda,
@@ -2239,11 +2240,7 @@ class InventoryService {
     bool soloCompletadasEnPeriodo = false,
   }) async {
     try {
-      final rpcName = soloCompletadasEnPeriodo
-          ? 'obtener_reporte_inventario_completo5_completadas_en_periodo'
-          : 'obtener_reporte_inventario_completo5';
-
-      print('🔍 Calling $rpcName with params:');
+      print('🔍 Calling obtener_reporte_inventario_export with params:');
       print('  - idAlmacen: $idAlmacen');
       print('  - idTienda: $idTienda');
       print('  - fechaDesde: ${fechaDesde?.toIso8601String().split('T')[0]}');
@@ -2254,7 +2251,7 @@ class InventoryService {
       print('  - soloCompletadasEnPeriodo: $soloCompletadasEnPeriodo');
 
       final response = await _supabase.rpc(
-        rpcName,
+        'obtener_reporte_inventario_export',
         params: {
           'p_id_tienda': idTienda,
           'p_fecha_desde': fechaDesde?.toIso8601String().split('T')[0],
@@ -2263,6 +2260,7 @@ class InventoryService {
               : null,
           'p_id_almacen': idAlmacen,
           'p_include_zero': includeZero,
+          'p_solo_completadas_en_periodo': soloCompletadasEnPeriodo,
         },
       );
 
