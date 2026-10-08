@@ -2,6 +2,8 @@ import '../models/servicio.dart';
 import '../utils/horario_atencion.dart';
 import '../utils/precio_reserva.dart';
 import 'catalogo_service.dart';
+import 'promocion_service.dart';
+import 'resena_service.dart';
 
 /// Categoría real del catálogo, tomada de `flow.nom_tipo_actividad_servicio`.
 ///
@@ -40,8 +42,12 @@ class HomeCatalogCategory {
 
 /// Tarjeta del Home construida **solo** con campos que existen en `flow`.
 ///
-/// Los campos de marketplace (rating, reseñas, distancia, descuento, duración)
-/// no se incluyen a propósito: no hay columnas que los respalden. Ver
+/// El rating y el número de reseñas **sí** son reales desde el Paso 4: salen de
+/// `flow.resena` vía `resenas_por_servicio`. Un servicio sin reseñas deja ambos
+/// en `null` (`totalResenas == 0`), y la tarjeta no debe pintar estrellas ni un
+/// "0.0": no se le supone una valoración.
+///
+/// Los campos que siguen sin existir son distancia, descuento y duración. Ver
 /// `lib/config/home_features.dart` para el estado de cada uno.
 class HomeCatalogItem {
   const HomeCatalogItem({
@@ -59,6 +65,9 @@ class HomeCatalogItem {
     this.pais,
     this.permiteReservaDirecta = false,
     this.cantidadMaxCapacidad = 1,
+    this.rating,
+    this.totalResenas = 0,
+    this.promocion,
     this.localServicio,
   });
 
@@ -96,8 +105,44 @@ class HomeCatalogItem {
   final bool permiteReservaDirecta;
   final int cantidadMaxCapacidad;
 
+  /// Promedio real de `flow.resena`, o `null` si el servicio no tiene ninguna.
+  final double? rating;
+
+  /// Cuántas reseñas respaldan [rating].
+  final int totalResenas;
+
+  /// Promoción vigente que aplica a este servicio, si hay alguna.
+  ///
+  /// Es **de referencia** para el badge del Home: se calcula sobre el precio
+  /// base, porque aquí no se conocen las opciones que elegirá el cliente (que
+  /// pueden cambiar el precio por reglas). El importe que se cobra lo fija el
+  /// servidor al confirmar, con la misma lógica compartida.
+  final Promocion? promocion;
+
   /// Entidad original, para navegar al detalle sin volver a consultar.
   final LocalServicio? localServicio;
+
+  /// Precio con la promoción aplicada, o el de lista si no hay promo.
+  double? get precioConPromocion {
+    final lista = price;
+    if (lista == null) return null;
+    final p = promocion;
+    if (p == null) return null;
+    final d = p.esPorcentaje
+        ? lista * p.valor / 100
+        : (p.valor > lista ? lista : p.valor);
+    final total = lista - d;
+    return total < 0 ? 0 : total;
+  }
+
+  /// `true` cuando hay promo y rebaja de verdad el precio base.
+  bool get tieneDescuento {
+    final con = precioConPromocion;
+    return promocion != null && price != null && con != null && con < price!;
+  }
+
+  /// `true` cuando hay valoración real que mostrar.
+  bool get tieneValoracion => totalResenas > 0 && (rating ?? 0) > 0;
 
   /// `true` cuando se puede afirmar si el local está abierto.
   bool get horarioConocido => estadoHorario != EstadoHorario.desconocido;
@@ -170,6 +215,7 @@ class HomeCatalogService {
     String query = '',
     HomeCatalogCategory category = HomeCatalogCategory.todas,
     bool onlyOpen = false,
+    bool topRated = false,
     String? provincia,
     DateTime? ahora,
   }) async {
@@ -181,6 +227,7 @@ class HomeCatalogService {
       query: query,
       category: category,
       onlyOpen: onlyOpen,
+      topRated: topRated,
       provincia: provincia,
       ahora: ahora,
     );
@@ -198,6 +245,7 @@ class HomeCatalogService {
     String query = '',
     HomeCatalogCategory category = HomeCatalogCategory.todas,
     bool onlyOpen = false,
+    bool topRated = false,
     String? provincia,
     DateTime? ahora,
   }) {
@@ -205,7 +253,7 @@ class HomeCatalogService {
     final normalizada = _sinAcentos(query.trim().toLowerCase());
     final provinciaBuscada = provincia?.trim().toLowerCase();
 
-    final filtrados = catalogo.where((item) {
+    var filtrados = catalogo.where((item) {
       if (!category.esTodas && item.category.id != category.id) return false;
 
       if (provinciaBuscada != null && provinciaBuscada.isNotEmpty) {
@@ -228,6 +276,22 @@ class HomeCatalogService {
 
       return true;
     }).toList();
+
+    // "Mejor valorados": promedio descendente y, a igual promedio, más reseñas
+    // primero. Los servicios **sin** ninguna reseña van al final, no se les
+    // supone una valoración. `List.sort` no es estable, pero aquí el criterio
+    // es total (todo par se compara), así que no importa.
+    if (topRated) {
+      filtrados.sort((a, b) {
+        final aTiene = a.tieneValoracion;
+        final bTiene = b.tieneValoracion;
+        if (aTiene != bTiene) return aTiene ? -1 : 1;
+        if (!aTiene) return 0;
+        final porPromedio = b.rating!.compareTo(a.rating!);
+        if (porPromedio != 0) return porPromedio;
+        return b.totalResenas.compareTo(a.totalResenas);
+      });
+    }
 
     final paginaSegura = page < 1 ? 1 : page;
     final inicio = (paginaSegura - 1) * pageSize;
@@ -307,9 +371,28 @@ class HomeCatalogService {
         for (final c in categorias)
           if (c.id != null) c.id!: c.nombre,
       };
-      final servicios = await CatalogoService.getLocalServicios();
+      // Las valoraciones se piden en paralelo con el catálogo y son
+      // **opcionales**: si `flow.resena` no existe todavía (migración 26 sin
+      // aplicar) el Home debe seguir mostrando servicios, solo que sin
+      // estrellas. Por eso el error se traga aquí y no rompe la carga.
+      final resultados = await Future.wait([
+        CatalogoService.getLocalServicios(),
+        _valoracionesSeguras(),
+        _promocionesSeguras(),
+      ]);
+      final servicios = resultados[0] as List<LocalServicio>;
+      final valoraciones = resultados[1] as Map<int, ResumenResenas>;
+      final promosPorServicio = resultados[2] as Map<int, Promocion>;
+
       final mapeados = servicios
-          .map((item) => _desdeLocalServicio(item, nombrePorId))
+          .map(
+            (item) => _desdeLocalServicio(
+              item,
+              nombrePorId,
+              valoraciones,
+              promosPorServicio,
+            ),
+          )
           .toList();
       _cachedCatalog = mapeados;
       return mapeados;
@@ -321,14 +404,40 @@ class HomeCatalogService {
     }
   }
 
+  /// Valoraciones por servicio, tolerando que la migración no esté aplicada.
+  static Future<Map<int, ResumenResenas>> _valoracionesSeguras() async {
+    try {
+      return await ResenaService.porServicio();
+    } catch (_) {
+      return const <int, ResumenResenas>{};
+    }
+  }
+
+  /// Mejor promo por servicio, en una sola llamada.
+  ///
+  /// El servidor resuelve la prioridad (promo propia antes que la de su
+  /// entidad, luego el porcentaje más alto), así que aquí no hay nada que
+  /// decidir: solo tolerar que la migración `27_promociones.sql` no esté
+  /// aplicada, en cuyo caso el feed se pinta sin badges.
+  static Future<Map<int, Promocion>> _promocionesSeguras() async {
+    try {
+      return await PromocionService.porServicio();
+    } catch (_) {
+      return const <int, Promocion>{};
+    }
+  }
+
   static HomeCatalogItem _desdeLocalServicio(
     LocalServicio item,
     Map<int, String> nombrePorTipo,
+    Map<int, ResumenResenas>? valoraciones,
+    Map<int, Promocion>? promociones,
   ) {
     final servicio = item.servicio;
     final local = item.local;
     final precio = precioBaseDe(servicio?.configPrecio);
     final horario = HorarioAtencion.parse(local?.horarioAtencion);
+    final resumen = valoraciones?[item.id];
     return HomeCatalogItem(
       id: item.id,
       title: servicio?.nombre ?? 'Servicio sin nombre',
@@ -348,6 +457,10 @@ class HomeCatalogService {
       pais: _primeraNoVacia(local?.pais, null),
       permiteReservaDirecta: item.permiteReservaDirecta,
       cantidadMaxCapacidad: item.cantidadMaxCapacidad,
+      // Sin reseñas, `rating` queda null: la tarjeta no pinta estrellas.
+      rating: (resumen?.hayDatos ?? false) ? resumen!.promedio : null,
+      totalResenas: resumen?.total ?? 0,
+      promocion: promociones?[item.id],
       localServicio: item,
     );
   }

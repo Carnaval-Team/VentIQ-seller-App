@@ -116,23 +116,115 @@ p_id_entidad, p_nombre_local, p_nombre_servicio, p_pais, p_provincia) → jsonb`
 - Tests: `test/catalogo_favoritos_test.dart` fija el contrato de la partición
   (estabilidad, sin pérdidas y con ids favoritos que ya no están en el catálogo).
 
-### Paso 4 — Reseñas y rating
+### ✅ Paso 4 — Reseñas y rating (hecho)
 
-- `flow.resena (uuid_usuario, id_local_servicio, puntuacion 1..5, comentario,
-  id_agenda, created_at)` con `unique(uuid_usuario, id_agenda)`.
-- Solo se puede reseñar con una reserva **completada** propia (`agenda.id_estado = 3`).
-- Vista/RPC de agregados (`rating_promedio`, `total_resenas`) e índice por servicio.
-- Moderación en admin (`resenas_screen`) + reporte.
-- Encender estrellas, `HomeFeatures.resenas` y `HomeFeatures.mejorValorados`.
+**Decisión de producto acordada:** se reseña una **reserva completada** y la
+reseña queda asociada al servicio (visible en el detalle y en el Home).
 
-### Paso 5 — Promociones, descuentos y cupos
+- `migraciones/26_resenas.sql` — tabla `flow.resena` + RLS + 5 RPC.
+  El ancla es la reserva, no el servicio: `id_agenda UNIQUE` impide inflar el
+  rating reseñando 10 veces el mismo turno, y el estado debe ser `Completado`
+  (no basta con haber reservado). **73 reservas ya están completadas**, así que
+  la sección tendrá datos reales desde el primer día.
+- `lib/services/resena_service.dart` — modelo, resumen con distribución y CRUD.
+- `lib/widgets/resenas.dart` — `Estrellas`, `SelectorEstrellas`,
+  `ResumenValoraciones`, `TarjetaResena` y el formulario de escritura.
+- **Detalle del servicio**: sección de reseñas con resumen, lista, y el
+  formulario que aparece **solo** cuando existe una reserva completada propia sin
+  reseñar (`agenda_resenable`). Así el botón nunca falla al pulsar. Se puede
+  editar y eliminar la propia.
+- **Home**: bloque "Lo que dicen los clientes" con reseñas reales — sustituye a
+  la "Reseña del día" inventada (texto, autor y 5 estrellas fijos de un negocio
+  que no existe). Estrellas reales en las tarjetas y chip "Mejor valorados"
+  funcionando.
+- `HomeFeatures.resenas` y `mejorValorados` encendidos.
+- Tests: `test/home_valoraciones_test.dart` y ampliación de
+  `favorito_service_test.dart` para la detección de migración pendiente.
 
-- `flow.promocion (id_local_servicio, titulo, tipo, valor, moneda, desde, hasta,
-  cupo_total, cupo_usado, activo)` + reglas de vigencia.
-- Descuento de cupo atómico (UPDATE con `where cupo_usado < cupo_total`).
-- `calcular_precio_reserva` debe aplicar la promo vigente para que el precio
-  mostrado y el cobrado coincidan.
-- CRUD en admin + encender "Ofertas relámpago" con contador real.
+**Detalle técnico que importa:** las funciones de lectura son `SECURITY DEFINER`
+con guarda de rol, no `invoker`. Con `invoker`, RLS (`perfil_select_own` y las
+políticas de `agenda`) haría que **todos los autores salieran "Cliente"** y que
+nadie pudiera ver su propia reseña. Como saltan RLS, filtran por `auth.uid()`
+explícito en SQL.
+
+**Pendiente:**
+
+1. **Aplicar `26_resenas.sql`** en ambos proyectos.
+2. **Moderación en admin**: sin pantalla, una reseña ofensiva solo se puede
+   borrar por SQL. El autor sí puede borrar la suya.
+3. Decidir si se exige un mínimo de reservas para mostrar el promedio (hoy se
+   muestra con 1 sola reseña, lo que puede ser ruidoso).
+
+### 🟡 Paso 5 — Promociones (hecho; falta aplicar el SQL)
+
+**Decisión acordada:** el "espacio patrocinado" **no** lo configura un admin de
+entidad sino un super admin desde otra app. Por eso este paso se separó en dos:
+**promociones** (aquí, con CRUD del admin) y **patrocinados** (después, solo
+tablas + RPC de lectura).
+
+#### El problema de precios que había que resolver primero
+
+Antes de esta migración había **una** función que decidía cuánto se cobra
+(`calcular_precio_reserva`) y **seis** que la llamaban:
+
+| Función | Quién la dispara |
+|---|---|
+| `cliente_reservar_directo` | cliente |
+| `cliente_reservar_pasaje_omnibus` | cliente |
+| `admin_crear_reserva_directa` | admin (mostrador) |
+| `admin_reservar_pasaje_omnibus` | admin |
+| `bot_procesar_plan` | **BOT** (mueve de la cola a la agenda) |
+| `bot_procesar_recurso_dia` | **BOT** |
+
+A la vez, la **app** calculaba el precio por su cuenta en Dart
+(`PrecioReserva.calcular`, usada en 5 sitios) para *mostrarlo*, y el servidor lo
+recalculaba para *cobrarlo*. **Dos implementaciones de la misma regla**: con
+promociones habrían descuadrado en cuanto una cambiara en un solo lado.
+
+#### Cómo quedó
+
+- **`_resolver_promocion`** es la única definición de "qué promo aplica y cuánto
+  descuenta". De ahí salen **tanto lo que se muestra como lo que se cobra**.
+- **El bot no toca promociones.** Si el descuento estuviera dentro de
+  `calcular_precio_reserva`, el bot lo aplicaría al mover a alguien de la sala de
+  espera —donde nadie eligió una oferta— y gastaría cupos que nadie pidió. Se
+  añadió `_aplicar_promocion` como envoltorio que **solo** usan los 4 caminos en
+  los que una persona confirma. Consecuencia asumida: una entrada de cola
+  promovida por el bot nunca lleva descuento.
+- **La app ya no calcula el precio: lo cotiza.** `cotizar_reserva` no consume
+  cupo y alimenta la hoja de reserva; el total que se ve es el que se cobra.
+- **El cupo se reserva al cobrar, no al cotizar**, con
+  `update ... where cupo_usado < cupo_total`. Si la promo se agota entre que el
+  cliente ve el precio y confirma, la reserva **se rechaza con un mensaje claro**
+  en vez de cobrarle más en silencio.
+- La promo puede ser del servicio o de **toda la entidad**; gana la propia del
+  servicio y, a igualdad, el porcentaje más alto.
+
+#### Archivos
+
+- `migraciones/27_promociones.sql` — tabla + RLS + 9 funciones, y **reescribe los
+  4 RPC personales** para que usen el envoltorio.
+- `lib/services/promocion_service.dart` — modelo, `cotizar`, `porServicio`.
+- `lib/screens/admin/promociones_screen.dart` — CRUD (alta, edición, activar,
+  cupo, vigencia), alcanzable desde el detalle del servicio.
+- `lib/screens/local_servicio_detail_screen.dart` — banner de promos y **total
+  cotizado** con el precio de lista tachado y el descuento.
+- `lib/screens/home_client_screen.dart` — precio rebajado en las tarjetas y
+  sección "Ofertas vigentes" que solo lista lo que **realmente** tiene descuento.
+- Eliminada la sección falsa: la antigua "Ofertas relámpago" mostraba cualquier
+  servicio como oferta, con un contador fijo "4:12:39" y, si no había ofertas,
+  dos negocios inventados ("Alma Spa", "Luna Studio").
+- Tests: `test/promocion_service_test.dart`.
+
+**Pendiente:**
+
+1. **Aplicar `27_promociones.sql`.** Sin ella el Home se pinta sin badges y la
+   hoja de reserva cae al cálculo anterior (sigue funcionando, sin descuentos).
+2. Validar en la app: el importe de la hoja debe coincidir con el de
+   `agenda.precio_total` tras reservar. Es la comprobación que cierra este paso.
+3. Decidir si las promos de entidad se gestionan desde una pantalla propia
+   (hoy el CRUD es por servicio; el alcance de entidad existe en la tabla y en
+   la resolución, pero no hay UI para crearlas).
 
 ### Paso 6 — Colecciones y campañas patrocinadas
 
@@ -180,7 +272,9 @@ desde el agente.
 | `22_categorias_marketplace.sql` | 14 categorías + RLS + RPC admin | ✅ aplicada |
 | `23_reasignar_categorias_servicios.sql` | 6 servicios a su categoría | ✅ aplicada |
 | `24_fix_idor_rpc_admin.sql` | cierra el IDOR (§5) | ✅ aplicada |
-| `25_favoritos.sql` | tabla `flow.favorito` + RLS | ⬜ **pendiente** |
+| `25_favoritos.sql` | tabla `flow.favorito` + RLS | ✅ aplicada |
+| `26_resenas.sql` | tabla `flow.resena` + 5 RPC + RLS | ✅ aplicada |
+| `27_promociones.sql` | tabla `flow.promocion` + 9 RPC + RLS, y reescribe los 4 RPC de reserva personales | ⬜ **pendiente** |
 
 Verificado tras aplicar las tres primeras: 14 categorías activas, 6 servicios
 reasignados, RLS activo en las 4 tablas, los 6 RPC con `auth.uid()` y sin

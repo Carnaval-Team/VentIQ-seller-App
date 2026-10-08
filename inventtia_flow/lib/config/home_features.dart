@@ -15,9 +15,19 @@ class HomeFeatures {
   const HomeFeatures._();
 
   /// Promociones con vigencia, descuento y cupos atómicos.
-  /// Falta: tabla `flow.promocion` + reglas + CRUD admin.
-  /// Hoy "Ofertas relámpago" y los precios tachados son inventados.
-  static const bool ofertasRelampago = false;
+  ///
+  /// **Ya implementado**: `flow.promocion` + `cotizar_reserva` +
+  /// `promociones_por_servicio`. El descuento se auto-detecta: si la migración
+  /// `27_promociones.sql` no está aplicada, el Home se pinta sin badges.
+  ///
+  /// Punto clave de diseño: el precio que se **muestra** y el que se **cobra**
+  /// salen de la misma función del servidor (`_resolver_promocion`), así que no
+  /// pueden descuadrar. Antes la app calculaba el precio en Dart y el servidor
+  /// lo recalculaba al cobrar: dos implementaciones de la misma regla.
+  ///
+  /// El **bot no aplica promociones**: cuando mueve a alguien de la sala de
+  /// espera a la agenda nadie eligió una oferta, así que cobra precio de lista.
+  static const bool ofertasRelampago = true;
 
   /// Campañas patrocinadas con prioridad de publicación.
   /// Falta: tabla `flow.campana` + facturación/prioridad + CRUD admin.
@@ -28,8 +38,15 @@ class HomeFeatures {
   static const bool colecciones = false;
 
   /// Reseñas y rating por servicio, verificadas contra una reserva completada.
-  /// Falta: `flow.resena` + RLS + RPC de lectura/escritura + moderación admin.
-  static const bool resenas = false;
+  ///
+  /// **Ya implementado**: `flow.resena` + `resenas_de_servicio`,
+  /// `resenas_recientes` y `resenas_por_servicio`. Igual que los favoritos, se
+  /// auto-detecta: si la migración `26_resenas.sql` no está aplicada, el Home no
+  /// pinta estrellas ni el bloque de reseñas, en vez de mostrar datos falsos.
+  ///
+  /// Nota: un servicio **sin** reseñas no muestra "0.0" ni estrellas rellenas.
+  /// Antes el Home inventaba 4.8 con 142 reseñas.
+  static const bool resenas = true;
 
   /// "Servicios populares de la semana" (ranking por reservas reales).
   /// Falta: RPC de ranking con ventana semanal.
@@ -57,8 +74,11 @@ class HomeFeatures {
   static const bool distancia = false;
 
   /// Filtro "Mejor valorados".
-  /// Depende de [resenas]: sin rating no hay orden por valoración.
-  static const bool mejorValorados = false;
+  ///
+  /// **Ya implementado**: depende de [resenas]. Ordena por el promedio real y,
+  /// a igualdad de promedio, por número de reseñas. Los servicios sin ninguna
+  /// reseña van al final: no se les supone una valoración.
+  static const bool mejorValorados = true;
 
   /// Búsqueda por voz.
   /// Falta: integración de reconocimiento de voz.

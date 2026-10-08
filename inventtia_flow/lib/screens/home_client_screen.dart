@@ -8,11 +8,13 @@ import '../config/home_features.dart';
 import '../providers/auth_provider.dart';
 import '../providers/favoritos_provider.dart';
 import '../services/home_catalog_service.dart';
+import '../services/resena_service.dart';
 import '../utils/horario_atencion.dart';
 import '../widgets/boton_favorito.dart';
 import '../widgets/home_hero_header.dart';
 import '../widgets/net_image.dart';
 import '../widgets/notificaciones_bell.dart';
+import '../widgets/resenas.dart';
 import 'favoritos_screen.dart';
 import 'local_servicio_detail_screen.dart';
 
@@ -30,7 +32,6 @@ class HomeClientScreenState extends State<HomeClientScreen>
   final _sponsoredController = PageController(viewportFraction: 0.86);
   final _searchFocusNode = FocusNode();
 
-  Timer? _countdownTimer;
   Timer? _searchDebounce;
   late final AnimationController _shineController;
 
@@ -47,9 +48,16 @@ class HomeClientScreenState extends State<HomeClientScreen>
   String? _provincia;
   bool _openNow = false;
 
+  /// Ordena por valoración real (`flow.resena`). Al desactivarlo se vuelve al
+  /// orden del catálogo.
+  bool _topRated = false;
+
+  /// Últimas reseñas con comentario, para el bloque del Home. Vacío si la
+  /// migración `26_resenas.sql` no está aplicada.
+  List<Resena> _resenasRecientes = const [];
+
   /// Mensaje del último fallo de lectura. `null` cuando el catálogo cargó.
   String? _error;
-  Duration _flashRemaining = const Duration(hours: 4, minutes: 12, seconds: 39);
 
   @override
   void initState() {
@@ -59,19 +67,9 @@ class HomeClientScreenState extends State<HomeClientScreen>
       vsync: this,
       duration: const Duration(milliseconds: 3200),
     )..repeat();
-    // El contador de "ofertas relámpago" no tiene promociones que contar
-    // todavía: no se arranca el temporizador mientras la sección esté apagada.
-    if (HomeFeatures.ofertasRelampago) {
-      _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (!mounted) return;
-        setState(() {
-          final seconds = _flashRemaining.inSeconds - 1;
-          _flashRemaining = Duration(seconds: seconds > 0 ? seconds : 0);
-        });
-      });
-    }
     _loadPage(reset: true);
     _loadCategorias();
+    _cargarResenasRecientes();
   }
 
   @override
@@ -80,7 +78,6 @@ class HomeClientScreenState extends State<HomeClientScreen>
     _searchController.dispose();
     _searchFocusNode.dispose();
     _sponsoredController.dispose();
-    _countdownTimer?.cancel();
     _searchDebounce?.cancel();
     _shineController.dispose();
     super.dispose();
@@ -93,6 +90,7 @@ class HomeClientScreenState extends State<HomeClientScreen>
     if (!mounted) return;
     await _loadPage(reset: true);
     await _loadCategorias();
+    await _cargarResenasRecientes();
   }
 
   Future<void> _loadPage({bool reset = false}) async {
@@ -116,6 +114,7 @@ class HomeClientScreenState extends State<HomeClientScreen>
         query: _query,
         category: _category,
         onlyOpen: _openNow,
+        topRated: _topRated,
         provincia: _provincia,
       );
       if (!mounted) return;
@@ -149,6 +148,20 @@ class HomeClientScreenState extends State<HomeClientScreen>
       final sigueExistiendo = categorias.any((c) => c.id == _category.id);
       if (!sigueExistiendo) _category = HomeCatalogCategory.todas;
     });
+  }
+
+  /// Últimas reseñas con comentario. Si el RPC no existe todavía, deja la lista
+  /// vacía y el bloque no se pinta.
+  Future<void> _cargarResenasRecientes() async {
+    if (!HomeFeatures.resenas) return;
+    try {
+      final resenas = await ResenaService.recientes(limit: 6);
+      if (!mounted) return;
+      setState(() => _resenasRecientes = resenas);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _resenasRecientes = const []);
+    }
   }
 
   void _onScroll() {
@@ -408,7 +421,7 @@ class HomeClientScreenState extends State<HomeClientScreen>
             if (HomeFeatures.rankingSemanal)
               SliverToBoxAdapter(child: _buildWeeklyPopular()),
             if (HomeFeatures.resenas)
-              SliverToBoxAdapter(child: _buildReviewOfDay()),
+              SliverToBoxAdapter(child: _buildResenasRecientes()),
             if (HomeFeatures.fidelidad)
               SliverToBoxAdapter(child: _buildLoyaltyBanner()),
             SliverToBoxAdapter(child: _buildHowItWorks()),
@@ -657,11 +670,11 @@ class HomeClientScreenState extends State<HomeClientScreen>
                     _QuickChip(
                       label: 'Mejor valorados',
                       icon: Icons.star_rounded,
-                      selected: false,
-                      onTap: () => _showToast(
-                        'Necesitamos el modelo de reseñas para ordenar por '
-                        'valoración.',
-                      ),
+                      selected: _topRated,
+                      onTap: () {
+                        setState(() => _topRated = !_topRated);
+                        _loadPage(reset: true);
+                      },
                     ),
                 ],
               ),
@@ -875,33 +888,31 @@ class HomeClientScreenState extends State<HomeClientScreen>
     );
   }
 
-  /// Sección apagada mientras no exista `flow.promocion`.
+  /// Sección de ofertas: SOLO servicios con promoción vigente real.
   ///
-  /// La versión anterior inventaba descuentos (`-20 %`, precio tachado y "3
-  /// cupos") y, si el catálogo no tenía ofertas, pintaba dos tarjetas de
-  /// negocios que no existen ("Alma Spa", "Luna Studio"). Ahora la tarjeta solo
-  /// muestra el descuento cuando una promoción real lo aporta.
+  /// Antes comparaba `item.discount > 0` sobre un campo inventado y, si no había
+  /// ofertas, pintaba dos tarjetas de negocios que no existen ("Alma Spa",
+  /// "Luna Studio") con "-20 %" y "3 cupos" falsos. Ahora se apoya en
+  /// `flow.promocion` y, si no hay ninguna promo, **la sección no se pinta**.
+  ///
+  /// No hay contador de cuenta regresiva: un "termina en 4:12:39" fijo no
+  /// significa nada. La vigencia real se muestra en el detalle ("Vigente hasta
+  /// dd/mm"), que sale de `promocion.hasta`.
   Widget _buildFlashOffers() {
-    final ofertas = _items.take(4).toList();
+    final ofertas = _items.where((i) => i.tieneDescuento).toList();
+    if (ofertas.isEmpty) return const SizedBox.shrink();
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 22),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                const Expanded(child: _SectionTitle('Ofertas relámpago')),
-                _CountdownPill(remaining: _flashRemaining),
-              ],
-            ),
-          ),
+          _sectionHeading('Ofertas vigentes'),
           const SizedBox(height: 4),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16),
             child: Text(
-              'Cupos limitados por tiempo',
+              'Servicios con descuento activo',
               style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
             ),
           ),
@@ -1045,113 +1056,59 @@ class HomeClientScreenState extends State<HomeClientScreen>
     );
   }
 
-  Widget _buildReviewOfDay() {
+  /// Reseñas recientes reales de `flow.resena`.
+  ///
+  /// Sustituye a la antigua "Reseña del día", que traía texto, autor y 5
+  /// estrellas fijos ("Llegué, reservé y me atendieron a la hora exacta" —
+  /// Ana R. · Luna Studio), un negocio que ni existe en la base.
+  ///
+  /// Se alimenta de `resenas_recientes`, que solo devuelve reseñas **con
+  /// comentario**: una fila de "5 estrellas" sin texto no aporta nada aquí. Si
+  /// no hay ninguna, el bloque no se pinta.
+  Widget _buildResenasRecientes() {
+    if (_resenasRecientes.isEmpty) return const SizedBox.shrink();
+
     return Padding(
-      padding: const EdgeInsets.only(left: 16, right: 16, bottom: 22),
-      child: Container(
-        padding: const EdgeInsets.all(17),
-        decoration: BoxDecoration(
-          color: const Color(0xFFEFF2FB),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFFDCE3F4)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(
-                  Icons.format_quote_rounded,
-                  color: AppTheme.primary,
-                  size: 26,
-                ),
-                const SizedBox(width: 6),
-                const Expanded(
-                  child: Text('Reseña del día', style: _SectionTitleStyle()),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 7,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.verified_rounded,
-                        color: AppTheme.accent,
-                        size: 13,
-                      ),
-                      SizedBox(width: 4),
-                      Text(
-                        'Verificada',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+      padding: const EdgeInsets.only(bottom: 22),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionHeading('Lo que dicen los clientes'),
+          const SizedBox(height: 4),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              'Reseñas de servicios ya atendidos',
+              style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
             ),
-            const SizedBox(height: 10),
-            const Row(
-              children: [
-                Icon(Icons.star_rounded, color: Color(0xFFF5A623), size: 17),
-                Icon(Icons.star_rounded, color: Color(0xFFF5A623), size: 17),
-                Icon(Icons.star_rounded, color: Color(0xFFF5A623), size: 17),
-                Icon(Icons.star_rounded, color: Color(0xFFF5A623), size: 17),
-                Icon(Icons.star_rounded, color: Color(0xFFF5A623), size: 17),
-              ],
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              '“Llegué, reservé y me atendieron a la hora exacta. La experiencia fue muy tranquila.”',
-              style: TextStyle(
-                color: AppTheme.textPrimary,
-                fontSize: 14,
-                height: 1.4,
-                fontWeight: FontWeight.w600,
+          ),
+          const SizedBox(height: 11),
+          SizedBox(
+            height: 178,
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              itemCount: _resenasRecientes.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 11),
+              itemBuilder: (_, index) => _ResenaRecienteCard(
+                resena: _resenasRecientes[index],
+                onTap: () {
+                  final id = _resenasRecientes[index].idLocalServicio;
+                  if (id == null) return;
+                  // El detalle necesita el LocalServicio completo: se toma del
+                  // feed si está cargado, y si no se avisa en vez de fallar.
+                  final item = _items.where((i) => i.id == id).firstOrNull;
+                  if (item == null) {
+                    _showToast('Desliza para encontrar ese servicio.');
+                    return;
+                  }
+                  _openItem(item);
+                },
               ),
             ),
-            const SizedBox(height: 11),
-            GestureDetector(
-              onTap: () => _showToast('Abriendo el perfil de Luna Studio.'),
-              child: const Row(
-                children: [
-                  CircleAvatar(
-                    radius: 13,
-                    backgroundColor: AppTheme.primary,
-                    child: Text(
-                      'A',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: 8),
-                  Text(
-                    'Ana R. · Luna Studio',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-                  ),
-                  Spacer(),
-                  Icon(
-                    Icons.arrow_forward_rounded,
-                    color: AppTheme.primary,
-                    size: 17,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1484,6 +1441,107 @@ class HomeClientScreenState extends State<HomeClientScreen>
       BoxShadow(color: Color(0x0D2B3A67), blurRadius: 12, offset: Offset(0, 5)),
     ],
   );
+}
+
+/// Tarjeta de una reseña reciente en el Home.
+///
+/// Solo muestra lo que el RPC entrega: estrellas reales, el comentario, el
+/// autor abreviado y el servicio. Nada de "Verificada" ni insignias decorativas:
+/// la reseña ya está verificada por construcción (viene de una reserva
+/// completada), así que presumirlo en cada tarjeta sería ruido.
+class _ResenaRecienteCard extends StatelessWidget {
+  final Resena resena;
+  final VoidCallback onTap;
+
+  const _ResenaRecienteCard({required this.resena, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 250,
+        padding: const EdgeInsets.all(13),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(17),
+          border: Border.all(color: AppTheme.border),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0D2B3A67),
+              blurRadius: 10,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Estrellas(promedio: resena.puntuacion.toDouble(), size: 15),
+            const SizedBox(height: 8),
+            Expanded(
+              child: Text(
+                resena.comentario!,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  height: 1.4,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 11,
+                  backgroundColor: AppTheme.primary.withValues(alpha: 0.12),
+                  child: Text(
+                    resena.autor.trim().isEmpty
+                        ? '?'
+                        : resena.autor.trim()[0].toUpperCase(),
+                    style: const TextStyle(
+                      color: AppTheme.primary,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        resena.autor,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      if (resena.servicio != null)
+                        Text(
+                          resena.servicio!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _StatusAvatar extends StatelessWidget {
@@ -1821,46 +1879,14 @@ class _SponsoredCard extends StatelessWidget {
   }
 }
 
-class _CountdownPill extends StatelessWidget {
-  final Duration remaining;
-  const _CountdownPill({required this.remaining});
-
-  @override
-  Widget build(BuildContext context) {
-    String two(int value) => value.toString().padLeft(2, '0');
-    final text =
-        '${two(remaining.inHours)}:${two(remaining.inMinutes.remainder(60))}:${two(remaining.inSeconds.remainder(60))}';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
-        color: AppTheme.error.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(9),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.timer_outlined, color: AppTheme.error, size: 14),
-          const SizedBox(width: 4),
-          Text(
-            text,
-            style: const TextStyle(
-              color: AppTheme.error,
-              fontSize: 11,
-              fontWeight: FontWeight.w900,
-              fontFeatures: [FontFeature.tabularFigures()],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+/// Fecha corta `dd/mm/aaaa` para la vigencia de una promoción.
+String _fechaCorta(DateTime d) {
+  final dia = d.day.toString().padLeft(2, '0');
+  final mes = d.month.toString().padLeft(2, '0');
+  return '$dia/$mes/${d.year}';
 }
 
-/// Tarjeta de promoción.
-///
-/// El descuento y el precio anterior llegarán de `flow.promocion`; hoy la
-/// sección está apagada (`HomeFeatures.ofertasRelampago`) y la tarjeta no
-/// inventa ninguno de los dos.
+/// Tarjeta de una oferta: descuento real de `flow.promocion`.
 class _FlashOfferCard extends StatelessWidget {
   final HomeCatalogItem item;
   final VoidCallback onTap;
@@ -1889,13 +1915,37 @@ class _FlashOfferCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Align(
-              alignment: Alignment.centerRight,
-              child: Icon(
-                Icons.bolt_rounded,
-                color: AppTheme.warning,
-                size: 19,
-              ),
+            Row(
+              children: [
+                // Descuento real de `flow.promocion`, no un "-20 %" fijo.
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppTheme.error,
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                  child: Text(
+                    item.promocion!.etiquetaDescuento,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                if (item.promocion!.hasta != null)
+                  Text(
+                    'hasta ${_fechaCorta(item.promocion!.hasta!)}',
+                    style: const TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontSize: 10,
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 11),
             Text(
@@ -1915,16 +1965,26 @@ class _FlashOfferCard extends StatelessWidget {
               ),
             ),
             const Spacer(),
-            Text(
-              item.priceLabel ?? 'Consultar precio',
-              style: const TextStyle(
-                color: AppTheme.primary,
-                fontSize: 15,
-                fontWeight: FontWeight.w900,
-              ),
+            _PrecioConPromocion(
+              item: item,
+              textoAlternativo: 'Consultar precio',
+              fontSize: 15,
             ),
             const SizedBox(height: 8),
-            _EstadoHorarioChip(item: item),
+            // Los cupos solo se muestran si la promo realmente los limita.
+            if (item.promocion!.cuposRestantes != null)
+              Text(
+                item.promocion!.cuposRestantes == 1
+                    ? 'Queda 1 cupo'
+                    : 'Quedan ${item.promocion!.cuposRestantes} cupos',
+                style: const TextStyle(
+                  color: AppTheme.error,
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              )
+            else
+              _EstadoHorarioChip(item: item),
           ],
         ),
       ),
@@ -2031,16 +2091,9 @@ class _RecommendedCard extends StatelessWidget {
             const SizedBox(height: 5),
             Row(
               children: [
-                _EstadoHorarioChip(item: item),
+                _ValoracionChip(item: item),
                 const Spacer(),
-                Text(
-                  item.priceLabel ?? 'Consultar',
-                  style: const TextStyle(
-                    color: AppTheme.primary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
+                _PrecioConPromocion(item: item),
               ],
             ),
           ],
@@ -2310,14 +2363,7 @@ class _WeeklyServiceRow extends StatelessWidget {
                 ],
               ),
             ),
-            Text(
-              item.priceLabel ?? 'Consultar',
-              style: const TextStyle(
-                color: AppTheme.primary,
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
+            _PrecioConPromocion(item: item),
             const Icon(
               Icons.chevron_right_rounded,
               color: AppTheme.textSecondary,
@@ -2415,15 +2461,14 @@ class _FeedServiceCard extends StatelessWidget {
                     const SizedBox(height: 6),
                     Row(
                       children: [
-                        _EstadoHorarioChip(item: item),
+                        if (item.tieneValoracion)
+                          _ValoracionChip(item: item)
+                        else
+                          _EstadoHorarioChip(item: item),
                         const Spacer(),
-                        Text(
-                          item.priceLabel ?? 'Consultar precio',
-                          style: const TextStyle(
-                            color: AppTheme.primary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w900,
-                          ),
+                        _PrecioConPromocion(
+                          item: item,
+                          textoAlternativo: 'Consultar precio',
                         ),
                       ],
                     ),
@@ -2434,6 +2479,100 @@ class _FeedServiceCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Precio de la tarjeta, con descuento si hay promoción vigente.
+///
+/// Cuando hay promo muestra el precio rebajado y el de lista tachado. El
+/// descuento es **de referencia**: se calcula sobre el precio base porque el
+/// Home no conoce las opciones que elegirá el cliente. El importe definitivo lo
+/// fija el servidor al confirmar, y la hoja de reserva lo muestra cotizado.
+class _PrecioConPromocion extends StatelessWidget {
+  final HomeCatalogItem item;
+  final String textoAlternativo;
+  final double fontSize;
+
+  const _PrecioConPromocion({
+    required this.item,
+    this.textoAlternativo = 'Consultar',
+    this.fontSize = 12,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!item.tieneDescuento) {
+      return Text(
+        item.priceLabel ?? textoAlternativo,
+        style: TextStyle(
+          color: AppTheme.primary,
+          fontSize: fontSize,
+          fontWeight: FontWeight.w900,
+        ),
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        Text(
+          '${item.precioConPromocion!.toStringAsFixed(0)} ${item.currency ?? ''}'
+              .trim(),
+          style: TextStyle(
+            color: AppTheme.error,
+            fontSize: fontSize,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          item.priceLabel!,
+          style: TextStyle(
+            color: AppTheme.textSecondary,
+            fontSize: fontSize * 0.82,
+            decoration: TextDecoration.lineThrough,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Valoración real del servicio: promedio + número de reseñas.
+///
+/// Solo se pinta cuando hay reseñas ([HomeCatalogItem.tieneValoracion]). Un
+/// servicio sin valoraciones no muestra "0.0" ni estrellas rellenas: mostraría
+/// una opinión que nadie dio. Antes el Home pintaba 4.8 con 142 reseñas
+/// inventadas en todas las tarjetas.
+class _ValoracionChip extends StatelessWidget {
+  final HomeCatalogItem item;
+  const _ValoracionChip({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!item.tieneValoracion) return const SizedBox.shrink();
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Estrellas(promedio: item.rating, size: 13),
+        const SizedBox(width: 4),
+        Text(
+          item.rating!.toStringAsFixed(1),
+          style: const TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w800,
+            color: AppTheme.textPrimary,
+          ),
+        ),
+        const SizedBox(width: 3),
+        Text(
+          '(${item.totalResenas})',
+          style: const TextStyle(fontSize: 10, color: AppTheme.textSecondary),
+        ),
+      ],
     );
   }
 }
@@ -2672,14 +2811,6 @@ class _SectionTitleStyle extends TextStyle {
         fontWeight: FontWeight.w800,
         letterSpacing: -0.2,
       );
-}
-
-class _SectionTitle extends StatelessWidget {
-  final String text;
-  const _SectionTitle(this.text);
-  @override
-  Widget build(BuildContext context) =>
-      Text(text, style: const _SectionTitleStyle());
 }
 
 /// Icono para un tipo de actividad.

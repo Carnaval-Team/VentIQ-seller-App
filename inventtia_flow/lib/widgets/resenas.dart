@@ -122,7 +122,10 @@ class ResumenValoraciones extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!resumen.hayDatos) return const SizedBox.shrink();
-    final maximo = resumen.distribucion.values.fold<int>(0, (a, b) => a > b ? a : b);
+    final maximo = resumen.distribucion.values.fold<int>(
+      0,
+      (a, b) => a > b ? a : b,
+    );
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -297,7 +300,10 @@ class TarjetaResena extends StatelessWidget {
                     const SizedBox(height: 2),
                     Row(
                       children: [
-                        Estrellas(promedio: resena.puntuacion.toDouble(), size: 13),
+                        Estrellas(
+                          promedio: resena.puntuacion.toDouble(),
+                          size: 13,
+                        ),
                         if (resena.createdAt != null) ...[
                           const SizedBox(width: 7),
                           Text(
@@ -475,10 +481,7 @@ class _EscribirResenaSheetState extends State<_EscribirResenaSheet> {
             widget.nombreServicio,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: AppTheme.textSecondary,
-              fontSize: 13,
-            ),
+            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
           ),
           const SizedBox(height: 6),
           const Text(

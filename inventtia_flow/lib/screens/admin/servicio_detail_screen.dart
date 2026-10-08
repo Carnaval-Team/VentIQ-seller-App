@@ -7,6 +7,7 @@ import '../../services/catalogo_service.dart';
 import '../../widgets/net_image.dart';
 import 'config_recursos_screen.dart';
 import 'gestion_servicios_screen.dart';
+import 'promociones_screen.dart';
 
 class ServicioDetailScreen extends StatefulWidget {
   final Servicio servicio;
@@ -187,19 +188,13 @@ class _ServicioDetailScreenState extends State<ServicioDetailScreen> {
         if (widget.servicio.foto != null) const SizedBox(height: 16),
         Text(
           widget.servicio.nombre,
-          style: const TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-          ),
+          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 8),
         if (widget.servicio.descripcion != null)
           Text(
             widget.servicio.descripcion!,
-            style: const TextStyle(
-              fontSize: 14,
-              color: AppTheme.textSecondary,
-            ),
+            style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary),
           ),
         const SizedBox(height: 16),
         _buildInfoRow(
@@ -224,15 +219,13 @@ class _ServicioDetailScreenState extends State<ServicioDetailScreen> {
           _buildInfoRow(
             'Precios base',
             widget.servicio.configPrecio.preciosBase.entries
-                .map((e) =>
-                    '${_fmtPrecio(e.value)} ${MonedasApp.simbolo(e.key)}')
+                .map(
+                  (e) => '${_fmtPrecio(e.value)} ${MonedasApp.simbolo(e.key)}',
+                )
                 .join(' · '),
           ),
         if (widget.servicio.configPrecio.aplicaPrecioIdaVueltaTodos)
-          _buildInfoRow(
-            'Ida y vuelta',
-            'Precio combinado aplica siempre',
-          ),
+          _buildInfoRow('Ida y vuelta', 'Precio combinado aplica siempre'),
         if (widget.servicio.configPrecio.reglas.isNotEmpty)
           ..._buildReglasPrecio(widget.servicio.configPrecio),
         if (widget.servicio.camposAdicionales.isNotEmpty)
@@ -261,8 +254,7 @@ class _ServicioDetailScreenState extends State<ServicioDetailScreen> {
       ...cfg.reglas.expand((r) {
         return r.preciosOpcion.entries.map((op) {
           final precios = op.value.entries
-              .map((e) =>
-                  '${_fmtPrecio(e.value)} ${MonedasApp.simbolo(e.key)}')
+              .map((e) => '${_fmtPrecio(e.value)} ${MonedasApp.simbolo(e.key)}')
               .join(' · ');
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 3),
@@ -378,12 +370,15 @@ class _ServicioDetailScreenState extends State<ServicioDetailScreen> {
                       spacing: 8,
                       runSpacing: 6,
                       children: campo.opciones
-                          .map((o) => Chip(
-                                label: Text(o),
-                                visualDensity: VisualDensity.compact,
-                                backgroundColor:
-                                    AppTheme.primary.withValues(alpha: 0.08),
-                              ))
+                          .map(
+                            (o) => Chip(
+                              label: Text(o),
+                              visualDensity: VisualDensity.compact,
+                              backgroundColor: AppTheme.primary.withValues(
+                                alpha: 0.08,
+                              ),
+                            ),
+                          )
                           .toList(),
                     ),
                   ],
@@ -440,10 +435,7 @@ class _ServicioDetailScreenState extends State<ServicioDetailScreen> {
             flex: 3,
             child: Text(
               value,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -483,10 +475,7 @@ class _ServicioDetailScreenState extends State<ServicioDetailScreen> {
           children: [
             Text(
               title,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-              ),
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
             ),
             if (local?.ubicacion.isNotEmpty == true) ...[
               const SizedBox(height: 4),
@@ -503,6 +492,26 @@ class _ServicioDetailScreenState extends State<ServicioDetailScreen> {
               localServicio: ls,
               showHeader: false,
               onUpdated: () => _cargar(),
+            ),
+            const SizedBox(height: 8),
+            // Las promociones son por local-servicio, no por recurso, así que
+            // viven aquí y no dentro de `ConfigRecursosPanel`.
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => PromocionesScreen(
+                      idLocalServicio: ls.id,
+                      nombreServicio:
+                          '${widget.servicio.nombre} · $localNombre',
+                    ),
+                  ),
+                ),
+                icon: const Icon(Icons.local_offer_outlined, size: 18),
+                label: const Text('Promociones'),
+              ),
             ),
           ],
         ),

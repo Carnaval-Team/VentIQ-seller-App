@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -10,9 +12,9 @@ import '../models/servicio.dart';
 import '../models/sala_espera.dart';
 import '../models/disponibilidad_dia.dart';
 import '../providers/auth_provider.dart';
-import '../providers/favoritos_provider.dart';
 import '../services/auth_service.dart';
 import '../services/lista_service.dart';
+import '../services/promocion_service.dart';
 import '../services/resena_service.dart';
 import '../services/agenda_service.dart';
 import '../services/catalogo_service.dart';
@@ -50,6 +52,10 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
   bool _cargandoResenas = true;
   bool _resenasDisponibles = true;
 
+  /// Promos vigentes del servicio, para el badge. Vacío si la migración
+  /// `27_promociones.sql` no está aplicada.
+  List<Promocion> _promociones = const [];
+
   @override
   void initState() {
     super.initState();
@@ -63,10 +69,7 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(
-          content: Text(mensaje),
-          behavior: SnackBarBehavior.floating,
-        ),
+        SnackBar(content: Text(mensaje), behavior: SnackBarBehavior.floating),
       );
   }
 
@@ -75,6 +78,19 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
     _load();
     _checkDisponibilidad();
     _cargarResenas();
+    _cargarPromociones();
+  }
+
+  /// Promos vigentes del servicio. Aislado: si la tabla no existe todavía, el
+  /// detalle se ve igual, solo que sin badge.
+  Future<void> _cargarPromociones() async {
+    try {
+      final promos = await PromocionService.deServicio(_localServicio.id);
+      if (!mounted) return;
+      setState(() => _promociones = promos);
+    } catch (e) {
+      debugPrint('[flow] LocalServicioDetail._cargarPromociones ERROR: $e');
+    }
   }
 
   /// Carga resumen, lista y si el usuario puede reseñar.
@@ -396,7 +412,10 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
         );
     if (sel == null || !mounted) return;
 
-    final datos = await _recolectarDatosReserva(cantidad: sel.cantidad);
+    final datos = await _recolectarDatosReserva(
+      cantidad: sel.cantidad,
+      idTurno: sel.idTurno,
+    );
     if (datos == null || !mounted) return;
 
     await _confirmarReservaDirecta(
@@ -497,7 +516,10 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
   /// tercero), y si tiene campos adicionales los recolecta. Devuelve null si
   /// el usuario cancela. Si el servicio no requiere nada, devuelve datos vacíos
   /// sin mostrar diálogo.
-  Future<_DatosReserva?> _recolectarDatosReserva({int cantidad = 1}) async {
+  Future<_DatosReserva?> _recolectarDatosReserva({
+    int cantidad = 1,
+    int? idTurno,
+  }) async {
     final servicio = _localServicio.servicio;
     final campos = servicio?.camposAdicionales ?? const <CampoAdicional>[];
     final permiteTercero = servicio?.permiteTercero ?? false;
@@ -518,6 +540,8 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
         campos: campos,
         permiteTercero: permiteTercero,
         configPrecio: configPrecio,
+        idLocalServicio: _localServicio.id,
+        idTurno: idTurno,
         cantidad: cantidad,
       ),
     );
@@ -655,6 +679,7 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
                         children: [
                           if (enLista) _buildMiTurnoCard(),
                           if (enLista) const SizedBox(height: 14),
+                          _buildPromocionesBanner(),
                           _buildContadoresCard(),
                           const SizedBox(height: 14),
                           _buildInfoCard(local, servicio),
@@ -675,6 +700,102 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
             ),
       bottomNavigationBar: _isLoading ? null : _buildBottomBar(),
     );
+  }
+
+  /// Banner de promociones vigentes del servicio (o de su entidad).
+  ///
+  /// El descuento definitivo se aplica al confirmar y se muestra en la hoja de
+  /// datos, cotizado por el servidor. Aquí solo se anuncia, para que el cliente
+  /// sepa antes de empezar el flujo que hay una oferta.
+  Widget _buildPromocionesBanner() {
+    if (_promociones.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final promo in _promociones)
+            Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(13),
+              decoration: BoxDecoration(
+                color: AppTheme.success.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: AppTheme.success.withValues(alpha: 0.30),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppTheme.success,
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: Text(
+                      promo.etiquetaDescuento,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          promo.titulo,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        if (promo.hasta != null)
+                          Text(
+                            'Vigente hasta ${_fechaPromo(promo.hasta!)}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.textSecondary,
+                            ),
+                          ),
+                        // Los cupos solo se muestran si la promo los limita:
+                        // decir "sin limite" en cada tarjeta es ruido.
+                        if (promo.cuposRestantes != null)
+                          Text(
+                            promo.cuposRestantes == 1
+                                ? 'Queda 1 cupo'
+                                : 'Quedan ${promo.cuposRestantes} cupos',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.success,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  static String _fechaPromo(DateTime d) {
+    final dia = d.day.toString().padLeft(2, '0');
+    final mes = d.month.toString().padLeft(2, '0');
+    return '$dia/$mes/${d.year}';
   }
 
   /// Sección de reseñas: resumen, lista y acción de escribir/editar.
@@ -771,15 +892,13 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
               ),
             ],
 
-            if (_resenas.items.where((r) => !r.esMia).isEmpty && resumen.hayDatos)
+            if (_resenas.items.where((r) => !r.esMia).isEmpty &&
+                resumen.hayDatos)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 6),
                 child: Text(
                   'De momento solo está tu reseña.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.textSecondary,
-                  ),
+                  style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                 ),
               )
             else
@@ -1728,10 +1847,17 @@ class _DatosReservaSheet extends StatefulWidget {
   final ConfigPrecio configPrecio;
   final int cantidad;
 
+  /// Necesarios para cotizar contra el servidor: el precio que se muestra debe
+  /// salir del MISMO calculo que cobra al reservar.
+  final int idLocalServicio;
+  final int? idTurno;
+
   const _DatosReservaSheet({
     required this.campos,
     required this.permiteTercero,
     required this.configPrecio,
+    required this.idLocalServicio,
+    this.idTurno,
     this.cantidad = 1,
   });
 
@@ -1745,6 +1871,16 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
   bool _paraTercero = false;
   late String _monedaSeleccionada;
   Map<String, dynamic> _valoresActuales = {};
+
+  /// Precio calculado por el SERVIDOR (`cotizar_reserva`), no en Dart.
+  ///
+  /// Antes esta hoja calculaba el precio con `PrecioReserva.calcular` (Dart) y
+  /// el servidor lo recalculaba al cobrar. Eran dos implementaciones de la
+  /// misma regla, y con promociones habrian descuadrado en cuanto una regla
+  /// cambiara en un solo lado. Ahora hay una unica fuente.
+  CotizacionReserva? _cotizacion;
+  bool _cotizando = false;
+  Timer? _debounceCotizacion;
 
   final _nombreCtrl = TextEditingController();
   final _apellidosCtrl = TextEditingController();
@@ -1765,27 +1901,53 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
       setState(() {
         _valoresActuales = _datosKey.currentState?.valores ?? {};
       });
+      _cotizar();
     });
-  }
-
-  ResultadoPrecioReserva? get _precioActual {
-    if (!widget.configPrecio.tienePrecio) return null;
-    final datos = _datosKey.currentState?.valores ?? _valoresActuales;
-    return PrecioReserva.calcular(
-      config: widget.configPrecio,
-      datosAdicionales: datos,
-      moneda: _monedaSeleccionada,
-      cantidad: widget.cantidad,
-    );
   }
 
   @override
   void dispose() {
+    _debounceCotizacion?.cancel();
     _nombreCtrl.dispose();
     _apellidosCtrl.dispose();
     _ciCtrl.dispose();
     _telefonoCtrl.dispose();
     super.dispose();
+  }
+
+  /// Pide el precio al servidor. Con un pequeño retardo para no lanzar una
+  /// consulta por cada tecla que el cliente escribe en un campo adicional.
+  void _cotizarProgramado() {
+    _debounceCotizacion?.cancel();
+    _debounceCotizacion = Timer(const Duration(milliseconds: 320), _cotizar);
+  }
+
+  Future<void> _cotizar() async {
+    final uuid = AuthService.currentUserId;
+    if (uuid == null) return;
+    if (mounted) setState(() => _cotizando = true);
+    try {
+      final datos = _datosKey.currentState?.valores ?? _valoresActuales;
+      final c = await PromocionService.cotizar(
+        uuidUsuario: uuid,
+        idLocalServicio: widget.idLocalServicio,
+        datosAdicionales: datos,
+        moneda: _monedaSeleccionada,
+        cantidad: widget.cantidad,
+        idTurno: widget.idTurno,
+      );
+      if (!mounted) return;
+      setState(() {
+        _cotizacion = c;
+        _cotizando = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      // Si la cotizacion falla se deja la anterior y se avisa: es mejor mostrar
+      // un precio algo desactualizado que inventar uno.
+      setState(() => _cotizando = false);
+      debugPrint('[flow] _DatosReservaSheet._cotizar ERROR: $e');
+    }
   }
 
   void _confirmar() {
@@ -1813,7 +1975,7 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
     final monedas = widget.configPrecio.monedas.isEmpty
         ? ['USD']
         : widget.configPrecio.monedas;
-    final precio = _precioActual;
+    final cotizacion = _cotizacion;
     return Padding(
       padding: EdgeInsets.only(
         left: 24,
@@ -1967,7 +2129,12 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
                     DatosAdicionalesForm(
                       key: _datosKey,
                       campos: widget.campos,
-                      onChanged: (v) => setState(() => _valoresActuales = v),
+                      // Los campos adicionales pueden cambiar el precio (reglas
+                      // por opcion), asi que cada cambio recotiza.
+                      onChanged: (v) {
+                        setState(() => _valoresActuales = v);
+                        _cotizarProgramado();
+                      },
                     ),
                   ],
                 ],
@@ -2006,8 +2173,10 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
                             )
                             .toList(),
                         onChanged: (v) {
-                          if (v != null)
-                            setState(() => _monedaSeleccionada = v);
+                          if (v == null) return;
+                          setState(() => _monedaSeleccionada = v);
+                          // La moneda cambia el precio: hay que recotizar.
+                          _cotizar();
                         },
                       ),
                       const SizedBox(height: 10),
@@ -2024,29 +2193,77 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'Total de la reserva',
-                                style: TextStyle(
+                              Text(
+                                cotizacion?.tieneDescuento == true
+                                    ? 'Total con descuento'
+                                    : 'Total de la reserva',
+                                style: const TextStyle(
                                   fontSize: 12,
                                   color: AppTheme.textSecondary,
                                 ),
                               ),
-                              Text(
-                                precio != null
-                                    ? PrecioReserva.formatear(
-                                        precio.total,
-                                        precio.moneda,
-                                      )
-                                    : '—',
-                                style: const TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppTheme.primary,
-                                ),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.baseline,
+                                textBaseline: TextBaseline.alphabetic,
+                                children: [
+                                  Text(
+                                    cotizacion != null && cotizacion.hayPrecio
+                                        ? PrecioReserva.formatear(
+                                            cotizacion.precioTotal,
+                                            cotizacion.moneda,
+                                          )
+                                        : '—',
+                                    style: const TextStyle(
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppTheme.primary,
+                                    ),
+                                  ),
+                                  // Precio de lista tachado: sale del mismo
+                                  // calculo que el total, asi que el descuento
+                                  // mostrado es siempre el que se cobrara.
+                                  if (cotizacion?.tieneDescuento == true) ...[
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      PrecioReserva.formatear(
+                                        cotizacion!.precioLista,
+                                        cotizacion.moneda,
+                                      ),
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        color: AppTheme.textSecondary,
+                                        decoration: TextDecoration.lineThrough,
+                                      ),
+                                    ),
+                                  ],
+                                  if (_cotizando) ...[
+                                    const SizedBox(width: 8),
+                                    const SizedBox(
+                                      width: 12,
+                                      height: 12,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
-                              if (widget.cantidad > 1 && precio != null)
+                              if (cotizacion?.tieneDescuento == true)
                                 Text(
-                                  '${PrecioReserva.formatear(precio.unitario, precio.moneda)} × ${widget.cantidad}',
+                                  cotizacion!.promoTitulo == null
+                                      ? 'Descuento aplicado: -${PrecioReserva.formatear(cotizacion.descuento, cotizacion.moneda)}'
+                                      : '${cotizacion.promoTitulo} · -${PrecioReserva.formatear(cotizacion.descuento, cotizacion.moneda)}',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: AppTheme.success,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              if (widget.cantidad > 1 &&
+                                  cotizacion != null &&
+                                  cotizacion.hayPrecio)
+                                Text(
+                                  '${PrecioReserva.formatear(cotizacion.precioUnit, cotizacion.moneda)} × ${widget.cantidad}',
                                   style: const TextStyle(
                                     fontSize: 11,
                                     color: AppTheme.textSecondary,

@@ -78,14 +78,17 @@ class ResumenResenas {
 
   bool get hayDatos => total > 0;
 
-  static const ResumenResenas vacio = ResumenResenas(
-    total: 0,
-    promedio: 0,
-  );
+  static const ResumenResenas vacio = ResumenResenas(total: 0, promedio: 0);
 
   factory ResumenResenas.fromJson(Map<String, dynamic>? json) {
     if (json == null) return vacio;
-    final estrellas = json['estrellas'] as Map<String, dynamic>? ?? const {};
+    // `as Map<String, dynamic>?` es un cast estricto y revienta si el mapa
+    // viene como `Map<dynamic, dynamic>` (pasa con jsonb anidado según cómo lo
+    // construya el driver). Se convierte explícitamente.
+    final estrellasRaw = json['estrellas'];
+    final estrellas = estrellasRaw is Map
+        ? Map<String, dynamic>.from(estrellasRaw)
+        : const <String, dynamic>{};
     return ResumenResenas(
       total: (json['total'] as num?)?.toInt() ?? 0,
       promedio: (json['promedio'] as num?)?.toDouble() ?? 0,
@@ -128,16 +131,24 @@ class ResenasDeServicio {
   factory ResenasDeServicio.fromJson(Map<String, dynamic>? json) {
     if (json == null || json['ok'] != true) return vacio;
 
-    final agenda = json['agenda_resenable'] as Map<String, dynamic>?;
-    final mias = json['mi_resena'] as Map<String, dynamic>?;
+    // Conversión explícita en vez de cast estricto: un jsonb anidado puede
+    // llegar como Map<dynamic, dynamic> y `as Map<String, dynamic>?` lanzaría.
+    final agendaRaw = json['agenda_resenable'];
+    final agenda = agendaRaw is Map
+        ? Map<String, dynamic>.from(agendaRaw)
+        : null;
+    final miasRaw = json['mi_resena'];
+    final mias = miasRaw is Map ? Map<String, dynamic>.from(miasRaw) : null;
+    final resumenRaw = json['resumen'];
     final crudas = json['items'] as List? ?? const [];
 
     return ResenasDeServicio(
       resumen: ResumenResenas.fromJson(
-        json['resumen'] as Map<String, dynamic>?,
+        resumenRaw is Map ? Map<String, dynamic>.from(resumenRaw) : null,
       ),
       items: crudas
-          .map((e) => Resena.fromJson(Map<String, dynamic>.from(e as Map)))
+          .whereType<Map>()
+          .map((e) => Resena.fromJson(Map<String, dynamic>.from(e)))
           .toList(),
       miResena: mias == null ? null : Resena.fromJson(mias),
       agendaResenable: agenda == null
@@ -183,12 +194,14 @@ class ResenaService {
     final res = await _supabase
         .schema(_schema)
         .rpc('resenas_recientes', params: {'p_limit': limit});
-    if (res == null) return const [];
-    final json = res as Map<String, dynamic>;
+    if (res is! Map) return const [];
+    final json = Map<String, dynamic>.from(res);
     if (json['ok'] != true) return const [];
-    final lista = json['data'] as List? ?? const [];
+    final lista = json['data'];
+    if (lista is! List) return const [];
     return lista
-        .map((e) => Resena.fromJson(Map<String, dynamic>.from(e as Map)))
+        .whereType<Map>()
+        .map((e) => Resena.fromJson(Map<String, dynamic>.from(e)))
         .toList();
   }
 
@@ -197,15 +210,13 @@ class ResenaService {
   /// Alimenta las estrellas del feed. Un servicio que no aparece **no tiene
   /// valoración**, y la tarjeta no debe inventársela.
   static Future<Map<int, ResumenResenas>> porServicio() async {
-    final res = await _supabase
-        .schema(_schema)
-        .rpc('resenas_por_servicio');
-    final filas = res as List? ?? const [];
+    final res = await _supabase.schema(_schema).rpc('resenas_por_servicio');
+    if (res is! List) return const {};
     return {
-      for (final f in filas)
-        (f['id_local_servicio'] as num).toInt(): ResumenResenas(
-          total: (f['total'] as num).toInt(),
-          promedio: (f['promedio'] as num).toDouble(),
+      for (final fila in res.whereType<Map>())
+        (fila['id_local_servicio'] as num).toInt(): ResumenResenas(
+          total: (fila['total'] as num).toInt(),
+          promedio: (fila['promedio'] as num).toDouble(),
         ),
     };
   }
