@@ -62,10 +62,27 @@ Ejecutar en el **SQL Editor** de Supabase, en este orden:
 
 ## Convenciones
 
+- **Todo cambio de escritura (DDL/DML) va a un archivo `.sql` en `migraciones/`,
+  con su número y un comentario de cabecera.** El agente **no aplica SQL**: el MCP
+  de Supabase de esta sesión está en modo solo lectura, así que las migraciones
+  las pega el usuario en el **SQL Editor**. Cada archivo debe ser:
+  - **idempotente** (re-ejecutarlo deja el mismo estado),
+  - **reversible**, con el SQL de vuelta atrás documentado en la cabecera,
+  - con una **consulta de verificación** al final,
+  - y con una **comprobación previa** que aborte con un mensaje claro si falta la
+    migración de la que depende (en vez de dejar el esquema a medias).
+- **Hay dos proyectos Supabase:** `qhprswhhfasrikhawjoz` (debug, `flutter run`)
+  y `vsieeihstajlrdvpuooh` (release). Las migraciones se aplican en **ambos**, o
+  el comportamiento diferirá entre debug y release.
 - **Todo devuelve `jsonb`.** Las funciones de lista devuelven un array (`[]` si no hay datos). Las de acción (entrar/salir) devuelven `{ ok: bool, data | error }`. Así se puede cambiar la forma de la respuesta sin `DROP`/recrear.
 - **`security invoker`** en las RPC de usuario → respetan RLS del que llama.
 - **`security definer`** solo en el bot (`bot_procesar_plan`, `bot_sweep`, triggers) → necesita escribir en varias tablas; concedido únicamente a `service_role`.
-- **Aislamiento por entidad (admin):** cada RPC admin hace `JOIN admin_entidades_de_usuario(uuid)`, así un admin solo ve datos de **sus** entidades aunque mande otro `id_entidad` por parámetro.
+- **Autorización: siempre `auth.uid()`, nunca un parámetro.** En una función
+  `security definer` el `p_uuid_usuario` que envía el cliente es **suplantable**:
+  basta pasar el uuid de otro administrador. Ver `24_fix_idor_rpc_admin.sql`.
+- **Aislamiento por entidad (admin):** cada RPC admin filtra por
+  `admin_entidades_de_usuario(auth.uid())`, así un admin solo ve datos de **sus**
+  entidades aunque mande otro `id_entidad` por parámetro.
 - **Concurrencia de colas:** `entrar`, `salir` y el bot comparten un `pg_advisory_xact_lock(hashtext('flow.sala_espera'), id_local_servicio)` → serializan por servicio sin bloquear la tabla.
 
 ## Cómo llamar desde Supabase JS

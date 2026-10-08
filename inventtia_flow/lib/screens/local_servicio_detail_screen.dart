@@ -10,13 +10,18 @@ import '../models/servicio.dart';
 import '../models/sala_espera.dart';
 import '../models/disponibilidad_dia.dart';
 import '../providers/auth_provider.dart';
+import '../providers/favoritos_provider.dart';
 import '../services/auth_service.dart';
 import '../services/lista_service.dart';
+import '../services/resena_service.dart';
 import '../services/agenda_service.dart';
 import '../services/catalogo_service.dart';
+import '../utils/esquema_pendiente.dart';
 import '../utils/precio_reserva.dart';
+import '../widgets/boton_favorito.dart';
 import '../widgets/datos_adicionales_form.dart';
 import '../widgets/net_image.dart';
+import '../widgets/resenas.dart';
 import 'reserva_transporte_sheet.dart';
 
 class LocalServicioDetailScreen extends StatefulWidget {
@@ -39,6 +44,12 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
   int _ultimoEnAnotarse = 0;
   bool _terminosExpanded = false;
 
+  // Reseñas del servicio. Se cargan aparte del resto para que un fallo (o que la
+  // migración `26_resenas.sql` no esté aplicada) no impida ver el servicio.
+  ResenasDeServicio _resenas = ResenasDeServicio.vacio;
+  bool _cargandoResenas = true;
+  bool _resenasDisponibles = true;
+
   @override
   void initState() {
     super.initState();
@@ -46,10 +57,108 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
     _init();
   }
 
+  /// Aviso flotante corto, con el mismo formato que el resto de la pantalla.
+  void _showToast(String mensaje) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(mensaje),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+  }
+
   Future<void> _init() async {
     await _ensureFullService();
     _load();
     _checkDisponibilidad();
+    _cargarResenas();
+  }
+
+  /// Carga resumen, lista y si el usuario puede reseñar.
+  ///
+  /// Aislado a propósito: si `flow.resena` todavía no existe o el RPC falla, el
+  /// resto de la pantalla debe seguir funcionando.
+  Future<void> _cargarResenas() async {
+    if (mounted) setState(() => _cargandoResenas = true);
+    try {
+      final data = await ResenaService.deServicio(_localServicio.id);
+      if (!mounted) return;
+      setState(() {
+        _resenas = data;
+        _cargandoResenas = false;
+        _resenasDisponibles = true;
+      });
+    } catch (e) {
+      debugPrint('[flow] LocalServicioDetailScreen._cargarResenas ERROR: $e');
+      if (!mounted) return;
+      setState(() {
+        _cargandoResenas = false;
+        // Si la tabla no existe aún, la sección no se pinta en vez de mostrar
+        // un error permanente.
+        _resenasDisponibles = !esErrorDeEsquemaAusente(e, tabla: 'resena');
+      });
+    }
+  }
+
+  Future<void> _escribirResena() async {
+    final existente = _resenas.miResena;
+    // Al editar manda la agenda de mi reseña; al publicar, la reserva completada
+    // que el RPC marcó como reseñable.
+    final idAgenda = existente?.idAgenda ?? _resenas.agendaResenable?.idAgenda;
+    if (idAgenda == null) return;
+
+    final guardado = await mostrarEscribirResena(
+      context,
+      idAgenda: idAgenda,
+      nombreServicio: _localServicio.servicio?.nombre ?? 'Servicio',
+      existente: existente,
+    );
+    if (guardado && mounted) {
+      await _cargarResenas();
+      if (mounted) _showToast('¡Gracias por tu reseña!');
+    }
+  }
+
+  Future<void> _eliminarResena() async {
+    final mi = _resenas.miResena;
+    final uuid = AuthService.currentUserId;
+    if (mi == null || uuid == null) return;
+
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Eliminar tu reseña'),
+        content: const Text(
+          '¿Seguro que quieres borrarla? Podrás volver a escribirla mientras '
+          'la reserva siga completada.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmado != true || !mounted) return;
+
+    try {
+      await ResenaService.eliminar(uuidUsuario: uuid, idResena: mi.id);
+      await _cargarResenas();
+      if (mounted) _showToast('Reseña eliminada.');
+    } catch (e) {
+      if (!mounted) return;
+      _showToast('$e'.replaceFirst('Exception: ', ''));
+    }
   }
 
   /// Si el servicio no vino con campos adicionales, recarga el local-servicio
@@ -310,7 +419,8 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
 
     // Validar carné para reservas del mismo día
     final ahora = DateTime.now();
-    final esHoy = fecha.year == ahora.year &&
+    final esHoy =
+        fecha.year == ahora.year &&
         fecha.month == ahora.month &&
         fecha.day == ahora.day;
     if (esHoy) {
@@ -548,6 +658,8 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
                           _buildContadoresCard(),
                           const SizedBox(height: 14),
                           _buildInfoCard(local, servicio),
+                          const SizedBox(height: 14),
+                          _buildResenasSection(servicio),
                           if (local?.terminosCondiciones != null &&
                               local!.terminosCondiciones!.isNotEmpty) ...[
                             const SizedBox(height: 14),
@@ -565,6 +677,120 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
     );
   }
 
+  /// Sección de reseñas: resumen, lista y acción de escribir/editar.
+  ///
+  /// No se pinta si la migración `26_resenas.sql` no está aplicada, en vez de
+  /// mostrar un error permanente. Tampoco si el servicio no tiene ninguna
+  /// reseña y el usuario no puede escribir: no hay nada que contar.
+  Widget _buildResenasSection(Servicio? servicio) {
+    if (!_resenasDisponibles) return const SizedBox.shrink();
+
+    final resumen = _resenas.resumen;
+    final mi = _resenas.miResena;
+    final puedoEscribir = mi == null && _resenas.puedoResenar;
+
+    if (!resumen.hayDatos && mi == null && !puedoEscribir) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.reviews_outlined,
+                color: AppTheme.primary,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Reseñas',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                ),
+              ),
+              if (mi != null)
+                TextButton.icon(
+                  onPressed: _escribirResena,
+                  icon: const Icon(Icons.edit_outlined, size: 16),
+                  label: const Text('Editar'),
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          if (_cargandoResenas)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 14),
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
+          else ...[
+            if (resumen.hayDatos) ...[
+              ResumenValoraciones(resumen: resumen),
+              const SizedBox(height: 14),
+            ],
+
+            // Invitación a reseñar: solo aparece si hay una reserva completada
+            // propia sin reseñar, así que guardar no puede fallar.
+            if (puedoEscribir) ...[
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _escribirResena,
+                  icon: const Icon(Icons.star_outline_rounded, size: 18),
+                  label: const Text('Escribe tu reseña'),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            if (mi != null) ...[
+              TarjetaResena(
+                resena: mi,
+                onEditar: _escribirResena,
+                onEliminar: _eliminarResena,
+              ),
+            ],
+
+            if (_resenas.items.where((r) => !r.esMia).isEmpty && resumen.hayDatos)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 6),
+                child: Text(
+                  'De momento solo está tu reseña.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+              )
+            else
+              for (final r in _resenas.items.where((r) => !r.esMia))
+                TarjetaResena(resena: r),
+          ],
+        ],
+      ),
+    );
+  }
+
   // ── Header colapsable tipo hero: foto del local de fondo + degradado de
   //    marca encima, con el nombre del servicio y del local. ──
   Widget _buildHeader(Local? local, Servicio? servicio) {
@@ -575,9 +801,24 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
       backgroundColor: AppTheme.primary,
       foregroundColor: Colors.white,
       elevation: 0,
+      actions: [
+        // Sobre el header oscuro: corazón con fondo translúcido. Se auto-oculta
+        // si `flow.favorito` aún no existe o no hay sesión.
+        Padding(
+          padding: const EdgeInsets.only(right: 12),
+          child: Center(
+            child: BotonFavorito(
+              idLocalServicio: _localServicio.id,
+              titulo: servicio?.nombre ?? 'Servicio',
+              size: 36,
+              sobreClaro: false,
+            ),
+          ),
+        ),
+      ],
       flexibleSpace: FlexibleSpaceBar(
         stretchModes: const [StretchMode.zoomBackground],
-        titlePadding: const EdgeInsets.fromLTRB(54, 0, 16, 14),
+        titlePadding: const EdgeInsets.fromLTRB(54, 0, 60, 14),
         title: Text(
           servicio?.nombre ?? 'Servicio',
           maxLines: 1,

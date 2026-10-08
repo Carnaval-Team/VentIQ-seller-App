@@ -1,396 +1,385 @@
 import '../models/servicio.dart';
+import '../utils/horario_atencion.dart';
+import '../utils/precio_reserva.dart';
 import 'catalogo_service.dart';
 
-/// View model ligero para las tarjetas del Home.
+/// Categoría real del catálogo, tomada de `flow.nom_tipo_actividad_servicio`.
 ///
-/// El catálogo real todavía no tiene campos de marketplace como rating,
-/// distancia o descuento. Esos campos son opcionales y se mantienen aquí para
-/// que el Home pueda renderizarse hoy sin inventar columnas en la base de datos.
-class HomeCatalogItem {
-  final int id;
-  final String title;
-  final String venue;
-  final String category;
-  final double price;
-  final String currency;
-  final double? originalPrice;
-  final int discount;
-  final int durationMinutes;
-  final String distance;
-  final double rating;
-  final int reviews;
-  final bool isOpen;
-  final bool verified;
-  final bool availableNow;
-  final String? imageUrl;
-  final List<String> tags;
-  final LocalServicio? localServicio;
+/// No es una taxonomía inventada: es exactamente lo que el administrador asigna
+/// al crear un servicio. Antes de la migración
+/// `22_categorias_marketplace.sql` la tabla solo tenía `general` y
+/// `transporte_omnibus`; ahora tiene la taxonomía sembrada, y esta clase la
+/// representa sin cambios.
+class HomeCatalogCategory {
+  const HomeCatalogCategory({
+    required this.id,
+    required this.codigo,
+    required this.nombre,
+  });
 
+  /// `null` representa la opción "Todas".
+  final int? id;
+  final String codigo;
+  final String nombre;
+
+  bool get esTodas => id == null;
+
+  static const HomeCatalogCategory todas = HomeCatalogCategory(
+    id: null,
+    codigo: '',
+    nombre: 'Todas',
+  );
+
+  factory HomeCatalogCategory.fromJson(Map<String, dynamic> json) =>
+      HomeCatalogCategory(
+        id: (json['id'] as num).toInt(),
+        codigo: json['codigo'] as String? ?? '',
+        nombre: json['nombre'] as String? ?? 'General',
+      );
+}
+
+/// Tarjeta del Home construida **solo** con campos que existen en `flow`.
+///
+/// Los campos de marketplace (rating, reseñas, distancia, descuento, duración)
+/// no se incluyen a propósito: no hay columnas que los respalden. Ver
+/// `lib/config/home_features.dart` para el estado de cada uno.
+class HomeCatalogItem {
   const HomeCatalogItem({
     required this.id,
     required this.title,
     required this.venue,
     required this.category,
-    required this.price,
-    this.currency = 'USD',
-    this.originalPrice,
-    this.discount = 0,
-    this.durationMinutes = 45,
-    this.distance = '1.2 km',
-    this.rating = 4.8,
-    this.reviews = 32,
-    this.isOpen = true,
-    this.verified = true,
-    this.availableNow = true,
+    this.price,
+    this.currency,
     this.imageUrl,
-    this.tags = const [],
+    this.estadoHorario = EstadoHorario.desconocido,
+    this.horarioTexto = '',
+    this.direccion,
+    this.provincia,
+    this.pais,
+    this.permiteReservaDirecta = false,
+    this.cantidadMaxCapacidad = 1,
     this.localServicio,
   });
 
-  String get priceLabel {
-    final amount = price == price.roundToDouble()
-        ? price.toStringAsFixed(0)
-        : price.toStringAsFixed(2);
-    return '$amount $currency';
+  /// `flow.local_servicio.id`.
+  final int id;
+
+  /// Nombre del servicio.
+  final String title;
+
+  /// Nombre del local.
+  final String venue;
+
+  /// Tipo de actividad real (`nom_tipo_actividad_servicio`).
+  final HomeCatalogCategory category;
+
+  /// Precio base de la moneda por defecto. `null` cuando el servicio no tiene
+  /// precio configurado (`config_precio = '{}'`), caso frecuente en producción.
+  final double? price;
+
+  /// Moneda de [price].
+  final String? currency;
+
+  final String? imageUrl;
+
+  /// Estado deducido de `app_dat_locales.horario_atencion`.
+  final EstadoHorario estadoHorario;
+
+  /// Texto original del horario, para mostrarlo tal cual.
+  final String horarioTexto;
+
+  final String? direccion;
+  final String? provincia;
+  final String? pais;
+
+  final bool permiteReservaDirecta;
+  final int cantidadMaxCapacidad;
+
+  /// Entidad original, para navegar al detalle sin volver a consultar.
+  final LocalServicio? localServicio;
+
+  /// `true` cuando se puede afirmar si el local está abierto.
+  bool get horarioConocido => estadoHorario != EstadoHorario.desconocido;
+
+  bool get abiertoAhora => estadoHorario == EstadoHorario.abierto;
+
+  /// `"18 USD"`, o `null` cuando no hay precio configurado.
+  String? get priceLabel {
+    final valor = price;
+    if (valor == null) return null;
+    final monto = valor == valor.roundToDouble()
+        ? valor.toStringAsFixed(0)
+        : valor.toStringAsFixed(2);
+    return '$monto ${currency ?? 'USD'}';
   }
+
+  /// Ubicación legible sin duplicados: `"Villa Clara Province, Cuba"`.
+  String? get ubicacion {
+    final partes = <String>[
+      if (provincia != null && provincia!.trim().isNotEmpty) provincia!.trim(),
+      if (pais != null && pais!.trim().isNotEmpty) pais!.trim(),
+    ];
+    return partes.isEmpty ? null : partes.join(', ');
+  }
+
+  /// Etiquetas derivadas de datos reales (no decorativas).
+  List<String> get tags => <String>[
+    if (permiteReservaDirecta) 'Reserva directa',
+    if (cantidadMaxCapacidad > 1) 'Hasta $cantidadMaxCapacidad por reserva',
+  ];
 }
 
 class HomeCatalogPage {
-  final List<HomeCatalogItem> items;
-  final bool hasMore;
-  final bool isMock;
-  final int page;
-
   const HomeCatalogPage({
     required this.items,
     required this.hasMore,
-    required this.isMock,
     required this.page,
+    required this.total,
   });
+
+  final List<HomeCatalogItem> items;
+  final bool hasMore;
+  final int page;
+
+  /// Total de coincidencias antes de paginar.
+  final int total;
 }
 
-/// Adaptador de lectura para el Home.
+/// Adaptador de lectura del Home.
 ///
-/// Mientras no exista el RPC paginado del Home, realiza una única lectura del
-/// RPC existente y pagina en memoria. Así navegar por el feed no dispara una
-/// petición por tarjeta. Cuando se publique el RPC/Edge Function definitivo,
-/// este es el único punto que deberá cambiar.
+/// Fuente única: `flow.cliente_obtener_servicios(...)`. Se lee una vez y se
+/// pagina en memoria para que recorrer el feed no dispare una petición por
+/// tarjeta. Cuando exista el RPC paginado `cliente_home_feed` descrito en
+/// `plan.md`, este es el único archivo que debe cambiar.
+///
+/// A diferencia de la versión anterior, **no hay catálogo de respaldo
+/// inventado**: si la lectura falla, el error sube al llamador para que la
+/// pantalla muestre un estado de error en lugar de negocios inexistentes.
 class HomeCatalogService {
   static const int defaultPageSize = 6;
+
   static List<HomeCatalogItem>? _cachedCatalog;
+  static List<HomeCatalogCategory>? _cachedCategories;
   static Future<List<HomeCatalogItem>>? _loadingCatalog;
-  static bool _usingMock = false;
+  static Future<List<HomeCatalogCategory>>? _loadingCategories;
 
   static Future<HomeCatalogPage> fetchPage({
     required int page,
     int pageSize = defaultPageSize,
     String query = '',
-    String category = 'Todas',
+    HomeCatalogCategory category = HomeCatalogCategory.todas,
     bool onlyOpen = false,
-    bool topRated = false,
-    bool nearMe = false,
+    String? provincia,
+    DateTime? ahora,
   }) async {
-    final catalog = await _getCatalog();
-    final normalizedQuery = query.trim().toLowerCase();
-    final filtered = catalog.where((item) {
-      final matchesCategory = category == 'Todas' || item.category == category;
-      final matchesQuery =
-          normalizedQuery.isEmpty ||
-          item.title.toLowerCase().contains(normalizedQuery) ||
-          item.venue.toLowerCase().contains(normalizedQuery) ||
-          item.category.toLowerCase().contains(normalizedQuery);
-      final matchesOpen = !onlyOpen || item.isOpen;
-      final matchesRating = !topRated || item.rating >= 4.7;
-      // Los datos actuales no exponen coordenadas de usuario; mientras tanto,
-      // `nearMe` conserva los elementos con distancia conocida o cercana.
-      final matchesDistance =
-          !nearMe ||
-          item.distance == 'Cerca de ti' ||
-          item.distance.endsWith('km');
-      return matchesCategory &&
-          matchesQuery &&
-          matchesOpen &&
-          matchesRating &&
-          matchesDistance;
+    final catalogo = await _getCatalog();
+    return paginar(
+      catalogo: catalogo,
+      page: page,
+      pageSize: pageSize,
+      query: query,
+      category: category,
+      onlyOpen: onlyOpen,
+      provincia: provincia,
+      ahora: ahora,
+    );
+  }
+
+  /// Filtrado y paginado en memoria, sin acceso a red.
+  ///
+  /// Está separado de [fetchPage] para poder probarlo con un catálogo
+  /// construido a mano. Cuando exista el RPC paginado `cliente_home_feed`,
+  /// esta función desaparece y el servidor aplica los mismos filtros.
+  static HomeCatalogPage paginar({
+    required List<HomeCatalogItem> catalogo,
+    required int page,
+    int pageSize = defaultPageSize,
+    String query = '',
+    HomeCatalogCategory category = HomeCatalogCategory.todas,
+    bool onlyOpen = false,
+    String? provincia,
+    DateTime? ahora,
+  }) {
+    final momento = ahora ?? DateTime.now();
+    final normalizada = _sinAcentos(query.trim().toLowerCase());
+    final provinciaBuscada = provincia?.trim().toLowerCase();
+
+    final filtrados = catalogo.where((item) {
+      if (!category.esTodas && item.category.id != category.id) return false;
+
+      if (provinciaBuscada != null && provinciaBuscada.isNotEmpty) {
+        final delItem = item.provincia?.trim().toLowerCase();
+        if (delItem != provinciaBuscada) return false;
+      }
+
+      if (normalizada.isNotEmpty) {
+        final heno = _sinAcentos(
+          '${item.title} ${item.venue} ${item.category.nombre}'.toLowerCase(),
+        );
+        if (!heno.contains(normalizada)) return false;
+      }
+
+      if (onlyOpen) {
+        // Solo se afirma "abierto ahora" cuando el horario es interpretable.
+        final horario = HorarioAtencion.parse(item.horarioTexto);
+        if (horario.evaluar(momento) != EstadoHorario.abierto) return false;
+      }
+
+      return true;
     }).toList();
 
-    final safePage = page < 1 ? 1 : page;
-    final start = (safePage - 1) * pageSize;
-    if (start >= filtered.length) {
+    final paginaSegura = page < 1 ? 1 : page;
+    final inicio = (paginaSegura - 1) * pageSize;
+    if (inicio >= filtrados.length) {
       return HomeCatalogPage(
-        items: const [],
+        items: const <HomeCatalogItem>[],
         hasMore: false,
-        isMock: _usingMock,
-        page: safePage,
+        page: paginaSegura,
+        total: filtrados.length,
       );
     }
-    final end = (start + pageSize).clamp(0, filtered.length);
+    final fin = (inicio + pageSize).clamp(0, filtrados.length);
     return HomeCatalogPage(
-      items: filtered.sublist(start, end),
-      hasMore: end < filtered.length,
-      isMock: _usingMock,
-      page: safePage,
+      items: filtrados.sublist(inicio, fin),
+      hasMore: fin < filtrados.length,
+      page: paginaSegura,
+      total: filtrados.length,
     );
+  }
+
+  /// Categorías reales para el riel del Home.
+  static Future<List<HomeCatalogCategory>> getCategorias() {
+    final cacheadas = _cachedCategories;
+    if (cacheadas != null) return Future.value(cacheadas);
+    return _loadingCategories ??= _loadCategorias();
   }
 
   static Future<void> clearCache() async {
     _cachedCatalog = null;
+    _cachedCategories = null;
     _loadingCatalog = null;
-    _usingMock = false;
+    _loadingCategories = null;
   }
 
   static Future<List<HomeCatalogItem>> _getCatalog() {
-    final cached = _cachedCatalog;
-    if (cached != null) return Future.value(cached);
+    final cacheado = _cachedCatalog;
+    if (cacheado != null) return Future.value(cacheado);
     return _loadingCatalog ??= _loadCatalog();
+  }
+
+  static Future<List<HomeCatalogCategory>> _loadCategorias() async {
+    try {
+      final filas = await CatalogoService.getTiposActividadServicio();
+      final categorias = filas
+          .map(HomeCatalogCategory.fromJson)
+          .where((c) => c.nombre.trim().isNotEmpty)
+          .toList();
+
+      // Orden del riel: alfabético, con "General" al final porque es el cajón
+      // de sastre (el valor por defecto de `id_tipo_actividad`), no una
+      // categoría que el cliente busque. "Todas" va siempre primero.
+      categorias.sort((a, b) {
+        final aGeneral = a.codigo == 'general';
+        final bGeneral = b.codigo == 'general';
+        if (aGeneral != bGeneral) return aGeneral ? 1 : -1;
+        return a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase());
+      });
+
+      _cachedCategories = <HomeCatalogCategory>[
+        HomeCatalogCategory.todas,
+        ...categorias,
+      ];
+    } catch (_) {
+      // Sin nomenclador el riel queda en "Todas": es preferible a inventar
+      // categorías que ningún servicio puede tener.
+      _cachedCategories = const <HomeCatalogCategory>[
+        HomeCatalogCategory.todas,
+      ];
+    }
+    return _cachedCategories!;
   }
 
   static Future<List<HomeCatalogItem>> _loadCatalog() async {
     try {
-      final services = await CatalogoService.getLocalServicios();
-      final mapped = services.map(_fromLocalServicio).toList();
-      if (mapped.isNotEmpty) {
-        _cachedCatalog = mapped;
-        _usingMock = false;
-        return mapped;
-      }
+      final categorias = await getCategorias();
+      final nombrePorId = <int, String>{
+        for (final c in categorias)
+          if (c.id != null) c.id!: c.nombre,
+      };
+      final servicios = await CatalogoService.getLocalServicios();
+      final mapeados = servicios
+          .map((item) => _desdeLocalServicio(item, nombrePorId))
+          .toList();
+      _cachedCatalog = mapeados;
+      return mapeados;
     } catch (_) {
-      // La vista debe seguir siendo navegable durante el primer despliegue,
-      // cuando el RPC o sus permisos aún no estén disponibles.
+      // Permite reintentar: sin esto un fallo de red dejaría el Future
+      // compartido cacheado con el error para siempre.
+      _loadingCatalog = null;
+      rethrow;
     }
-
-    _usingMock = true;
-    _cachedCatalog = _mockCatalog;
-    return _cachedCatalog!;
   }
 
-  static HomeCatalogItem _fromLocalServicio(LocalServicio item) {
+  static HomeCatalogItem _desdeLocalServicio(
+    LocalServicio item,
+    Map<int, String> nombrePorTipo,
+  ) {
     final servicio = item.servicio;
     final local = item.local;
-    final config = servicio?.configPrecio;
-    final defaultCurrency = config?.monedaDefault ?? 'USD';
-    final basePrice =
-        config?.preciosBase[defaultCurrency] ??
-        (config?.preciosBase.values.isNotEmpty == true
-            ? config!.preciosBase.values.first
-            : 0);
-    final category = _categoryFor(servicio?.nombre, servicio?.tipoActividad);
-    final isOpen = _isOpen(local?.horarioAtencion);
+    final precio = precioBaseDe(servicio?.configPrecio);
+    final horario = HorarioAtencion.parse(local?.horarioAtencion);
     return HomeCatalogItem(
       id: item.id,
-      title: servicio?.nombre ?? 'Servicio disponible',
-      venue: local?.nombre ?? 'Establecimiento cercano',
-      category: category,
-      price: basePrice,
-      currency: defaultCurrency,
-      durationMinutes: _durationFor(category),
-      distance: 'Cerca de ti',
-      rating: 4.7,
-      reviews: 24,
-      isOpen: isOpen,
-      verified: true,
-      availableNow: item.permiteReservaDirecta || isOpen,
-      imageUrl: servicio?.foto ?? local?.foto,
-      tags: [if (item.permiteReservaDirecta) 'Reserva directa', 'Pago online'],
+      title: servicio?.nombre ?? 'Servicio sin nombre',
+      venue: local?.nombre ?? 'Local sin nombre',
+      category: HomeCatalogCategory(
+        id: servicio?.idTipoActividad,
+        codigo: servicio?.tipoActividad ?? '',
+        nombre: _nombreCategoria(servicio, nombrePorTipo),
+      ),
+      price: precio?.precio,
+      currency: precio?.moneda,
+      imageUrl: _primeraNoVacia(servicio?.foto, local?.foto),
+      estadoHorario: horario.evaluar(DateTime.now()),
+      horarioTexto: local?.horarioAtencion?.trim() ?? '',
+      direccion: _primeraNoVacia(local?.direccion, null),
+      provincia: _primeraNoVacia(local?.provincia, null),
+      pais: _primeraNoVacia(local?.pais, null),
+      permiteReservaDirecta: item.permiteReservaDirecta,
+      cantidadMaxCapacidad: item.cantidadMaxCapacidad,
       localServicio: item,
     );
   }
 
-  static bool _isOpen(String? schedule) {
-    if (schedule == null || schedule.trim().isEmpty) return true;
-    final value = schedule.toLowerCase();
-    return !value.contains('cerrado');
+  static String _nombreCategoria(
+    Servicio? servicio,
+    Map<int, String> nombrePorTipo,
+  ) {
+    final id = servicio?.idTipoActividad;
+    if (id != null) {
+      final nombre = nombrePorTipo[id];
+      if (nombre != null && nombre.trim().isNotEmpty) return nombre;
+    }
+    final codigo = servicio?.tipoActividad;
+    if (codigo != null && codigo.trim().isNotEmpty) {
+      return codigo.replaceAll('_', ' ');
+    }
+    return 'General';
   }
 
-  static int _durationFor(String category) => switch (category) {
-    'Transporte' => 60,
-    'Salud' => 45,
-    'Hogar' => 90,
-    _ => 45,
-  };
-
-  static String _categoryFor(String? name, String? activity) {
-    final value = '${name ?? ''} ${activity ?? ''}'.toLowerCase();
-    if (value.contains('uñ') ||
-        value.contains('manicur') ||
-        value.contains('pedicur')) {
-      return 'Uñas';
-    }
-    if (value.contains('ceja') || value.contains('pestañ')) {
-      return 'Cejas & Pestañas';
-    }
-    if (value.contains('transport') ||
-        value.contains('ómnibus') ||
-        value.contains('taxi')) {
-      return 'Transporte';
-    }
-    if (value.contains('salud') ||
-        value.contains('méd') ||
-        value.contains('doctor')) {
-      return 'Salud';
-    }
-    if (value.contains('hogar') ||
-        value.contains('repar') ||
-        value.contains('plomer')) {
-      return 'Hogar';
-    }
-    if (value.contains('mascot') || value.contains('veter')) return 'Mascotas';
-    return 'Belleza';
+  static String? _primeraNoVacia(String? a, String? b) {
+    if (a != null && a.trim().isNotEmpty) return a.trim();
+    if (b != null && b.trim().isNotEmpty) return b.trim();
+    return null;
   }
 
-  static final List<HomeCatalogItem> _mockCatalog = [
-    const HomeCatalogItem(
-      id: 9001,
-      title: 'Diseño de uñas gel',
-      venue: 'Luna Studio',
-      category: 'Uñas',
-      price: 18,
-      originalPrice: 24,
-      discount: 25,
-      durationMinutes: 60,
-      distance: '0.8 km',
-      rating: 4.9,
-      reviews: 128,
-      tags: ['Sin filas garantizado', 'Pago online'],
-    ),
-    const HomeCatalogItem(
-      id: 9002,
-      title: 'Corte + brushing',
-      venue: 'Casa Aura',
-      category: 'Belleza',
-      price: 22,
-      durationMinutes: 45,
-      distance: '1.1 km',
-      rating: 4.8,
-      reviews: 96,
-      tags: ['Wi-Fi', 'Reserva directa'],
-    ),
-    const HomeCatalogItem(
-      id: 9003,
-      title: 'Perfilado de cejas',
-      venue: 'Marfil Beauty',
-      category: 'Cejas & Pestañas',
-      price: 12,
-      originalPrice: 15,
-      discount: 20,
-      durationMinutes: 30,
-      distance: '1.4 km',
-      rating: 4.7,
-      reviews: 74,
-      tags: ['Abierto ahora'],
-    ),
-    const HomeCatalogItem(
-      id: 9004,
-      title: 'Ruta centro · ida y vuelta',
-      venue: 'Moverte',
-      category: 'Transporte',
-      price: 9,
-      currency: 'USD',
-      durationMinutes: 60,
-      distance: '2.0 km',
-      rating: 4.6,
-      reviews: 51,
-      tags: ['Pago online', 'Reserva directa'],
-    ),
-    const HomeCatalogItem(
-      id: 9005,
-      title: 'Masaje relajante',
-      venue: 'Alma Spa',
-      category: 'Belleza',
-      price: 30,
-      originalPrice: 38,
-      discount: 20,
-      durationMinutes: 60,
-      distance: '2.3 km',
-      rating: 4.9,
-      reviews: 142,
-      tags: ['Wi-Fi', 'Sin filas garantizado'],
-    ),
-    const HomeCatalogItem(
-      id: 9006,
-      title: 'Consulta general',
-      venue: 'Centro Vida',
-      category: 'Salud',
-      price: 25,
-      durationMinutes: 30,
-      distance: '2.7 km',
-      rating: 4.8,
-      reviews: 63,
-      tags: ['Abierto ahora', 'Reserva directa'],
-    ),
-    const HomeCatalogItem(
-      id: 9007,
-      title: 'Limpieza profunda',
-      venue: 'Hogar Listo',
-      category: 'Hogar',
-      price: 35,
-      durationMinutes: 90,
-      distance: '3.0 km',
-      rating: 4.6,
-      reviews: 44,
-      tags: ['Pago online'],
-    ),
-    const HomeCatalogItem(
-      id: 9008,
-      title: 'Baño y cuidado',
-      venue: 'Patitas Club',
-      category: 'Mascotas',
-      price: 16,
-      durationMinutes: 45,
-      distance: '3.4 km',
-      rating: 4.8,
-      reviews: 37,
-      tags: ['Sin filas garantizado'],
-    ),
-    const HomeCatalogItem(
-      id: 9009,
-      title: 'Lifting de pestañas',
-      venue: 'Luna Studio',
-      category: 'Cejas & Pestañas',
-      price: 20,
-      originalPrice: 26,
-      discount: 23,
-      durationMinutes: 50,
-      distance: '0.8 km',
-      rating: 4.9,
-      reviews: 88,
-      tags: ['Reserva directa'],
-    ),
-    const HomeCatalogItem(
-      id: 9010,
-      title: 'Coloración express',
-      venue: 'Casa Aura',
-      category: 'Belleza',
-      price: 40,
-      durationMinutes: 90,
-      distance: '1.1 km',
-      rating: 4.7,
-      reviews: 35,
-      tags: ['Wi-Fi'],
-    ),
-    const HomeCatalogItem(
-      id: 9011,
-      title: 'Pedicure spa',
-      venue: 'Marfil Beauty',
-      category: 'Uñas',
-      price: 19,
-      durationMinutes: 50,
-      distance: '1.4 km',
-      rating: 4.8,
-      reviews: 67,
-      tags: ['Abierto ahora'],
-    ),
-    const HomeCatalogItem(
-      id: 9012,
-      title: 'Traslado aeropuerto',
-      venue: 'Moverte',
-      category: 'Transporte',
-      price: 28,
-      durationMinutes: 75,
-      distance: '2.0 km',
-      rating: 4.7,
-      reviews: 29,
-      tags: ['Reserva directa', 'Pago online'],
-    ),
-  ];
+  static String _sinAcentos(String valor) => valor
+      .replaceAll('á', 'a')
+      .replaceAll('é', 'e')
+      .replaceAll('í', 'i')
+      .replaceAll('ó', 'o')
+      .replaceAll('ú', 'u')
+      .replaceAll('ü', 'u')
+      .replaceAll('ñ', 'n');
 }

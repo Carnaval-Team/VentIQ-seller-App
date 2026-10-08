@@ -5,6 +5,7 @@ import '../../models/entidad.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/entidad_provider.dart';
 import '../../services/auth_service.dart';
+import 'config_categorias_screen.dart';
 import 'entidad_detail_screen.dart';
 import 'gestion_locales_screen.dart';
 import 'gestion_servicios_screen.dart';
@@ -24,23 +25,21 @@ class GestionScreen extends StatelessWidget {
     // Si no hay UUID, mostrar mensaje de error
     if (myUuid.isEmpty) {
       return const Scaffold(
-        body: Center(
-          child: Text('No se pudo obtener el usuario autenticado'),
-        ),
+        body: Center(child: Text('No se pudo obtener el usuario autenticado')),
       );
     }
 
     if (entidadProv.isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (!entidadProv.isAdmin || seleccionada == null) {
       return const Scaffold(
         body: Center(
-          child: Text('Sin entidades disponibles',
-              style: TextStyle(color: AppTheme.textSecondary)),
+          child: Text(
+            'Sin entidades disponibles',
+            style: TextStyle(color: AppTheme.textSecondary),
+          ),
         ),
       );
     }
@@ -65,7 +64,8 @@ class GestionScreen extends StatelessWidget {
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(
-                  builder: (_) => EntidadDetailScreen(entidad: seleccionada)),
+                builder: (_) => EntidadDetailScreen(entidad: seleccionada),
+              ),
             ),
           ),
         ],
@@ -79,7 +79,8 @@ class GestionScreen extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (_) => _NuevaEntidadInlineSheet(ownerUuid: ownerUuid),
     );
   }
@@ -112,20 +113,22 @@ class _EntidadSelector extends StatelessWidget {
         value: seleccionada.id,
         icon: const Icon(Icons.expand_more, color: AppTheme.textPrimary),
         style: const TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w600,
-            color: AppTheme.textPrimary),
+          fontSize: 17,
+          fontWeight: FontWeight.w600,
+          color: AppTheme.textPrimary,
+        ),
         onChanged: (id) {
           if (id == null) return;
           final e = entidades.firstWhere((e) => e.id == id);
           onChanged(e);
         },
         items: entidades
-            .map((e) => DropdownMenuItem(
-                  value: e.id,
-                  child: Text(e.denominacion,
-                      overflow: TextOverflow.ellipsis),
-                ))
+            .map(
+              (e) => DropdownMenuItem(
+                value: e.id,
+                child: Text(e.denominacion, overflow: TextOverflow.ellipsis),
+              ),
+            )
             .toList(),
       ),
     );
@@ -152,12 +155,15 @@ class _GestionBody extends StatelessWidget {
           _EntidadInfoCard(entidad: entidad, isOwner: isOwner),
           const SizedBox(height: 24),
 
-          const Text('Gestión',
-              style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.textSecondary,
-                  letterSpacing: 0.8)),
+          const Text(
+            'Gestión',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: AppTheme.textSecondary,
+              letterSpacing: 0.8,
+            ),
+          ),
           const SizedBox(height: 12),
 
           // Grid de módulos — columnas adaptativas según ancho disponible
@@ -165,47 +171,85 @@ class _GestionBody extends StatelessWidget {
             builder: (context, constraints) {
               // 1 col < 300px | 2 col < 500px | 3 col < 750px | 4 col+
               final w = constraints.maxWidth;
-              final cols = w < 300 ? 1 : w < 500 ? 2 : w < 750 ? 3 : 4;
+              final cols = w < 300
+                  ? 1
+                  : w < 500
+                  ? 2
+                  : w < 750
+                  ? 3
+                  : 4;
               final modulos = [
                 _ModuloCard(
                   icon: Icons.store_outlined,
                   title: 'Locales',
                   subtitle: 'Puntos de atención',
                   color: const Color(0xFF4F7FFA),
-                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => GestionLocalesScreen(entidad: entidad))),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => GestionLocalesScreen(entidad: entidad),
+                    ),
+                  ),
                 ),
                 _ModuloCard(
                   icon: Icons.miscellaneous_services_outlined,
                   title: 'Servicios',
                   subtitle: 'Catálogo de servicios',
                   color: const Color(0xFF7C5CFC),
-                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => GestionServiciosScreen(entidad: entidad))),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => GestionServiciosScreen(entidad: entidad),
+                    ),
+                  ),
                 ),
                 _ModuloCard(
                   icon: Icons.account_tree_outlined,
                   title: 'Planificación',
                   subtitle: 'Servicios por local',
                   color: const Color(0xFF34C759),
-                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => PlanificacionScreen(entidad: entidad))),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PlanificacionScreen(entidad: entidad),
+                    ),
+                  ),
                 ),
                 _ModuloCard(
                   icon: Icons.confirmation_number_outlined,
                   title: 'Reservas',
                   subtitle: 'Consultar y exportar',
                   color: const Color(0xFF5856D6),
-                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => ReservasScreen(entidad: entidad))),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ReservasScreen(entidad: entidad),
+                    ),
+                  ),
+                ),
+                _ModuloCard(
+                  icon: Icons.category_outlined,
+                  title: 'Categorías',
+                  subtitle: 'Tipos de actividad',
+                  color: const Color(0xFF00A3A3),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const ConfigCategoriasScreen(),
+                    ),
+                  ),
                 ),
                 _ModuloCard(
                   icon: Icons.people_alt_outlined,
                   title: 'Admins',
                   subtitle: 'Gestionar accesos',
                   color: const Color(0xFFFF9500),
-                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => EntidadDetailScreen(entidad: entidad))),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => EntidadDetailScreen(entidad: entidad),
+                    ),
+                  ),
                 ),
               ];
               return GridView.builder(
@@ -251,9 +295,10 @@ class _EntidadInfoCard extends StatelessWidget {
             child: Text(
               entidad.denominacion[0].toUpperCase(),
               style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.primary),
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.primary,
+              ),
             ),
           ),
           const SizedBox(width: 14),
@@ -261,19 +306,31 @@ class _EntidadInfoCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(entidad.denominacion,
-                    style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.bold)),
+                Text(
+                  entidad.denominacion,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 if (entidad.direccion != null)
-                  Text(entidad.direccion!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontSize: 12, color: AppTheme.textSecondary)),
+                  Text(
+                    entidad.direccion!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
                 if (entidad.telefono != null)
-                  Text(entidad.telefono!,
-                      style: const TextStyle(
-                          fontSize: 12, color: AppTheme.textSecondary)),
+                  Text(
+                    entidad.telefono!,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -288,9 +345,10 @@ class _EntidadInfoCard extends StatelessWidget {
             child: Text(
               isOwner ? 'Owner' : 'Admin',
               style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: isOwner ? AppTheme.primary : AppTheme.accent),
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: isOwner ? AppTheme.primary : AppTheme.accent,
+              ),
             ),
           ),
         ],
@@ -340,12 +398,20 @@ class _ModuloCard extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w700, fontSize: 14)),
-                Text(subtitle,
-                    style: const TextStyle(
-                        fontSize: 11, color: AppTheme.textSecondary)),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
               ],
             ),
           ],
@@ -365,8 +431,7 @@ class _NuevaEntidadInlineSheet extends StatefulWidget {
       _NuevaEntidadInlineSheetState();
 }
 
-class _NuevaEntidadInlineSheetState
-    extends State<_NuevaEntidadInlineSheet> {
+class _NuevaEntidadInlineSheetState extends State<_NuevaEntidadInlineSheet> {
   final _formKey = GlobalKey<FormState>();
   final _denomCtrl = TextEditingController();
   final _dirCtrl = TextEditingController();
@@ -385,10 +450,8 @@ class _NuevaEntidadInlineSheetState
     final provider = context.read<EntidadProvider>();
     final result = await provider.crearEntidad(
       denominacion: _denomCtrl.text.trim(),
-      direccion:
-          _dirCtrl.text.trim().isEmpty ? null : _dirCtrl.text.trim(),
-      telefono:
-          _telCtrl.text.trim().isEmpty ? null : _telCtrl.text.trim(),
+      direccion: _dirCtrl.text.trim().isEmpty ? null : _dirCtrl.text.trim(),
+      telefono: _telCtrl.text.trim().isEmpty ? null : _telCtrl.text.trim(),
       ownerUuid: widget.ownerUuid,
     );
     if (!mounted) return;
@@ -409,7 +472,9 @@ class _NuevaEntidadInlineSheetState
     final provider = context.watch<EntidadProvider>();
     return Padding(
       padding: EdgeInsets.only(
-        left: 24, right: 24, top: 24,
+        left: 24,
+        right: 24,
+        top: 24,
         bottom: MediaQuery.of(context).viewInsets.bottom + 24,
       ),
       child: Form(
@@ -418,20 +483,23 @@ class _NuevaEntidadInlineSheetState
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('Nueva Entidad',
-                style:
-                    TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text(
+              'Nueva Entidad',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 6),
-            const Text('Serás el propietario (owner) de esta entidad.',
-                style: TextStyle(
-                    fontSize: 13, color: AppTheme.textSecondary)),
+            const Text(
+              'Serás el propietario (owner) de esta entidad.',
+              style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+            ),
             const SizedBox(height: 20),
             TextFormField(
               controller: _denomCtrl,
               textCapitalization: TextCapitalization.words,
               decoration: const InputDecoration(
-                  labelText: 'Denominación *',
-                  prefixIcon: Icon(Icons.business)),
+                labelText: 'Denominación *',
+                prefixIcon: Icon(Icons.business),
+              ),
               validator: (v) =>
                   (v == null || v.trim().isEmpty) ? 'Requerido' : null,
             ),
@@ -439,27 +507,32 @@ class _NuevaEntidadInlineSheetState
             TextFormField(
               controller: _dirCtrl,
               decoration: const InputDecoration(
-                  labelText: 'Dirección',
-                  prefixIcon: Icon(Icons.location_on_outlined)),
+                labelText: 'Dirección',
+                prefixIcon: Icon(Icons.location_on_outlined),
+              ),
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _telCtrl,
               keyboardType: TextInputType.phone,
               decoration: const InputDecoration(
-                  labelText: 'Teléfono de contacto',
-                  prefixIcon: Icon(Icons.phone_outlined)),
+                labelText: 'Teléfono de contacto',
+                prefixIcon: Icon(Icons.phone_outlined),
+              ),
             ),
             const SizedBox(height: 20),
             ElevatedButton(
               onPressed: provider.isLoading ? null : _submit,
               child: provider.isLoading
                   ? const SizedBox(
-                      height: 20, width: 20,
+                      height: 20,
+                      width: 20,
                       child: CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2))
-                  : const Text('Crear Entidad',
-                      style: TextStyle(fontSize: 16)),
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : const Text('Crear Entidad', style: TextStyle(fontSize: 16)),
             ),
           ],
         ),

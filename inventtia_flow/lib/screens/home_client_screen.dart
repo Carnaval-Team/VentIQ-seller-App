@@ -4,11 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../config/app_theme.dart';
+import '../config/home_features.dart';
 import '../providers/auth_provider.dart';
+import '../providers/favoritos_provider.dart';
 import '../services/home_catalog_service.dart';
+import '../utils/horario_atencion.dart';
+import '../widgets/boton_favorito.dart';
 import '../widgets/home_hero_header.dart';
 import '../widgets/net_image.dart';
 import '../widgets/notificaciones_bell.dart';
+import 'favoritos_screen.dart';
 import 'local_servicio_detail_screen.dart';
 
 class HomeClientScreen extends StatefulWidget {
@@ -25,36 +30,26 @@ class HomeClientScreenState extends State<HomeClientScreen>
   final _sponsoredController = PageController(viewportFraction: 0.86);
   final _searchFocusNode = FocusNode();
 
-  final Set<int> _savedIds = <int>{9001, 9005};
   Timer? _countdownTimer;
   Timer? _searchDebounce;
   late final AnimationController _shineController;
 
   List<HomeCatalogItem> _items = const [];
+  List<HomeCatalogCategory> _categories = const [HomeCatalogCategory.todas];
   bool _isLoading = true;
   bool _isLoadingMore = false;
   bool _hasMore = true;
-  bool _isMock = false;
   int _page = 1;
+  int _total = 0;
   int _sponsoredPage = 0;
   String _query = '';
-  String _category = 'Todas';
-  String _location = 'Santa Clara, Villa Clara';
-  bool _nearMe = false;
+  HomeCatalogCategory _category = HomeCatalogCategory.todas;
+  String? _provincia;
   bool _openNow = false;
-  bool _topRated = false;
-  Duration _flashRemaining = const Duration(hours: 4, minutes: 12, seconds: 39);
 
-  static const _categories = <_HomeCategory>[
-    _HomeCategory('Todas', '▦', Icons.grid_view_rounded),
-    _HomeCategory('Belleza', '✦', Icons.auto_awesome_rounded),
-    _HomeCategory('Uñas', '✧', Icons.back_hand_rounded),
-    _HomeCategory('Cejas & Pestañas', '◌', Icons.remove_red_eye_outlined),
-    _HomeCategory('Transporte', '↗', Icons.directions_bus_filled_outlined),
-    _HomeCategory('Salud', '+', Icons.medical_services_outlined),
-    _HomeCategory('Hogar', '⌂', Icons.home_repair_service_outlined),
-    _HomeCategory('Mascotas', '♡', Icons.pets_outlined),
-  ];
+  /// Mensaje del último fallo de lectura. `null` cuando el catálogo cargó.
+  String? _error;
+  Duration _flashRemaining = const Duration(hours: 4, minutes: 12, seconds: 39);
 
   @override
   void initState() {
@@ -64,14 +59,19 @@ class HomeClientScreenState extends State<HomeClientScreen>
       vsync: this,
       duration: const Duration(milliseconds: 3200),
     )..repeat();
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      setState(() {
-        final seconds = _flashRemaining.inSeconds - 1;
-        _flashRemaining = Duration(seconds: seconds > 0 ? seconds : 0);
+    // El contador de "ofertas relámpago" no tiene promociones que contar
+    // todavía: no se arranca el temporizador mientras la sección esté apagada.
+    if (HomeFeatures.ofertasRelampago) {
+      _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) return;
+        setState(() {
+          final seconds = _flashRemaining.inSeconds - 1;
+          _flashRemaining = Duration(seconds: seconds > 0 ? seconds : 0);
+        });
       });
-    });
+    }
     _loadPage(reset: true);
+    _loadCategorias();
   }
 
   @override
@@ -92,6 +92,7 @@ class HomeClientScreenState extends State<HomeClientScreen>
     await HomeCatalogService.clearCache();
     if (!mounted) return;
     await _loadPage(reset: true);
+    await _loadCategorias();
   }
 
   Future<void> _loadPage({bool reset = false}) async {
@@ -115,30 +116,39 @@ class HomeClientScreenState extends State<HomeClientScreen>
         query: _query,
         category: _category,
         onlyOpen: _openNow,
-        topRated: _topRated,
-        nearMe: _nearMe,
+        provincia: _provincia,
       );
       if (!mounted) return;
       setState(() {
         _items = reset ? page.items : [..._items, ...page.items];
         _page = page.page;
         _hasMore = page.hasMore;
-        _isMock = page.isMock;
+        _total = page.total;
+        _error = null;
         _isLoading = false;
         _isLoadingMore = false;
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
         _isLoadingMore = false;
         _hasMore = false;
+        _error = 'No pudimos leer el catálogo. Revisa tu conexión.';
       });
-      _showToast(
-        'No pudimos actualizar el catálogo.',
-        actionLabel: 'Reintentar',
-      );
+      debugPrint('[flow] HomeClientScreen._loadPage ERROR: $e');
     }
+  }
+
+  /// Categorías reales del nomenclador (`flow.nom_tipo_actividad_servicio`).
+  Future<void> _loadCategorias() async {
+    final categorias = await HomeCatalogService.getCategorias();
+    if (!mounted) return;
+    setState(() {
+      _categories = categorias;
+      final sigueExistiendo = categorias.any((c) => c.id == _category.id);
+      if (!sigueExistiendo) _category = HomeCatalogCategory.todas;
+    });
   }
 
   void _onScroll() {
@@ -158,28 +168,36 @@ class HomeClientScreenState extends State<HomeClientScreen>
     });
   }
 
-  void _selectCategory(String category) {
-    if (_category == category) return;
+  void _selectCategory(HomeCatalogCategory category) {
+    if (_category.id == category.id) return;
     setState(() => _category = category);
     _loadPage(reset: true);
   }
 
-  void _toggleSaved(HomeCatalogItem item) {
-    setState(() {
-      if (!_savedIds.add(item.id)) _savedIds.remove(item.id);
-    });
-    _showToast(
-      _savedIds.contains(item.id)
-          ? '${item.title} guardado en Mis Listas.'
-          : '${item.title} eliminado de Mis Listas.',
-      actionLabel: 'Ver listas',
+  void _selectProvincia(String? provincia) {
+    if (_provincia == provincia) return;
+    setState(() => _provincia = provincia);
+    _loadPage(reset: true);
+  }
+
+  /// Alterna el favorito desde el Home.
+  ///
+  /// El estado y el aviso los gestiona `alternarFavorito` (widgets/boton_favorito),
+  /// para que Home, catálogo y detalle se comporten igual. La tarjeta recibe
+  /// `saved` ya resuelto porque se repinta con el resto de la lista.
+  Future<void> _toggleFavorito(HomeCatalogItem item) async {
+    await alternarFavorito(
+      context,
+      idLocalServicio: item.id,
+      titulo: item.title,
     );
   }
 
   void _openItem(HomeCatalogItem item) {
     final localServicio = item.localServicio;
     if (localServicio == null) {
-      _showToast('Esta tarjeta es una vista previa. Pronto podrás reservarla.');
+      // No debería ocurrir: las tarjetas siempre salen de `local_servicio`.
+      _showToast('No pudimos abrir este servicio.');
       return;
     }
     Navigator.push(
@@ -208,8 +226,13 @@ class HomeClientScreenState extends State<HomeClientScreen>
                   onPressed: () {
                     if (actionLabel == 'Reintentar') {
                       _refresh();
-                    } else {
-                      _showToast('Abre Mis Listas desde la barra inferior.');
+                    } else if (actionLabel == 'Ver favoritos') {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const FavoritosScreen(),
+                        ),
+                      );
                     }
                   },
                 ),
@@ -217,9 +240,31 @@ class HomeClientScreenState extends State<HomeClientScreen>
       );
   }
 
+  /// Provincias disponibles, deducidas de `flow.app_dat_locales.provincia`
+  /// de los locales que ya están en el catálogo cargado.
+  List<String> get _provinciasDisponibles {
+    final valores = <String>{};
+    for (final item in _items) {
+      final provincia = item.provincia;
+      if (provincia != null && provincia.trim().isNotEmpty) {
+        valores.add(provincia.trim());
+      }
+    }
+    final lista = valores.toList()..sort();
+    return lista;
+  }
+
+  String get _etiquetaUbicacion => _provincia ?? 'Todas las provincias';
+
   Future<void> _showLocationPicker() async {
-    final options = ['Santa Clara, Villa Clara', 'Centro', 'Cerca de mí'];
-    final selected = await showModalBottomSheet<String>(
+    final provincias = _provinciasDisponibles;
+    if (provincias.isEmpty) {
+      _showToast('Todavía no hay locales con provincia configurada.');
+      return;
+    }
+    // `null` = sin filtro de ubicación; se usa '' porque showModalBottomSheet
+    // devuelve null también al cerrar sin elegir.
+    final seleccion = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.white,
       showDragHandle: true,
@@ -236,24 +281,22 @@ class HomeClientScreenState extends State<HomeClientScreen>
               const Text('Elige tu ubicación', style: _SectionTitleStyle()),
               const SizedBox(height: 6),
               const Text(
-                'Veremos servicios y disponibilidad cerca de ti.',
+                'Filtramos por la provincia que el local tiene registrada.',
                 style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
               ),
               const SizedBox(height: 12),
-              ...options.map(
-                (option) => ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(
-                    option == 'Cerca de mí'
-                        ? Icons.my_location_outlined
-                        : Icons.location_on_outlined,
-                    color: AppTheme.primary,
-                  ),
-                  title: Text(option),
-                  trailing: option == _location
-                      ? const Icon(Icons.check_circle, color: AppTheme.accent)
-                      : null,
-                  onTap: () => Navigator.pop(sheetContext, option),
+              _OpcionUbicacion(
+                titulo: 'Todas las provincias',
+                icono: Icons.public_rounded,
+                seleccionada: _provincia == null,
+                onTap: () => Navigator.pop(sheetContext, ''),
+              ),
+              ...provincias.map(
+                (provincia) => _OpcionUbicacion(
+                  titulo: provincia,
+                  icono: Icons.location_on_outlined,
+                  seleccionada: _provincia == provincia,
+                  onTap: () => Navigator.pop(sheetContext, provincia),
                 ),
               ),
             ],
@@ -261,18 +304,13 @@ class HomeClientScreenState extends State<HomeClientScreen>
         ),
       ),
     );
-    if (selected == null || !mounted) return;
-    setState(() {
-      _location = selected == 'Cerca de mí' ? 'Cerca de mí' : selected;
-      _nearMe = selected == 'Cerca de mí';
-    });
+    if (seleccion == null || !mounted) return;
+    _selectProvincia(seleccion.isEmpty ? null : seleccion);
     _showToast('Ubicación actualizada.');
   }
 
   Future<void> _showAdvancedFilters() async {
-    var nearMe = _nearMe;
     var openNow = _openNow;
-    var topRated = _topRated;
     final applied = await showModalBottomSheet<bool>(
       context: context,
       backgroundColor: Colors.white,
@@ -297,25 +335,17 @@ class HomeClientScreenState extends State<HomeClientScreen>
                 const SizedBox(height: 10),
                 SwitchListTile.adaptive(
                   contentPadding: EdgeInsets.zero,
-                  value: nearMe,
-                  onChanged: (value) => setSheetState(() => nearMe = value),
-                  title: const Text('Cerca de mí'),
-                  secondary: const Icon(Icons.near_me_outlined),
-                ),
-                SwitchListTile.adaptive(
-                  contentPadding: EdgeInsets.zero,
                   value: openNow,
                   onChanged: (value) => setSheetState(() => openNow = value),
                   title: const Text('Abierto ahora'),
+                  subtitle: const Text(
+                    'Según el horario que cada local tiene registrado.',
+                    style: TextStyle(fontSize: 11),
+                  ),
                   secondary: const Icon(Icons.schedule_outlined),
                 ),
-                SwitchListTile.adaptive(
-                  contentPadding: EdgeInsets.zero,
-                  value: topRated,
-                  onChanged: (value) => setSheetState(() => topRated = value),
-                  title: const Text('Mejor valorados'),
-                  secondary: const Icon(Icons.star_outline_rounded),
-                ),
+                // "Cerca de mí" y "Mejor valorados" aparecerán aquí cuando
+                // existan coordenadas y reseñas. Ver `lib/config/home_features.dart`.
                 const SizedBox(height: 8),
                 SizedBox(
                   width: double.infinity,
@@ -332,10 +362,7 @@ class HomeClientScreenState extends State<HomeClientScreen>
     );
     if (applied != true || !mounted) return;
     setState(() {
-      _nearMe = nearMe;
       _openNow = openNow;
-      _topRated = topRated;
-      if (_nearMe) _location = 'Cerca de mí';
     });
     _loadPage(reset: true);
     _showToast('Filtros aplicados a tu exploración.');
@@ -347,6 +374,9 @@ class HomeClientScreenState extends State<HomeClientScreen>
     final firstName = profile?.nombre.trim().isNotEmpty == true
         ? profile!.nombre.trim().split(' ').first
         : 'María';
+
+    // `watch` para que los corazones se repinten al alternar un favorito.
+    final favoritos = context.watch<FavoritosProvider>();
 
     return Scaffold(
       backgroundColor: AppTheme.surface,
@@ -364,14 +394,23 @@ class HomeClientScreenState extends State<HomeClientScreen>
               ),
             ),
             SliverToBoxAdapter(child: _buildCategories()),
-            SliverToBoxAdapter(child: _buildCollections()),
-            SliverToBoxAdapter(child: _buildSponsoredCarousel()),
-            SliverToBoxAdapter(child: _buildFlashOffers()),
-            SliverToBoxAdapter(child: _buildRecommended()),
+            // Secciones apagadas: su respaldo no existe todavía ni en la base
+            // de datos ni en la administración. `lib/config/home_features.dart`
+            // documenta qué falta para encender cada una.
+            if (HomeFeatures.colecciones)
+              SliverToBoxAdapter(child: _buildCollections()),
+            if (HomeFeatures.patrocinados)
+              SliverToBoxAdapter(child: _buildSponsoredCarousel()),
+            if (HomeFeatures.ofertasRelampago)
+              SliverToBoxAdapter(child: _buildFlashOffers()),
+            SliverToBoxAdapter(child: _buildRecommended(favoritos)),
             SliverToBoxAdapter(child: _buildPopularPlaces()),
-            SliverToBoxAdapter(child: _buildWeeklyPopular()),
-            SliverToBoxAdapter(child: _buildReviewOfDay()),
-            SliverToBoxAdapter(child: _buildLoyaltyBanner()),
+            if (HomeFeatures.rankingSemanal)
+              SliverToBoxAdapter(child: _buildWeeklyPopular()),
+            if (HomeFeatures.resenas)
+              SliverToBoxAdapter(child: _buildReviewOfDay()),
+            if (HomeFeatures.fidelidad)
+              SliverToBoxAdapter(child: _buildLoyaltyBanner()),
             SliverToBoxAdapter(child: _buildHowItWorks()),
             SliverToBoxAdapter(child: _buildFeedHeader()),
             if (_isLoading && _items.isEmpty)
@@ -380,15 +419,15 @@ class HomeClientScreenState extends State<HomeClientScreen>
               SliverToBoxAdapter(child: _buildNoResults()),
             if (_items.isNotEmpty)
               SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (_, index) => _FeedServiceCard(
-                    item: _items[index],
-                    saved: _savedIds.contains(_items[index].id),
-                    onTap: () => _openItem(_items[index]),
-                    onSave: () => _toggleSaved(_items[index]),
-                  ),
-                  childCount: _items.length,
-                ),
+                delegate: SliverChildBuilderDelegate((_, index) {
+                  final item = _items[index];
+                  return _FeedServiceCard(
+                    item: item,
+                    saved: favoritos.estaGuardado(item.id),
+                    onTap: () => _openItem(item),
+                    onSave: () => _toggleFavorito(item),
+                  );
+                }, childCount: _items.length),
               ),
             if (_isLoadingMore)
               const SliverToBoxAdapter(child: _LoadingMoreBlock()),
@@ -484,7 +523,7 @@ class HomeClientScreenState extends State<HomeClientScreen>
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        _location,
+                        _etiquetaUbicacion,
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 12,
@@ -554,18 +593,20 @@ class HomeClientScreenState extends State<HomeClientScreen>
                   suffixIcon: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      IconButton(
-                        tooltip: 'Buscar por voz',
-                        onPressed: () => _showToast(
-                          'La búsqueda por voz estará disponible pronto.',
+                      if (HomeFeatures.busquedaPorVoz)
+                        IconButton(
+                          tooltip: 'Buscar por voz',
+                          onPressed: () => _showToast(
+                            'La búsqueda por voz estará disponible pronto.',
+                          ),
+                          icon: const Icon(
+                            Icons.mic_none_rounded,
+                            color: AppTheme.textSecondary,
+                            size: 20,
+                          ),
                         ),
-                        icon: const Icon(
-                          Icons.mic_none_rounded,
-                          color: AppTheme.textSecondary,
-                          size: 20,
-                        ),
-                      ),
-                      Container(width: 1, height: 20, color: AppTheme.border),
+                      if (HomeFeatures.busquedaPorVoz)
+                        Container(width: 1, height: 20, color: AppTheme.border),
                       IconButton(
                         tooltip: 'Filtros avanzados',
                         onPressed: _showAdvancedFilters,
@@ -591,18 +632,18 @@ class HomeClientScreenState extends State<HomeClientScreen>
                 scrollDirection: Axis.horizontal,
                 physics: const BouncingScrollPhysics(),
                 children: [
-                  _QuickChip(
-                    label: 'Cerca de mí',
-                    icon: Icons.location_on_outlined,
-                    selected: _nearMe,
-                    onTap: () {
-                      setState(() {
-                        _nearMe = !_nearMe;
-                        if (_nearMe) _location = 'Cerca de mí';
-                      });
-                      _loadPage(reset: true);
-                    },
-                  ),
+                  // "Cerca de mí" y "Mejor valorados" solo aparecen cuando hay
+                  // coordenadas y reseñas. Ver `lib/config/home_features.dart`.
+                  if (HomeFeatures.distancia)
+                    _QuickChip(
+                      label: 'Cerca de mí',
+                      icon: Icons.location_on_outlined,
+                      selected: false,
+                      onTap: () => _showToast(
+                        'Necesitamos coordenadas de los locales para calcular '
+                        'distancias.',
+                      ),
+                    ),
                   _QuickChip(
                     label: 'Abierto ahora',
                     live: true,
@@ -612,15 +653,16 @@ class HomeClientScreenState extends State<HomeClientScreen>
                       _loadPage(reset: true);
                     },
                   ),
-                  _QuickChip(
-                    label: 'Mejor valorados',
-                    icon: Icons.star_rounded,
-                    selected: _topRated,
-                    onTap: () {
-                      setState(() => _topRated = !_topRated);
-                      _loadPage(reset: true);
-                    },
-                  ),
+                  if (HomeFeatures.mejorValorados)
+                    _QuickChip(
+                      label: 'Mejor valorados',
+                      icon: Icons.star_rounded,
+                      selected: false,
+                      onTap: () => _showToast(
+                        'Necesitamos el modelo de reseñas para ordenar por '
+                        'valoración.',
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -648,9 +690,9 @@ class HomeClientScreenState extends State<HomeClientScreen>
               separatorBuilder: (_, __) => const SizedBox(width: 8),
               itemBuilder: (_, index) {
                 final category = _categories[index];
-                final selected = category.name == _category;
+                final selected = category.id == _category.id;
                 return GestureDetector(
-                  onTap: () => _selectCategory(category.name),
+                  onTap: () => _selectCategory(category),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 180),
                     padding: const EdgeInsets.symmetric(horizontal: 13),
@@ -672,19 +714,14 @@ class HomeClientScreenState extends State<HomeClientScreen>
                     ),
                     child: Row(
                       children: [
-                        Text(
-                          category.emoji,
-                          style: TextStyle(
-                            color: selected
-                                ? AppTheme.accent
-                                : AppTheme.primary,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                          ),
+                        Icon(
+                          _iconoCategoria(category),
+                          color: selected ? AppTheme.accent : AppTheme.primary,
+                          size: 15,
                         ),
                         const SizedBox(width: 6),
                         Text(
-                          category.name,
+                          category.nombre,
                           style: TextStyle(
                             color: selected
                                 ? Colors.white
@@ -749,12 +786,14 @@ class HomeClientScreenState extends State<HomeClientScreen>
             itemBuilder: (_, index) => _CollectionCard(
               collection: collections[index],
               onTap: () {
-                final category = index == 2
-                    ? 'Transporte'
-                    : index == 3
-                    ? 'Todas'
-                    : 'Belleza';
-                _selectCategory(category);
+                // Pendiente: las colecciones tendrán su propia tabla. Mientras
+                // tanto el toque solo lleva al tipo de actividad más cercano.
+                final codigo = index == 2 ? 'transporte_omnibus' : '';
+                final destino = _categories.firstWhere(
+                  (c) => c.codigo == codigo,
+                  orElse: () => HomeCatalogCategory.todas,
+                );
+                _selectCategory(destino);
                 _showToast('Explorando ${collections[index].title}.');
               },
             ),
@@ -836,38 +875,14 @@ class HomeClientScreenState extends State<HomeClientScreen>
     );
   }
 
+  /// Sección apagada mientras no exista `flow.promocion`.
+  ///
+  /// La versión anterior inventaba descuentos (`-20 %`, precio tachado y "3
+  /// cupos") y, si el catálogo no tenía ofertas, pintaba dos tarjetas de
+  /// negocios que no existen ("Alma Spa", "Luna Studio"). Ahora la tarjeta solo
+  /// muestra el descuento cuando una promoción real lo aporta.
   Widget _buildFlashOffers() {
-    final offers = _items.where((item) => item.discount > 0).take(4).toList();
-    final displayOffers = offers.isEmpty
-        ? const [
-            HomeCatalogItem(
-              id: 9991,
-              title: 'Masaje relajante',
-              venue: 'Alma Spa',
-              category: 'Belleza',
-              price: 30,
-              originalPrice: 38,
-              discount: 20,
-              durationMinutes: 60,
-              distance: '2.3 km',
-              rating: 4.9,
-              reviews: 142,
-            ),
-            HomeCatalogItem(
-              id: 9992,
-              title: 'Diseño de uñas gel',
-              venue: 'Luna Studio',
-              category: 'Uñas',
-              price: 18,
-              originalPrice: 24,
-              discount: 25,
-              durationMinutes: 60,
-              distance: '0.8 km',
-              rating: 4.9,
-              reviews: 128,
-            ),
-          ]
-        : offers;
+    final ofertas = _items.take(4).toList();
     return Padding(
       padding: const EdgeInsets.only(bottom: 22),
       child: Column(
@@ -897,11 +912,11 @@ class HomeClientScreenState extends State<HomeClientScreen>
               padding: const EdgeInsets.symmetric(horizontal: 16),
               scrollDirection: Axis.horizontal,
               physics: const BouncingScrollPhysics(),
-              itemCount: displayOffers.length,
+              itemCount: ofertas.length,
               separatorBuilder: (_, __) => const SizedBox(width: 10),
               itemBuilder: (_, index) => _FlashOfferCard(
-                item: displayOffers[index],
-                onTap: () => _openItem(displayOffers[index]),
+                item: ofertas[index],
+                onTap: () => _openItem(ofertas[index]),
               ),
             ),
           ),
@@ -910,40 +925,40 @@ class HomeClientScreenState extends State<HomeClientScreen>
     );
   }
 
-  Widget _buildRecommended() {
-    final recommendations = _items.take(6).toList();
+  Widget _buildRecommended(FavoritosProvider favoritos) {
+    final recomendaciones = _items.take(6).toList();
     return Padding(
       padding: const EdgeInsets.only(bottom: 22),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionHeading('Recomendado para ti', trailing: 'Ver todo'),
+          _sectionHeading('Servicios disponibles', trailing: 'Ver todo'),
           const SizedBox(height: 4),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16),
             child: Text(
-              'Basado en tus preferencias y ubicación',
+              'Todo el catálogo publicado por los locales',
               style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
             ),
           ),
           const SizedBox(height: 11),
           SizedBox(
             height: 224,
-            child: recommendations.isEmpty
+            child: recomendaciones.isEmpty
                 ? const _HorizontalLoading()
                 : ListView.separated(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     scrollDirection: Axis.horizontal,
                     physics: const BouncingScrollPhysics(),
-                    itemCount: recommendations.length,
+                    itemCount: recomendaciones.length,
                     separatorBuilder: (_, __) => const SizedBox(width: 12),
                     itemBuilder: (_, index) {
-                      final item = recommendations[index];
+                      final item = recomendaciones[index];
                       return _RecommendedCard(
                         item: item,
-                        saved: _savedIds.contains(item.id),
+                        saved: favoritos.estaGuardado(item.id),
                         onTap: () => _openItem(item),
-                        onSave: () => _toggleSaved(item),
+                        onSave: () => _toggleFavorito(item),
                       );
                     },
                   ),
@@ -954,18 +969,26 @@ class HomeClientScreenState extends State<HomeClientScreen>
   }
 
   Widget _buildPopularPlaces() {
-    final places = <String, HomeCatalogItem>{};
+    final locales = <String, HomeCatalogItem>{};
     for (final item in _items) {
-      places.putIfAbsent(item.venue, () => item);
+      locales.putIfAbsent(item.venue, () => item);
     }
-    final values = places.values.take(4).toList();
+    final values = locales.values.take(4).toList();
     return Padding(
       padding: const EdgeInsets.only(bottom: 22),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionHeading('Establecimientos populares', trailing: 'Ver todos'),
-          const SizedBox(height: 10),
+          _sectionHeading('Establecimientos', trailing: 'Ver todos'),
+          const SizedBox(height: 4),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              'Locales con servicios publicados',
+              style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+            ),
+          ),
+          const SizedBox(height: 11),
           SizedBox(
             height: 270,
             child: values.isEmpty
@@ -1303,17 +1326,17 @@ class HomeClientScreenState extends State<HomeClientScreen>
           const Expanded(
             child: Text('Más servicios para ti', style: _SectionTitleStyle()),
           ),
-          if (_isMock)
+          if (_items.isNotEmpty)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
               decoration: BoxDecoration(
-                color: AppTheme.accent.withValues(alpha: 0.10),
+                color: AppTheme.primary.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Text(
-                'Vista previa',
-                style: TextStyle(
-                  color: AppTheme.accent,
+              child: Text(
+                _total == 1 ? '1 servicio' : '$_total servicios',
+                style: const TextStyle(
+                  color: AppTheme.primary,
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
                 ),
@@ -1325,6 +1348,7 @@ class HomeClientScreenState extends State<HomeClientScreen>
   }
 
   Widget _buildNoResults() {
+    final hayError = _error != null;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
       child: Container(
@@ -1334,33 +1358,50 @@ class HomeClientScreenState extends State<HomeClientScreen>
         child: Column(
           children: [
             Icon(
-              Icons.search_off_rounded,
+              hayError ? Icons.cloud_off_rounded : Icons.search_off_rounded,
               size: 42,
               color: AppTheme.primary.withValues(alpha: 0.55),
             ),
             const SizedBox(height: 10),
-            const Text(
-              'No encontramos resultados',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+            Text(
+              hayError
+                  ? 'No pudimos cargar el catálogo'
+                  : 'No encontramos resultados',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
             ),
             const SizedBox(height: 5),
-            const Text(
-              'Prueba otra categoría o cambia la búsqueda.',
+            Text(
+              hayError
+                  ? (_error ?? '')
+                  : 'Prueba otra categoría o cambia la búsqueda.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+              style: const TextStyle(
+                color: AppTheme.textSecondary,
+                fontSize: 13,
+              ),
             ),
             const SizedBox(height: 14),
-            TextButton(
-              onPressed: () {
-                _searchController.clear();
-                setState(() {
-                  _query = '';
-                  _category = 'Todas';
-                });
-                _loadPage(reset: true);
-              },
-              child: const Text('Limpiar filtros'),
-            ),
+            if (hayError)
+              FilledButton.icon(
+                onPressed: _refresh,
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                label: const Text('Reintentar'),
+              )
+            else
+              TextButton(
+                onPressed: () {
+                  _searchController.clear();
+                  setState(() {
+                    _query = '';
+                    _category = HomeCatalogCategory.todas;
+                    _provincia = null;
+                    _openNow = false;
+                  });
+                  _loadPage(reset: true);
+                },
+                child: const Text('Limpiar filtros'),
+              ),
           ],
         ),
       ),
@@ -1815,14 +1856,19 @@ class _CountdownPill extends StatelessWidget {
   }
 }
 
+/// Tarjeta de promoción.
+///
+/// El descuento y el precio anterior llegarán de `flow.promocion`; hoy la
+/// sección está apagada (`HomeFeatures.ofertasRelampago`) y la tarjeta no
+/// inventa ninguno de los dos.
 class _FlashOfferCard extends StatelessWidget {
   final HomeCatalogItem item;
   final VoidCallback onTap;
+
   const _FlashOfferCard({required this.item, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    final original = item.originalPrice ?? (item.price * 1.2);
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -1843,38 +1889,18 @@ class _FlashOfferCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 7,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppTheme.error,
-                    borderRadius: BorderRadius.circular(7),
-                  ),
-                  child: Text(
-                    '-${item.discount == 0 ? 20 : item.discount}%',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                const Icon(
-                  Icons.bolt_rounded,
-                  color: AppTheme.warning,
-                  size: 19,
-                ),
-              ],
+            const Align(
+              alignment: Alignment.centerRight,
+              child: Icon(
+                Icons.bolt_rounded,
+                color: AppTheme.warning,
+                size: 19,
+              ),
             ),
             const SizedBox(height: 11),
             Text(
               item.title,
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
             ),
@@ -1889,52 +1915,16 @@ class _FlashOfferCard extends StatelessWidget {
               ),
             ),
             const Spacer(),
-            Row(
-              children: [
-                Text(
-                  item.priceLabel,
-                  style: const TextStyle(
-                    color: AppTheme.primary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  '${original.toStringAsFixed(0)} ${item.currency}',
-                  style: const TextStyle(
-                    color: AppTheme.textSecondary,
-                    fontSize: 10,
-                    decoration: TextDecoration.lineThrough,
-                  ),
-                ),
-              ],
+            Text(
+              item.priceLabel ?? 'Consultar precio',
+              style: const TextStyle(
+                color: AppTheme.primary,
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
             ),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(5),
-                    child: const LinearProgressIndicator(
-                      value: 0.72,
-                      minHeight: 5,
-                      backgroundColor: Color(0xFFEFF1F5),
-                      color: AppTheme.error,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 7),
-                const Text(
-                  '3 cupos',
-                  style: TextStyle(
-                    color: AppTheme.error,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
+            _EstadoHorarioChip(item: item),
           ],
         ),
       ),
@@ -1949,9 +1939,9 @@ class _RecommendedCard extends StatelessWidget {
   final VoidCallback onSave;
   const _RecommendedCard({
     required this.item,
-    required this.saved,
     required this.onTap,
     required this.onSave,
+    this.saved = false,
   });
 
   @override
@@ -1981,6 +1971,16 @@ class _RecommendedCard extends StatelessWidget {
                 children: [
                   _MediaPreview(item: item, radius: 13),
                   Positioned(
+                    top: 4,
+                    right: 4,
+                    child: BotonFavorito(
+                      idLocalServicio: item.id,
+                      titulo: item.title,
+                      saved: saved,
+                      size: 30,
+                    ),
+                  ),
+                  Positioned(
                     top: 7,
                     left: 7,
                     child: Container(
@@ -1992,36 +1992,16 @@ class _RecommendedCard extends StatelessWidget {
                         color: AppTheme.primary,
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: const Text(
-                        'PARA TI',
-                        style: TextStyle(
+                      child: Text(
+                        item.category.nombre.toUpperCase(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 8,
                           fontWeight: FontWeight.w900,
                           letterSpacing: 0.5,
                         ),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    top: 4,
-                    right: 4,
-                    child: IconButton(
-                      onPressed: onSave,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 30,
-                        height: 30,
-                      ),
-                      style: IconButton.styleFrom(
-                        backgroundColor: Colors.white.withValues(alpha: 0.90),
-                      ),
-                      icon: Icon(
-                        saved
-                            ? Icons.favorite_rounded
-                            : Icons.favorite_border_rounded,
-                        size: 17,
-                        color: saved ? AppTheme.error : AppTheme.primary,
                       ),
                     ),
                   ),
@@ -2039,24 +2019,22 @@ class _RecommendedCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 3),
+            Text(
+              item.venue,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppTheme.textSecondary,
+                fontSize: 10.5,
+              ),
+            ),
+            const SizedBox(height: 5),
             Row(
               children: [
-                const Icon(
-                  Icons.star_rounded,
-                  color: AppTheme.warning,
-                  size: 14,
-                ),
-                const SizedBox(width: 3),
-                Text(
-                  item.rating.toStringAsFixed(1),
-                  style: const TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
+                _EstadoHorarioChip(item: item),
                 const Spacer(),
                 Text(
-                  item.priceLabel,
+                  item.priceLabel ?? 'Consultar',
                   style: const TextStyle(
                     color: AppTheme.primary,
                     fontSize: 12,
@@ -2145,17 +2123,22 @@ class _PopularPlaceCard extends StatelessWidget {
                       ),
                       child: Row(
                         children: [
-                          const Icon(
-                            Icons.verified_rounded,
+                          Icon(
+                            _iconoCategoria(item.category),
                             color: AppTheme.accent,
                             size: 13,
                           ),
                           const SizedBox(width: 3),
-                          Text(
-                            item.rating.toStringAsFixed(1),
-                            style: const TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w900,
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 90),
+                            child: Text(
+                              item.category.nombre,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                              ),
                             ),
                           ),
                         ],
@@ -2183,22 +2166,21 @@ class _PopularPlaceCard extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const Icon(
-                        Icons.verified_rounded,
-                        color: AppTheme.accent,
-                        size: 16,
-                      ),
                     ],
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${item.category} · ${item.distance}',
+                    item.ubicacion ?? item.direccion ?? 'Ubicación no indicada',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: AppTheme.textSecondary,
                       fontSize: 11,
                     ),
                   ),
-                  const SizedBox(height: 9),
+                  const SizedBox(height: 6),
+                  _EstadoHorarioChip(item: item),
+                  const SizedBox(height: 8),
                   Wrap(
                     spacing: 5,
                     runSpacing: 4,
@@ -2315,32 +2297,25 @@ class _WeeklyServiceRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    '${item.durationMinutes} min · ${item.distance}',
+                    item.ubicacion ?? item.category.nombre,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: AppTheme.textSecondary,
                       fontSize: 10,
                     ),
                   ),
                   const SizedBox(height: 3),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.circle,
-                        color: AppTheme.success,
-                        size: 7,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        item.availableNow ? 'Disponible ahora' : 'Próximamente',
-                        style: const TextStyle(
-                          color: AppTheme.success,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
+                  _EstadoHorarioChip(item: item),
                 ],
+              ),
+            ),
+            Text(
+              item.priceLabel ?? 'Consultar',
+              style: const TextStyle(
+                color: AppTheme.primary,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
               ),
             ),
             const Icon(
@@ -2363,9 +2338,9 @@ class _FeedServiceCard extends StatelessWidget {
 
   const _FeedServiceCard({
     required this.item,
-    required this.saved,
     required this.onTap,
     required this.onSave,
+    this.saved = false,
   });
 
   @override
@@ -2407,57 +2382,43 @@ class _FeedServiceCard extends StatelessWidget {
                             ),
                           ),
                         ),
-                        IconButton(
-                          onPressed: onSave,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 26,
-                            height: 26,
-                          ),
-                          icon: Icon(
-                            saved
-                                ? Icons.favorite_rounded
-                                : Icons.favorite_border_rounded,
-                            size: 18,
-                            color: saved ? AppTheme.error : AppTheme.primary,
-                          ),
+                        BotonFavorito(
+                          idLocalServicio: item.id,
+                          titulo: item.title,
+                          saved: saved,
+                          size: 26,
                         ),
                       ],
                     ),
+                    const SizedBox(height: 2),
                     Text(
                       item.venue,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: AppTheme.textSecondary,
                         fontSize: 11,
                       ),
                     ),
+                    const SizedBox(height: 5),
+                    Text(
+                      item.ubicacion ??
+                          item.direccion ??
+                          'Ubicación no indicada',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 10,
+                      ),
+                    ),
                     const SizedBox(height: 6),
                     Row(
                       children: [
-                        const Icon(
-                          Icons.star_rounded,
-                          color: AppTheme.warning,
-                          size: 14,
-                        ),
-                        const SizedBox(width: 3),
-                        Text(
-                          item.rating.toStringAsFixed(1),
-                          style: const TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Text(
-                          '${item.durationMinutes} min · ${item.distance}',
-                          style: const TextStyle(
-                            color: AppTheme.textSecondary,
-                            fontSize: 10,
-                          ),
-                        ),
+                        _EstadoHorarioChip(item: item),
                         const Spacer(),
                         Text(
-                          item.priceLabel,
+                          item.priceLabel ?? 'Consultar precio',
                           style: const TextStyle(
                             color: AppTheme.primary,
                             fontSize: 12,
@@ -2473,6 +2434,49 @@ class _FeedServiceCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Estado de apertura real del local, o "Horario no disponible" cuando el
+/// texto de `horario_atencion` no se puede interpretar.
+class _EstadoHorarioChip extends StatelessWidget {
+  final HomeCatalogItem item;
+  const _EstadoHorarioChip({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final (color, icono, etiqueta) = switch (item.estadoHorario) {
+      EstadoHorario.abierto => (
+        AppTheme.success,
+        Icons.circle,
+        'Abierto ahora',
+      ),
+      EstadoHorario.cerrado => (
+        AppTheme.textSecondary,
+        Icons.circle_outlined,
+        'Cerrado ahora',
+      ),
+      EstadoHorario.desconocido => (
+        AppTheme.textSecondary,
+        Icons.schedule_outlined,
+        'Horario no disponible',
+      ),
+    };
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icono, color: color, size: 9),
+        const SizedBox(width: 4),
+        Text(
+          etiqueta,
+          style: TextStyle(
+            color: color,
+            fontSize: 9.5,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -2513,25 +2517,43 @@ class _MediaPreview extends StatelessWidget {
     );
   }
 
-  static List<Color> _gradientFor(String category) => switch (category) {
-    'Uñas' => const [Color(0xFF8D667F), Color(0xFFE5ACBF)],
-    'Cejas & Pestañas' => const [Color(0xFF63758D), Color(0xFFA8BED2)],
-    'Transporte' => const [Color(0xFF385582), Color(0xFF7BA6D3)],
-    'Salud' => const [Color(0xFF2D7573), Color(0xFF71BCB4)],
-    'Hogar' => const [Color(0xFF8A7355), Color(0xFFCBB58B)],
-    'Mascotas' => const [Color(0xFF8D6C47), Color(0xFFD7AC70)],
-    _ => const [Color(0xFF70537C), Color(0xFFC69CC4)],
-  };
+  static List<Color> _gradientFor(HomeCatalogCategory category) {
+    if (category.codigo == 'transporte_omnibus') {
+      return const [Color(0xFF385582), Color(0xFF7BA6D3)];
+    }
+    // Degradado estable derivado del propio identificador: el mismo tipo de
+    // actividad pinta siempre igual, sin tabla de colores que mantener.
+    final semilla = category.codigo.isEmpty
+        ? category.nombre.length
+        : category.codigo.codeUnits.fold<int>(0, (a, b) => a + b);
+    const paletas = <List<Color>>[
+      [Color(0xFF70537C), Color(0xFFC69CC4)],
+      [Color(0xFF2D7573), Color(0xFF71BCB4)],
+      [Color(0xFF8A7355), Color(0xFFCBB58B)],
+      [Color(0xFF395B91), Color(0xFF6D9DD1)],
+      [Color(0xFF8C5B72), Color(0xFFC98CA4)],
+    ];
+    return paletas[semilla % paletas.length];
+  }
 
-  static String _emojiFor(String category) => switch (category) {
-    'Uñas' => '💅',
-    'Cejas & Pestañas' => '✨',
-    'Transporte' => '🚌',
-    'Salud' => '🩺',
-    'Hogar' => '⌂',
-    'Mascotas' => '🐾',
-    _ => '✦',
-  };
+  static String _emojiFor(HomeCatalogCategory category) =>
+      switch (category.codigo) {
+        'general' => '▦',
+        'belleza' => '✦',
+        'unas' => '💅',
+        'cejas_pestanas' => '✨',
+        'peluqueria' => '💇',
+        'estetica_spa' => '🧖',
+        'salud' => '🩺',
+        'hogar' => '⌂',
+        'mascotas' => '🐾',
+        'gastronomia' => '🍽',
+        'eventos' => '🎉',
+        'tecnologia' => '📱',
+        'transporte_omnibus' => '🚌',
+        'transporte_privado' => '🚕',
+        _ => '✦',
+      };
 }
 
 class _HowStepCard extends StatelessWidget {
@@ -2660,11 +2682,56 @@ class _SectionTitle extends StatelessWidget {
       Text(text, style: const _SectionTitleStyle());
 }
 
-class _HomeCategory {
-  final String name;
-  final String emoji;
-  final IconData icon;
-  const _HomeCategory(this.name, this.emoji, this.icon);
+/// Icono para un tipo de actividad.
+///
+/// Se conocen los códigos sembrados por `22_categorias_marketplace.sql`; un
+/// código nuevo creado desde el panel admin cae al icono genérico sin romper
+/// nada.
+IconData _iconoCategoria(HomeCatalogCategory category) =>
+    switch (category.codigo) {
+      'general' => Icons.grid_view_rounded,
+      'belleza' => Icons.auto_awesome_rounded,
+      'unas' => Icons.back_hand_rounded,
+      'cejas_pestanas' => Icons.remove_red_eye_outlined,
+      'peluqueria' => Icons.content_cut_rounded,
+      'estetica_spa' => Icons.spa_outlined,
+      'salud' => Icons.medical_services_outlined,
+      'hogar' => Icons.home_repair_service_outlined,
+      'mascotas' => Icons.pets_outlined,
+      'gastronomia' => Icons.restaurant_outlined,
+      'eventos' => Icons.celebration_outlined,
+      'tecnologia' => Icons.devices_other_outlined,
+      'transporte_omnibus' => Icons.directions_bus_filled_outlined,
+      'transporte_privado' => Icons.local_taxi_outlined,
+      _ => Icons.category_outlined,
+    };
+
+/// Opción del selector de provincia.
+class _OpcionUbicacion extends StatelessWidget {
+  final String titulo;
+  final IconData icono;
+  final bool seleccionada;
+  final VoidCallback onTap;
+
+  const _OpcionUbicacion({
+    required this.titulo,
+    required this.icono,
+    required this.seleccionada,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(icono, color: AppTheme.primary),
+      title: Text(titulo),
+      trailing: seleccionada
+          ? const Icon(Icons.check_circle, color: AppTheme.accent)
+          : null,
+      onTap: onTap,
+    );
+  }
 }
 
 class _Collection {

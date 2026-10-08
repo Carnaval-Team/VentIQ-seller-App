@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../config/app_theme.dart';
 import '../models/servicio.dart';
+import '../providers/favoritos_provider.dart';
 import '../services/catalogo_service.dart';
+import '../widgets/boton_favorito.dart';
 import '../widgets/net_image.dart';
 import '../widgets/notificaciones_bell.dart';
 import 'local_servicio_detail_screen.dart';
@@ -22,6 +25,10 @@ class CatalogoScreenState extends State<CatalogoScreen> {
   final _searchCtrl = TextEditingController();
   String _searchQuery = '';
   String? _provinciaFiltro;
+
+  /// Muestra solo los servicios guardados. Los favoritos ya se ordenan primero
+  /// por defecto; este chip sirve para ver *únicamente* esos.
+  bool _soloFavoritos = false;
 
   // Datos derivados para los chips de provincia
   List<String> _provincias = [];
@@ -48,7 +55,9 @@ class CatalogoScreenState extends State<CatalogoScreen> {
     _historialRefrescos.removeWhere((t) => t.isBefore(hace1Min));
 
     if (_historialRefrescos.length >= _maxRefrescosPorMinuto) {
-      final proxDisponible = _historialRefrescos.first.add(const Duration(minutes: 1));
+      final proxDisponible = _historialRefrescos.first.add(
+        const Duration(minutes: 1),
+      );
       final espera = proxDisponible.difference(ahora).inSeconds + 1;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -85,8 +94,17 @@ class CatalogoScreenState extends State<CatalogoScreen> {
     }
   }
 
-  List<LocalServicio> get _filtered {
+  /// Filtra y ordena. Los favoritos van **primero**, preservando el orden
+  /// original del catálogo dentro de cada grupo (ordenación estable).
+  ///
+  /// El criterio agrupa, no ordena alfabéticamente: si estás buscando algo que
+  /// guardaste, lo encuentras arriba sin perder de vista el resto del catálogo.
+  List<LocalServicio> _filtered(Set<int> idsFavoritos) {
     var lista = _localServicios;
+
+    if (_soloFavoritos) {
+      lista = lista.where((ls) => idsFavoritos.contains(ls.id)).toList();
+    }
 
     if (_provinciaFiltro != null) {
       lista = lista
@@ -97,13 +115,28 @@ class CatalogoScreenState extends State<CatalogoScreen> {
     if (_searchQuery.isNotEmpty) {
       final q = _searchQuery.toLowerCase();
       lista = lista
-          .where((ls) =>
-              (ls.local?.nombre ?? '').toLowerCase().contains(q) ||
-              (ls.servicio?.nombre ?? '').toLowerCase().contains(q))
+          .where(
+            (ls) =>
+                (ls.local?.nombre ?? '').toLowerCase().contains(q) ||
+                (ls.servicio?.nombre ?? '').toLowerCase().contains(q),
+          )
           .toList();
     }
 
-    return lista;
+    if (idsFavoritos.isEmpty) return lista;
+
+    // `List.sort` de Dart NO es estable, así que no se puede ordenar por el
+    // booleano directamente: se particiona en dos listas conservando el orden.
+    final favoritos = <LocalServicio>[];
+    final resto = <LocalServicio>[];
+    for (final ls in lista) {
+      if (idsFavoritos.contains(ls.id)) {
+        favoritos.add(ls);
+      } else {
+        resto.add(ls);
+      }
+    }
+    return <LocalServicio>[...favoritos, ...resto];
   }
 
   void _clearFiltros() {
@@ -111,13 +144,19 @@ class CatalogoScreenState extends State<CatalogoScreen> {
     setState(() {
       _searchQuery = '';
       _provinciaFiltro = null;
+      _soloFavoritos = false;
     });
   }
 
-  bool get _hayFiltros => _searchQuery.isNotEmpty || _provinciaFiltro != null;
+  bool get _hayFiltros =>
+      _searchQuery.isNotEmpty || _provinciaFiltro != null || _soloFavoritos;
 
   @override
   Widget build(BuildContext context) {
+    final favoritos = context.watch<FavoritosProvider>();
+    final ids = favoritos.ids;
+    final lista = _filtered(ids);
+
     return Scaffold(
       backgroundColor: AppTheme.surface,
       body: Column(
@@ -126,24 +165,26 @@ class CatalogoScreenState extends State<CatalogoScreen> {
           _buildHero(),
 
           // ── Chips de provincia + contador (sobre la superficie) ──
-          if (!_isLoading) _buildFiltersBar(),
+          if (!_isLoading) _buildFiltersBar(lista.length, ids, favoritos),
 
           // ── Lista ─────────────────────────────────────
           Expanded(
             child: _isLoading
                 ? _buildLoading()
-                : _filtered.isEmpty
-                    ? _buildEmptyState()
-                    : RefreshIndicator(
-                        onRefresh: _load,
-                        color: AppTheme.primary,
-                        child: ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                          itemCount: _filtered.length,
-                          itemBuilder: (_, i) =>
-                              _LocalServicioCard(localServicio: _filtered[i]),
-                        ),
+                : lista.isEmpty
+                ? _buildEmptyState()
+                : RefreshIndicator(
+                    onRefresh: _load,
+                    color: AppTheme.primary,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                      itemCount: lista.length,
+                      itemBuilder: (_, i) => _LocalServicioCard(
+                        localServicio: lista[i],
+                        esFavorito: ids.contains(lista[i].id),
                       ),
+                    ),
+                  ),
           ),
         ],
       ),
@@ -248,8 +289,10 @@ class CatalogoScreenState extends State<CatalogoScreen> {
         style: const TextStyle(fontSize: 14.5, color: AppTheme.textPrimary),
         decoration: InputDecoration(
           hintText: 'Buscar servicio o local...',
-          hintStyle:
-              const TextStyle(color: AppTheme.textSecondary, fontSize: 14.5),
+          hintStyle: const TextStyle(
+            color: AppTheme.textSecondary,
+            fontSize: 14.5,
+          ),
           prefixIcon: const Icon(Icons.search, color: AppTheme.primary),
           filled: true,
           fillColor: Colors.white,
@@ -280,10 +323,43 @@ class CatalogoScreenState extends State<CatalogoScreen> {
     );
   }
 
-  Widget _buildFiltersBar() {
+  Widget _buildFiltersBar(
+    int total,
+    Set<int> idsFavoritos,
+    FavoritosProvider favoritos,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Favoritos primero: chip para ver solo los guardados. Se oculta si la
+        // tabla aún no existe (migración sin aplicar) o si no hay ninguno.
+        if (favoritos.disponible && idsFavoritos.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 40,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              children: [
+                _FilterChip(
+                  label: 'Favoritos (${idsFavoritos.length})',
+                  icon: Icons.favorite_rounded,
+                  selected: _soloFavoritos,
+                  onTap: () => setState(() => _soloFavoritos = !_soloFavoritos),
+                ),
+                if (_soloFavoritos) ...[
+                  const SizedBox(width: 8),
+                  _FilterChip(
+                    label: 'Ver todos',
+                    icon: Icons.grid_view_rounded,
+                    selected: false,
+                    onTap: () => setState(() => _soloFavoritos = false),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
         if (_provincias.isNotEmpty) ...[
           const SizedBox(height: 14),
           SizedBox(
@@ -298,12 +374,14 @@ class CatalogoScreenState extends State<CatalogoScreen> {
                   selected: _provinciaFiltro == null,
                   onTap: () => setState(() => _provinciaFiltro = null),
                 ),
-                ..._provincias.map((p) => _FilterChip(
-                      label: p,
-                      icon: Icons.place_outlined,
-                      selected: _provinciaFiltro == p,
-                      onTap: () => setState(() => _provinciaFiltro = p),
-                    )),
+                ..._provincias.map(
+                  (p) => _FilterChip(
+                    label: p,
+                    icon: Icons.place_outlined,
+                    selected: _provinciaFiltro == p,
+                    onTap: () => setState(() => _provinciaFiltro = p),
+                  ),
+                ),
               ],
             ),
           ),
@@ -313,7 +391,7 @@ class CatalogoScreenState extends State<CatalogoScreen> {
           child: Row(
             children: [
               Text(
-                '${_filtered.length}',
+                '$total',
                 style: const TextStyle(
                   fontSize: 15,
                   color: AppTheme.textPrimary,
@@ -322,9 +400,7 @@ class CatalogoScreenState extends State<CatalogoScreen> {
               ),
               const SizedBox(width: 5),
               Text(
-                _filtered.length == 1
-                    ? 'servicio disponible'
-                    : 'servicios disponibles',
+                total == 1 ? 'servicio disponible' : 'servicios disponibles',
                 style: const TextStyle(
                   fontSize: 13,
                   color: AppTheme.textSecondary,
@@ -337,15 +413,20 @@ class CatalogoScreenState extends State<CatalogoScreen> {
                   onTap: _clearFiltros,
                   child: Row(
                     children: [
-                      Icon(Icons.refresh,
-                          size: 15,
-                          color: AppTheme.primary.withValues(alpha: 0.9)),
+                      Icon(
+                        Icons.refresh,
+                        size: 15,
+                        color: AppTheme.primary.withValues(alpha: 0.9),
+                      ),
                       const SizedBox(width: 3),
-                      Text('Limpiar',
-                          style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: AppTheme.primary.withValues(alpha: 0.9))),
+                      Text(
+                        'Limpiar',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.primary.withValues(alpha: 0.9),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -363,8 +444,10 @@ class CatalogoScreenState extends State<CatalogoScreen> {
         children: [
           CircularProgressIndicator(color: AppTheme.primary),
           SizedBox(height: 16),
-          Text('Cargando servicios...',
-              style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+          Text(
+            'Cargando servicios...',
+            style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+          ),
         ],
       ),
     );
@@ -389,18 +472,26 @@ class CatalogoScreenState extends State<CatalogoScreen> {
               ),
               shape: BoxShape.circle,
             ),
-            child: Icon(Icons.travel_explore,
-                size: 46, color: AppTheme.primary.withValues(alpha: 0.55)),
+            child: Icon(
+              Icons.travel_explore,
+              size: 46,
+              color: AppTheme.primary.withValues(alpha: 0.55),
+            ),
           ),
           const SizedBox(height: 18),
-          const Text('Nada por aquí todavía',
-              style: TextStyle(
-                  color: AppTheme.textPrimary,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700)),
+          const Text(
+            'Nada por aquí todavía',
+            style: TextStyle(
+              color: AppTheme.textPrimary,
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
           const SizedBox(height: 6),
-          const Text('Prueba con otra búsqueda o provincia',
-              style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+          const Text(
+            'Prueba con otra búsqueda o provincia',
+            style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+          ),
           if (_hayFiltros) ...[
             const SizedBox(height: 16),
             FilledButton.tonalIcon(
@@ -439,45 +530,47 @@ class _FilterChip extends StatelessWidget {
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOut,
             padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
-          decoration: BoxDecoration(
-            color: selected ? AppTheme.primary : Colors.white,
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(
-              color: selected ? AppTheme.primary : AppTheme.border,
-            ),
-            boxShadow: selected
-                ? [
-                    BoxShadow(
-                      color: AppTheme.primary.withValues(alpha: 0.30),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ]
-                : [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.03),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon,
-                  size: 15,
-                  color: selected ? Colors.white : AppTheme.textSecondary),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  color: selected ? Colors.white : AppTheme.textPrimary,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                  fontSize: 13,
-                ),
+            decoration: BoxDecoration(
+              color: selected ? AppTheme.primary : Colors.white,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(
+                color: selected ? AppTheme.primary : AppTheme.border,
               ),
-            ],
-          ),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: AppTheme.primary.withValues(alpha: 0.30),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ]
+                  : [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.03),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  icon,
+                  size: 15,
+                  color: selected ? Colors.white : AppTheme.textSecondary,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: selected ? Colors.white : AppTheme.textPrimary,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -488,7 +581,13 @@ class _FilterChip extends StatelessWidget {
 class _LocalServicioCard extends StatelessWidget {
   final LocalServicio localServicio;
 
-  const _LocalServicioCard({required this.localServicio});
+  /// Ya resuelto por el catálogo, para poder repintar la lista al alternar.
+  final bool esFavorito;
+
+  const _LocalServicioCard({
+    required this.localServicio,
+    this.esFavorito = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -560,12 +659,16 @@ class _LocalServicioCard extends StatelessWidget {
                                   url: servicio!.foto!,
                                   fit: BoxFit.cover,
                                   errorWidget: () => const Icon(
-                                      Icons.design_services_outlined,
-                                      color: AppTheme.primary,
-                                      size: 30),
+                                    Icons.design_services_outlined,
+                                    color: AppTheme.primary,
+                                    size: 30,
+                                  ),
                                 )
-                              : const Icon(Icons.design_services_outlined,
-                                  color: AppTheme.primary, size: 30),
+                              : const Icon(
+                                  Icons.design_services_outlined,
+                                  color: AppTheme.primary,
+                                  size: 30,
+                                ),
                         ),
                         const SizedBox(width: 14),
 
@@ -592,8 +695,11 @@ class _LocalServicioCard extends StatelessWidget {
                                 const SizedBox(height: 5),
                                 Row(
                                   children: [
-                                    const Icon(Icons.storefront_outlined,
-                                        size: 12, color: AppTheme.accent),
+                                    const Icon(
+                                      Icons.storefront_outlined,
+                                      size: 12,
+                                      color: AppTheme.accent,
+                                    ),
                                     const SizedBox(width: 4),
                                     Flexible(
                                       child: Text(
@@ -623,16 +729,31 @@ class _LocalServicioCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 10),
 
-                        // ── Indicador de navegación ──
-                        Container(
-                          width: 34,
-                          height: 34,
-                          decoration: BoxDecoration(
-                            color: AppTheme.primary.withValues(alpha: 0.10),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(Icons.arrow_forward_ios,
-                              color: AppTheme.primary, size: 15),
+                        // ── Favorito + indicador de navegación ──
+                        Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            BotonFavorito(
+                              idLocalServicio: localServicio.id,
+                              titulo: servicio?.nombre ?? 'Servicio',
+                              saved: esFavorito,
+                              size: 34,
+                            ),
+                            const SizedBox(height: 6),
+                            Container(
+                              width: 34,
+                              height: 34,
+                              decoration: BoxDecoration(
+                                color: AppTheme.primary.withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(
+                                Icons.arrow_forward_ios,
+                                color: AppTheme.primary,
+                                size: 15,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -645,7 +766,6 @@ class _LocalServicioCard extends StatelessWidget {
       ),
     );
   }
-
 }
 
 // Línea de info con ícono + texto truncable (ubicación, dirección).
