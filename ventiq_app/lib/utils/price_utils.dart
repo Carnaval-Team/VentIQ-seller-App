@@ -115,10 +115,11 @@ class PriceUtils {
 
   /// Formats a quantity smartly: "2" for 2.0, "1.5" for 1.5, "0.25" for 0.25
   static String paymentCurrency(Map<String, dynamic> payment) {
-    final raw = (payment['moneda'] ?? payment['currency'] ?? '')
-        .toString()
-        .trim()
-        .toUpperCase();
+    final raw =
+        (payment['moneda'] ?? payment['currency'] ?? '')
+            .toString()
+            .trim()
+            .toUpperCase();
     return raw == 'USD' ? 'USD' : 'CUP';
   }
 
@@ -142,29 +143,31 @@ class PriceUtils {
     Map<String, dynamic> payment, {
     double? fallbackRate,
   }) {
-    final savedRaw = payment['monto_cup_equivalente'];
-    if (savedRaw != null) {
-      final saved = _paymentNumber(savedRaw);
-      // 0 explícito en filas USD suele ser dato incompleto: recalcular.
-      if (saved > 0 || paymentCurrency(payment) != 'USD') return saved;
-    }
     final amount = paymentAmount(payment);
     if (paymentCurrency(payment) != 'USD') return amount;
+
     final rate = _paymentNumber(payment['tasa_usd']);
     final effectiveRate = rate > 0 ? rate : (fallbackRate ?? 0);
-    if (effectiveRate > 0) return amount * effectiveRate;
-    return amount;
+    final saved = _paymentNumber(payment['monto_cup_equivalente']);
+    if (effectiveRate > 0) {
+      final calculated = amount * effectiveRate;
+      final roundingTolerance = effectiveRate * 0.005 + 0.01;
+      return saved > 0 && (saved - calculated).abs() <= roundingTolerance
+          ? saved
+          : calculated;
+    }
+
+    return saved > 0 ? saved : amount;
   }
 
   static double paymentTotalCup(
     List<Map<String, dynamic>> payments, {
     double? fallbackRate,
-  }) =>
-      payments.fold(
-        0,
-        (total, payment) =>
-            total + paymentCupEquivalent(payment, fallbackRate: fallbackRate),
-      );
+  }) => payments.fold(
+    0,
+    (total, payment) =>
+        total + paymentCupEquivalent(payment, fallbackRate: fallbackRate),
+  );
 
   static double paymentTotalUsd(List<Map<String, dynamic>> payments) => payments
       .where((payment) => paymentCurrency(payment) == 'USD')
@@ -317,6 +320,9 @@ class PriceUtils {
     if (quantity == quantity.roundToDouble()) {
       return quantity.toInt().toString();
     }
-    return quantity.toStringAsFixed(2).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+    return quantity
+        .toStringAsFixed(2)
+        .replaceAll(RegExp(r'0+$'), '')
+        .replaceAll(RegExp(r'\.$'), '');
   }
 }

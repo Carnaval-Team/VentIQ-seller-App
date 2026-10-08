@@ -6725,48 +6725,30 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
       _errorMessage = null;
     });
 
-    final List<String> errors = [];
-
-    for (final op in _pendingOps) {
-      if (!mounted) break;
-      Map<String, dynamic> result;
-
-      switch (op['op']) {
-        case 'update':
-          result = await widget.orderService.updatePendingOrderItemQuantity(
-            idExtraccion: op['id_extraccion'] as int,
-            nuevaCantidad: (op['nueva_cantidad'] as num).toDouble(),
-          );
-        case 'remove':
-          result = await widget.orderService.removePendingOrderItem(
-            idExtraccion: op['id_extraccion'] as int,
-          );
-        case 'add':
-          final payload = Map<String, dynamic>.from(op['payload'] as Map);
-          // id=999 = "Efectivo sin descuento" (UI only) → guardar como efectivo id=1 en BD
-          if (payload['id_medio_pago'] == 999) payload['id_medio_pago'] = 1;
-          result = await widget.orderService.addProductToPendingOrder(
-            operationId: _operationId!,
-            producto: payload,
-          );
-        default:
-          continue;
+    final operations = _pendingOps.map((op) {
+      final normalized = Map<String, dynamic>.from(op);
+      if (normalized['op'] == 'add') {
+        final payload = Map<String, dynamic>.from(normalized['payload'] as Map);
+        if (payload['id_medio_pago'] == 999) payload['id_medio_pago'] = 1;
+        normalized['payload'] = payload;
+        normalized.remove('item');
+        normalized.remove('item_id');
       }
+      return normalized;
+    }).toList();
 
-      if (result['success'] != true) {
-        errors.add(result['error']?.toString() ?? 'Error desconocido');
-      }
-    }
+    final result = await widget.orderService.editPendingOrderV2(
+      operationId: _operationId!,
+      operations: operations,
+    );
 
     if (!mounted) return;
 
-    if (errors.isNotEmpty) {
+    if (result['success'] != true) {
       setState(() {
         _isSaving = false;
-        _errorMessage =
-            'Algunos cambios no se aplicaron:\n${errors.join('\n')}';
+        _errorMessage = result['error']?.toString() ?? 'Error desconocido';
       });
-      // No cerramos: el usuario puede ver el error y reintentar o cancelar
       return;
     }
 

@@ -14,16 +14,16 @@ class AuthService {
   static const String _userNivelAccesoKey = 'user_nivel_acceso';
   static const String _userRoleIdKey = 'user_role_id';
   static const String _userRolePermissionsKey = 'user_role_permissions';
-  
+
   static final _supabase = Supabase.instance.client;
   static SuperAdmin? _currentSuperAdmin;
-  
+
   static SuperAdmin? get currentSuperAdmin => _currentSuperAdmin;
 
   Future<Map<String, dynamic>> login(String email, String password) async {
     try {
       debugPrint('🔐 Iniciando login para: $email');
-      
+
       // Autenticar con Supabase
       final response = await _supabase.auth.signInWithPassword(
         email: email,
@@ -31,22 +31,20 @@ class AuthService {
       );
 
       if (response.user == null) {
-        return {
-          'success': false,
-          'message': 'Credenciales inválidas',
-        };
+        return {'success': false, 'message': 'Credenciales inválidas'};
       }
 
       final user = response.user!;
       debugPrint('✅ Usuario autenticado: ${user.id}');
 
       // Verificar si es superadmin y cargar rol con permisos
-      final superadminResponse = await _supabase
-          .from('app_dat_superadmin')
-          .select('*, app_dat_superadmin_roles(*)')
-          .eq('uuid', user.id)
-          .eq('activo', true)
-          .maybeSingle();
+      final superadminResponse =
+          await _supabase
+              .from('app_dat_superadmin')
+              .select('*, app_dat_superadmin_roles(*)')
+              .eq('uuid', user.id)
+              .eq('activo', true)
+              .maybeSingle();
 
       if (superadminResponse == null) {
         debugPrint('❌ Usuario no es superadministrador');
@@ -57,8 +55,10 @@ class AuthService {
         };
       }
 
-      debugPrint('✅ Superadmin verificado: ${superadminResponse['nombre']} ${superadminResponse['apellidos']}');
-      
+      debugPrint(
+        '✅ Superadmin verificado: ${superadminResponse['nombre']} ${superadminResponse['apellidos']}',
+      );
+
       // Crear objeto SuperAdmin
       _currentSuperAdmin = SuperAdmin.fromJson(superadminResponse);
 
@@ -80,7 +80,9 @@ class AuthService {
         rolePermissions: _currentSuperAdmin!.permisosRutas,
       );
 
-      debugPrint('✅ Login exitoso - Nivel de acceso: ${_currentSuperAdmin!.nivelAccesoTexto}');
+      debugPrint(
+        '✅ Login exitoso - Nivel de acceso: ${_currentSuperAdmin!.nivelAccesoTexto}',
+      );
 
       return {
         'success': true,
@@ -91,14 +93,11 @@ class AuthService {
           'name': _currentSuperAdmin!.nombreCompleto,
           'role': 'super_admin',
           'nivel_acceso': _currentSuperAdmin!.nivelAcceso,
-        }
+        },
       };
     } catch (e) {
       debugPrint('❌ Error en login: $e');
-      return {
-        'success': false,
-        'message': 'Error: ${e.toString()}',
-      };
+      return {'success': false, 'message': 'Error: ${e.toString()}'};
     }
   }
 
@@ -131,12 +130,12 @@ class AuthService {
   Future<bool> isLoggedIn() async {
     final prefs = await SharedPreferences.getInstance();
     final isLoggedIn = prefs.getBool(_isLoggedInKey) ?? false;
-    
+
     if (isLoggedIn && _currentSuperAdmin == null) {
       // Intentar recuperar datos del superadmin
       await checkAuthStatus();
     }
-    
+
     return isLoggedIn && _currentSuperAdmin != null;
   }
 
@@ -182,19 +181,20 @@ class AuthService {
     }
   }
 
-  Future<bool> changePassword(String currentPassword, String newPassword) async {
+  Future<bool> changePassword(
+    String currentPassword,
+    String newPassword,
+  ) async {
     try {
       // Actualizar contraseña en Supabase
-      await _supabase.auth.updateUser(
-        UserAttributes(password: newPassword),
-      );
+      await _supabase.auth.updateUser(UserAttributes(password: newPassword));
       return true;
     } catch (e) {
       debugPrint('❌ Error al cambiar contraseña: $e');
       return false;
     }
   }
-  
+
   Future<bool> checkAuthStatus() async {
     try {
       final user = _supabase.auth.currentUser;
@@ -204,12 +204,13 @@ class AuthService {
       if (_currentSuperAdmin != null) return true;
 
       // Intentar recuperar de la base de datos
-      final superadminResponse = await _supabase
-          .from('app_dat_superadmin')
-          .select('*, app_dat_superadmin_roles(*)')
-          .eq('uuid', user.id)
-          .eq('activo', true)
-          .maybeSingle();
+      final superadminResponse =
+          await _supabase
+              .from('app_dat_superadmin')
+              .select('*, app_dat_superadmin_roles(*)')
+              .eq('uuid', user.id)
+              .eq('activo', true)
+              .maybeSingle();
 
       if (superadminResponse != null) {
         _currentSuperAdmin = SuperAdmin.fromJson(superadminResponse);
@@ -222,7 +223,7 @@ class AuthService {
       return false;
     }
   }
-  
+
   static bool hasFullAccess() {
     return _currentSuperAdmin?.nivelAcceso == 1;
   }
@@ -244,17 +245,10 @@ class AuthService {
     final admin = _currentSuperAdmin;
     if (admin == null) return false;
 
-    // Acceso total: un superadmin nivel 1 ve todas las rutas protegidas,
-    // tenga o no una lista explicita de permisos (asi las rutas nuevas no
-    // quedan ocultas hasta re-guardar permisos).
-    if (admin.nivelAcceso == 1) return true;
-
-    // Legacy fallback: acceso total
+    // Legacy fallback: los usuarios nivel 1 sin rol mantienen acceso total.
+    // Si tienen un rol, siempre se respetan los permisos configurados.
     if (admin.rol == null && admin.nivelAcceso == 1) return true;
 
-    final permisos = admin.permisosRutas;
-    if (permisos.isEmpty && admin.nivelAcceso == 1) return true;
-
-    return permisos.contains(route);
+    return admin.permisosRutas.contains(route);
   }
 }

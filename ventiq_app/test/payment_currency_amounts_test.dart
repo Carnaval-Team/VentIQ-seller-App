@@ -24,6 +24,43 @@ void main() {
     expect(PriceUtils.paymentTotalUsd(payments), 2);
   });
 
+  test('ignores stale CUP equivalents after an order payment is edited', () {
+    final payments = <Map<String, dynamic>>[
+      {'monto': 600, 'moneda': 'CUP', 'monto_cup_equivalente': 1000},
+      {
+        'monto': 1,
+        'moneda': 'USD',
+        'tasa_usd': 400,
+        'monto_cup_equivalente': 800,
+      },
+    ];
+
+    expect(PriceUtils.paymentTotalCup(payments), 1000);
+  });
+
+  test('preserves a current USD equivalent across currency rounding', () {
+    expect(
+      PriceUtils.paymentCupEquivalent({
+        'monto': 0.24,
+        'moneda': 'USD',
+        'tasa_usd': 420,
+        'monto_cup_equivalente': 100,
+      }),
+      100,
+    );
+  });
+
+  test('uses saved USD equivalent only when no rate is available', () {
+    expect(
+      PriceUtils.paymentCupEquivalent({
+        'monto': 2,
+        'moneda': 'USD',
+        'monto_cup_equivalente': 900,
+      }),
+      900,
+    );
+  });
+
   test('offline mode has no invented USD rate when cache is empty', () async {
     SharedPreferences.setMockInitialValues({});
 
