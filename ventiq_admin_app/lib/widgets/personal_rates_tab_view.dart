@@ -26,11 +26,16 @@ class _PersonalRatesTabViewState extends State<PersonalRatesTabView> {
     _loadStoreAndData();
   }
 
+  Set<int> get _activeOriginIds =>
+      _rates
+          .map((r) => (r['id_moneda_origen'] as num?)?.toInt())
+          .whereType<int>()
+          .toSet();
+
   Future<void> _loadStoreAndData() async {
     setState(() => _isLoading = true);
     try {
-      final storeId =
-          await StoreService.getCurrentStoreId(); // tienda seleccionada
+      final storeId = await StoreService.getCurrentStoreId();
       if (storeId == null) {
         throw Exception('No se pudo obtener la tienda actual');
       }
@@ -60,28 +65,56 @@ class _PersonalRatesTabViewState extends State<PersonalRatesTabView> {
   Future<void> _showRateDialog({Map<String, dynamic>? rate}) async {
     if (!widget.canEdit) return;
 
-    int? selectedCurrencyId = rate?['id_moneda_origen'];
-    double? valorCambio = (rate?['valor_cambio'] as num?)?.toDouble() ?? null;
+    final isEdit = rate != null;
+    final previousRateId = rate?['id'] as int?;
+    final previousOriginId = (rate?['id_moneda_origen'] as num?)?.toInt();
+    int? selectedCurrencyId = previousOriginId;
+    double? valorCambio = (rate?['valor_cambio'] as num?)?.toDouble();
     bool usarPrecioToque = rate?['usar_precio_toque'] == true;
+    var isSaving = false;
+
+    // Al crear, solo monedas sin tasa activa. Al editar, la actual + las libres.
+    List<Map<String, dynamic>> availableCurrencies() {
+      return _currencies.where((c) {
+        final id = c['id'] as int;
+        if (id == _cupId) return false;
+        if (isEdit && (id == previousOriginId || id == selectedCurrencyId)) {
+          return true;
+        }
+        return !_activeOriginIds.contains(id);
+      }).toList();
+    }
 
     await showDialog(
       context: context,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setLocalState) {
+            final currencies = availableCurrencies();
             return AlertDialog(
-              title: Text(rate == null ? 'Agregar tasa' : 'Editar tasa'),
+              title: Text(isEdit ? 'Editar tasa' : 'Agregar tasa'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (!isEdit && currencies.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 12),
+                      child: Text(
+                        'Todas las monedas ya tienen una tasa activa. '
+                        'Edita o desactiva una existente.',
+                        style: TextStyle(color: Colors.orange, fontSize: 13),
+                      ),
+                    ),
                   DropdownButtonFormField<int>(
-                    value: selectedCurrencyId,
+                    value:
+                        currencies.any((c) => c['id'] == selectedCurrencyId)
+                            ? selectedCurrencyId
+                            : null,
                     decoration: const InputDecoration(
                       labelText: 'Moneda origen',
                     ),
                     items:
-                        _currencies
-                            .where((c) => c['id'] != _cupId)
+                        currencies
                             .map(
                               (c) => DropdownMenuItem<int>(
                                 value: c['id'] as int,
@@ -91,19 +124,23 @@ class _PersonalRatesTabViewState extends State<PersonalRatesTabView> {
                               ),
                             )
                             .toList(),
-                    onChanged: (value) {
-                      setLocalState(() {
-                        selectedCurrencyId = value;
-                        if (selectedCurrencyId != _usdId) {
-                          usarPrecioToque = false;
-                        }
-                      });
-                    },
+                    onChanged:
+                        isSaving
+                            ? null
+                            : (value) {
+                              setLocalState(() {
+                                selectedCurrencyId = value;
+                                if (selectedCurrencyId != _usdId) {
+                                  usarPrecioToque = false;
+                                }
+                              });
+                            },
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
                     initialValue:
                         valorCambio != null ? valorCambio.toString() : '',
+                    enabled: !isSaving,
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
@@ -128,42 +165,93 @@ class _PersonalRatesTabViewState extends State<PersonalRatesTabView> {
                         style: TextStyle(fontSize: 12),
                       ),
                       value: usarPrecioToque,
-                      onChanged: (value) {
-                        setLocalState(() => usarPrecioToque = value);
-                      },
+                      onChanged:
+                          isSaving
+                              ? null
+                              : (value) {
+                                setLocalState(() => usarPrecioToque = value);
+                              },
+                    ),
+                  if (isEdit)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: Text(
+                        'Al guardar se crea un registro nuevo y se desactiva el anterior '
+                        '(historial + triggers de precio).',
+                        style: TextStyle(fontSize: 12, color: Colors.black54),
+                      ),
                     ),
                 ],
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed:
+                      isSaving ? null : () => Navigator.of(context).pop(),
                   child: const Text('Cancelar'),
                 ),
                 ElevatedButton(
-                  onPressed: () async {
-                    if (selectedCurrencyId == null ||
-                        valorCambio == null ||
-                        valorCambio! <= 0) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Completa moneda y valor válido'),
-                          backgroundColor: Colors.red,
-                        ),
-                      );
-                      return;
-                    }
-                    await PersonalRatesService.upsertRate(
-                      id: rate?['id'] as int?,
-                      storeId: _storeId!,
-                      monedaOrigenId: selectedCurrencyId!,
-                      valorCambio: valorCambio!,
-                      usarPrecioToque: usarPrecioToque,
-                    );
-                    if (!mounted) return;
-                    Navigator.of(context).pop();
-                    await _loadStoreAndData();
-                  },
-                  child: const Text('Guardar'),
+                  onPressed:
+                      isSaving || currencies.isEmpty
+                          ? null
+                          : () async {
+                            if (selectedCurrencyId == null ||
+                                valorCambio == null ||
+                                valorCambio! <= 0) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Completa moneda y valor válido',
+                                  ),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                              return;
+                            }
+
+                            setLocalState(() => isSaving = true);
+                            try {
+                              if (isEdit) {
+                                await PersonalRatesService.replaceRate(
+                                  previousRateId: previousRateId!,
+                                  storeId: _storeId!,
+                                  monedaOrigenId: selectedCurrencyId!,
+                                  valorCambio: valorCambio!,
+                                  usarPrecioToque: usarPrecioToque,
+                                );
+                              } else {
+                                await PersonalRatesService.createRate(
+                                  storeId: _storeId!,
+                                  monedaOrigenId: selectedCurrencyId!,
+                                  valorCambio: valorCambio!,
+                                  usarPrecioToque: usarPrecioToque,
+                                );
+                              }
+                              if (!mounted) return;
+                              Navigator.of(context).pop();
+                              await _loadStoreAndData();
+                            } catch (e) {
+                              setLocalState(() => isSaving = false);
+                              if (!mounted) return;
+                              final msg =
+                                  e is StateError
+                                      ? e.message
+                                      : 'Error guardando tasa: $e';
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(msg),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          },
+                  child:
+                      isSaving
+                          ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                          : const Text('Guardar'),
                 ),
               ],
             );
@@ -208,6 +296,11 @@ class _PersonalRatesTabViewState extends State<PersonalRatesTabView> {
       return const Center(child: CircularProgressIndicator());
     }
 
+    final canAddMore = _currencies.any((c) {
+      final id = c['id'] as int;
+      return id != _cupId && !_activeOriginIds.contains(id);
+    });
+
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -224,7 +317,7 @@ class _PersonalRatesTabViewState extends State<PersonalRatesTabView> {
               const Spacer(),
               if (widget.canEdit)
                 ElevatedButton.icon(
-                  onPressed: () => _showRateDialog(),
+                  onPressed: canAddMore ? () => _showRateDialog() : null,
                   icon: const Icon(Icons.add),
                   label: const Text('Agregar'),
                   style: ElevatedButton.styleFrom(
@@ -233,6 +326,13 @@ class _PersonalRatesTabViewState extends State<PersonalRatesTabView> {
                 ),
             ],
           ),
+          if (widget.canEdit && !canAddMore) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Cada moneda solo puede tener una tasa activa. Edita o desactiva una existente.',
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+          ],
           const SizedBox(height: 16),
           Expanded(
             child:
@@ -272,8 +372,8 @@ class _PersonalRatesTabViewState extends State<PersonalRatesTabView> {
                               children: [
                                 Text('1 → ${valor.toStringAsFixed(2)} CUP'),
                                 if (toque)
-                                  Row(
-                                    children: const [
+                                  const Row(
+                                    children: [
                                       Icon(
                                         Icons.flash_on,
                                         size: 14,
@@ -302,12 +402,12 @@ class _PersonalRatesTabViewState extends State<PersonalRatesTabView> {
                                         }
                                       },
                                       itemBuilder:
-                                          (context) => [
-                                            const PopupMenuItem(
+                                          (context) => const [
+                                            PopupMenuItem(
                                               value: 'edit',
                                               child: Text('Editar'),
                                             ),
-                                            const PopupMenuItem(
+                                            PopupMenuItem(
                                               value: 'delete',
                                               child: Text('Desactivar'),
                                             ),

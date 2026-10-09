@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/supplier_payment_model.dart';
 
-double supplierBasePrice(double extractionPrice) => extractionPrice / 1.12;
+double supplierBasePrice(double price, double pct) =>
+    pct > 0 && pct < 100 ? price / (1 + pct / 100) : price;
 
 class _ExcludedInventtiaLine {
   final int orderId;
@@ -51,7 +52,8 @@ class SupplierPaymentService {
   }
 
   /// Precio real histórico desde `app_dat_extraccion_productos` indexados por `orderId_carnavalProductId`.
-  static Future<Map<String, double>> _loadExtractionPricesByOrders(
+  static Future<Map<String, ({double? oficial, double? extraction})>>
+  _loadExtractionPricesByOrders(
     Set<int> orderIds,
     Set<int> carnavalProductIds,
   ) async {
@@ -95,22 +97,29 @@ class SupplierPaymentService {
 
     final extractions = await _supabase
         .from('app_dat_extraccion_productos')
-        .select('id_operacion, id_producto, precio_unitario')
+        .select(
+          'id_operacion, id_producto, precio_unitario, precio_oficial_venta',
+        )
         .inFilter('id_operacion', opIds)
         .inFilter('id_producto', inventtiaIds.toList());
 
-    final priceMap = <String, double>{};
+    final priceMap = <String, ({double? oficial, double? extraction})>{};
     for (final row in List<Map<String, dynamic>>.from(extractions as List)) {
       final opId = _asInt(row['id_operacion']);
       final inventtiaId = _asInt(row['id_producto']);
       final precio = (row['precio_unitario'] as num?)?.toDouble();
+      final oficial = (row['precio_oficial_venta'] as num?)?.toDouble();
 
-      if (opId == null || inventtiaId == null || precio == null) continue;
+      if (opId == null || inventtiaId == null) continue;
+      if (precio == null && (oficial == null || oficial <= 0)) continue;
       final orderId = opIdToOrder[opId];
       final carnavalId = inventtiaToCarnaval[inventtiaId];
 
       if (orderId != null && carnavalId != null) {
-        priceMap['${orderId}_$carnavalId'] = precio;
+        priceMap['${orderId}_$carnavalId'] = (
+          oficial: oficial,
+          extraction: precio,
+        );
       }
     }
 
@@ -493,24 +502,30 @@ class SupplierPaymentService {
       final extractionKey = '${orderId}_$productId';
       final extractionPrice =
           productId != null ? extractionPrices[extractionKey] : null;
-      double unitPrice =
-          extractionPrice != null ? supplierBasePrice(extractionPrice) : 0.0;
       final carnavalPrice = (detail['price'] as num?)?.toDouble() ?? 0.0;
       final isTransfer = detail['transferencia'] as bool? ?? false;
 
-      // Sin vínculo de extracción histórica: usar fallback por markup
+      // % de la tienda según método de pago (con mínimo global)
+      final pricing =
+          detailProveedor != null ? pricingByProvider[detailProveedor] : null;
+      final pct =
+          isTransfer
+              ? (pricing?.transferPct ?? 0.0)
+              : (pricing?.cashPct ?? 0.0);
+
+      // 1) precio_oficial_venta (lo que se paga al proveedor)
+      // 2) precio de extracción menos el % de la tienda
+      final oficial = extractionPrice?.oficial;
+      final extraction = extractionPrice?.extraction;
+      double unitPrice =
+          oficial != null && oficial > 0
+              ? oficial
+              : (extraction != null ? supplierBasePrice(extraction, pct) : 0.0);
+
+      // 3) Sin vínculo de extracción histórica: precio Carnaval menos el %
       if (unitPrice <= 0 && carnavalPrice > 0) {
         missingExtractionPrice++;
-        final pricing =
-            detailProveedor != null ? pricingByProvider[detailProveedor] : null;
-        final pct =
-            isTransfer
-                ? (pricing?.transferPct ?? 0.0)
-                : (pricing?.cashPct ?? 0.0);
-        unitPrice =
-            pct > 0 && pct < 100
-                ? carnavalPrice / (1 + pct / 100)
-                : carnavalPrice;
+        unitPrice = supplierBasePrice(carnavalPrice, pct);
       }
 
       result.add({

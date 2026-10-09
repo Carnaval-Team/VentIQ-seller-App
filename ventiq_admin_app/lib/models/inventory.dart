@@ -242,9 +242,15 @@ class InventoryProduct {
       ventasPeriodo: map['ventas_periodo'] != null
           ? (map['ventas_periodo']).toDouble()
           : null,
-      stockDisponible: (map['stock_disponible'] ?? 0).toDouble(),
-      stockReservado: (map['stock_reservado'] ?? 0).toDouble(),
-      stockDisponibleAjustado: (map['stock_disponible_ajustado'] ?? 0)
+      stockDisponible:
+          ((map['stock_disponible'] ?? map['cantidad_final']) ?? 0)
+              .toDouble(),
+      stockReservado:
+          ((map['stock_reservado'] ?? map['cantidad_reservada']) ?? 0)
+              .toDouble(),
+      stockDisponibleAjustado: (map['stock_disponible_ajustado'] ??
+              map['cantidad_final'] ??
+              0)
           .toDouble(),
       esVendible: map['es_vendible'] ?? false,
       esInventariable: map['es_inventariable'] ?? false,

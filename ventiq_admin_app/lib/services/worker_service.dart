@@ -1,6 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/worker_models.dart';
-import 'permissions_service.dart';
 
 class WorkerService {
   static final _supabase = Supabase.instance.client;
@@ -338,6 +337,36 @@ class WorkerService {
     } catch (e) {
       print('❌ Error en updateWorkerUUID: $e');
       throw Exception('Error al actualizar UUID del trabajador: $e');
+    }
+  }
+
+  /// Desvincula el usuario Auth de un trabajador, elimina todos sus roles
+  /// de aplicación y deja el registro del trabajador intacto.
+  /// NO borra la cuenta de auth.users.
+  static Future<bool> removeWorkerUser({
+    required int workerId,
+    required int storeId,
+  }) async {
+    try {
+      print('🔗 Desvinculando usuario del trabajador: $workerId');
+
+      final response = await _supabase.rpc(
+        'fn_desvincular_usuario_trabajador',
+        params: {'p_trabajador_id': workerId, 'p_id_tienda': storeId},
+      );
+
+      print('📋 Respuesta de desvinculación: $response');
+
+      if (response['success'] == true) {
+        return true;
+      } else {
+        throw Exception(
+          response['message'] ?? 'Error al desvincular usuario del trabajador',
+        );
+      }
+    } catch (e) {
+      print('❌ Error en removeWorkerUser: $e');
+      throw Exception('Error al desvincular usuario del trabajador: $e');
     }
   }
 

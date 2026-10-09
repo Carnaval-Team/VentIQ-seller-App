@@ -40,7 +40,10 @@ class OrderService {
     return true;
   }
 
-  bool applyLocalOrderPagos(String orderId, List<Map<String, dynamic>> payments) {
+  bool applyLocalOrderPagos(
+    String orderId,
+    List<Map<String, dynamic>> payments,
+  ) {
     final idx = _orders.indexWhere((o) => o.id == orderId);
     if (idx == -1) return false;
     _orders[idx] = _orders[idx].copyWith(
@@ -2762,6 +2765,38 @@ class OrderService {
   }
 
   // ==================== EDICIÓN DE ÓRDENES PENDIENTES ====================
+
+  Future<Map<String, dynamic>> editPendingOrderV2({
+    required int operationId,
+    required List<Map<String, dynamic>> operations,
+  }) async {
+    try {
+      final userId = await UserPreferencesService().getUserId();
+      if (userId == null) {
+        return {'success': false, 'error': 'Usuario no encontrado'};
+      }
+
+      final response = await Supabase.instance.client.rpc(
+        'fn_editar_orden_pendiente_v2',
+        params: {
+          'p_id_operacion': operationId,
+          'p_operaciones': operations,
+          'p_uuid_usuario': userId,
+        },
+      );
+      final result = Map<String, dynamic>.from(response as Map);
+      if (result['status'] != 'success') {
+        return {
+          'success': false,
+          'error': result['message'] ?? 'No se pudo editar la orden',
+        };
+      }
+
+      return {'success': true, ...result};
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
 
   /// Actualiza la cantidad de un producto en una orden pendiente.
   /// [idExtraccion]: ID en app_dat_extraccion_productos

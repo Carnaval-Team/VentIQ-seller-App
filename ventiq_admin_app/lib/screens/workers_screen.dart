@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../widgets/admin_drawer.dart';
@@ -480,12 +481,52 @@ class _WorkersScreenState extends State<WorkersScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      worker.nombreCompleto,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                      ),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            worker.nombreCompleto,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 16,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (!worker.tieneUsuario) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.orange.shade300),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.person_off_outlined,
+                                  size: 11,
+                                  color: Colors.orange.shade800,
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  'Sin usuario',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.orange.shade800,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -569,8 +610,10 @@ class _WorkersScreenState extends State<WorkersScreen>
                   ],
                 ),
               ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
+              Wrap(
+                alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 0,
                 children: [
                   // Botón para crear usuario si no tiene UUID
                   if (!worker.tieneUsuario && _canEditWorkers)
@@ -579,6 +622,14 @@ class _WorkersScreenState extends State<WorkersScreen>
                       onPressed: () => _showCreateUserDialog(worker),
                       tooltip: 'Crear Usuario',
                       color: Colors.green,
+                    ),
+                  // Botón para desvincular usuario si tiene UUID
+                  if (worker.tieneUsuario && _canEditWorkers)
+                    IconButton(
+                      icon: const Icon(Icons.person_remove, size: 18),
+                      onPressed: () => _showUnlinkUserDialog(worker),
+                      tooltip: 'Desvincular Usuario',
+                      color: Colors.orange,
                     ),
                   if (_canEditWorkers)
                     IconButton(
@@ -1802,6 +1853,116 @@ class _WorkersScreenState extends State<WorkersScreen>
     );
   }
 
+  /// 🔐 Crea (o vincula) el usuario de acceso SIN perder la sesión del admin.
+  ///
+  /// `signUp`/`signInWithPassword` del SDK de cliente reemplazan la sesión
+  /// activa por la del usuario nuevo, por eso la sesión actual se guarda antes
+  /// y se restaura al terminar (con éxito o con error).
+  ///
+  /// Devuelve el UUID verificado del usuario y si el usuario ya existía.
+  /// Lanza excepción si el usuario no pudo crearse ni verificarse, por lo que
+  /// quien lo llame puede garantizar que el trabajador solo se crea cuando el
+  /// usuario quedó correctamente resuelto.
+  Future<({String uuid, bool alreadyExisted})> _resolverUsuarioAcceso({
+    required String email,
+    required String password,
+    required String nombres,
+    required String apellidos,
+  }) async {
+    final supabase = Supabase.instance.client;
+
+    final adminSession = supabase.auth.currentSession;
+    final adminUserId = adminSession?.user.id;
+    final adminSessionJson =
+        adminSession == null ? null : jsonEncode(adminSession.toJson());
+
+    String? userUuid;
+    var alreadyExisted = false;
+
+    try {
+      print('🔐 Resolviendo usuario de acceso para $email ...');
+
+      // 1. Intentar registrar el usuario
+      try {
+        final authResponse = await supabase.auth.signUp(
+          email: email,
+          password: password,
+          data: {
+            'nombres': nombres,
+            'apellidos': apellidos,
+            'full_name': '$nombres $apellidos',
+          },
+          emailRedirectTo: null,
+        );
+
+        final user = authResponse.user;
+        if (user == null) {
+          throw Exception('Error al registrar usuario en Supabase Auth');
+        }
+
+        // Con protección contra enumeración de emails activa, el servidor
+        // devuelve un usuario "fantasma" (sin identities) cuando el email ya
+        // existe, en lugar de lanzar error. Se trata como usuario existente.
+        if (user.identities != null && user.identities!.isEmpty) {
+          throw StateError('user_already_exists');
+        }
+
+        userUuid = user.id;
+        print('✅ Usuario registrado con UUID: $userUuid');
+      } catch (signUpError) {
+        final msg = signUpError.toString();
+        final yaExiste =
+            msg.contains('user_already_exists') ||
+            msg.contains('User already registered');
+
+        if (!yaExiste) rethrow;
+
+        print(
+          '⚠️ Usuario ya existe, verificando credenciales para vincular...',
+        );
+
+        // 2. Ya existe: comprobar las credenciales y obtener su UUID real
+        try {
+          final loginResponse = await supabase.auth.signInWithPassword(
+            email: email,
+            password: password,
+          );
+
+          if (loginResponse.user == null) {
+            throw Exception(
+              'No se pudo obtener el UUID del usuario existente',
+            );
+          }
+
+          userUuid = loginResponse.user!.id;
+          alreadyExisted = true;
+          print('✅ Usuario existente verificado con UUID: $userUuid');
+        } catch (loginError) {
+          print('❌ Error al autenticar usuario existente: $loginError');
+          throw Exception(
+            'El email ya está registrado pero las credenciales no coinciden. '
+            'Verifica la contraseña del usuario.',
+          );
+        }
+      }
+    } finally {
+      // Restaurar la sesión del admin si fue reemplazada por la del usuario
+      if (adminSessionJson != null && adminUserId != null) {
+        try {
+          final currentUserId = supabase.auth.currentSession?.user.id;
+          if (currentUserId != adminUserId) {
+            await supabase.auth.recoverSession(adminSessionJson);
+            print('🔄 Sesión del administrador restaurada');
+          }
+        } catch (e) {
+          print('⚠️ No se pudo restaurar la sesión del administrador: $e');
+        }
+      }
+    }
+
+    return (uuid: userUuid, alreadyExisted: alreadyExisted);
+  }
+
   // 🆕 Método flexible para crear trabajador (con o sin usuario)
   Future<void> _createWorkerFlexible({
     required String nombres,
@@ -1888,107 +2049,62 @@ class _WorkersScreenState extends State<WorkersScreen>
       String? userUuid;
       bool userAlreadyExisted = false;
 
-      // CASO 1: Crear usuario
+      // CASO 1: Crear el usuario PRIMERO y verificar que quedó resuelto;
+      // solo si es exitoso se crea el trabajador.
       if (crearUsuario) {
-        print('🔐 Registrando usuario en Supabase Auth...');
-        final supabase = Supabase.instance.client;
+        final resolucion = await _resolverUsuarioAcceso(
+          email: email!,
+          password: password!,
+          nombres: nombres,
+          apellidos: apellidos,
+        );
+        userUuid = resolucion.uuid;
+        userAlreadyExisted = resolucion.alreadyExisted;
 
         try {
-          final authResponse = await supabase.auth.signUp(
-            email: email!,
-            password: password!,
-            data: {
-              'nombres': nombres,
-              'apellidos': apellidos,
-              'full_name': '$nombres $apellidos',
-            },
-            emailRedirectTo: null,
-          );
-
-          if (authResponse.user == null) {
-            throw Exception('Error al registrar usuario en Supabase Auth');
-          }
-
-          userUuid = authResponse.user!.id;
-          print('✅ Usuario registrado con UUID: $userUuid');
-        } catch (signUpError) {
-          // Verificar si el error es por usuario ya existente
-          if (signUpError.toString().contains('user_already_exists') ||
-              signUpError.toString().contains('User already registered')) {
-            print(
-              '⚠️ Usuario ya existe, intentando vincular con credenciales existentes...',
+          // Si asigna rol específico
+          if (asignarRolEspecifico && tipoRol != null) {
+            print('👤 Creando trabajador con rol específico: $tipoRol');
+            final success = await WorkerService.createWorker(
+              storeId: _storeId!,
+              nombres: nombres,
+              apellidos: apellidos,
+              tipoRol: tipoRol,
+              usuarioUuid: userUuid,
+              salarioHoras: salarioHoras, // 💰 NUEVO
+              salarioDia: salarioDia, // 💰 NUEVO
+              tipoSalario: tipoSalario, // 💰 NUEVO
+              tpvId: tpvId,
+              almacenId: almacenId,
+              numeroConfirmacion: numeroConfirmacion,
             );
 
-            try {
-              // Intentar autenticar con el usuario existente
-              final loginResponse = await supabase.auth.signInWithPassword(
-                email: email!,
-                password: password!,
-              );
-
-              if (loginResponse.user != null) {
-                userUuid = loginResponse.user!.id;
-                userAlreadyExisted = true;
-                print(
-                  '✅ Usuario existente autenticado exitosamente con UUID: $userUuid',
-                );
-              } else {
-                throw Exception(
-                  'No se pudo obtener el UUID del usuario existente',
-                );
-              }
-            } catch (loginError) {
-              print('❌ Error al autenticar usuario existente: $loginError');
-              throw Exception(
-                'El email ya está registrado pero no se pudo autenticar. Verifica la contraseña.',
-              );
+            if (!success) {
+              throw Exception('Error al crear trabajador con rol específico');
             }
           } else {
-            rethrow;
+            // Solo crear trabajador con UUID, sin rol específico
+            print('👤 Creando trabajador con usuario pero sin rol específico');
+            final success = await WorkerService.createWorkerBasic(
+              storeId: _storeId!,
+              nombres: nombres,
+              apellidos: apellidos,
+              usuarioUuid: userUuid,
+              salarioHoras: salarioHoras, // 💰 NUEVO
+              salarioDia: salarioDia, // 💰 NUEVO
+              tipoSalario: tipoSalario, // 💰 NUEVO
+              rolId: rolGeneralId,
+            );
+
+            if (!success) {
+              throw Exception('Error al crear trabajador');
+            }
           }
-        }
-
-        if (userUuid == null) {
-          throw Exception('No se pudo obtener el UUID del usuario');
-        }
-
-        // Si asigna rol específico
-        if (asignarRolEspecifico && tipoRol != null) {
-          print('👤 Creando trabajador con rol específico: $tipoRol');
-          final success = await WorkerService.createWorker(
-            storeId: _storeId!,
-            nombres: nombres,
-            apellidos: apellidos,
-            tipoRol: tipoRol,
-            usuarioUuid: userUuid,
-            salarioHoras: salarioHoras, // 💰 NUEVO
-            salarioDia: salarioDia, // 💰 NUEVO
-            tipoSalario: tipoSalario, // 💰 NUEVO
-            tpvId: tpvId,
-            almacenId: almacenId,
-            numeroConfirmacion: numeroConfirmacion,
+        } catch (e) {
+          throw Exception(
+            'El usuario $email quedó ${userAlreadyExisted ? "verificado" : "creado"} '
+            'correctamente, pero no se pudo crear el trabajador: $e',
           );
-
-          if (!success) {
-            throw Exception('Error al crear trabajador con rol específico');
-          }
-        } else {
-          // Solo crear trabajador con UUID, sin rol específico
-          print('👤 Creando trabajador con usuario pero sin rol específico');
-          final success = await WorkerService.createWorkerBasic(
-            storeId: _storeId!,
-            nombres: nombres,
-            apellidos: apellidos,
-            usuarioUuid: userUuid,
-            salarioHoras: salarioHoras, // 💰 NUEVO
-            salarioDia: salarioDia, // 💰 NUEVO
-            tipoSalario: tipoSalario, // 💰 NUEVO
-            rolId: rolGeneralId,
-          );
-
-          if (!success) {
-            throw Exception('Error al crear trabajador');
-          }
         }
       }
       // CASO 2: No crear usuario (UUID null)
@@ -2466,6 +2582,80 @@ class _WorkersScreenState extends State<WorkersScreen>
     }
   }
 
+  // Métodos para desvincular usuario de un trabajador existente
+  void _showUnlinkUserDialog(WorkerData worker) {
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Desvincular Usuario'),
+            content: Text(
+              '¿Estás seguro de que deseas desvincular el usuario de '
+              '${worker.nombreCompleto}?\n\n'
+              'Se eliminarán sus roles en el sistema (gerente, supervisor, '
+              'dependiente, almacenero, recursos humanos, auditor).\n\n'
+              'La cuenta del usuario NO se eliminará de Supabase Auth; solo '
+              'perderá el acceso a esta tienda.\n\n'
+              'Esta acción no se puede deshacer.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () => _unlinkUser(worker),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                child: const Text('Desvincular'),
+              ),
+            ],
+          ),
+    );
+  }
+
+  Future<void> _unlinkUser(WorkerData worker) async {
+    if (_storeId == null) {
+      _showErrorDialog('Error: No se pudo obtener el ID de la tienda');
+      return;
+    }
+
+    if (worker.usuarioUuid == null || worker.usuarioUuid!.isEmpty) {
+      _showErrorDialog('Este trabajador no tiene un usuario vinculado');
+      return;
+    }
+
+    Navigator.pop(context); // Cerrar diálogo
+
+    // Opcional: mostrar un indicador de carga
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final success = await WorkerService.removeWorkerUser(
+        workerId: worker.trabajadorId,
+        storeId: _storeId!,
+      );
+
+      if (mounted) Navigator.pop(context); // Cerrar indicador de carga
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Usuario desvinculado exitosamente'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        await _loadWorkersData(); // Recargar datos
+      }
+    } catch (e) {
+      if (mounted) Navigator.pop(context); // Cerrar indicador de carga en error
+      _showErrorDialog('Error al desvincular usuario: $e');
+    }
+  }
+
   // Métodos para gestión de roles
   void _showAddRoleDialog() {
     final denominacionController = TextEditingController();
@@ -2889,82 +3079,38 @@ class _WorkersScreenState extends State<WorkersScreen>
     );
 
     try {
-      // Paso 1: Registrar usuario en Supabase Auth
-      print('🔐 Registrando usuario en Supabase Auth...');
-      final supabase = Supabase.instance.client;
-
-      String? userUuid;
-      bool userAlreadyExisted = false;
-
-      try {
-        final authResponse = await supabase.auth.signUp(
-          email: email,
-          password: password,
-          data: {
-            'nombres': worker.nombres,
-            'apellidos': worker.apellidos,
-            'full_name': worker.nombreCompleto,
-          },
-          emailRedirectTo: null,
-        );
-
-        if (authResponse.user == null) {
-          throw Exception('Error al registrar usuario en Supabase Auth');
-        }
-
-        userUuid = authResponse.user!.id;
-        print('✅ Usuario registrado con UUID: $userUuid');
-      } catch (signUpError) {
-        // Verificar si el error es por usuario ya existente
-        if (signUpError.toString().contains('user_already_exists') ||
-            signUpError.toString().contains('User already registered')) {
-          print(
-            '⚠️ Usuario ya existe, intentando vincular con credenciales existentes...',
-          );
-
-          try {
-            // Intentar autenticar con el usuario existente
-            final loginResponse = await supabase.auth.signInWithPassword(
-              email: email,
-              password: password,
-            );
-
-            if (loginResponse.user != null) {
-              userUuid = loginResponse.user!.id;
-              userAlreadyExisted = true;
-              print(
-                '✅ Usuario existente autenticado exitosamente con UUID: $userUuid',
-              );
-            } else {
-              throw Exception(
-                'No se pudo obtener el UUID del usuario existente',
-              );
-            }
-          } catch (loginError) {
-            print('❌ Error al autenticar usuario existente: $loginError');
-            throw Exception(
-              'El email ya está registrado pero no se pudo autenticar. Verifica la contraseña.',
-            );
-          }
-        } else {
-          rethrow;
-        }
-      }
-
-      if (userUuid == null) {
-        throw Exception('No se pudo obtener el UUID del usuario');
-      }
+      // Paso 1: Crear/verificar el usuario PRIMERO (sin perder la sesión
+      // del admin); solo si es exitoso se asocia el UUID al trabajador.
+      final resolucion = await _resolverUsuarioAcceso(
+        email: email,
+        password: password,
+        nombres: worker.nombres,
+        apellidos: worker.apellidos,
+      );
+      final userUuid = resolucion.uuid;
+      final userAlreadyExisted = resolucion.alreadyExisted;
 
       // Paso 2: Actualizar trabajador con el UUID
       print('🔄 Actualizando trabajador con UUID...');
-      final success = await WorkerService.updateWorkerUUID(
-        workerId: worker.trabajadorId,
-        storeId: _storeId!,
-        uuid: userUuid,
-      );
+      bool success;
+      try {
+        success = await WorkerService.updateWorkerUUID(
+          workerId: worker.trabajadorId,
+          storeId: _storeId!,
+          uuid: userUuid,
+        );
+      } catch (e) {
+        throw Exception(
+          'El usuario $email quedó resuelto, pero no se pudo asociar al '
+          'trabajador: $e. Inténtalo de nuevo desde el botón Crear Usuario.',
+        );
+      }
 
       if (!success) {
-        throw Exception('Error al actualizar trabajador con UUID');
+        throw Exception(
+          'El usuario $email quedó resuelto, pero no se pudo asociar al '
+          'trabajador (la actualización no afectó ninguna fila).',
+        );
       }
 
       Navigator.pop(context); // Cerrar loading

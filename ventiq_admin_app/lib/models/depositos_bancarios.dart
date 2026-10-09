@@ -244,6 +244,7 @@ class DepositoBancario {
   final int? idTipoExtraccion;
   final String? denominacionTipoExtraccion;
   final String? colorTipoExtraccion;
+  final String? observacion;
   final int idBanco;
   final String? nombreBanco;
   final int idtienda;
@@ -262,6 +263,7 @@ class DepositoBancario {
     this.idTipoExtraccion,
     this.denominacionTipoExtraccion,
     this.colorTipoExtraccion,
+    this.observacion,
     required this.idBanco,
     this.nombreBanco,
     required this.idtienda,
@@ -287,6 +289,7 @@ class DepositoBancario {
       idTipoExtraccion: json['id_tipo_extraccion'],
       denominacionTipoExtraccion: tipoExtraccion?['denominacion'],
       colorTipoExtraccion: tipoExtraccion?['color'],
+      observacion: json['observacion'],
       idBanco: json['id_banco'] ?? 0,
       nombreBanco: banco?['denominacion'] as String?,
       idtienda: json['idtienda'] ?? 0,
@@ -312,6 +315,7 @@ class DepositoBancario {
       idTipoExtraccion: idTipoExtraccion,
       denominacionTipoExtraccion: denominacionTipoExtraccion,
       colorTipoExtraccion: colorTipoExtraccion,
+      observacion: observacion,
       idBanco: idBanco,
       nombreBanco: nombreBanco,
       idtienda: idtienda,

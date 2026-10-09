@@ -747,6 +747,7 @@ class PermissionsService {
     'supplier.edit': [UserRole.gerente],
     'supplier.delete': [UserRole.gerente],
     'supplier.view': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
+    'supplier.invoice.delete': [UserRole.gerente],
 
     // Finanzas
     'financial.view': [UserRole.gerente, UserRole.auditor],
@@ -795,6 +796,9 @@ class PermissionsService {
     'consignacion.edit': [UserRole.gerente, UserRole.supervisor],
     'consignacion.delete': [UserRole.gerente, UserRole.supervisor],
     'consignacion.confirm': [UserRole.gerente, UserRole.supervisor],
+
+    // Carnaval: exportar órdenes mostradas (datos de clientes y ventas)
+    'carnaval.export': [UserRole.gerente, UserRole.supervisor],
 
     // Cuentas por Cobrar
     'cxc.view': [UserRole.gerente, UserRole.supervisor],

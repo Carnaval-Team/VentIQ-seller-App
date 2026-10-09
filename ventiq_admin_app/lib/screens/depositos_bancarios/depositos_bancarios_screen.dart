@@ -792,6 +792,7 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
 
     final numFacturaCtrl = TextEditingController();
     final valorCtrl = TextEditingController();
+    final obsCtrl = TextEditingController();
     DateTime selectedDate = DateTime.now();
     final List<({Uint8List bytes, String nombre, String mimeType})> fotos = [];
 
@@ -876,6 +877,16 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
                       onChanged: (value) {
                         setDialogState(() => selectedTipoId = value);
                       },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: obsCtrl,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Observaciones (opcional)',
+                        hintText: 'Ej. destino del dinero, referencia externa...',
+                        border: OutlineInputBorder(),
+                      ),
                     ),
                     const SizedBox(height: 12),
                     InkWell(
@@ -1112,6 +1123,9 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
                       valor: valor,
                       fechaProcesamiento: selectedDate,
                       idTipoExtraccion: selectedTipoId,
+                      observacion: obsCtrl.text.trim().isEmpty
+                          ? null
+                          : obsCtrl.text.trim(),
                       fotosEntradas: fotos,
                     );
                     await _loadAllData();
@@ -1141,6 +1155,7 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
     final valorCtrl = TextEditingController(
       text: factura.valor.toStringAsFixed(2),
     );
+    final obsCtrl = TextEditingController(text: factura.observacion ?? '');
 
     showDialog(
       context: context,
@@ -1220,6 +1235,15 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
                   setDialogState(() => selectedTipoId = value);
                 },
               ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: obsCtrl,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  labelText: 'Observaciones (opcional)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
             ],
           ),
         ),
@@ -1254,6 +1278,7 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
                   valorAnterior: factura.valor,
                   nuevoValor: nuevoValor,
                   idTipoExtraccion: selectedTipoId,
+                  observacion: obsCtrl.text.trim(),
                 );
                 await _loadAllData();
                 _showSuccess('Extracción actualizada correctamente');
@@ -1321,6 +1346,175 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // ==================== DIALOGO DETALLE ====================
+
+  void _showDetalleDepositoDialog(DepositoBancario factura) {
+    final estadoColor = _hexToColor(factura.colorEstado);
+    final tipoColor = _hexToColor(factura.colorTipoExtraccion);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Extracción #${factura.numeroDeposito}'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildDetalleDepositoRow(
+                Icons.attach_money,
+                'Valor',
+                _currencyFmt.format(factura.valor),
+              ),
+              _buildDetalleDepositoRow(
+                Icons.calendar_today,
+                'Procesamiento',
+                _dateFmt.format(factura.fechaProcesamiento),
+              ),
+              _buildDetalleDepositoRow(
+                Icons.schedule,
+                'Registrada',
+                _dateFmt.format(factura.createdAt),
+              ),
+              _buildDetalleDepositoRow(
+                Icons.account_balance_outlined,
+                'Cuenta',
+                factura.nombreBanco ?? '—',
+              ),
+              _buildDetalleDepositoRow(
+                Icons.comment_outlined,
+                'Observaciones',
+                (factura.observacion != null &&
+                        factura.observacion!.isNotEmpty)
+                    ? factura.observacion!
+                    : '—',
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  children: [
+                    Icon(Icons.output, size: 16, color: tipoColor),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Tipo: ',
+                      style: TextStyle(fontSize: 13, color: Colors.grey),
+                    ),
+                    Flexible(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: tipoColor.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: tipoColor.withOpacity(0.4)),
+                        ),
+                        child: Text(
+                          factura.denominacionTipoExtraccion ?? 'Sin tipo',
+                          style: TextStyle(
+                            color: tipoColor,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  children: [
+                    Icon(Icons.label_outline, size: 16, color: estadoColor),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Estado: ',
+                      style: TextStyle(fontSize: 13, color: Colors.grey),
+                    ),
+                    Flexible(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: estadoColor.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: estadoColor.withOpacity(0.4),
+                          ),
+                        ),
+                        child: Text(
+                          factura.denominacionEstado ?? 'Sin estado',
+                          style: TextStyle(
+                            color: estadoColor,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _buildDetalleDepositoRow(
+                Icons.attach_file,
+                'Archivos',
+                factura.fotos.isEmpty
+                    ? 'Sin archivos adjuntos'
+                    : '${factura.fotos.length} archivo(s) adjunto(s)',
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _showHistorialEstadosDialog(factura);
+            },
+            icon: const Icon(Icons.history, size: 16),
+            label: const Text('Historial'),
+          ),
+          TextButton.icon(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _showGestionFotosDialog(factura);
+            },
+            icon: const Icon(Icons.photo_library_outlined, size: 16),
+            label: const Text('Archivos'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetalleDepositoRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: Colors.grey[600]),
+          const SizedBox(width: 8),
+          Text('$label: ', style: const TextStyle(fontSize: 13, color: Colors.grey)),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2576,193 +2770,255 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
 
   Widget _buildDepositoCard(DepositoBancario factura) {
     final estadoColor = _hexToColor(factura.colorEstado);
+    final tipoColor = _hexToColor(factura.colorTipoExtraccion);
 
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Extracción #${factura.numeroDeposito}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _showDetalleDepositoDialog(factura),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Extracción #${factura.numeroDeposito}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Procesamiento: ${_dateFmt.format(factura.fechaProcesamiento)}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
+                        ),
+                        if (factura.denominacionTipoExtraccion != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.output, size: 12, color: tipoColor),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    factura.denominacionTipoExtraccion!,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: tipoColor,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (factura.fotos.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: GestureDetector(
+                        onTap: () => _showGestionFotosDialog(factura),
+                        child: Stack(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: Image.network(
+                                factura.fotos.first.fotoUrl,
+                                width: 42,
+                                height: 42,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => const Icon(
+                                  Icons.image_not_supported_outlined,
+                                  size: 42,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ),
+                            if (factura.fotos.length > 1)
+                              Positioned(
+                                bottom: 0,
+                                right: 0,
+                                child: Container(
+                                  padding: const EdgeInsets.all(2),
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.primary,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Text(
+                                    '${factura.fotos.length}',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Procesamiento: ${_dateFmt.format(factura.fechaProcesamiento)}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey,
+                    ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: estadoColor.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: estadoColor.withOpacity(0.4)),
+                    ),
+                    child: Text(
+                      factura.denominacionEstado ?? 'Sin estado',
+                      style: TextStyle(
+                        color: estadoColor,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.attach_money,
+                    size: 18,
+                    color: AppColors.primary,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _currencyFmt.format(factura.valor),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ],
+              ),
+              if (factura.observacion != null &&
+                  factura.observacion!.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.comment_outlined,
+                        size: 12,
+                        color: Colors.grey[600],
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          factura.observacion!,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[700],
+                            fontStyle: FontStyle.italic,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
                   ),
                 ),
-                if (factura.fotos.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: GestureDetector(
-                      onTap: () => _showGestionFotosDialog(factura),
-                      child: Stack(
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(6),
-                            child: Image.network(
-                              factura.fotos.first.fotoUrl,
-                              width: 42,
-                              height: 42,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => const Icon(
-                                Icons.image_not_supported_outlined,
-                                size: 42,
-                                color: Colors.grey,
-                              ),
-                            ),
-                          ),
-                          if (factura.fotos.length > 1)
-                            Positioned(
-                              bottom: 0,
-                              right: 0,
-                              child: Container(
-                                padding: const EdgeInsets.all(2),
-                                decoration: const BoxDecoration(
-                                  color: AppColors.primary,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Text(
-                                  '${factura.fotos.length}',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  TextButton.icon(
+                    onPressed: () => _showGestionFotosDialog(factura),
+                    icon: Icon(
+                      factura.fotos.isNotEmpty
+                          ? Icons.photo_library_outlined
+                          : Icons.add_a_photo_outlined,
+                      size: 16,
+                    ),
+                    label: Text(
+                      factura.fotos.isNotEmpty
+                          ? 'Fotos (${factura.fotos.length})'
+                          : 'Añadir Foto',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    style: TextButton.styleFrom(
+                      foregroundColor: factura.fotos.isNotEmpty
+                          ? AppColors.primary
+                          : Colors.grey,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: () => _showHistorialEstadosDialog(factura),
+                    icon: const Icon(Icons.history, size: 16),
+                    label: const Text(
+                      'Historial',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.grey,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: () => _showEditarDepositoDialog(factura),
+                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    label: const Text('Editar', style: TextStyle(fontSize: 12)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.grey.shade700,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
                       ),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                   ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: estadoColor.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: estadoColor.withOpacity(0.4)),
-                  ),
-                  child: Text(
-                    factura.denominacionEstado ?? 'Sin estado',
-                    style: TextStyle(
-                      color: estadoColor,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
+                  ElevatedButton.icon(
+                    onPressed: () => _showCambioEstadoDialog(factura),
+                    icon: const Icon(Icons.swap_horiz, size: 16),
+                    label: const Text('Estado', style: TextStyle(fontSize: 12)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                const Icon(
-                  Icons.attach_money,
-                  size: 18,
-                  color: AppColors.primary,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  _currencyFmt.format(factura.valor),
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primary,
-                  ),
-                ),
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: () => _showGestionFotosDialog(factura),
-                  icon: Icon(
-                    factura.fotos.isNotEmpty
-                        ? Icons.photo_library_outlined
-                        : Icons.add_a_photo_outlined,
-                    size: 16,
-                  ),
-                  label: Text(
-                    factura.fotos.isNotEmpty
-                        ? 'Fotos (${factura.fotos.length})'
-                        : 'Añadir Foto',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  style: TextButton.styleFrom(
-                    foregroundColor: factura.fotos.isNotEmpty
-                        ? AppColors.primary
-                        : Colors.grey,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                  ),
-                ),
-                TextButton.icon(
-                  onPressed: () => _showHistorialEstadosDialog(factura),
-                  icon: const Icon(Icons.history, size: 16),
-                  label: const Text(
-                    'Historial',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.grey,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                ElevatedButton.icon(
-                  onPressed: () => _showEditarDepositoDialog(factura),
-                  icon: const Icon(Icons.edit_outlined, size: 16),
-                  label: const Text('Editar', style: TextStyle(fontSize: 12)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.grey.shade700,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                ElevatedButton.icon(
-                  onPressed: () => _showCambioEstadoDialog(factura),
-                  icon: const Icon(Icons.swap_horiz, size: 16),
-                  label: const Text('Estado', style: TextStyle(fontSize: 12)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
+
 
   ElevatedButton _buildSubmitButton({
     required bool isLoading,

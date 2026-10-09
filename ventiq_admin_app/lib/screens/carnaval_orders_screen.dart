@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/carnaval_pickup_summary.dart';
 import '../services/carnaval_service.dart';
 import '../services/export_service.dart';
+import '../services/permissions_service.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/whatsapp_helper.dart';
 import '../widgets/admin_drawer.dart';
@@ -53,6 +54,7 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
   int? _carnavalStoreId;
   int? _ventiqStoreId;
   bool _isAdmin = false;
+  bool _canExport = false;
   List<Map<String, dynamic>> _orders = [];
   Map<int, int> _ventiqOps = {}; // carnaval order id -> ventiq operation id
   // id repartidor -> {nombre, telefono}. Se carga una sola vez (son pocos)
@@ -111,6 +113,9 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       }
       _carnavalStoreId = carnavalId;
       _isAdmin = _adminIds.contains(carnavalId);
+      _canExport = await PermissionsService().canPerformAction(
+        'carnaval.export',
+      );
       _repartidores = await CarnavalService.getRepartidoresMap();
       await _loadOrders();
     } catch (e) {
@@ -619,6 +624,17 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
   }
 
   Future<void> _showExportDialog() async {
+    if (!_canExport) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No tienes permiso para exportar las órdenes'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
     if (_orders.isEmpty || _isExporting) return;
     final format = await showModalBottomSheet<ExportFormat>(
       context: context,
@@ -1083,7 +1099,8 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       ),
       endDrawer: const AdminDrawer(),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-      floatingActionButton: _orders.isEmpty || _carnavalStoreId == null
+      floatingActionButton:
+          _orders.isEmpty || _carnavalStoreId == null || !_canExport
           ? null
           : FloatingActionButton.extended(
               onPressed: _isExporting ? null : _showExportDialog,
