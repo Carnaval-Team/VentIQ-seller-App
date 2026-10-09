@@ -234,6 +234,8 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen>
     }
   }
 
+  // Conservado: la UI de eliminar factura está oculta por ahora.
+  // ignore: unused_element
   Future<void> _confirmEliminarFactura(ProveedorFactura factura) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -2902,18 +2904,19 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen>
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                 ),
-                const SizedBox(width: 4),
-                IconButton(
-                  tooltip: 'Eliminar factura',
-                  icon: Icon(
-                    Icons.delete_outline,
-                    color: Colors.red.shade700,
-                    size: 20,
-                  ),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  onPressed: () => _confirmEliminarFactura(factura),
-                ),
+                // Eliminar factura deshabilitado por el momento.
+                // const SizedBox(width: 4),
+                // IconButton(
+                //   tooltip: 'Eliminar factura',
+                //   icon: Icon(
+                //     Icons.delete_outline,
+                //     color: Colors.red.shade700,
+                //     size: 20,
+                //   ),
+                //   padding: EdgeInsets.zero,
+                //   constraints: const BoxConstraints(),
+                //   onPressed: () => _confirmEliminarFactura(factura),
+                // ),
               ],
             ),
           ],

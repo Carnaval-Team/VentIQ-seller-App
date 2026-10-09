@@ -242,6 +242,11 @@ class AppDrawer extends StatelessWidget {
                       title: 'Banners inicio',
                       route: '/banners-inicio',
                     ),
+                    _DrawerItem(
+                      icon: Icons.campaign_outlined,
+                      title: 'Espacio patrocinado',
+                      route: '/patrocinados',
+                    ),
                   ],
                 ),
                 _buildMenuSection(
