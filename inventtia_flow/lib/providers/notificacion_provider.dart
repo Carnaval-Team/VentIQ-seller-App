@@ -20,8 +20,20 @@ class NotificacionProvider extends ChangeNotifier {
   final Set<int> _conocidos = {};
   bool _snapshotInicialRecibido = false;
 
+  /// Semilla del feed del Home: se usa **solo** antes del primer snapshot.
+  ///
+  /// En cuanto `_snapshotInicialRecibido` es `true` la lista es la única
+  /// autoridad, así que una semilla vieja no puede quedarse pegada.
+  int? _semillaNoLeidas;
+
   List<Notificacion> get items => _items;
-  int get unreadCount => _items.where((n) => !n.leida).length;
+
+  int get unreadCount {
+    final semilla = _semillaNoLeidas;
+    if (!_snapshotInicialRecibido && semilla != null) return semilla;
+    return _items.where((n) => !n.leida).length;
+  }
+
   bool get hayNoLeidas => unreadCount > 0;
 
   NotificacionProvider() {
@@ -43,6 +55,7 @@ class NotificacionProvider extends ChangeNotifier {
     _uuid = uuid;
     _conocidos.clear();
     _snapshotInicialRecibido = false;
+    _semillaNoLeidas = null;
     _items = [];
     notifyListeners();
 
@@ -83,7 +96,20 @@ class NotificacionProvider extends ChangeNotifier {
     _uuid = null;
     _conocidos.clear();
     _snapshotInicialRecibido = false;
+    _semillaNoLeidas = null;
     _items = [];
+    notifyListeners();
+  }
+
+  /// Siembra el contador de no leídas con el snapshot del feed del Home.
+  ///
+  /// Evita que el badge aparezca vacío hasta que llegue el primer snapshot del
+  /// realtime. Si el stream ya trajo datos, no hace nada: manda la lista.
+  void sembrarNoLeidas(int noLeidas) {
+    if (_snapshotInicialRecibido) return;
+    final valor = noLeidas < 0 ? 0 : noLeidas;
+    if (_semillaNoLeidas == valor) return;
+    _semillaNoLeidas = valor;
     notifyListeners();
   }
 

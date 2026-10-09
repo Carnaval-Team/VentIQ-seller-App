@@ -7,6 +7,11 @@ import '../config/app_theme.dart';
 import '../config/home_features.dart';
 import '../providers/auth_provider.dart';
 import '../providers/favoritos_provider.dart';
+import '../providers/notificacion_provider.dart';
+import '../providers/reservas_provider.dart';
+import '../services/campana_service.dart';
+import '../services/coleccion_service.dart';
+import '../services/fidelidad_service.dart';
 import '../services/home_catalog_service.dart';
 import '../services/resena_service.dart';
 import '../utils/horario_atencion.dart';
@@ -36,6 +41,17 @@ class HomeClientScreenState extends State<HomeClientScreen>
   late final AnimationController _shineController;
 
   List<HomeCatalogItem> _items = const [];
+
+  /// Muestra completa que devolvió el servidor, ya filtrada por él.
+  ///
+  /// Se guarda entera para poder pasar de página sin red: el servidor todavía no
+  /// trocea (`has_more` llega `false`), así que paginar en memoria sigue siendo
+  /// lo correcto y "cargar más" no cuesta una petición.
+  List<HomeCatalogItem> _feedItems = const [];
+
+  /// Ranking semanal real (`cliente_ranking_semanal`). Vacío = no se pinta.
+  List<HomeCatalogItem> _rankingSemanal = const [];
+
   List<HomeCatalogCategory> _categories = const [HomeCatalogCategory.todas];
   bool _isLoading = true;
   bool _isLoadingMore = false;
@@ -56,6 +72,28 @@ class HomeClientScreenState extends State<HomeClientScreen>
   /// migración `26_resenas.sql` no está aplicada.
   List<Resena> _resenasRecientes = const [];
 
+  /// Campañas patrocinadas vigentes (`flow.campana`), curadas por el superadmin.
+  /// Vacío si la migración `28_patrocinados.sql` no está aplicada: en ese caso
+  /// la sección no se pinta, en vez de mostrar tarjetas inventadas.
+  List<CampanaPatrocinada> _campanas = const [];
+
+  /// Colecciones temáticas vigentes (`flow.coleccion`), curadas por el
+  /// superadmin. Vacío si la migración `30_colecciones.sql` no está aplicada: en
+  /// ese caso la sección no se pinta.
+  List<Coleccion> _colecciones = const [];
+
+  /// Colección seleccionada. `null` = sin filtro. Cuando hay una, el feed se
+  /// limita a sus servicios (filtrado en memoria, como la categoría).
+  Coleccion? _coleccionActiva;
+
+  /// Programa de fidelidad del usuario: saldo, regla vigente, beneficio de
+  /// bienvenida pendiente y últimos movimientos (`flow.cliente_mi_fidelidad`).
+  ///
+  /// `null` si la migración `31_fidelidad.sql` no está aplicada o no hay sesión.
+  /// En ese caso el banner no se pinta, en vez de anunciar un "20 % de descuento"
+  /// inventado como hacía antes.
+  MiFidelidad? _fidelidad;
+
   /// Mensaje del último fallo de lectura. `null` cuando el catálogo cargó.
   String? _error;
 
@@ -67,9 +105,14 @@ class HomeClientScreenState extends State<HomeClientScreen>
       vsync: this,
       duration: const Duration(milliseconds: 3200),
     )..repeat();
+    // El catálogo y las secciones curadas por el superadmin (categorías,
+    // colecciones, patrocinados) llegan juntos en una sola petición desde
+    // `_loadPage`. Solo quedan aparte las dos secciones que son del usuario y se
+    // refrescan por su cuenta.
     _loadPage(reset: true);
-    _loadCategorias();
+    _cargarRankingSemanal();
     _cargarResenasRecientes();
+    _cargarFidelidad();
   }
 
   @override
@@ -89,8 +132,9 @@ class HomeClientScreenState extends State<HomeClientScreen>
     await HomeCatalogService.clearCache();
     if (!mounted) return;
     await _loadPage(reset: true);
-    await _loadCategorias();
+    await _cargarRankingSemanal();
     await _cargarResenasRecientes();
+    await _cargarFidelidad();
   }
 
   Future<void> _loadPage({bool reset = false}) async {
@@ -109,14 +153,30 @@ class HomeClientScreenState extends State<HomeClientScreen>
     }
 
     try {
-      final page = await HomeCatalogService.fetchPage(
+      HomeFeed? feed;
+      if (reset) {
+        // UNA petición: el catálogo ya filtrado por el servidor (búsqueda,
+        // categoría, provincia, colección y orden) más las categorías, las
+        // colecciones, los patrocinados y los contadores del usuario.
+        feed = await HomeCatalogService.fetchFeed(
+          query: _query,
+          category: _category,
+          provincia: _provincia,
+          idColeccion: _coleccionActiva?.id,
+          topRated: _topRated,
+        );
+        if (!mounted) return;
+        _feedItems = feed.items;
+      }
+
+      // En el cliente solo queda el filtro de horario (a propósito: ver
+      // `HomeCatalogService.paginar`) y el troceado en páginas.
+      final page = HomeCatalogService.paginar(
+        catalogo: _feedItems,
         page: reset ? 1 : _page + 1,
-        query: _query,
-        category: _category,
         onlyOpen: _openNow,
-        topRated: _topRated,
-        provincia: _provincia,
       );
+
       if (!mounted) return;
       setState(() {
         _items = reset ? page.items : [..._items, ...page.items];
@@ -127,6 +187,16 @@ class HomeClientScreenState extends State<HomeClientScreen>
         _isLoading = false;
         _isLoadingMore = false;
       });
+
+      // Las secciones van después de pintar el catálogo: no retrasan la primera
+      // tarjeta, y `_aplicarColecciones` puede pedir una recarga si la colección
+      // activa desapareció.
+      if (feed != null) {
+        _aplicarCategorias(feed.categorias);
+        _aplicarColecciones(feed.colecciones);
+        _aplicarCampanas(feed.patrocinados);
+        _sembrarContadores(feed.contadores);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -139,15 +209,54 @@ class HomeClientScreenState extends State<HomeClientScreen>
     }
   }
 
-  /// Categorías reales del nomenclador (`flow.nom_tipo_actividad_servicio`).
-  Future<void> _loadCategorias() async {
-    final categorias = await HomeCatalogService.getCategorias();
+  /// Deja los contadores del feed como snapshot inicial de los badges.
+  ///
+  /// Es solo para el arranque en frío: cada provider ignora la semilla si ya
+  /// tiene su propio dato, así que el badge no aparece vacío durante el primer
+  /// segundo y **nunca** puede contradecir a su lista.
+  void _sembrarContadores(HomeContadores contadores) {
     if (!mounted) return;
+    context.read<NotificacionProvider>().sembrarNoLeidas(
+      contadores.notificaciones,
+    );
+    context.read<ReservasProvider>().sembrarPendientes(contadores.reservas);
+  }
+
+  /// Aplica el nomenclador que vino dentro del feed.
+  ///
+  /// "Todas" no se comprueba como las demás: no es una categoría real (su `id`
+  /// es `null`), así que nunca "desaparece" y no puede provocar un ciclo. Si la
+  /// categoría seleccionada sí desapareció (el superadmin la apagó), se quita el
+  /// filtro **y se relee**, porque ahora es el servidor quien filtra: la muestra
+  /// guardada correspondería a la categoría anterior.
+  void _aplicarCategorias(List<HomeCatalogCategory> categorias) {
+    if (!mounted) return;
+    final activa = _category;
+    final desaparecio =
+        !activa.esTodas && !categorias.any((c) => c.id == activa.id);
+
     setState(() {
       _categories = categorias;
-      final sigueExistiendo = categorias.any((c) => c.id == _category.id);
-      if (!sigueExistiendo) _category = HomeCatalogCategory.todas;
+      if (desaparecio) _category = HomeCatalogCategory.todas;
     });
+
+    if (desaparecio) _loadPage(reset: true);
+  }
+
+  /// Ranking semanal real: lugares reservados en la semana en curso.
+  ///
+  /// Si la migración 36 no está aplicada, o no hay reservas esta semana, deja la
+  /// lista vacía y el bloque no se pinta. Antes esta sección mostraba
+  /// `_items.take(3)` con posiciones 1-2-3 que no significaban nada.
+  Future<void> _cargarRankingSemanal() async {
+    if (!HomeFeatures.rankingSemanal) return;
+    try {
+      final ranking = await HomeCatalogService.fetchRankingSemanal();
+      if (!mounted) return;
+      setState(() => _rankingSemanal = ranking);
+    } catch (e) {
+      debugPrint('[flow] HomeClientScreen._cargarRankingSemanal ERROR: $e');
+    }
   }
 
   /// Últimas reseñas con comentario. Si el RPC no existe todavía, deja la lista
@@ -162,6 +271,102 @@ class HomeClientScreenState extends State<HomeClientScreen>
       if (!mounted) return;
       setState(() => _resenasRecientes = const []);
     }
+  }
+
+  /// Aplica las campañas patrocinadas que vinieron dentro del feed.
+  ///
+  /// El servidor ya las devuelve vigentes y ordenadas por prioridad, así que
+  /// aquí solo queda recolocar el carrusel si el superadmin quitó campañas y la
+  /// página actual quedó fuera de rango.
+  void _aplicarCampanas(List<CampanaPatrocinada> campanas) {
+    if (!mounted || !HomeFeatures.patrocinados) return;
+    final fueraDeRango = _sponsoredPage >= campanas.length;
+    setState(() {
+      _campanas = campanas;
+      if (fueraDeRango) _sponsoredPage = 0;
+    });
+    // El `PageController` es persistente: si el superadmin quitó campañas y la
+    // página actual quedó fuera de rango, hay que devolverlo al inicio o el
+    // carrusel arranca en una posición que ya no existe.
+    if (fueraDeRango && campanas.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_sponsoredController.hasClients) return;
+        _sponsoredController.jumpToPage(0);
+      });
+    }
+  }
+
+  /// Aplica las colecciones temáticas que vinieron dentro del feed.
+  ///
+  /// Si la colección seleccionada desapareció (el superadmin la apagó o le quitó
+  /// todos los servicios), se quita el filtro **y se relee** para no dejar el
+  /// feed vacío sin explicación.
+  void _aplicarColecciones(List<Coleccion> colecciones) {
+    if (!mounted || !HomeFeatures.colecciones) return;
+
+    final activa = _coleccionActiva;
+    final sigueExistiendo =
+        activa != null && colecciones.any((c) => c.id == activa.id);
+
+    setState(() {
+      _colecciones = colecciones;
+      if (!sigueExistiendo) _coleccionActiva = null;
+    });
+
+    if (activa != null && !sigueExistiendo) {
+      // El filtro ya no aplica: releer para que el feed vuelva a estar completo.
+      _loadPage(reset: true);
+    }
+  }
+
+  /// Saldo y movimientos de puntos, y el beneficio de bienvenida pendiente.
+  ///
+  /// Silencioso a propósito: si la migración no está aplicada el servicio
+  /// devuelve `null` y el banner simplemente no aparece. Un fallo de la fidelidad
+  /// nunca debe romper el Home ni impedir reservar.
+  Future<void> _cargarFidelidad() async {
+    if (!HomeFeatures.fidelidad) return;
+    final fidelidad = await FidelidadService.miFidelidad();
+    if (!mounted) return;
+    setState(() => _fidelidad = fidelidad);
+  }
+
+  /// Filtra el feed por una colección. Tocar la que ya está activa la quita.
+  void _selectColeccion(Coleccion coleccion) {
+    if (_coleccionActiva?.id == coleccion.id) {
+      _limpiarColeccion();
+      return;
+    }
+    setState(() => _coleccionActiva = coleccion);
+    _loadPage(reset: true);
+    _showToast('Mostrando ${coleccion.titulo}.');
+  }
+
+  void _limpiarColeccion() {
+    if (_coleccionActiva == null) return;
+    setState(() => _coleccionActiva = null);
+    _loadPage(reset: true);
+  }
+
+  /// Degradado de la tarjeta a partir de los colores que fijó el superadmin.
+  ///
+  /// Si un color no es un `#RRGGBB` válido se cae al degradado por defecto en
+  /// vez de romper el pintado: el campo lo escribe una persona en un formulario.
+  List<Color> _degradadoDe(Coleccion coleccion) {
+    final inicio = _colorHex(coleccion.colorInicio);
+    final fin = _colorHex(coleccion.colorFin);
+    if (inicio == null && fin == null) {
+      return const [Color(0xFF2C3654), Color(0xFF1FA8B8)];
+    }
+    return [inicio ?? fin!, fin ?? inicio!];
+  }
+
+  static Color? _colorHex(String? valor) {
+    final v = valor?.trim().replaceFirst('#', '');
+    if (v == null || v.length != 6) return null;
+    final n = int.tryParse(v, radix: 16);
+    if (n == null) return null;
+    return Color(0xFF000000 | n);
   }
 
   void _onScroll() {
@@ -755,31 +960,26 @@ class HomeClientScreenState extends State<HomeClientScreen>
     );
   }
 
+  /// Colecciones temáticas reales (`flow.coleccion`), curadas por el superadmin.
+  ///
+  /// Antes eran cuatro tarjetas inventadas ("Pack Novia", "Self-care Sunday",
+  /// "Ruta & Transporte", "Ofertas del día") con recuentos, emojis y colores que
+  /// no respaldaba ninguna tabla, y el toque no abría la colección: llevaba a la
+  /// categoría "más cercana" y avisaba con un toast. Ahora, si el superadmin no
+  /// ha curado ninguna, la sección **no se pinta**.
   Widget _buildCollections() {
-    const collections = [
-      _Collection('Pack Novia', '12 servicios', '💍', [
-        Color(0xFF8C5B72),
-        Color(0xFFC98CA4),
-      ]),
-      _Collection('Self-care Sunday', '8 servicios', '🧖‍♀️', [
-        Color(0xFF1C7C7A),
-        Color(0xFF64B6AC),
-      ]),
-      _Collection('Ruta & Transporte', '5 opciones', '🚌', [
-        Color(0xFF395B91),
-        Color(0xFF6D9DD1),
-      ]),
-      _Collection('Ofertas del día', 'Hasta 20% menos', '⚡', [
-        Color(0xFF2C3654),
-        Color(0xFF1FA8B8),
-      ]),
-    ];
+    if (!HomeFeatures.colecciones || _colecciones.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final colecciones = _colecciones;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 22),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionHeading('Colecciones destacadas', trailing: 'Explorar'),
+          // Sin "Explorar": no hay una pantalla de colecciones a la que ir; la
+          // tarjeta filtra el propio feed.
+          _sectionHeading('Colecciones destacadas'),
           const SizedBox(height: 4),
           const Text(
             'Experiencias curadas para ti',
@@ -789,76 +989,69 @@ class HomeClientScreenState extends State<HomeClientScreen>
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            itemCount: collections.length,
+            itemCount: colecciones.length,
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
               crossAxisSpacing: 10,
               mainAxisSpacing: 10,
               mainAxisExtent: 112,
             ),
-            itemBuilder: (_, index) => _CollectionCard(
-              collection: collections[index],
-              onTap: () {
-                // Pendiente: las colecciones tendrán su propia tabla. Mientras
-                // tanto el toque solo lleva al tipo de actividad más cercano.
-                final codigo = index == 2 ? 'transporte_omnibus' : '';
-                final destino = _categories.firstWhere(
-                  (c) => c.codigo == codigo,
-                  orElse: () => HomeCatalogCategory.todas,
-                );
-                _selectCategory(destino);
-                _showToast('Explorando ${collections[index].title}.');
-              },
-            ),
+            itemBuilder: (_, index) {
+              final coleccion = colecciones[index];
+              final icono = coleccion.icono?.trim() ?? '';
+              return _CollectionCard(
+                collection: _Collection(
+                  coleccion.titulo,
+                  coleccion.subtituloORecuento,
+                  icono.isNotEmpty ? icono : '✨',
+                  _degradadoDe(coleccion),
+                ),
+                seleccionada: _coleccionActiva?.id == coleccion.id,
+                onTap: () => _selectColeccion(coleccion),
+              );
+            },
           ),
         ],
       ),
     );
   }
 
+  /// Carrusel de espacio patrocinado: SOLO campañas reales de `flow.campana`.
+  ///
+  /// Antes pintaba tres tarjetas inventadas ("Luna Studio", "Casa Aura",
+  /// "Moverte") con la etiqueta "Verificado", que nadie podía configurar ni
+  /// respaldaba dato alguno. Ahora las crea el superadmin desde
+  /// `ventiq_superadmin` y, si no hay ninguna campaña vigente, **la sección no
+  /// se pinta**.
   Widget _buildSponsoredCarousel() {
-    const sponsored = [
-      _Sponsored('Luna Studio', 'Tu momento empieza aquí', Icons.spa_outlined, [
-        Color(0xFF6D547D),
-        Color(0xFFC795B0),
-      ]),
-      _Sponsored(
-        'Casa Aura',
-        'Reserva en menos de un minuto',
-        Icons.face_retouching_natural_outlined,
-        [Color(0xFF275B68), Color(0xFF45A2A1)],
-      ),
-      _Sponsored(
-        'Moverte',
-        'Llega a tiempo, sin esperas',
-        Icons.directions_car_filled_outlined,
-        [Color(0xFF324B78), Color(0xFF5D83C1)],
-      ),
-    ];
+    if (!HomeFeatures.patrocinados || _campanas.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final campanas = _campanas;
     return Padding(
       padding: const EdgeInsets.only(bottom: 22),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionHeading('Espacio patrocinado', trailing: 'Ver todo'),
+          // Sin "Ver todo": no existe una pantalla de patrocinados a la que ir.
+          _sectionHeading('Espacio patrocinado'),
           const SizedBox(height: 10),
           SizedBox(
             height: 166,
             child: PageView.builder(
               controller: _sponsoredController,
-              itemCount: sponsored.length,
+              itemCount: campanas.length,
               onPageChanged: (index) => setState(() => _sponsoredPage = index),
               itemBuilder: (_, index) {
-                final item = sponsored[index];
+                final campana = campanas[index];
                 return Padding(
                   padding: EdgeInsets.only(
                     left: index == 0 ? 16 : 5,
-                    right: index == sponsored.length - 1 ? 16 : 5,
+                    right: index == campanas.length - 1 ? 16 : 5,
                   ),
                   child: _SponsoredCard(
-                    sponsored: item,
-                    onTap: () =>
-                        _showToast('Abriendo el perfil de ${item.name}.'),
+                    sponsored: _Sponsored.deCampana(campana),
+                    onTap: () => _abrirCampana(campana),
                   ),
                 );
               },
@@ -868,7 +1061,7 @@ class HomeClientScreenState extends State<HomeClientScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(
-              sponsored.length,
+              campanas.length,
               (index) => AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
                 margin: const EdgeInsets.symmetric(horizontal: 3),
@@ -886,6 +1079,39 @@ class HomeClientScreenState extends State<HomeClientScreen>
         ],
       ),
     );
+  }
+
+  /// Abre el servicio destacado por una campaña.
+  ///
+  /// La campaña puede apuntar a un servicio que no esté en la página cargada,
+  /// así que se busca en el catálogo completo (ya cacheado) en vez de solo en
+  /// `_items`. Una campaña de entidad no tiene servicio que abrir: en ese caso
+  /// se indica al cliente en vez de no hacer nada.
+  Future<void> _abrirCampana(CampanaPatrocinada campana) async {
+    final idLocalServicio = campana.idLocalServicio;
+    if (idLocalServicio == null) {
+      _showToast(
+        campana.entidad == null
+            ? 'Esta campaña no tiene un servicio asociado.'
+            : 'Explora los servicios de ${campana.entidad}.',
+      );
+      return;
+    }
+
+    HomeCatalogItem? item;
+    for (final candidato in _items) {
+      if (candidato.id == idLocalServicio) {
+        item = candidato;
+        break;
+      }
+    }
+    item ??= await HomeCatalogService.itemPorId(idLocalServicio);
+    if (!mounted) return;
+    if (item == null) {
+      _showToast('Ese servicio ya no está disponible.');
+      return;
+    }
+    _openItem(item);
   }
 
   /// Sección de ofertas: SOLO servicios con promoción vigente real.
@@ -1022,7 +1248,10 @@ class HomeClientScreenState extends State<HomeClientScreen>
   }
 
   Widget _buildWeeklyPopular() {
-    final weekly = _items.take(3).toList();
+    // Sin reservas esta semana el bloque no existe: no se rellena con el orden
+    // del catálogo, que no significaría nada.
+    if (_rankingSemanal.isEmpty) return const SizedBox.shrink();
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 22),
       child: Column(
@@ -1032,22 +1261,28 @@ class HomeClientScreenState extends State<HomeClientScreen>
             'Servicios populares de la semana',
             trailing: 'Ranking',
           ),
+          const SizedBox(height: 4),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              'Lugares reservados esta semana (lunes a hoy)',
+              style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+            ),
+          ),
           const SizedBox(height: 10),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Container(
               decoration: _cardDecoration(),
               child: Column(
-                children: weekly.isEmpty
-                    ? const [_LoadingBlock(compact: true)]
-                    : List.generate(
-                        weekly.length,
-                        (index) => _WeeklyServiceRow(
-                          rank: index + 1,
-                          item: weekly[index],
-                          onTap: () => _openItem(weekly[index]),
-                        ),
-                      ),
+                children: List.generate(
+                  _rankingSemanal.length,
+                  (index) => _WeeklyServiceRow(
+                    rank: index + 1,
+                    item: _rankingSemanal[index],
+                    onTap: () => _openItem(_rankingSemanal[index]),
+                  ),
+                ),
               ),
             ),
           ),
@@ -1114,6 +1349,33 @@ class HomeClientScreenState extends State<HomeClientScreen>
   }
 
   Widget _buildLoyaltyBanner() {
+    final f = _fidelidad;
+
+    // Sin migración 31, sin sesión o sin regla configurada no hay nada honesto
+    // que contar: la sección no se pinta. Antes este banner anunciaba un "20 %
+    // de descuento" que no existía en ninguna tabla.
+    if (f == null || !f.hayAlgoQueMostrar) return const SizedBox.shrink();
+
+    // El beneficio solo se anuncia si ya está encendida la migración que lo
+    // aplica al precio; si no, estaríamos prometiendo un descuento que no se
+    // cobra. `beneficio` es local y nullable, así que el `!= null` sí promueve.
+    final beneficio = HomeFeatures.beneficioBienvenida ? f.beneficio : null;
+    final mostrarBeneficio = beneficio != null;
+
+    final titulo =
+        beneficio != null ? beneficio.titulo.toUpperCase() : 'TU FIDELIDAD';
+
+    // Puntos reales del libro de movimientos, o el descuento del beneficio.
+    final destacado =
+        beneficio != null ? beneficio.etiqueta : f.etiquetaPuntos;
+
+    final detalleBeneficio = beneficio?.descripcion?.trim();
+    final detalle = beneficio != null
+        ? ((detalleBeneficio != null && detalleBeneficio.isNotEmpty)
+              ? detalleBeneficio
+              : 'Se aplica en tu próxima reserva.')
+        : f.regla!.explicacion;
+
     return Padding(
       padding: const EdgeInsets.only(left: 16, right: 16, bottom: 22),
       child: ClipRRect(
@@ -1170,7 +1432,7 @@ class HomeClientScreenState extends State<HomeClientScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'BENEFICIO DE BIENVENIDA',
+                            titulo,
                             style: TextStyle(
                               color: Colors.white.withValues(alpha: 0.72),
                               fontSize: 10,
@@ -1179,8 +1441,8 @@ class HomeClientScreenState extends State<HomeClientScreen>
                             ),
                           ),
                           const SizedBox(height: 6),
-                          const Text(
-                            '20% de descuento',
+                          Text(
+                            destacado,
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 20,
@@ -1189,7 +1451,7 @@ class HomeClientScreenState extends State<HomeClientScreen>
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Actívalo en tu primera reserva.',
+                            detalle,
                             style: TextStyle(
                               color: Colors.white.withValues(alpha: 0.82),
                               fontSize: 12,
@@ -1199,9 +1461,11 @@ class HomeClientScreenState extends State<HomeClientScreen>
                           SizedBox(
                             height: 32,
                             child: FilledButton(
-                              onPressed: () => _showToast(
-                                'Beneficio listo para usar en tu próxima reserva.',
-                              ),
+                              onPressed: mostrarBeneficio
+                                  ? () => _showToast(
+                                        'Se aplica solo en tu próxima reserva.',
+                                      )
+                                  : _mostrarMovimientos,
                               style: FilledButton.styleFrom(
                                 backgroundColor: Colors.white,
                                 foregroundColor: AppTheme.primary,
@@ -1209,9 +1473,11 @@ class HomeClientScreenState extends State<HomeClientScreen>
                                   horizontal: 14,
                                 ),
                               ),
-                              child: const Text(
-                                'Activar beneficio',
-                                style: TextStyle(
+                              child: Text(
+                                mostrarBeneficio
+                                    ? 'Cómo funciona'
+                                    : 'Mis movimientos',
+                                style: const TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w800,
                                 ),
@@ -1233,6 +1499,117 @@ class HomeClientScreenState extends State<HomeClientScreen>
           ),
         ),
       ),
+    );
+  }
+
+  /// Libro de puntos del cliente: de dónde vino cada punto y cuándo caduca.
+  ///
+  /// Es la parte de **auditoría** del programa y responde a "¿por qué tengo estos
+  /// puntos?". El saldo del banner es literalmente la suma de esta lista, así que
+  /// no pueden discrepar.
+  void _mostrarMovimientos() {
+    final f = _fidelidad;
+    if (f == null) return;
+
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) {
+        final movs = f.movimientos;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  f.etiquetaPuntos,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                if (f.regla != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      f.regla!.explicacion,
+                      style: const TextStyle(
+                        color: Colors.black54,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                if (f.regla?.etiquetaVigencia != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      f.regla!.etiquetaVigencia!,
+                      style: const TextStyle(
+                        color: Colors.black45,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                const Divider(height: 24),
+                if (movs.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Text(
+                      'Todavía no tienes movimientos. Aquí aparecerán los puntos '
+                      'que ganes al completar tus reservas.',
+                      style: TextStyle(color: Colors.black54, fontSize: 13),
+                    ),
+                  )
+                else
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: movs.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (_, i) {
+                        final m = movs[i];
+                        final suma = m.puntos >= 0;
+                        return ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(
+                            suma
+                                ? Icons.add_circle_outline
+                                : Icons.remove_circle_outline,
+                            color: suma ? AppTheme.primary : Colors.black38,
+                          ),
+                          title: Text(
+                            (m.motivo?.trim().isNotEmpty ?? false)
+                                ? m.motivo!.trim()
+                                : m.etiquetaTipo,
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                          subtitle: Text(
+                            m.vencido
+                                ? '${m.etiquetaTipo} · caducados'
+                                : m.etiquetaTipo,
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                          trailing: Text(
+                            m.etiquetaPuntos,
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: suma ? AppTheme.primary : Colors.black38,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1276,31 +1653,94 @@ class HomeClientScreenState extends State<HomeClientScreen>
   }
 
   Widget _buildFeedHeader() {
+    final activa = _coleccionActiva;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 2, 16, 10),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Expanded(
-            child: Text('Más servicios para ti', style: _SectionTitleStyle()),
-          ),
-          if (_items.isNotEmpty)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppTheme.primary.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(8),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  // Con una colección activa el título cambia: "Más servicios
+                  // para ti" describiría mal una lista curada y filtrada.
+                  activa == null ? 'Más servicios para ti' : activa.titulo,
+                  style: const _SectionTitleStyle(),
+                ),
               ),
-              child: Text(
-                _total == 1 ? '1 servicio' : '$_total servicios',
+              if (_items.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    _total == 1 ? '1 servicio' : '$_total servicios',
+                    style: const TextStyle(
+                      color: AppTheme.primary,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          if (activa != null) ...[
+            const SizedBox(height: 8),
+            _buildColeccionActivaChip(activa),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Aviso de que el feed está limitado a una colección, con botón para quitar
+  /// el filtro. Sin esto el cliente vería menos servicios de los normales sin
+  /// saber por qué.
+  Widget _buildColeccionActivaChip(Coleccion coleccion) {
+    final icono = coleccion.icono?.trim() ?? '';
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(
+            color: AppTheme.primary.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icono.isNotEmpty) ...[
+                Text(icono, style: const TextStyle(fontSize: 12)),
+                const SizedBox(width: 5),
+              ],
+              Text(
+                'Colección · ${coleccion.titulo}',
                 style: const TextStyle(
                   color: AppTheme.primary,
-                  fontSize: 10,
+                  fontSize: 11,
                   fontWeight: FontWeight.w700,
                 ),
               ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+        GestureDetector(
+          onTap: _limpiarColeccion,
+          child: const Text(
+            'Quitar filtro',
+            style: TextStyle(
+              color: AppTheme.textSecondary,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              decoration: TextDecoration.underline,
             ),
-        ],
-      ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1669,7 +2109,15 @@ class _QuickChip extends StatelessWidget {
 class _CollectionCard extends StatelessWidget {
   final _Collection collection;
   final VoidCallback onTap;
-  const _CollectionCard({required this.collection, required this.onTap});
+
+  /// Marca la colección que está filtrando el feed ahora mismo.
+  final bool seleccionada;
+
+  const _CollectionCard({
+    required this.collection,
+    required this.onTap,
+    this.seleccionada = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1683,6 +2131,9 @@ class _CollectionCard extends StatelessWidget {
             colors: collection.colors,
           ),
           borderRadius: BorderRadius.circular(18),
+          border: seleccionada
+              ? Border.all(color: Colors.white, width: 2.5)
+              : null,
           boxShadow: const [
             BoxShadow(
               color: Color(0x1A2B3A67),
@@ -1813,20 +2264,28 @@ class _SponsoredCard extends StatelessWidget {
                         ),
                       ),
                       const Spacer(),
-                      const Icon(
-                        Icons.verified_rounded,
-                        color: Colors.white,
-                        size: 17,
-                      ),
-                      const SizedBox(width: 4),
-                      const Text(
-                        'Verificado',
-                        style: TextStyle(
+                      // Antes decía "Verificado" sin que nada lo respaldara.
+                      // Ahora se muestra el local real de la campaña.
+                      if (sponsored.venue != null) ...[
+                        const Icon(
+                          Icons.place_outlined,
                           color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
+                          size: 15,
                         ),
-                      ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            sponsored.venue!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                   const Spacer(),
@@ -2350,7 +2809,11 @@ class _WeeklyServiceRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    item.ubicacion ?? item.category.nombre,
+                    // El número que ordena el ranking es el que se pinta: así la
+                    // posición 1-2-3 queda explicada por un dato real.
+                    item.lugaresSemanaLabel != null
+                        ? '${item.lugaresSemanaLabel} · ${item.venue}'
+                        : (item.ubicacion ?? item.category.nombre),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -2737,40 +3200,27 @@ class _HowStepCard extends StatelessWidget {
 }
 
 class _LoadingBlock extends StatelessWidget {
-  final bool compact;
-  const _LoadingBlock({this.compact = false});
+  const _LoadingBlock();
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: compact ? 18 : 24,
-      ),
+    return const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       child: Center(
-        child: compact
-            ? const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Column(
-                children: [
-                  SizedBox(
-                    height: 15,
-                    width: 15,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                  SizedBox(height: 10),
-                  Text(
-                    'Cargando servicios…',
-                    style: TextStyle(
-                      color: AppTheme.textSecondary,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
+        child: Column(
+          children: [
+            SizedBox(
+              height: 15,
+              width: 15,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(height: 10),
+            Text(
+              'Cargando servicios…',
+              style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2878,7 +3328,64 @@ class _Sponsored {
   final String subtitle;
   final IconData icon;
   final List<Color> colors;
-  const _Sponsored(this.name, this.subtitle, this.icon, this.colors);
+
+  /// Local donde está el servicio destacado. Se pinta en la esquina.
+  final String? venue;
+
+  const _Sponsored(
+    this.name,
+    this.subtitle,
+    this.icon,
+    this.colors, {
+    this.venue,
+  });
+
+  /// Construye la tarjeta desde una campaña real de `flow.campana`.
+  factory _Sponsored.deCampana(CampanaPatrocinada c) {
+    return _Sponsored(
+      c.titulo,
+      c.subtituloONombre,
+      _iconoDeCampana(c.icono),
+      _coloresDeCampana(c),
+      venue: c.local,
+    );
+  }
+
+  /// Los iconos son una clave corta guardada por el superadmin. Se traduce aquí
+  /// para que la base no dependa de `IconData`.
+  static IconData _iconoDeCampana(String? nombre) => switch (nombre) {
+    'spa' => Icons.spa_outlined,
+    'storefront' => Icons.storefront_outlined,
+    'star' => Icons.star_rounded,
+    'local_offer' => Icons.local_offer_outlined,
+    'directions_bus' => Icons.directions_bus_filled_outlined,
+    'restaurant' => Icons.restaurant_outlined,
+    'pets' => Icons.pets_outlined,
+    'health' => Icons.medical_services_outlined,
+    _ => Icons.campaign_outlined,
+  };
+
+  /// Degradado de la campaña. Si no define colores (o son inválidos) se usa el
+  /// color de marca, en vez de caer a un color de relleno arbitrario.
+  static List<Color> _coloresDeCampana(CampanaPatrocinada c) {
+    final inicio = _parseHex(c.colorInicio) ?? AppTheme.primary;
+    final fin = _parseHex(c.colorFin) ?? _aclarar(inicio);
+    return [inicio, fin];
+  }
+
+  static Color? _parseHex(String? hex) {
+    if (hex == null || hex.trim().isEmpty) return null;
+    var v = hex.trim().replaceFirst('#', '');
+    if (v.length == 6) v = 'FF$v';
+    if (v.length != 8) return null;
+    final n = int.tryParse(v, radix: 16);
+    return n == null ? null : Color(n);
+  }
+
+  static Color _aclarar(Color c) {
+    final hsl = HSLColor.fromColor(c);
+    return hsl.withLightness((hsl.lightness + 0.22).clamp(0.0, 1.0)).toColor();
+  }
 }
 
 class _HowStep {

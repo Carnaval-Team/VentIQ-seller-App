@@ -1,9 +1,11 @@
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../models/servicio.dart';
 import '../utils/horario_atencion.dart';
 import '../utils/precio_reserva.dart';
-import 'catalogo_service.dart';
+import 'campana_service.dart';
+import 'coleccion_service.dart';
 import 'promocion_service.dart';
-import 'resena_service.dart';
 
 /// Categoría real del catálogo, tomada de `flow.nom_tipo_actividad_servicio`.
 ///
@@ -69,6 +71,7 @@ class HomeCatalogItem {
     this.totalResenas = 0,
     this.promocion,
     this.localServicio,
+    this.lugaresSemana,
   });
 
   /// `flow.local_servicio.id`.
@@ -121,6 +124,20 @@ class HomeCatalogItem {
 
   /// Entidad original, para navegar al detalle sin volver a consultar.
   final LocalServicio? localServicio;
+
+  /// Lugares reservados en la semana en curso, **solo** en el ranking semanal.
+  ///
+  /// `null` en el feed normal. Es el numero que ordena
+  /// `cliente_ranking_semanal`, asi que pintarlo es lo que explica la posicion:
+  /// sin el, las posiciones 1-2-3 serian decorativas.
+  final int? lugaresSemana;
+
+  /// `"11 lugares reservados"`, o `null` si el item no viene del ranking.
+  String? get lugaresSemanaLabel {
+    final n = lugaresSemana;
+    if (n == null) return null;
+    return n == 1 ? '1 lugar reservado' : '$n lugares reservados';
+  }
 
   /// Precio con la promoción aplicada, o el de lista si no hay promo.
   double? get precioConPromocion {
@@ -193,105 +210,245 @@ class HomeCatalogPage {
 
 /// Adaptador de lectura del Home.
 ///
-/// Fuente única: `flow.cliente_obtener_servicios(...)`. Se lee una vez y se
-/// pagina en memoria para que recorrer el feed no dispare una petición por
-/// tarjeta. Cuando exista el RPC paginado `cliente_home_feed` descrito en
-/// `plan.md`, este es el único archivo que debe cambiar.
+/// Fuente única: `flow.cliente_home_feed(...)` (migración 35), que devuelve el
+/// catálogo ya filtrado junto con las categorías, las colecciones, los
+/// patrocinados y los contadores del usuario. Se lee una vez y se pagina en
+/// memoria para que recorrer el feed no dispare una petición por tarjeta.
 ///
 /// A diferencia de la versión anterior, **no hay catálogo de respaldo
 /// inventado**: si la lectura falla, el error sube al llamador para que la
 /// pantalla muestre un estado de error en lugar de negocios inexistentes.
+/// Contadores que el shell del Home pinta junto al catálogo.
+///
+/// Es un **snapshot** que llega con el feed: ahorra las lecturas de arranque en
+/// frío (una sola petición ya deja los badges puestos). Una vez que los
+/// providers con tiempo real tienen dato (`NotificacionProvider`,
+/// `ReservasProvider`), ellos mandan, para no tener dos fuentes del mismo número
+/// discutiendo.
+class HomeContadores {
+  const HomeContadores({this.notificaciones = 0, this.reservas = 0});
+
+  /// Notificaciones sin leer del usuario.
+  final int notificaciones;
+
+  /// Reservas en estado `Reservado`: las propias y las hechas para terceros.
+  final int reservas;
+
+  static const HomeContadores vacio = HomeContadores();
+
+  factory HomeContadores.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return vacio;
+    return HomeContadores(
+      notificaciones: (json['notificaciones'] as num?)?.toInt() ?? 0,
+      reservas: (json['reservas'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+/// Todo lo que el Home necesita para pintarse, en **una** petición
+/// (`flow.cliente_home_feed`).
+///
+/// Antes el Home encadenaba ~6 lecturas y podía quedar a medio actualizar
+/// (catálogo nuevo con colecciones viejas, o al revés). Ahora llega un solo
+/// objeto: o está todo lo nuevo, o nada.
+///
+/// No incluye las reseñas recientes ni la fidelidad: son secciones
+/// independientes del usuario y se refrescan por su cuenta.
+class HomeFeed {
+  const HomeFeed({
+    required this.items,
+    required this.total,
+    this.hasMore = false,
+    this.nextCursor,
+    this.categorias = const <HomeCatalogCategory>[HomeCatalogCategory.todas],
+    this.colecciones = const <Coleccion>[],
+    this.patrocinados = const <CampanaPatrocinada>[],
+    this.contadores = HomeContadores.vacio,
+  });
+
+  /// Ítems que cumplen los filtros, **ya ordenados por el servidor**.
+  final List<HomeCatalogItem> items;
+
+  /// Total de coincidencias.
+  final int total;
+
+  /// Contrato de paginación. Hoy el servidor devuelve el catálogo completo (7
+  /// filas), así que siempre llega `false`/`null`: se deja listo para no tener
+  /// que cambiar la forma de la respuesta cuando el catálogo crezca.
+  final bool hasMore;
+  final int? nextCursor;
+
+  /// Nomenclador para el riel, con "Todas" primero.
+  final List<HomeCatalogCategory> categorias;
+
+  /// Colecciones temáticas vigentes, curadas por el superadmin.
+  final List<Coleccion> colecciones;
+
+  /// Campañas patrocinadas vigentes.
+  final List<CampanaPatrocinada> patrocinados;
+
+  /// Snapshot de los contadores del usuario.
+  final HomeContadores contadores;
+}
+
 class HomeCatalogService {
   static const int defaultPageSize = 6;
 
-  static List<HomeCatalogItem>? _cachedCatalog;
-  static List<HomeCatalogCategory>? _cachedCategories;
-  static Future<List<HomeCatalogItem>>? _loadingCatalog;
-  static Future<List<HomeCatalogCategory>>? _loadingCategories;
+  static const String _schema = 'flow';
 
-  static Future<HomeCatalogPage> fetchPage({
-    required int page,
-    int pageSize = defaultPageSize,
+  static List<HomeCatalogItem>? _cachedCatalog;
+  static Future<List<HomeCatalogItem>>? _loadingCatalog;
+
+  /// Una sola petición que trae el catálogo ya filtrado y las secciones curadas.
+  ///
+  /// Los filtros los aplica el servidor (`cliente_home_feed`), que además
+  /// resuelve el nombre de la categoría (`ta.nombre`) para el riel y respeta el
+  /// orden curado de la colección. Por eso aquí no hay que cruzar ni ordenar
+  /// nada: se pinta lo que llega.
+  ///
+  /// El único filtro que NO viaja es "Solo abiertos": el horario se interpreta
+  /// con [HorarioAtencion] en [paginar], a propósito.
+  static Future<HomeFeed> fetchFeed({
     String query = '',
     HomeCatalogCategory category = HomeCatalogCategory.todas,
-    bool onlyOpen = false,
-    bool topRated = false,
     String? provincia,
-    DateTime? ahora,
+    int? idColeccion,
+    bool topRated = false,
   }) async {
-    final catalogo = await _getCatalog();
-    return paginar(
-      catalogo: catalogo,
-      page: page,
-      pageSize: pageSize,
-      query: query,
-      category: category,
-      onlyOpen: onlyOpen,
-      topRated: topRated,
-      provincia: provincia,
-      ahora: ahora,
+    final res = await Supabase.instance.client
+        .schema(_schema)
+        .rpc(
+          'cliente_home_feed',
+          params: <String, dynamic>{
+            'p_query': query.trim().isEmpty ? null : query.trim(),
+            'p_id_categoria': category.esTodas ? null : category.id,
+            'p_provincia': (provincia == null || provincia.trim().isEmpty)
+                ? null
+                : provincia.trim(),
+            'p_id_coleccion': idColeccion,
+            'p_mejor_valorados': topRated,
+          },
+        );
+
+    final json = res is Map
+        ? Map<String, dynamic>.from(res)
+        : const <String, dynamic>{};
+    final crudos = (json['items'] as List?) ?? const <dynamic>[];
+
+    return HomeFeed(
+      items: crudos
+          .whereType<Map>()
+          .map((e) => _desdeItemFeed(Map<String, dynamic>.from(e)))
+          .toList(growable: false),
+      total: (json['total'] as num?)?.toInt() ?? crudos.length,
+      hasMore: json['has_more'] as bool? ?? false,
+      nextCursor: (json['next_cursor'] as num?)?.toInt(),
+      categorias: _categoriasDesdeFeed(json),
+      colecciones: _coleccionesDesdeFeed(json),
+      patrocinados: _patrocinadosDesdeFeed(json),
+      contadores: HomeContadores.fromJson(
+        json['contadores'] is Map
+            ? Map<String, dynamic>.from(json['contadores'] as Map)
+            : null,
+      ),
     );
   }
 
-  /// Filtrado y paginado en memoria, sin acceso a red.
+  /// Ranking semanal: los servicios con más lugares reservados esta semana.
   ///
-  /// Está separado de [fetchPage] para poder probarlo con un catálogo
-  /// construido a mano. Cuando exista el RPC paginado `cliente_home_feed`,
-  /// esta función desaparece y el servidor aplica los mismos filtros.
+  /// Va aparte del feed a propósito: es otra consulta (agrega `flow.agenda` en
+  /// una ventana) y solo se pide cuando `HomeFeatures.rankingSemanal` está
+  /// encendido.
+  ///
+  /// Reusa [_desdeItemFeed] porque el servidor devuelve la misma forma de item
+  /// que el feed más `lugares_semana`, así que aquí no hay nada que adaptar. Si
+  /// la migración 36 no está aplicada, el error sube y el bloque no se pinta.
+  static Future<List<HomeCatalogItem>> fetchRankingSemanal({
+    int limite = 5,
+  }) async {
+    final res = await Supabase.instance.client
+        .schema(_schema)
+        .rpc(
+          'cliente_ranking_semanal',
+          params: <String, dynamic>{'p_limite': limite},
+        );
+    if (res is! List) return const <HomeCatalogItem>[];
+    return res
+        .whereType<Map>()
+        .map((e) => _desdeItemFeed(Map<String, dynamic>.from(e)))
+        .toList(growable: false);
+  }
+
+  /// Riel de categorías a partir de `metadata.categorias`.
+  ///
+  /// El servidor ya devuelve solo las activas y en el orden correcto ("General"
+  /// al final, que es el cajón de sastre). "Todas" lo añade el cliente porque no
+  /// es una categoría real, es la ausencia de filtro.
+  static List<HomeCatalogCategory> _categoriasDesdeFeed(
+    Map<String, dynamic> json,
+  ) {
+    final meta = json['metadata'];
+    final crudas = meta is Map ? (meta['categorias'] as List?) : null;
+    final categorias = (crudas ?? const <dynamic>[])
+        .whereType<Map>()
+        .map((e) => HomeCatalogCategory.fromJson(Map<String, dynamic>.from(e)))
+        .where((c) => c.nombre.trim().isNotEmpty)
+        .toList();
+    return <HomeCatalogCategory>[HomeCatalogCategory.todas, ...categorias];
+  }
+
+  static List<Coleccion> _coleccionesDesdeFeed(Map<String, dynamic> json) {
+    final crudas = json['colecciones'];
+    if (crudas is! List) return const <Coleccion>[];
+    return crudas
+        .whereType<Map>()
+        .map((e) => Coleccion.fromJson(Map<String, dynamic>.from(e)))
+        // Red de seguridad: el RPC ya excluye las vacías.
+        .where((c) => c.tieneServicios)
+        .toList();
+  }
+
+  static List<CampanaPatrocinada> _patrocinadosDesdeFeed(
+    Map<String, dynamic> json,
+  ) {
+    final crudos = json['patrocinados'];
+    if (crudos is! List) return const <CampanaPatrocinada>[];
+    return crudos
+        .whereType<Map>()
+        .map((e) => CampanaPatrocinada.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  /// Troceado en páginas y filtro de horario, en memoria y sin red.
+  ///
+  /// La búsqueda, la categoría, la provincia, la colección y el orden los aplica
+  /// el servidor en [fetchFeed], que es la única implementación de esas reglas.
+  /// Aquí queda **solo** lo que no puede ir en SQL sin duplicarse:
+  ///
+  /// - `onlyOpen`: se interpreta el texto libre de `horario_atencion` con
+  ///   [HorarioAtencion]. Portarlo a SQL sería una segunda implementación de la
+  ///   misma regla, y si diverge el feed diría "abierto" donde el detalle dice
+  ///   "Horario no disponible".
+  /// - el troceado en páginas.
+  ///
+  /// Está separado de [fetchFeed] para poder probarlo con un catálogo
+  /// construido a mano, sin tocar Supabase.
   static HomeCatalogPage paginar({
     required List<HomeCatalogItem> catalogo,
     required int page,
     int pageSize = defaultPageSize,
-    String query = '',
-    HomeCatalogCategory category = HomeCatalogCategory.todas,
     bool onlyOpen = false,
-    bool topRated = false,
-    String? provincia,
     DateTime? ahora,
   }) {
     final momento = ahora ?? DateTime.now();
-    final normalizada = _sinAcentos(query.trim().toLowerCase());
-    final provinciaBuscada = provincia?.trim().toLowerCase();
 
-    var filtrados = catalogo.where((item) {
-      if (!category.esTodas && item.category.id != category.id) return false;
-
-      if (provinciaBuscada != null && provinciaBuscada.isNotEmpty) {
-        final delItem = item.provincia?.trim().toLowerCase();
-        if (delItem != provinciaBuscada) return false;
-      }
-
-      if (normalizada.isNotEmpty) {
-        final heno = _sinAcentos(
-          '${item.title} ${item.venue} ${item.category.nombre}'.toLowerCase(),
-        );
-        if (!heno.contains(normalizada)) return false;
-      }
-
-      if (onlyOpen) {
-        // Solo se afirma "abierto ahora" cuando el horario es interpretable.
-        final horario = HorarioAtencion.parse(item.horarioTexto);
-        if (horario.evaluar(momento) != EstadoHorario.abierto) return false;
-      }
-
-      return true;
-    }).toList();
-
-    // "Mejor valorados": promedio descendente y, a igual promedio, más reseñas
-    // primero. Los servicios **sin** ninguna reseña van al final, no se les
-    // supone una valoración. `List.sort` no es estable, pero aquí el criterio
-    // es total (todo par se compara), así que no importa.
-    if (topRated) {
-      filtrados.sort((a, b) {
-        final aTiene = a.tieneValoracion;
-        final bTiene = b.tieneValoracion;
-        if (aTiene != bTiene) return aTiene ? -1 : 1;
-        if (!aTiene) return 0;
-        final porPromedio = b.rating!.compareTo(a.rating!);
-        if (porPromedio != 0) return porPromedio;
-        return b.totalResenas.compareTo(a.totalResenas);
-      });
-    }
+    final filtrados = onlyOpen
+        ? catalogo.where((item) {
+            // Solo se afirma "abierto ahora" cuando el horario es interpretable.
+            final horario = HorarioAtencion.parse(item.horarioTexto);
+            return horario.evaluar(momento) == EstadoHorario.abierto;
+          }).toList()
+        : catalogo;
 
     final paginaSegura = page < 1 ? 1 : page;
     final inicio = (paginaSegura - 1) * pageSize;
@@ -312,18 +469,26 @@ class HomeCatalogService {
     );
   }
 
-  /// Categorías reales para el riel del Home.
-  static Future<List<HomeCatalogCategory>> getCategorias() {
-    final cacheadas = _cachedCategories;
-    if (cacheadas != null) return Future.value(cacheadas);
-    return _loadingCategories ??= _loadCategorias();
+  /// Ítem del catálogo **completo** por `id_local_servicio`.
+  ///
+  /// El Home solo tiene cargada una página, pero una campaña patrocinada puede
+  /// destacar un servicio que esté en otra. Se busca sobre el catálogo ya
+  /// cacheado, así que no supone una petición extra.
+  static Future<HomeCatalogItem?> itemPorId(int idLocalServicio) async {
+    try {
+      final todos = await _getCatalog();
+      for (final item in todos) {
+        if (item.id == idLocalServicio) return item;
+      }
+    } catch (_) {
+      // Sin catálogo no se puede abrir la campaña; el llamador avisa.
+    }
+    return null;
   }
 
   static Future<void> clearCache() async {
     _cachedCatalog = null;
-    _cachedCategories = null;
     _loadingCatalog = null;
-    _loadingCategories = null;
   }
 
   static Future<List<HomeCatalogItem>> _getCatalog() {
@@ -332,70 +497,16 @@ class HomeCatalogService {
     return _loadingCatalog ??= _loadCatalog();
   }
 
-  static Future<List<HomeCatalogCategory>> _loadCategorias() async {
-    try {
-      final filas = await CatalogoService.getTiposActividadServicio();
-      final categorias = filas
-          .map(HomeCatalogCategory.fromJson)
-          .where((c) => c.nombre.trim().isNotEmpty)
-          .toList();
-
-      // Orden del riel: alfabético, con "General" al final porque es el cajón
-      // de sastre (el valor por defecto de `id_tipo_actividad`), no una
-      // categoría que el cliente busque. "Todas" va siempre primero.
-      categorias.sort((a, b) {
-        final aGeneral = a.codigo == 'general';
-        final bGeneral = b.codigo == 'general';
-        if (aGeneral != bGeneral) return aGeneral ? 1 : -1;
-        return a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase());
-      });
-
-      _cachedCategories = <HomeCatalogCategory>[
-        HomeCatalogCategory.todas,
-        ...categorias,
-      ];
-    } catch (_) {
-      // Sin nomenclador el riel queda en "Todas": es preferible a inventar
-      // categorías que ningún servicio puede tener.
-      _cachedCategories = const <HomeCatalogCategory>[
-        HomeCatalogCategory.todas,
-      ];
-    }
-    return _cachedCategories!;
-  }
-
+  /// Catálogo completo, para [itemPorId].
+  ///
+  /// Una campaña patrocinada puede destacar un servicio que no esté en la página
+  /// visible, así que hace falta el catálogo entero. Se pide al mismo feed sin
+  /// filtros: no hay una segunda forma de leer el catálogo.
   static Future<List<HomeCatalogItem>> _loadCatalog() async {
     try {
-      final categorias = await getCategorias();
-      final nombrePorId = <int, String>{
-        for (final c in categorias)
-          if (c.id != null) c.id!: c.nombre,
-      };
-      // Las valoraciones se piden en paralelo con el catálogo y son
-      // **opcionales**: si `flow.resena` no existe todavía (migración 26 sin
-      // aplicar) el Home debe seguir mostrando servicios, solo que sin
-      // estrellas. Por eso el error se traga aquí y no rompe la carga.
-      final resultados = await Future.wait([
-        CatalogoService.getLocalServicios(),
-        _valoracionesSeguras(),
-        _promocionesSeguras(),
-      ]);
-      final servicios = resultados[0] as List<LocalServicio>;
-      final valoraciones = resultados[1] as Map<int, ResumenResenas>;
-      final promosPorServicio = resultados[2] as Map<int, Promocion>;
-
-      final mapeados = servicios
-          .map(
-            (item) => _desdeLocalServicio(
-              item,
-              nombrePorId,
-              valoraciones,
-              promosPorServicio,
-            ),
-          )
-          .toList();
-      _cachedCatalog = mapeados;
-      return mapeados;
+      final feed = await fetchFeed();
+      _cachedCatalog = feed.items;
+      return feed.items;
     } catch (_) {
       // Permite reintentar: sin esto un fallo de red dejaría el Future
       // compartido cacheado con el error para siempre.
@@ -404,40 +515,21 @@ class HomeCatalogService {
     }
   }
 
-  /// Valoraciones por servicio, tolerando que la migración no esté aplicada.
-  static Future<Map<int, ResumenResenas>> _valoracionesSeguras() async {
-    try {
-      return await ResenaService.porServicio();
-    } catch (_) {
-      return const <int, ResumenResenas>{};
-    }
-  }
-
-  /// Mejor promo por servicio, en una sola llamada.
+  /// Convierte un ítem de `cliente_home_feed` en el modelo del Home.
   ///
-  /// El servidor resuelve la prioridad (promo propia antes que la de su
-  /// entidad, luego el porcentaje más alto), así que aquí no hay nada que
-  /// decidir: solo tolerar que la migración `27_promociones.sql` no esté
-  /// aplicada, en cuyo caso el feed se pinta sin badges.
-  static Future<Map<int, Promocion>> _promocionesSeguras() async {
-    try {
-      return await PromocionService.porServicio();
-    } catch (_) {
-      return const <int, Promocion>{};
-    }
-  }
-
-  static HomeCatalogItem _desdeLocalServicio(
-    LocalServicio item,
-    Map<int, String> nombrePorTipo,
-    Map<int, ResumenResenas>? valoraciones,
-    Map<int, Promocion>? promociones,
-  ) {
+  /// El servidor devuelve cada ítem con la misma forma anidada que
+  /// `cliente_obtener_servicios` (`servicio` / `local` / `entidad`), así que se
+  /// reusa [LocalServicio.fromJson] y la navegación al detalle sigue igual.
+  /// `rating` y `promocion` ya vienen resueltos por el servidor: no hay nada que
+  /// cruzar en el cliente.
+  static HomeCatalogItem _desdeItemFeed(Map<String, dynamic> json) {
+    final item = LocalServicio.fromJson(json);
     final servicio = item.servicio;
     final local = item.local;
     final precio = precioBaseDe(servicio?.configPrecio);
     final horario = HorarioAtencion.parse(local?.horarioAtencion);
-    final resumen = valoraciones?[item.id];
+    final promocion = json['promocion'];
+
     return HomeCatalogItem(
       id: item.id,
       title: servicio?.nombre ?? 'Servicio sin nombre',
@@ -445,7 +537,7 @@ class HomeCatalogService {
       category: HomeCatalogCategory(
         id: servicio?.idTipoActividad,
         codigo: servicio?.tipoActividad ?? '',
-        nombre: _nombreCategoria(servicio, nombrePorTipo),
+        nombre: _nombreCategoriaDeItem(json, servicio),
       ),
       price: precio?.precio,
       currency: precio?.moneda,
@@ -457,26 +549,38 @@ class HomeCatalogService {
       pais: _primeraNoVacia(local?.pais, null),
       permiteReservaDirecta: item.permiteReservaDirecta,
       cantidadMaxCapacidad: item.cantidadMaxCapacidad,
-      // Sin reseñas, `rating` queda null: la tarjeta no pinta estrellas.
-      rating: (resumen?.hayDatos ?? false) ? resumen!.promedio : null,
-      totalResenas: resumen?.total ?? 0,
-      promocion: promociones?[item.id],
+      // Sin reseñas el servidor manda `rating` nulo: la tarjeta no pinta
+      // estrellas, en vez de inventar un promedio.
+      rating: (json['rating'] as num?)?.toDouble(),
+      totalResenas: (json['total_resenas'] as num?)?.toInt() ?? 0,
+      promocion: promocion is Map
+          ? Promocion.fromJson(Map<String, dynamic>.from(promocion))
+          : null,
       localServicio: item,
+      // Solo lo manda `cliente_ranking_semanal`; el feed no lo trae.
+      lugaresSemana: (json['lugares_semana'] as num?)?.toInt(),
     );
   }
 
-  static String _nombreCategoria(
+  /// Nombre de la categoría tal como lo decidió el servidor.
+  ///
+  /// `categoria_nombre` llega vacío cuando la categoría está apagada (el RPC lo
+  /// anula a propósito), y entonces se cae al código legible y, en último caso,
+  /// a "General". Es la misma regla que había antes, cuando el cliente solo
+  /// conocía el nomenclador activo.
+  static String _nombreCategoriaDeItem(
+    Map<String, dynamic> json,
     Servicio? servicio,
-    Map<int, String> nombrePorTipo,
   ) {
-    final id = servicio?.idTipoActividad;
-    if (id != null) {
-      final nombre = nombrePorTipo[id];
-      if (nombre != null && nombre.trim().isNotEmpty) return nombre;
-    }
-    final codigo = servicio?.tipoActividad;
-    if (codigo != null && codigo.trim().isNotEmpty) {
+    final nombre = (json['categoria_nombre'] as String?)?.trim();
+    if (nombre != null && nombre.isNotEmpty) return nombre;
+    final codigo = (json['categoria_codigo'] as String?)?.trim();
+    if (codigo != null && codigo.isNotEmpty) {
       return codigo.replaceAll('_', ' ');
+    }
+    final delServicio = servicio?.tipoActividad;
+    if (delServicio != null && delServicio.trim().isNotEmpty) {
+      return delServicio.replaceAll('_', ' ');
     }
     return 'General';
   }
@@ -486,13 +590,4 @@ class HomeCatalogService {
     if (b != null && b.trim().isNotEmpty) return b.trim();
     return null;
   }
-
-  static String _sinAcentos(String valor) => valor
-      .replaceAll('á', 'a')
-      .replaceAll('é', 'e')
-      .replaceAll('í', 'i')
-      .replaceAll('ó', 'o')
-      .replaceAll('ú', 'u')
-      .replaceAll('ü', 'u')
-      .replaceAll('ñ', 'n');
 }

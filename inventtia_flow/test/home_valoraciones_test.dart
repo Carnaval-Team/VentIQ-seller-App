@@ -1,10 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:inventtia_flow/services/home_catalog_service.dart';
 
-/// El orden "Mejor valorados" del Home usa el promedio real de `flow.resena`.
+/// Valoraciones del Home.
 ///
-/// La regla importante: un servicio **sin** reseñas no se coloca como si
-/// tuviera una valoración. Va al final, y su tarjeta no pinta estrellas.
+/// La regla importante se mantiene: un servicio **sin** reseñas no se coloca
+/// como si tuviera una valoración. Su tarjeta no pinta estrellas
+/// (`tieneValoracion`), y el orden lo resuelve el servidor.
 void main() {
   const categoria = HomeCatalogCategory(
     id: 1,
@@ -26,15 +27,11 @@ void main() {
     totalResenas: totalResenas,
   );
 
-  List<int> ordenarTopRated(List<HomeCatalogItem> catalogo) {
-    final page = HomeCatalogService.paginar(
-      catalogo: catalogo,
-      page: 1,
-      pageSize: 50,
-      topRated: true,
-    );
-    return page.items.map((i) => i.id).toList();
-  }
+  // El orden "Mejor valorados" **ya no se calcula aquí**: lo aplica el servidor
+  // en `cliente_home_feed` (`p_mejor_valorados`) con la misma regla — primero
+  // los que tienen reseñas, por promedio descendente y, a igual promedio, más
+  // reseñas primero; los que no tienen ninguna van al final. Se comprueba
+  // contra la base en las consultas de `migraciones/35_home_feed.sql`.
 
   test('sin el filtro conserva el orden del catálogo', () {
     final catalogo = [
@@ -46,36 +43,9 @@ void main() {
       page: 1,
       pageSize: 50,
     );
+    // Es lo que permite que el orden curado de una colección y el de "mejor
+    // valorados" lleguen intactos desde el servidor hasta la pantalla.
     expect(page.items.map((i) => i.id), [1, 2]);
-  });
-
-  test('ordena por promedio descendente', () {
-    final catalogo = [
-      item(id: 1, title: 'Malo', rating: 2.0, totalResenas: 4),
-      item(id: 2, title: 'Excelente', rating: 4.9, totalResenas: 3),
-      item(id: 3, title: 'Bueno', rating: 4.2, totalResenas: 8),
-    ];
-    expect(ordenarTopRated(catalogo), [2, 3, 1]);
-  });
-
-  test('a igual promedio gana el que tiene más reseñas', () {
-    final catalogo = [
-      item(id: 1, title: 'Pocas', rating: 4.5, totalResenas: 2),
-      item(id: 2, title: 'Muchas', rating: 4.5, totalResenas: 30),
-    ];
-    expect(ordenarTopRated(catalogo), [2, 1]);
-  });
-
-  test('los servicios sin reseñas van al final, no primero', () {
-    // Sin este cuidado un servicio con `rating = null` podría colarse arriba.
-    final catalogo = [
-      item(id: 1, title: 'Sin reseñas'),
-      item(id: 2, title: 'Con 3.0', rating: 3.0, totalResenas: 1),
-      item(id: 3, title: 'Sin reseñas tampoco'),
-      item(id: 4, title: 'Con 5.0', rating: 5.0, totalResenas: 2),
-    ];
-    final orden = ordenarTopRated(catalogo);
-    expect(orden, [4, 2, 1, 3]);
   });
 
   group('tieneValoracion', () {

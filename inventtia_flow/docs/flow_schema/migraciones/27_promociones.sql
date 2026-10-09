@@ -61,24 +61,33 @@
 -- QUE CREA
 --   - flow.promocion (+ RLS + indices)
 --   - flow._resolver_promocion        (helper, no expuesto a la app)
---   - flow._precio_con_promocion      (helper: calcula Y reserva cupo)
+--   - flow._aplicar_promocion         (helper: descuenta Y reserva cupo)
+--   - flow._precio_con_promocion      (helper: envuelve precio de lista + descuento)
 --   - flow.cotizar_reserva            (lo que llama la app para MOSTRAR precio)
---   - flow.promociones_de_servicio    (badges del Home y del detalle)
+--   - flow.promociones_de_servicio    (badges del detalle de UN servicio)
+--   - flow.promociones_por_servicio   (badges de TODO el Home en una sola llamada)
 --   - flow.admin_guardar_promocion    (CRUD admin, con auth.uid())
 --   - flow.admin_eliminar_promocion
 --   - flow.admin_listar_promociones
---   Y reescribe los 4 RPC de reserva personales para que usen el envoltorio.
+--
+--   Y reescribe **2** RPC de reserva personal para que apliquen la promocion:
+--   `cliente_reservar_directo` y `admin_crear_reserva_directa`. Ambos consumen
+--   cupo (el bot no: ver `usa_promociones` en la verificacion).
+--
+--   NO toca `cliente_reservar_pasaje_omnibus` ni `admin_reservar_pasaje_omnibus`:
+--   el transporte de omnibus llama a `calcular_precio_turno` hasta 3 veces por
+--   operacion (ida, vuelta, ida_vuelta) y descontar en cada llamada
+--   multiplicaria el descuento. Limitacion conocida y documentada, no olvido.
 --
 -- REVERSION
---   -- 1) Devolver los 4 RPC a `calcular_precio_reserva` a secas:
---   --    volver a aplicar 27_recursos_reservar.sql y
---   --    13_transporte_omnibus.sql (versiones originales).
---   drop function if exists flow.admin_listar_promociones(uuid);
+--   -- 1) Devolver los 2 RPC reescritos a `calcular_precio_reserva` a secas:
+--   --    volver a aplicar las versiones originales de esos dos archivos.
+--   drop function if exists flow.admin_listar_promociones(uuid, integer);
 --   drop function if exists flow.admin_eliminar_promocion(uuid, integer);
---   drop function if exists flow.admin_guardar_promocion(uuid, integer, text, text, numeric, text, timestamp, timestamp, integer, boolean);
+--   drop function if exists flow.admin_guardar_promocion(uuid, integer, text, text, numeric, text, timestamptz, timestamptz, integer, boolean, integer);
 --   drop function if exists flow.promociones_de_servicio(integer);
---   drop function if exists flow.promociones_activas();
---   drop function if exists flow.cotizar_reserva(uuid, integer, integer, jsonb, text, integer);
+--   drop function if exists flow.promociones_por_servicio();
+--   drop function if exists flow.cotizar_reserva(uuid, integer, jsonb, text, integer, integer);
 --   drop function if exists flow._precio_con_promocion(integer, integer, jsonb, text, integer, boolean);
 --   drop function if exists flow._aplicar_promocion(integer, integer, numeric, varchar, numeric, boolean);
 --   drop function if exists flow._resolver_promocion(integer, integer, numeric);
@@ -146,9 +155,16 @@ create index if not exists idx_promocion_entidad_vigente
 --   SELECT -> cualquier autenticado: una promo es informacion publica del
 --     catalogo (el Home muestra los badges), y el cliente necesita poder
 --     cotizar. No se abre a `anon` porque la app requiere sesion.
---   INSERT/UPDATE/DELETE -> directo a tabla queda cerrado. El CRUD va por los
---     RPC `admin_*`, que validan la entidad. Asi no hay dos caminos de escritura
---     con reglas distintas.
+--   INSERT/UPDATE/DELETE -> directo a tabla queda cerrado: `authenticated` solo
+--     tiene SELECT. El CRUD va por los RPC `admin_*`, que **son DEFINER**
+--     (obligatorio: con INVOKER no podrian escribir, porque no hay grant ni
+--     politica de escritura) y validan la entidad por dentro con
+--     `admin_entidades_de_usuario(auth.uid())`. Asi no hay dos caminos de
+--     escritura con reglas distintas.
+--
+--   NO cambiar los `admin_*` de DEFINER a INVOKER "por simetria": romperia el
+--   alta y el borrado de promociones. Y NO anadir politicas de escritura
+--   dejandolos INVOKER: duplicaria la regla de autorizacion en dos sitios.
 -- ============================================================================
 alter table flow.promocion enable row level security;
 
@@ -359,7 +375,12 @@ create or replace function flow.cotizar_reserva(
 returns jsonb
 language plpgsql
 stable
-security invoker
+-- DEFINER, no INVOKER. Motivo: llama a `_resolver_promocion`, que NO se expone
+-- a los roles de la app (es un helper privado), asi que un INVOKER recibiria
+-- "permission denied for function _resolver_promocion" al previsualizar precio.
+-- Es seguro porque NO autoriza por el parametro: exige que `auth.uid()` sea el
+-- uuid recibido (ver el guard del cuerpo), igual que los RPC de reserva.
+security definer
 set search_path = flow, public
 as $$
 declare
@@ -563,7 +584,12 @@ create or replace function flow.admin_guardar_promocion(
 returns jsonb
 language plpgsql
 volatile
-security invoker
+-- DEFINER, no INVOKER. `flow.promocion` solo concede SELECT a `authenticated`
+-- (y solo tiene politica de SELECT), asi que un INVOKER no podria insertar:
+-- daria "permission denied for table promocion" + violacion de RLS. El RPC es
+-- la unica frontera de autorizacion, y ya valida entidad con
+-- `admin_entidades_de_usuario(auth.uid())` y el uuid contra `auth.uid()`.
+security definer
 set search_path = flow, public
 as $$
 declare
@@ -664,7 +690,9 @@ create or replace function flow.admin_eliminar_promocion(
 returns jsonb
 language plpgsql
 volatile
-security invoker
+-- DEFINER por el mismo motivo que `admin_guardar_promocion`: DELETE no esta
+-- concedido a `authenticated` ni tiene politica. Valida entidad y uuid.
+security definer
 set search_path = flow, public
 as $$
 declare
@@ -1156,7 +1184,7 @@ $$;
 -- ============================================================================
 revoke all on function flow.cotizar_reserva(uuid, integer, jsonb, text, integer, integer) from public, anon;
 revoke all on function flow.promociones_de_servicio(integer) from public, anon;
-revoke all on function flow.promociones_activas() from public, anon;
+revoke all on function flow.promociones_por_servicio() from public, anon;
 revoke all on function flow.admin_guardar_promocion(uuid, integer, text, text, numeric, text, timestamptz, timestamptz, integer, boolean, integer) from public, anon;
 revoke all on function flow.admin_eliminar_promocion(uuid, integer) from public, anon;
 revoke all on function flow.admin_listar_promociones(uuid, integer) from public, anon;
@@ -1167,12 +1195,13 @@ revoke all on function flow._aplicar_promocion(integer, integer, numeric, varcha
 
 grant execute on function flow.cotizar_reserva(uuid, integer, jsonb, text, integer, integer) to authenticated, service_role;
 grant execute on function flow.promociones_de_servicio(integer) to authenticated, service_role;
-grant execute on function flow.promociones_activas() to authenticated, service_role;
+grant execute on function flow.promociones_por_servicio() to authenticated, service_role;
 grant execute on function flow.admin_guardar_promocion(uuid, integer, text, text, numeric, text, timestamptz, timestamptz, integer, boolean, integer) to authenticated, service_role;
 grant execute on function flow.admin_eliminar_promocion(uuid, integer) to authenticated, service_role;
 grant execute on function flow.admin_listar_promociones(uuid, integer) to authenticated, service_role;
 
--- Los 4 RPC de reserva conservan sus permisos previos; se reafirman.
+-- Los 2 RPC de reserva reescritos conservan sus permisos previos; se reafirman
+-- (no se tocan los de pasaje_omnibus, que esta migracion no reescribe).
 grant execute on function flow.cliente_reservar_directo(uuid, integer, date, integer, jsonb, boolean, text, text, text, text, text, integer) to authenticated;
 grant execute on function flow.admin_crear_reserva_directa(integer, date, integer, jsonb, uuid, integer) to authenticated;
 
@@ -1199,7 +1228,7 @@ select 'funcion', p.proname, p.prosecdef,
        coalesce(array_to_string(p.proacl::text[], ' | '), 'default(PUBLIC)')
 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
 where n.nspname = 'flow' and p.proname in (
-  'cotizar_reserva', 'promociones_de_servicio', 'promociones_activas',
+  'cotizar_reserva', 'promociones_de_servicio', 'promociones_por_servicio',
   'admin_guardar_promocion',
   'admin_eliminar_promocion', 'admin_listar_promociones',
   '_resolver_promocion', '_precio_con_promocion', '_aplicar_promocion'

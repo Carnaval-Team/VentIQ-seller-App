@@ -103,6 +103,9 @@ class CotizacionReserva {
     required this.precioUnit,
     this.idPromocion,
     this.promoTitulo,
+    this.descuentoBeneficio = 0,
+    this.idBeneficio,
+    this.beneficioTitulo,
   });
 
   /// Precio sin promoción. Es el que se pinta tachado.
@@ -111,14 +114,35 @@ class CotizacionReserva {
   /// Lo que se cobra de verdad.
   final double precioTotal;
 
+  /// Descuento por **promoción**.
   final double descuento;
+
   final String moneda;
   final double precioUnit;
 
   final int? idPromocion;
   final String? promoTitulo;
 
-  bool get tieneDescuento => descuento > 0 && precioLista > precioTotal;
+  /// Descuento por **beneficio de bienvenida** (migración 34).
+  ///
+  /// Ya viene calculado sobre lo que quedaba **después** de la promoción, así que
+  /// los dos descuentos no se solapan y basta con sumarlos.
+  final double descuentoBeneficio;
+
+  final int? idBeneficio;
+  final String? beneficioTitulo;
+
+  /// Rebaja total = promoción + bienvenida. Es lo que hay que restarle a
+  /// [precioLista] para llegar a [precioTotal].
+  double get descuentoTotal => descuento + descuentoBeneficio;
+
+  /// Hay rebaja si algo se descontó **y** el total es menor que la lista.
+  ///
+  /// No basta con mirar `descuento > 0`: con solo el beneficio de bienvenida (sin
+  /// promoción) el descuento de promoción es 0 pero el precio baja igual, y el
+  /// precio tachado no se pintaría.
+  bool get tieneDescuento => descuentoTotal > 0 && precioLista > precioTotal;
+
   bool get hayPrecio => precioLista > 0;
 
   static const CotizacionReserva vacia = CotizacionReserva(
@@ -139,6 +163,10 @@ class CotizacionReserva {
       precioUnit: (json['precio_unit'] as num?)?.toDouble() ?? 0,
       idPromocion: (json['id_promocion'] as num?)?.toInt(),
       promoTitulo: json['promo_titulo'] as String?,
+      descuentoBeneficio:
+          (json['descuento_beneficio'] as num?)?.toDouble() ?? 0,
+      idBeneficio: (json['id_beneficio'] as num?)?.toInt(),
+      beneficioTitulo: json['beneficio_titulo'] as String?,
     );
   }
 }

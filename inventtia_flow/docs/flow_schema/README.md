@@ -40,13 +40,26 @@ flow_schema/
     ├── 07_admin_reserva_directa.sql            # toggle permite_reserva_directa
     ├── 08_admin_config_plan.sql                # guardar/obtener config recurrente
     └── 09_admin_generar_plan_mensual.sql       # generar planes del mes en lote
+└── pruebas/                  # comprobaciones manuales, NO son migraciones
+    └── prueba_reserva_directo_promociones.sql  # precios/promos en BEGIN..ROLLBACK
 ```
+
+> **`pruebas/` no se aplica nunca.** Son scripts que se pegan en el SQL Editor y
+> terminan en `ROLLBACK`: verifican comportamiento sin dejar rastro (ni agenda,
+> ni cupo, ni promoción). Si un script de `pruebas/` sale con `fallan > 0`, lo
+> que hay que arreglar es el código o la base, no el script.
 
 ## Orden de instalación
 
 Ejecutar en el **SQL Editor** de Supabase, en este orden:
 
-1. **`migraciones/`** completo (01 → 02 → 03 → 04 → 08 → 09).
+1. **`migraciones/`** completo, en orden numérico. Las del marketplace/Home van
+   después del esquema base y **en este orden**: `22` (categorías) → `23`
+   (reasignar servicios) → `24` (fix IDOR admin) → `25` (favoritos) → `26`
+   (reseñas) → `27` (promociones) → `28` (patrocinados) → `29` (bots con promo)
+   → `30` (colecciones temáticas) → `31` (fidelidad: puntos y beneficio) → `32`
+   (fidelidad: configuración y auditoría del panel) → `33` (interruptor global
+   de fidelidad) → `34` (el descuento de bienvenida aplicado al precio).
 2. **`rpc clientes/00_indices_sala_espera.sql`** (índices de apoyo).
 3. El resto de **`rpc clientes/`** (cualquier orden; el 08 depende del 07; el 10 y 11 dependen de las migraciones 08/09).
 4. **`rpc admin/00_helper_entidades_usuario.sql`** primero, luego el resto de `rpc admin/` (07/08/09 dependen del helper y de la migración 09).
@@ -80,6 +93,11 @@ Ejecutar en el **SQL Editor** de Supabase, en este orden:
 - **Autorización: siempre `auth.uid()`, nunca un parámetro.** En una función
   `security definer` el `p_uuid_usuario` que envía el cliente es **suplantable**:
   basta pasar el uuid de otro administrador. Ver `24_fix_idor_rpc_admin.sql`.
+  - **Excepción conocida, sin corregir:** `cliente_reservar_directo`,
+    `cliente_cancelar_reserva` y `cliente_actualizar_fecha_regla` siguen siendo
+    `security definer` y usan `p_uuid_usuario` **sin** compararlo con
+    `auth.uid()`. `cotizar_reserva` y `cliente_reservar_pasaje_omnibus` sí lo
+    comprueban. Ver §5.c de `plan.md`.
 - **Aislamiento por entidad (admin):** cada RPC admin filtra por
   `admin_entidades_de_usuario(auth.uid())`, así un admin solo ve datos de **sus**
   entidades aunque mande otro `id_entidad` por parámetro.

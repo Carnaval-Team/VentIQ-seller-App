@@ -447,5 +447,16 @@ where n.nspname = 'flow' and p.proname in (
 )
 order by objeto, nombre;
 
--- El helper del superadmin debe existir: si falta, los RPC fallaran en runtime.
-select public.fn_is_superadmin_full_access() as helper_disponible;
+-- El helper del superadmin debe EXISTIR: si falta, los RPC fallaran en runtime.
+--
+-- OJO — no aqui se puede comprobar "soy superadmin". La version anterior de este
+-- pre-check hacia `select public.fn_is_superadmin_full_access()` y daba la
+-- impresion de que el helper faltaba. No es eso: lo que devuelve es si el
+-- USUARIO DE ESTA SESION es superadmin de nivel 1, y en el SQL Editor no hay
+-- JWT, asi que `auth.uid()` es NULL y la comparacion `uuid = NULL` no casa con
+-- nadie. El resultado es `false` SIEMPRE, tambien para un superadmin de verdad.
+--
+-- Que salga false NO impide aplicar esta migracion: la tabla, las policies y los
+-- RPC se crean igual. El gate se evalua en runtime, dentro de cada RPC y en las
+-- policies, con el JWT real del usuario de la app.
+select to_regprocedure('public.fn_is_superadmin_full_access()') is not null as helper_existe;

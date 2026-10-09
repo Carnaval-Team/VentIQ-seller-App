@@ -1970,6 +1970,23 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
     );
   }
 
+  /// Etiqueta del descuento: "Promo verano · -12" o "Bienvenida + Promo · -12".
+  ///
+  /// El importe es el descuento **total** (promoción + bienvenida). Mostrar solo
+  /// el de la promoción diría menos de lo que se está rebajando.
+  String _etiquetaDescuento(CotizacionReserva c) {
+    final total = PrecioReserva.formatear(c.descuentoTotal, c.moneda);
+    final nombres = <String>[
+      if (c.descuento > 0 && (c.promoTitulo?.isNotEmpty ?? false))
+        c.promoTitulo!,
+      if (c.descuentoBeneficio > 0 && (c.beneficioTitulo?.isNotEmpty ?? false))
+        c.beneficioTitulo!,
+    ];
+    return nombres.isEmpty
+        ? 'Descuento aplicado: -$total'
+        : '${nombres.join(' + ')} · -$total';
+  }
+
   @override
   Widget build(BuildContext context) {
     final monedas = widget.configPrecio.monedas.isEmpty
@@ -2250,9 +2267,7 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
                               ),
                               if (cotizacion?.tieneDescuento == true)
                                 Text(
-                                  cotizacion!.promoTitulo == null
-                                      ? 'Descuento aplicado: -${PrecioReserva.formatear(cotizacion.descuento, cotizacion.moneda)}'
-                                      : '${cotizacion.promoTitulo} · -${PrecioReserva.formatear(cotizacion.descuento, cotizacion.moneda)}',
+                                  _etiquetaDescuento(cotizacion!),
                                   style: const TextStyle(
                                     fontSize: 11,
                                     color: AppTheme.success,

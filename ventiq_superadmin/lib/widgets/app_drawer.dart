@@ -247,6 +247,16 @@ class AppDrawer extends StatelessWidget {
                       title: 'Espacio patrocinado',
                       route: '/patrocinados',
                     ),
+                    _DrawerItem(
+                      icon: Icons.collections_bookmark_outlined,
+                      title: 'Colecciones temáticas',
+                      route: '/colecciones',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.loyalty_outlined,
+                      title: 'Programa de fidelidad',
+                      route: '/fidelidad',
+                    ),
                   ],
                 ),
                 _buildMenuSection(
@@ -426,6 +436,9 @@ class AppDrawer extends StatelessWidget {
                 item.route == '/carnaval-precios-tiendas' ||
                 item.route == '/carnaval-productos-tienda' ||
                 item.route == '/banners-inicio' ||
+                item.route == '/patrocinados' ||
+                item.route == '/colecciones' ||
+                item.route == '/fidelidad' ||
                 item.route == '/roles') {
               Navigator.of(context).pushReplacementNamed(item.route);
             } else {

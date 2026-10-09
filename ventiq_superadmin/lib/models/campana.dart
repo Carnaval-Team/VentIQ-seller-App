@@ -1,7 +1,7 @@
-﻿/// CampaÃ±a patrocinada del Home: fila de `flow.campana`.
+/// Campaña patrocinada del Home: fila de `flow.campana`.
 ///
-/// A diferencia de una promociÃ³n (que descuenta precio y la crea el admin de la
-/// entidad), una campaÃ±a es **contenido de plataforma**: destaca un servicio o
+/// A diferencia de una promoción (que descuenta precio y la crea el admin de la
+/// entidad), una campaña es **contenido de plataforma**: destaca un servicio o
 /// una entidad en el Home y la cura el superadmin. **Nunca afecta al importe**
 /// que paga el cliente.
 class Campana {
@@ -42,7 +42,7 @@ class Campana {
   final DateTime? desde;
   final DateTime? hasta;
 
-  /// Mayor = aparece antes en la rotaciÃ³n del Home.
+  /// Mayor = aparece antes en la rotación del Home.
   final int prioridad;
 
   final bool activo;
@@ -55,29 +55,29 @@ class Campana {
   bool get esDeEntidad => idEntidad != null;
   bool get tieneImagen => imageUrl != null && imageUrl!.trim().isNotEmpty;
 
-  /// QuÃ© destaca, en una lÃ­nea, para el listado del superadmin.
+  /// Qué destaca, en una línea, para el listado del superadmin.
   String get destino {
     if (esDeEntidad) return entidad ?? 'Entidad #$idEntidad';
     final partes = <String>[
       if (servicio != null) servicio!,
       if (local != null) local!,
     ];
-    return partes.isEmpty ? 'Servicio #$idLocalServicio' : partes.join(' Â· ');
+    return partes.isEmpty ? 'Servicio #$idLocalServicio' : partes.join(' · ');
   }
 
-  /// `true` si estÃ¡ activa y dentro de su ventana de vigencia.
+  /// `true` si está activa y dentro de su ventana de vigencia.
   bool get vigente {
     if (!activo) return false;
     final ahora = DateTime.now();
     if (desde != null && ahora.isBefore(desde!)) return false;
-    // `hasta` es exclusivo: una campaÃ±a que termina a las 00:00 ya no aplica.
+    // `hasta` es exclusivo: una campaña que termina a las 00:00 ya no aplica.
     if (hasta != null && !ahora.isBefore(hasta!)) return false;
     return true;
   }
 
   factory Campana.fromJson(Map<String, dynamic> json) => Campana(
     id: (json['id'] as num).toInt(),
-    titulo: json['titulo'] as String? ?? 'CampaÃ±a',
+    titulo: json['titulo'] as String? ?? 'Campaña',
     subtitulo: json['subtitulo'] as String?,
     descripcion: json['descripcion'] as String?,
     idLocalServicio: (json['id_local_servicio'] as num?)?.toInt(),

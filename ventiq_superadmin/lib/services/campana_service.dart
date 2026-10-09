@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/campana.dart';
+import 'catalogo_destinos_service.dart';
 
 /// Operaciones sobre `flow.campana` (campañas patrocinadas del Home).
 ///
@@ -119,28 +120,10 @@ class CampanaService {
     }
   }
 
-  /// Servicios y entidades disponibles para elegir el destino de la campaña.
+  /// Servicios disponibles para elegir el destino de la campaña.
   ///
-  /// Se leen de `cliente_obtener_servicios` (el mismo RPC que alimenta el Home)
-  /// y de `cliente_obtener_locales`, así lo que el superadmin elige es
-  /// exactamente lo que el cliente puede ver.
-  static Future<List<({int id, String etiqueta})>> destinosServicio() async {
-    final res = await _supabase
-        .schema(_schema)
-        .rpc('cliente_obtener_servicios');
-    if (res is! List) return const [];
-    final vistos = <int>{};
-    final out = <({int id, String etiqueta})>[];
-    for (final fila in res.whereType<Map>()) {
-      final id = (fila['id_local_servicio'] as num?)?.toInt();
-      if (id == null || !vistos.add(id)) continue;
-      final s = fila['servicio'] as Map?;
-      final l = fila['local'] as Map?;
-      final nombreServicio = s?['nombre']?.toString() ?? 'Servicio';
-      final nombreLocal = l?['nombre']?.toString() ?? 'Local';
-      out.add((id: id, etiqueta: '$nombreServicio · $nombreLocal'));
-    }
-    out.sort((a, b) => a.etiqueta.compareTo(b.etiqueta));
-    return out;
-  }
+  /// Delega en [CatalogoDestinosService]: el catálogo lo comparten los
+  /// patrocinados y las colecciones temáticas, así que se lee en un solo sitio.
+  static Future<List<({int id, String etiqueta})>> destinosServicio() =>
+      CatalogoDestinosService.servicios();
 }

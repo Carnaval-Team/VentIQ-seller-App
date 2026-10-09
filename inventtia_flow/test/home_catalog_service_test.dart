@@ -2,12 +2,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:inventtia_flow/services/home_catalog_service.dart';
 import 'package:inventtia_flow/utils/horario_atencion.dart';
 
-/// Pruebas del filtrado/paginado del Home.
+/// Pruebas del paginado y del filtro de horario del Home.
 ///
-/// Se ejercita `HomeCatalogService.paginar`, que es puro: no toca Supabase. La
-/// versión anterior de este archivo llamaba a `fetchPage`, que sí hace red, así
-/// que solo pasaba porque existía un catálogo de respaldo inventado. Ese
-/// respaldo ya no existe y estas pruebas construyen el catálogo a mano.
+/// Se ejercita `HomeCatalogService.paginar`, que es puro: no toca Supabase, así
+/// que el catálogo se construye a mano.
+///
+/// Los demás filtros (búsqueda, categoría, provincia, colección y orden) ya no
+/// viven en Dart: los aplica el servidor en `cliente_home_feed`, y se comprueban
+/// contra la base en las consultas de verificación de
+/// `migraciones/35_home_feed.sql`. Mantener aquí una segunda copia sería volver
+/// a tener dos definiciones de la misma regla.
 void main() {
   const belleza = HomeCatalogCategory(
     id: 1,
@@ -128,27 +132,7 @@ void main() {
     });
   });
 
-  group('filtros', () {
-    test('filtra por tipo de actividad real', () {
-      final pagina = HomeCatalogService.paginar(
-        catalogo: catalogo,
-        page: 1,
-        category: transporte,
-        ahora: lunes10,
-      );
-      expect(pagina.items.map((i) => i.id), [13]);
-    });
-
-    test('la búsqueda ignora acentos y mayúsculas', () {
-      final pagina = HomeCatalogService.paginar(
-        catalogo: catalogo,
-        page: 1,
-        query: 'UNAS',
-        ahora: lunes10,
-      );
-      expect(pagina.items.map((i) => i.id), containsAll([11, 14]));
-    });
-
+  group('solo abiertos', () {
     test('"abierto ahora" excluye horarios no interpretables', () {
       final pagina = HomeCatalogService.paginar(
         catalogo: catalogo,
@@ -163,14 +147,28 @@ void main() {
       expect(ids, isNot(contains(16)));
     });
 
-    test('filtra por provincia del local', () {
-      final pagina = HomeCatalogService.paginar(
+    test('"solo abiertos" también se pagina, no se vuelca entero', () {
+      final primera = HomeCatalogService.paginar(
         catalogo: catalogo,
         page: 1,
-        provincia: 'Provincia de Camagüey',
+        pageSize: 2,
+        onlyOpen: true,
         ahora: lunes10,
       );
-      expect(pagina.items.map((i) => i.id), [14]);
+      expect(primera.items, hasLength(2));
+      expect(primera.hasMore, isTrue);
+      // El total es el de los abiertos, no el del catálogo entero.
+      expect(primera.total, 4);
+
+      final segunda = HomeCatalogService.paginar(
+        catalogo: catalogo,
+        page: 2,
+        pageSize: 2,
+        onlyOpen: true,
+        ahora: lunes10,
+      );
+      expect(segunda.items, hasLength(2));
+      expect(segunda.hasMore, isFalse);
     });
   });
 

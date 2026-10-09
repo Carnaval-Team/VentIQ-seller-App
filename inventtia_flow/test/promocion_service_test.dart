@@ -172,6 +172,80 @@ void main() {
       });
       expect(c.tieneDescuento, isFalse);
     });
+
+    test('solo el beneficio de bienvenida ya cuenta como descuento', () {
+      // Este es el caso que rompía: sin promoción `descuento` es 0, así que el
+      // precio tachado no se pintaba aunque el total fuera menor.
+      final c = CotizacionReserva.fromJson({
+        'ok': true,
+        'precio_lista': 35,
+        'precio_total': 28,
+        'descuento': 0,
+        'descuento_beneficio': 7,
+        'id_beneficio': 4,
+        'beneficio_titulo': 'Bienvenida',
+        'moneda': 'USD',
+        'precio_unit': 28,
+      });
+      expect(c.tieneDescuento, isTrue);
+      expect(c.descuentoTotal, 7);
+      expect(c.idBeneficio, 4);
+      expect(c.beneficioTitulo, 'Bienvenida');
+    });
+
+    test('promocion y bienvenida se suman en descuentoTotal', () {
+      // 35 de lista, 20 % de promo (7) y 5 de bienvenida sobre el resto = 23.
+      final c = CotizacionReserva.fromJson({
+        'ok': true,
+        'precio_lista': 35,
+        'precio_total': 23,
+        'descuento': 7,
+        'descuento_beneficio': 5,
+        'id_promocion': 9,
+        'promo_titulo': 'Verano',
+        'id_beneficio': 2,
+        'beneficio_titulo': 'Bienvenida',
+        'moneda': 'USD',
+        'precio_unit': 23,
+      });
+      expect(c.descuentoTotal, 12);
+      // Lo mostrado y lo cobrado cuadran: lista - total = suma de descuentos.
+      expect(c.precioLista - c.precioTotal, 12);
+      expect(c.promoTitulo, 'Verano');
+      expect(c.beneficioTitulo, 'Bienvenida');
+    });
+
+    test('una respuesta vieja sin campos de bienvenida sigue igual', () {
+      // Compatibilidad: si el servidor no manda los campos nuevos, el
+      // comportamiento debe ser idéntico al de antes de la migración 34.
+      final c = CotizacionReserva.fromJson({
+        'ok': true,
+        'precio_lista': 100,
+        'precio_total': 80,
+        'descuento': 20,
+        'moneda': 'USD',
+        'precio_unit': 80,
+      });
+      expect(c.descuentoBeneficio, 0);
+      expect(c.descuentoTotal, 20);
+      expect(c.tieneDescuento, isTrue);
+      expect(c.idBeneficio, isNull);
+      expect(c.beneficioTitulo, isNull);
+    });
+
+    test('un beneficio de 0 no inventa descuento', () {
+      final c = CotizacionReserva.fromJson({
+        'ok': true,
+        'precio_lista': 35,
+        'precio_total': 35,
+        'descuento': 0,
+        'descuento_beneficio': 0,
+        'moneda': 'USD',
+        'precio_unit': 35,
+      });
+      expect(c.tieneDescuento, isFalse);
+      expect(c.descuentoTotal, 0);
+    });
   });
 
   group('Promocion.fromJson', () {
