@@ -766,6 +766,7 @@ class DepositosBancariosService {
     required double valor,
     required DateTime fechaProcesamiento,
     int? idTipoExtraccion,
+    String? observacion,
     List<({Uint8List bytes, String nombre, String mimeType})> fotosEntradas =
         const [],
   }) async {
@@ -802,6 +803,8 @@ class DepositosBancariosService {
             .first,
         'id_estado': estadoInicial.id,
         if (idTipoExtraccion != null) 'id_tipo_extraccion': idTipoExtraccion,
+        if (observacion != null && observacion.isNotEmpty)
+          'observacion': observacion,
         'created_at': DateTime.now().toIso8601String(),
       };
       print(
@@ -954,6 +957,7 @@ class DepositosBancariosService {
     required double valorAnterior,
     required double nuevoValor,
     int? idTipoExtraccion,
+    String? observacion,
   }) async {
     try {
       final storeId = await _userPrefs.getIdTienda();
@@ -970,11 +974,16 @@ class DepositosBancariosService {
         }
       }
 
-      final updateData = {
+      final updateData = <String, dynamic>{
         'numero_deposito': nuevoNumeroDeposito,
         'valor': nuevoValor,
         if (idTipoExtraccion != null) 'id_tipo_extraccion': idTipoExtraccion,
       };
+      // null = no tocar la observación; cadena vacía = borrarla.
+      if (observacion != null) {
+        updateData['observacion'] =
+            observacion.isEmpty ? null : observacion;
+      }
       await _supabase
           .from('dep_dat_deposito')
           .update(updateData)

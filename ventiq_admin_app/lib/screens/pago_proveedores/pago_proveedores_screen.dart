@@ -15,6 +15,7 @@ import '../../config/app_colors.dart';
 import '../../models/pago_proveedores.dart';
 import '../../models/supplier.dart';
 import '../../services/pago_proveedores_service.dart';
+import '../../services/permissions_service.dart';
 import '../../services/supplier_service.dart';
 import '../../services/file_picker_service.dart';
 import 'estados_factura_proveedores_screen.dart';
@@ -46,6 +47,8 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen>
   bool _isLoadingSaldo = false;
   bool _isLoadingFacturas = false;
 
+  late Future<bool> _canDeleteInvoiceFuture;
+
   // Filtro de fechas para el reporte de saldo
   DateTime? _reporteDesde;
   DateTime? _reporteHasta;
@@ -64,6 +67,8 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen>
   @override
   void initState() {
     super.initState();
+    _canDeleteInvoiceFuture =
+        PermissionsService().canPerformAction('supplier.invoice.delete');
     _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging && _idProveedor != null) {
@@ -235,6 +240,11 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen>
   }
 
   Future<void> _confirmEliminarFactura(ProveedorFactura factura) async {
+    if (!await PermissionsService().canPerformAction('supplier.invoice.delete')) {
+      _showError('No tienes permiso para eliminar facturas.');
+      return;
+    }
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -2836,7 +2846,15 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen>
                     color: AppColors.primary,
                   ),
                 ),
-                const Spacer(),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 4,
+              runSpacing: 4,
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
                 TextButton.icon(
                   onPressed: () => _showGestionFotosDialog(factura),
                   icon: Icon(
@@ -2870,7 +2888,6 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen>
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                   ),
                 ),
-                const SizedBox(width: 4),
                 ElevatedButton.icon(
                   onPressed: () => _showEditarFacturaDialog(factura),
                   icon: const Icon(Icons.edit_outlined, size: 16),
@@ -2886,7 +2903,6 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen>
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                 ),
-                const SizedBox(width: 4),
                 ElevatedButton.icon(
                   onPressed: () => _showCambioEstadoDialog(factura),
                   icon: const Icon(Icons.swap_horiz, size: 16),
@@ -2902,17 +2918,23 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen>
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                 ),
-                const SizedBox(width: 4),
-                IconButton(
-                  tooltip: 'Eliminar factura',
-                  icon: Icon(
-                    Icons.delete_outline,
-                    color: Colors.red.shade700,
-                    size: 20,
-                  ),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  onPressed: () => _confirmEliminarFactura(factura),
+                FutureBuilder<bool>(
+                  future: _canDeleteInvoiceFuture,
+                  builder: (context, snapshot) {
+                    final canDelete = snapshot.data ?? false;
+                    if (!canDelete) return const SizedBox.shrink();
+                    return IconButton(
+                      tooltip: 'Eliminar factura',
+                      icon: Icon(
+                        Icons.delete_outline,
+                        color: Colors.red.shade700,
+                        size: 20,
+                      ),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: () => _confirmEliminarFactura(factura),
+                    );
+                  },
                 ),
               ],
             ),

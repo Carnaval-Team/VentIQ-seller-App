@@ -195,6 +195,9 @@ CREATE TABLE IF NOT EXISTS public.dep_dat_deposito (
 ALTER TABLE public.dep_dat_deposito
     ADD COLUMN IF NOT EXISTS id_tipo_extraccion BIGINT;
 
+ALTER TABLE public.dep_dat_deposito
+    ADD COLUMN IF NOT EXISTS observacion TEXT;
+
 DO $$
 BEGIN
     IF NOT EXISTS (

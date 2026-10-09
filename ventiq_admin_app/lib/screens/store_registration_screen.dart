@@ -794,23 +794,27 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
             ),
           ),
 
-          // Content con mejor diseño
+          // Content: ancho adaptable (móvil → web)
           Expanded(
-            child: Container(
-              width: double.infinity,
-              constraints: const BoxConstraints(
-                maxWidth: 600,
-              ), // Limitar ancho en pantallas grandes
-              child: PageView(
-                controller: _pageController,
-                physics: const NeverScrollableScrollPhysics(),
-                children: [
-                  _buildUserRegistrationStep(),
-                  _buildStoreInfoStep(),
-                  _buildOptionalDataStep(),
-                  _buildConfirmationStep(),
-                ],
-              ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final maxW = _contentMaxWidth(constraints.maxWidth);
+                return Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxW),
+                    child: PageView(
+                      controller: _pageController,
+                      physics: const NeverScrollableScrollPhysics(),
+                      children: [
+                        _buildUserRegistrationStep(),
+                        _buildStoreInfoStep(),
+                        _buildOptionalDataStep(),
+                        _buildConfirmationStep(),
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
           ),
 
@@ -819,6 +823,18 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
         ],
       ),
     );
+  }
+
+  double _contentMaxWidth(double availableWidth) {
+    if (availableWidth >= 1200) return 1100;
+    if (availableWidth >= 900) return 900;
+    if (availableWidth >= 700) return 720;
+    return availableWidth;
+  }
+
+  bool get _isWideLayout {
+    final width = MediaQuery.sizeOf(context).width;
+    return width >= 900;
   }
 
   Widget _buildModernProgressIndicator() {
@@ -836,7 +852,9 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
           // Indicador de progreso centrado - VERSIÓN COMPACTA
           Center(
             child: Container(
-              constraints: const BoxConstraints(maxWidth: 400),
+              constraints: BoxConstraints(
+                maxWidth: _isWideLayout ? 640 : 400,
+              ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: List.generate(steps.length, (index) {
@@ -917,10 +935,13 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
 
   Widget _buildUserRegistrationStep() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.symmetric(
+        horizontal: _isWideLayout ? 32 : 24,
+        vertical: 24,
+      ),
       child: Center(
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 500),
+          constraints: BoxConstraints(maxWidth: _isWideLayout ? 720 : 520),
           child: Form(
             key: _userFormKey,
             child: Column(
@@ -1100,10 +1121,13 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
 
   Widget _buildStoreInfoStep() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.symmetric(
+        horizontal: _isWideLayout ? 32 : 24,
+        vertical: 24,
+      ),
       child: Center(
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 500),
+          constraints: BoxConstraints(maxWidth: _isWideLayout ? 900 : 520),
           child: Form(
             key: _storeFormKey,
             child: Column(
@@ -1650,50 +1674,33 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
   }
 
   Widget _buildOptionalDataStep() {
+    final wide = _isWideLayout;
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.symmetric(
+        horizontal: wide ? 32 : 24,
+        vertical: 24,
+      ),
       child: Center(
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 600),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: wide ? 1100 : 600),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header del paso
               Center(
                 child: Column(
                   children: [
-                    // Container(
-                    //   width: 80,
-                    //   height: 80,
-                    //   decoration: BoxDecoration(
-                    //     gradient: AppColors.primaryGradient,
-                    //     borderRadius: BorderRadius.circular(20),
-                    //     boxShadow: [
-                    //       BoxShadow(
-                    //         color: AppColors.primary.withOpacity(0.3),
-                    //         blurRadius: 15,
-                    //         offset: const Offset(0, 5),
-                    //       ),
-                    //     ],
-                    //   ),
-                    //   child: const Icon(
-                    //     Icons.settings,
-                    //     size: 40,
-                    //     color: Colors.white,
-                    //   ),
-                    // ),
-                    const SizedBox(height: 20),
-                    const Text(
+                    const SizedBox(height: 12),
+                    Text(
                       'Configuración Adicional',
                       style: TextStyle(
-                        fontSize: 28,
+                        fontSize: wide ? 30 : 28,
                         fontWeight: FontWeight.bold,
                         color: AppColors.textPrimary,
                       ),
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      'Configura TPVs, almacenes y personal (opcional)',
+                      'Configura almacenes con sus zonas, TPVs y personal',
                       style: TextStyle(
                         color: AppColors.textSecondary,
                         fontSize: 16,
@@ -1703,60 +1710,385 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: 40),
-              // Almacenes Section
-              _buildSectionCard(
-                title: 'Almacenes',
-                icon: Icons.warehouse,
-                count: _almacenesData.length,
-                items: _almacenesData,
-                onAdd: _showAddAlmacenDialog,
-                onEdit: (index) => _showEditAlmacenDialog(index),
-                onDelete: (index) => _deleteAlmacen(index),
-                required: true,
-              ),
+              const SizedBox(height: 32),
+
+              // Almacenes con layouts anidados
+              _buildAlmacenesConLayoutsSection(),
               const SizedBox(height: 16),
 
-              // Layouts Section
-              _buildSectionCard(
-                title: 'Layouts/Zonas',
-                icon: Icons.grid_view,
-                count: _layoutsData.length,
-                items: _layoutsData,
-                onAdd: _showAddLayoutDialog,
-                onEdit: (index) => _showEditLayoutDialog(index),
-                onDelete: (index) => _deleteLayout(index),
-                required: true,
-              ),
-              const SizedBox(height: 16),
-
-              // TPVs Section
-              _buildSectionCard(
-                title: 'TPVs',
-                icon: Icons.point_of_sale,
-                count: _tpvData.length,
-                items: _tpvData,
-                onAdd: _showAddTPVDialog,
-                onEdit: (index) => _showEditTPVDialog(index),
-                onDelete: (index) => _deleteTPV(index),
-                required: true,
-              ),
-              const SizedBox(height: 16),
-
-              // Personal Section
-              _buildSectionCard(
-                title: 'Personal',
-                icon: Icons.people,
-                count: _personalData.length,
-                items: _personalData,
-                onAdd: _showAddPersonalDialog,
-                onEdit: (index) => _showEditPersonalDialog(index),
-                onDelete: (index) => _deletePersonal(index),
-                required: true,
-              ),
+              if (wide)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: _buildSectionCard(
+                        title: 'TPVs(Cajas)',
+                        icon: Icons.point_of_sale,
+                        count: _tpvData.length,
+                        items: _tpvData,
+                        onAdd: _showAddTPVDialog,
+                        onEdit: (index) => _showEditTPVDialog(index),
+                        onDelete: (index) => _deleteTPV(index),
+                        required: true,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _buildSectionCard(
+                        title: 'Personal',
+                        icon: Icons.people,
+                        count: _personalData.length,
+                        items: _personalData,
+                        onAdd: _showAddPersonalDialog,
+                        onEdit: (index) => _showEditPersonalDialog(index),
+                        onDelete: (index) => _deletePersonal(index),
+                        required: true,
+                      ),
+                    ),
+                  ],
+                )
+              else ...[
+                _buildSectionCard(
+                  title: 'TPVs(Cajas)',
+                  icon: Icons.point_of_sale,
+                  count: _tpvData.length,
+                  items: _tpvData,
+                  onAdd: _showAddTPVDialog,
+                  onEdit: (index) => _showEditTPVDialog(index),
+                  onDelete: (index) => _deleteTPV(index),
+                  required: true,
+                ),
+                const SizedBox(height: 16),
+                _buildSectionCard(
+                  title: 'Personal',
+                  icon: Icons.people,
+                  count: _personalData.length,
+                  items: _personalData,
+                  onAdd: _showAddPersonalDialog,
+                  onEdit: (index) => _showEditPersonalDialog(index),
+                  onDelete: (index) => _deletePersonal(index),
+                  required: true,
+                ),
+              ],
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  List<MapEntry<int, Map<String, dynamic>>> _layoutsEntriesForAlmacen(
+    String nombreAlmacen,
+  ) {
+    final entries = <MapEntry<int, Map<String, dynamic>>>[];
+    for (var i = 0; i < _layoutsData.length; i++) {
+      if ((_layoutsData[i]['almacen_asignado'] ?? '').toString() ==
+          nombreAlmacen) {
+        entries.add(MapEntry(i, _layoutsData[i]));
+      }
+    }
+    return entries;
+  }
+
+  Widget _buildAlmacenesConLayoutsSection() {
+    final wide = _isWideLayout;
+    final hasMissingLayouts = _almacenesData.any((almacen) {
+      final nombre = (almacen['denominacion'] ?? '').toString();
+      return !_layoutsData.any(
+        (layout) =>
+            (layout['almacen_asignado'] ?? '').toString() == nombre,
+      );
+    });
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.warehouse, color: AppColors.primary),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Almacenes y Layouts/Zonas',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                if (_almacenesData.isEmpty || hasMissingLayouts)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.red.withOpacity(0.3)),
+                    ),
+                    child: Text(
+                      _almacenesData.isEmpty
+                          ? 'REQUERIDO'
+                          : 'FALTAN ZONAS',
+                      style: const TextStyle(
+                        color: Colors.red,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: ElevatedButton(
+                    onPressed: _showAddAlmacenDialog,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      shape: const CircleBorder(),
+                      padding: EdgeInsets.zero,
+                      elevation: 2,
+                    ),
+                    child: const Icon(Icons.add, size: 20),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Cada almacén debe tener al menos un layout/zona.',
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.shade700,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (_almacenesData.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.withOpacity(0.3)),
+                ),
+                child: const Text(
+                  'No hay almacenes configurados. Agrega uno para empezar.',
+                  style: TextStyle(
+                    color: Colors.grey,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              )
+            else
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final useGrid = wide && constraints.maxWidth >= 640;
+                  final cardWidth = useGrid
+                      ? (constraints.maxWidth - 16) / 2
+                      : constraints.maxWidth;
+                  return Wrap(
+                    spacing: 16,
+                    runSpacing: 12,
+                    children: List.generate(_almacenesData.length, (index) {
+                      return SizedBox(
+                        width: cardWidth,
+                        child: _buildAlmacenConLayoutsCard(index),
+                      );
+                    }),
+                  );
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAlmacenConLayoutsCard(int almacenIndex) {
+    final almacen = _almacenesData[almacenIndex];
+    final nombreAlmacen = (almacen['denominacion'] ?? '').toString();
+    final layouts = _layoutsEntriesForAlmacen(nombreAlmacen);
+    final tieneLayouts = layouts.isNotEmpty;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blue.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: tieneLayouts
+              ? Colors.blue.withOpacity(0.25)
+              : Colors.orange.withOpacity(0.6),
+          width: tieneLayouts ? 1 : 1.5,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      nombreAlmacen.isEmpty ? 'Sin nombre' : nombreAlmacen,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
+                    if ((almacen['direccion'] ?? '')
+                        .toString()
+                        .trim()
+                        .isNotEmpty)
+                      Text(
+                        almacen['direccion'].toString(),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    if ((almacen['ubicacion'] ?? '')
+                        .toString()
+                        .trim()
+                        .isNotEmpty)
+                      Text(
+                        almacen['ubicacion'].toString(),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: () => _showEditAlmacenDialog(almacenIndex),
+                icon: const Icon(Icons.edit, size: 20),
+                color: Colors.blue,
+                tooltip: 'Editar almacén',
+              ),
+              IconButton(
+                onPressed: () => _deleteAlmacen(almacenIndex),
+                icon: const Icon(Icons.delete, size: 20),
+                color: Colors.red,
+                tooltip: 'Eliminar almacén',
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(Icons.grid_view, size: 16, color: Colors.grey.shade700),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Layouts/Zonas (${layouts.length})',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                    color: Colors.grey.shade800,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () =>
+                    _showAddLayoutDialog(preselectedAlmacen: nombreAlmacen),
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Zona'),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ],
+          ),
+          if (!tieneLayouts)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.withOpacity(0.35)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded,
+                      color: Colors.orange, size: 18),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Debes agregar al menos un layout/zona en este almacén.',
+                      style: TextStyle(fontSize: 12, color: Colors.orange),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            ...layouts.map((entry) {
+              final layoutIndex = entry.key;
+              final layout = entry.value;
+              return Container(
+                margin: const EdgeInsets.only(top: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.withOpacity(0.25)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            layout['denominacion']?.toString() ?? 'Sin nombre',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                          Text(
+                            '${layout['tipo_nombre'] ?? 'Zona'} · Código: ${layout['codigo'] ?? '-'}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => _showEditLayoutDialog(layoutIndex),
+                      icon: const Icon(Icons.edit, size: 18),
+                      color: Colors.blue,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    IconButton(
+                      onPressed: () => _deleteLayout(layoutIndex),
+                      icon: const Icon(Icons.delete, size: 18),
+                      color: Colors.red,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ],
+                ),
+              );
+            }),
+        ],
       ),
     );
   }
@@ -2006,10 +2338,13 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
 
   Widget _buildConfirmationStep() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.symmetric(
+        horizontal: _isWideLayout ? 32 : 24,
+        vertical: 24,
+      ),
       child: Center(
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 600),
+          constraints: BoxConstraints(maxWidth: _isWideLayout ? 900 : 600),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -2163,38 +2498,60 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                           .toList(),
                       const SizedBox(height: 8),
 
-                      // Almacenes
+                      // Almacenes con layouts anidados
                       Text(
-                        'Almacenes (${_almacenesData.length}):',
+                        'Almacenes y zonas (${_almacenesData.length}):',
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
-                      ..._almacenesData
-                          .map(
-                            (almacen) => Padding(
-                              padding: const EdgeInsets.only(left: 16, top: 4),
-                              child: Text(
-                                '• ${almacen['denominacion']} - ${almacen['direccion']}',
+                      ..._almacenesData.map((almacen) {
+                        final nombre =
+                            (almacen['denominacion'] ?? '').toString();
+                        final layouts = _layoutsData
+                            .where(
+                              (l) =>
+                                  (l['almacen_asignado'] ?? '').toString() ==
+                                  nombre,
+                            )
+                            .toList();
+                        return Padding(
+                          padding: const EdgeInsets.only(left: 16, top: 6),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '• $nombre${(almacen['direccion'] ?? '').toString().isNotEmpty ? ' - ${almacen['direccion']}' : ''}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                ),
                               ),
-                            ),
-                          )
-                          .toList(),
-                      const SizedBox(height: 8),
-
-                      // Layouts
-                      Text(
-                        'Layouts/Zonas (${_layoutsData.length}):',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      ..._layoutsData
-                          .map(
-                            (layout) => Padding(
-                              padding: const EdgeInsets.only(left: 16, top: 4),
-                              child: Text(
-                                '• ${layout['denominacion']} (${layout['tipo_nombre'] ?? 'Zona'}) - Almacén: ${layout['almacen_asignado']} - Código: ${layout['codigo']}',
-                              ),
-                            ),
-                          )
-                          .toList(),
+                              if (layouts.isEmpty)
+                                const Padding(
+                                  padding: EdgeInsets.only(left: 12, top: 2),
+                                  child: Text(
+                                    '⚠ Sin layouts/zonas',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.orange,
+                                    ),
+                                  ),
+                                )
+                              else
+                                ...layouts.map(
+                                  (layout) => Padding(
+                                    padding: const EdgeInsets.only(
+                                      left: 12,
+                                      top: 2,
+                                    ),
+                                    child: Text(
+                                      '↳ ${layout['denominacion']} (${layout['tipo_nombre'] ?? 'Zona'}) · ${layout['codigo']}',
+                                      style: const TextStyle(fontSize: 13),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        );
+                      }),
                       const SizedBox(height: 8),
 
                       // Personal
@@ -2281,7 +2638,9 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
       child: SafeArea(
         child: Center(
           child: Container(
-            constraints: const BoxConstraints(maxWidth: 400),
+            constraints: BoxConstraints(
+              maxWidth: _isWideLayout ? 720 : 400,
+            ),
             child: Row(
               children: [
                 // Botón Anterior
@@ -2494,7 +2853,7 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
         personalData: _personalData.isEmpty ? null : _personalData,
       );
 
-      if (result['success']) {
+      if (result['success'] == true) {
         final userAlreadyExisted = result['user_already_existed'] == true;
         _showSuccessDialog(userAlreadyExisted: userAlreadyExisted);
       } else {
@@ -2886,13 +3245,39 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
               ElevatedButton(
                 onPressed: () {
                   if (nameController.text.trim().isNotEmpty) {
+                    final oldName =
+                        (_almacenesData[index]['denominacion'] ?? '')
+                            .toString();
+                    final newName = nameController.text.trim();
                     setState(() {
-                      _almacenesData[index]['denominacion'] =
-                          nameController.text.trim();
+                      _almacenesData[index]['denominacion'] = newName;
                       _almacenesData[index]['direccion'] =
                           addressController.text.trim();
                       _almacenesData[index]['ubicacion'] =
                           locationController.text.trim();
+
+                      // Mantener relaciones por nombre al renombrar
+                      if (oldName != newName) {
+                        for (final layout in _layoutsData) {
+                          if ((layout['almacen_asignado'] ?? '').toString() ==
+                              oldName) {
+                            layout['almacen_asignado'] = newName;
+                          }
+                        }
+                        for (final tpv in _tpvData) {
+                          if ((tpv['almacen_asignado'] ?? '').toString() ==
+                              oldName) {
+                            tpv['almacen_asignado'] = newName;
+                          }
+                        }
+                        for (final personal in _personalData) {
+                          if ((personal['almacen_asignado'] ?? '')
+                                  .toString() ==
+                              oldName) {
+                            personal['almacen_asignado'] = newName;
+                          }
+                        }
+                      }
                     });
                     Navigator.pop(context);
                   }
@@ -2905,13 +3290,23 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
   }
 
   void _deleteAlmacen(int index) {
+    final nombre = (_almacenesData[index]['denominacion'] ?? '').toString();
+    final layoutsAsociados = _layoutsData
+        .where((l) => (l['almacen_asignado'] ?? '').toString() == nombre)
+        .length;
+    final tpvsAsociados = _tpvData
+        .where((t) => (t['almacen_asignado'] ?? '').toString() == nombre)
+        .length;
+
     showDialog(
       context: context,
       builder:
           (context) => AlertDialog(
             title: const Text('Eliminar Almacén'),
             content: Text(
-              '¿Estás seguro de eliminar "${_almacenesData[index]['denominacion']}"?',
+              layoutsAsociados > 0 || tpvsAsociados > 0
+                  ? '¿Eliminar "$nombre"? También se eliminarán $layoutsAsociados zona(s) y se desasignarán $tpvsAsociados TPV(s) vinculados.'
+                  : '¿Estás seguro de eliminar "$nombre"?',
             ),
             actions: [
               TextButton(
@@ -2921,6 +3316,22 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
               ElevatedButton(
                 onPressed: () {
                   setState(() {
+                    _layoutsData.removeWhere(
+                      (l) =>
+                          (l['almacen_asignado'] ?? '').toString() == nombre,
+                    );
+                    for (final tpv in _tpvData) {
+                      if ((tpv['almacen_asignado'] ?? '').toString() ==
+                          nombre) {
+                        tpv['almacen_asignado'] = null;
+                      }
+                    }
+                    for (final personal in _personalData) {
+                      if ((personal['almacen_asignado'] ?? '').toString() ==
+                          nombre) {
+                        personal['almacen_asignado'] = null;
+                      }
+                    }
                     _almacenesData.removeAt(index);
                   });
                   Navigator.pop(context);
@@ -3447,13 +3858,15 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
   }
 
   // ===== MÉTODOS PARA LAYOUTS =====
-  void _showAddLayoutDialog() {
+  void _showAddLayoutDialog({String? preselectedAlmacen}) {
     final nameController = TextEditingController();
     final codeController = TextEditingController();
-    String? selectedAlmacen;
+    String? selectedAlmacen = preselectedAlmacen;
     int? selectedTipoLayout;
     List<Map<String, dynamic>> layoutTypes = [];
     bool loadingTypes = true;
+    final lockAlmacen = preselectedAlmacen != null &&
+        preselectedAlmacen.trim().isNotEmpty;
 
     showDialog(
       context: context,
@@ -3489,14 +3902,20 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
               }
 
               return AlertDialog(
-                title: const Text('Agregar Layout/Zona'),
+                title: Text(
+                  lockAlmacen
+                      ? 'Agregar zona en $preselectedAlmacen'
+                      : 'Agregar Layout/Zona',
+                ),
                 content: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text(
-                        'Crea una zona dentro del almacén para organizar los productos.',
-                        style: TextStyle(fontSize: 14, color: Colors.grey),
+                      Text(
+                        lockAlmacen
+                            ? 'Crea una zona dentro de este almacén para organizar los productos.'
+                            : 'Crea una zona dentro del almacén para organizar los productos.',
+                        style: const TextStyle(fontSize: 14, color: Colors.grey),
                       ),
                       const SizedBox(height: 16),
                       TextField(
@@ -3540,16 +3959,14 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                             labelText: 'Tipo de Layout',
                             prefixIcon: Icon(Icons.category),
                           ),
-                          isExpanded: true, // Evita overflow
+                          isExpanded: true,
                           items:
                               layoutTypes.map((tipo) {
                                 return DropdownMenuItem<int?>(
                                   value: tipo['id'],
                                   child: Text(
                                     tipo['denominacion'] ?? 'Sin nombre',
-                                    overflow:
-                                        TextOverflow
-                                            .ellipsis, // Truncar texto largo
+                                    overflow: TextOverflow.ellipsis,
                                     maxLines: 1,
                                   ),
                                 );
@@ -3559,45 +3976,43 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                               selectedTipoLayout = value;
                             });
                           },
-                          validator: (value) {
-                            if (value == null) {
-                              return 'Selecciona un tipo de layout';
-                            }
-                            return null;
-                          },
                         ),
                       const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        value: selectedAlmacen,
-                        decoration: const InputDecoration(
-                          labelText: 'Almacén Asignado',
+                      if (lockAlmacen)
+                        InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: 'Almacén',
+                            prefixIcon: Icon(Icons.warehouse),
+                          ),
+                          child: Text(
+                            selectedAlmacen ?? '',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        )
+                      else
+                        DropdownButtonFormField<String>(
+                          value: selectedAlmacen,
+                          decoration: const InputDecoration(
+                            labelText: 'Almacén Asignado',
+                          ),
+                          isExpanded: true,
+                          items:
+                              _almacenesData.map((almacen) {
+                                return DropdownMenuItem<String>(
+                                  value: almacen['denominacion'],
+                                  child: Text(
+                                    almacen['denominacion'],
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
+                                  ),
+                                );
+                              }).toList(),
+                          onChanged: (value) {
+                            setDialogState(() {
+                              selectedAlmacen = value;
+                            });
+                          },
                         ),
-                        isExpanded: true, // Evita overflow
-                        items:
-                            _almacenesData.map((almacen) {
-                              return DropdownMenuItem<String>(
-                                value: almacen['denominacion'],
-                                child: Text(
-                                  almacen['denominacion'],
-                                  overflow:
-                                      TextOverflow
-                                          .ellipsis, // Truncar texto largo
-                                  maxLines: 1,
-                                ),
-                              );
-                            }).toList(),
-                        onChanged: (value) {
-                          setDialogState(() {
-                            selectedAlmacen = value;
-                          });
-                        },
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Selecciona un almacén';
-                          }
-                          return null;
-                        },
-                      ),
                       if (_almacenesData.isEmpty)
                         const Padding(
                           padding: EdgeInsets.only(top: 8),
@@ -3626,14 +4041,13 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                             'denominacion': nameController.text.trim(),
                             'codigo': codeController.text.trim(),
                             'almacen_asignado': selectedAlmacen,
-                            'id_tipo_layout':
-                                selectedTipoLayout, // Tipo seleccionado por el usuario
-                            'id_layout_padre': null, // Layout raíz
+                            'id_tipo_layout': selectedTipoLayout,
+                            'id_layout_padre': null,
                             'tipo_nombre':
                                 layoutTypes.firstWhere(
                                   (t) => t['id'] == selectedTipoLayout,
                                   orElse: () => {'denominacion': 'Desconocido'},
-                                )['denominacion'], // Para mostrar en confirmación
+                                )['denominacion'],
                           });
                         });
                         Navigator.pop(context);
