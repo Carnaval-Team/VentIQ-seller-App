@@ -95,6 +95,15 @@ class Product {
   num get cantidadReal =>
       (cantidad - reservadoCarnaval).clamp(0, double.infinity);
 
+  num get stockDisponibleVenta =>
+      ((stockEquivalenteBase ?? cantidad) - reservadoCarnaval).clamp(
+        0,
+        double.infinity,
+      );
+
+  bool get disponibleParaVenta =>
+      esVendible && (ilimitado || esServicio || stockDisponibleVenta > 0);
+
   /// Se produce por lotes: la disponibilidad son porciones ya hechas.
   bool get esPorTanda => modoElaboracion == 'por_tanda';
 

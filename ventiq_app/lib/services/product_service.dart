@@ -100,6 +100,7 @@ class ProductService {
 
         // Convert Supabase response to Product model
         final product = _convertSupabaseToProduct(productData);
+        if (!product.disponibleParaVenta) continue;
 
         // Group by subcategory
         if (!productsBySubcategory.containsKey(subcategoryName)) {
@@ -165,18 +166,26 @@ class ProductService {
         precio: (prodData['precio'] as num?)?.toDouble() ?? 0.0,
         cantidad: prodData['cantidad'] as num? ?? 0,
         categoria: prodData['categoria'] as String? ?? '',
-        esRefrigerado: false,
-        esFragil: false,
-        esPeligroso: false,
-        esVendible: true,
-        esComprable: true,
-        esInventariable: true,
-        esPorLotes: false,
-        esElaborado: false,
-        esServicio: false,
+        esRefrigerado: prodData['es_refrigerado'] as bool? ?? false,
+        esFragil: prodData['es_fragil'] as bool? ?? false,
+        esPeligroso: prodData['es_peligroso'] as bool? ?? false,
+        esVendible: prodData['es_vendible'] as bool? ?? true,
+        esComprable: prodData['es_comprable'] as bool? ?? true,
+        esInventariable: prodData['es_inventariable'] as bool? ?? true,
+        esPorLotes: prodData['es_por_lotes'] as bool? ?? false,
+        esElaborado: prodData['es_elaborado'] as bool? ?? false,
+        esServicio: prodData['es_servicio'] as bool? ?? false,
+        esPaquete: prodData['es_paquete'] as bool? ?? false,
+        reservadoCarnaval: prodData['reservado_carnaval'] as num? ?? 0,
+        ilimitado: prodData['ilimitado'] as bool? ?? false,
+        idCocina: (prodData['id_cocina'] as num?)?.toInt(),
+        modoElaboracion: prodData['modo_elaboracion'] as String?,
+        stockEquivalenteBase: prodData['stock_equivalente_base'] as num?,
         variantes: [],
       );
-      products.putIfAbsent(subcategory, () => []).add(product);
+      if (product.disponibleParaVenta) {
+        products.putIfAbsent(subcategory, () => []).add(product);
+      }
     }
     return products;
   }
@@ -235,6 +244,7 @@ class ProductService {
                 (item) =>
                     _convertSupabaseToProduct(item as Map<String, dynamic>),
               )
+              .where((product) => product.disponibleParaVenta)
               .toList();
 
       debugPrint('✅ Resultados búsqueda: ${results.length}');

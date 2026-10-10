@@ -508,6 +508,13 @@ class _CategoriesScreenState extends State<CategoriesScreen>
                     esPorLotes: p['es_por_lotes'] as bool? ?? false,
                     esElaborado: p['es_elaborado'] as bool? ?? false,
                     esServicio: p['es_servicio'] as bool? ?? false,
+                    esPaquete: p['es_paquete'] as bool? ?? false,
+                    reservadoCarnaval: p['reservado_carnaval'] as num? ?? 0,
+                    ilimitado: p['ilimitado'] as bool? ?? false,
+                    idCocina: (p['id_cocina'] as num?)?.toInt(),
+                    modoElaboracion: p['modo_elaboracion'] as String?,
+                    stockEquivalenteBase:
+                        p['stock_equivalente_base'] as num?,
                     variantes:
                         (p['variantes'] as List<dynamic>? ?? const []).map((
                           variant,
@@ -519,7 +526,10 @@ class _CategoriesScreenState extends State<CategoriesScreen>
                         }).toList(),
                   ),
                 )
-                .where((product) => product.id > 0)
+                .where(
+                  (product) =>
+                      product.id > 0 && product.disponibleParaVenta,
+                )
                 .toList();
         if (!mounted) return;
         setState(() {
