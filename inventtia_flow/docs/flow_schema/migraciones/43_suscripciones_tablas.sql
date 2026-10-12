@@ -162,12 +162,19 @@ create table if not exists flow.suscripcion_config (
   -- Valores iniciales: los que ya usa Carnaval (decision del usuario: "por
   -- ahora usaremos ese en la tabla, luego pondremos el otro"). Editables desde
   -- el panel del superadmin sin tocar codigo ni recompilar.
+  --
+  -- id_transaccion va FIJO en "ESTATICO" a proposito: es un bug de la app de
+  -- Transfermovil, que trata el id como estatico aunque se mande uno unico
+  -- (en carnavalAPP se genero un txId por pago y se acabó comentando:
+  -- validacionform_widget.dart:530). Si una plantilla lleva el token
+  -- $id_transaccion, la 45 lo sustituye por el LITERAL 'ESTATICO', nunca por
+  -- la referencia interna FLW-....
   transfermovil_numero_proveedor text  not null default '4055432',
   transfermovil_titulo           text  not null default 'Carnaval Alimentos',
   transfermovil_intent_template  text  not null default
-    'transfermovil://tm_compra_en_linea/action?id_transaccion=$id_transaccion&importe=$importe&moneda=$moneda&numero_proveedor=$numero_proveedor&version=1.0.0&titulo=$titulo&set_title=$titulo',
+    'transfermovil://tm_compra_en_linea/action?id_transaccion=ESTATICO&importe=$importe&moneda=$moneda&numero_proveedor=$numero_proveedor&version=1.0.0&titulo=$titulo&set_title=$titulo',
   transfermovil_url_template     text  not null default
-    'https://transfermovil.app/action?id_transaccion=$id_transaccion&importe=$importe&moneda=$moneda&numero_proveedor=$numero_proveedor&version=5&titulo=$titulo&set_title=$titulo',
+    'https://transfermovil.app/action?id_transaccion=ESTATICO&importe=$importe&moneda=$moneda&numero_proveedor=$numero_proveedor&version=5&titulo=$titulo&set_title=$titulo',
 
   moneda_default              text     not null default 'CUP',
 

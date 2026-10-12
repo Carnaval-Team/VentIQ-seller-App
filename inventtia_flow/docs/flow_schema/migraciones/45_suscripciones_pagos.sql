@@ -215,8 +215,12 @@ begin
                      else to_char(v_monto, 'FM9999999990.00')
                    end;
 
-  -- id_transaccion UNICO: si se repite, Transfermovil reutiliza el importe de la
-  -- transaccion anterior (lo sufrio Carnaval). Lleva entidad + fecha + azar.
+  -- Referencia interna UNICA por intent. NO viaja en el link: es un bug de la
+  -- app de Transfermovil, que trata el id_transaccion como estatico
+  -- ("ESTATICO") aunque se mande uno unico (en carnavalAPP se genero un txId
+  -- por pago y se acabo comentando: validacionform_widget.dart:530). El link
+  -- lleva el literal ESTATICO; esta referencia queda para que SOPORTE ubique
+  -- el intento en el panel y para auditar.
   v_id_trx := 'FLW-' || p_id_entidad || '-' || to_char(now(), 'YYYYMMDDHH24MISS') || '-'
               || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 6));
 
@@ -224,7 +228,7 @@ begin
 
   v_url_intent := replace(replace(replace(replace(replace(
                     v_cfg.transfermovil_intent_template,
-                    '$id_transaccion',   v_id_trx),
+                    '$id_transaccion',   'ESTATICO'),
                     '$importe',          v_importe_txt),
                     '$moneda',           v_moneda),
                     '$numero_proveedor', v_cfg.transfermovil_numero_proveedor),
@@ -232,7 +236,7 @@ begin
 
   v_url_http := replace(replace(replace(replace(replace(
                     v_cfg.transfermovil_url_template,
-                    '$id_transaccion',   v_id_trx),
+                    '$id_transaccion',   'ESTATICO'),
                     '$importe',          v_importe_txt),
                     '$moneda',           v_moneda),
                     '$numero_proveedor', v_cfg.transfermovil_numero_proveedor),
@@ -391,7 +395,7 @@ begin
   v_mensaje := 'Yo ' || v_persona || ' he pagado el plan ' || coalesce(v_plan_nombre, '')
             || ' para la entidad ' || coalesce(v_entidad, '')
             || ' por ' || trim(to_char(v_int.monto, 'FM9999999990.00')) || ' ' || v_int.moneda
-            || '. Transaccion: ' || v_int.id_transaccion
+            || '. Referencia de soporte: ' || v_int.id_transaccion
             || '. Codigo de confirmacion: ' || v_cod
             || '. Espero por la acreditacion del plan. Gracias.';
 

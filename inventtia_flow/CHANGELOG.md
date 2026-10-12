@@ -21,6 +21,9 @@ si admite reservas. Requiere las migraciones **43 → 46** del schema `flow`
   servidor. Transfermóvil no devuelve ningún callback, así que el botón
   *Ya he pagado* aparece al volver la app a primer plano; si el usuario cerró la
   app después de pagar, la pantalla reanuda el intento que quedó vivo.
+  El id de transacción del link es siempre el literal `ESTATICO` (bug de la app
+  de Transfermóvil, que ignora el id que se le mande); la referencia `FLW-…`
+  que muestra la app es interna, para que soporte localice el pago en el panel.
 - **Reporte a soporte por WhatsApp** con el mensaje ya redactado por el servidor
   (plan, entidad, importe, id de transacción y código de confirmación).
 - **Ninguna suscripción se activa desde la app**: el pago se verifica a mano en

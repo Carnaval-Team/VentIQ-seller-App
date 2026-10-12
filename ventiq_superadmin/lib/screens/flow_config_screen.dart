@@ -251,23 +251,23 @@ class _FlowConfigScreenState extends State<FlowConfigScreen> {
       return false;
     }
 
-    // Las plantillas se rellenan por sustitución de tokens: si falta $importe o
-    // $id_transaccion, Transfermóvil abriría una pantalla de pago incompleta.
+    // Las plantillas se rellenan por sustitución de tokens. Solo $importe es
+    // obligatorio: el id_transaccion que ve Transfermóvil es SIEMPRE el literal
+    // "ESTATICO" (bug de su app; por eso el link no lleva nuestra referencia
+    // interna FLW-...) y sin importe la pantalla de pago saldría vacía.
     for (final clave in const [
       'transfermovil_intent_template',
       'transfermovil_url_template',
     ]) {
       final t = cambios[clave];
       if (t is String && t.isNotEmpty) {
-        for (final token in const ['\$id_transaccion', '\$importe']) {
-          if (!t.contains(token)) {
-            _avisar(
-              'La plantilla $clave debe incluir $token: sin ese dato el pago '
-              'no se puede casar con la entidad.',
-              esError: true,
-            );
-            return false;
-          }
+        if (!t.contains('\$importe')) {
+          _avisar(
+            'La plantilla $clave debe incluir \$importe: sin él la pantalla de '
+            'pago de Transfermóvil saldría vacía.',
+            esError: true,
+          );
+          return false;
         }
       }
     }
@@ -413,7 +413,10 @@ class _FlowConfigScreenState extends State<FlowConfigScreen> {
           descripcion:
               'Datos del comercio con los que la app arma el pago. Los tokens '
               'disponibles son \$id_transaccion, \$importe, \$moneda, '
-              '\$numero_proveedor y \$titulo.',
+              '\$numero_proveedor y \$titulo. Ojo: la app de Transfermóvil '
+              'siempre trata el id como el literal "ESTATICO" (bug suyo), así '
+              'que \$id_transaccion se sustituye por ese texto; la referencia '
+              'interna FLW-… no viaja en el link.',
           children: [
             _CampoTexto(
               controlador: _txNumero,

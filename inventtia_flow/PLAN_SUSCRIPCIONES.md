@@ -265,7 +265,7 @@ flow.suscripcion_movimiento      -- libro mayor / auditoría (nunca se borra)
 |---|---|---|
 | `flow.entidad_activa(id_entidad)` | interno | Predicado único de "al día". Se compone con `_ls_disponible` (§B.3). |
 | `flow.suscripcion_estado_entidad(id_entidad)` | admin de la entidad | Estado, plan, vencimiento, días restantes, en gracia. |
-| `flow.suscripcion_crear_intent(id_entidad, id_plan)` | owner/admin | Valida permisos, calcula monto, genera `id_transaccion` único y las 2 URLs desde la config. |
+| `flow.suscripcion_crear_intent(id_entidad, id_plan)` | owner/admin | Valida permisos, calcula monto, genera `id_transaccion` único (referencia interna; el link lleva `ESTATICO` fijo) y las 2 URLs desde la config. |
 | `flow.suscripcion_reportar_pago(id_intent, codigo, comprobante)` | owner/admin | Crea la transacción `reportado` + notifica. |
 | `flow.suscripcion_aprobar_pago(id_transaccion, ...)` | superadmin | Verifica, acredita días, renueva suscripción, escribe movimiento, notifica. |
 | `flow.suscripcion_rechazar_pago(id_transaccion, motivo)` | superadmin | Rechaza con motivo; notifica. |
@@ -324,11 +324,13 @@ admin. Ver Q7.
 
 ```
 Yo {nombre del owner} he pagado el plan {plan} para la entidad {entidad}
-por {monto} {moneda}. Nº de transacción: {id_transaccion}.
+por {monto} {moneda}. Referencia de soporte: {id_transaccion}.
 Código de confirmación: {codigo_confirmacion}.
 Espero por la acreditación del plan. Gracias.
 ```
 Enviado a `wa.me/5354590207` (o el número que responda Q5/Q18).
+La referencia `{id_transaccion}` es la interna (`FLW-…`), para que soporte localice el
+intento en el panel; el id que muestra la app de Transfermóvil siempre es `ESTATICO`.
 
 ---
 
@@ -431,9 +433,14 @@ creados. ¿Obligatorio, opcional o fuera de v1?
 
 **Q17. Duración del intent.**
 ¿Cuánto vale un intent antes de expirar? **Recomiendo 24 h** y que al expirar se marque
-`expirado` y se pueda generar otro (con nuevo `id_transaccion`). ¿De acuerdo? (Ojo: en Carnaval
-el `id_transaccion` se generaba **único por pago** a propósito, porque si no Transfermóvil
-reutilizaba el importe de la transacción anterior.)
+`expirado` y se pueda generar otro.
+
+> **Resuelto con un dato del usuario (12/10/2026):** el `id_transaccion` del link de pago es
+> SIEMPRE el literal `"ESTATICO"` — un bug de la app de Transfermóvil, que ignora el id que se
+> mande (en carnavalAPP se llegó a generar un txId único por pago y se acabó comentando:
+> `validacionform_widget.dart:530`). El link lleva `id_transaccion=ESTATICO` fijo; el
+> `FLW-…` que genera el servidor queda como **referencia interna**: soporte la pide para
+> localizar el intento en el panel, y no viaja en el link.
 
 **Q18. ¿Sólo Transfermóvil en v1, o también Zelle/Stripe/TropiPay?**
 Carnaval tiene `stripe_payment`, `numero_zelle_pagos`, `enlace_pago_tropipay`.

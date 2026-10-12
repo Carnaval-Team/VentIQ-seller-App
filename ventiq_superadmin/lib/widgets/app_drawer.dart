@@ -460,7 +460,10 @@ class AppDrawer extends StatelessWidget {
                 item.route == '/patrocinados' ||
                 item.route == '/colecciones' ||
                 item.route == '/fidelidad' ||
-                item.route == '/roles') {
+                item.route == '/roles' ||
+                item.route == '/flow-suscripciones' ||
+                item.route == '/flow-planes' ||
+                item.route == '/flow-config') {
               Navigator.of(context).pushReplacementNamed(item.route);
             } else {
               // Para rutas que aún no están implementadas

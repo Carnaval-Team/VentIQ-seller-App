@@ -656,7 +656,7 @@ class _TarjetaPago extends StatelessWidget {
                 _Dato('Reportado', fechaHora(fechaDe(pago['reportado_at']))),
                 _Dato('Plan', textoDe(pago['plan_nombre'], porDefecto: '—')),
                 _Dato(
-                  'Id transacción',
+                  'Referencia interna',
                   textoDe(pago['id_transaccion'], porDefecto: '—'),
                 ),
                 if (fechaDe(pago['verificado_at']) != null)

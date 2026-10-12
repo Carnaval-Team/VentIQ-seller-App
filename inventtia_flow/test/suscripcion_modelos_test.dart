@@ -251,9 +251,12 @@ void main() {
       'id_transaccion': 'FLW-7-20261012120000-A1B2C3',
       'numero_proveedor': '4055432',
       'titulo': 'Carnaval Alimentos',
+      // El link lleva el id LITERAL de Transfermovil (bug de su app: siempre
+      // "ESTATICO"), nunca nuestra referencia interna FLW-....
       'url_intent':
-          'transfermovil://tm_compra_en_linea/action?id_transaccion=FLW-7',
-      'url_http': 'https://transfermovil.app/action?id_transaccion=FLW-7',
+          'transfermovil://tm_compra_en_linea/action?id_transaccion=ESTATICO',
+      'url_http':
+          'https://transfermovil.app/action?id_transaccion=ESTATICO',
       'expira_at': '2026-10-13T12:00:00+00:00',
       'soporte_whatsapp': '5354590207',
       'modo_prueba': modoPrueba,

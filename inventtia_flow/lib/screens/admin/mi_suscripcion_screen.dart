@@ -206,8 +206,19 @@ class _MiSuscripcionScreenState extends State<MiSuscripcionScreen>
               ),
               _DatoCopiable(etiqueta: 'Título', valor: intent.titulo),
               _DatoCopiable(
-                etiqueta: 'Id de transacción',
+                etiqueta: 'Referencia de soporte',
                 valor: intent.idTransaccion,
+              ),
+              const SizedBox(height: 14),
+              // Bug de la app de Transfermovil: muestra "ESTATICO" como id de la
+              // transaccion aunque el link lleve otro. Se avisa para que el
+              // cliente no piense que pago mal, y se le recuerda que el dato que
+              // SI tiene que cuadrar es el importe.
+              const Text(
+                'Transfermóvil mostrará "ESTATICO" como id de la transacción: '
+                'es un fallo de su app. Verifica que el importe sea el de arriba '
+                'antes de pagar.',
+                style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
               ),
             ],
           ),
@@ -229,8 +240,8 @@ class _MiSuscripcionScreenState extends State<MiSuscripcionScreen>
   /// el principio, así que no hace falta esperar a que la app vuelva a primer
   /// plano para revelarlo.
   ///
-  /// Si no se puede abrir nada, el aviso lleva el id de transacción, que es el
-  /// dato que el cliente necesita para pagar por otra vía.
+  /// Si no se puede abrir nada, el aviso lleva la referencia de soporte: es lo
+  /// que soporte le pedira para localizar el intento en el panel.
   Future<void> _abrirIntentGuardado(IntentSuscripcion intent) async {
     bool abierto = false;
     try {
@@ -256,8 +267,8 @@ class _MiSuscripcionScreenState extends State<MiSuscripcionScreen>
 
     if (!abierto && mounted) {
       _avisar(
-        'No se pudo abrir Transfermóvil. Paga con el id ${intent.idTransaccion} '
-        'y pulsa "Ya he pagado".',
+        'No se pudo abrir Transfermóvil. Paga el importe y pulsa "Ya he '
+        'pagado". Referencia para soporte: ${intent.idTransaccion}.',
         esError: true,
       );
     }
@@ -367,7 +378,7 @@ class _MiSuscripcionScreenState extends State<MiSuscripcionScreen>
   /// Abre WhatsApp con el mensaje ya redactado **por el servidor**.
   ///
   /// El texto viene del RPC a propósito: dice el nombre, el plan, la entidad, el
-  /// importe, el id de transacción y el código de confirmación. Redactarlo en la
+  /// importe, la referencia de soporte y el código de confirmación. Redactarlo en la
   /// app sería duplicar el formato en dos sitios y acabarían discrepando.
   Future<void> _escribirSoporte(String numero, String mensaje) async {
     final url = SuscripcionService.urlWhatsapp(numero, mensaje);
@@ -1466,7 +1477,7 @@ class _Dato extends StatelessWidget {
   }
 }
 
-/// Dato con botón de copiar: el id de transacción y el número del comercio se
+/// Dato con botón de copiar: la referencia de soporte y el número del comercio se
 /// copian a mano en Transfermóvil cuando el deep link no abre.
 class _DatoCopiable extends StatelessWidget {
   const _DatoCopiable({required this.etiqueta, required this.valor});
