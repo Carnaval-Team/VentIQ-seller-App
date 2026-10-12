@@ -48,6 +48,9 @@ import 'screens/patrocinados_screen.dart';
 import 'screens/colecciones_screen.dart';
 import 'screens/fidelidad_screen.dart';
 import 'screens/roles_screen.dart';
+import 'screens/flow_suscripciones_screen.dart';
+import 'screens/flow_planes_screen.dart';
+import 'screens/flow_config_screen.dart';
 import 'widgets/route_guard.dart';
 import 'services/auth_service.dart';
 
@@ -258,6 +261,19 @@ class VentIQSuperAdminApp extends StatelessWidget {
         '/roles': (context) => const RouteGuard(
               route: '/roles',
               child: RolesScreen(),
+            ),
+        // Inventtia Flow: suscripciones de las entidades y su configuracion.
+        '/flow-suscripciones': (context) => const RouteGuard(
+              route: '/flow-suscripciones',
+              child: FlowSuscripcionesScreen(),
+            ),
+        '/flow-planes': (context) => const RouteGuard(
+              route: '/flow-planes',
+              child: FlowPlanesScreen(),
+            ),
+        '/flow-config': (context) => const RouteGuard(
+              route: '/flow-config',
+              child: FlowConfigScreen(),
             ),
       },
     );

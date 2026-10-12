@@ -261,6 +261,27 @@ class AppDrawer extends StatelessWidget {
                 ),
                 _buildMenuSection(
                   context,
+                  title: 'Flow',
+                  items: [
+                    _DrawerItem(
+                      icon: Icons.workspace_premium_outlined,
+                      title: 'Suscripciones',
+                      route: '/flow-suscripciones',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.card_membership,
+                      title: 'Planes de suscripción',
+                      route: '/flow-planes',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.tune,
+                      title: 'Configuración de suscripciones',
+                      route: '/flow-config',
+                    ),
+                  ],
+                ),
+                _buildMenuSection(
+                  context,
                   title: 'Sistema',
                   items: [
                     _DrawerItem(

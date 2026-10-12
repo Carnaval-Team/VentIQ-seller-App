@@ -62,12 +62,51 @@ Ejecutar en el **SQL Editor** de Supabase, en este orden:
    de fidelidad) → `34` (el descuento de bienvenida aplicado al precio) → `35`
    (Home feed) → `36` (ranking semanal) → `37` (Realtime de la agenda) → `38`
    (el turno elegido en la lista de espera) → `39` (arreglo: `resenas_recientes`
-   no encontraba el local).
+   no encontraba el local) → `40` (`_ls_disponible`, el único predicado de
+   visibilidad) → `41` (dashboard admin: modo y horas) → `42` (filtro de activos
+   y horarios + triggers `trg_agenda_ls_disponible`) → `43` → `44` → `45` → `46`
+   (**suscripciones**, en ese orden exacto: ver la sección siguiente).
 2. **`rpc clientes/00_indices_sala_espera.sql`** (índices de apoyo).
 3. El resto de **`rpc clientes/`** (cualquier orden; el 08 depende del 07; el 10 y 11 dependen de las migraciones 08/09).
 4. **`rpc admin/00_helper_entidades_usuario.sql`** primero, luego el resto de `rpc admin/` (07/08/09 dependen del helper y de la migración 09).
 
 > El helper `admin_entidades_de_usuario` debe existir antes que las demás RPC admin, porque todas lo usan.
+
+### Suscripciones de entidad (43 → 46)
+
+El módulo que cobra el uso de la plataforma por entidad. **El orden importa**,
+porque `44` recompone `_ls_disponible` y `45`/`46` dependen de las tablas y del
+helper de autorización:
+
+| # | Archivo | Qué hace |
+|---|---------|----------|
+| 43 | `43_suscripciones_tablas.sql` | 7 tablas nuevas en `flow`: `suscripcion_config` (1 fila), `suscripcion_plan`, `suscripcion`, `suscripcion_intent`, `suscripcion_transaccion`, `suscripcion_movimiento`, `suscripcion_notificacion`. RLS + grants. |
+| 44 | `44_suscripciones_predicado_trial.sql` | `flow.entidad_activa(id)` (predicado único), `_ls_disponible` v2 que lo compone, trial automático al crear la entidad, `cliente_estado_suscripcion`, `cliente_planes_suscripcion`. |
+| 45 | `45_suscripciones_pagos.sql` | Circuito de pago: `cliente_crear_intent_suscripcion`, `cliente_reportar_pago_suscripcion` ("Ya he pagado"), `cliente_mis_pagos_suscripcion`, `admin_suscripcion_aprobar/rechazar_pago`, `admin_suscripcion_acreditar`, `suscripcion_expirar`. |
+| 46 | `46_suscripciones_admin_cron_seed.sql` | Panel: `admin_suscripcion_listar/detalle/inicializar/suspender/reactivar`, CRUD de planes y config, outbox de WhatsApp, cron cada 15 min, seed de 3 planes **desactivados**. |
+
+Decisiones que un futuro lector no puede deducir del código:
+
+- **Sin fila de suscripción, la entidad está ACTIVA** (`coalesce(..., true)` en
+  `entidad_activa`). Es *grandfathering*: aplicar la migración 44 no apaga a
+  todas las entidades existentes. El backfill es explícito y manual:
+  `flow.admin_suscripcion_inicializar()`.
+- **El corte no depende del cron.** `entidad_activa` compara fechas, así que una
+  entidad impagada deja de mostrarse aunque el cron no corra. Si `pg_cron` no
+  está disponible, la migración 46 avisa y sigue.
+- **El cliente no puede activar nada.** Ningún RPC de cliente acredita tiempo;
+  "Ya he pagado" solo encola la verificación, y `admin_suscripcion_*` exige
+  `public.fn_is_superadmin_full_access()`.
+- **Transfermóvil no da callback.** El flujo es deep link + botón "Ya he pagado"
+  + código de confirmación único + verificación manual del superadmin en el
+  banco. Sin código no hay acreditación; el `UNIQUE` impide reusar un pago.
+- **Acreditar SUMA**, no reinicia: los días se añaden a lo que quede vigente (o a
+  `now()` si ya venció).
+- **Sin bot de WhatsApp todavía** (`whatsapp_bot_activo = false`): los avisos al
+  soporte quedan en el outbox como `omitida` y la app ofrece el deep link
+  `wa.me`. La cola `pendiente` se activa sola cuando exista el bot.
+
+Detalle de cada pregunta abierta y su respuesta: `../../PLAN_SUSCRIPCIONES.md`.
 
 ### Reserva directa + planificación recurrente (nuevo)
 

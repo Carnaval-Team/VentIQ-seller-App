@@ -12,6 +12,7 @@ import 'providers/entidad_provider.dart';
 import 'providers/favoritos_provider.dart';
 import 'providers/notificacion_provider.dart';
 import 'providers/reservas_provider.dart';
+import 'providers/suscripcion_provider.dart';
 import 'services/local_notifications.dart';
 import 'services/catalogo_service.dart';
 import 'screens/splash_screen.dart';
@@ -20,6 +21,7 @@ import 'screens/register_screen.dart';
 import 'screens/perfil_setup_screen.dart';
 import 'screens/home_shell.dart';
 import 'screens/notificaciones_screen.dart';
+import 'screens/admin/mi_suscripcion_screen.dart';
 
 Future<void> main() async {
   final binding = WidgetsFlutterBinding.ensureInitialized();
@@ -61,6 +63,9 @@ class FlowApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => NotificacionProvider()),
         ChangeNotifierProvider(create: (_) => ReservasProvider()),
         ChangeNotifierProvider(create: (_) => FavoritosProvider()),
+        // El estado de la suscripción vive en la raíz porque el aviso de impago
+        // se pinta sobre el shell y tiene que sobrevivir al cambio de pestaña.
+        ChangeNotifierProvider(create: (_) => SuscripcionProvider()),
       ],
       child: MaterialApp(
         title: 'GoReserva',
@@ -81,6 +86,7 @@ class FlowApp extends StatelessWidget {
           '/perfil-setup': (_) => const PerfilSetupScreen(),
           '/home': (_) => const HomeShell(),
           '/notificaciones': (_) => const NotificacionesScreen(),
+          '/mi-suscripcion': (_) => const MiSuscripcionScreen(),
         },
       ),
     );

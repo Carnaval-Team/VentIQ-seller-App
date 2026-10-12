@@ -4,7 +4,8 @@ import '../config/app_theme.dart';
 class Notificacion {
   final int id;
   final String uuidUsuario;
-  final String tipo; // 'sala_espera' | 'reserva' | 'sistema' | 'promo'
+  /// 'sala_espera' | 'reserva' | 'promo' | 'sistema' | 'suscripcion'
+  final String tipo;
   final String titulo;
   final String mensaje;
   final bool leida;
@@ -67,6 +68,11 @@ class Notificacion {
         return Icons.confirmation_number;
       case 'promo':
         return Icons.campaign;
+      // Avisos de suscripción: pago reportado y plan acreditado. Se distinguen
+      // del aviso genérico porque son los que el admin tiene que leer para saber
+      // si su entidad sigue activa.
+      case 'suscripcion':
+        return Icons.workspace_premium;
       case 'sistema':
       default:
         return Icons.notifications;

@@ -7,8 +7,10 @@ import '../providers/auth_provider.dart';
 import '../providers/entidad_provider.dart';
 import '../providers/favoritos_provider.dart';
 import '../providers/reservas_provider.dart';
+import '../providers/suscripcion_provider.dart';
 import '../services/auth_service.dart';
 import '../services/update_service.dart';
+import '../widgets/aviso_suscripcion.dart';
 import 'catalogo_screen.dart';
 import 'home_client_screen.dart';
 import 'mis_listas_screen.dart';
@@ -96,6 +98,9 @@ class _HomeShellState extends State<HomeShell> {
     if (uuid == null) {
       if (!mounted) return;
       context.read<EntidadProvider>().limpiar();
+      // La suscripción era de la entidad del usuario anterior: si no se limpia,
+      // el siguiente en entrar vería el aviso de impago de otro.
+      context.read<SuscripcionProvider>().limpiar();
       Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
       return;
     }
@@ -112,6 +117,7 @@ class _HomeShellState extends State<HomeShell> {
     if (!mounted || _redirectingToLogin) return;
     _redirectingToLogin = true;
     context.read<EntidadProvider>().limpiar();
+    context.read<SuscripcionProvider>().limpiar();
     Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
   }
 
@@ -431,7 +437,18 @@ class _HomeShellState extends State<HomeShell> {
     final safeIndex = _currentIndex.clamp(0, screens.length - 1);
 
     return Scaffold(
-      body: IndexedStack(index: safeIndex, children: screens),
+      // El aviso de suscripción va ENCIMA del IndexedStack, no dentro de una
+      // pestaña: así el impago se ve en todo momento, que es el requisito. El
+      // widget se pinta solo cuando hay algo que decir (y se oculta si el módulo
+      // todavía no está migrado), así que los usuarios al día no ven nada.
+      body: Column(
+        children: [
+          if (isAdmin) const AvisoSuscripcion(),
+          Expanded(
+            child: IndexedStack(index: safeIndex, children: screens),
+          ),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: safeIndex,
         onDestinationSelected: (i) => _onTabSelected(i, isAdmin),

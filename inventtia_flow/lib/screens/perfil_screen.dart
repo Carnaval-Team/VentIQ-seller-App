@@ -196,6 +196,20 @@ class PerfilScreenState extends State<PerfilScreen> {
                     padding: EdgeInsets.zero,
                     child: Column(
                       children: [
+                        // Solo para admin: la suscripción es de la ENTIDAD, no del
+                        // usuario. Un cliente o un vendedor no tienen nada que pagar
+                        // aquí. El aviso permanente del shell aparece igual cuando el
+                        // impago bloquea la entidad, así que esta entrada es la vía
+                        // cómoda, no la única.
+                        if (entidadProv.isAdmin) ...[
+                          _ActionTile(
+                            icon: Icons.workspace_premium_outlined,
+                            title: 'Mi suscripción',
+                            onTap: () =>
+                                Navigator.pushNamed(context, '/mi-suscripcion'),
+                          ),
+                          const _SoftDivider(indent: 56),
+                        ],
                         // Solo para clientes: un admin no navega el catálogo.
                         if (!entidadProv.isAdmin &&
                             !entidadProv.isVendedor) ...[
