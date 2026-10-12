@@ -25,9 +25,7 @@ class _ConfigRecursosScreenState extends State<ConfigRecursosScreen> {
       appBar: AppBar(title: const Text('Recursos y turnos')),
       body: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: ConfigRecursosPanel(
-          localServicio: widget.localServicio,
-        ),
+        child: ConfigRecursosPanel(localServicio: widget.localServicio),
       ),
     );
   }
@@ -35,10 +33,20 @@ class _ConfigRecursosScreenState extends State<ConfigRecursosScreen> {
 
 /// Configuración de RECURSOS, TRAMOS y TURNOS de un local_servicio.
 ///
-/// Jerarquía editable:
-///   Recurso (Carro 1) → Tramos (Ida, Vuelta) → Turnos (Ida y vuelta, Solo ida)
+/// Jerarquía editable (con ejemplos de varios oficios, no sólo transporte):
+///   Recurso (Carro 1 / Mesa 3 / Habitación 4) → Tramos (Ida, Vuelta, Entrada)
+///   → Turnos (la opción que el cliente elige)
 /// Un turno consume 1 plaza de cada tramo marcado. La disponibilidad de un
 /// turno = mínimo de los tramos que ocupa (capacidad compartida).
+///
+/// Es OPCIONAL, y desde el punto 6 del plan de mejoras hay dos atajos para quien
+/// no necesita pensar en tramos:
+///   · `sin_tramos`  → se ocultan los tramos; cada turno recibe un tramo oculto
+///                     propio (cupo independiente por turno).
+///   · `solo_turnos` → además se ocultan los recursos: el admin sólo ve una
+///                     lista de turnos y el sistema crea el recurso oculto.
+/// En ambos casos los objetos siguen existiendo en la base de datos: no se
+/// cambia ni una regla de `_ls_tiene_recursos`, `plan_tramo` ni la reserva.
 ///
 /// Es OPCIONAL: si un servicio no define recursos, sigue funcionando con el
 /// cupo por día de siempre (plan_servicios).
@@ -62,14 +70,40 @@ class _ConfigRecursosPanelState extends State<ConfigRecursosPanel> {
   List<Recurso> _recursos = [];
   bool _loading = true;
 
+  /// Modo simplificado: no se gestionan tramos (se crean solos, uno por turno).
+  late bool _sinTramos;
+
+  /// Modo simplificado extremo: tampoco se gestionan recursos.
+  late bool _soloTurnos;
+
+  bool _cambiandoModo = false;
+
   String get _uuid => AuthService.currentUserId ?? '';
 
+  /// Moneda del servicio para el precio fijo de los turnos.
+  String get _moneda =>
+      widget.localServicio.servicio?.configPrecio.monedaDefault ?? 'USD';
+
   bool get _esTransporte => widget.localServicio.esTransporteOmnibus;
+
+  /// En modo simple los tramos y el recurso son invisibles: no tiene sentido
+  /// asustar al admin con las reglas de mínimos de ida/vuelta del transporte.
+  bool get _modoSimple => _soloTurnos || _sinTramos;
+
+  /// Recursos que se pintan. En "solo turnos" la lista queda vacía porque todo
+  /// se muestra en el bloque plano de turnos.
+  List<Recurso> get _recursosVisibles => _soloTurnos ? const [] : _recursos;
+
+  /// Todos los turnos del local_servicio con su recurso, para el modo simple.
+  List<(Recurso, Turno)> get _turnosPlano => [
+    for (final r in _recursos)
+      for (final t in r.turnos) (r, t),
+  ];
 
   /// Para transporte: cada recurso activo debe tener al menos un turno solo-ida
   /// y un turno solo-vuelta. El turno combinado (ida+vuelta) es opcional.
   String? get _avisoTurnosMinimos {
-    if (!_esTransporte) return null;
+    if (!_esTransporte || _modoSimple) return null;
     final incompletos = <String>[];
     for (final r in _recursos.where((e) => e.activo)) {
       final falta = _faltantesTurnosMinimos(r);
@@ -94,15 +128,14 @@ class _ConfigRecursosPanelState extends State<ConfigRecursosPanel> {
       if (tipos.length == 1 && tipos.contains('ida')) tieneIda = true;
       if (tipos.length == 1 && tipos.contains('vuelta')) tieneVuelta = true;
     }
-    return [
-      if (!tieneIda) 'Ida',
-      if (!tieneVuelta) 'Vuelta',
-    ];
+    return [if (!tieneIda) 'Ida', if (!tieneVuelta) 'Vuelta'];
   }
 
   @override
   void initState() {
     super.initState();
+    _soloTurnos = widget.localServicio.soloTurnos;
+    _sinTramos = widget.localServicio.sinTramos;
     _cargar();
   }
 
@@ -129,6 +162,52 @@ class _ConfigRecursosPanelState extends State<ConfigRecursosPanel> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(msg), backgroundColor: color));
+  }
+
+  // ── Modo de gestión (punto 6) ──────────────────────────────────────────
+
+  /// Activa/desactiva los modos simplificados.
+  ///
+  /// Todo el trabajo lo hace la RPC en una transacción: guarda las banderas,
+  /// garantiza el recurso oculto si hace falta y crea un tramo oculto por cada
+  /// turno que aún no tenga. Aquí sólo se refleja el resultado y se recarga.
+  Future<void> _cambiarModo({bool? soloTurnos, bool? sinTramos}) async {
+    final nuevoSolo = soloTurnos ?? _soloTurnos;
+    final nuevoSin = sinTramos ?? _sinTramos;
+    setState(() => _cambiandoModo = true);
+    try {
+      final res = await RecursoService.configurarModo(
+        uuidUsuario: _uuid,
+        idLocalServicio: widget.localServicio.id,
+        soloTurnos: nuevoSolo,
+        sinTramos: nuevoSin,
+      );
+      if (!mounted) return;
+      setState(() {
+        _soloTurnos = res.soloTurnos;
+        _sinTramos = res.sinTramos;
+      });
+      widget.onUpdated?.call();
+      await _cargar();
+      if (!mounted) return;
+      final detalles = <String>[
+        if (res.recursoCreado) 'se creó el cupo interno',
+        if (res.tramosCreados > 0)
+          'se creó ${res.tramosCreados} tramo(s) interno(s)',
+      ];
+      _snack(
+        detalles.isEmpty
+            ? 'Modo actualizado'
+            : 'Modo actualizado: ${detalles.join(' y ')}.',
+        AppTheme.success,
+      );
+    } catch (e) {
+      // La RPC rechaza "solo turnos" cuando hay varios recursos: el mensaje ya
+      // explica qué hacer, así que se muestra tal cual.
+      _snack('$e'.replaceFirst('Exception: ', ''), AppTheme.warning);
+    } finally {
+      if (mounted) setState(() => _cambiandoModo = false);
+    }
   }
 
   // ── Recurso ────────────────────────────────────────────────────────────
@@ -197,7 +276,9 @@ class _ConfigRecursosPanelState extends State<ConfigRecursosPanel> {
   // ── Turno ──────────────────────────────────────────────────────────────
 
   Future<void> _editarTurno(Recurso recurso, {Turno? turno}) async {
-    if (recurso.tramos.where((t) => t.activo).isEmpty) {
+    // En modo simple los tramos son un detalle interno: no se piden. Fuera de
+    // él, un turno sin tramos no tendría cupo que descontar.
+    if (!_sinTramos && recurso.tramos.where((t) => t.activo).isEmpty) {
       _snack(
         'Primero agrega al menos un tramo a este recurso.',
         AppTheme.warning,
@@ -213,10 +294,31 @@ class _ConfigRecursosPanelState extends State<ConfigRecursosPanel> {
       builder: (_) => _TurnoFormSheet(
         uuid: _uuid,
         recurso: recurso,
+        idLocalServicio: widget.localServicio.id,
         turno: turno,
-        moneda:
-            widget.localServicio.servicio?.configPrecio.monedaDefault ?? 'USD',
-        exigirTurnosMinimos: _esTransporte,
+        sinTramos: _sinTramos,
+        moneda: _moneda,
+        exigirTurnosMinimos: _esTransporte && !_modoSimple,
+      ),
+    );
+    if (res == true) _cargar();
+  }
+
+  /// Alta de turno en "Solo configurar turnos" cuando todavía no existe ningún
+  /// recurso: la RPC crea el cupo interno y el tramo la primera vez.
+  Future<void> _nuevoTurnoModoSimple() async {
+    final res = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _TurnoFormSheet(
+        uuid: _uuid,
+        recurso: null,
+        idLocalServicio: widget.localServicio.id,
+        sinTramos: true,
+        moneda: _moneda,
       ),
     );
     if (res == true) _cargar();
@@ -280,6 +382,8 @@ class _ConfigRecursosPanelState extends State<ConfigRecursosPanel> {
   Widget build(BuildContext context) {
     final servicio = widget.localServicio.servicio?.nombre ?? 'Servicio';
     final local = widget.localServicio.local?.nombre ?? '';
+    final moneda =
+        widget.localServicio.servicio?.configPrecio.monedaDefault ?? 'USD';
     final content = ListView(
       shrinkWrap: true,
       physics: const ClampingScrollPhysics(),
@@ -313,45 +417,162 @@ class _ConfigRecursosPanelState extends State<ConfigRecursosPanel> {
           ),
         ],
         const SizedBox(height: 16),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: ElevatedButton.icon(
-            onPressed: () => _editarRecurso(),
-            icon: const Icon(Icons.add),
-            label: const Text('Recurso'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primary,
-              foregroundColor: Colors.white,
-            ),
+        _ModoGestionCard(
+          soloTurnos: _soloTurnos,
+          sinTramos: _sinTramos,
+          cambiando: _cambiandoModo,
+          cantidadRecursos: _recursos.length,
+          onSoloTurnos: (v) => _cambiarModo(
+            soloTurnos: v,
+            // Activar "solo turnos" implica "sin tramos" (lo exige el CHECK).
+            sinTramos: v ? true : _sinTramos,
           ),
+          onSinTramos: (v) => _cambiarModo(sinTramos: v),
         ),
         const SizedBox(height: 16),
-        if (_recursos.isEmpty)
-          _EmptyState(onCrear: () => _editarRecurso())
-        else
-          ..._recursos.map(
-            (r) => _RecursoCard(
-              recurso: r,
-              onEditRecurso: () => _editarRecurso(recurso: r),
-              onDeleteRecurso: () => _eliminarRecurso(r),
-              onAddTramo: () => _editarTramo(r),
-              onEditTramo: (t) => _editarTramo(r, tramo: t),
-              onDeleteTramo: _eliminarTramo,
-              onAddTurno: () => _editarTurno(r),
-              onEditTurno: (t) => _editarTurno(r, turno: t),
-              onDeleteTurno: (t) => _eliminarTurno(r, t),
+        if (!_modoSimple) _AyudaTramos(esTransporte: _esTransporte),
+        const SizedBox(height: 16),
+
+        if (_soloTurnos) ...[
+          // ── Modo "solo configurar turnos": lista plana, sin recursos ──
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Turnos reservables',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: _nuevoTurnoModoSimple,
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Turno'),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ],
+          ),
+          if (_turnosPlano.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Text(
+                'Aún no hay turnos. Crea el primero: el sistema se encarga del '
+                'cupo interno.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+              ),
+            )
+          else
+            Card(
+              margin: EdgeInsets.zero,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+              ),
+              child: Column(
+                children: [
+                  for (final (recurso, turno) in _turnosPlano)
+                    ListTile(
+                      dense: true,
+                      leading: Icon(
+                        turno.activo
+                            ? Icons.confirmation_number_outlined
+                            : Icons.confirmation_number_outlined,
+                        color: turno.activo
+                            ? AppTheme.primary
+                            : AppTheme.textSecondary,
+                      ),
+                      title: Text(
+                        turno.nombre,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
+                          color: turno.activo ? null : AppTheme.textSecondary,
+                        ),
+                      ),
+                      subtitle: Text(
+                        _subtituloTurno(turno, moneda: moneda),
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit_outlined, size: 18),
+                            onPressed: () =>
+                                _editarTurno(recurso, turno: turno),
+                          ),
+                          IconButton(
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              size: 18,
+                              color: AppTheme.error,
+                            ),
+                            onPressed: () => _eliminarTurno(recurso, turno),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+        ] else ...[
+          // ── Modo normal: recursos (con o sin tramos visibles) ──
+          Align(
+            alignment: Alignment.centerLeft,
+            child: ElevatedButton.icon(
+              onPressed: () => _editarRecurso(),
+              icon: const Icon(Icons.add),
+              label: const Text('Recurso'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                foregroundColor: Colors.white,
+              ),
             ),
           ),
+          const SizedBox(height: 16),
+          if (_recursos.isEmpty)
+            _EmptyState(onCrear: () => _editarRecurso())
+          else
+            ..._recursosVisibles.map(
+              (r) => _RecursoCard(
+                recurso: r,
+                ocultarTramos: _sinTramos,
+                onEditRecurso: () => _editarRecurso(recurso: r),
+                onDeleteRecurso: () => _eliminarRecurso(r),
+                onAddTramo: () => _editarTramo(r),
+                onEditTramo: (t) => _editarTramo(r, tramo: t),
+                onDeleteTramo: _eliminarTramo,
+                onAddTurno: () => _editarTurno(r),
+                onEditTurno: (t) => _editarTurno(r, turno: t),
+                onDeleteTurno: (t) => _eliminarTurno(r, t),
+              ),
+            ),
+        ],
       ],
     );
 
     return _loading
         ? const Center(child: CircularProgressIndicator())
-        : RefreshIndicator(
-            onRefresh: _cargar,
-            child: content,
-          );
+        : RefreshIndicator(onRefresh: _cargar, child: content);
   }
+}
+
+/// Subtítulo de un turno: horas (si las tiene), tramos y precios.
+String _subtituloTurno(Turno turno, {required String moneda}) {
+  final partes = <String>[
+    if (turno.etiquetaHora != null) turno.etiquetaHora!,
+    if (turno.precios.isNotEmpty)
+      turno.precios.entries
+          .map(
+            (e) =>
+                '${e.value.toStringAsFixed(e.value == e.value.roundToDouble() ? 0 : 2)} ${e.key}',
+          )
+          .join(' · '),
+  ];
+  return partes.isEmpty ? 'Sin precio fijo' : partes.join('  ·  ');
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -373,10 +594,7 @@ class _Header extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(
-            Icons.directions_car_filled_outlined,
-            color: AppTheme.primary,
-          ),
+          const Icon(Icons.tune_outlined, color: AppTheme.primary),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -399,13 +617,224 @@ class _Header extends StatelessWidget {
                   ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Define recursos (ej: Carro 1), sus tramos de capacidad '
-                  '(Ida, Vuelta) y los turnos reservables. En transporte se '
-                  'exigen mínimo un turno Solo Ida y uno Solo Vuelta; el de '
-                  'Ida y vuelta es opcional (precio paquete).',
+                  'Aquí se define QUÉ puede reservarse y CUÁNTO cabe por día. '
+                  'Si sólo necesitas horarios (ej: turnos de 9:00, 10:00...), '
+                  'activa el modo simple más abajo y olvídate de recursos y '
+                  'tramos.',
                   style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Explicación de qué es un "recurso" y qué es un "tramo", pensada para que la
+/// entienda quien corta uñas o alquila habitaciones, no sólo un transportista.
+class _AyudaTramos extends StatelessWidget {
+  final bool esTransporte;
+  const _AyudaTramos({required this.esTransporte});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.accent.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.accent.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.lightbulb_outline,
+                size: 18,
+                color: AppTheme.accent,
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  '¿Qué es un recurso y qué es un tramo?',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const _AyudaParrafo(
+            titulo: 'Recurso',
+            texto:
+                'Es "la cosa" que atiende a un cliente a la vez: Carro 1, Mesa '
+                '3, Habitación 4, Sillón de uñas, Sillón 2. Cada recurso lleva '
+                'su propia capacidad por día.',
+          ),
+          const SizedBox(height: 6),
+          const _AyudaParrafo(
+            titulo: 'Tramo',
+            texto:
+                'Es un contador dentro del recurso. Sólo hace falta cuando una '
+                'misma reserva consume varias plazas a la vez. Ejemplo de '
+                'transporte: un recurso "Carro 1" con los tramos Ida y Vuelta, '
+                'porque un pasaje de ida y vuelta gasta una plaza en cada uno.',
+          ),
+          const SizedBox(height: 6),
+          _AyudaParrafo(
+            titulo: 'Turno',
+            texto: esTransporte
+                ? 'Es la opción que el cliente elige: "Solo ida", "Solo '
+                      'vuelta", "Ida y vuelta". Puede llevar horas y precio '
+                      'propios.'
+                : 'Es la opción que el cliente elige: "9:00 – 10:00", "Turno '
+                      'mañana", "Sesión completa". Puede llevar horas y precio '
+                      'propios.',
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Regla práctica: si cada reserva gasta una sola plaza, NO uses '
+            'tramos. Marca "No uso tramos" abajo y listo.',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AyudaParrafo extends StatelessWidget {
+  const _AyudaParrafo({required this.titulo, required this.texto});
+
+  final String titulo;
+  final String texto;
+
+  @override
+  Widget build(BuildContext context) {
+    return RichText(
+      text: TextSpan(
+        style: const TextStyle(
+          fontSize: 12,
+          color: AppTheme.textSecondary,
+          height: 1.35,
+        ),
+        children: [
+          TextSpan(
+            text: '$titulo: ',
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              color: AppTheme.textPrimary,
+            ),
+          ),
+          TextSpan(text: texto),
+        ],
+      ),
+    );
+  }
+}
+
+/// Tarjeta con los dos atajos del punto 6 del plan.
+class _ModoGestionCard extends StatelessWidget {
+  const _ModoGestionCard({
+    required this.soloTurnos,
+    required this.sinTramos,
+    required this.cambiando,
+    required this.cantidadRecursos,
+    required this.onSoloTurnos,
+    required this.onSinTramos,
+  });
+
+  final bool soloTurnos;
+  final bool sinTramos;
+  final bool cambiando;
+  final int cantidadRecursos;
+  final ValueChanged<bool> onSoloTurnos;
+  final ValueChanged<bool> onSinTramos;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.auto_awesome_outlined,
+                  size: 18,
+                  color: AppTheme.primary,
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'Modo de configuración',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                ),
+                if (cambiando) ...[
+                  const SizedBox(width: 10),
+                  const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          CheckboxListTile(
+            dense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+            activeColor: AppTheme.primary,
+            value: sinTramos || soloTurnos,
+            onChanged: cambiando ? null : (v) => onSinTramos(v == true),
+            title: const Text(
+              'No uso tramos',
+              style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+            ),
+            subtitle: const Text(
+              'Oculta los tramos. Cada turno recibe un cupo propio e '
+              'independiente, así que el cupo del día se reparte por turno.',
+              style: TextStyle(fontSize: 11.5, color: AppTheme.textSecondary),
+            ),
+          ),
+          CheckboxListTile(
+            dense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+            activeColor: AppTheme.primary,
+            value: soloTurnos,
+            onChanged: cambiando ? null : (v) => onSoloTurnos(v == true),
+            title: const Text(
+              'Solo configurar turnos',
+              style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+            ),
+            subtitle: Text(
+              'Verás únicamente la lista de turnos. '
+              '${cantidadRecursos > 1 ? 'Requiere tener un solo recurso: ahora hay $cantidadRecursos.' : 'El sistema crea el cupo interno que necesite.'}',
+              style: const TextStyle(
+                fontSize: 11.5,
+                color: AppTheme.textSecondary,
+              ),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(14, 0, 14, 12),
+            child: Text(
+              'Recursos y tramos se siguen guardando por dentro, sólo se '
+              'ocultan. Las reservas y los cupos por día funcionan igual.',
+              style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
             ),
           ),
         ],
@@ -438,9 +867,9 @@ class _EmptyState extends StatelessWidget {
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 24),
             child: Text(
-              'Este servicio usa el cupo por día normal. Agrega recursos solo '
-              'si necesitas turnos con capacidad compartida (ej: transporte '
-              'ida/vuelta).',
+              'Este servicio usa el cupo por día normal: sirve para agendar sin '
+              'distinguir entre varias personas, mesas o habitaciones. Crea un '
+              'recurso por cada una si quieres controlar su cupo por separado.',
               textAlign: TextAlign.center,
               style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
             ),
@@ -467,6 +896,10 @@ class _EmptyState extends StatelessWidget {
 
 class _RecursoCard extends StatelessWidget {
   final Recurso recurso;
+
+  /// Modo "no uso tramos": se oculta la sección de tramos (siguen existiendo en
+  /// la base de datos, uno por turno, pero son un detalle interno).
+  final bool ocultarTramos;
   final VoidCallback onEditRecurso;
   final VoidCallback onDeleteRecurso;
   final VoidCallback onAddTramo;
@@ -486,6 +919,7 @@ class _RecursoCard extends StatelessWidget {
     required this.onAddTurno,
     required this.onEditTurno,
     required this.onDeleteTurno,
+    this.ocultarTramos = false,
   });
 
   String _nombresTramos(Turno t) {
@@ -494,6 +928,22 @@ class _RecursoCard extends StatelessWidget {
         .map((tr) => tr.nombre)
         .toList();
     return nombres.isEmpty ? 'sin tramos' : nombres.join(' + ');
+  }
+
+  /// Línea secundaria de un turno: horas (punto 7), tramos y precios.
+  String _detalleTurno(Turno t) {
+    final partes = <String>[
+      if (t.etiquetaHora != null) t.etiquetaHora!,
+      if (!ocultarTramos) _nombresTramos(t),
+      if (t.precios.isNotEmpty)
+        t.precios.entries
+            .map(
+              (e) =>
+                  '${e.value.toStringAsFixed(e.value == e.value.roundToDouble() ? 0 : 2)} ${e.key}',
+            )
+            .join(' · '),
+    ];
+    return partes.isEmpty ? 'Sin precio fijo' : partes.join('  ·  ');
   }
 
   @override
@@ -538,8 +988,10 @@ class _RecursoCard extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        '${recurso.tramos.length} tramo(s) · '
-                        '${recurso.turnos.length} turno(s)',
+                        ocultarTramos
+                            ? '${recurso.turnos.length} turno(s)'
+                            : '${recurso.tramos.length} tramo(s) · '
+                                  '${recurso.turnos.length} turno(s)',
                         style: const TextStyle(
                           color: AppTheme.textSecondary,
                           fontSize: 12,
@@ -572,47 +1024,53 @@ class _RecursoCard extends StatelessWidget {
             ),
             const Divider(height: 20),
 
-            // Tramos
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Tramos',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                ),
-                TextButton.icon(
-                  onPressed: onAddTramo,
-                  icon: const Icon(Icons.add, size: 16),
-                  label: const Text('Añadir'),
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
+            // Tramos (ocultos en modo "no uso tramos": el sistema crea uno
+            // interno por turno, así que no hay nada que el admin deba tocar).
+            if (!ocultarTramos) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Tramos',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                   ),
-                ),
-              ],
-            ),
-            if (recurso.tramos.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 4),
-                child: Text(
-                  'Aún no hay tramos.',
-                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
-                ),
-              )
-            else
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: recurso.tramos.map((t) {
-                  return InputChip(
-                    label: Text(t.nombre),
-                    onPressed: () => onEditTramo(t),
-                    onDeleted: () => onDeleteTramo(t),
-                    backgroundColor: AppTheme.accent.withValues(alpha: 0.10),
-                    deleteIconColor: AppTheme.error,
-                  );
-                }).toList(),
+                  TextButton.icon(
+                    onPressed: onAddTramo,
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('Añadir'),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ],
               ),
-            const SizedBox(height: 14),
+              if (recurso.tramos.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 4),
+                  child: Text(
+                    'Aún no hay tramos.',
+                    style: TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                )
+              else
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: recurso.tramos.map((t) {
+                    return InputChip(
+                      label: Text(t.nombre),
+                      onPressed: () => onEditTramo(t),
+                      onDeleted: () => onDeleteTramo(t),
+                      backgroundColor: AppTheme.accent.withValues(alpha: 0.10),
+                      deleteIconColor: AppTheme.error,
+                    );
+                  }).toList(),
+                ),
+              const SizedBox(height: 14),
+            ],
 
             // Turnos
             Row(
@@ -657,7 +1115,7 @@ class _RecursoCard extends StatelessWidget {
                     ),
                   ),
                   subtitle: Text(
-                    '${_nombresTramos(t)}${t.precios.isEmpty ? '' : ' · ${t.precios.entries.map((e) => '${e.value.toStringAsFixed(e.value == e.value.roundToDouble() ? 0 : 2)} ${e.key}').join(' · ')}'}',
+                    _detalleTurno(t),
                     style: const TextStyle(fontSize: 12),
                   ),
                   trailing: Row(
@@ -915,16 +1373,27 @@ class _TramoFormSheetState extends State<_TramoFormSheet> {
 
 class _TurnoFormSheet extends StatefulWidget {
   final String uuid;
-  final Recurso recurso;
+
+  /// `null` en modo "solo configurar turnos" cuando el recurso oculto todavía no
+  /// existe: la RPC `admin_guardar_turno_auto` lo crea.
+  final Recurso? recurso;
+  final int idLocalServicio;
   final Turno? turno;
   final String moneda;
   final bool exigirTurnosMinimos;
+
+  /// Modo "no uso tramos": no se piden tramos; la RPC asigna el tramo propio del
+  /// turno (y lo crea si falta).
+  final bool sinTramos;
+
   const _TurnoFormSheet({
     required this.uuid,
-    required this.recurso,
+    required this.idLocalServicio,
     required this.moneda,
+    this.recurso,
     this.turno,
     this.exigirTurnosMinimos = false,
+    this.sinTramos = false,
   });
 
   @override
@@ -940,7 +1409,38 @@ class _TurnoFormSheetState extends State<_TurnoFormSheet> {
   late final TextEditingController _precio = TextEditingController(
     text: widget.turno?.precios[widget.moneda]?.toString() ?? '',
   );
+
+  // ── Punto 7: la hora del turno es opcional ──
+  TimeOfDay? _horaInicio;
+  TimeOfDay? _horaFin;
   bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _horaInicio = _parseHora(widget.turno?.horaInicio);
+    _horaFin = _parseHora(widget.turno?.horaFin);
+  }
+
+  static TimeOfDay? _parseHora(String? texto) {
+    if (texto == null) return null;
+    final partes = texto.split(':');
+    if (partes.length < 2) return null;
+    final h = int.tryParse(partes[0]);
+    final m = int.tryParse(partes[1]);
+    if (h == null || m == null || h < 0 || h > 23 || m < 0 || m > 59) {
+      return null;
+    }
+    return TimeOfDay(hour: h, minute: m);
+  }
+
+  static String _textoHora(TimeOfDay h) =>
+      '${h.hour.toString().padLeft(2, '0')}:'
+      '${h.minute.toString().padLeft(2, '0')}';
+
+  String? get _horaInicioTexto =>
+      _horaInicio == null ? null : _textoHora(_horaInicio!);
+  String? get _horaFinTexto => _horaFin == null ? null : _textoHora(_horaFin!);
 
   @override
   void dispose() {
@@ -949,13 +1449,31 @@ class _TurnoFormSheetState extends State<_TurnoFormSheet> {
     super.dispose();
   }
 
+  Future<void> _elegirHora({required bool inicio}) async {
+    final elegida = await showTimePicker(
+      context: context,
+      initialTime:
+          (inicio ? _horaInicio : _horaFin) ??
+          const TimeOfDay(hour: 9, minute: 0),
+      helpText: inicio ? 'Hora de inicio' : 'Hora de fin',
+    );
+    if (elegida == null || !mounted) return;
+    setState(() {
+      if (inicio) {
+        _horaInicio = elegida;
+      } else {
+        _horaFin = elegida;
+      }
+    });
+  }
+
   Future<void> _guardar() async {
     final nombre = _nombre.text.trim();
     if (nombre.isEmpty) {
       _err('El nombre es obligatorio');
       return;
     }
-    if (_tramosSel.isEmpty) {
+    if (!widget.sinTramos && _tramosSel.isEmpty) {
       _err('Selecciona al menos un tramo que el turno ocupa');
       return;
     }
@@ -966,38 +1484,52 @@ class _TurnoFormSheetState extends State<_TurnoFormSheet> {
       _err('Ingresa un precio válido');
       return;
     }
+    // Hora fin después de inicio: misma regla que el CHECK de la base de datos,
+    // validada aquí para dar un mensaje claro antes de ir a la red.
+    if (_horaInicio != null && _horaFin != null) {
+      final ini = _horaInicio!.hour * 60 + _horaInicio!.minute;
+      final fin = _horaFin!.hour * 60 + _horaFin!.minute;
+      if (fin <= ini) {
+        _err('La hora de fin debe ser posterior a la de inicio');
+        return;
+      }
+    }
+    final precios = precio == null
+        ? const <String, double>{}
+        : {widget.moneda: precio};
 
-    if (widget.exigirTurnosMinimos) {
+    if (widget.exigirTurnosMinimos && widget.recurso != null) {
+      // `widget.recurso` no se promueve a no-nulo (es un campo público detrás de
+      // un getter), así que se copia a una local ya garantizada.
+      final recurso = widget.recurso!;
       final editado = Turno(
         id: widget.turno?.id ?? -1,
         nombre: nombre,
         orden: widget.turno?.orden ?? 0,
         activo: _activo,
-        precios: precio == null ? const {} : {widget.moneda: precio},
+        precios: precios,
         tramosIds: _tramosSel.toList(),
       );
       final restantes = <Turno>[
-        for (final t in widget.recurso.turnos)
+        for (final t in recurso.turnos)
           if (widget.turno == null || t.id != widget.turno!.id) t,
         if (_activo) editado,
       ];
       final prueba = Recurso(
-        id: widget.recurso.id,
-        idLocalServicio: widget.recurso.idLocalServicio,
-        nombre: widget.recurso.nombre,
-        capacidad: widget.recurso.capacidad,
-        orden: widget.recurso.orden,
-        activo: widget.recurso.activo,
-        tramos: widget.recurso.tramos,
+        id: recurso.id,
+        idLocalServicio: recurso.idLocalServicio,
+        nombre: recurso.nombre,
+        capacidad: recurso.capacidad,
+        orden: recurso.orden,
+        activo: recurso.activo,
+        tramos: recurso.tramos,
         turnos: restantes,
       );
       final falta = _ConfigRecursosPanelState._faltantesTurnosMinimos(prueba);
       // Solo bloquear si ya había configuración completa y esta edición la rompe,
       // o si desactiva/cambia el último turno mínimo. Al crear turnos uno a uno
       // se permite quedar incompleto (el aviso de la pantalla lo indica).
-      final antes = _ConfigRecursosPanelState._faltantesTurnosMinimos(
-        widget.recurso,
-      );
+      final antes = _ConfigRecursosPanelState._faltantesTurnosMinimos(recurso);
       if (antes.isEmpty && falta.isNotEmpty) {
         _err(
           'Quedaría sin turno(s) de ${falta.join(' y ')}. '
@@ -1009,15 +1541,33 @@ class _TurnoFormSheetState extends State<_TurnoFormSheet> {
 
     setState(() => _saving = true);
     try {
-      await RecursoService.guardarTurno(
-        uuidUsuario: widget.uuid,
-        idRecurso: widget.recurso.id,
-        nombre: nombre,
-        tramosIds: _tramosSel.toList(),
-        activo: _activo,
-        precios: precio == null ? const {} : {widget.moneda: precio},
-        id: widget.turno?.id,
-      );
+      if (widget.sinTramos) {
+        // Camino simple: la RPC resuelve el recurso oculto, el tramo propio del
+        // turno y (si es nuevo) el turno + su vínculo, todo en una transacción.
+        await RecursoService.guardarTurnoAuto(
+          uuidUsuario: widget.uuid,
+          idLocalServicio: widget.idLocalServicio,
+          nombre: nombre,
+          orden: widget.turno?.orden ?? 0,
+          activo: _activo,
+          precios: precios,
+          horaInicio: _horaInicioTexto,
+          horaFin: _horaFinTexto,
+          id: widget.turno?.id,
+        );
+      } else {
+        await RecursoService.guardarTurno(
+          uuidUsuario: widget.uuid,
+          idRecurso: widget.recurso!.id,
+          nombre: nombre,
+          tramosIds: _tramosSel.toList(),
+          activo: _activo,
+          precios: precios,
+          horaInicio: _horaInicioTexto,
+          horaFin: _horaFinTexto,
+          id: widget.turno?.id,
+        );
+      }
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       _err('$e');
@@ -1032,7 +1582,9 @@ class _TurnoFormSheetState extends State<_TurnoFormSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final tramos = widget.recurso.tramos.where((t) => t.activo).toList();
+    final tramos =
+        widget.recurso?.tramos.where((t) => t.activo).toList() ?? const [];
+    final ocultarTramos = widget.sinTramos;
     return _SheetScaffold(
       titulo: widget.turno == null ? 'Nuevo turno' : 'Editar turno',
       saving: _saving,
@@ -1041,13 +1593,80 @@ class _TurnoFormSheetState extends State<_TurnoFormSheet> {
         TextField(
           controller: _nombre,
           textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             labelText: 'Nombre *',
-            hintText: 'Ej: Ida y vuelta, Solo ida',
-            border: OutlineInputBorder(),
+            hintText: ocultarTramos
+                ? 'Ej: 9:00 - 10:00, Turno mañana'
+                : 'Ej: Ida y vuelta, Solo ida',
+            border: const OutlineInputBorder(),
           ),
         ),
         const SizedBox(height: 16),
+
+        // ── Punto 7: hora inicio / hora fin (opcional) ──
+        const Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'Horario del turno',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'Opcional. Sirve para que el cliente vea a qué hora empieza y '
+            'termina, no sólo el nombre.',
+            style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _elegirHora(inicio: true),
+                icon: const Icon(Icons.schedule, size: 16),
+                label: Text(
+                  _horaInicio == null
+                      ? 'Hora inicio'
+                      : _textoHora(_horaInicio!),
+                  style: const TextStyle(fontSize: 13),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _elegirHora(inicio: false),
+                icon: const Icon(Icons.schedule_outlined, size: 16),
+                label: Text(
+                  _horaFin == null ? 'Hora fin' : _textoHora(_horaFin!),
+                  style: const TextStyle(fontSize: 13),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (_horaInicio != null || _horaFin != null)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => setState(() {
+                _horaInicio = null;
+                _horaFin = null;
+              }),
+              icon: const Icon(Icons.clear, size: 14),
+              label: const Text('Quitar horas', style: TextStyle(fontSize: 12)),
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+              ),
+            ),
+          ),
+        const SizedBox(height: 8),
         TextField(
           controller: _precio,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -1057,39 +1676,67 @@ class _TurnoFormSheetState extends State<_TurnoFormSheet> {
             border: const OutlineInputBorder(),
           ),
         ),
-        const SizedBox(height: 16),
-        const Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            'Tramos que ocupa este turno *',
-            style: TextStyle(fontWeight: FontWeight.w600),
+
+        if (ocultarTramos) ...[
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.accent.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.auto_awesome, size: 16, color: AppTheme.accent),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Este turno tendrá su propio cupo, independiente del resto '
+                    'de turnos. No hace falta configurar tramos.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 4),
-        const Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            'Reservar este turno descuenta 1 plaza de cada tramo marcado.',
-            style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+        ] else ...[
+          const SizedBox(height: 16),
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Tramos que ocupa este turno *',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
           ),
-        ),
-        const SizedBox(height: 8),
-        ...tramos.map((t) {
-          return CheckboxListTile(
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-            value: _tramosSel.contains(t.id),
-            activeColor: AppTheme.primary,
-            title: Text(t.nombre),
-            onChanged: (v) => setState(() {
-              if (v == true) {
-                _tramosSel.add(t.id);
-              } else {
-                _tramosSel.remove(t.id);
-              }
-            }),
-          );
-        }),
+          const SizedBox(height: 4),
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Reservar este turno descuenta 1 plaza de cada tramo marcado.',
+              style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...tramos.map((t) {
+            return CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              value: _tramosSel.contains(t.id),
+              activeColor: AppTheme.primary,
+              title: Text(t.nombre),
+              onChanged: (v) => setState(() {
+                if (v == true) {
+                  _tramosSel.add(t.id);
+                } else {
+                  _tramosSel.remove(t.id);
+                }
+              }),
+            );
+          }),
+        ],
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Activo'),

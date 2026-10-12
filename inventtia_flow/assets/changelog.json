@@ -1,8 +1,65 @@
 {
   "app_name": "inventtia_flow",
-  "current_version": "1.4.7",
-  "build": 15,
+  "current_version": "1.4.8",
+  "build": 16,
   "changelogs": [
+    {
+      "version": "1.4.8",
+      "date": "2026-10-12",
+      "title": "🎛️ Tú decides qué publicas, y ahora ves tus resultados",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Tus resultados, de un vistazo",
+          "description": "Al final de Gestión tienes un resumen con tus locales y servicios, cuántas reservas llevas y cómo se reparten los últimos 30 días en un gráfico. También los servicios que más te reservan, para ver de un vistazo qué es lo que más te funciona."
+        },
+        {
+          "type": "feature",
+          "title": "Publica o pausa un local cuando quieras",
+          "description": "Cada local tiene su interruptor. Si lo apagas, deja de aparecer en el catálogo de tus clientes junto con todos sus servicios, pero no borras nada: lo vuelves a encender y todo queda como estaba."
+        },
+        {
+          "type": "feature",
+          "title": "Publica o pausa un servicio",
+          "description": "Igual para cada servicio: con un toque lo ocultas de tus clientes sin perder su configuración, sus precios ni su foto. Ideal para lo que no ofreces esta temporada."
+        },
+        {
+          "type": "feature",
+          "title": "Pausa solo la combinación que quieras",
+          "description": "En Planificación puedes apagar la unión de un local con un servicio (por ejemplo, tu servicio de uñas en un local pero no en el otro). Para tus clientes desaparece; para ti sigue ahí, listo para reactivarlo."
+        },
+        {
+          "type": "feature",
+          "title": "Configura solo turnos, sin pensar en tramos",
+          "description": "Si tu negocio no necesita tramos, marca «solo configurar turnos» o «no uso tramos» y la app se encarga del resto por dentro: tú creas turnos y ya está. Un tramo solo hace falta cuando un mismo turno te ocupa dos cupos a la vez (la ida y la vuelta de un ómnibus, o la entrada y la salida de una habitación). Si vendes cortes de uñas, atiendes consultas o alojas huéspedes, no los necesitas."
+        },
+        {
+          "type": "feature",
+          "title": "Ahora puedes ponerle hora a tus turnos",
+          "description": "Al crear un turno puedes indicar desde y hasta qué hora es. Se ve en tu listado y también en la ficha que consulta el cliente, para que nadie llegue a destiempo."
+        },
+        {
+          "type": "feature",
+          "title": "Tu horario de atención, tal como es",
+          "description": "Elige los días que abres (por ejemplo, lunes, miércoles y viernes) y tu hora de apertura y cierre. El sistema lo entiende de verdad, así que cuando un cliente ve «abierto ahora» es porque lo estás."
+        },
+        {
+          "type": "feature",
+          "title": "Una foto para cada servicio",
+          "description": "Además de la foto del local, cada servicio puede tener la suya propia y se muestra en el catálogo y en su ficha. Una imagen vale más que una lista de precios."
+        },
+        {
+          "type": "improvement",
+          "title": "Los cambios se ven en el momento",
+          "description": "Antes, al guardar los cambios de un servicio tenías que salir del detalle y volver a entrar para comprobarlos. Ahora se actualizan al instante."
+        },
+        {
+          "type": "fix",
+          "title": "Formularios más limpios",
+          "description": "Corregido el encimado del nombre del campo con el valor elegido en los desplegables (país, provincia, estado y los filtros de reservas). Ahora se lee todo a la primera."
+        }
+      ]
+    },
     {
       "version": "1.4.7",
       "date": "2026-08-03",

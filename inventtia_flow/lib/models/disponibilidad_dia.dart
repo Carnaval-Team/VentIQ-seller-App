@@ -4,6 +4,10 @@
 /// Para servicios SIN recursos, [turnos] queda vacío y se usa [disponibles]
 /// (cupo agregado del día). Para servicios CON recursos, [turnos] trae la lista
 /// de turnos reservables ese día con su disponibilidad individual.
+library;
+
+import 'recurso.dart' show etiquetaHoraTurno;
+
 class DisponibilidadDia {
   final DateTime fecha;
   final int cantidad;
@@ -30,9 +34,11 @@ class DisponibilidadDia {
         cantidad: (json['cantidad'] as num?)?.toInt() ?? 0,
         agendados: (json['agendados'] as num?)?.toInt() ?? 0,
         disponibles: (json['disponibles'] as num?)?.toInt() ?? 0,
-        turnos: (json['turnos'] as List?)
-                ?.map((e) =>
-                    TurnoDisponible.fromJson(e as Map<String, dynamic>))
+        turnos:
+            (json['turnos'] as List?)
+                ?.map(
+                  (e) => TurnoDisponible.fromJson(e as Map<String, dynamic>),
+                )
                 .toList() ??
             [],
       );
@@ -47,13 +53,24 @@ class TurnoDisponible {
   final String turno;
   final int disponibles;
 
+  /// Hora de inicio del turno, `"HH:MM"`, o null (punto 7 del plan).
+  final String? horaInicio;
+
+  /// Hora de fin del turno, `"HH:MM"`, o null.
+  final String? horaFin;
+
   TurnoDisponible({
     required this.idRecurso,
     required this.recurso,
     required this.idTurno,
     required this.turno,
     required this.disponibles,
+    this.horaInicio,
+    this.horaFin,
   });
+
+  /// `"09:00 – 11:00"`, `"09:00"` o null si el turno no tiene horas.
+  String? get etiquetaHora => etiquetaHoraTurno(horaInicio, horaFin);
 
   factory TurnoDisponible.fromJson(Map<String, dynamic> json) =>
       TurnoDisponible(
@@ -62,5 +79,15 @@ class TurnoDisponible {
         idTurno: (json['id_turno'] as num).toInt(),
         turno: json['turno'] as String? ?? '',
         disponibles: (json['disponibles'] as num?)?.toInt() ?? 0,
+        horaInicio: _horaDe(json['hora_inicio']),
+        horaFin: _horaDe(json['hora_fin']),
       );
+}
+
+/// Acepta `"09:00"` y `"09:00:00"`; descarta cualquier otra cosa.
+String? _horaDe(Object? raw) {
+  if (raw is! String) return null;
+  final t = raw.trim();
+  if (t.length >= 5 && t[2] == ':') return t.substring(0, 5);
+  return null;
 }

@@ -59,7 +59,10 @@ Ejecutar en el **SQL Editor** de Supabase, en este orden:
    (reseñas) → `27` (promociones) → `28` (patrocinados) → `29` (bots con promo)
    → `30` (colecciones temáticas) → `31` (fidelidad: puntos y beneficio) → `32`
    (fidelidad: configuración y auditoría del panel) → `33` (interruptor global
-   de fidelidad) → `34` (el descuento de bienvenida aplicado al precio).
+   de fidelidad) → `34` (el descuento de bienvenida aplicado al precio) → `35`
+   (Home feed) → `36` (ranking semanal) → `37` (Realtime de la agenda) → `38`
+   (el turno elegido en la lista de espera) → `39` (arreglo: `resenas_recientes`
+   no encontraba el local).
 2. **`rpc clientes/00_indices_sala_espera.sql`** (índices de apoyo).
 3. El resto de **`rpc clientes/`** (cualquier orden; el 08 depende del 07; el 10 y 11 dependen de las migraciones 08/09).
 4. **`rpc admin/00_helper_entidades_usuario.sql`** primero, luego el resto de `rpc admin/` (07/08/09 dependen del helper y de la migración 09).
@@ -119,6 +122,77 @@ const { data: res } = await supabase
     p_id_local_servicio: 5,
   });
 ```
+
+## Lista de espera con turno
+
+Anotarse en la cola pide también el día y, si el servicio trabaja por turnos, el
+turno (igual que la reserva directa): la pantalla del servicio llama a
+`cliente_obtener_disponibilidad` y guarda la elección en
+`flow.sala_espera.id_turno`.
+
+- **Migración 38** hace que `cliente_obtener_salas_espera` y
+  `admin_listar_salas_espera` devuelvan `id_turno` y `turno`, y alinea el
+  pre-chequeo de duplicado de `cliente_entrar_sala_espera_reserva` con el índice
+  real `unique_usuario_servicio_activo`.
+- **Sigue habiendo una sola entrada por (usuario, servicio-local).** El turno es
+  la *preferencia* dentro de esa entrada, no una segunda cola; el bot
+  (`bot_procesar_recurso_dia`) ya lo respeta (`se.id_turno = p_id_turno`, con
+  respaldo para las entradas viejas sin turno). El porqué de no ampliar el índice
+  está en la cabecera de la migración 38.
+- El cliente tolera que la migración no esté aplicada: `SalaEspera.fromJson` lee
+  el turno como opcional y la pantalla dice "cualquier turno".
+
+## Feed de reseñas (`resenas_recientes`)
+
+El Home pide las reseñas con comentario vía `flow.resenas_recientes`.
+
+- **Migración 39** (`migraciones/39_resenas_recientes_fix.sql`) arregla un error
+  que dejaba el feed **siempre vacío**: la función unía el local con
+  `ls.local`, una columna que no existe (la real es `ls.id_local`), así que
+  respondía `42703 column ls.local does not exist`.
+- **Por qué tardó en verse:** en PostgreSQL el cuerpo de una función `plpgsql` no
+  se valida al crearla, solo en la primera ejecución. Un `create or replace`
+  aparentemente correcto puede dejar una función rota. Al tocar una función,
+  llamarla una vez contra la base es parte de la verificación.
+- La migración 26 del repo ya viene corregida, pero en cualquier base donde se
+  aplicó antes hay que pegar la **39** (re-despliega solo esa función).
+
+## Publicación, modos de gestión y horario estructurado (migraciones 40, 41 y 42)
+
+Las tres se aplican **en orden** y son aditivas: al migrar, **nada cambia de
+visibilidad** (todo arranca `activo = true`). Están escritas para aplicarse a mano
+desde el SQL Editor; el detalle funcional está en
+`../../PLAN_MEJORAS_ADMIN_CLIENTE.md` §0.bis.
+
+- **40** (`migraciones/40_activo_servicios_locales_turnos_horario.sql`): columnas
+  `activo` en `app_dat_locales`, `app_dat_servicios` y `local_servicio`;
+  `horario_detalle jsonb`; `solo_turnos`/`sin_tramos`; `turno.hora_inicio/hora_fin`;
+  el predicado `flow._ls_disponible(id)` y el helper
+  `flow._caller_es_admin_de_ls(id)`. **Incluye un cambio de seguridad**: elimina la
+  política `"update ls"` de `flow.local_servicio`, que dejaba el UPDATE abierto a
+  `public`/`anon`.
+- **41** (`migraciones/41_rpc_admin_dashboard_modo_y_horas.sql`):
+  `admin_dashboard_entidad`, `admin_config_modo_gestion`, `admin_guardar_turno_auto`
+  y el `drop`+`create` de `admin_guardar_turno` (10 args) y `admin_listar_recursos`
+  (con horas).
+- **42** (`migraciones/42_cliente_filtro_activos_y_horas.sql`): `drop`+`create` de
+  `cliente_obtener_servicios` con `p_incluir_inactivos boolean default false`, el
+  filtro `_ls_disponible` en los RPC de cliente, `horario_detalle` en el payload y
+  las horas del turno en `cliente_obtener_disponibilidad`, más el trigger
+  `trg_agenda_ls_disponible` que bloquea reservar un par desactivado.
+
+Igual que con la 39: **las lecturas del cliente toleran que las migraciones no estén
+aplicadas.** `LocalServicio.activoEfectivo` asume publicado cuando la columna `activo`
+no viene (nunca oculta de más) y el horario cae al parser de texto si no hay
+`horario_detalle`.
+
+**⚠️ Las escrituras del admin no toleran lo mismo.** `createServicio`,
+`updateServicio`, `createLocal`, `updateLocal`, `updateLocalServicio(activo:)` y
+`guardarTurno(horaInicio:)` mandan columnas que solo existen tras la 40: sin
+migrar, PostgREST responde `column "activo" does not exist` y el admin no puede
+guardar locales, servicios ni turnos. Aplica la 40 (y la 41, que crea las RPC
+nuevas) **antes** de abrir el admin. La 42 es la que permite al admin listar y
+reactivar lo desactivado.
 
 ## El "bot" en segundo plano
 

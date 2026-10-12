@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -15,6 +14,7 @@ import '../../services/catalogo_service.dart';
 import '../../services/imagen_service.dart';
 import '../../widgets/net_image.dart';
 import '../../widgets/opciones_list_editor.dart';
+import '../../widgets/preview_imagen.dart';
 import 'servicio_detail_screen.dart';
 
 class GestionServiciosScreen extends StatefulWidget {
@@ -91,42 +91,66 @@ class _GestionServiciosScreenState extends State<GestionServiciosScreen> {
                       borderRadius: BorderRadius.circular(12),
                       side: BorderSide(color: Colors.grey.shade200),
                     ),
-                    child: ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: AppTheme.surface,
-                        backgroundImage: s.foto != null
-                            ? (kIsWeb
-                                  ? NetworkImage(s.foto!) as ImageProvider
-                                  : CachedNetworkImageProvider(s.foto!))
-                            : null,
-                        child: s.foto == null
-                            ? const Icon(
-                                Icons.miscellaneous_services_outlined,
-                                color: AppTheme.primary,
+                    // Un servicio inactivo sigue listado (hay que poder
+                    // reactivarlo) pero atenuado: los clientes no lo ven en
+                    // ningún local (punto 4).
+                    child: Opacity(
+                      opacity: s.activo ? 1 : 0.6,
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: AppTheme.surface,
+                          backgroundImage: s.foto != null
+                              ? (kIsWeb
+                                    ? NetworkImage(
+                                        ImagenService.conVersion(s.foto),
+                                      )
+                                    : CachedNetworkImageProvider(
+                                        ImagenService.conVersion(s.foto),
+                                      ))
+                              : null,
+                          child: s.foto == null
+                              ? const Icon(
+                                  Icons.miscellaneous_services_outlined,
+                                  color: AppTheme.primary,
+                                )
+                              : null,
+                        ),
+                        title: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                s.nombre,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            if (!s.activo)
+                              const Padding(
+                                padding: EdgeInsets.only(left: 6),
+                                child: _SrvChipInactivo(),
+                              ),
+                          ],
+                        ),
+                        subtitle: s.descripcion != null
+                            ? Text(
+                                s.descripcion!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 12),
                               )
                             : null,
-                      ),
-                      title: Text(
-                        s.nombre,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: s.descripcion != null
-                          ? Text(
-                              s.descripcion!,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 12),
-                            )
-                          : null,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ServicioDetailScreen(
-                            servicio: s,
-                            idEntidad: widget.entidad.id,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ServicioDetailScreen(
+                              servicio: s,
+                              idEntidad: widget.entidad.id,
+                            ),
                           ),
-                        ),
-                      ).then((_) => _cargar()),
+                        ).then((_) => _cargar()),
+                      ),
                     ),
                   );
                 },
@@ -152,6 +176,9 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
   XFile? _imagenFile;
   String? _fotoUrl;
   bool _saving = false;
+
+  /// Punto 4: publicar/ocultar el servicio en todos los locales.
+  late bool _activo;
 
   // Datos adicionales + terceros + precio
   bool _permiteTercero = false;
@@ -180,6 +207,7 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
     _nombreCtrl = TextEditingController(text: widget.servicio?.nombre ?? '');
     _descCtrl = TextEditingController(text: widget.servicio?.descripcion ?? '');
     _fotoUrl = widget.servicio?.foto;
+    _activo = widget.servicio?.activo ?? true;
     _permiteTercero = widget.servicio?.permiteTercero ?? false;
     _campos = (widget.servicio?.camposAdicionales ?? [])
         .map(_CampoEditable.fromModel)
@@ -544,6 +572,7 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
               : _descCtrl.text.trim(),
           idEntidad: widget.idEntidad,
           idTipoActividad: _idTipoActividad,
+          activo: _activo,
         );
         idServicio = nuevo.id;
         if (_imagenFile != null) {
@@ -557,6 +586,7 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
             descripcion: nuevo.descripcion,
             foto: fotoFinal,
             idTipoActividad: _idTipoActividad,
+            activo: _activo,
           );
         }
       } else {
@@ -575,6 +605,7 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
               : _descCtrl.text.trim(),
           foto: fotoFinal,
           idTipoActividad: _idTipoActividad,
+          activo: _activo,
         );
       }
       // Guarda datos adicionales + flag de terceros (RPC admin)
@@ -586,7 +617,14 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
         configPrecio: configPrecio,
       );
       if (!mounted) return;
-      Navigator.pop(context);
+      // Punto 5: se devuelve el servicio RECIÉN leído, no `true`. El detalle lo
+      // usa para repintarse en el sitio sin obligar a salir y volver a entrar.
+      final actualizado = await CatalogoService.getServicio(idServicio);
+      // La foto se sube al mismo path, así que hay que invalidar la caché o se
+      // seguiría viendo la anterior (punto 9).
+      ImagenService.invalidar(actualizado.foto);
+      if (!mounted) return;
+      Navigator.pop(context, actualizado);
     } catch (e) {
       setState(() => _saving = false);
       if (!mounted) return;
@@ -660,8 +698,8 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(11),
                     child: _imagenFile != null
-                        ? Image.file(
-                            File(_imagenFile!.path),
+                        ? PreviewImagen(
+                            file: _imagenFile!,
                             fit: BoxFit.cover,
                             width: double.infinity,
                           )
@@ -719,6 +757,28 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
                   validator: (value) => value == null ? 'Requerido' : null,
                 ),
               const SizedBox(height: 12),
+
+              // ── Publicación del servicio (punto 4) ─────────
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _activo,
+                activeThumbColor: AppTheme.primary,
+                onChanged: (v) => setState(() => _activo = v),
+                title: const Text(
+                  'Servicio activo',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(
+                  _activo
+                      ? 'Disponible en los locales donde esté vinculado.'
+                      : 'Oculto en TODOS los locales: no se muestra ni se '
+                            'puede reservar.',
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+              ),
 
               TextFormField(
                 controller: _nombreCtrl,
@@ -828,9 +888,8 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
                 CheckboxListTile(
                   contentPadding: EdgeInsets.zero,
                   value: _aplicaPrecioIdaVueltaTodos,
-                  onChanged: (v) => setState(
-                    () => _aplicaPrecioIdaVueltaTodos = v ?? false,
-                  ),
+                  onChanged: (v) =>
+                      setState(() => _aplicaPrecioIdaVueltaTodos = v ?? false),
                   title: const Text(
                     'Aplica precio de Ida y vuelta para todos los pasajes',
                     style: TextStyle(fontSize: 13.5),
@@ -1694,17 +1753,41 @@ class _SrvImagePlaceholder extends StatelessWidget {
           Icon(
             Icons.miscellaneous_services_outlined,
             size: 36,
-            color: AppTheme.textSecondary.withOpacity(0.4),
+            color: AppTheme.textSecondary.withValues(alpha: 0.4),
           ),
           const SizedBox(height: 6),
           Text(
             'Toca para agregar imagen',
             style: TextStyle(
               fontSize: 12,
-              color: AppTheme.textSecondary.withOpacity(0.6),
+              color: AppTheme.textSecondary.withValues(alpha: 0.6),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Chip "Inactivo" de la lista de servicios (punto 4).
+class _SrvChipInactivo extends StatelessWidget {
+  const _SrvChipInactivo();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppTheme.warning.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: const Text(
+        'Inactivo',
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: AppTheme.warning,
+        ),
       ),
     );
   }

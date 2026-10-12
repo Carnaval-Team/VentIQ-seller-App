@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -13,8 +15,64 @@ import 'admin/entidad_detail_screen.dart';
 import 'admin/gestion_locales_screen.dart';
 import 'admin/gestion_servicios_screen.dart';
 
-class PerfilScreen extends StatelessWidget {
+class PerfilScreen extends StatefulWidget {
   const PerfilScreen({super.key});
+
+  @override
+  State<PerfilScreen> createState() => PerfilScreenState();
+}
+
+class PerfilScreenState extends State<PerfilScreen> {
+  /// Ancla de la sección "Registrar Entidad", destino de "Publica tu negocio".
+  final GlobalKey _entidadKey = GlobalKey();
+  final ScrollController _scrollController = ScrollController();
+
+  /// Resalta la sección de entidad un momento tras llegar desde el Home, para
+  /// que el salto no pase desapercibido.
+  bool _entidadResaltada = false;
+  Timer? _resaltadoTimer;
+
+  @override
+  void dispose() {
+    _resaltadoTimer?.cancel();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  /// Desplaza el perfil hasta la sección "Registrar Entidad".
+  ///
+  /// Lo invoca `HomeShell` desde "Publica tu negocio". Si esa sección no está
+  /// montada (un admin ve otra distinta), se baja al final como respaldo.
+  void irARegistrarEntidad() {
+    if (!mounted) return;
+    final ctx = _entidadKey.currentContext;
+    if (ctx != null) {
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeOutCubic,
+        alignment: 0.18,
+      );
+      _resaltarEntidad();
+      return;
+    }
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  void _resaltarEntidad() {
+    _resaltadoTimer?.cancel();
+    setState(() => _entidadResaltada = true);
+    _resaltadoTimer = Timer(const Duration(milliseconds: 1800), () {
+      if (!mounted) return;
+      setState(() => _entidadResaltada = false);
+    });
+  }
 
   Future<void> _signOut(BuildContext context) async {
     final confirm = await showDialog<bool>(
@@ -72,6 +130,7 @@ class PerfilScreen extends StatelessWidget {
           // ── Contenido desplazable ───────────────────────────────
           Expanded(
             child: SingleChildScrollView(
+              controller: _scrollController,
               padding: const EdgeInsets.fromLTRB(20, 22, 20, 28),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -121,7 +180,13 @@ class PerfilScreen extends StatelessWidget {
                   if (entidadProv.isAdmin)
                     _EntidadAdminSection(provider: entidadProv)
                   else
-                    _EntidadRegisterBanner(ownerUuid: user?.id ?? ''),
+                    KeyedSubtree(
+                      key: _entidadKey,
+                      child: _EntidadRegisterBanner(
+                        ownerUuid: user?.id ?? '',
+                        resaltada: _entidadResaltada,
+                      ),
+                    ),
                   const SizedBox(height: 22),
 
                   // ── Acciones generales ───────────────────────────
@@ -433,7 +498,15 @@ class _ActionTile extends StatelessWidget {
 // ── Banner para usuarios sin entidad ──────────────────────────
 class _EntidadRegisterBanner extends StatelessWidget {
   final String ownerUuid;
-  const _EntidadRegisterBanner({required this.ownerUuid});
+
+  /// `true` mientras se llega desde "Publica tu negocio": la tarjeta se destaca
+  /// un instante para señalar dónde está "Registrar Entidad".
+  final bool resaltada;
+
+  const _EntidadRegisterBanner({
+    required this.ownerUuid,
+    this.resaltada = false,
+  });
 
   void _registrar(BuildContext context) {
     showModalBottomSheet(
@@ -448,7 +521,9 @@ class _EntidadRegisterBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOut,
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
@@ -457,7 +532,21 @@ class _EntidadRegisterBanner extends StatelessWidget {
           ],
         ),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppTheme.primary.withValues(alpha: 0.2)),
+        border: Border.all(
+          color: resaltada
+              ? AppTheme.accent
+              : AppTheme.primary.withValues(alpha: 0.2),
+          width: resaltada ? 2 : 1,
+        ),
+        boxShadow: resaltada
+            ? [
+                BoxShadow(
+                  color: AppTheme.accent.withValues(alpha: 0.30),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
+                ),
+              ]
+            : null,
       ),
       padding: const EdgeInsets.all(20),
       child: Column(

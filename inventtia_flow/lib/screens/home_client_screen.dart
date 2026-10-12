@@ -16,15 +16,38 @@ import '../services/home_catalog_service.dart';
 import '../services/resena_service.dart';
 import '../utils/horario_atencion.dart';
 import '../widgets/boton_favorito.dart';
+import '../widgets/filtros_servicios_sheet.dart';
 import '../widgets/home_hero_header.dart';
 import '../widgets/net_image.dart';
 import '../widgets/notificaciones_bell.dart';
 import '../widgets/resenas.dart';
+import '../widgets/tarjeta_resena_reciente.dart';
 import 'favoritos_screen.dart';
 import 'local_servicio_detail_screen.dart';
 
 class HomeClientScreen extends StatefulWidget {
-  const HomeClientScreen({super.key});
+  const HomeClientScreen({
+    super.key,
+    this.onVerCatalogo,
+    this.onPublicarNegocio,
+    this.onVerEstablecimiento,
+  });
+
+  /// Abre la lista completa de servicios (pestaña Catálogo de `HomeShell`).
+  ///
+  /// Es `null` cuando la pantalla se monta fuera del shell; en ese caso los
+  /// botones que dependen de él caen al aviso informativo de siempre.
+  final VoidCallback? onVerCatalogo;
+
+  /// Lleva al perfil, a la sección "Registrar Entidad".
+  final VoidCallback? onPublicarNegocio;
+
+  /// Abre la lista de servicios **filtrada por un establecimiento**.
+  ///
+  /// Tocar una tarjeta de "Establecimientos" debe enseñar todo lo que publica
+  /// ese local, no el detalle de su primer servicio. Si es `null` (la pantalla
+  /// se usa fuera del shell) se mantiene el comportamiento anterior.
+  final void Function(int idLocal, String nombreLocal)? onVerEstablecimiento;
 
   @override
   State<HomeClientScreen> createState() => HomeClientScreenState();
@@ -62,7 +85,10 @@ class HomeClientScreenState extends State<HomeClientScreen>
   String _query = '';
   HomeCatalogCategory _category = HomeCatalogCategory.todas;
   String? _provincia;
-  bool _openNow = false;
+
+  /// Filtros del sheet (precio, moneda, provincia, valoración, establecimiento
+  /// y "abierto ahora"), aplicados en memoria sobre el catálogo ya cargado.
+  FiltrosServicios _filtros = FiltrosServicios.vacio;
 
   /// Ordena por valoración real (`flow.resena`). Al desactivarlo se vuelve al
   /// orden del catálogo.
@@ -170,11 +196,17 @@ class HomeClientScreenState extends State<HomeClientScreen>
       }
 
       // En el cliente solo queda el filtro de horario (a propósito: ver
-      // `HomeCatalogService.paginar`) y el troceado en páginas.
+      // `HomeCatalogService.paginar`) y el troceado en páginas. Los filtros del
+      // sheet se aplican aquí, en memoria, sobre el catálogo que el servidor ya
+      // acotó por búsqueda, categoría, provincia y colección.
+      final catalogo = _filtros.hayAlgo
+          ? _feedItems.where(_pasaFiltros).toList()
+          : _feedItems;
+
       final page = HomeCatalogService.paginar(
-        catalogo: _feedItems,
+        catalogo: catalogo,
         page: reset ? 1 : _page + 1,
-        onlyOpen: _openNow,
+        onlyOpen: _filtros.soloAbiertos,
       );
 
       if (!mounted) return;
@@ -207,6 +239,118 @@ class HomeClientScreenState extends State<HomeClientScreen>
       });
       debugPrint('[flow] HomeClientScreen._loadPage ERROR: $e');
     }
+  }
+
+  /// Aplica en memoria los filtros del sheet sobre el catálogo cargado.
+  ///
+  /// "Abierto ahora" se recalcula con el reloj actual (igual que hace
+  /// `paginar`) para que un feed cargado hace horas no decida con datos viejos.
+  /// Admite unos [filtros] distintos de los aplicados para que el sheet pueda
+  /// previsualizar su borrador sin tocar el estado real.
+  bool _pasaFiltros(HomeCatalogItem item, [FiltrosServicios? filtros]) {
+    final f = filtros ?? _filtros;
+    final abierto = f.soloAbiertos
+        ? HorarioAtencion.parseConDetalle(
+                item.horarioTexto,
+                item.horarioDetalle,
+              ).evaluar(DateTime.now()) ==
+              EstadoHorario.abierto
+        : null;
+
+    return f.coincide(
+      precioItem: item.price,
+      monedaItem: item.currency,
+      provinciaItem: item.provincia,
+      ratingItem: item.totalResenas > 0 ? item.rating : null,
+      idLocalItem: item.localServicio?.idLocal ?? item.localServicio?.local?.id,
+      abiertoItem: abierto,
+    );
+  }
+
+  /// Opciones reales del sheet de filtros, deducidas del catálogo cargado.
+  OpcionesFiltros _opcionesFiltros() {
+    final precios = <OfertaPrecio>[];
+    final provincias = <String>{};
+    final locales = <int, LocalOpcion>{};
+    var hayValoraciones = false;
+
+    for (final item in _feedItems) {
+      if (item.price != null && (item.currency ?? '').isNotEmpty) {
+        precios.add(OfertaPrecio(precio: item.price!, moneda: item.currency!));
+      }
+
+      final provincia = item.provincia?.trim();
+      if ((provincia ?? '').isNotEmpty) provincias.add(provincia!);
+
+      final localServicio = item.localServicio;
+      final idLocal = localServicio?.idLocal ?? localServicio?.local?.id;
+      if (idLocal != null && item.venue.trim().isNotEmpty) {
+        locales.putIfAbsent(
+          idLocal,
+          () => LocalOpcion(
+            id: idLocal,
+            nombre: item.venue.trim(),
+            provincia: (provincia ?? '').isEmpty ? null : provincia,
+          ),
+        );
+      }
+
+      if (item.totalResenas > 0) hayValoraciones = true;
+    }
+
+    final listaProvincias = provincias.toList()..sort();
+    final listaLocales = locales.values.toList()
+      ..sort(
+        (a, b) => a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase()),
+      );
+
+    return OpcionesFiltros(
+      precios: precios,
+      provincias: listaProvincias,
+      locales: listaLocales,
+      hayValoraciones: hayValoraciones,
+    );
+  }
+
+  /// Abre el sheet de filtros y recarga el feed con lo elegido.
+  Future<void> _abrirFiltros() async {
+    final elegidos = await mostrarFiltrosServicios(
+      context,
+      actual: _filtros,
+      opciones: _opcionesFiltros(),
+      // Sin catálogo cargado todavía no hay nada que contar: es mejor dejar el
+      // botón en "Aplicar filtros" que desactivarlo con un 0 engañoso.
+      contador: _feedItems.isEmpty
+          ? null
+          : (borrador) =>
+                _feedItems.where((item) => _pasaFiltros(item, borrador)).length,
+    );
+
+    if (elegidos == null || !mounted) return;
+    setState(() => _filtros = elegidos);
+    // Sin petición nueva: el servidor ya trajo el catálogo completo y los
+    // filtros se aplican en memoria.
+    _loadPage(reset: true);
+
+    if (elegidos.hayAlgo) {
+      _showToast('Filtros aplicados a tu exploración.');
+    }
+  }
+
+  /// Tocar un establecimiento abre la lista de servicios **de ese local**.
+  ///
+  /// Antes abría el detalle del primer servicio que hubiera devuelto el feed,
+  /// que no es lo que el cliente pidió al tocar el local.
+  void _abrirEstablecimiento(HomeCatalogItem item) {
+    final idLocal =
+        item.localServicio?.idLocal ?? item.localServicio?.local?.id;
+    final callback = widget.onVerEstablecimiento;
+    if (callback != null && idLocal != null) {
+      callback(idLocal, item.venue);
+      return;
+    }
+    // Fuera del shell (o sin id resoluble) se conserva el comportamiento previo.
+    _openItem(item);
   }
 
   /// Deja los contadores del feed como snapshot inicial de los badges.
@@ -527,65 +671,6 @@ class HomeClientScreenState extends State<HomeClientScreen>
     _showToast('Ubicación actualizada.');
   }
 
-  Future<void> _showAdvancedFilters() async {
-    var openNow = _openNow;
-    final applied = await showModalBottomSheet<bool>(
-      context: context,
-      backgroundColor: Colors.white,
-      showDragHandle: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (_, setSheetState) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Filtros avanzados', style: _SectionTitleStyle()),
-                const SizedBox(height: 4),
-                const Text(
-                  'Ajusta el resultado sin salir del Home.',
-                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
-                ),
-                const SizedBox(height: 10),
-                SwitchListTile.adaptive(
-                  contentPadding: EdgeInsets.zero,
-                  value: openNow,
-                  onChanged: (value) => setSheetState(() => openNow = value),
-                  title: const Text('Abierto ahora'),
-                  subtitle: const Text(
-                    'Según el horario que cada local tiene registrado.',
-                    style: TextStyle(fontSize: 11),
-                  ),
-                  secondary: const Icon(Icons.schedule_outlined),
-                ),
-                // "Cerca de mí" y "Mejor valorados" aparecerán aquí cuando
-                // existan coordenadas y reseñas. Ver `lib/config/home_features.dart`.
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: () => Navigator.pop(sheetContext, true),
-                    child: const Text('Aplicar filtros'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-    if (applied != true || !mounted) return;
-    setState(() {
-      _openNow = openNow;
-    });
-    _loadPage(reset: true);
-    _showToast('Filtros aplicados a tu exploración.');
-  }
-
   @override
   Widget build(BuildContext context) {
     final profile = context.watch<AuthProvider>().perfil;
@@ -689,13 +774,23 @@ class HomeClientScreenState extends State<HomeClientScreen>
                           ),
                         ),
                         const SizedBox(height: 5),
-                        Text(
-                          'Hola, $firstName 👋',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.4,
+                        // El nombre lo escribe la persona: puede ser largo. Con
+                        // `FittedBox` el texto se reduce solo lo necesario para
+                        // caber en una línea, en vez de partirse en dos y empujar
+                        // el resto de la cabecera hacia abajo.
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Hola, $firstName 👋',
+                            maxLines: 1,
+                            softWrap: false,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.4,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -827,12 +922,24 @@ class HomeClientScreenState extends State<HomeClientScreen>
                         Container(width: 1, height: 20, color: AppTheme.border),
                       IconButton(
                         tooltip: 'Filtros avanzados',
-                        onPressed: _showAdvancedFilters,
-                        icon: const Icon(
-                          Icons.tune_rounded,
-                          color: AppTheme.primary,
-                          size: 20,
-                        ),
+                        onPressed: _abrirFiltros,
+                        // Mismo lenguaje que el buscador del catálogo: con
+                        // filtros puestos, el botón lo dice.
+                        icon: _filtros.activos > 0
+                            ? Badge.count(
+                                count: _filtros.activos,
+                                backgroundColor: AppTheme.accent,
+                                child: const Icon(
+                                  Icons.tune_rounded,
+                                  color: AppTheme.primary,
+                                  size: 20,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.tune_rounded,
+                                color: AppTheme.primary,
+                                size: 20,
+                              ),
                       ),
                     ],
                   ),
@@ -865,9 +972,13 @@ class HomeClientScreenState extends State<HomeClientScreen>
                   _QuickChip(
                     label: 'Abierto ahora',
                     live: true,
-                    selected: _openNow,
+                    selected: _filtros.soloAbiertos,
                     onTap: () {
-                      setState(() => _openNow = !_openNow);
+                      setState(
+                        () => _filtros = _filtros.copyWith(
+                          soloAbiertos: !_filtros.soloAbiertos,
+                        ),
+                      );
                       _loadPage(reset: true);
                     },
                   ),
@@ -1164,12 +1275,21 @@ class HomeClientScreenState extends State<HomeClientScreen>
 
   Widget _buildRecommended(FavoritosProvider favoritos) {
     final recomendaciones = _items.take(6).toList();
+    // Sin servicios no se deja un cargador girando para siempre: o se está
+    // cargando de verdad, o la sección desaparece (el estado vacío lo explica
+    // el bloque principal de la pantalla).
+    if (recomendaciones.isEmpty && !_isLoading) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(bottom: 22),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionHeading('Servicios disponibles', trailing: 'Ver todo'),
+          _sectionHeading(
+            'Servicios disponibles',
+            trailing: 'Ver todo',
+            // "Ver todo" abre la lista completa del catálogo.
+            onTrailingTap: widget.onVerCatalogo,
+          ),
           const SizedBox(height: 4),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16),
@@ -1211,6 +1331,8 @@ class HomeClientScreenState extends State<HomeClientScreen>
       locales.putIfAbsent(item.venue, () => item);
     }
     final values = locales.values.take(4).toList();
+    // Igual que en "Servicios disponibles": sin locales no se gira en vano.
+    if (values.isEmpty && !_isLoading) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(bottom: 22),
       child: Column(
@@ -1227,7 +1349,10 @@ class HomeClientScreenState extends State<HomeClientScreen>
           ),
           const SizedBox(height: 11),
           SizedBox(
-            height: 270,
+            // Alto suficiente para imagen, nombre, ubicación, estado, chips y
+            // botón: antes 270 px dejaban "Ver servicios" fuera de la tarjeta
+            // en los locales con más datos.
+            height: 330,
             child: values.isEmpty
                 ? const _HorizontalLoading()
                 : ListView.separated(
@@ -1238,7 +1363,9 @@ class HomeClientScreenState extends State<HomeClientScreen>
                     separatorBuilder: (_, __) => const SizedBox(width: 12),
                     itemBuilder: (_, index) => _PopularPlaceCard(
                       item: values[index],
-                      onTap: () => _openItem(values[index]),
+                      // La tarjeta y su botón "Ver servicios" abren la lista de
+                      // servicios del local, no su primer servicio.
+                      onTap: () => _abrirEstablecimiento(values[index]),
                     ),
                   ),
           ),
@@ -1326,7 +1453,7 @@ class HomeClientScreenState extends State<HomeClientScreen>
               physics: const BouncingScrollPhysics(),
               itemCount: _resenasRecientes.length,
               separatorBuilder: (_, __) => const SizedBox(width: 11),
-              itemBuilder: (_, index) => _ResenaRecienteCard(
+              itemBuilder: (_, index) => TarjetaResenaReciente(
                 resena: _resenasRecientes[index],
                 onTap: () {
                   final id = _resenasRecientes[index].idLocalServicio;
@@ -1362,12 +1489,12 @@ class HomeClientScreenState extends State<HomeClientScreen>
     final beneficio = HomeFeatures.beneficioBienvenida ? f.beneficio : null;
     final mostrarBeneficio = beneficio != null;
 
-    final titulo =
-        beneficio != null ? beneficio.titulo.toUpperCase() : 'TU FIDELIDAD';
+    final titulo = beneficio != null
+        ? beneficio.titulo.toUpperCase()
+        : 'TU FIDELIDAD';
 
     // Puntos reales del libro de movimientos, o el descuento del beneficio.
-    final destacado =
-        beneficio != null ? beneficio.etiqueta : f.etiquetaPuntos;
+    final destacado = beneficio != null ? beneficio.etiqueta : f.etiquetaPuntos;
 
     final detalleBeneficio = beneficio?.descripcion?.trim();
     final detalle = beneficio != null
@@ -1463,8 +1590,8 @@ class HomeClientScreenState extends State<HomeClientScreen>
                             child: FilledButton(
                               onPressed: mostrarBeneficio
                                   ? () => _showToast(
-                                        'Se aplica solo en tu próxima reserva.',
-                                      )
+                                      'Se aplica solo en tu próxima reserva.',
+                                    )
                                   : _mostrarMovimientos,
                               style: FilledButton.styleFrom(
                                 backgroundColor: Colors.white,
@@ -1671,7 +1798,10 @@ class HomeClientScreenState extends State<HomeClientScreen>
               ),
               if (_items.isNotEmpty)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: AppTheme.primary.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(8),
@@ -1746,6 +1876,30 @@ class HomeClientScreenState extends State<HomeClientScreen>
 
   Widget _buildNoResults() {
     final hayError = _error != null;
+
+    // Cuando hay una categoría (o una búsqueda) activa se dice **qué** no tiene
+    // servicios: "No encontramos resultados" a secas deja al usuario pensando
+    // que la app se quedó cargando.
+    final categoria = _category.esTodas ? null : _category.nombre;
+    final conFiltros = _filtros.hayAlgo;
+    final titulo = hayError
+        ? 'No pudimos cargar el catálogo'
+        : conFiltros
+        ? 'Ningún servicio con estos filtros'
+        : categoria != null
+        ? 'Sin servicios en «$categoria»'
+        : 'No encontramos resultados';
+
+    final detalle = hayError
+        ? (_error ?? '')
+        : conFiltros
+        ? 'Ninguno de los servicios publicados cumple lo que pediste. '
+              'Quita algún filtro para ampliar la búsqueda.'
+        : categoria != null
+        ? 'Todavía no hay servicios publicados en esta categoría. '
+              'Prueba con otra o quita los filtros.'
+        : 'Prueba otra categoría o cambia la búsqueda.';
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
       child: Container(
@@ -1755,23 +1909,25 @@ class HomeClientScreenState extends State<HomeClientScreen>
         child: Column(
           children: [
             Icon(
-              hayError ? Icons.cloud_off_rounded : Icons.search_off_rounded,
+              hayError
+                  ? Icons.cloud_off_rounded
+                  : conFiltros
+                  ? Icons.filter_alt_off_rounded
+                  : categoria != null
+                  ? Icons.category_outlined
+                  : Icons.search_off_rounded,
               size: 42,
               color: AppTheme.primary.withValues(alpha: 0.55),
             ),
             const SizedBox(height: 10),
             Text(
-              hayError
-                  ? 'No pudimos cargar el catálogo'
-                  : 'No encontramos resultados',
+              titulo,
               textAlign: TextAlign.center,
               style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
             ),
             const SizedBox(height: 5),
             Text(
-              hayError
-                  ? (_error ?? '')
-                  : 'Prueba otra categoría o cambia la búsqueda.',
+              detalle,
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: AppTheme.textSecondary,
@@ -1793,7 +1949,7 @@ class HomeClientScreenState extends State<HomeClientScreen>
                     _query = '';
                     _category = HomeCatalogCategory.todas;
                     _provincia = null;
-                    _openNow = false;
+                    _filtros = FiltrosServicios.vacio;
                   });
                   _loadPage(reset: true);
                 },
@@ -1821,8 +1977,11 @@ class HomeClientScreenState extends State<HomeClientScreen>
                 ),
               ),
               TextButton.icon(
-                onPressed: () =>
-                    _showToast('Te ayudaremos a publicar tu negocio.'),
+                // Publicar un negocio se hace desde el perfil: el botón lleva
+                // directo a "Registrar Entidad".
+                onPressed:
+                    widget.onPublicarNegocio ??
+                    () => _showToast('Te ayudaremos a publicar tu negocio.'),
                 icon: const Icon(Icons.storefront_outlined, size: 16),
                 label: const Text('Publica tu negocio'),
                 style: TextButton.styleFrom(
@@ -1845,7 +2004,11 @@ class HomeClientScreenState extends State<HomeClientScreen>
     );
   }
 
-  Widget _sectionHeading(String title, {String? trailing}) {
+  Widget _sectionHeading(
+    String title, {
+    String? trailing,
+    VoidCallback? onTrailingTap,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
@@ -1853,7 +2016,11 @@ class HomeClientScreenState extends State<HomeClientScreen>
           Expanded(child: Text(title, style: const _SectionTitleStyle())),
           if (trailing != null)
             TextButton(
-              onPressed: () => _showToast('Desliza para ver más opciones.'),
+              // Sin destino real, el botón sigue avisando ("Desliza…") en vez de
+              // fingir una navegación que no existe.
+              onPressed:
+                  onTrailingTap ??
+                  () => _showToast('Desliza para ver más opciones.'),
               style: TextButton.styleFrom(
                 padding: EdgeInsets.zero,
                 minimumSize: Size.zero,
@@ -1881,107 +2048,6 @@ class HomeClientScreenState extends State<HomeClientScreen>
       BoxShadow(color: Color(0x0D2B3A67), blurRadius: 12, offset: Offset(0, 5)),
     ],
   );
-}
-
-/// Tarjeta de una reseña reciente en el Home.
-///
-/// Solo muestra lo que el RPC entrega: estrellas reales, el comentario, el
-/// autor abreviado y el servicio. Nada de "Verificada" ni insignias decorativas:
-/// la reseña ya está verificada por construcción (viene de una reserva
-/// completada), así que presumirlo en cada tarjeta sería ruido.
-class _ResenaRecienteCard extends StatelessWidget {
-  final Resena resena;
-  final VoidCallback onTap;
-
-  const _ResenaRecienteCard({required this.resena, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 250,
-        padding: const EdgeInsets.all(13),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(17),
-          border: Border.all(color: AppTheme.border),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x0D2B3A67),
-              blurRadius: 10,
-              offset: Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Estrellas(promedio: resena.puntuacion.toDouble(), size: 15),
-            const SizedBox(height: 8),
-            Expanded(
-              child: Text(
-                resena.comentario!,
-                maxLines: 4,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 12.5,
-                  height: 1.4,
-                  color: AppTheme.textPrimary,
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 11,
-                  backgroundColor: AppTheme.primary.withValues(alpha: 0.12),
-                  child: Text(
-                    resena.autor.trim().isEmpty
-                        ? '?'
-                        : resena.autor.trim()[0].toUpperCase(),
-                    style: const TextStyle(
-                      color: AppTheme.primary,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        resena.autor,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      if (resena.servicio != null)
-                        Text(
-                          resena.servicio!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: AppTheme.textSecondary,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _StatusAvatar extends StatelessWidget {
@@ -2660,88 +2726,104 @@ class _PopularPlaceCard extends StatelessWidget {
                 ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(13, 24, 13, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          item.venue,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w900,
+            // `Expanded` acota la altura del bloque de datos: solo con altura
+            // definida el `Spacer` puede anclar los chips y el botón al pie.
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(13, 24, 13, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            item.venue,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w900,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    item.ubicacion ?? item.direccion ?? 'Ubicación no indicada',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppTheme.textSecondary,
-                      fontSize: 11,
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  _EstadoHorarioChip(item: item),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 5,
-                    runSpacing: 4,
-                    children: item.tags
-                        .take(3)
-                        .map(
-                          (tag) => Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppTheme.surface,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              tag,
-                              style: const TextStyle(
-                                color: AppTheme.textSecondary,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w700,
+                    const SizedBox(height: 4),
+                    Text(
+                      item.ubicacion ??
+                          item.direccion ??
+                          'Ubicación no indicada',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 11,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    _EstadoHorarioChip(item: item),
+                    // El botón queda anclado al pie de la tarjeta: con muchos o
+                    // pocos chips, "Ver servicios" aparece siempre a la misma
+                    // altura y nunca se sale del recorte.
+                    const Spacer(),
+                    Wrap(
+                      spacing: 5,
+                      runSpacing: 4,
+                      children: item.tags
+                          .take(3)
+                          .map(
+                            (tag) => ConstrainedBox(
+                              // Tres chips de 80 px caben en una sola línea de la
+                              // tarjeta, así un tag largo no empuja el botón fuera.
+                              constraints: const BoxConstraints(maxWidth: 80),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.surface,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  tag,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: AppTheme.textSecondary,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                               ),
                             ),
+                          )
+                          .toList(),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 34,
+                      child: FilledButton(
+                        onPressed: onTap,
+                        style: FilledButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(9),
                           ),
-                        )
-                        .toList(),
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 32,
-                    child: FilledButton(
-                      onPressed: onTap,
-                      style: FilledButton.styleFrom(
-                        padding: EdgeInsets.zero,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(9),
                         ),
-                      ),
-                      child: const Text(
-                        'Ver servicios',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
+                        child: const Text(
+                          'Ver servicios',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],

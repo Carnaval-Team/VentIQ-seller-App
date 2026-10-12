@@ -374,7 +374,12 @@ class _ReservasScreenState extends State<ReservasScreen> {
       _localServicios = [];
     });
     if (local != null) {
-      final ls = await CatalogoService.getLocalServicios(idLocal: local.id);
+      // Con inactivos: una reserva de un par ya desactivado debe seguir siendo
+      // filtrable y visible para el admin (el cliente no la ve, él sí).
+      final ls = await CatalogoService.getLocalServicios(
+        idLocal: local.id,
+        incluirInactivos: true,
+      );
       if (mounted) setState(() => _localServicios = ls);
     }
     _load();
@@ -1384,17 +1389,12 @@ class _ReservasScreenState extends State<ReservasScreen> {
                     children: [
                       Expanded(
                         child: DropdownButtonFormField<Local?>(
-                          value: _localFiltro,
+                          initialValue: _localFiltro,
                           isExpanded: true,
-                          decoration: const InputDecoration(
-                            labelText: 'Local',
-                            contentPadding: EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 8,
-                            ),
-                            border: OutlineInputBorder(),
-                            isDense: true,
-                          ),
+                          // Sin `contentPadding` ni `isDense`: los toma del tema
+                          // (`vertical: 14`). Con 8 px la etiqueta "Local" se
+                          // dibujaba encima del valor (punto 2 del plan).
+                          decoration: const InputDecoration(labelText: 'Local'),
                           items: [
                             const DropdownMenuItem(
                               value: null,
@@ -1416,16 +1416,10 @@ class _ReservasScreenState extends State<ReservasScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: DropdownButtonFormField<LocalServicio?>(
-                          value: _lsFiltro,
+                          initialValue: _lsFiltro,
                           isExpanded: true,
                           decoration: const InputDecoration(
                             labelText: 'Servicio',
-                            contentPadding: EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 8,
-                            ),
-                            border: OutlineInputBorder(),
-                            isDense: true,
                           ),
                           items: [
                             const DropdownMenuItem(

@@ -62,6 +62,7 @@ class HomeCatalogItem {
     this.imageUrl,
     this.estadoHorario = EstadoHorario.desconocido,
     this.horarioTexto = '',
+    this.horarioDetalle,
     this.direccion,
     this.provincia,
     this.pais,
@@ -100,6 +101,10 @@ class HomeCatalogItem {
 
   /// Texto original del horario, para mostrarlo tal cual.
   final String horarioTexto;
+
+  /// Horario estructurado (`app_dat_locales.horario_detalle`), si el admin usó
+  /// el constructor de días + horas. Manda sobre [horarioTexto] al interpretar.
+  final Map<String, dynamic>? horarioDetalle;
 
   final String? direccion;
   final String? provincia;
@@ -336,10 +341,7 @@ class HomeCatalogService {
     final crudos = (json['items'] as List?) ?? const <dynamic>[];
 
     return HomeFeed(
-      items: crudos
-          .whereType<Map>()
-          .map((e) => _desdeItemFeed(Map<String, dynamic>.from(e)))
-          .toList(growable: false),
+      items: _itemsDesdeCrudos(crudos),
       total: (json['total'] as num?)?.toInt() ?? crudos.length,
       hasMore: json['has_more'] as bool? ?? false,
       nextCursor: (json['next_cursor'] as num?)?.toInt(),
@@ -373,10 +375,27 @@ class HomeCatalogService {
           params: <String, dynamic>{'p_limite': limite},
         );
     if (res is! List) return const <HomeCatalogItem>[];
-    return res
-        .whereType<Map>()
-        .map((e) => _desdeItemFeed(Map<String, dynamic>.from(e)))
-        .toList(growable: false);
+    return _itemsDesdeCrudos(res);
+  }
+
+  /// Convierte la lista cruda del RPC en items, **filtrando** los que no están
+  /// publicados.
+  ///
+  /// Red de seguridad del punto 3/4: el servidor ya filtra con
+  /// `flow._ls_disponible` (local, servicio y local-servicio activos), pero el
+  /// feed puede llegar cacheado o con las columnas `activo` ausentes si la
+  /// migración 40 aún no se aplicó. [LocalServicio.activoEfectivo] decide con los
+  /// tres valores y, si faltan, asume publicado: nunca oculta de más.
+  static List<HomeCatalogItem> _itemsDesdeCrudos(List<dynamic> crudos) {
+    final items = <HomeCatalogItem>[];
+    for (final crudo in crudos) {
+      if (crudo is! Map) continue;
+      final json = Map<String, dynamic>.from(crudo);
+      final ls = LocalServicio.fromJson(json);
+      if (!ls.activoEfectivo) continue;
+      items.add(_desdeItemFeed(json, item: ls));
+    }
+    return List.unmodifiable(items);
   }
 
   /// Riel de categorías a partir de `metadata.categorias`.
@@ -445,7 +464,13 @@ class HomeCatalogService {
     final filtrados = onlyOpen
         ? catalogo.where((item) {
             // Solo se afirma "abierto ahora" cuando el horario es interpretable.
-            final horario = HorarioAtencion.parse(item.horarioTexto);
+            // Se prefiere el detalle estructurado (punto 10): con él, un local
+            // que abre "Lun, Mié, Vie" se filtra por esos tres días y no por
+            // lunes-viernes.
+            final horario = HorarioAtencion.parseConDetalle(
+              item.horarioTexto,
+              item.horarioDetalle,
+            );
             return horario.evaluar(momento) == EstadoHorario.abierto;
           }).toList()
         : catalogo;
@@ -522,12 +547,18 @@ class HomeCatalogService {
   /// reusa [LocalServicio.fromJson] y la navegación al detalle sigue igual.
   /// `rating` y `promocion` ya vienen resueltos por el servidor: no hay nada que
   /// cruzar en el cliente.
-  static HomeCatalogItem _desdeItemFeed(Map<String, dynamic> json) {
-    final item = LocalServicio.fromJson(json);
+  static HomeCatalogItem _desdeItemFeed(
+    Map<String, dynamic> json, {
+    LocalServicio? item,
+  }) {
+    item ??= LocalServicio.fromJson(json);
     final servicio = item.servicio;
     final local = item.local;
     final precio = precioBaseDe(servicio?.configPrecio);
-    final horario = HorarioAtencion.parse(local?.horarioAtencion);
+    final horario = HorarioAtencion.parseConDetalle(
+      local?.horarioAtencion,
+      local?.horarioDetalle,
+    );
     final promocion = json['promocion'];
 
     return HomeCatalogItem(
@@ -544,6 +575,7 @@ class HomeCatalogService {
       imageUrl: _primeraNoVacia(servicio?.foto, local?.foto),
       estadoHorario: horario.evaluar(DateTime.now()),
       horarioTexto: local?.horarioAtencion?.trim() ?? '',
+      horarioDetalle: local?.horarioDetalle,
       direccion: _primeraNoVacia(local?.direccion, null),
       provincia: _primeraNoVacia(local?.provincia, null),
       pais: _primeraNoVacia(local?.pais, null),

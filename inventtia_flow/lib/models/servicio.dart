@@ -13,6 +13,11 @@ class Servicio {
   final int? idTipoActividad;
   final String? tipoActividad;
 
+  /// Si es false, el servicio no se muestra en NINGÚN local ni admite reservas.
+  /// Se combina con [Local.activo] y [LocalServicio.activo] en
+  /// [LocalServicio.activoEfectivo].
+  final bool activo;
+
   Servicio({
     required this.id,
     required this.nombre,
@@ -24,6 +29,7 @@ class Servicio {
     ConfigPrecio? configPrecio,
     this.idTipoActividad,
     this.tipoActividad,
+    this.activo = true,
   }) : camposAdicionales = camposAdicionales ?? [],
        configPrecio = configPrecio ?? ConfigPrecio();
 
@@ -48,6 +54,9 @@ class Servicio {
     tipoActividad:
         (json['tipo_actividad'] as Map?)?['codigo'] as String? ??
         json['tipo_actividad_codigo'] as String?,
+    // `?? true`: los payloads antiguos (o PostgREST sin la columna) siguen
+    // tratando el servicio como publicado en vez de ocultarlo por accidente.
+    activo: (json['activo'] as bool?) ?? true,
   );
 }
 
@@ -56,6 +65,15 @@ class Local {
   final String nombre;
   final String? descripcion;
   final String? horarioAtencion;
+
+  /// Horario estructurado del local, tal cual lo devuelve la BD:
+  /// `{"dias": [1..7], "apertura": "HH:MM", "cierre": "HH:MM"}`.
+  ///
+  /// Es `null` cuando el admin usó el modo de texto libre. En ese caso la única
+  /// fuente es [horarioAtencion] y se interpreta con el parser clásico.
+  /// Se guarda crudo (no como [HorarioDetalle]) para no acoplar el modelo a
+  /// `utils/` y para tolerar JSON inesperado sin romper el parseo del resto.
+  final Map<String, dynamic>? horarioDetalle;
   final String? terminosCondiciones;
   final Map<String, dynamic>? coordenadas;
   final String? direccion;
@@ -64,11 +82,16 @@ class Local {
   final String? foto;
   final DateTime createdAt;
 
+  /// Si es false, este local y TODOS sus servicios dejan de mostrarse y de
+  /// poder reservarse.
+  final bool activo;
+
   Local({
     required this.id,
     required this.nombre,
     this.descripcion,
     this.horarioAtencion,
+    this.horarioDetalle,
     this.terminosCondiciones,
     this.coordenadas,
     this.direccion,
@@ -76,6 +99,7 @@ class Local {
     this.provincia,
     this.foto,
     required this.createdAt,
+    this.activo = true,
   });
 
   String get ubicacion {
@@ -91,6 +115,7 @@ class Local {
     nombre: json['nombre'] as String,
     descripcion: json['descripcion'] as String?,
     horarioAtencion: json['horario_atencion'] as String?,
+    horarioDetalle: json['horario_detalle'] as Map<String, dynamic>?,
     terminosCondiciones: json['terminos_condiciones'] as String?,
     coordenadas: json['coordenadas'] as Map<String, dynamic>?,
     direccion: json['direccion'] as String?,
@@ -100,6 +125,7 @@ class Local {
     createdAt: json['created_at'] != null
         ? DateTime.parse(json['created_at'] as String)
         : DateTime.now(),
+    activo: (json['activo'] as bool?) ?? true,
   );
 }
 
@@ -114,6 +140,17 @@ class LocalServicio {
   final int cantidadDefault;
   final int cantidadMaxCapacidad;
 
+  /// Si es false, esta combinación local-servicio no se ofrece ni se reserva.
+  final bool activo;
+
+  /// Modo simplificado: la UI no muestra recursos ni tramos. En BD se traduce en
+  /// un recurso oculto y un tramo oculto por turno.
+  final bool soloTurnos;
+
+  /// Modo simplificado: se ocultan los tramos, se conservan los recursos. Cada
+  /// turno recibe un tramo oculto propio.
+  final bool sinTramos;
+
   LocalServicio({
     required this.id,
     required this.idLocal,
@@ -124,10 +161,29 @@ class LocalServicio {
     this.permiteReservaDirecta = false,
     this.cantidadDefault = 1,
     this.cantidadMaxCapacidad = 1,
+    this.activo = true,
+    this.soloTurnos = false,
+    this.sinTramos = false,
   });
 
   bool get esTransporteOmnibus =>
       servicio?.tipoActividad == 'transporte_omnibus';
+
+  /// Réplica Dart de `flow._ls_disponible(id)`.
+  ///
+  /// Es la ÚNICA definición de "este par es visible y reservable" en la app: la
+  /// usan el filtro defensivo del cliente y los chips del admin. Si el servidor
+  /// ya filtró, esto no cambia nada; existe para que una fila vieja en caché o
+  /// un payload sin los tres campos no enseñe algo que no se puede reservar.
+  ///
+  /// `local`/`servicio` pueden ser null (payload PostgREST sin joins): en ese
+  /// caso se consideran publicados y manda sólo [activo], para no ocultar datos
+  /// por una limitación del payload.
+  bool get activoEfectivo =>
+      activo && (local?.activo ?? true) && (servicio?.activo ?? true);
+
+  /// true si la UI debe ocultar la sección de tramos.
+  bool get ocultaTramos => sinTramos || soloTurnos;
 
   factory LocalServicio.fromJson(Map<String, dynamic> json) {
     // Soporta formato RPC (id_local_servicio, local, servicio)
@@ -162,6 +218,9 @@ class LocalServicio {
       cantidadDefault: (json['cantidad_default'] as num?)?.toInt() ?? 1,
       cantidadMaxCapacidad:
           (json['cantidad_max_capacidad'] as num?)?.toInt() ?? 1,
+      activo: (json['activo'] as bool?) ?? true,
+      soloTurnos: (json['solo_turnos'] as bool?) ?? false,
+      sinTramos: (json['sin_tramos'] as bool?) ?? false,
     );
   }
 
@@ -169,15 +228,23 @@ class LocalServicio {
     bool? permiteReservaDirecta,
     int? cantidadDefault,
     int? cantidadMaxCapacidad,
+    bool? activo,
+    bool? soloTurnos,
+    bool? sinTramos,
+    Local? local,
+    Servicio? servicio,
   }) => LocalServicio(
     id: id,
     idLocal: idLocal,
     idServicio: idServicio,
-    local: local,
-    servicio: servicio,
+    local: local ?? this.local,
+    servicio: servicio ?? this.servicio,
     createdAt: createdAt,
     permiteReservaDirecta: permiteReservaDirecta ?? this.permiteReservaDirecta,
     cantidadDefault: cantidadDefault ?? this.cantidadDefault,
     cantidadMaxCapacidad: cantidadMaxCapacidad ?? this.cantidadMaxCapacidad,
+    activo: activo ?? this.activo,
+    soloTurnos: soloTurnos ?? this.soloTurnos,
+    sinTramos: sinTramos ?? this.sinTramos,
   );
 }

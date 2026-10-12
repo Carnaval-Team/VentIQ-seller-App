@@ -1425,17 +1425,12 @@ class _VendedorScreenState extends State<VendedorScreen> {
                     children: [
                       Expanded(
                         child: DropdownButtonFormField<Local?>(
-                          value: _localFiltro,
+                          initialValue: _localFiltro,
                           isExpanded: true,
-                          decoration: const InputDecoration(
-                            labelText: 'Local',
-                            contentPadding: EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 8,
-                            ),
-                            border: OutlineInputBorder(),
-                            isDense: true,
-                          ),
+                          // Sin `contentPadding`/`isDense`: se toman del tema
+                          // (`vertical: 14`). Con 8 px la etiqueta "Local" se
+                          // dibujaba encima del valor (punto 2 del plan).
+                          decoration: const InputDecoration(labelText: 'Local'),
                           items: [
                             const DropdownMenuItem(
                               value: null,
@@ -1457,16 +1452,10 @@ class _VendedorScreenState extends State<VendedorScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: DropdownButtonFormField<LocalServicio?>(
-                          value: _lsFiltro,
+                          initialValue: _lsFiltro,
                           isExpanded: true,
                           decoration: const InputDecoration(
                             labelText: 'Servicio',
-                            contentPadding: EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 8,
-                            ),
-                            border: OutlineInputBorder(),
-                            isDense: true,
                           ),
                           items: [
                             const DropdownMenuItem(

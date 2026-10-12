@@ -19,12 +19,27 @@ import '../services/resena_service.dart';
 import '../services/agenda_service.dart';
 import '../services/catalogo_service.dart';
 import '../utils/esquema_pendiente.dart';
+import '../utils/horario_atencion.dart';
 import '../utils/precio_reserva.dart';
+import '../utils/turnos_servicio.dart';
 import '../widgets/boton_favorito.dart';
 import '../widgets/datos_adicionales_form.dart';
-import '../widgets/net_image.dart';
+import '../widgets/detalle_hero_header.dart';
 import '../widgets/resenas.dart';
 import 'reserva_transporte_sheet.dart';
+
+/// Día y turno elegidos en el calendario de disponibilidad
+/// ([_DisponibilidadSheet]).
+///
+/// Se usa el mismo registro para reservar y para anotarse en la lista de espera
+/// porque el cliente elige lo mismo en los dos casos; `cantidad` solo se usa al
+/// reservar (la cola anota una entrada por persona).
+typedef _SeleccionTurno = ({
+  DateTime fecha,
+  int cantidad,
+  int? idTurno,
+  String? turnoNombre,
+});
 
 class LocalServicioDetailScreen extends StatefulWidget {
   final LocalServicio localServicio;
@@ -41,6 +56,20 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
   bool _isLoading = true;
   bool _isActing = false;
   bool _hasDisponibilidad = false;
+
+  /// Días con disponibilidad tal como los devuelve la RPC. Se guardan (y no
+  /// solo el booleano `_hasDisponibilidad`) para poder enseñar los **turnos**
+  /// del servicio con el cupo del día, que es lo que el cliente necesita ver
+  /// antes de decidir.
+  List<DisponibilidadDia> _dias = const [];
+
+  /// Turnos **configurados** por el admin (`flow.recurso` + `flow.turno`), con
+  /// independencia del cupo.
+  ///
+  /// La RPC de disponibilidad solo devuelve turnos con plazas libres, así que sin
+  /// esto la ficha no podría decir nada de un servicio lleno —que es justo cuando
+  /// el cliente necesita saber a qué turnos puede apuntarse.
+  List<TurnoDisponible> _turnosConfig = const [];
   SalaEspera? _miLugar;
   int _ultimoOtorgado = 0;
   int _ultimoEnAnotarse = 0;
@@ -220,6 +249,10 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
   }
 
   Future<void> _checkDisponibilidad() async {
+    // La configuración de turnos del servicio se pide en paralelo: cuando no hay
+    // ninguna disponibilidad (el caso típico de la lista de espera), es lo único
+    // que permite decir qué turnos ofrece el servicio.
+    final futuroConfig = AgendaService.getTurnosConfigurados(_localServicio.id);
     try {
       final dias = await AgendaService.getDisponibilidad(_localServicio.id);
 
@@ -241,32 +274,61 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
       }
 
       if (mounted) {
-        setState(() => _hasDisponibilidad = hasAvailable);
+        setState(() {
+          _hasDisponibilidad = hasAvailable;
+          _dias = dias;
+        });
       }
     } catch (_) {
       if (mounted) {
-        setState(() => _hasDisponibilidad = false);
+        setState(() {
+          _hasDisponibilidad = false;
+          _dias = const [];
+        });
       }
+    }
+
+    // Nunca lanza: si no se puede leer, `[]`.
+    final config = await futuroConfig;
+    if (mounted && config.isNotEmpty) {
+      setState(() => _turnosConfig = config);
     }
   }
 
+  /// Anota al cliente en la lista de espera **eligiendo día y turno**.
+  ///
+  /// Antes solo se pedía una fecha con `showDatePicker`, así que la cola no
+  /// sabía para qué turno se anotaba la persona; el bot de la cola sí filtra por
+  /// turno (`bot_procesar_recurso_dia`), de modo que llamaba a quien hubiera
+  /// elegido cualquier turno. Ahora se usa el mismo selector que la reserva
+  /// (`_DisponibilidadSheet` en modo espera, donde también valen los días sin
+  /// cupo, que es justo cuando uno se anota), se envía `p_id_turno` al RPC y se
+  /// cotizan los datos adicionales con ese turno, igual que en `_reservarAhora`.
   Future<void> _anotarse() async {
     final uuid = AuthService.currentUserId;
     if (uuid == null) return;
 
-    final now = DateTime.now();
-    final fecha = await showDatePicker(
-      context: context,
-      initialDate: now.add(const Duration(days: 1)),
-      firstDate: now.add(const Duration(days: 1)),
-      lastDate: now.add(const Duration(days: 365)),
-      helpText: '¿A partir de qué fecha quieres el turno?',
-      confirmText: 'Confirmar',
-      cancelText: 'Cancelar',
-    );
-    if (fecha == null || !mounted) return;
+    _SeleccionTurno? seleccion;
 
-    final datos = await _recolectarDatosReserva();
+    setState(() => _isActing = true);
+    try {
+      final dias = await AgendaService.getDisponibilidad(_localServicio.id);
+      if (!mounted) return;
+      setState(() => _isActing = false);
+      seleccion = await _mostrarSelectorDia(dias, paraEspera: true);
+    } catch (_) {
+      // Sin agenda (o sin red) se conserva el mínimo: elegir día y turno. Es
+      // preferible anotarse sin turno (el servidor lo acepta y el bot lo trata
+      // como "cualquier turno") que no poder anotarse. Se abre el mismo selector
+      // con la lista de días vacía: en modo cola el calendario no necesita cupo y
+      // los turnos salen de la configuración del admin, no de la agenda.
+      if (!mounted) return;
+      setState(() => _isActing = false);
+      seleccion = await _mostrarSelectorDia(const [], paraEspera: true);
+    }
+    if (seleccion == null || !mounted) return;
+
+    final datos = await _recolectarDatosReserva(idTurno: seleccion.idTurno);
     if (datos == null || !mounted) return;
 
     setState(() => _isActing = true);
@@ -274,7 +336,8 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
       await ListaService.entrarSalaEspera(
         uuidUsuario: uuid,
         idLocalServicio: _localServicio.id,
-        fechaRegla: fecha,
+        fechaRegla: seleccion.fecha,
+        idTurno: seleccion.idTurno,
         datosAdicionales: datos.datosAdicionales.isEmpty
             ? null
             : datos.datosAdicionales,
@@ -286,14 +349,10 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
       );
       await _load();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '✅ Anotado para el ${DateFormat('dd/MM/yyyy').format(fecha)}',
-            ),
-            backgroundColor: AppTheme.success,
-            behavior: SnackBarBehavior.floating,
-          ),
+        final turno = seleccion.turnoNombre;
+        _showToast(
+          '✅ Anotado para el ${DateFormat('dd/MM/yyyy').format(seleccion.fecha)}'
+          '${turno == null ? '' : ' · turno $turno'}',
         );
       }
     } catch (e) {
@@ -309,6 +368,29 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
     } finally {
       if (mounted) setState(() => _isActing = false);
     }
+  }
+
+  /// Abre el selector de día + turno con la disponibilidad ya cargada.
+  ///
+  /// Con [paraEspera] se abre en modo lista de espera: valen también los días
+  /// sin cupo y no se pregunta cantidad.
+  Future<_SeleccionTurno?> _mostrarSelectorDia(
+    List<DisponibilidadDia> dias, {
+    bool paraEspera = false,
+  }) {
+    return showModalBottomSheet<_SeleccionTurno>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => _DisponibilidadSheet(
+        localServicio: _localServicio,
+        dias: dias,
+        paraEspera: paraEspera,
+      ),
+    );
   }
 
   // ── Reserva directa: abre el calendario de disponibilidad ──
@@ -397,19 +479,7 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
     }
     if (!mounted) return;
 
-    final sel =
-        await showModalBottomSheet<
-          ({DateTime fecha, int cantidad, int? idTurno})
-        >(
-          context: context,
-          isScrollControlled: true,
-          backgroundColor: Colors.white,
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          builder: (_) =>
-              _DisponibilidadSheet(localServicio: _localServicio, dias: dias),
-        );
+    final sel = await _mostrarSelectorDia(dias);
     if (sel == null || !mounted) return;
 
     final datos = await _recolectarDatosReserva(
@@ -485,6 +555,9 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
         idTurno: idTurno,
       );
       await _load();
+      // El cupo de los turnos que enseña la pantalla cambia con la reserva que
+      // se acaba de hacer.
+      _checkDisponibilidad();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -672,26 +745,34 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
                 slivers: [
                   _buildHeader(local, servicio),
                   SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (enLista) _buildMiTurnoCard(),
-                          if (enLista) const SizedBox(height: 14),
-                          _buildPromocionesBanner(),
-                          _buildContadoresCard(),
-                          const SizedBox(height: 14),
-                          _buildInfoCard(local, servicio),
-                          const SizedBox(height: 14),
-                          _buildResenasSection(servicio),
-                          if (local?.terminosCondiciones != null &&
-                              local!.terminosCondiciones!.isNotEmpty) ...[
+                    // La primera tarjeta se monta 12px sobre el hero: así la
+                    // foto y el contenido se leen como una sola pieza y no como
+                    // dos bloques pegados. El desplazamiento es de pintado, no
+                    // de caja, así que no altera el scroll.
+                    child: Transform.translate(
+                      offset: const Offset(0, -12),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (enLista) _buildMiTurnoCard(),
+                            if (enLista) const SizedBox(height: 14),
+                            _buildPromocionesBanner(),
+                            _buildContadoresCard(),
+                            _buildTurnosCard(),
                             const SizedBox(height: 14),
-                            _buildTerminosCard(local.terminosCondiciones!),
+                            _buildInfoCard(local, servicio),
+                            const SizedBox(height: 14),
+                            _buildResenasSection(servicio),
+                            if (local?.terminosCondiciones != null &&
+                                local!.terminosCondiciones!.isNotEmpty) ...[
+                              const SizedBox(height: 14),
+                              _buildTerminosCard(local.terminosCondiciones!),
+                            ],
+                            const SizedBox(height: 16),
                           ],
-                          const SizedBox(height: 16),
-                        ],
+                        ),
                       ),
                     ),
                   ),
@@ -910,19 +991,31 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
     );
   }
 
-  // ── Header colapsable tipo hero: foto del local de fondo + degradado de
-  //    marca encima, con el nombre del servicio y del local. ──
+  // ── Cabecera hero: foto del local, velo en capas y bloque de identidad ──
+  //
+  // El nombre vive dentro de la foto, así que el contraste no puede depender de
+  // la foto: van un velo superior (iconos de la barra), un velo inferior oscuro
+  // (el texto) y un tinte de marca, más sombra en el texto. Con foto blanca,
+  // oscura o cargada el bloque se lee igual. Al colapsar, el bloque se
+  // desvanece y aparece el título compacto de la barra.
   Widget _buildHeader(Local? local, Servicio? servicio) {
     return SliverAppBar(
-      expandedHeight: 200,
+      // 230 y no 300: con 300 el hero se comía media pantalla y dejaba media
+      // tarjeta fuera de la vista en el primer pantallazo. El bloque de texto
+      // ocupa ~160px, así que sigue habiendo foto de sobra encima.
+      expandedHeight: 230,
       pinned: true,
       stretch: true,
-      backgroundColor: AppTheme.primary,
+      backgroundColor: AppTheme.primaryDark,
       foregroundColor: Colors.white,
       elevation: 0,
+      // Sin tinte de "scrolled under": ensuciaría la foto del hero.
+      scrolledUnderElevation: 0,
+      surfaceTintColor: Colors.transparent,
+      systemOverlayStyle: SystemUiOverlayStyle.light,
       actions: [
-        // Sobre el header oscuro: corazón con fondo translúcido. Se auto-oculta
-        // si `flow.favorito` aún no existe o no hay sesión.
+        // Sobre la foto: corazón con fondo translúcido. Se auto-oculta si
+        // `flow.favorito` aún no existe o no hay sesión.
         Padding(
           padding: const EdgeInsets.only(right: 12),
           child: Center(
@@ -935,114 +1028,18 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
           ),
         ),
       ],
-      flexibleSpace: FlexibleSpaceBar(
-        stretchModes: const [StretchMode.zoomBackground],
-        titlePadding: const EdgeInsets.fromLTRB(54, 0, 60, 14),
-        title: Text(
-          servicio?.nombre ?? 'Servicio',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            fontWeight: FontWeight.w800,
-            fontSize: 16,
-            letterSpacing: -0.3,
-            color: Colors.white,
-          ),
-        ),
-        background: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (local?.foto != null && local!.foto!.isNotEmpty)
-              NetImage(
-                url: local!.foto!,
-                fit: BoxFit.cover,
-                placeholder: () => _headerFallback(),
-                errorWidget: () => _headerFallback(),
-              )
-            else
-              _headerFallback(),
-            // Velo degradado para legibilidad del título.
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Color(0x22000000),
-                    Color(0x00000000),
-                    Color(0xCC0D47A1),
-                  ],
-                  stops: [0.0, 0.45, 1.0],
-                ),
-              ),
-            ),
-            // Pastilla con el nombre del local.
-            if (local != null)
-              Positioned(
-                left: 16,
-                right: 16,
-                bottom: 44,
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.92),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.storefront,
-                            size: 14,
-                            color: AppTheme.primary,
-                          ),
-                          const SizedBox(width: 5),
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 220),
-                            child: Text(
-                              local.nombre,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: AppTheme.primary,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 12.5,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
+      flexibleSpace: DetalleHeroHeader(
+        local: local,
+        servicio: servicio,
+        nombreServicio: servicio?.nombre ?? 'Servicio',
+        resenas: _resenas.resumen,
+        precioTexto: etiquetaPrecioBase(servicio?.configPrecio),
+        permiteDirecta: _localServicio.permiteReservaDirecta,
       ),
     );
   }
 
-  Widget _headerFallback() {
-    return const DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppTheme.primaryDark, AppTheme.primary],
-        ),
-      ),
-      child: Center(
-        child: Icon(Icons.storefront_outlined, size: 64, color: Colors.white24),
-      ),
-    );
-  }
-
-  // ── Tarjeta "ticket" con tu turno actual ──
+  // ── Tarjeta de estado en la cola (número, cola, fecha y turno) ──
   Widget _buildMiTurnoCard() {
     final mi = _miLugar!;
     final esTurno = mi.esSuTurno;
@@ -1068,45 +1065,14 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(18),
+        // Compacta a propósito: cuando ya estás en la cola esto es lo primero que
+        // ves, y antes ocupaba un montón (cuadro de 76px + tres fichas que caían
+        // una por línea en un móvil normal). Los mismos datos caben en una fila
+        // por línea de texto, sin perder nada: número, estado, cola, fecha,
+        // turno y cambiar fecha.
+        padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
         child: Row(
           children: [
-            // Número grande tipo ticket.
-            Container(
-              width: 76,
-              height: 76,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.35),
-                  width: 1.5,
-                ),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'N°',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.8),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  Text(
-                    '${mi.numeroCola}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 30,
-                      fontWeight: FontWeight.w900,
-                      height: 1.0,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1116,102 +1082,128 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
                       Icon(
                         esTurno ? Icons.notifications_active : Icons.event_seat,
                         color: Colors.white,
-                        size: 18,
+                        size: 16,
                       ),
                       const SizedBox(width: 6),
-                      Expanded(
+                      // `Flexible` + elipsis: el título cede antes que desbordar
+                      // la fila en un móvil estrecho (o con un número de 3 cifras).
+                      Flexible(
                         child: Text(
                           esTurno ? '¡Es tu turno!' : 'Estás en la lista',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.w800,
-                            fontSize: 16,
+                            fontSize: 15,
                           ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        width: 1,
+                        height: 14,
+                        color: Colors.white.withValues(alpha: 0.30),
+                      ),
+                      const SizedBox(width: 8),
+                      // El número, en línea: se lee igual y deja sitio al resto.
+                      Text(
+                        'N°',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.75),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        '${mi.numeroCola}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          height: 1.0,
+                          fontFeatures: [FontFeature.tabularFigures()],
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 3),
                   Text(
                     esTurno
                         ? 'Acércate, ya casi te toca'
                         : (delante <= 0
                               ? 'Eres el siguiente'
                               : '$delante ${delante == 1 ? 'persona' : 'personas'} delante de ti'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.92),
-                      fontSize: 13,
+                      fontSize: 12.5,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 7),
                   Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 9,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.18),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.calendar_today,
-                              color: Colors.white,
-                              size: 12,
-                            ),
-                            const SizedBox(width: 5),
-                            Text(
-                              'Desde ${DateFormat('dd/MM/yyyy').format(mi.fechaRegla)}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
+                      const Icon(
+                        Icons.calendar_today,
+                        color: Colors.white,
+                        size: 12,
+                      ),
+                      const SizedBox(width: 5),
+                      // `Flexible` en los dos: en un móvil estrecho se recortan
+                      // con elipsis en vez de desbordar la fila.
+                      Flexible(
+                        child: Text(
+                          'Desde ${DateFormat('dd/MM/yy').format(mi.fechaRegla)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      GestureDetector(
-                        onTap: _isActing ? null : _cambiarFecha,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.18),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: const [
-                              Icon(
-                                Icons.edit_calendar,
-                                color: Colors.white,
-                                size: 13,
-                              ),
-                              SizedBox(width: 5),
-                              Text(
-                                'Modificar fecha',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
+                      const SizedBox(width: 12),
+                      // Turno elegido al anotarse. Si la entrada es anterior a
+                      // que se pidiera el turno (o el servicio no trabaja por
+                      // turnos) se dice explícitamente que vale cualquiera.
+                      const Icon(Icons.schedule, color: Colors.white, size: 12),
+                      const SizedBox(width: 5),
+                      Flexible(
+                        child: Text(
+                          mi.turnoNombre ?? 'Cualquier turno',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
                     ],
                   ),
                 ],
+              ),
+            ),
+            const SizedBox(width: 4),
+            // Antes era una ficha de texto ("Modificar fecha"); con el icono y el
+            // tooltip cabe en la misma fila y libera el ancho que necesitaban la
+            // fecha y el turno.
+            SizedBox(
+              width: 40,
+              height: 40,
+              child: IconButton(
+                onPressed: _isActing ? null : _cambiarFecha,
+                tooltip: 'Modificar fecha',
+                padding: EdgeInsets.zero,
+                iconSize: 19,
+                color: Colors.white,
+                disabledColor: Colors.white38,
+                icon: const Icon(Icons.edit_calendar),
               ),
             ),
           ],
@@ -1222,28 +1214,187 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
 
   // ── Contadores de la cola ──
   Widget _buildContadoresCard() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 18),
-        child: Row(
+    final enEspera = _ultimoEnAnotarse - _ultimoOtorgado;
+    return _Tarjeta(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(child: _SectionTitle('Cola del servicio')),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: (enEspera > 0 ? AppTheme.warning : AppTheme.success)
+                      .withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  enEspera > 0 ? 'En espera · $enEspera' : 'Sin espera',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: enEspera > 0 ? AppTheme.warning : AppTheme.success,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Sin `CrossAxisAlignment.stretch`: la fila vive en un scroll vertical
+          // (alto sin acotar) y estirar en el eje cruzado no tiene altura de la
+          // que tirar. Las dos cajas miden lo mismo solas, porque tienen la
+          // misma estructura.
+          Row(
+            children: [
+              Expanded(
+                child: _StatItem(
+                  label: 'Último atendido',
+                  value: '$_ultimoOtorgado',
+                  icon: Icons.how_to_reg_outlined,
+                  color: AppTheme.primary,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _StatItem(
+                  label: 'Último anotado',
+                  value: '$_ultimoEnAnotarse',
+                  icon: Icons.person_add_alt_1_outlined,
+                  color: AppTheme.accent,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Turnos del servicio ─────────────────────────────────────────────────
+
+  /// Día cuyos turnos enseña la ficha (ver `diaDeTurnosAMostrar`).
+  DisponibilidadDia? get _diaDeTurnos => diaDeTurnosAMostrar(_dias);
+
+  /// "Hoy", "Mañana" o la fecha corta: nadie lee "12/05/2026" de un vistazo.
+  String _etiquetaDiaTurnos(DateTime fecha) {
+    final relativa = etiquetaRelativaDia(fecha, DateTime.now());
+    if (relativa != null) return relativa;
+    return DateFormat('EEE d MMM', 'es_ES').format(fecha);
+  }
+
+  /// Turnos del servicio con el cupo del día.
+  ///
+  /// Sin esto, en un servicio que trabaja por turnos el cliente solo descubría
+  /// cuáles existen al abrir el flujo de reserva. Aquí se ven antes: nombre,
+  /// recurso (solo si hay más de uno) y plazas libres.
+  ///
+  /// Cuando no hay ningún día con cupo (habitual cuando hay que anotarse en la
+  /// lista) se enseñan los turnos **configurados**, todos como "sin cupo": es
+  /// mejor decir a qué turnos se puede optar que no decir nada.
+  Widget _buildTurnosCard() {
+    final dia = _diaDeTurnos;
+    final turnos = (dia != null && dia.turnos.isNotEmpty)
+        ? dia.turnos
+        : _turnosConfig;
+    if (turnos.isEmpty) return const SizedBox.shrink();
+
+    final variosRecursos = {for (final t in turnos) t.recurso}.length > 1;
+    final hayCupo = turnos.any((t) => t.disponibles > 0);
+    final enLista = _miLugar != null;
+    final puedeReservar = _localServicio.permiteReservaDirecta;
+    final etiquetaDia = dia == null ? null : _etiquetaDiaTurnos(dia.fecha);
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: _Tarjeta(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: _StatItem(
-                label: 'Último atendido',
-                value: '$_ultimoOtorgado',
-                icon: Icons.check_circle_outline,
-                color: AppTheme.primary,
+            Row(
+              children: [
+                const Expanded(child: _SectionTitle('Turnos')),
+                if (etiquetaDia != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      etiquetaDia,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.primary,
+                      ),
+                    ),
+                  )
+                else
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppTheme.warning.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Text(
+                      'Sin cupo',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.warning,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              hayCupo && etiquetaDia != null
+                  ? 'Estos son los turnos de ${etiquetaDia.toLowerCase()}. '
+                        'El turno se elige al reservar.'
+                  : (hayCupo
+                        ? 'Los turnos con plazas libres son estos. El turno se '
+                              'elige al reservar.'
+                        : 'Ahora mismo no hay cupo en ningún turno. Anótate en la '
+                              'lista y te avisamos.'),
+              style: const TextStyle(
+                fontSize: 12,
+                height: 1.35,
+                color: AppTheme.textSecondary,
               ),
             ),
-            Container(width: 1, height: 48, color: AppTheme.border),
-            Expanded(
-              child: _StatItem(
-                label: 'Último anotado',
-                value: '$_ultimoEnAnotarse',
-                icon: Icons.person_add_outlined,
-                color: AppTheme.accent,
+            const SizedBox(height: 12),
+            for (var i = 0; i < turnos.length; i++) ...[
+              if (i > 0) const SizedBox(height: 8),
+              _TurnoFila(turno: turnos[i], mostrarRecurso: variosRecursos),
+            ],
+            // Solo cuando hay cupo y el servicio lo permite: si no, el botón de
+            // abajo ya ofrece lo que toca y repetirlo aquí sería ruido.
+            if (!enLista && hayCupo && puedeReservar) ...[
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _isActing ? null : _reservarAhora,
+                  icon: const Icon(Icons.event_available, size: 18),
+                  label: const Text('Elegir día y turno'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppTheme.primary,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                  ),
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),
@@ -1280,12 +1431,21 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
         ),
       );
     }
+    // Punto 10: cuando el local tiene horario estructurado (`horario_detalle`)
+    // se muestra ESE texto, no el de la columna, porque el detalle es exacto
+    // (días sueltos como "Lun, Mié, Vie" no se malinterpretan).
+    final horario = HorarioAtencion.parseConDetalle(
+      local?.horarioAtencion,
+      local?.horarioDetalle,
+    );
     if (local?.horarioAtencion != null && local!.horarioAtencion!.isNotEmpty) {
       rows.add(
         _InfoRow(
           icon: Icons.access_time,
           label: 'Horario de atención',
-          value: local.horarioAtencion!,
+          value: horario.esDesconocido
+              ? local.horarioAtencion!
+              : horario.etiqueta,
         ),
       );
     }
@@ -1319,89 +1479,83 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
 
     if (rows.isEmpty) return const SizedBox.shrink();
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 16, 18, 6),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const _SectionTitle('Información'),
-            const SizedBox(height: 8),
-            for (int i = 0; i < rows.length; i++) ...[
-              rows[i],
-              if (i < rows.length - 1)
-                const Divider(height: 22, color: AppTheme.border),
-            ],
-            const SizedBox(height: 8),
+    return _Tarjeta(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _SectionTitle('Información'),
+          const SizedBox(height: 12),
+          for (int i = 0; i < rows.length; i++) ...[
+            rows[i],
+            if (i < rows.length - 1)
+              const Divider(height: 24, color: AppTheme.border),
           ],
-        ),
+        ],
       ),
     );
   }
 
   // ── Términos y condiciones (expandible) ──
   Widget _buildTerminosCard(String terminos) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            InkWell(
-              onTap: () =>
-                  setState(() => _terminosExpanded = !_terminosExpanded),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.description_outlined,
-                      size: 18,
-                      color: AppTheme.textSecondary,
-                    ),
-                    const SizedBox(width: 10),
-                    const Expanded(
-                      child: Text(
-                        'Términos y condiciones',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.textPrimary,
-                        ),
-                      ),
-                    ),
-                    AnimatedRotation(
-                      turns: _terminosExpanded ? 0.5 : 0,
-                      duration: const Duration(milliseconds: 200),
-                      child: const Icon(
-                        Icons.expand_more,
-                        color: AppTheme.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            AnimatedCrossFade(
-              firstChild: const SizedBox(width: double.infinity),
-              secondChild: Padding(
-                padding: const EdgeInsets.only(bottom: 14),
-                child: Text(
-                  terminos,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    height: 1.5,
+    return _Tarjeta(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: () => setState(() => _terminosExpanded = !_terminosExpanded),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.description_outlined,
+                    size: 18,
                     color: AppTheme.textSecondary,
                   ),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Términos y condiciones',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                  ),
+                  AnimatedRotation(
+                    turns: _terminosExpanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: const Icon(
+                      Icons.expand_more,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          AnimatedCrossFade(
+            firstChild: const SizedBox(width: double.infinity),
+            secondChild: Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: Text(
+                terminos,
+                style: const TextStyle(
+                  fontSize: 13,
+                  height: 1.5,
+                  color: AppTheme.textSecondary,
                 ),
               ),
-              crossFadeState: _terminosExpanded
-                  ? CrossFadeState.showSecond
-                  : CrossFadeState.showFirst,
-              duration: const Duration(milliseconds: 200),
             ),
-          ],
-        ),
+            crossFadeState: _terminosExpanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 200),
+          ),
+        ],
       ),
     );
   }
@@ -1617,20 +1771,73 @@ class _ActionButtonState extends State<_ActionButton> {
   }
 }
 
+/// Tarjeta de sección del detalle.
+///
+/// Sustituye al `Card` del tema (radio 16 y color `surface`) que, sobre el
+/// fondo `surface` de la pantalla, quedaba casi invisible: aquí es blanca, con
+/// radio 22, borde suave y una sombra corta, para que cada sección se lea como
+/// una pieza separada.
+class _Tarjeta extends StatelessWidget {
+  const _Tarjeta({
+    required this.child,
+    this.padding = const EdgeInsets.fromLTRB(18, 16, 18, 16),
+  });
+
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: AppTheme.cardBg,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0F0B1B3A),
+            blurRadius: 18,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+}
+
 class _SectionTitle extends StatelessWidget {
   final String text;
   const _SectionTitle(this.text);
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      text.toUpperCase(),
-      style: const TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.w800,
-        letterSpacing: 1,
-        color: AppTheme.textSecondary,
-      ),
+    return Row(
+      children: [
+        Container(
+          width: 3,
+          height: 15,
+          decoration: BoxDecoration(
+            color: AppTheme.primary,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            text.toUpperCase(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.9,
+              color: AppTheme.textSecondary,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1652,10 +1859,12 @@ class _InfoRow extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          padding: const EdgeInsets.all(8),
+          width: 36,
+          height: 36,
+          alignment: Alignment.center,
           decoration: BoxDecoration(
             color: AppTheme.primary.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(12),
           ),
           child: Icon(icon, size: 18, color: AppTheme.primary),
         ),
@@ -1665,21 +1874,22 @@ class _InfoRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                label,
+                label.toUpperCase(),
                 style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8,
                   color: AppTheme.textSecondary,
                 ),
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 3),
               Text(
                 value,
                 style: const TextStyle(
-                  fontSize: 14,
-                  height: 1.4,
+                  fontSize: 13.5,
+                  height: 1.45,
                   color: AppTheme.textPrimary,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ],
@@ -1705,31 +1915,160 @@ class _StatItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.1),
-            shape: BoxShape.circle,
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 15, color: color),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    height: 1.2,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+              ),
+            ],
           ),
-          child: Icon(icon, color: color, size: 22),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-            color: color,
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: TextStyle(
+              // 20 y no 24: la cifra es lo que se mira, pero 24 en dos cajas
+              // seguidas pesaba demasiado en la ficha.
+              fontSize: 20,
+              height: 1,
+              fontWeight: FontWeight.w800,
+              color: color,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
           ),
-        ),
-        Text(
-          label,
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-        ),
-      ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Una fila de turno en la ficha: nombre, recurso (si el servicio tiene varios)
+/// y plazas libres del día que se está enseñando.
+class _TurnoFila extends StatelessWidget {
+  const _TurnoFila({required this.turno, required this.mostrarRecurso});
+
+  final TurnoDisponible turno;
+  final bool mostrarRecurso;
+
+  @override
+  Widget build(BuildContext context) {
+    final hayCupo = turno.disponibles > 0;
+    final color = hayCupo ? AppTheme.success : AppTheme.warning;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withValues(alpha: 0.09),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: const Icon(
+              Icons.confirmation_number_outlined,
+              size: 17,
+              color: AppTheme.primary,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  turno.turno.isEmpty ? 'Turno' : turno.turno,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    height: 1.2,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                if (mostrarRecurso && turno.recurso.isNotEmpty)
+                  Text(
+                    turno.recurso,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                // Punto 7: horas del turno, si el admin las puso.
+                if (turno.etiquetaHora != null)
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.schedule,
+                        size: 12,
+                        color: AppTheme.textSecondary,
+                      ),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          turno.etiquetaHora!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              etiquetaCupoTurno(turno.disponibles),
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: color,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2317,7 +2656,21 @@ class _DisponibilidadSheet extends StatefulWidget {
   final LocalServicio localServicio;
   final List<DisponibilidadDia> dias;
 
-  const _DisponibilidadSheet({required this.localServicio, required this.dias});
+  /// Modo lista de espera.
+  ///
+  /// En la reserva solo se pueden tocar los días **con cupo**; en la cola
+  /// interesan justo los que no lo tienen, así que aquí vale cualquier día
+  /// futuro con plan (o sin datos de plan, si el servicio no trabaja por días)
+  /// y no se pregunta cantidad. Además, el selector de turno ofrece **todos los
+  /// turnos configurados** del servicio (no solo los del día con cupo): quien se
+  /// anota lo hace porque no hay hueco.
+  final bool paraEspera;
+
+  const _DisponibilidadSheet({
+    required this.localServicio,
+    required this.dias,
+    this.paraEspera = false,
+  });
 
   @override
   State<_DisponibilidadSheet> createState() => _DisponibilidadSheetState();
@@ -2326,6 +2679,13 @@ class _DisponibilidadSheet extends StatefulWidget {
 class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
   late final Map<String, DisponibilidadDia> _porDia;
   late DateTime _focusedDay;
+
+  /// Turnos configurados por el admin, con independencia del cupo del día.
+  ///
+  /// Solo se cargan en modo cola: en la reserva directa un turno sin cupo no se
+  /// puede reservar, así que ahí manda la disponibilidad. Si la consulta falla
+  /// (o el servicio no trabaja por turnos) queda vacío y todo sigue igual.
+  List<TurnoDisponible> _turnosConfig = const [];
 
   String _key(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-'
@@ -2340,30 +2700,63 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
     _focusedDay = widget.dias.isNotEmpty
         ? widget.dias.first.fecha
         : DateTime.now();
+    if (widget.paraEspera) _cargarTurnosConfig();
+  }
+
+  Future<void> _cargarTurnosConfig() async {
+    final turnos = await AgendaService.getTurnosConfigurados(
+      widget.localServicio.id,
+    );
+    if (!mounted) return;
+    setState(() => _turnosConfig = turnos);
   }
 
   DisponibilidadDia? _disp(DateTime day) => _porDia[_key(day)];
 
   Future<void> _confirmar(DateTime day) async {
     final disp = _disp(day);
-    if (disp == null || disp.disponibles <= 0) return;
+    // En la reserva el día tiene que tener cupo; en la cola puede estar lleno.
+    if (!widget.paraEspera && (disp == null || disp.disponibles <= 0)) return;
     final fecha = DateTime(day.year, day.month, day.day);
 
-    // Si el día ofrece turnos (servicio con recursos), primero elegimos turno.
+    // Turnos que se pueden elegir. En la cola, además de los del día (con su
+    // cupo real) entran los configurados que ese día no aparecen: anotarse es
+    // precisamente para cuando no hay hueco.
+    final ofrecidos = widget.paraEspera
+        ? combinarTurnosConConfig(disp?.turnos ?? const [], _turnosConfig)
+        : (disp?.turnos ?? const <TurnoDisponible>[]);
+
     TurnoDisponible? turnoSel;
-    int disponiblesTurno = disp.disponibles;
-    if (disp.tieneTurnos) {
+    int disponiblesTurno = disp?.disponibles ?? 0;
+    if (ofrecidos.isNotEmpty) {
       final elegido = await showModalBottomSheet<TurnoDisponible>(
         context: context,
+        isScrollControlled: true,
         backgroundColor: Colors.white,
         shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
-        builder: (_) => _TurnoPickerSheet(fecha: fecha, dia: disp),
+        builder: (_) => _TurnoPickerSheet(
+          fecha: fecha,
+          turnos: ofrecidos,
+          paraEspera: widget.paraEspera,
+        ),
       );
       if (elegido == null || !mounted) return;
       turnoSel = elegido;
       disponiblesTurno = elegido.disponibles;
+    }
+
+    // La cola anota una sola entrada por persona: nunca pregunta cantidad.
+    if (widget.paraEspera) {
+      if (!mounted) return;
+      Navigator.pop(context, (
+        fecha: fecha,
+        cantidad: 1,
+        idTurno: turnoSel?.idTurno,
+        turnoNombre: turnoSel?.turno,
+      ));
+      return;
     }
 
     final ls = widget.localServicio;
@@ -2377,6 +2770,7 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
         fecha: fecha,
         cantidad: 1,
         idTurno: turnoSel?.idTurno,
+        turnoNombre: turnoSel?.turno,
       ));
       return;
     }
@@ -2397,6 +2791,7 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
       fecha: fecha,
       cantidad: cantidad,
       idTurno: turnoSel?.idTurno,
+      turnoNombre: turnoSel?.turno,
     ));
   }
 
@@ -2431,8 +2826,10 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                const Icon(
-                  Icons.event_available,
+                Icon(
+                  widget.paraEspera
+                      ? Icons.playlist_add_check_circle_outlined
+                      : Icons.event_available,
                   size: 20,
                   color: AppTheme.primary,
                 ),
@@ -2441,9 +2838,11 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Reservar ahora',
-                        style: TextStyle(
+                      Text(
+                        widget.paraEspera
+                            ? 'Anotarme en la lista'
+                            : 'Reservar ahora',
+                        style: const TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 16,
                         ),
@@ -2464,7 +2863,7 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
             ),
           ),
           const SizedBox(height: 8),
-          if (vacio)
+          if (vacio && !widget.paraEspera)
             const Padding(
               padding: EdgeInsets.fromLTRB(24, 28, 24, 40),
               child: Column(
@@ -2506,9 +2905,11 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
                 // Don't show events for current day
                 final isTomorrowOrLater = selectedDay.isAfter(today);
 
-                return d != null && d.disponibles > 0 && isTomorrowOrLater
-                    ? [d]
-                    : [];
+                if (!isTomorrowOrLater) return [];
+                // En la cola se marca también el día lleno: saber que no hay
+                // cupo es la razón para anotarse.
+                if (widget.paraEspera) return d != null ? [d] : [];
+                return d != null && d.disponibles > 0 ? [d] : [];
               },
               enabledDayPredicate: (day) {
                 final d = _disp(day);
@@ -2519,7 +2920,9 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
                 // Disable current day and only allow from tomorrow onwards
                 final isTomorrowOrLater = selectedDay.isAfter(today);
 
-                return d != null && d.disponibles > 0 && isTomorrowOrLater;
+                if (!isTomorrowOrLater) return false;
+                if (widget.paraEspera) return true;
+                return d != null && d.disponibles > 0;
               },
               calendarStyle: CalendarStyle(
                 outsideDaysVisible: false,
@@ -2569,6 +2972,7 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
                 markerBuilder: (context, day, events) {
                   if (events.isEmpty) return null;
                   final disp = events.first;
+                  final sinCupo = disp.disponibles <= 0;
                   return Positioned(
                     top: 2,
                     right: 2,
@@ -2578,7 +2982,9 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
                         vertical: 1,
                       ),
                       decoration: BoxDecoration(
-                        color: AppTheme.success,
+                        // Ámbar cuando no queda cupo: en la cola es el dato que
+                        // importa, no un día "malo".
+                        color: sinCupo ? AppTheme.warning : AppTheme.success,
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(color: Colors.white, width: 1),
                       ),
@@ -2610,15 +3016,18 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
               onPageChanged: (f) => setState(() => _focusedDay = f),
               onDaySelected: (selected, focused) => _confirmar(selected),
             ),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 8, 20, 24),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
               child: Text(
-                'Toca un día con cupo para reservar. El número indica los turnos libres.',
+                widget.paraEspera
+                    ? 'Elige el día en que quieres entrar a la cola; si el servicio trabaja por turnos, te pediremos también el turno.'
+                    : 'Toca un día con cupo para reservar. El número indica los turnos libres.',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
+                style: const TextStyle(
+                  fontSize: 13.5,
                   color: AppTheme.textSecondary,
                   fontWeight: FontWeight.w500,
+                  height: 1.35,
                 ),
               ),
             ),
@@ -2632,21 +3041,32 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
 /// Selector de turno para un día concreto (servicios con recursos). Agrupa los
 /// turnos por recurso y muestra la disponibilidad de cada uno. Devuelve el
 /// [TurnoDisponible] elegido.
+///
+/// Con [paraEspera] (lista de espera) también se pueden elegir los turnos sin
+/// cupo —es el caso normal al anotarse— y el texto lo dice. La lista que llega
+/// en [turnos] ya viene preparada por quien abre la hoja: en la cola incluye los
+/// turnos configurados del servicio, no solo los del día.
 class _TurnoPickerSheet extends StatelessWidget {
   final DateTime fecha;
-  final DisponibilidadDia dia;
+  final List<TurnoDisponible> turnos;
+  final bool paraEspera;
 
-  const _TurnoPickerSheet({required this.fecha, required this.dia});
+  const _TurnoPickerSheet({
+    required this.fecha,
+    required this.turnos,
+    this.paraEspera = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     // Agrupa turnos por recurso conservando el orden de llegada.
     final porRecurso = <int, List<TurnoDisponible>>{};
     final nombreRecurso = <int, String>{};
-    for (final t in dia.turnos) {
+    for (final t in turnos) {
       porRecurso.putIfAbsent(t.idRecurso, () => []).add(t);
       nombreRecurso[t.idRecurso] = t.recurso;
     }
+    final hayVariosRecursos = porRecurso.length > 1;
 
     return SafeArea(
       child: Column(
@@ -2666,66 +3086,216 @@ class _TurnoPickerSheet extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                const Icon(
-                  Icons.confirmation_number_outlined,
-                  size: 20,
-                  color: AppTheme.primary,
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.schedule,
+                    size: 20,
+                    color: AppTheme.primary,
+                  ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: Text(
-                    'Elige un turno · ${DateFormat('dd/MM/yyyy').format(fecha)}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 16,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        paraEspera ? 'Elige el turno' : 'Elige un turno',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 17,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                      Text(
+                        DateFormat('EEEE d/MM', 'es_ES').format(fecha),
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: AppTheme.textSecondary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (paraEspera)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 2),
+                          child: Text(
+                            'No hace falta que queden plazas: te avisamos.',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: AppTheme.textSecondary,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Flexible(
             child: ListView(
               shrinkWrap: true,
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
               children: [
                 for (final idRec in porRecurso.keys) ...[
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(4, 12, 4, 6),
-                    child: Text(
-                      nombreRecurso[idRec] ?? 'Recurso',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: AppTheme.textSecondary,
+                  if (hayVariosRecursos)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(4, 12, 4, 6),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.directions_bus_outlined,
+                            size: 14,
+                            color: AppTheme.textSecondary,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              nombreRecurso[idRec] ?? 'Recurso',
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: AppTheme.textSecondary,
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
                   for (final t in porRecurso[idRec]!)
-                    Card(
-                      margin: const EdgeInsets.symmetric(vertical: 4),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: ListTile(
-                        title: Text(
-                          t.turno,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        subtitle: Text('${t.disponibles} disponibles'),
-                        trailing: const Icon(
-                          Icons.chevron_right,
-                          color: AppTheme.primary,
-                        ),
-                        onTap: () => Navigator.pop(context, t),
-                      ),
+                    _TurnoOpcion(
+                      turno: t,
+                      paraEspera: paraEspera,
+                      onTap: () => Navigator.pop(context, t),
                     ),
                 ],
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Turno tocable dentro del selector: muestra la hora y el cupo que queda.
+///
+/// Sin cupo sigue siendo elegible cuando la pantalla viene de la lista de
+/// espera; en una reserva no se llega aquí con 0 disponibles.
+class _TurnoOpcion extends StatelessWidget {
+  final TurnoDisponible turno;
+  final bool paraEspera;
+  final VoidCallback onTap;
+
+  const _TurnoOpcion({
+    required this.turno,
+    required this.paraEspera,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final sinCupo = turno.disponibles <= 0;
+    final color = sinCupo ? AppTheme.warning : AppTheme.success;
+    final detalle = sinCupo
+        ? (paraEspera ? 'Sin cupo · te avisamos' : 'Sin cupo')
+        : '${turno.disponibles} ${turno.disponibles == 1 ? 'lugar libre' : 'lugares libres'}';
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Ink(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: sinCupo
+                    ? AppTheme.warning.withValues(alpha: 0.45)
+                    : AppTheme.border,
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          turno.turno,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15.5,
+                            color: AppTheme.textPrimary,
+                          ),
+                        ),
+                        // Punto 7: la hora del turno, si está configurada.
+                        if (turno.etiquetaHora != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.schedule,
+                                  size: 13,
+                                  color: AppTheme.textSecondary,
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  turno.etiquetaHora!,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        const SizedBox(height: 3),
+                        Row(
+                          children: [
+                            Icon(
+                              sinCupo
+                                  ? Icons.hourglass_bottom
+                                  : Icons.event_seat_outlined,
+                              size: 13,
+                              color: color,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              detalle,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: color,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: AppTheme.primary.withValues(alpha: 0.8),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

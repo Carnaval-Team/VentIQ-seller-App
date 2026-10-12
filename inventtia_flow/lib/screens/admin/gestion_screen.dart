@@ -2,14 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_theme.dart';
 import '../../models/entidad.dart';
-import '../../providers/auth_provider.dart';
 import '../../providers/entidad_provider.dart';
 import '../../services/auth_service.dart';
+import '../../widgets/dashboard_entidad.dart';
 import 'config_categorias_screen.dart';
 import 'entidad_detail_screen.dart';
 import 'gestion_locales_screen.dart';
 import 'gestion_servicios_screen.dart';
-import 'mis_entidades_screen.dart';
 import 'planificacion_screen.dart';
 import 'reservas_screen.dart';
 
@@ -266,6 +265,12 @@ class _GestionBody extends StatelessWidget {
               );
             },
           ),
+
+          // Resumen de la entidad: totales y reservas. Va al final de Gestión
+          // porque es información de contexto, no un acceso directo, y tiene su
+          // propio estado de carga/error para no tumbar los módulos de arriba.
+          DashboardEntidadPanel(idEntidad: entidad.id, uuidUsuario: myUuid),
+          const SizedBox(height: 12),
         ],
       ),
     );

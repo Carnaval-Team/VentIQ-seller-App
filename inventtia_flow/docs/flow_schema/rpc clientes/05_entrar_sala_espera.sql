@@ -11,6 +11,15 @@
 -- Parametros obligatorios: p_uuid_usuario, p_id_local_servicio
 -- p_fecha_regla es opcional (default = ahora).
 -- Devuelve: jsonb con el registro creado o un error controlado.
+--
+-- OJO: este archivo es HISTORICO y define `cliente_entrar_sala_espera` (9 args,
+--       sin turno). La app del cliente usa ahora
+--       `flow.cliente_entrar_sala_espera_reserva` (10 args: acepta
+--       `p_id_turno`), y su version vigente -incluido el pre-chequeo de
+--       duplicado por (servicio, titular), que es el que impone el indice
+--       `unique_usuario_servicio_activo`- esta en
+--       migraciones/38_sala_espera_turno.sql. Antes de tocar la funcion,
+--       extrae la version real con pg_get_functiondef() y trabaja sobre ella.
 -- ============================================================================
 
 -- Añadir columna si no existe (ejecutar una sola vez en migracion):

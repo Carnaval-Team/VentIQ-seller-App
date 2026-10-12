@@ -38,6 +38,10 @@ class _HomeShellState extends State<HomeShell> {
       GlobalKey<MisListasScreenState>();
   final GlobalKey<MisTicketsScreenState> _misTicketsKey =
       GlobalKey<MisTicketsScreenState>();
+  // Perfil con acceso por clave: "Publica tu negocio" salta a "Registrar
+  // Entidad" dentro de esta pestaña.
+  final GlobalKey<PerfilScreenState> _perfilKey =
+      GlobalKey<PerfilScreenState>();
 
   late final List<Widget> _screens;
   late final List<Widget> _screensNoAdmin;
@@ -57,11 +61,19 @@ class _HomeShellState extends State<HomeShell> {
     super.initState();
     _screens = [const GestionScreen(), const PerfilScreen()];
     _screensNoAdmin = [
-      HomeClientScreen(key: _homeKey),
+      HomeClientScreen(
+        key: _homeKey,
+        // "Ver todo" de servicios abre la lista completa del catálogo.
+        onVerCatalogo: _abrirCatalogoServicios,
+        // "Publica tu negocio" lleva al perfil, a "Registrar Entidad".
+        onPublicarNegocio: _abrirRegistrarEntidad,
+        // Tocar un establecimiento abre el catálogo filtrado por ese local.
+        onVerEstablecimiento: _abrirCatalogoDeEstablecimiento,
+      ),
       CatalogoScreen(key: _catalogoKey),
       MisListasScreen(key: _misListasKey),
       MisTicketsScreen(key: _misTicketsKey),
-      const PerfilScreen(),
+      PerfilScreen(key: _perfilKey),
     ];
     _screensVendedor = [
       MisTicketsScreen(key: _misTicketsKey),
@@ -317,6 +329,43 @@ class _HomeShellState extends State<HomeShell> {
         ],
       ),
     );
+  }
+
+  /// Abre la pestaña de Servicios (catálogo) desde el Home.
+  ///
+  /// Es el destino de "Ver todo" en la sección de servicios disponibles: la
+  /// lista completa, no el carrusel del Home.
+  void _abrirCatalogoServicios() {
+    if (!mounted) return;
+    setState(() => _currentIndex = 1);
+    _catalogoKey.currentState?.reload();
+  }
+
+  /// Abre el catálogo **filtrado por un establecimiento** desde el Home.
+  ///
+  /// Es el destino de tocar una tarjeta de "Establecimientos": se ve todo lo que
+  /// publica ese local, no el detalle del primer servicio que aparezca.
+  void _abrirCatalogoDeEstablecimiento(int idLocal, String nombreLocal) {
+    if (!mounted) return;
+    setState(() => _currentIndex = 1);
+    // El filtro se aplica después de cambiar de pestaña: así la lista ya está
+    // montada y el estado del catálogo no se pierde por el orden de los frames.
+    _catalogoKey.currentState?.filtrarPorLocal(idLocal, nombreLocal);
+  }
+
+  /// Lleva al perfil y desplaza hasta la sección "Registrar Entidad".
+  ///
+  /// Es el destino de "Publica tu negocio": publicar se hace registrando una
+  /// entidad, así que el atajo debe dejar esa sección a la vista.
+  void _abrirRegistrarEntidad() {
+    if (!mounted) return;
+    setState(() => _currentIndex = _screensNoAdmin.length - 1);
+    // La pestaña ya está montada (IndexedStack), pero el desplazamiento se pide
+    // un frame después para que el perfil esté visible y con layout hecho.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _perfilKey.currentState?.irARegistrarEntidad();
+    });
   }
 
   void _onTabSelected(int i, bool isAdmin) {

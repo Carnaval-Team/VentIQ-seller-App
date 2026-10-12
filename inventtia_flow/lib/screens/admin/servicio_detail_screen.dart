@@ -29,9 +29,18 @@ class _ServicioDetailScreenState extends State<ServicioDetailScreen> {
   String? _error;
   String? _tipoActividadNombre;
 
+  /// Copia viva del servicio.
+  ///
+  /// Antes el build leía `widget.servicio` en todas partes, así que al guardar
+  /// desde el formulario la pantalla seguía mostrando los datos viejos: había
+  /// que salir a la lista y volver a entrar (punto 5). Ahora el formulario
+  /// devuelve la fila actualizada y se sustituye aquí.
+  late Servicio _servicio;
+
   @override
   void initState() {
     super.initState();
+    _servicio = widget.servicio;
     _cargar();
   }
 
@@ -39,11 +48,17 @@ class _ServicioDetailScreenState extends State<ServicioDetailScreen> {
     setState(() => _cargando = true);
     try {
       final [locales, tipos] = await Future.wait([
-        CatalogoService.getLocalServicios(idServicio: widget.servicio.id),
+        // Se listan también los pares desactivados: el detalle del admin debe
+        // decir en qué locales está el servicio aunque esté oculto al cliente
+        // (punto 4), y cada fila avisa de su estado.
+        CatalogoService.getLocalServicios(
+          idServicio: _servicio.id,
+          incluirInactivos: true,
+        ),
         CatalogoService.getTiposActividadServicio(),
       ]);
       final nombre = () {
-        final id = widget.servicio.idTipoActividad;
+        final id = _servicio.idTipoActividad;
         if (id == null) return null;
         for (final t in tipos as List<Map<String, dynamic>>) {
           if ((t['id'] as num?)?.toInt() == id) {
@@ -73,7 +88,7 @@ class _ServicioDetailScreenState extends State<ServicioDetailScreen> {
     return Scaffold(
       backgroundColor: AppTheme.surface,
       appBar: AppBar(
-        title: Text(widget.servicio.nombre),
+        title: Text(_servicio.nombre),
         actions: [
           IconButton(
             icon: const Icon(Icons.edit_outlined),
@@ -92,16 +107,19 @@ class _ServicioDetailScreenState extends State<ServicioDetailScreen> {
   }
 
   Future<void> _editarServicio() async {
-    final res = await showModalBottomSheet<bool>(
+    // El formulario devuelve el `Servicio` recargado de la BD, no un bool: así
+    // el detalle se repinta al instante y sin volver a pedir nada (punto 5).
+    final actualizado = await showModalBottomSheet<Servicio>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => ServicioFormSheet(
-        idEntidad: widget.idEntidad,
-        servicio: widget.servicio,
-      ),
+      builder: (_) =>
+          ServicioFormSheet(idEntidad: widget.idEntidad, servicio: _servicio),
     );
-    if (res == true && mounted) {
-      Navigator.pop(context, true);
+    if (actualizado != null && mounted) {
+      setState(() => _servicio = actualizado);
+      // El nombre de la actividad se resuelve contra el catálogo, así que se
+      // recalcula por si el admin la cambió.
+      await _cargar();
     }
   }
 
@@ -111,7 +129,7 @@ class _ServicioDetailScreenState extends State<ServicioDetailScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Eliminar servicio'),
         content: Text(
-          '¿Eliminar "${widget.servicio.nombre}"?\n\n'
+          '¿Eliminar "${_servicio.nombre}"?\n\n'
           'Se desvinculará de todos los locales.',
         ),
         actions: [
@@ -129,7 +147,7 @@ class _ServicioDetailScreenState extends State<ServicioDetailScreen> {
     );
     if (ok != true) return;
     try {
-      await CatalogoService.deleteServicio(widget.servicio.id);
+      await CatalogoService.deleteServicio(_servicio.id);
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
@@ -174,62 +192,95 @@ class _ServicioDetailScreenState extends State<ServicioDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (widget.servicio.foto != null)
+        // Punto 4: dejar claro que un servicio inactivo no se ve en ningún lado.
+        if (!_servicio.activo) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.warning.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: AppTheme.warning.withValues(alpha: 0.35),
+              ),
+            ),
+            child: const Row(
+              children: [
+                Icon(
+                  Icons.visibility_off_outlined,
+                  size: 18,
+                  color: AppTheme.warning,
+                ),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Servicio inactivo: no se muestra en ningún local ni se '
+                    'puede reservar. Actívalo desde Editar.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+        if (_servicio.foto != null)
           ClipRRect(
             borderRadius: BorderRadius.circular(14),
             child: NetImage(
-              url: widget.servicio.foto!,
+              url: _servicio.foto!,
               fit: BoxFit.cover,
               width: double.infinity,
               height: 180,
               errorWidget: () => _fotoPlaceholder(),
             ),
           ),
-        if (widget.servicio.foto != null) const SizedBox(height: 16),
+        if (_servicio.foto != null) const SizedBox(height: 16),
         Text(
-          widget.servicio.nombre,
+          _servicio.nombre,
           style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 8),
-        if (widget.servicio.descripcion != null)
+        if (_servicio.descripcion != null)
           Text(
-            widget.servicio.descripcion!,
+            _servicio.descripcion!,
             style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary),
           ),
         const SizedBox(height: 16),
         _buildInfoRow(
           'Actividad',
-          _tipoActividadNombre ?? widget.servicio.tipoActividad ?? '—',
+          _tipoActividadNombre ?? _servicio.tipoActividad ?? '—',
         ),
+        _buildInfoRow('Estado', _servicio.activo ? 'Activo' : 'Inactivo'),
         _buildInfoRow(
           'Reserva para terceros',
-          widget.servicio.permiteTercero ? 'Sí' : 'No',
+          _servicio.permiteTercero ? 'Sí' : 'No',
         ),
         _buildInfoRow(
           'Moneda por defecto',
-          MonedasApp.etiqueta(widget.servicio.configPrecio.monedaDefault),
+          MonedasApp.etiqueta(_servicio.configPrecio.monedaDefault),
         ),
         _buildInfoRow(
           'Monedas disponibles',
-          widget.servicio.configPrecio.monedas
-              .map(MonedasApp.etiqueta)
-              .join(', '),
+          _servicio.configPrecio.monedas.map(MonedasApp.etiqueta).join(', '),
         ),
-        if (widget.servicio.configPrecio.preciosBase.isNotEmpty)
+        if (_servicio.configPrecio.preciosBase.isNotEmpty)
           _buildInfoRow(
             'Precios base',
-            widget.servicio.configPrecio.preciosBase.entries
+            _servicio.configPrecio.preciosBase.entries
                 .map(
                   (e) => '${_fmtPrecio(e.value)} ${MonedasApp.simbolo(e.key)}',
                 )
                 .join(' · '),
           ),
-        if (widget.servicio.configPrecio.aplicaPrecioIdaVueltaTodos)
+        if (_servicio.configPrecio.aplicaPrecioIdaVueltaTodos)
           _buildInfoRow('Ida y vuelta', 'Precio combinado aplica siempre'),
-        if (widget.servicio.configPrecio.reglas.isNotEmpty)
-          ..._buildReglasPrecio(widget.servicio.configPrecio),
-        if (widget.servicio.camposAdicionales.isNotEmpty)
-          _buildCamposAdicionales(widget.servicio.camposAdicionales),
+        if (_servicio.configPrecio.reglas.isNotEmpty)
+          ..._buildReglasPrecio(_servicio.configPrecio),
+        if (_servicio.camposAdicionales.isNotEmpty)
+          _buildCamposAdicionales(_servicio.camposAdicionales),
       ],
     );
   }
@@ -458,7 +509,7 @@ class _ServicioDetailScreenState extends State<ServicioDetailScreen> {
   Widget _buildLocalCard(LocalServicio ls) {
     final local = ls.local;
     final localNombre = local?.nombre ?? 'Local #${ls.idLocal}';
-    final title = localNombre == widget.servicio.nombre
+    final title = localNombre == _servicio.nombre
         ? 'Recursos y turnos'
         : 'Recursos y turnos · $localNombre';
     return Card(
@@ -504,8 +555,7 @@ class _ServicioDetailScreenState extends State<ServicioDetailScreen> {
                   MaterialPageRoute(
                     builder: (_) => PromocionesScreen(
                       idLocalServicio: ls.id,
-                      nombreServicio:
-                          '${widget.servicio.nombre} · $localNombre',
+                      nombreServicio: '${_servicio.nombre} · $localNombre',
                     ),
                   ),
                 ),

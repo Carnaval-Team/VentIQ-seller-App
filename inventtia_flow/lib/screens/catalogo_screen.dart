@@ -1,12 +1,21 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_theme.dart';
+import '../models/config_precio.dart';
 import '../models/servicio.dart';
 import '../providers/favoritos_provider.dart';
 import '../services/catalogo_service.dart';
+import '../services/resena_service.dart';
+import '../utils/horario_atencion.dart';
+import '../utils/precio_reserva.dart';
 import '../widgets/boton_favorito.dart';
+import '../widgets/filtros_servicios_sheet.dart';
 import '../widgets/net_image.dart';
 import '../widgets/notificaciones_bell.dart';
+import '../widgets/pista_busqueda_avanzada.dart';
 import 'local_servicio_detail_screen.dart';
 
 class CatalogoScreen extends StatefulWidget {
@@ -24,14 +33,25 @@ class CatalogoScreenState extends State<CatalogoScreen> {
   // Filtros
   final _searchCtrl = TextEditingController();
   String _searchQuery = '';
-  String? _provinciaFiltro;
 
-  /// Muestra solo los servicios guardados. Los favoritos ya se ordenan primero
-  /// por defecto; este chip sirve para ver *únicamente* esos.
-  bool _soloFavoritos = false;
+  /// Todo lo que el cliente puede acotar desde el sheet de filtros: precio,
+  /// moneda, provincia, valoración, establecimiento, "abierto ahora" y **solo
+  /// favoritos** (que antes era un chip suelto encima de la lista).
+  FiltrosServicios _filtros = FiltrosServicios.vacio;
 
-  // Datos derivados para los chips de provincia
-  List<String> _provincias = [];
+  /// Ancla del mensaje que apunta al botón de filtros.
+  final LayerLink _linkFiltros = LayerLink();
+
+  /// Pista "¿no encuentras lo que buscas?": se enseña una vez, mientras el
+  /// usuario no haya filtrado ni buscado nada, y se apunta en preferencias para
+  /// no repetirla en cada visita.
+  static const String _prefPistaFiltros = 'catalogo_pista_filtros_vista';
+  bool _pistaFiltros = false;
+  Timer? _pistaTimer;
+
+  /// Valoraciones reales por `local_servicio.id` (`flow.resena`). Vacío si el
+  /// RPC no está disponible: entonces no se ofrece filtrar por valoración.
+  Map<int, ResumenResenas> _resenas = const {};
 
   // Rate limiting: máx 5 refrescos por minuto
   static const int _maxRefrescosPorMinuto = 5;
@@ -41,12 +61,44 @@ class CatalogoScreenState extends State<CatalogoScreen> {
   void initState() {
     super.initState();
     _load();
+    _comprobarPistaFiltros();
   }
 
   @override
   void dispose() {
+    _pistaTimer?.cancel();
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  /// Enseña la pista que apunta al botón de filtros solo la primera vez.
+  ///
+  /// Se guarda en preferencias al ocultarla (a mano o sola), así que no aparece
+  /// en cada visita; si el usuario nunca llegó a verla por cerrar la app antes,
+  /// volverá a salir, que es lo deseado.
+  Future<void> _comprobarPistaFiltros() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(_prefPistaFiltros) == true) return;
+
+    // Se espera a que haya lista: la pista apunta al botón de filtros, así que
+    // mientras carga (o si el catálogo vino vacío) no tiene a quién señalar.
+    // Se reintenta un rato en vez de darla por perdida en la primera carga.
+    for (var intento = 0; intento < 12; intento++) {
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      if (!mounted) return;
+      if (!_isLoading && _localServicios.isNotEmpty) break;
+    }
+    if (!mounted || _isLoading || _localServicios.isEmpty) return;
+
+    setState(() => _pistaFiltros = true);
+    _pistaTimer = Timer(const Duration(seconds: 9), _ocultarPistaFiltros);
+  }
+
+  Future<void> _ocultarPistaFiltros() async {
+    _pistaTimer?.cancel();
+    if (mounted && _pistaFiltros) setState(() => _pistaFiltros = false);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefPistaFiltros, true);
   }
 
   Future<void> _refresh() async {
@@ -77,15 +129,26 @@ class CatalogoScreenState extends State<CatalogoScreen> {
   Future<void> _load() async {
     setState(() => _isLoading = true);
     try {
-      final localServicios = await CatalogoService.getLocalServicios();
-      final provinciaSet = <String>{};
-      for (final ls in localServicios) {
-        final p = ls.local?.provincia;
-        if (p != null && p.isNotEmpty) provinciaSet.add(p);
-      }
+      // Las valoraciones salen de otro RPC: si falla, el catálogo se pinta
+      // igual y simplemente no se ofrece el filtro por valoración.
+      final resultados = await Future.wait([
+        CatalogoService.getLocalServicios(),
+        ResenaService.porServicio().catchError(
+          (_) => const <int, ResumenResenas>{},
+        ),
+      ]);
+
+      final localServicios = resultados[0] as List<LocalServicio>;
+      final resenas = resultados[1] as Map<int, ResumenResenas>;
+
       setState(() {
-        _localServicios = localServicios;
-        _provincias = provinciaSet.toList()..sort();
+        // Red de seguridad: el RPC ya filtra por `flow._ls_disponible`, pero una
+        // respuesta cacheada puede traer pares ya desactivados. Se descartan
+        // aquí para no ofrecer algo no reservable (puntos 3/4/8).
+        _localServicios = localServicios
+            .where((ls) => ls.activoEfectivo)
+            .toList(growable: false);
+        _resenas = resenas;
         _isLoading = false;
       });
     } catch (e) {
@@ -99,21 +162,27 @@ class CatalogoScreenState extends State<CatalogoScreen> {
   ///
   /// El criterio agrupa, no ordena alfabéticamente: si estás buscando algo que
   /// guardaste, lo encuentras arriba sin perder de vista el resto del catálogo.
-  List<LocalServicio> _filtered(Set<int> idsFavoritos) {
-    var lista = _localServicios;
+  List<LocalServicio> _filtered(Set<int> idsFavoritos) => _filtrar(
+    _localServicios,
+    idsFavoritos: idsFavoritos,
+    filtros: _filtros,
+    query: _searchQuery,
+  );
 
-    if (_soloFavoritos) {
-      lista = lista.where((ls) => idsFavoritos.contains(ls.id)).toList();
-    }
+  /// Núcleo del filtrado, con todo por parámetro.
+  ///
+  /// El sheet de filtros lo reutiliza con su borrador para enseñar en vivo
+  /// cuántos servicios quedarían: así el usuario no aplica a ciegas.
+  List<LocalServicio> _filtrar(
+    List<LocalServicio> base, {
+    required Set<int> idsFavoritos,
+    required FiltrosServicios filtros,
+    required String query,
+  }) {
+    var lista = base;
 
-    if (_provinciaFiltro != null) {
-      lista = lista
-          .where((ls) => ls.local?.provincia == _provinciaFiltro)
-          .toList();
-    }
-
-    if (_searchQuery.isNotEmpty) {
-      final q = _searchQuery.toLowerCase();
+    if (query.isNotEmpty) {
+      final q = query.toLowerCase();
       lista = lista
           .where(
             (ls) =>
@@ -121,6 +190,24 @@ class CatalogoScreenState extends State<CatalogoScreen> {
                 (ls.servicio?.nombre ?? '').toLowerCase().contains(q),
           )
           .toList();
+    }
+
+    if (filtros.hayAlgo) {
+      lista = lista.where((ls) {
+        final precio = precioBaseDe(ls.servicio?.configPrecio);
+        final resumen = _resenas[ls.id];
+        return filtros.coincide(
+          precioItem: precio?.precio,
+          monedaItem: precio?.moneda,
+          provinciaItem: ls.local?.provincia,
+          ratingItem: (resumen?.total ?? 0) > 0 ? resumen!.promedio : null,
+          idLocalItem: ls.idLocal,
+          // Solo se evalúa el horario cuando el filtro lo pide: interpretar el
+          // texto libre de cada local no es gratis.
+          abiertoItem: filtros.soloAbiertos ? _estaAbierto(ls) : null,
+          esFavoritoItem: idsFavoritos.contains(ls.id),
+        );
+      }).toList();
     }
 
     if (idsFavoritos.isEmpty) return lista;
@@ -139,17 +226,209 @@ class CatalogoScreenState extends State<CatalogoScreen> {
     return <LocalServicio>[...favoritos, ...resto];
   }
 
+  /// `true` solo si el horario se pudo interpretar y estamos dentro de la franja.
+  /// Un texto ilegible es "no lo sé", nunca "abierto".
+  ///
+  /// Prefiere `horario_detalle` (punto 10): con el constructor de días, un local
+  /// que abre "Lun, Mié, Vie" no se lee como lunes-viernes.
+  bool _estaAbierto(LocalServicio ls) =>
+      HorarioAtencion.parseConDetalle(
+        ls.local?.horarioAtencion,
+        ls.local?.horarioDetalle,
+      ).evaluar(DateTime.now()) ==
+      EstadoHorario.abierto;
+
+  /// Opciones reales del sheet de filtros, deducidas de lo ya cargado.
+  OpcionesFiltros _opciones(Set<int> idsFavoritos) {
+    final precios = <OfertaPrecio>[];
+    final provincias = <String>{};
+    final locales = <int, LocalOpcion>{};
+    var hayValoraciones = false;
+
+    for (final ls in _localServicios) {
+      final precio = precioBaseDe(ls.servicio?.configPrecio);
+      if (precio != null) {
+        precios.add(OfertaPrecio(precio: precio.precio, moneda: precio.moneda));
+      }
+
+      final provincia = ls.local?.provincia?.trim();
+      final provinciaValida = (provincia ?? '').isEmpty ? null : provincia;
+      if (provinciaValida != null) provincias.add(provinciaValida);
+
+      final local = ls.local;
+      if (local != null && local.nombre.trim().isNotEmpty) {
+        locales.putIfAbsent(
+          local.id,
+          () => LocalOpcion(
+            id: local.id,
+            nombre: local.nombre.trim(),
+            provincia: provinciaValida,
+          ),
+        );
+      }
+
+      if ((_resenas[ls.id]?.total ?? 0) > 0) hayValoraciones = true;
+    }
+
+    final listaProvincias = provincias.toList()..sort();
+    final listaLocales = locales.values.toList()
+      ..sort(
+        (a, b) => a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase()),
+      );
+
+    return OpcionesFiltros(
+      precios: precios,
+      provincias: listaProvincias,
+      locales: listaLocales,
+      hayValoraciones: hayValoraciones,
+    );
+  }
+
+  /// Abre el sheet de filtros y aplica Lo elegido.
+  Future<void> _abrirFiltros() async {
+    // Abrir el sheet es la respuesta a la pista flotante: se retira y no vuelve.
+    _ocultarPistaFiltros();
+    final idsFavoritos = context.read<FavoritosProvider>().ids;
+    final query = _searchQuery;
+
+    final elegidos = await mostrarFiltrosServicios(
+      context,
+      actual: _filtros,
+      opciones: _opciones(idsFavoritos),
+      contador: _localServicios.isEmpty
+          ? null
+          : (borrador) => _filtrar(
+              _localServicios,
+              idsFavoritos: idsFavoritos,
+              filtros: borrador,
+              query: query,
+            ).length,
+    );
+
+    if (elegidos == null || !mounted) return;
+    setState(() => _filtros = elegidos);
+
+    if (elegidos.hayAlgo && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Filtros aplicados · ${_filtered(idsFavoritos).length} servicios',
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  /// Muestra solo los servicios de un establecimiento concreto.
+  ///
+  /// La llama `HomeShell` al tocar una tarjeta de "Establecimientos" en el Home:
+  /// en lugar de abrir el primer servicio del local, se abre esta lista ya
+  /// filtrada por él.
+  void filtrarPorLocal(int idLocal, String nombreLocal) {
+    _searchCtrl.clear();
+    setState(() {
+      _searchQuery = '';
+      // Se parte de cero para que ningún filtro previo (ni "solo favoritos")
+      // deje fuera al local que el usuario acaba de tocar.
+      _filtros = FiltrosServicios(idLocal: idLocal, nombreLocal: nombreLocal);
+    });
+  }
+
   void _clearFiltros() {
     _searchCtrl.clear();
     setState(() {
       _searchQuery = '';
-      _provinciaFiltro = null;
-      _soloFavoritos = false;
+      _filtros = FiltrosServicios.vacio;
     });
   }
 
-  bool get _hayFiltros =>
-      _searchQuery.isNotEmpty || _provinciaFiltro != null || _soloFavoritos;
+  bool get _hayFiltros => _searchQuery.isNotEmpty || _filtros.hayAlgo;
+
+  /// Resumen de los filtros del sheet, para poder quitarlos de uno en uno.
+  List<({String etiqueta, VoidCallback quitar})> _resumenFiltros() {
+    final filtros = _filtros;
+    final resumen = <({String etiqueta, VoidCallback quitar})>[];
+
+    if (filtros.soloFavoritos) {
+      resumen.add((
+        etiqueta: 'Solo favoritos',
+        quitar: () =>
+            setState(() => _filtros = _filtros.copyWith(soloFavoritos: false)),
+      ));
+    }
+
+    if (filtros.precioMin != null || filtros.precioMax != null) {
+      final moneda = filtros.moneda;
+      String valor(double? v) {
+        if (v == null) return '…';
+        final texto = v == v.roundToDouble()
+            ? v.toStringAsFixed(0)
+            : v.toStringAsFixed(2);
+        return moneda == null ? texto : '$texto ${MonedasApp.simbolo(moneda)}';
+      }
+
+      resumen.add((
+        etiqueta:
+            'Precio ${valor(filtros.precioMin)} – ${valor(filtros.precioMax)}',
+        quitar: () => setState(
+          () => _filtros = _filtros.copyWith(precioMin: null, precioMax: null),
+        ),
+      ));
+    }
+
+    if (filtros.moneda != null) {
+      resumen.add((
+        etiqueta: 'Moneda ${filtros.moneda}',
+        quitar: () => setState(
+          () => _filtros = _filtros.copyWith(
+            moneda: null,
+            precioMin: null,
+            precioMax: null,
+          ),
+        ),
+      ));
+    }
+
+    if (filtros.ratingMinimo != null) {
+      final r = filtros.ratingMinimo!;
+      resumen.add((
+        etiqueta: '${r == r.roundToDouble() ? r.toStringAsFixed(0) : r}★ o más',
+        quitar: () =>
+            setState(() => _filtros = _filtros.copyWith(ratingMinimo: null)),
+      ));
+    }
+
+    if (filtros.idLocal != null) {
+      resumen.add((
+        etiqueta: filtros.nombreLocal ?? 'Establecimiento',
+        quitar: () => setState(
+          () => _filtros = _filtros.copyWith(idLocal: null, nombreLocal: null),
+        ),
+      ));
+    }
+
+    // La provincia ya no tiene su propia fila de chips en la lista, así que si
+    // no se resumiera aquí, se podría activar en el sheet y no verla en
+    // ninguna parte (solo el número del botón).
+    if (filtros.provincia != null) {
+      resumen.add((
+        etiqueta: 'Provincia: ${filtros.provincia}',
+        quitar: () =>
+            setState(() => _filtros = _filtros.copyWith(provincia: null)),
+      ));
+    }
+
+    if (filtros.soloAbiertos) {
+      resumen.add((
+        etiqueta: 'Abierto ahora',
+        quitar: () =>
+            setState(() => _filtros = _filtros.copyWith(soloAbiertos: false)),
+      ));
+    }
+
+    return resumen;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -159,34 +438,65 @@ class CatalogoScreenState extends State<CatalogoScreen> {
 
     return Scaffold(
       backgroundColor: AppTheme.surface,
-      body: Column(
-        children: [
-          // ── Hero con degradado de marca + buscador flotante ──
-          _buildHero(),
+      body: SizedBox.expand(
+        // `expand` fija las restricciones al tamaño de la pantalla: así el
+        // `Stack` no puede encogerse al tamaño de la pista flotante (que es un
+        // hijo no posicionado y, sin esto, mandaría en el tamaño).
+        child: Stack(
+          children: [
+            // `Positioned.fill` para que la columna reciba las mismas
+            // restricciones que tenía antes de meter el Stack.
+            Positioned.fill(
+              child: Column(
+                children: [
+                  // ── Hero con degradado de marca + buscador flotante ──
+                  _buildHero(),
 
-          // ── Chips de provincia + contador (sobre la superficie) ──
-          if (!_isLoading) _buildFiltersBar(lista.length, ids, favoritos),
+                  // ── Chips de filtros activos + contador (en la superficie) ──
+                  if (!_isLoading) _buildFiltersBar(lista.length),
 
-          // ── Lista ─────────────────────────────────────
-          Expanded(
-            child: _isLoading
-                ? _buildLoading()
-                : lista.isEmpty
-                ? _buildEmptyState()
-                : RefreshIndicator(
-                    onRefresh: _load,
-                    color: AppTheme.primary,
-                    child: ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                      itemCount: lista.length,
-                      itemBuilder: (_, i) => _LocalServicioCard(
-                        localServicio: lista[i],
-                        esFavorito: ids.contains(lista[i].id),
-                      ),
-                    ),
+                  // ── Lista ─────────────────────────────────────
+                  Expanded(
+                    child: _isLoading
+                        ? _buildLoading()
+                        : lista.isEmpty
+                        ? _buildEmptyState(ids)
+                        : RefreshIndicator(
+                            onRefresh: _load,
+                            color: AppTheme.primary,
+                            child: ListView.builder(
+                              padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                              itemCount: lista.length,
+                              itemBuilder: (_, i) => _LocalServicioCard(
+                                localServicio: lista[i],
+                                esFavorito: ids.contains(lista[i].id),
+                                resenas: _resenas[lista[i].id],
+                              ),
+                            ),
+                          ),
                   ),
-          ),
-        ],
+                ],
+              ),
+            ),
+
+            // ── Pista flotante apuntando al botón de filtros ──
+            // `CompositedTransformFollower` la ancla al botón real, así que
+            // sigue apuntándolo aunque cambie el alto de la cabecera (safe area,
+            // fuente del sistema, textos a dos líneas...).
+            if (_pistaFiltros && !_isLoading && lista.isNotEmpty)
+              CompositedTransformFollower(
+                link: _linkFiltros,
+                showWhenUnlinked: false,
+                targetAnchor: Alignment.bottomRight,
+                followerAnchor: Alignment.topRight,
+                offset: const Offset(0, 10),
+                child: PistaBusquedaAvanzada(
+                  onTap: _abrirFiltros,
+                  onCerrar: _ocultarPistaFiltros,
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -236,16 +546,16 @@ class CatalogoScreenState extends State<CatalogoScreen> {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        const Text(
-                          'Servicios cerca de ti',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 26,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.5,
-                            height: 1.1,
-                          ),
-                        ),
+                        // const Text(
+                        //   'Servicios cerca de ti',
+                        //   style: TextStyle(
+                        //     color: Colors.white,
+                        //     fontSize: 26,
+                        //     fontWeight: FontWeight.w800,
+                        //     letterSpacing: -0.5,
+                        //     height: 1.1,
+                        //   ),
+                        // ),
                         const SizedBox(height: 4),
                         Text(
                           'Reserva tu turno y evita las filas',
@@ -285,7 +595,11 @@ class CatalogoScreenState extends State<CatalogoScreen> {
       ),
       child: TextField(
         controller: _searchCtrl,
-        onChanged: (v) => setState(() => _searchQuery = v),
+        onChanged: (v) {
+          // La pista apunta a los filtros: en cuanto se busca algo, sobra.
+          if (_pistaFiltros && v.isNotEmpty) _ocultarPistaFiltros();
+          setState(() => _searchQuery = v);
+        },
         style: const TextStyle(fontSize: 14.5, color: AppTheme.textPrimary),
         decoration: InputDecoration(
           hintText: 'Buscar servicio o local...',
@@ -309,77 +623,73 @@ class CatalogoScreenState extends State<CatalogoScreen> {
             borderRadius: BorderRadius.circular(16),
             borderSide: BorderSide.none,
           ),
-          suffixIcon: _searchQuery.isNotEmpty
-              ? IconButton(
+          suffixIcon: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_searchQuery.isNotEmpty)
+                IconButton(
                   icon: const Icon(Icons.clear, color: AppTheme.textSecondary),
                   onPressed: () {
                     _searchCtrl.clear();
                     setState(() => _searchQuery = '');
                   },
-                )
-              : null,
+                ),
+              // Botón de filtros a la derecha del buscador: abre el sheet.
+              // Es el ancla de la pista flotante (ver `build`).
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: CompositedTransformTarget(
+                  link: _linkFiltros,
+                  child: _BotonFiltros(
+                    activos: _filtros.activos,
+                    onTap: _abrirFiltros,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildFiltersBar(
-    int total,
-    Set<int> idsFavoritos,
-    FavoritosProvider favoritos,
-  ) {
+  /// Barra sobre la lista: solo los filtros **activos** (quitables de uno en
+  /// uno) y el contador. Los filtros de provincia y favoritos que antes tenían
+  /// su propia fila de chips viven ahora dentro del sheet, que es donde el
+  /// usuario los busca; aquí solo queda el resultado de lo ya elegido.
+  Widget _buildFiltersBar(int total) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Favoritos primero: chip para ver solo los guardados. Se oculta si la
-        // tabla aún no existe (migración sin aplicar) o si no hay ninguno.
-        if (favoritos.disponible && idsFavoritos.isNotEmpty) ...[
-          const SizedBox(height: 14),
+        // Filtros del sheet, quitables de uno en uno sin volver a abrirlo.
+        if (_resumenFiltros().isNotEmpty) ...[
+          const SizedBox(height: 12),
           SizedBox(
-            height: 40,
+            height: 38,
             child: ListView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
               children: [
-                _FilterChip(
-                  label: 'Favoritos (${idsFavoritos.length})',
-                  icon: Icons.favorite_rounded,
-                  selected: _soloFavoritos,
-                  onTap: () => setState(() => _soloFavoritos = !_soloFavoritos),
-                ),
-                if (_soloFavoritos) ...[
-                  const SizedBox(width: 8),
-                  _FilterChip(
-                    label: 'Ver todos',
-                    icon: Icons.grid_view_rounded,
-                    selected: false,
-                    onTap: () => setState(() => _soloFavoritos = false),
+                for (final filtro in _resumenFiltros()) ...[
+                  _ChipFiltroActivo(
+                    label: filtro.etiqueta,
+                    onRemove: filtro.quitar,
                   ),
+                  const SizedBox(width: 8),
                 ],
-              ],
-            ),
-          ),
-        ],
-        if (_provincias.isNotEmpty) ...[
-          const SizedBox(height: 14),
-          SizedBox(
-            height: 40,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              children: [
-                _FilterChip(
-                  label: 'Todas',
-                  icon: Icons.public,
-                  selected: _provinciaFiltro == null,
-                  onTap: () => setState(() => _provinciaFiltro = null),
-                ),
-                ..._provincias.map(
-                  (p) => _FilterChip(
-                    label: p,
-                    icon: Icons.place_outlined,
-                    selected: _provinciaFiltro == p,
-                    onTap: () => setState(() => _provinciaFiltro = p),
+                GestureDetector(
+                  onTap: _clearFiltros,
+                  child: Container(
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: Text(
+                      'Quitar todo',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.error.withValues(alpha: 0.9),
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -453,7 +763,7 @@ class CatalogoScreenState extends State<CatalogoScreen> {
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(Set<int> idsFavoritos) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -479,18 +789,25 @@ class CatalogoScreenState extends State<CatalogoScreen> {
             ),
           ),
           const SizedBox(height: 18),
-          const Text(
-            'Nada por aquí todavía',
-            style: TextStyle(
+          Text(
+            _filtros.idLocal != null
+                ? 'Sin servicios del establecimiento'
+                : 'Nada por aquí todavía',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
               color: AppTheme.textPrimary,
               fontSize: 17,
               fontWeight: FontWeight.w700,
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
-            'Prueba con otra búsqueda o provincia',
-            style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+          Text(
+            _filtros.idLocal != null
+                ? '${_filtros.nombreLocal ?? 'Ese local'} no tiene servicios '
+                      'publicados todavía.'
+                : 'Prueba con otra búsqueda o quita algún filtro',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
           ),
           if (_hayFiltros) ...[
             const SizedBox(height: 16),
@@ -499,80 +816,18 @@ class CatalogoScreenState extends State<CatalogoScreen> {
               icon: const Icon(Icons.refresh, size: 18),
               label: const Text('Limpiar filtros'),
             ),
+          ] else if (_opciones(idsFavoritos).hayAlgo) ...[
+            // Sin filtros puestos y sin resultados: el camino es la búsqueda
+            // avanzada, no seguir cambiando palabras en el buscador.
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _abrirFiltros,
+              icon: const Icon(Icons.tune_rounded, size: 18),
+              label: const Text('Búsqueda avanzada'),
+              style: FilledButton.styleFrom(backgroundColor: AppTheme.primary),
+            ),
           ],
         ],
-      ),
-    );
-  }
-}
-
-class _FilterChip extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _FilterChip({
-    required this.label,
-    required this.icon,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.only(right: 8),
-        child: GestureDetector(
-          onTap: onTap,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOut,
-            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
-            decoration: BoxDecoration(
-              color: selected ? AppTheme.primary : Colors.white,
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(
-                color: selected ? AppTheme.primary : AppTheme.border,
-              ),
-              boxShadow: selected
-                  ? [
-                      BoxShadow(
-                        color: AppTheme.primary.withValues(alpha: 0.30),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ]
-                  : [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.03),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  icon,
-                  size: 15,
-                  color: selected ? Colors.white : AppTheme.textSecondary,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: selected ? Colors.white : AppTheme.textPrimary,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -584,15 +839,23 @@ class _LocalServicioCard extends StatelessWidget {
   /// Ya resuelto por el catálogo, para poder repintar la lista al alternar.
   final bool esFavorito;
 
+  /// Reseñas reales del servicio. `null` si no tiene ninguna: entonces no se
+  /// pinta ninguna valoración (no se inventa un 0).
+  final ResumenResenas? resenas;
+
   const _LocalServicioCard({
     required this.localServicio,
     this.esFavorito = false,
+    this.resenas,
   });
 
   @override
   Widget build(BuildContext context) {
     final local = localServicio.local;
     final servicio = localServicio.servicio;
+    // La foto del servicio manda (punto 9); si no tiene, se cae a la del local,
+    // igual que en el Home y en el detalle.
+    final foto = servicio?.foto ?? local?.foto;
 
     return Container(
       margin: const EdgeInsets.only(top: 12),
@@ -654,9 +917,9 @@ class _LocalServicioCard extends StatelessWidget {
                             borderRadius: BorderRadius.circular(16),
                           ),
                           clipBehavior: Clip.antiAlias,
-                          child: servicio?.foto != null
+                          child: foto != null
                               ? NetImage(
-                                  url: servicio!.foto!,
+                                  url: foto,
                                   fit: BoxFit.cover,
                                   errorWidget: () => const Icon(
                                     Icons.design_services_outlined,
@@ -678,17 +941,27 @@ class _LocalServicioCard extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              // Principal: nombre del servicio
-                              Text(
-                                servicio?.nombre ?? 'Servicio',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 16,
-                                  color: AppTheme.textPrimary,
-                                  letterSpacing: -0.3,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                              // Principal: nombre del servicio (+ valoración real)
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      servicio?.nombre ?? 'Servicio',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 16,
+                                        color: AppTheme.textPrimary,
+                                        letterSpacing: -0.3,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  if (resenas != null && resenas!.hayDatos) ...[
+                                    const SizedBox(width: 6),
+                                    _RatingChip(resenas: resenas!),
+                                  ],
+                                ],
                               ),
                               // Secundario: nombre del local
                               if (local != null) ...[
@@ -763,6 +1036,173 @@ class _LocalServicioCard extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Botón de filtros que vive a la derecha del buscador.
+///
+/// Cuando hay filtros activos cambia a degradado de marca y muestra cuántos
+/// son, para que no se puedan "perder" dentro del sheet.
+class _BotonFiltros extends StatelessWidget {
+  final int activos;
+  final VoidCallback onTap;
+
+  const _BotonFiltros({required this.activos, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final hay = activos > 0;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+          gradient: hay
+              ? const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppTheme.primary, AppTheme.accent],
+                )
+              : null,
+          color: hay ? null : AppTheme.surface,
+          borderRadius: BorderRadius.circular(13),
+          boxShadow: hay
+              ? [
+                  BoxShadow(
+                    color: AppTheme.primary.withValues(alpha: 0.30),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
+              : null,
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Icon(
+              Icons.tune_rounded,
+              size: 21,
+              color: hay ? Colors.white : AppTheme.primary,
+            ),
+            if (hay)
+              Positioned(
+                top: 3,
+                right: 3,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 1,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  constraints: const BoxConstraints(minWidth: 15),
+                  child: Text(
+                    '$activos',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w900,
+                      color: AppTheme.primaryDark,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Pill de un filtro activo: se quita con la X sin volver a abrir el sheet.
+class _ChipFiltroActivo extends StatelessWidget {
+  final String label;
+  final VoidCallback onRemove;
+
+  const _ChipFiltroActivo({required this.label, required this.onRemove});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.only(left: 12, right: 4),
+      decoration: BoxDecoration(
+        color: AppTheme.primary.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppTheme.primary.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 150),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.primary,
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: onRemove,
+            iconSize: 15,
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+            icon: const Icon(Icons.close_rounded, color: AppTheme.primary),
+            tooltip: 'Quitar filtro',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Valoración real del servicio dentro de la tarjeta del catálogo.
+class _RatingChip extends StatelessWidget {
+  final ResumenResenas resenas;
+
+  const _RatingChip({required this.resenas});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppTheme.warning.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.star_rounded, size: 13, color: AppTheme.warning),
+          const SizedBox(width: 2),
+          Text(
+            resenas.promedio.toStringAsFixed(1),
+            style: const TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w800,
+              color: AppTheme.textPrimary,
+            ),
+          ),
+          const SizedBox(width: 3),
+          Text(
+            '(${resenas.total})',
+            style: const TextStyle(
+              fontSize: 10.5,
+              color: AppTheme.textSecondary,
+            ),
+          ),
+        ],
       ),
     );
   }

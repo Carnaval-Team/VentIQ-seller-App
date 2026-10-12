@@ -93,6 +93,10 @@ class FavoritoService {
             Map<String, dynamic>.from(e['local_servicio'] as Map),
           ),
         )
+        // Un favorito de un local/servicio desactivado ya no se puede reservar:
+        // no se ofrece en la lista (puntos 3/4/8). El favorito sigue guardado,
+        // así que si el admin lo reactiva vuelve a aparecer.
+        .where((ls) => ls.activoEfectivo)
         .toList();
   }
 

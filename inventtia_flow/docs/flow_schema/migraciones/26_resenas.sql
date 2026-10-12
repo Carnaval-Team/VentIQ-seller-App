@@ -393,7 +393,12 @@ begin
     from flow.resena r
     join flow.local_servicio ls on ls.id = r.id_local_servicio
     join flow.app_dat_servicios s on s.id = ls.id_servicio
-    join flow.app_dat_locales l on l.id = ls.local
+    -- OJO: aqui decia `ls.local`, que NO existe (la columna es `id_local`). En
+    -- plpgsql el cuerpo no se valida al crear la funcion, asi que el error solo
+    -- aparecia al llamarla (`42703 column ls.local does not exist`) y el Home se
+    -- quedaba sin resenas. Corregido tambien en la migracion 39, que re-despliega
+    -- esta misma funcion en las bases ya creadas.
+    join flow.app_dat_locales l on l.id = ls.id_local
     left join flow.perfil p on p.uuid_usuario = r.uuid_usuario
     where r.comentario is not null
     order by r.created_at desc

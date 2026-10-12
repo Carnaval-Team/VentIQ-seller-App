@@ -155,6 +155,31 @@ class HorarioAtencion {
     );
   }
 
+  /// Interpreta el horario preferiendo el detalle estructurado.
+  ///
+  /// Cuando el admin usó el constructor de días + hora apertura/cierre,
+  /// `horario_detalle` es la fuente exacta y se ignora la heurística del texto:
+  /// **ese** es el arreglo del bug por el que "Lun, Mié, Vie" se leía como
+  /// lunes-viernes. Si no hay detalle (modo texto libre, o un local anterior a
+  /// la migración 40), se cae al parser clásico.
+  static HorarioAtencion parseConDetalle(String? texto, Object? detalle) {
+    final d = HorarioDetalle.fromJson(detalle);
+    if (d == null) return parse(texto);
+
+    final t = (texto ?? '').trim();
+    return HorarioAtencion._(
+      texto: t.isEmpty ? textoDesdeDetalle(d) : t,
+      franjas: <FranjaHorario>[
+        FranjaHorario(
+          desdeMinutos: d.desdeMinutos,
+          hastaMinutos: d.hastaMinutos,
+        ),
+      ],
+      dias: d.dias.toSet(),
+      declaradoCerrado: false,
+    );
+  }
+
   static const List<String> _marcadoresCerrado = <String>[
     'cerrado',
     'closed',
@@ -185,28 +210,45 @@ class HorarioAtencion {
     return h * 60 + minuto;
   }
 
-  /// Días mencionados en el texto. Si aparecen dos o más, se toma el rango
-  /// cerrado entre el primero y el último; uno solo restringe a ese día.
+  /// Días mencionados en el texto.
+  ///
+  /// Si los días van **enumerados** ("Lun, Mié, Vie") se devuelve exactamente
+  /// ese conjunto. Solo si van **encadenados** ("Lun-Vie", "Lun a Dom") se toma
+  /// el rango cerrado, que es lo que el texto significa.
+  ///
+  /// Antes se tomaba siempre el rango entre el primero y el último mencionados,
+  /// así que "Lun, Mié, Vie 8:00-17:00" se leía como lunes a viernes y el local
+  /// aparecía **abierto** martes y jueves. Ahora el separador decide.
   static Set<int> _diasDe(String normalizado) {
-    final encontrados = <int>[];
-    // Las claves abreviadas primero para no confundir "lun" con "lunes".
+    // Se recorre por POSICIÓN en el texto (no por orden del mapa) para que
+    // "Vie a Lun" signifique lo mismo leído de izquierda a derecha.
+    final posiciones = <int, int>{};
     for (final entrada in _nombresDia.entries) {
       final indice = normalizado.indexOf(entrada.key);
       if (indice < 0) continue;
-      if (encontrados.contains(entrada.value)) continue;
-      encontrados.add(entrada.value);
+      posiciones[indice] = entrada.value;
     }
-    if (encontrados.isEmpty) return const <int>{};
-    if (encontrados.length == 1) return <int>{encontrados.first};
+    if (posiciones.isEmpty) return const <int>{};
 
-    final primero = encontrados.first;
-    final ultimo = encontrados.last;
-    if (primero == ultimo) return <int>{primero};
+    final ordenadas = posiciones.keys.toList()..sort();
+    if (ordenadas.length == 1) return <int>{posiciones[ordenadas.first]!};
+
+    final primero = ordenadas.first;
+    final ultimo = ordenadas.last;
+    final entre = normalizado.substring(primero, ultimo);
+    final enumera =
+        entre.contains(',') || entre.contains(' y ') || entre.contains(' e ');
+
+    if (enumera) return posiciones.values.toSet();
+
+    final desde = posiciones[primero]!;
+    final hasta = posiciones[ultimo]!;
+    if (desde == hasta) return <int>{desde};
     final resultado = <int>{};
-    var dia = primero;
+    var dia = desde;
     while (true) {
       resultado.add(dia);
-      if (dia == ultimo) break;
+      if (dia == hasta) break;
       dia = dia == 7 ? 1 : dia + 1;
     }
     return resultado;
@@ -236,4 +278,200 @@ class HorarioAtencion {
   String toString() =>
       'HorarioAtencion("$texto", franjas: $franjas, dias: $dias, '
       'cerrado: $declaradoCerrado)';
+}
+
+// ---------------------------------------------------------------------------
+// Horario estructurado (punto 10 del plan de mejoras)
+// ---------------------------------------------------------------------------
+
+/// Horario de atención construido por el admin: días + hora de apertura y de
+/// cierre. Es el contenido de `flow.app_dat_locales.horario_detalle`:
+///
+/// ```json
+/// { "dias": [1, 2, 3, 4, 5], "apertura": "08:00", "cierre": "17:00" }
+/// ```
+///
+/// Vive junto al parser porque son las dos caras del mismo dato: el texto libre
+/// (`horario_atencion`) se sigue interpretando con [HorarioAtencion.parse] y el
+/// detalle exacto con [HorarioDetalle.fromJson] desde
+/// [HorarioAtencion.parseConDetalle].
+class HorarioDetalle {
+  const HorarioDetalle._({
+    required this.dias,
+    required this.desdeMinutos,
+    required this.hastaMinutos,
+  });
+
+  /// Días de la semana, 1 = lunes … 7 = domingo, ordenados y sin repetir.
+  final List<int> dias;
+
+  /// Minutos desde medianoche.
+  final int desdeMinutos;
+
+  /// Minutos desde medianoche. Puede superar 1440 cuando la franja cruza
+  /// medianoche (22:00 → 02:00 queda como 1320 → 1560).
+  final int hastaMinutos;
+
+  /// Nombres largos, indexados por `weekday - 1`.
+  static const List<String> nombresDia = <String>[
+    'Lunes',
+    'Martes',
+    'Miércoles',
+    'Jueves',
+    'Viernes',
+    'Sábado',
+    'Domingo',
+  ];
+
+  /// Abreviaturas, indexadas por `weekday - 1`.
+  static const List<String> abreviaturasDia = <String>[
+    'Lun',
+    'Mar',
+    'Mié',
+    'Jue',
+    'Vie',
+    'Sáb',
+    'Dom',
+  ];
+
+  /// Cierre == apertura significa "abierto todo el día".
+  bool get es24Horas => desdeMinutos == 0 && hastaMinutos >= 1440;
+
+  String get aperturaTexto => _hhmm(desdeMinutos);
+
+  /// Hora de cierre en formato `HH:MM`. Si la franja cruza medianoche devuelve
+  /// la hora real del reloj (`02:00`), no los minutos acumulados.
+  String get cierreTexto => _hhmm(hastaMinutos % 1440);
+
+  /// `"Lun-Vie"`, `"Lun, Mié, Vie"`, `"Sáb-Dom"` o `"Lun-Dom"`.
+  String get etiquetaDias {
+    if (dias.length == 7) return 'Lun-Dom';
+    final partes = <String>[];
+    var i = 0;
+    while (i < dias.length) {
+      var j = i;
+      // Se agrupa solo lo que es contiguo de verdad: [1,3,5] no es un rango.
+      while (j + 1 < dias.length && dias[j + 1] == dias[j] + 1) {
+        j++;
+      }
+      if (j - i >= 2) {
+        partes.add(
+          '${abreviaturasDia[dias[i] - 1]}-${abreviaturasDia[dias[j] - 1]}',
+        );
+      } else {
+        for (var k = i; k <= j; k++) {
+          partes.add(abreviaturasDia[dias[k] - 1]);
+        }
+      }
+      i = j + 1;
+    }
+    return partes.join(', ');
+  }
+
+  /// `"08:00-17:00"` o `"24 h"`.
+  String get etiquetaRango =>
+      es24Horas ? '24 h' : '$aperturaTexto-$cierreTexto';
+
+  /// `"Lun-Vie 08:00-17:00"`: el texto canónico que se guarda en
+  /// `horario_atencion` para que el resto de la app (y el parser clásico)
+  /// entiendan lo mismo sin conocer el detalle.
+  String get etiqueta => '$etiquetaDias $etiquetaRango';
+
+  /// Horas de un día concreto para la tabla del cliente. Cadena vacía si ese día
+  /// está cerrado.
+  String horasDeDia(int dia) => dias.contains(dia) ? etiquetaRango : '';
+
+  /// Construye un detalle validado, o `null` si los datos no son usables.
+  ///
+  /// Reglas:
+  ///  · hace falta al menos un día válido (1..7);
+  ///  · apertura y cierre tienen que venir las dos y en `H:MM` / `HH:MM`;
+  ///  · apertura == cierre ⇒ 24 horas;
+  ///  · cierre < apertura ⇒ la franja cruza medianoche (turno de noche).
+  static HorarioDetalle? crear({
+    required Iterable<int> dias,
+    required String? apertura,
+    required String? cierre,
+  }) {
+    final limpios = dias.where((d) => d >= 1 && d <= 7).toSet().toList()
+      ..sort();
+    if (limpios.isEmpty) return null;
+
+    final desde = _minutosDeTexto(apertura);
+    final hasta = _minutosDeTexto(cierre);
+    if (desde == null || hasta == null) return null;
+
+    if (desde == hasta) {
+      return HorarioDetalle._(
+        dias: limpios,
+        desdeMinutos: 0,
+        hastaMinutos: 1440,
+      );
+    }
+    return HorarioDetalle._(
+      dias: limpios,
+      desdeMinutos: desde,
+      hastaMinutos: hasta < desde ? hasta + 1440 : hasta,
+    );
+  }
+
+  /// Lee la forma jsonb de la BD. Devuelve `null` ante cualquier dato inválido:
+  /// un horario malformado no puede tumbar la ficha del local, solo hace que se
+  /// use el parser de texto.
+  static HorarioDetalle? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final diasRaw = raw['dias'];
+    if (diasRaw is! List) return null;
+    final dias = <int>[];
+    for (final d in diasRaw) {
+      if (d is num) dias.add(d.toInt());
+    }
+    return crear(
+      dias: dias,
+      apertura: raw['apertura'] is String ? raw['apertura'] as String : null,
+      cierre: raw['cierre'] is String ? raw['cierre'] as String : null,
+    );
+  }
+
+  /// Forma jsonb que se guarda en `horario_detalle`. Reversible con [fromJson].
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'dias': dias,
+    'apertura': aperturaTexto,
+    'cierre': cierreTexto,
+  };
+
+  /// Minutos desde medianoche de un texto `HH:MM`. `null` si no es válido.
+  static int? minutosDeTexto(String? texto) => _minutosDeTexto(texto);
+
+  /// `"HH:MM"` a partir de minutos desde medianoche.
+  static String textoDeMinutos(int minutos) => _hhmm(minutos % 1440);
+
+  @override
+  String toString() => 'HorarioDetalle($etiqueta)';
+}
+
+/// Texto canónico de un [HorarioDetalle] (`"Lun-Vie 08:00-17:00"`).
+///
+/// Es lo que se guarda en `horario_atencion`, así que el cliente y el admin
+/// leen lo mismo aunque uno use el detalle y el otro el parser de texto.
+String textoDesdeDetalle(HorarioDetalle detalle) => detalle.etiqueta;
+
+String _hhmm(int minutos) {
+  final m = minutos % 1440;
+  final h = m ~/ 60;
+  return '${h.toString().padLeft(2, '0')}:${(m % 60).toString().padLeft(2, '0')}';
+}
+
+/// Acepta `"8:00"`, `"08:00"` y `"8"` (hora en punto). `null` si nada cuadra.
+int? _minutosDeTexto(String? texto) {
+  if (texto == null) return null;
+  final t = texto.trim();
+  if (t.isEmpty) return null;
+  final partes = t.split(':');
+  if (partes.length > 2) return null;
+  final h = int.tryParse(partes[0]);
+  if (h == null || h < 0 || h > 23) return null;
+  final m = partes.length == 2 ? int.tryParse(partes[1]) : 0;
+  if (m == null || m < 0 || m > 59) return null;
+  return h * 60 + m;
 }

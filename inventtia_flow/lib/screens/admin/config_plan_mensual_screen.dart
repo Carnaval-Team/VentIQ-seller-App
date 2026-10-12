@@ -101,7 +101,8 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
           final saved = cfg?.porRecurso[r.id];
           rc.defaultCtrl.text = (saved?.porDefecto ?? 1).toString();
           for (var d = 1; d <= 7; d++) {
-            rc.diaCtrls[d]!.text = (saved != null && saved.porDia.containsKey(d))
+            rc.diaCtrls[d]!.text =
+                (saved != null && saved.porDia.containsKey(d))
                 ? saved.porDia[d].toString()
                 : '';
           }
@@ -110,16 +111,18 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
       } else if (cfg != null) {
         _defaultCtrl.text = cfg.porDefecto.toString();
         for (var d = 1; d <= 7; d++) {
-          _diaCtrls[d]!.text =
-              cfg.porDia.containsKey(d) ? cfg.porDia[d].toString() : '';
+          _diaCtrls[d]!.text = cfg.porDia.containsKey(d)
+              ? cfg.porDia[d].toString()
+              : '';
         }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('Error al cargar: $e'),
-              backgroundColor: AppTheme.error),
+            content: Text('Error al cargar: $e'),
+            backgroundColor: AppTheme.error,
+          ),
         );
       }
     } finally {
@@ -140,8 +143,10 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
           final v = int.tryParse(txt);
           if (v != null) porDia[d] = v;
         }
-        porRecurso[entry.key] =
-            RecursoPlanConfig(porDefecto: def, porDia: porDia);
+        porRecurso[entry.key] = RecursoPlanConfig(
+          porDefecto: def,
+          porDia: porDia,
+        );
       }
       return PlanConfig(
         idLocalServicio: widget.localServicio.id,
@@ -168,10 +173,12 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
     if (!_porRecurso) {
       final porDefecto = int.tryParse(_defaultCtrl.text.trim());
       if (porDefecto == null || porDefecto < 0) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Ingresa una capacidad por defecto válida (≥ 0)'),
-          backgroundColor: AppTheme.error,
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Ingresa una capacidad por defecto válida (≥ 0)'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
         return;
       }
     }
@@ -183,16 +190,17 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
         config: _buildConfig(),
       );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Configuración guardada'),
-          backgroundColor: AppTheme.success,
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Configuración guardada'),
+            backgroundColor: AppTheme.success,
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Error: $e'), backgroundColor: AppTheme.error),
+          SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.error),
         );
       }
     } finally {
@@ -218,8 +226,7 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
     final confirmar = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Generar planes del mes'),
         content: Text(
           'Se crearán los planes de ${DateFormat('MMMM yyyy', 'es').format(_mesSel)} '
@@ -229,8 +236,9 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancelar')),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             child: const Text('Generar'),
@@ -260,28 +268,32 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
           context: context,
           builder: (_) => AlertDialog(
             shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20)),
+              borderRadius: BorderRadius.circular(20),
+            ),
             title: const Text('Planificación generada'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _ResumenRow(
-                    label: _porRecurso ? 'Tramos-día creados' : 'Creados',
-                    valor: res.creados,
-                    color: AppTheme.success),
+                  label: _porRecurso ? 'Tramos-día creados' : 'Creados',
+                  valor: res.creados,
+                  color: AppTheme.success,
+                ),
                 if (!_porRecurso) ...[
                   const SizedBox(height: 6),
                   _ResumenRow(
-                      label: 'Actualizados',
-                      valor: res.actualizados,
-                      color: AppTheme.primary),
+                    label: 'Actualizados',
+                    valor: res.actualizados,
+                    color: AppTheme.primary,
+                  ),
                 ],
                 const SizedBox(height: 6),
                 _ResumenRow(
-                    label: 'Días sin cupo (cerrados)',
-                    valor: res.diasSinCupo,
-                    color: AppTheme.textSecondary),
+                  label: 'Días sin cupo (cerrados)',
+                  valor: res.diasSinCupo,
+                  color: AppTheme.textSecondary,
+                ),
               ],
             ),
             actions: [
@@ -296,8 +308,7 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Error: $e'), backgroundColor: AppTheme.error),
+          SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.error),
         );
       }
     } finally {
@@ -319,8 +330,7 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
             const Text('Configuración mensual'),
             Text(
               '${servicio?.nombre ?? ''} · ${local?.nombre ?? ''}',
-              style:
-                  const TextStyle(fontSize: 12, fontWeight: FontWeight.w400),
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w400),
             ),
           ],
         ),
@@ -330,7 +340,10 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
               children: [
-                if (_porRecurso) ..._buildRecursoSection() else ..._buildSimpleSection(),
+                if (_porRecurso)
+                  ..._buildRecursoSection()
+                else
+                  ..._buildSimpleSection(),
                 const SizedBox(height: 16),
                 ElevatedButton.icon(
                   onPressed: _saving ? null : _guardar,
@@ -339,9 +352,14 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
                           width: 18,
                           height: 18,
                           child: CircularProgressIndicator(
-                              color: Colors.white, strokeWidth: 2))
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
                       : const Icon(Icons.save_outlined),
-                  label: Text(_saving ? 'Guardando...' : 'Guardar configuración'),
+                  label: Text(
+                    _saving ? 'Guardando...' : 'Guardar configuración',
+                  ),
                 ),
                 const SizedBox(height: 28),
                 _sectionTitle('Planificar mes'),
@@ -350,7 +368,9 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
                   'Genera los planes del mes elegido a partir de la configuración '
                   'guardada. Puedes repetirlo cada mes.',
                   style: TextStyle(
-                      fontSize: 12.5, color: AppTheme.textSecondary),
+                    fontSize: 12.5,
+                    color: AppTheme.textSecondary,
+                  ),
                 ),
                 const SizedBox(height: 14),
                 InkWell(
@@ -362,34 +382,43 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
                       color: AppTheme.primary.withValues(alpha: 0.05),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                          color: AppTheme.primary.withValues(alpha: 0.15)),
+                        color: AppTheme.primary.withValues(alpha: 0.15),
+                      ),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.calendar_month_outlined,
-                            color: AppTheme.primary),
+                        const Icon(
+                          Icons.calendar_month_outlined,
+                          color: AppTheme.primary,
+                        ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('Mes a planificar',
-                                  style: TextStyle(
-                                      fontSize: 11,
-                                      color: AppTheme.textSecondary)),
+                              const Text(
+                                'Mes a planificar',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: AppTheme.textSecondary,
+                                ),
+                              ),
                               Text(
-                                DateFormat('MMMM yyyy', 'es')
-                                    .format(_mesSel),
+                                DateFormat('MMMM yyyy', 'es').format(_mesSel),
                                 style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppTheme.primary),
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppTheme.primary,
+                                ),
                               ),
                             ],
                           ),
                         ),
-                        const Icon(Icons.edit_calendar,
-                            size: 18, color: AppTheme.primary),
+                        const Icon(
+                          Icons.edit_calendar,
+                          size: 18,
+                          color: AppTheme.primary,
+                        ),
                       ],
                     ),
                   ),
@@ -402,10 +431,14 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
                           width: 18,
                           height: 18,
                           child: CircularProgressIndicator(
-                              color: Colors.white, strokeWidth: 2))
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
                       : const Icon(Icons.auto_awesome_motion_outlined),
                   label: Text(
-                      _generando ? 'Generando...' : 'Generar planes del mes'),
+                    _generando ? 'Generando...' : 'Generar planes del mes',
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.success,
                   ),
@@ -417,83 +450,96 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
 
   // ── Sección modo SIN recursos ──
   List<Widget> _buildSimpleSection() => [
-        _sectionTitle('Capacidades por día'),
-        const SizedBox(height: 4),
-        const Text(
-          'Define la capacidad por defecto y, opcionalmente, una distinta '
-          'por día. Deja un día vacío para usar el valor por defecto, o pon '
-          '0 para no abrir ese día.',
-          style: TextStyle(fontSize: 12.5, color: AppTheme.textSecondary),
+    _sectionTitle('Capacidades por día'),
+    const SizedBox(height: 4),
+    const Text(
+      'Define la capacidad por defecto y, opcionalmente, una distinta '
+      'por día. Deja un día vacío para usar el valor por defecto, o pon '
+      '0 para no abrir ese día.',
+      style: TextStyle(fontSize: 12.5, color: AppTheme.textSecondary),
+    ),
+    const SizedBox(height: 14),
+    TextField(
+      controller: _defaultCtrl,
+      keyboardType: TextInputType.number,
+      decoration: const InputDecoration(
+        labelText: 'Capacidad por defecto *',
+        prefixIcon: Icon(Icons.tune),
+        hintText: 'Ej: 30',
+      ),
+      onChanged: (_) => setState(() {}), // refresca los hints de los días
+    ),
+    const SizedBox(height: 16),
+    Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        child: Column(
+          children: [
+            for (var d = 1; d <= 7; d++) ...[
+              if (d > 1) Divider(height: 1, color: Colors.grey.shade100),
+              _DiaRow(
+                nombre: _nombresDia[d - 1],
+                controller: _diaCtrls[d]!,
+                hintDefault: _defaultCtrl.text.trim(),
+              ),
+            ],
+          ],
         ),
-        const SizedBox(height: 14),
-        TextField(
-          controller: _defaultCtrl,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'Capacidad por defecto *',
-            prefixIcon: Icon(Icons.tune),
-            hintText: 'Ej: 30',
-          ),
-          onChanged: (_) => setState(() {}), // refresca los hints de los días
-        ),
-        const SizedBox(height: 16),
-        Card(
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-            side: BorderSide(color: Colors.grey.shade200),
-          ),
-          child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-            child: Column(
-              children: [
-                for (var d = 1; d <= 7; d++) ...[
-                  if (d > 1)
-                    Divider(height: 1, color: Colors.grey.shade100),
-                  _DiaRow(
-                    nombre: _nombresDia[d - 1],
-                    controller: _diaCtrls[d]!,
-                    hintDefault: _defaultCtrl.text.trim(),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ];
+      ),
+    ),
+  ];
 
   // ── Sección modo CON recursos (una tarjeta por recurso) ──
-  List<Widget> _buildRecursoSection() => [
-        _sectionTitle('Capacidad por recurso y día'),
-        const SizedBox(height: 4),
-        const Text(
-          'Define la capacidad de cada recurso: un valor por defecto y, '
-          'opcionalmente, uno distinto por día. Deja un día vacío para usar el '
-          'valor por defecto, o pon 0 para cerrar ese recurso ese día.',
-          style: TextStyle(fontSize: 12.5, color: AppTheme.textSecondary),
+  //
+  // En los modos simplificados (punto 6) el único recurso es el "Cupo" interno.
+  // Se explica con otras palabras: el cupo del día es único para todos los
+  // turnos, así que hablar de "recurso Mesa 3" confundiría.
+  List<Widget> _buildRecursoSection() {
+    final soloCupoInterno =
+        _recursos.isNotEmpty && _recursos.every((r) => r.esCupoInterno);
+    return [
+      _sectionTitle(
+        soloCupoInterno ? 'Capacidad por día' : 'Capacidad por recurso y día',
+      ),
+      const SizedBox(height: 4),
+      Text(
+        soloCupoInterno
+            ? 'Este servicio está en modo simple: el cupo del día se comparte '
+                  'entre todos los turnos. Indica cuántas reservas caben por '
+                  'día (o 0 para cerrar el día).'
+            : 'Define la capacidad de cada recurso: un valor por defecto y, '
+                  'opcionalmente, uno distinto por día. Deja un día vacío para '
+                  'usar el valor por defecto, o pon 0 para cerrar ese recurso '
+                  'ese día.',
+        style: const TextStyle(fontSize: 12.5, color: AppTheme.textSecondary),
+      ),
+      const SizedBox(height: 14),
+      for (final r in _recursos) ...[
+        _RecursoConfigCard(
+          recurso: r,
+          ctrls: _recCtrls[r.id]!,
+          nombresDia: _nombresDia,
+          onDefaultChanged: () => setState(() {}),
         ),
-        const SizedBox(height: 14),
-        for (final r in _recursos) ...[
-          _RecursoConfigCard(
-            recurso: r,
-            ctrls: _recCtrls[r.id]!,
-            nombresDia: _nombresDia,
-            onDefaultChanged: () => setState(() {}),
-          ),
-          const SizedBox(height: 12),
-        ],
-      ];
+        const SizedBox(height: 12),
+      ],
+    ];
+  }
 
   Widget _sectionTitle(String t) => Text(
-        t.toUpperCase(),
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 1,
-          color: AppTheme.textSecondary,
-        ),
-      );
+    t.toUpperCase(),
+    style: const TextStyle(
+      fontSize: 12,
+      fontWeight: FontWeight.w800,
+      letterSpacing: 1,
+      color: AppTheme.textSecondary,
+    ),
+  );
 }
 
 /// Controladores de la config de un recurso (default + 7 días).
@@ -546,14 +592,21 @@ class _RecursoConfigCard extends StatelessWidget {
                     color: AppTheme.primary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(Icons.widgets_outlined,
-                      color: AppTheme.primary, size: 18),
+                  child: const Icon(
+                    Icons.widgets_outlined,
+                    color: AppTheme.primary,
+                    size: 18,
+                  ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(recurso.nombre,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 15)),
+                  child: Text(
+                    recurso.esCupoInterno ? 'Cupo del día' : recurso.nombre,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -602,9 +655,10 @@ class _DiaRow extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: Text(nombre,
-                style: const TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w600)),
+            child: Text(
+              nombre,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
           ),
           SizedBox(
             width: 110,
@@ -616,9 +670,12 @@ class _DiaRow extends StatelessWidget {
                 isDense: true,
                 hintText: hintDefault.isEmpty ? 'def.' : hintDefault,
                 contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 8),
+                  horizontal: 10,
+                  vertical: 8,
+                ),
                 border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
             ),
           ),
@@ -632,8 +689,11 @@ class _ResumenRow extends StatelessWidget {
   final String label;
   final int valor;
   final Color color;
-  const _ResumenRow(
-      {required this.label, required this.valor, required this.color});
+  const _ResumenRow({
+    required this.label,
+    required this.valor,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -645,11 +705,15 @@ class _ResumenRow extends StatelessWidget {
           decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
         const SizedBox(width: 10),
-        Expanded(
-            child: Text(label, style: const TextStyle(fontSize: 14))),
-        Text('$valor',
-            style: TextStyle(
-                fontSize: 16, fontWeight: FontWeight.bold, color: color)),
+        Expanded(child: Text(label, style: const TextStyle(fontSize: 14))),
+        Text(
+          '$valor',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
       ],
     );
   }
