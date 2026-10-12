@@ -1534,11 +1534,14 @@ class CarnavalService {
     }
   }
 
-  /// Cancela una orden que ya fue entregada al repartidor, devolviendo stock.
+  /// Cancela una orden Carnaval cambiando su estado a 'Cancelado'.
+  /// Mantiene los OrderDetails de Carnaval para consulta histórica y
+  /// devuelve el stock correspondiente en Inventtia. El stock de Carnaval se
+  /// sincroniza automáticamente desde Inventtia.
   static Future<bool> cancelOrder(int orderId, {String? changedBy}) async {
     try {
       final response = await _supabase.rpc(
-        'fn_cancelar_orden_carnaval',
+        'fn_cancelar_orden_carnaval_con_devolucion_v2',
         params: {
           'p_order_id': orderId,
           if (changedBy != null && changedBy.trim().isNotEmpty)

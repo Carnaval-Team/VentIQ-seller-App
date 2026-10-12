@@ -5540,89 +5540,84 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     );
   }
 
-  /// Abre un diálogo para editar el precio base del producto
-
-  void _editBasePriceDialog() {
-    final priceController = TextEditingController(
-      text: _product.basePrice.toStringAsFixed(2),
-    );
-
+  /// Abre un diálogo para editar el precio base del producto.
+  /// Espera la tasa efectiva antes de abrir, para no desincronizar CUP/USD.
+  Future<void> _editBasePriceDialog() async {
     final screenContext = context;
 
-    showDialog(
+    showDialog<void>(
       context: screenContext,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
 
+    double exchangeRate = 0;
+    try {
+      exchangeRate = await CurrencyService.getEffectiveUsdToCupRate();
+    } catch (e) {
+      debugPrint('Error obteniendo tasa para editar precio: $e');
+    }
+
+    if (!mounted) return;
+    Navigator.of(screenContext, rootNavigator: true).pop();
+
+    if (exchangeRate <= 0) {
+      ScaffoldMessenger.of(screenContext).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No se pudo obtener la tasa de cambio. Intenta de nuevo.',
+          ),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    await showDialog<void>(
+      context: screenContext,
       builder: (BuildContext dialogContext) {
-        return FutureBuilder<double>(
-          future: CurrencyService.getEffectiveUsdToCupRate(),
+        return _BasePriceEditDialog(
+          denominacion: _product.denominacion,
+          exchangeRate: exchangeRate,
+          initialCupPrice: _product.basePrice,
+          initialUsdPrice: _product.precioVentaUsd,
+          onSave: (double finalCupPrice, double finalUsdPrice) async {
+            try {
+              final success = await ProductService.updateBasePriceVenta(
+                productId: int.parse(_product.id),
+                newPrice: finalCupPrice,
+                newPriceUsd: finalUsdPrice,
+              );
 
-          builder: (context, rateSnapshot) {
-            final exchangeRate = rateSnapshot.data ?? 1.0;
+              if (!mounted) return;
 
-            final rateLoaded =
-                rateSnapshot.connectionState == ConnectionState.done;
-
-            return _BasePriceEditDialog(
-              denominacion: _product.denominacion,
-
-              priceController: priceController,
-
-              exchangeRate: exchangeRate,
-
-              rateLoaded: rateLoaded,
-
-              initialUsdPrice: _product.precioVentaUsd,
-
-              onSave: (double finalCupPrice, double? finalUsdPrice) async {
-                try {
-                  final success = await ProductService.updateBasePriceVenta(
-                    productId: int.parse(_product.id),
-
-                    newPrice: finalCupPrice,
-
-                    newPriceUsd: finalUsdPrice,
-                  );
-
-                  if (!mounted) return;
-
-                  if (success) {
-                    Navigator.pop(dialogContext);
-
-                    await _loadAdditionalData();
-
-                    if (!mounted) return;
-
-                    ScaffoldMessenger.of(screenContext).showSnackBar(
-                      const SnackBar(
-                        content: Text('Precio base actualizado exitosamente'),
-
-                        backgroundColor: AppColors.success,
-                      ),
-                    );
-                  } else {
-                    if (!mounted) return;
-
-                    ScaffoldMessenger.of(screenContext).showSnackBar(
-                      const SnackBar(
-                        content: Text('Error al actualizar el precio'),
-
-                        backgroundColor: AppColors.error,
-                      ),
-                    );
-                  }
-                } catch (e) {
-                  if (!mounted) return;
-
-                  ScaffoldMessenger.of(screenContext).showSnackBar(
-                    SnackBar(
-                      content: Text('Error al actualizar precio: $e'),
-
-                      backgroundColor: AppColors.error,
-                    ),
-                  );
-                }
-              },
-            );
+              if (success) {
+                Navigator.pop(dialogContext);
+                await _loadAdditionalData();
+                if (!mounted) return;
+                ScaffoldMessenger.of(screenContext).showSnackBar(
+                  const SnackBar(
+                    content: Text('Precio base actualizado exitosamente'),
+                    backgroundColor: AppColors.success,
+                  ),
+                );
+              } else {
+                ScaffoldMessenger.of(screenContext).showSnackBar(
+                  const SnackBar(
+                    content: Text('Error al actualizar el precio'),
+                    backgroundColor: AppColors.error,
+                  ),
+                );
+              }
+            } catch (e) {
+              if (!mounted) return;
+              ScaffoldMessenger.of(screenContext).showSnackBar(
+                SnackBar(
+                  content: Text('Error al actualizar precio: $e'),
+                  backgroundColor: AppColors.error,
+                ),
+              );
+            }
           },
         );
       },
@@ -5989,29 +5984,17 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
 class _BasePriceEditDialog extends StatefulWidget {
   final String denominacion;
-
-  final TextEditingController priceController;
-
   final double exchangeRate;
-
-  final bool rateLoaded;
-
+  final double initialCupPrice;
   final double? initialUsdPrice;
-
-  final Future<void> Function(double finalCupPrice, double? finalUsdPrice)
+  final Future<void> Function(double finalCupPrice, double finalUsdPrice)
   onSave;
 
   const _BasePriceEditDialog({
     required this.denominacion,
-
-    required this.priceController,
-
     required this.exchangeRate,
-
-    required this.rateLoaded,
-
+    required this.initialCupPrice,
     this.initialUsdPrice,
-
     required this.onSave,
   });
 
@@ -6020,250 +6003,196 @@ class _BasePriceEditDialog extends StatefulWidget {
 }
 
 class _BasePriceEditDialogState extends State<_BasePriceEditDialog> {
+  late final TextEditingController _cupController;
   late final TextEditingController _usdController;
 
   bool _isSaving = false;
-
   bool _updatingFromCup = false;
-
   bool _updatingFromUsd = false;
+
+  /// Último campo editado por el usuario; al guardar se re-sincroniza el otro.
+  bool _lastEditedUsd = false;
 
   @override
   void initState() {
     super.initState();
 
+    final rate = widget.exchangeRate;
+    final initialUsd =
+        widget.initialUsdPrice != null && widget.initialUsdPrice! > 0
+            ? widget.initialUsdPrice!
+            : (widget.initialCupPrice > 0 && rate > 0
+                ? widget.initialCupPrice / rate
+                : 0.0);
+    final initialCup =
+        widget.initialCupPrice > 0
+            ? widget.initialCupPrice
+            : (initialUsd > 0 && rate > 0 ? initialUsd * rate : 0.0);
+
+    _cupController = TextEditingController(
+      text: initialCup > 0 ? initialCup.toStringAsFixed(2) : '',
+    );
     _usdController = TextEditingController(
-      text: widget.initialUsdPrice != null
-          ? widget.initialUsdPrice!.toStringAsFixed(2)
-          : '',
+      text: initialUsd > 0 ? initialUsd.toStringAsFixed(2) : '',
     );
   }
 
   @override
   void dispose() {
+    _cupController.dispose();
     _usdController.dispose();
-
     super.dispose();
+  }
+
+  void _syncUsdFromCup(String value) {
+    if (_updatingFromUsd) return;
+    _updatingFromCup = true;
+    _lastEditedUsd = false;
+    if (widget.exchangeRate > 0) {
+      final cup = double.tryParse(value);
+      if (cup != null && cup >= 0) {
+        final usdText = (cup / widget.exchangeRate).toStringAsFixed(2);
+        if (_usdController.text != usdText) {
+          _usdController.text = usdText;
+        }
+      } else if (value.isEmpty) {
+        _usdController.clear();
+      }
+    }
+    _updatingFromCup = false;
+    setState(() {});
+  }
+
+  void _syncCupFromUsd(String value) {
+    if (_updatingFromCup) return;
+    _updatingFromUsd = true;
+    _lastEditedUsd = true;
+    if (widget.exchangeRate > 0) {
+      final usd = double.tryParse(value);
+      if (usd != null && usd >= 0) {
+        final cupText = (usd * widget.exchangeRate).toStringAsFixed(2);
+        if (_cupController.text != cupText) {
+          _cupController.text = cupText;
+        }
+      } else if (value.isEmpty) {
+        _cupController.clear();
+      }
+    }
+    _updatingFromUsd = false;
+    setState(() {});
+  }
+
+  /// Garantiza par coherente con la tasa antes de enviar al servidor.
+  ({double cup, double usd})? _resolvePairForSave() {
+    final rate = widget.exchangeRate;
+    if (rate <= 0) return null;
+
+    final cupRaw = double.tryParse(_cupController.text.trim());
+    final usdRaw = double.tryParse(_usdController.text.trim());
+
+    if (_lastEditedUsd) {
+      if (usdRaw == null || usdRaw < 0) return null;
+      final cup = double.parse((usdRaw * rate).toStringAsFixed(2));
+      return (cup: cup, usd: usdRaw);
+    }
+
+    if (cupRaw == null || cupRaw < 0) return null;
+    final usd = double.parse((cupRaw / rate).toStringAsFixed(2));
+    return (cup: cupRaw, usd: usd);
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('Editar Precio Base'),
-
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
-
           crossAxisAlignment: CrossAxisAlignment.start,
-
           children: [
             Text(
               'Producto: ${widget.denominacion}',
-
               style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
             ),
-
-            if (widget.rateLoaded && widget.exchangeRate > 0) ...[
-              const SizedBox(height: 4),
-
-              Text(
-                'Tasa: ${widget.exchangeRate.toStringAsFixed(0)} CUP/USD',
-
-                style: TextStyle(fontSize: 11, color: Colors.grey[500]),
-              ),
-            ] else ...[
-              const SizedBox(height: 4),
-
-              Row(
-                children: [
-                  const SizedBox(
-                    width: 12,
-                    height: 12,
-
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-
-                  const SizedBox(width: 8),
-
-                  Text(
-                    'Obteniendo tasa...',
-                    style: TextStyle(fontSize: 11, color: Colors.grey[500]),
-                  ),
-                ],
-              ),
-            ],
-
+            const SizedBox(height: 4),
+            Text(
+              'Tasa: ${widget.exchangeRate.toStringAsFixed(0)} CUP/USD',
+              style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+            ),
             const SizedBox(height: 16),
-
-            // Campo CUP
             TextField(
-              controller: widget.priceController,
-
+              controller: _cupController,
               autofocus: true,
-
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
                 signed: false,
               ),
-
-              onChanged: (value) {
-                if (_updatingFromUsd) return;
-
-                _updatingFromCup = true;
-
-                if (widget.exchangeRate > 0) {
-                  final cup = double.tryParse(value);
-
-                  if (cup != null && cup >= 0) {
-                    final usdText = (cup / widget.exchangeRate).toStringAsFixed(
-                      2,
-                    );
-
-                    if (_usdController.text != usdText) {
-                      _usdController.text = usdText;
-                    }
-                  } else if (value.isEmpty) {
-                    _usdController.clear();
-                  }
-                }
-
-                setState(() {});
-
-                _updatingFromCup = false;
-              },
-
+              onChanged: _syncUsdFromCup,
               decoration: const InputDecoration(
                 labelText: 'Precio en CUP',
-
                 prefixText: '₱ ',
-
                 border: OutlineInputBorder(),
-
                 hintText: '0.00',
               ),
             ),
-
             const SizedBox(height: 12),
-
-            // Campo USD
             TextField(
               controller: _usdController,
-
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
                 signed: false,
               ),
-
-              onChanged: (value) {
-                if (_updatingFromCup) return;
-
-                _updatingFromUsd = true;
-
-                if (widget.exchangeRate > 0) {
-                  final usd = double.tryParse(value);
-
-                  if (usd != null && usd >= 0) {
-                    final cupText = (usd * widget.exchangeRate).toStringAsFixed(
-                      2,
-                    );
-
-                    if (widget.priceController.text != cupText) {
-                      widget.priceController.text = cupText;
-                    }
-                  } else if (value.isEmpty) {
-                    widget.priceController.clear();
-                  }
-                }
-
-                setState(() {});
-
-                _updatingFromUsd = false;
-              },
-
+              onChanged: _syncCupFromUsd,
               decoration: const InputDecoration(
                 labelText: 'Precio en USD',
-
                 prefixText: '\$ ',
-
                 border: OutlineInputBorder(),
-
                 hintText: '0.00',
               ),
             ),
           ],
         ),
       ),
-
       actions: [
         TextButton(
           onPressed: _isSaving ? null : () => Navigator.pop(context),
-
           child: const Text('Cancelar'),
         ),
-
         ElevatedButton(
           onPressed: _isSaving
               ? null
               : () async {
-                  final cup = double.tryParse(widget.priceController.text);
-
-                  if (cup == null || cup < 0) {
+                  final pair = _resolvePairForSave();
+                  if (pair == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text(
-                          'Ingresa un precio CUP válido (0 o mayor)',
+                          'Ingresa un precio válido en CUP o USD',
                         ),
-
                         backgroundColor: Colors.red,
                       ),
                     );
-
                     return;
                   }
 
-                  final usd = _usdController.text.trim().isEmpty
-                      ? null
-                      : double.tryParse(_usdController.text);
-
-                  if (usd != null && usd < 0) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Ingresa un precio USD válido (0 o mayor)',
-                        ),
-
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-
-                    return;
-                  }
-
-                  final finalUsd = usd;
+                  // Refleja el par final en los campos (por si hubo redondeo).
+                  _cupController.text = pair.cup.toStringAsFixed(2);
+                  _usdController.text = pair.usd.toStringAsFixed(2);
 
                   setState(() => _isSaving = true);
-
-                  await widget.onSave(cup, finalUsd);
-
+                  await widget.onSave(pair.cup, pair.usd);
                   if (mounted) setState(() => _isSaving = false);
                 },
-
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF4A90E2),
-
             foregroundColor: Colors.white,
           ),
-
           child: _isSaving
               ? const SizedBox(
                   width: 16,
-
                   height: 16,
-
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-
                     valueColor: AlwaysStoppedAnimation(Colors.white),
                   ),
                 )
