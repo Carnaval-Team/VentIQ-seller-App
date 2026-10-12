@@ -124,3 +124,4 @@ tools/web_cache_killer
 
 # DSH: telemetría del CLI de Dart redirigida dentro del workspace por el MCP
 .dsh/dart-tool/
+dsh-plugins/
