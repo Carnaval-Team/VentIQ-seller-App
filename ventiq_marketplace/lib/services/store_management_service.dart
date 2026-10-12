@@ -271,11 +271,14 @@ class StoreManagementService {
       }
     }
 
+    final today = DateTime.now().toIso8601String().split('T')[0];
+
     final pricesResponse = await _supabase
         .from('app_dat_precio_venta')
-        .select('id_producto, precio_venta_cup, fecha_desde')
+        .select('id_producto, id, precio_venta_cup')
         .inFilter('id_producto', productIds)
-        .order('fecha_desde', ascending: false);
+        .or('fecha_hasta.is.null,fecha_hasta.gte.$today')
+        .order('id', ascending: false);
 
     final priceByProduct = <int, num>{};
     for (final row in List<Map<String, dynamic>>.from(pricesResponse as List)) {
@@ -382,11 +385,14 @@ class StoreManagementService {
         ? basePresentationIdRaw
         : (basePresentationIdRaw is num ? basePresentationIdRaw.toInt() : null);
 
+    final today = DateTime.now().toIso8601String().split('T')[0];
+
     final priceResponse = await _supabase
         .from('app_dat_precio_venta')
-        .select('precio_venta_cup, fecha_desde')
+        .select('id, precio_venta_cup')
         .eq('id_producto', productId)
-        .order('fecha_desde', ascending: false)
+        .or('fecha_hasta.is.null,fecha_hasta.gte.$today')
+        .order('id', ascending: false)
         .limit(1)
         .maybeSingle();
 

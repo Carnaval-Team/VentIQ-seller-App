@@ -611,20 +611,16 @@ class ProductsAnalyticsService {
         print('⚠️ Error obteniendo tasa de cambio global: $e');
       }
 
-      // 1. Obtener precio de venta actual
+      // 1. Obtener precio de venta actual (vigente, max id)
       final precioResponse =
           await supabase
               .from('app_dat_precio_venta')
-              .select('precio_venta_cup')
+              .select('id, precio_venta_cup')
               .eq('id_producto', productId)
               .or(
                 'fecha_hasta.is.null,fecha_hasta.gte.${DateTime.now().toIso8601String().split('T')[0]}',
               )
-              .lte(
-                'fecha_desde',
-                DateTime.now().toIso8601String().split('T')[0],
-              )
-              .order('fecha_desde', ascending: false)
+              .order('id', ascending: false)
               .limit(1)
               .maybeSingle();
 
