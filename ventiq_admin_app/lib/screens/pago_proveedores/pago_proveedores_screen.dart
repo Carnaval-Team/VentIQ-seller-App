@@ -239,6 +239,8 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen>
     }
   }
 
+  // Conservado: la UI de eliminar factura está oculta por ahora.
+  // ignore: unused_element
   Future<void> _confirmEliminarFactura(ProveedorFactura factura) async {
     if (!await PermissionsService().canPerformAction('supplier.invoice.delete')) {
       _showError('No tienes permiso para eliminar facturas.');

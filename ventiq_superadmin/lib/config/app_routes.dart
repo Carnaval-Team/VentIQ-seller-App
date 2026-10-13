@@ -12,6 +12,9 @@ class AppRoutes {
   static const String login = '/login';
   static const String dashboard = '/dashboard';
   static const String homeBanners = '/banners-inicio';
+  static const String patrocinados = '/patrocinados';
+  static const String colecciones = '/colecciones';
+  static const String fidelidad = '/fidelidad';
 
   // Rutas protegidas agrupadas
   static const List<AppRoute> protected = [
@@ -48,6 +51,12 @@ class AppRoutes {
     AppRoute(route: '/carnaval-precios-tiendas', label: 'Recargos Carnaval por Tienda', group: 'Carnaval'),
     AppRoute(route: '/carnaval-productos-tienda', label: 'Productos por Tienda en Carnaval', group: 'Carnaval'),
     AppRoute(route: '/banners-inicio', label: 'Banners inicio', group: 'Marketing'),
+    AppRoute(route: '/patrocinados', label: 'Espacio patrocinado', group: 'Marketing'),
+    AppRoute(route: '/colecciones', label: 'Colecciones temáticas', group: 'Marketing'),
+    AppRoute(route: '/fidelidad', label: 'Programa de fidelidad', group: 'Marketing'),
+    AppRoute(route: '/flow-suscripciones', label: 'Suscripciones Flow', group: 'Flow'),
+    AppRoute(route: '/flow-planes', label: 'Planes de suscripción Flow', group: 'Flow'),
+    AppRoute(route: '/flow-config', label: 'Configuración de suscripciones', group: 'Flow'),
     AppRoute(route: '/roles', label: 'Gestión de Roles', group: 'Sistema'),
     AppRoute(route: '/configuracion', label: 'Configuración', group: 'Sistema'),
   ];

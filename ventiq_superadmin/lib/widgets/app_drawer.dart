@@ -242,6 +242,42 @@ class AppDrawer extends StatelessWidget {
                       title: 'Banners inicio',
                       route: '/banners-inicio',
                     ),
+                    _DrawerItem(
+                      icon: Icons.campaign_outlined,
+                      title: 'Espacio patrocinado',
+                      route: '/patrocinados',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.collections_bookmark_outlined,
+                      title: 'Colecciones temáticas',
+                      route: '/colecciones',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.loyalty_outlined,
+                      title: 'Programa de fidelidad',
+                      route: '/fidelidad',
+                    ),
+                  ],
+                ),
+                _buildMenuSection(
+                  context,
+                  title: 'Flow',
+                  items: [
+                    _DrawerItem(
+                      icon: Icons.workspace_premium_outlined,
+                      title: 'Suscripciones',
+                      route: '/flow-suscripciones',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.card_membership,
+                      title: 'Planes de suscripción',
+                      route: '/flow-planes',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.tune,
+                      title: 'Configuración de suscripciones',
+                      route: '/flow-config',
+                    ),
                   ],
                 ),
                 _buildMenuSection(
@@ -421,7 +457,13 @@ class AppDrawer extends StatelessWidget {
                 item.route == '/carnaval-precios-tiendas' ||
                 item.route == '/carnaval-productos-tienda' ||
                 item.route == '/banners-inicio' ||
-                item.route == '/roles') {
+                item.route == '/patrocinados' ||
+                item.route == '/colecciones' ||
+                item.route == '/fidelidad' ||
+                item.route == '/roles' ||
+                item.route == '/flow-suscripciones' ||
+                item.route == '/flow-planes' ||
+                item.route == '/flow-config') {
               Navigator.of(context).pushReplacementNamed(item.route);
             } else {
               // Para rutas que aún no están implementadas

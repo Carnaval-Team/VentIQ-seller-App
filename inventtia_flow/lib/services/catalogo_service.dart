@@ -1,6 +1,17 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/servicio.dart';
 
+/// Centinela para distinguir "no toques este campo" de "ponlo a `null`".
+///
+/// Con `Map`, un `null` no puede significar las dos cosas: PostgREST necesita
+/// saber si el campo va en el body. Los parámetros nuevos que deben poder
+/// **limpiarse** (`horario_detalle`) usan este valor por defecto.
+class _NoCambiar {
+  const _NoCambiar();
+}
+
+const _NoCambiar _noCambiar = _NoCambiar();
+
 class CatalogoService {
   static final SupabaseClient _supabase = Supabase.instance.client;
   static const String _schema = 'flow';
@@ -98,12 +109,34 @@ class CatalogoService {
     }
   }
 
+  /// Vuelve a leer un servicio de la base de datos.
+  ///
+  /// Se usa después de guardar desde el formulario para devolver a la pantalla
+  /// de detalle la fila REAL (con `config_precio`, campos adicionales y
+  /// `permite_tercero` ya persistidos) en vez de un objeto armado a mano. Ese
+  /// era el bug del punto 5: el detalle seguía mostrando el `Servicio` viejo
+  /// porque el bottom sheet se cerraba sin devolver nada.
+  static Future<Servicio> getServicio(int id) async {
+    try {
+      final res = await _supabase
+          .schema(_schema)
+          .from('app_dat_servicios')
+          .select()
+          .eq('id', id)
+          .single();
+      return Servicio.fromJson(res);
+    } catch (e) {
+      throw handleSchemaPermissionError(Exception(e.toString()));
+    }
+  }
+
   static Future<Servicio> createServicio({
     required String nombre,
     String? descripcion,
     String? foto,
     required int idEntidad,
     int? idTipoActividad,
+    bool activo = true,
   }) async {
     final res = await _supabase
         .schema(_schema)
@@ -113,6 +146,7 @@ class CatalogoService {
           'descripcion': descripcion,
           'foto': foto,
           'id_entidad': idEntidad,
+          'activo': activo,
           if (idTipoActividad != null) 'id_tipo_actividad': idTipoActividad,
         })
         .select()
@@ -126,6 +160,7 @@ class CatalogoService {
     String? descripcion,
     String? foto,
     int? idTipoActividad,
+    bool? activo,
   }) async {
     final res = await _supabase
         .schema(_schema)
@@ -134,12 +169,28 @@ class CatalogoService {
           'nombre': nombre,
           'descripcion': descripcion,
           if (foto != null) 'foto': foto,
+          if (activo != null) 'activo': activo,
           if (idTipoActividad != null) 'id_tipo_actividad': idTipoActividad,
         })
         .eq('id', id)
         .select()
         .single();
     return Servicio.fromJson(res);
+  }
+
+  /// Activa/desactiva un servicio sin tocar el resto de sus campos.
+  ///
+  /// Va por PostgREST (no por RPC): la política `app_dat_servicios_*_admin`
+  /// valida la pertenencia a la entidad vía `flow.is_entidad_admin`.
+  static Future<void> setServicioActivo({
+    required int id,
+    required bool activo,
+  }) async {
+    await _supabase
+        .schema(_schema)
+        .from('app_dat_servicios')
+        .update({'activo': activo})
+        .eq('id', id);
   }
 
   static Future<void> deleteServicio(int id) async {
@@ -182,10 +233,12 @@ class CatalogoService {
     String? descripcion,
     String? direccion,
     String? horarioAtencion,
+    Map<String, dynamic>? horarioDetalle,
     String? pais,
     String? provincia,
     String? foto,
     required int idEntidad,
+    bool activo = true,
   }) async {
     final res = await _supabase
         .schema(_schema)
@@ -195,10 +248,12 @@ class CatalogoService {
           'descripcion': descripcion,
           'direccion': direccion,
           'horario_atencion': horarioAtencion,
+          'horario_detalle': horarioDetalle,
           'pais': pais,
           'provincia': provincia,
           'foto': foto,
           'id_entidad': idEntidad,
+          'activo': activo,
         })
         .select()
         .single();
@@ -214,6 +269,11 @@ class CatalogoService {
     String? pais,
     String? provincia,
     String? foto,
+    bool? activo,
+
+    /// `_noCambiar` = no toques la columna; `null` = bórrala (el admin pasó a
+    /// texto libre); un mapa = guárdalo.
+    Object? horarioDetalle = _noCambiar,
   }) async {
     final res = await _supabase
         .schema(_schema)
@@ -226,11 +286,28 @@ class CatalogoService {
           'pais': pais,
           'provincia': provincia,
           if (foto != null) 'foto': foto,
+          if (activo != null) 'activo': activo,
+          if (!identical(horarioDetalle, _noCambiar))
+            'horario_detalle': horarioDetalle,
         })
         .eq('id', id)
         .select()
         .single();
     return Local.fromJson(res);
+  }
+
+  /// Activa/desactiva un local sin tocar el resto de sus campos. Al desactivarlo
+  /// desaparecen también TODOS sus servicios del lado cliente: la regla es
+  /// `flow._ls_disponible` (local AND servicio AND par).
+  static Future<void> setLocalActivo({
+    required int id,
+    required bool activo,
+  }) async {
+    await _supabase
+        .schema(_schema)
+        .from('app_dat_locales')
+        .update({'activo': activo})
+        .eq('id', id);
   }
 
   static Future<void> deleteLocal(int id) async {
@@ -249,6 +326,10 @@ class CatalogoService {
     String? nombreLocal,
     String? pais,
     String? provincia,
+
+    /// false (default) = sólo lo visible y reservable para el cliente.
+    /// true = todo, para la administración (ver y reactivar lo desactivado).
+    bool incluirInactivos = false,
   }) async {
     final res = await _supabase
         .schema(_schema)
@@ -262,6 +343,7 @@ class CatalogoService {
             if (nombreServicio != null) 'p_nombre_servicio': nombreServicio,
             if (pais != null) 'p_pais': pais,
             if (provincia != null) 'p_provincia': provincia,
+            if (incluirInactivos) 'p_incluir_inactivos': true,
           },
         );
     final list = res as List;
@@ -327,6 +409,7 @@ class CatalogoService {
     bool? permiteReservaDirecta,
     int? cantidadDefault,
     int? cantidadMaxCapacidad,
+    bool? activo,
   }) async {
     final res = await _supabase
         .schema(_schema)
@@ -337,6 +420,7 @@ class CatalogoService {
           if (cantidadDefault != null) 'cantidad_default': cantidadDefault,
           if (cantidadMaxCapacidad != null)
             'cantidad_max_capacidad': cantidadMaxCapacidad,
+          if (activo != null) 'activo': activo,
         })
         .eq('id', id)
         .select('*, app_dat_locales(*), app_dat_servicios(*)')

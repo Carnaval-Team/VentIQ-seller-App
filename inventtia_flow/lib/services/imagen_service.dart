@@ -28,7 +28,7 @@ class ImagenService {
     required String path,
   }) async {
     Uint8List bytes;
-    
+
     if (kIsWeb) {
       // Web: Read bytes directly and compress in memory
       final originalBytes = await imagen.readAsBytes();
@@ -53,7 +53,9 @@ class ImagenService {
       bytes = await (compressed ?? imagen).readAsBytes();
     }
 
-    await _supabase.storage.from(_bucket).uploadBinary(
+    await _supabase.storage
+        .from(_bucket)
+        .uploadBinary(
           path,
           bytes,
           fileOptions: const FileOptions(
@@ -75,4 +77,35 @@ class ImagenService {
 
   /// Construye el path para un servicio.
   static String pathServicio(int idServicio) => 'servicios/$idServicio.jpg';
+
+  // ── Cache-busting de imágenes reemplazadas ───────────────────────────────
+  //
+  // La foto se sube siempre al MISMO path (`locales/3.jpg`, `servicios/7.jpg`)
+  // con `upsert: true`, así que la URL pública no cambia al reemplazarla. Sin
+  // esto, el navegador (o la caché de `CachedNetworkImage`) sigue enseñando la
+  // imagen vieja aunque la nueva ya esté subida.
+  //
+  // Se guarda la versión en memoria y sólo se añade al pintar, nunca al guardar
+  // en la base de datos: así la columna `foto` sigue teniendo la URL limpia.
+  static final Map<String, int> _versiones = {};
+  static int _contadorVersiones = 0;
+
+  /// Marca una URL como recién reemplazada para que se vuelva a descargar.
+  static void invalidar(String? url) {
+    if (url == null || url.isEmpty) return;
+    _versiones[url] = ++_contadorVersiones;
+  }
+
+  /// URL lista para pintar, con el `?v=` de la última sustitución si la hubo.
+  ///
+  /// No toca las URLs firmadas (llevan `token=`) porque añadirles parámetros las
+  /// invalida.
+  static String conVersion(String? url) {
+    if (url == null || url.isEmpty) return '';
+    final version = _versiones[url];
+    if (version == null) return url;
+    if (!url.startsWith('http') || url.contains('token=')) return url;
+    final separador = url.contains('?') ? '&' : '?';
+    return '$url${separador}v=$version';
+  }
 }

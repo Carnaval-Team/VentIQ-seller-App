@@ -9,7 +9,10 @@ import 'config/supabase_config.dart';
 import 'config/app_theme.dart';
 import 'providers/auth_provider.dart';
 import 'providers/entidad_provider.dart';
+import 'providers/favoritos_provider.dart';
 import 'providers/notificacion_provider.dart';
+import 'providers/reservas_provider.dart';
+import 'providers/suscripcion_provider.dart';
 import 'services/local_notifications.dart';
 import 'services/catalogo_service.dart';
 import 'screens/splash_screen.dart';
@@ -18,6 +21,7 @@ import 'screens/register_screen.dart';
 import 'screens/perfil_setup_screen.dart';
 import 'screens/home_shell.dart';
 import 'screens/notificaciones_screen.dart';
+import 'screens/admin/mi_suscripcion_screen.dart';
 
 Future<void> main() async {
   final binding = WidgetsFlutterBinding.ensureInitialized();
@@ -33,8 +37,12 @@ Future<void> main() async {
   // Check schema access permissions for web deployment
   final hasSchemaAccess = await CatalogoService.checkSchemaAccess();
   if (!hasSchemaAccess) {
-    print('[flow] ERROR: No se puede acceder al esquema "flow". La aplicación no funcionará correctamente.');
-    print('[flow] Por favor, ejecuta los comandos SQL proporcionados arriba en Supabase.');
+    print(
+      '[flow] ERROR: No se puede acceder al esquema "flow". La aplicación no funcionará correctamente.',
+    );
+    print(
+      '[flow] Por favor, ejecuta los comandos SQL proporcionados arriba en Supabase.',
+    );
   }
 
   // Notificaciones locales del sistema (no-op en Web).
@@ -53,6 +61,11 @@ class FlowApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => EntidadProvider()),
         ChangeNotifierProvider(create: (_) => NotificacionProvider()),
+        ChangeNotifierProvider(create: (_) => ReservasProvider()),
+        ChangeNotifierProvider(create: (_) => FavoritosProvider()),
+        // El estado de la suscripción vive en la raíz porque el aviso de impago
+        // se pinta sobre el shell y tiene que sobrevivir al cambio de pestaña.
+        ChangeNotifierProvider(create: (_) => SuscripcionProvider()),
       ],
       child: MaterialApp(
         title: 'GoReserva',
@@ -64,10 +77,7 @@ class FlowApp extends StatelessWidget {
           GlobalWidgetsLocalizations.delegate,
           GlobalCupertinoLocalizations.delegate,
         ],
-        supportedLocales: const [
-          Locale('es'),
-          Locale('en'),
-        ],
+        supportedLocales: const [Locale('es'), Locale('en')],
         initialRoute: '/splash',
         routes: {
           '/splash': (_) => const SplashScreen(),
@@ -76,6 +86,7 @@ class FlowApp extends StatelessWidget {
           '/perfil-setup': (_) => const PerfilSetupScreen(),
           '/home': (_) => const HomeShell(),
           '/notificaciones': (_) => const NotificacionesScreen(),
+          '/mi-suscripcion': (_) => const MiSuscripcionScreen(),
         },
       ),
     );

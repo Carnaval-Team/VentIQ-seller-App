@@ -64,11 +64,13 @@ Para la app del cliente final. `security invoker`, concedidas a `authenticated` 
     "personas_delante": 2,       // cuántos faltan para su turno
     "es_su_turno": false,
     "id_local_servicio": 7,
+    "id_turno": 3, "turno": "Mañana",  // turno elegido al anotarse (null si no)
     "servicio": {...}, "local": {...}
   }
 ]
 ```
 > Nota: si se usa el modelo de **cola compacta** (renumera 1..N al salir/agendar), `numero_cola = 1` es siempre el siguiente y `personas_delante` = `numero_cola - 1`.
+> `id_turno`/`turno` los añade la **migración 38** (`migraciones/38_sala_espera_turno.sql`); el cliente los lee como opcionales.
 
 ### `cliente_obtener_agendas(p_uuid_usuario uuid, p_id_estado int = null)`
 - **Para qué:** ver las reservas del usuario y su estado.
@@ -85,6 +87,18 @@ Para la app del cliente final. `security invoker`, concedidas a `authenticated` 
                           "fecha_regla": "...", "numero_cola": 4, "created_at": "..." } }
 ```
 - **Responde (error):** `{ "ok": false, "error": "El usuario ya esta en esta cola" }`
+
+### `cliente_entrar_sala_espera_reserva(...)` — **ACCIÓN (la que usa la app)**
+- **Para qué:** lo mismo que la anterior, pero con datos de tercero y con **turno**:
+  `p_uuid_usuario, p_id_local_servicio, p_fecha_regla, p_datos_adicionales,
+  p_para_tercero, p_t_nombre, p_t_apellidos, p_t_ci, p_t_telefono, p_id_turno`.
+- **Turno:** si `p_id_turno` viene, se valida que el turno esté activo y sea de un
+  recurso activo de ese servicio-local, y se guarda en `flow.sala_espera.id_turno`.
+  El bot lo respeta al repartir cupo (`se.id_turno = p_id_turno`).
+- **Duplicado:** una sola entrada por (usuario, servicio-local), por el índice
+  `unique_usuario_servicio_activo`; el turno no crea una segunda cola. El
+  pre-chequeo de la **migración 38** ya lo dice con `{ok:false, error:...}` en vez
+  de dejar salir un `23505`.
 
 ### `cliente_salir_sala_espera(p_uuid_usuario uuid, p_id_local_servicio int)` — **ACCIÓN**
 - **Para qué:** salir de la cola. Recompacta: los de atrás suben un puesto (cola sin huecos).
@@ -174,7 +188,7 @@ Para el panel de administración. `security invoker`, concedidas a `authenticate
 
 ### `admin_listar_salas_espera(p_uuid_usuario uuid, p_id_entidad, p_id_local, p_id_local_servicio)`
 - **Para qué:** ver las colas en vivo de sus servicios: quién espera, con qué número y sus datos de contacto.
-- **Responde:** array con `numero_cola`, `servicio`, `local`, `entidad`, `cliente` (perfil resumido), ordenado por `numero_cola`.
+- **Responde:** array con `numero_cola`, `servicio`, `local`, `entidad`, `cliente` (perfil resumido), ordenado por `numero_cola`. Desde la **migración 38** incluye también `id_turno` y `turno` (el turno que pidió cada persona; `null` en las entradas viejas).
 
 ### `admin_set_reserva_directa(p_uuid_usuario uuid, p_id_local_servicio int, p_permite bool)` — **ACCIÓN**
 - **Para qué:** habilitar/deshabilitar la **reserva directa** de un `local_servicio` (flag `permite_reserva_directa`). Valida pertenencia con el helper (no fuga entre entidades).

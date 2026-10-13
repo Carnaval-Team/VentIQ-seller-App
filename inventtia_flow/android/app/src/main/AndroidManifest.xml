@@ -48,5 +48,22 @@
             <action android:name="android.intent.action.DIAL"/>
             <data android:scheme="tel"/>
         </intent>
+        <!-- Pago de la suscripción: Transfermóvil se abre por deep link.
+             Android 11+ exige declarar aquí el esquema para que la app pueda
+             VER que Transfermóvil está instalado. Sin esto, `canLaunchUrl`
+             devuelve false aunque la app esté puesta. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="transfermovil"/>
+        </intent>
+        <!-- WhatsApp: el botón "Ya he pagado" abre wa.me con el mensaje a soporte. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https" android:host="wa.me"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https" android:host="transfermovil.app"/>
+        </intent>
     </queries>
 </manifest>

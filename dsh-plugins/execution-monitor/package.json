@@ -1,0 +1,38 @@
+{
+  "name": "@local/dsh-execution-monitor",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Live execution dashboard for the Harness Web UI: run state, step progress, tool calls, failures and charts.",
+  "icon": "./icon.svg",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "locale/*.json"
+  ],
+  "meta": {
+    "title": "Execution Monitor",
+    "description": "A live panel with run state, step progress, tool calls, failures, tokens and charts."
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-trajectory"
+      ]
+    }
+  }
+}

@@ -6,11 +6,21 @@ class ListaService {
   static const String _schema = 'flow';
 
   /// Entra a la sala de espera usando el RPC seguro (con advisory lock + antifraude).
-  /// Opcionalmente con datos adicionales y/o a nombre de un tercero.
+  ///
+  /// Opcionalmente con datos adicionales, a nombre de un tercero y con el
+  /// [idTurno] elegido (el mismo turno que se elige al reservar; ver
+  /// `TurnoDisponible.idTurno`).
+  ///
+  /// Se llama a `cliente_entrar_sala_espera_reserva` y no a `_cola`: son el
+  /// mismo procedimiento, pero `_cola` no recibe `p_id_turno`, así que por ahí
+  /// el turno se perdía. El servidor valida que el turno exista, esté activo y
+  /// sea de ese servicio-local, y lo guarda en `flow.sala_espera.id_turno`, que
+  /// es lo que consume el bot de la cola.
   static Future<void> entrarSalaEspera({
     required String uuidUsuario,
     required int idLocalServicio,
     required DateTime fechaRegla,
+    int? idTurno,
     Map<String, dynamic>? datosAdicionales,
     bool paraTercero = false,
     String? terceroNombre,
@@ -18,20 +28,24 @@ class ListaService {
     String? terceroCi,
     String? terceroTelefono,
   }) async {
-    final res = await _supabase.schema(_schema).rpc(
-      'cliente_entrar_sala_espera_cola', // Updated function name
-      params: {
-        'p_uuid_usuario': uuidUsuario,
-        'p_id_local_servicio': idLocalServicio,
-        'p_fecha_regla': fechaRegla.toIso8601String(),
-        if (datosAdicionales != null) 'p_datos_adicionales': datosAdicionales,
-        'p_para_tercero': paraTercero,
-        if (paraTercero) 'p_t_nombre': terceroNombre,
-        if (paraTercero) 'p_t_apellidos': terceroApellidos,
-        if (paraTercero) 'p_t_ci': terceroCi,
-        if (paraTercero) 'p_t_telefono': terceroTelefono,
-      },
-    );
+    final res = await _supabase
+        .schema(_schema)
+        .rpc(
+          'cliente_entrar_sala_espera_reserva',
+          params: {
+            'p_uuid_usuario': uuidUsuario,
+            'p_id_local_servicio': idLocalServicio,
+            'p_fecha_regla': fechaRegla.toIso8601String(),
+            if (idTurno != null) 'p_id_turno': idTurno,
+            if (datosAdicionales != null)
+              'p_datos_adicionales': datosAdicionales,
+            'p_para_tercero': paraTercero,
+            if (paraTercero) 'p_t_nombre': terceroNombre,
+            if (paraTercero) 'p_t_apellidos': terceroApellidos,
+            if (paraTercero) 'p_t_ci': terceroCi,
+            if (paraTercero) 'p_t_telefono': terceroTelefono,
+          },
+        );
     final json = res as Map<String, dynamic>;
     if (json['ok'] != true) {
       throw Exception(json['error'] ?? 'Error al entrar en la sala de espera');
@@ -43,13 +57,15 @@ class ListaService {
     required String uuidUsuario,
     required int idLocalServicio,
   }) async {
-    final res = await _supabase.schema(_schema).rpc(
-      'cliente_salir_sala_espera',
-      params: {
-        'p_uuid_usuario': uuidUsuario,
-        'p_id_local_servicio': idLocalServicio,
-      },
-    );
+    final res = await _supabase
+        .schema(_schema)
+        .rpc(
+          'cliente_salir_sala_espera',
+          params: {
+            'p_uuid_usuario': uuidUsuario,
+            'p_id_local_servicio': idLocalServicio,
+          },
+        );
     final json = res as Map<String, dynamic>;
     if (json['ok'] != true) {
       throw Exception(json['error'] ?? 'Error al salir de la sala de espera');
@@ -97,7 +113,9 @@ class ListaService {
           'numero_cola': siguienteNumero,
           'fecha_regla': fechaRegla.toIso8601String(),
         })
-        .select('*, local_servicio(*, app_dat_locales(*), app_dat_servicios(*))')
+        .select(
+          '*, local_servicio(*, app_dat_locales(*), app_dat_servicios(*))',
+        )
         .single();
 
     return SalaEspera.fromJson(res);
@@ -105,12 +123,16 @@ class ListaService {
 
   /// Mis entradas en sala de espera activas
   static Future<List<SalaEspera>> getMisListas(String uuidUsuario) async {
-    final res = await _supabase.schema(_schema).rpc(
-      'cliente_obtener_salas_espera',
-      params: {'p_uuid_usuario': uuidUsuario},
-    );
+    final res = await _supabase
+        .schema(_schema)
+        .rpc(
+          'cliente_obtener_salas_espera',
+          params: {'p_uuid_usuario': uuidUsuario},
+        );
     final list = res as List;
-    return list.map((e) => SalaEspera.fromJson(e as Map<String, dynamic>)).toList();
+    return list
+        .map((e) => SalaEspera.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   /// Lista completa de una cola por local-servicio (para ver posición)
@@ -118,7 +140,9 @@ class ListaService {
     final res = await _supabase
         .schema(_schema)
         .from('sala_espera')
-        .select('*, local_servicio(*, app_dat_locales(*), app_dat_servicios(*))')
+        .select(
+          '*, local_servicio(*, app_dat_locales(*), app_dat_servicios(*))',
+        )
         .eq('id_local_servicio', idLocalServicio)
         .order('numero_cola');
     return (res as List).map((e) => SalaEspera.fromJson(e)).toList();
@@ -149,8 +173,9 @@ class ListaService {
   }
 
   /// Devuelve {ultimo_otorgado, ultimo_en_anotarse} para un local-servicio
-  static Future<({int ultimoOtorgado, int ultimoEnAnotarse})>
-      getContadoresCola(int idLocalServicio) async {
+  static Future<({int ultimoOtorgado, int ultimoEnAnotarse})> getContadoresCola(
+    int idLocalServicio,
+  ) async {
     final res = await _supabase
         .schema(_schema)
         .from('ultimo_numero')
@@ -159,8 +184,9 @@ class ListaService {
         .maybeSingle();
     return (
       ultimoOtorgado: res != null ? (res['ultimo_otorgado'] as int? ?? 0) : 0,
-      ultimoEnAnotarse:
-          res != null ? (res['ultimo_en_anotarse'] as int? ?? 0) : 0,
+      ultimoEnAnotarse: res != null
+          ? (res['ultimo_en_anotarse'] as int? ?? 0)
+          : 0,
     );
   }
 
@@ -170,14 +196,16 @@ class ListaService {
     required int idSalaEspera,
     required DateTime fechaRegla,
   }) async {
-    final res = await _supabase.schema(_schema).rpc(
-      'cliente_actualizar_fecha_regla',
-      params: {
-        'p_uuid_usuario': uuidUsuario,
-        'p_id_sala_espera': idSalaEspera,
-        'p_fecha_regla': fechaRegla.toIso8601String().substring(0, 10),
-      },
-    );
+    final res = await _supabase
+        .schema(_schema)
+        .rpc(
+          'cliente_actualizar_fecha_regla',
+          params: {
+            'p_uuid_usuario': uuidUsuario,
+            'p_id_sala_espera': idSalaEspera,
+            'p_fecha_regla': fechaRegla.toIso8601String().substring(0, 10),
+          },
+        );
     final json = res as Map<String, dynamic>;
     if (json['ok'] != true) {
       throw Exception(json['error'] ?? 'No se pudo actualizar la fecha');

@@ -54,11 +54,13 @@ class MisListasScreenState extends State<MisListasScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Salir de la lista'),
         content: Text(
-            '¿Deseas salir de la cola de ${s.localServicio?.local?.nombre ?? 'este local'}?'),
+          '¿Deseas salir de la cola de ${s.localServicio?.local?.nombre ?? 'este local'}?',
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancelar')),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
@@ -70,11 +72,16 @@ class MisListasScreenState extends State<MisListasScreen> {
     if (confirm != true) return;
     try {
       await ListaService.salirSalaEspera(
-          uuidUsuario: uuid, idLocalServicio: s.idLocalServicio);
+        uuidUsuario: uuid,
+        idLocalServicio: s.idLocalServicio,
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString()), backgroundColor: AppTheme.error),
+          SnackBar(
+            content: Text(e.toString()),
+            backgroundColor: AppTheme.error,
+          ),
         );
       }
     }
@@ -92,32 +99,32 @@ class MisListasScreenState extends State<MisListasScreen> {
             child: _isLoading
                 ? _buildLoading()
                 : _listas.isEmpty
-                    ? _buildEmptyState()
-                    : RefreshIndicator(
-                        onRefresh: _load,
-                        color: AppTheme.primary,
-                        child: ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                          itemCount: _listas.length,
-                          itemBuilder: (_, i) => _ListaCard(
-                            sala: _listas[i],
-                            onSalir: () => _salir(_listas[i]),
-                            onTap: () async {
-                              final ls =
-                                  await CatalogoService.getLocalServicio(
-                                      _listas[i].idLocalServicio);
-                              if (!mounted) return;
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => LocalServicioDetailScreen(
-                                      localServicio: ls),
-                                ),
-                              ).then((_) => _load());
-                            },
-                          ),
-                        ),
+                ? _buildEmptyState()
+                : RefreshIndicator(
+                    onRefresh: _load,
+                    color: AppTheme.primary,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                      itemCount: _listas.length,
+                      itemBuilder: (_, i) => _ListaCard(
+                        sala: _listas[i],
+                        onSalir: () => _salir(_listas[i]),
+                        onTap: () async {
+                          final ls = await CatalogoService.getLocalServicio(
+                            _listas[i].idLocalServicio,
+                          );
+                          if (!mounted) return;
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  LocalServicioDetailScreen(localServicio: ls),
+                            ),
+                          ).then((_) => _load());
+                        },
                       ),
+                    ),
+                  ),
           ),
         ],
       ),
@@ -181,10 +188,10 @@ class MisListasScreenState extends State<MisListasScreen> {
                       _isLoading
                           ? 'Cargando tus colas...'
                           : n == 0
-                              ? 'No estás en ninguna cola'
-                              : n == 1
-                                  ? 'Estás en 1 cola activa'
-                                  : 'Estás en $n colas activas',
+                          ? 'No estás en ninguna cola'
+                          : n == 1
+                          ? 'Estás en 1 cola activa'
+                          : 'Estás en $n colas activas',
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.82),
                         fontSize: 13.5,
@@ -214,8 +221,10 @@ class MisListasScreenState extends State<MisListasScreen> {
         children: [
           CircularProgressIndicator(color: AppTheme.primary),
           SizedBox(height: 16),
-          Text('Cargando tus colas...',
-              style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+          Text(
+            'Cargando tus colas...',
+            style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+          ),
         ],
       ),
     );
@@ -246,19 +255,26 @@ class MisListasScreenState extends State<MisListasScreen> {
                     ),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(Icons.list_alt_rounded,
-                      size: 46, color: AppTheme.primary.withValues(alpha: 0.55)),
+                  child: Icon(
+                    Icons.list_alt_rounded,
+                    size: 46,
+                    color: AppTheme.primary.withValues(alpha: 0.55),
+                  ),
                 ),
                 const SizedBox(height: 18),
-                const Text('No estás en ninguna lista',
-                    style: TextStyle(
-                        color: AppTheme.textPrimary,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700)),
+                const Text(
+                  'No estás en ninguna lista',
+                  style: TextStyle(
+                    color: AppTheme.textPrimary,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 const SizedBox(height: 6),
-                const Text('Explora el catálogo y anótate en una cola',
-                    style:
-                        TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+                const Text(
+                  'Explora el catálogo y anótate en una cola',
+                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                ),
               ],
             ),
           ),
@@ -363,8 +379,11 @@ class _ListaCard extends StatelessWidget {
                                 ),
                                 borderRadius: BorderRadius.circular(16),
                               ),
-                              child: const Icon(Icons.storefront_rounded,
-                                  color: AppTheme.primary, size: 28),
+                              child: const Icon(
+                                Icons.storefront_rounded,
+                                color: AppTheme.primary,
+                                size: 28,
+                              ),
                             ),
                             const SizedBox(width: 14),
                             Expanded(
@@ -387,8 +406,11 @@ class _ListaCard extends StatelessWidget {
                                     const SizedBox(height: 5),
                                     Row(
                                       children: [
-                                        const Icon(Icons.design_services_outlined,
-                                            size: 12, color: AppTheme.accent),
+                                        const Icon(
+                                          Icons.design_services_outlined,
+                                          size: 12,
+                                          color: AppTheme.accent,
+                                        ),
                                         const SizedBox(width: 4),
                                         Flexible(
                                           child: Text(
@@ -418,21 +440,52 @@ class _ListaCard extends StatelessWidget {
                         const SizedBox(height: 12),
                         Row(
                           children: [
-                            const Icon(Icons.access_time_rounded,
-                                size: 14, color: AppTheme.textSecondary),
+                            const Icon(
+                              Icons.access_time_rounded,
+                              size: 14,
+                              color: AppTheme.textSecondary,
+                            ),
                             const SizedBox(width: 5),
                             Expanded(
                               child: Text(
                                 'Anotado el ${fmt.format(sala.fechaRegla.toLocal())}',
                                 style: const TextStyle(
-                                    fontSize: 12,
-                                    color: AppTheme.textSecondary),
+                                  fontSize: 12,
+                                  color: AppTheme.textSecondary,
+                                ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
                             const SizedBox(width: 8),
                             _SalirButton(onTap: onSalir),
+                          ],
+                        ),
+                        // Turno elegido al anotarse: sin él el cliente no sabe
+                        // para qué turno está esperando.
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.schedule,
+                              size: 14,
+                              color: AppTheme.textSecondary,
+                            ),
+                            const SizedBox(width: 5),
+                            Expanded(
+                              child: Text(
+                                sala.turnoNombre == null
+                                    ? 'Turno: cualquiera (te llamamos cuando haya cupo)'
+                                    : 'Turno: ${sala.turnoNombre}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.textSecondary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
                           ],
                         ),
                       ],
@@ -520,11 +573,14 @@ class _SalirButton extends StatelessWidget {
             children: [
               Icon(Icons.exit_to_app_rounded, size: 15, color: AppTheme.error),
               SizedBox(width: 4),
-              Text('Salir',
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.error)),
+              Text(
+                'Salir',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.error,
+                ),
+              ),
             ],
           ),
         ),

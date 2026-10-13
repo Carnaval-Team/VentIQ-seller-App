@@ -1,0 +1,3 @@
+- insert:
+    - id: execution-monitor
+      name: '@local/dsh-execution-monitor'

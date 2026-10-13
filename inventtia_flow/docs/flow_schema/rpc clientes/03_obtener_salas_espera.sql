@@ -4,6 +4,11 @@
 --       + flow.app_dat_servicios + flow.ultimo_numero
 -- Permite saber el numero del usuario en la cola y el ultimo numero otorgado
 -- Devuelve: jsonb (array de salas de espera del usuario)
+--
+-- OJO: este archivo es HISTORICO. La definicion vigente anade `id_turno` y
+--       `turno` (join a flow.turno) segun
+--       migraciones/38_sala_espera_turno.sql. Antes de tocar la funcion,
+--       extrae la version real con pg_get_functiondef() y trabaja sobre ella.
 -- ============================================================================
 
 create or replace function flow.cliente_obtener_salas_espera(

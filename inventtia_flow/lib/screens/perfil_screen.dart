@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -7,13 +9,70 @@ import '../providers/entidad_provider.dart';
 import '../services/auth_service.dart';
 import '../widgets/notificaciones_bell.dart';
 import '../services/update_service.dart';
+import 'favoritos_screen.dart';
 import 'perfil_setup_screen.dart';
 import 'admin/entidad_detail_screen.dart';
 import 'admin/gestion_locales_screen.dart';
 import 'admin/gestion_servicios_screen.dart';
 
-class PerfilScreen extends StatelessWidget {
+class PerfilScreen extends StatefulWidget {
   const PerfilScreen({super.key});
+
+  @override
+  State<PerfilScreen> createState() => PerfilScreenState();
+}
+
+class PerfilScreenState extends State<PerfilScreen> {
+  /// Ancla de la sección "Registrar Entidad", destino de "Publica tu negocio".
+  final GlobalKey _entidadKey = GlobalKey();
+  final ScrollController _scrollController = ScrollController();
+
+  /// Resalta la sección de entidad un momento tras llegar desde el Home, para
+  /// que el salto no pase desapercibido.
+  bool _entidadResaltada = false;
+  Timer? _resaltadoTimer;
+
+  @override
+  void dispose() {
+    _resaltadoTimer?.cancel();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  /// Desplaza el perfil hasta la sección "Registrar Entidad".
+  ///
+  /// Lo invoca `HomeShell` desde "Publica tu negocio". Si esa sección no está
+  /// montada (un admin ve otra distinta), se baja al final como respaldo.
+  void irARegistrarEntidad() {
+    if (!mounted) return;
+    final ctx = _entidadKey.currentContext;
+    if (ctx != null) {
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeOutCubic,
+        alignment: 0.18,
+      );
+      _resaltarEntidad();
+      return;
+    }
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  void _resaltarEntidad() {
+    _resaltadoTimer?.cancel();
+    setState(() => _entidadResaltada = true);
+    _resaltadoTimer = Timer(const Duration(milliseconds: 1800), () {
+      if (!mounted) return;
+      setState(() => _entidadResaltada = false);
+    });
+  }
 
   Future<void> _signOut(BuildContext context) async {
     final confirm = await showDialog<bool>(
@@ -24,8 +83,9 @@ class PerfilScreen extends StatelessWidget {
         content: const Text('¿Estás seguro que deseas cerrar sesión?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancelar')),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
@@ -70,6 +130,7 @@ class PerfilScreen extends StatelessWidget {
           // ── Contenido desplazable ───────────────────────────────
           Expanded(
             child: SingleChildScrollView(
+              controller: _scrollController,
               padding: const EdgeInsets.fromLTRB(20, 22, 20, 28),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -82,29 +143,34 @@ class PerfilScreen extends StatelessWidget {
                     child: Column(
                       children: [
                         _InfoRow(
-                            icon: Icons.person_outlined,
-                            label: 'Nombre',
-                            value: perfil?.nombre ?? '-'),
+                          icon: Icons.person_outlined,
+                          label: 'Nombre',
+                          value: perfil?.nombre ?? '-',
+                        ),
                         const _SoftDivider(),
                         _InfoRow(
-                            icon: Icons.person_outlined,
-                            label: 'Apellidos',
-                            value: perfil?.apellidos ?? '-'),
+                          icon: Icons.person_outlined,
+                          label: 'Apellidos',
+                          value: perfil?.apellidos ?? '-',
+                        ),
                         const _SoftDivider(),
                         _InfoRow(
-                            icon: Icons.badge_outlined,
-                            label: 'CI',
-                            value: perfil?.ci ?? '-'),
+                          icon: Icons.badge_outlined,
+                          label: 'CI',
+                          value: perfil?.ci ?? '-',
+                        ),
                         const _SoftDivider(),
                         _InfoRow(
-                            icon: Icons.phone_outlined,
-                            label: 'Teléfono',
-                            value: perfil?.telefono ?? '-'),
+                          icon: Icons.phone_outlined,
+                          label: 'Teléfono',
+                          value: perfil?.telefono ?? '-',
+                        ),
                         const _SoftDivider(),
                         _InfoRow(
-                            icon: Icons.email_outlined,
-                            label: 'Correo',
-                            value: user?.email ?? '-'),
+                          icon: Icons.email_outlined,
+                          label: 'Correo',
+                          value: user?.email ?? '-',
+                        ),
                       ],
                     ),
                   ),
@@ -114,7 +180,13 @@ class PerfilScreen extends StatelessWidget {
                   if (entidadProv.isAdmin)
                     _EntidadAdminSection(provider: entidadProv)
                   else
-                    _EntidadRegisterBanner(ownerUuid: user?.id ?? ''),
+                    KeyedSubtree(
+                      key: _entidadKey,
+                      child: _EntidadRegisterBanner(
+                        ownerUuid: user?.id ?? '',
+                        resaltada: _entidadResaltada,
+                      ),
+                    ),
                   const SizedBox(height: 22),
 
                   // ── Acciones generales ───────────────────────────
@@ -124,20 +196,51 @@ class PerfilScreen extends StatelessWidget {
                     padding: EdgeInsets.zero,
                     child: Column(
                       children: [
+                        // Solo para admin: la suscripción es de la ENTIDAD, no del
+                        // usuario. Un cliente o un vendedor no tienen nada que pagar
+                        // aquí. El aviso permanente del shell aparece igual cuando el
+                        // impago bloquea la entidad, así que esta entrada es la vía
+                        // cómoda, no la única.
+                        if (entidadProv.isAdmin) ...[
+                          _ActionTile(
+                            icon: Icons.workspace_premium_outlined,
+                            title: 'Mi suscripción',
+                            onTap: () =>
+                                Navigator.pushNamed(context, '/mi-suscripcion'),
+                          ),
+                          const _SoftDivider(indent: 56),
+                        ],
+                        // Solo para clientes: un admin no navega el catálogo.
+                        if (!entidadProv.isAdmin &&
+                            !entidadProv.isVendedor) ...[
+                          _ActionTile(
+                            icon: Icons.favorite_border_rounded,
+                            title: 'Favoritos',
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const FavoritosScreen(),
+                              ),
+                            ),
+                          ),
+                          const _SoftDivider(indent: 56),
+                        ],
                         _ActionTile(
                           icon: Icons.edit_outlined,
                           title: 'Editar Perfil',
                           onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => const PerfilSetupScreen())),
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const PerfilSetupScreen(),
+                            ),
+                          ),
                         ),
                         const _SoftDivider(indent: 56),
                         _ActionTile(
                           icon: Icons.notifications_outlined,
                           title: 'Notificaciones',
-                          onTap: () => Navigator.pushNamed(
-                              context, '/notificaciones'),
+                          onTap: () =>
+                              Navigator.pushNamed(context, '/notificaciones'),
                         ),
                       ],
                     ),
@@ -158,7 +261,8 @@ class PerfilScreen extends StatelessWidget {
                       side: const BorderSide(color: AppTheme.error),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                 ],
@@ -223,8 +327,9 @@ class PerfilScreen extends StatelessWidget {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.45),
-                          width: 2),
+                        color: Colors.white.withValues(alpha: 0.45),
+                        width: 2,
+                      ),
                     ),
                     child: CircleAvatar(
                       radius: 34,
@@ -258,9 +363,11 @@ class PerfilScreen extends StatelessWidget {
                         const SizedBox(height: 3),
                         Row(
                           children: [
-                            Icon(Icons.email_outlined,
-                                size: 13,
-                                color: Colors.white.withValues(alpha: 0.75)),
+                            Icon(
+                              Icons.email_outlined,
+                              size: 13,
+                              color: Colors.white.withValues(alpha: 0.75),
+                            ),
                             const SizedBox(width: 5),
                             Expanded(
                               child: Text(
@@ -342,7 +449,12 @@ class _SoftDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Divider(height: 20, thickness: 1, color: AppTheme.border, indent: indent);
+    return Divider(
+      height: 20,
+      thickness: 1,
+      color: AppTheme.border,
+      indent: indent,
+    );
   }
 }
 
@@ -351,8 +463,11 @@ class _ActionTile extends StatelessWidget {
   final IconData icon;
   final String title;
   final VoidCallback onTap;
-  const _ActionTile(
-      {required this.icon, required this.title, required this.onTap});
+  const _ActionTile({
+    required this.icon,
+    required this.title,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -376,14 +491,16 @@ class _ActionTile extends StatelessWidget {
               ),
               const SizedBox(width: 14),
               Expanded(
-                child: Text(title,
-                    style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textPrimary)),
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
               ),
-              const Icon(Icons.chevron_right,
-                  color: AppTheme.textSecondary),
+              const Icon(Icons.chevron_right, color: AppTheme.textSecondary),
             ],
           ),
         ),
@@ -395,30 +512,55 @@ class _ActionTile extends StatelessWidget {
 // ── Banner para usuarios sin entidad ──────────────────────────
 class _EntidadRegisterBanner extends StatelessWidget {
   final String ownerUuid;
-  const _EntidadRegisterBanner({required this.ownerUuid});
+
+  /// `true` mientras se llega desde "Publica tu negocio": la tarjeta se destaca
+  /// un instante para señalar dónde está "Registrar Entidad".
+  final bool resaltada;
+
+  const _EntidadRegisterBanner({
+    required this.ownerUuid,
+    this.resaltada = false,
+  });
 
   void _registrar(BuildContext context) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (_) => _NuevaEntidadSheet(ownerUuid: ownerUuid),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOut,
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
             AppTheme.primary.withValues(alpha: 0.08),
-            AppTheme.accent.withValues(alpha: 0.06)
+            AppTheme.accent.withValues(alpha: 0.06),
           ],
         ),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppTheme.primary.withValues(alpha: 0.2)),
+        border: Border.all(
+          color: resaltada
+              ? AppTheme.accent
+              : AppTheme.primary.withValues(alpha: 0.2),
+          width: resaltada ? 2 : 1,
+        ),
+        boxShadow: resaltada
+            ? [
+                BoxShadow(
+                  color: AppTheme.accent.withValues(alpha: 0.30),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
+                ),
+              ]
+            : null,
       ),
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -432,14 +574,18 @@ class _EntidadRegisterBanner extends StatelessWidget {
                   color: AppTheme.primary.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.business_outlined,
-                    color: AppTheme.primary, size: 22),
+                child: const Icon(
+                  Icons.business_outlined,
+                  color: AppTheme.primary,
+                  size: 22,
+                ),
               ),
               const SizedBox(width: 12),
               const Expanded(
-                child: Text('¿Tienes una organización?',
-                    style:
-                        TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800)),
+                child: Text(
+                  '¿Tienes una organización?',
+                  style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800),
+                ),
               ),
             ],
           ),
@@ -515,24 +661,24 @@ class _EntidadAdminSection extends StatelessWidget {
               final e = provider.misEntidades[i];
               final isSelected = seleccionada?.id == e.id;
               return ChoiceChip(
-                label: Text(e.denominacion,
-                    style: TextStyle(
-                        fontSize: 13,
-                        color: isSelected
-                            ? Colors.white
-                            : AppTheme.textPrimary,
-                        fontWeight: isSelected
-                            ? FontWeight.w700
-                            : FontWeight.normal)),
+                label: Text(
+                  e.denominacion,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: isSelected ? Colors.white : AppTheme.textPrimary,
+                    fontWeight: isSelected
+                        ? FontWeight.w700
+                        : FontWeight.normal,
+                  ),
+                ),
                 selected: isSelected,
                 selectedColor: AppTheme.primary,
                 backgroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(22),
                   side: BorderSide(
-                      color: isSelected
-                          ? AppTheme.primary
-                          : AppTheme.border),
+                    color: isSelected ? AppTheme.primary : AppTheme.border,
+                  ),
                 ),
                 showCheckmark: false,
                 onSelected: (_) => provider.seleccionarEntidad(e),
@@ -550,8 +696,7 @@ class _EntidadAdminSection extends StatelessWidget {
             child: Column(
               children: [
                 ListTile(
-                  contentPadding:
-                      const EdgeInsets.fromLTRB(14, 6, 8, 6),
+                  contentPadding: const EdgeInsets.fromLTRB(14, 6, 8, 6),
                   leading: Container(
                     width: 46,
                     height: 46,
@@ -567,36 +712,47 @@ class _EntidadAdminSection extends StatelessWidget {
                       borderRadius: BorderRadius.circular(14),
                     ),
                     alignment: Alignment.center,
-                    child: Text(seleccionada.denominacion[0].toUpperCase(),
-                        style: const TextStyle(
-                            color: AppTheme.primary,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 18)),
-                  ),
-                  title: Text(seleccionada.denominacion,
+                    child: Text(
+                      seleccionada.denominacion[0].toUpperCase(),
                       style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.textPrimary)),
+                        color: AppTheme.primary,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 18,
+                      ),
+                    ),
+                  ),
+                  title: Text(
+                    seleccionada.denominacion,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
                   subtitle: seleccionada.direccion != null
-                      ? Text(seleccionada.direccion!,
+                      ? Text(
+                          seleccionada.direccion!,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 12))
+                          style: const TextStyle(fontSize: 12),
+                        )
                       : null,
                   trailing: TextButton(
                     onPressed: () => Navigator.push(
                       context,
                       MaterialPageRoute(
-                          builder: (_) =>
-                              EntidadDetailScreen(entidad: seleccionada)),
+                        builder: (_) =>
+                            EntidadDetailScreen(entidad: seleccionada),
+                      ),
                     ),
                     child: const Text('Detalle'),
                   ),
                 ),
                 const _SoftDivider(indent: 14),
                 Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 6,
+                  ),
                   child: Row(
                     children: [
                       _QuickAction(
@@ -605,8 +761,9 @@ class _EntidadAdminSection extends StatelessWidget {
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (_) => GestionLocalesScreen(
-                                  entidad: seleccionada)),
+                            builder: (_) =>
+                                GestionLocalesScreen(entidad: seleccionada),
+                          ),
                         ),
                       ),
                       _QuickAction(
@@ -615,8 +772,9 @@ class _EntidadAdminSection extends StatelessWidget {
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (_) => GestionServiciosScreen(
-                                  entidad: seleccionada)),
+                            builder: (_) =>
+                                GestionServiciosScreen(entidad: seleccionada),
+                          ),
                         ),
                       ),
                       _QuickAction(
@@ -625,8 +783,9 @@ class _EntidadAdminSection extends StatelessWidget {
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (_) => EntidadDetailScreen(
-                                  entidad: seleccionada)),
+                            builder: (_) =>
+                                EntidadDetailScreen(entidad: seleccionada),
+                          ),
                         ),
                       ),
                     ],
@@ -644,7 +803,8 @@ class _EntidadAdminSection extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (_) => _NuevaEntidadSheet(ownerUuid: ownerUuid),
     );
   }
@@ -654,8 +814,11 @@ class _QuickAction extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  const _QuickAction(
-      {required this.icon, required this.label, required this.onTap});
+  const _QuickAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -677,11 +840,14 @@ class _QuickAction extends StatelessWidget {
                 child: Icon(icon, size: 21, color: AppTheme.primary),
               ),
               const SizedBox(height: 6),
-              Text(label,
-                  style: const TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textSecondary)),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textSecondary,
+                ),
+              ),
             ],
           ),
         ),
@@ -751,19 +917,23 @@ class _NuevaEntidadSheetState extends State<_NuevaEntidadSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('Nueva Entidad',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text(
+              'Nueva Entidad',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 6),
-            const Text('Serás el propietario (owner) de esta entidad.',
-                style:
-                    TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+            const Text(
+              'Serás el propietario (owner) de esta entidad.',
+              style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+            ),
             const SizedBox(height: 20),
             TextFormField(
               controller: _denomCtrl,
               textCapitalization: TextCapitalization.words,
               decoration: const InputDecoration(
-                  labelText: 'Denominación *',
-                  prefixIcon: Icon(Icons.business)),
+                labelText: 'Denominación *',
+                prefixIcon: Icon(Icons.business),
+              ),
               validator: (v) =>
                   (v == null || v.trim().isEmpty) ? 'Requerido' : null,
             ),
@@ -771,16 +941,18 @@ class _NuevaEntidadSheetState extends State<_NuevaEntidadSheet> {
             TextFormField(
               controller: _dirCtrl,
               decoration: const InputDecoration(
-                  labelText: 'Dirección',
-                  prefixIcon: Icon(Icons.location_on_outlined)),
+                labelText: 'Dirección',
+                prefixIcon: Icon(Icons.location_on_outlined),
+              ),
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _telCtrl,
               keyboardType: TextInputType.phone,
               decoration: const InputDecoration(
-                  labelText: 'Teléfono de contacto',
-                  prefixIcon: Icon(Icons.phone_outlined)),
+                labelText: 'Teléfono de contacto',
+                prefixIcon: Icon(Icons.phone_outlined),
+              ),
             ),
             const SizedBox(height: 20),
             ElevatedButton(
@@ -790,9 +962,11 @@ class _NuevaEntidadSheetState extends State<_NuevaEntidadSheet> {
                       height: 20,
                       width: 20,
                       child: CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2))
-                  : const Text('Crear Entidad',
-                      style: TextStyle(fontSize: 16)),
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : const Text('Crear Entidad', style: TextStyle(fontSize: 16)),
             ),
           ],
         ),
@@ -882,8 +1056,10 @@ class _AppVersionSectionState extends State<_AppVersionSection> {
                 isObligatory
                     ? 'Actualización obligatoria'
                     : 'Nueva versión disponible',
-                style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
                 maxLines: 2,
               ),
             ),
@@ -894,9 +1070,10 @@ class _AppVersionSectionState extends State<_AppVersionSection> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _VersionRow(
-                label: 'Versión disponible',
-                value: newVersion,
-                highlight: true),
+              label: 'Versión disponible',
+              value: newVersion,
+              highlight: true,
+            ),
             const SizedBox(height: 6),
             _VersionRow(label: 'Versión actual', value: _version),
             const SizedBox(height: 16),
@@ -909,8 +1086,7 @@ class _AppVersionSectionState extends State<_AppVersionSection> {
                     ? Colors.orange.shade800
                     : AppTheme.textSecondary,
                 fontSize: 13,
-                fontWeight:
-                    isObligatory ? FontWeight.w500 : FontWeight.normal,
+                fontWeight: isObligatory ? FontWeight.w500 : FontWeight.normal,
               ),
             ),
           ],
@@ -928,8 +1104,7 @@ class _AppVersionSectionState extends State<_AppVersionSection> {
               final url = Uri.parse(UpdateService.downloadUrl);
               bool ok = false;
               try {
-                ok = await launchUrl(url,
-                    mode: LaunchMode.externalApplication);
+                ok = await launchUrl(url, mode: LaunchMode.externalApplication);
               } catch (_) {}
               if (!ok) {
                 try {
@@ -942,7 +1117,8 @@ class _AppVersionSectionState extends State<_AppVersionSection> {
               backgroundColor: isObligatory ? Colors.orange : AppTheme.primary,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
           ),
         ],
@@ -963,24 +1139,29 @@ class _AppVersionSectionState extends State<_AppVersionSection> {
               color: AppTheme.primary.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(12),
             ),
-            child:
-                const Icon(Icons.info_outline, color: AppTheme.primary, size: 20),
+            child: const Icon(
+              Icons.info_outline,
+              color: AppTheme.primary,
+              size: 20,
+            ),
           ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Versión de la app',
-                    style: TextStyle(
-                        fontSize: 12, color: AppTheme.textSecondary)),
+                const Text(
+                  'Versión de la app',
+                  style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                ),
                 const SizedBox(height: 2),
                 Text(
                   'v$_version (build $_build)',
                   style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.textPrimary),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textPrimary,
+                  ),
                 ),
               ],
             ),
@@ -990,17 +1171,23 @@ class _AppVersionSectionState extends State<_AppVersionSection> {
                   width: 22,
                   height: 22,
                   child: CircularProgressIndicator(
-                      strokeWidth: 2, color: AppTheme.primary),
+                    strokeWidth: 2,
+                    color: AppTheme.primary,
+                  ),
                 )
               : TextButton(
                   onPressed: _checkUpdates,
                   style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
                     foregroundColor: AppTheme.primary,
                   ),
-                  child:
-                      const Text('Verificar', style: TextStyle(fontSize: 13)),
+                  child: const Text(
+                    'Verificar',
+                    style: TextStyle(fontSize: 13),
+                  ),
                 ),
         ],
       ),
@@ -1012,23 +1199,29 @@ class _VersionRow extends StatelessWidget {
   final String label;
   final String value;
   final bool highlight;
-  const _VersionRow(
-      {required this.label, required this.value, this.highlight = false});
+  const _VersionRow({
+    required this.label,
+    required this.value,
+    this.highlight = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Text('$label: ',
-            style:
-                const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+        Text(
+          '$label: ',
+          style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+        ),
         Flexible(
-          child: Text(value,
-              style: TextStyle(
-                fontSize: highlight ? 15 : 13,
-                fontWeight: highlight ? FontWeight.bold : FontWeight.w500,
-                color: highlight ? AppTheme.primary : AppTheme.textPrimary,
-              )),
+          child: Text(
+            value,
+            style: TextStyle(
+              fontSize: highlight ? 15 : 13,
+              fontWeight: highlight ? FontWeight.bold : FontWeight.w500,
+              color: highlight ? AppTheme.primary : AppTheme.textPrimary,
+            ),
+          ),
         ),
       ],
     );
@@ -1040,8 +1233,11 @@ class _InfoRow extends StatelessWidget {
   final String label;
   final String value;
 
-  const _InfoRow(
-      {required this.icon, required this.label, required this.value});
+  const _InfoRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1061,15 +1257,22 @@ class _InfoRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label,
-                  style: const TextStyle(
-                      fontSize: 11, color: AppTheme.textSecondary)),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppTheme.textSecondary,
+                ),
+              ),
               const SizedBox(height: 2),
-              Text(value,
-                  style: const TextStyle(
-                      fontSize: 14,
-                      color: AppTheme.textPrimary,
-                      fontWeight: FontWeight.w600)),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: AppTheme.textPrimary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ],
           ),
         ),

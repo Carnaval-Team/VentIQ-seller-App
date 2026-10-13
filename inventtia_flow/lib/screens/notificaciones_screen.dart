@@ -341,6 +341,9 @@ class _NotificacionCard extends StatelessWidget {
         return 'Reserva';
       case 'promo':
         return 'Promo';
+      // Pagos reportados y planes acreditados de la entidad.
+      case 'suscripcion':
+        return 'Suscripción';
       case 'sistema':
       default:
         return 'Aviso';

@@ -121,3 +121,7 @@ app.*.symbols
 ventiq_admin_app/android/app/build.gradle.kts
 *.mbtiles
 tools/web_cache_killer
+
+# DSH: telemetría del CLI de Dart redirigida dentro del workspace por el MCP
+.dsh/dart-tool/
+dsh-plugins/
