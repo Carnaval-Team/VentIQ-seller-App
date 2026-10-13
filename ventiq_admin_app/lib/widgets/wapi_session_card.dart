@@ -97,23 +97,33 @@ class WapiSessionCard extends StatelessWidget {
                   }
                 },
                 itemBuilder: (ctx) => [
-                  if (st != WapiStatus.connected)
+                  if (st == WapiStatus.scanQr)
                     const PopupMenuItem(
                       value: 'qr',
                       child: ListTile(
                         leading: Icon(Icons.qr_code_2),
-                        title: Text('Ver QR / Reconectar'),
+                        title: Text('Mostrar QR'),
+                        dense: true,
+                      ),
+                    )
+                  else if (st != WapiStatus.connected)
+                    const PopupMenuItem(
+                      value: 'restart',
+                      child: ListTile(
+                        leading: Icon(Icons.qr_code_2),
+                        title: Text('Reconectar / ver QR'),
                         dense: true,
                       ),
                     ),
-                  const PopupMenuItem(
-                    value: 'restart',
-                    child: ListTile(
-                      leading: Icon(Icons.refresh),
-                      title: Text('Reiniciar'),
-                      dense: true,
+                  if (st == WapiStatus.connected || st == WapiStatus.scanQr)
+                    const PopupMenuItem(
+                      value: 'restart',
+                      child: ListTile(
+                        leading: Icon(Icons.refresh),
+                        title: Text('Reiniciar'),
+                        dense: true,
+                      ),
                     ),
-                  ),
                   if (st == WapiStatus.connected)
                     const PopupMenuItem(
                       value: 'logout',
@@ -171,6 +181,17 @@ class WapiSessionCard extends StatelessWidget {
                 ),
               ],
             ),
+            if (st == WapiStatus.scanQr) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => onAction('qr'),
+                  icon: const Icon(Icons.qr_code_2),
+                  label: const Text('Mostrar QR'),
+                ),
+              ),
+            ],
           ],
         ],
       ),
