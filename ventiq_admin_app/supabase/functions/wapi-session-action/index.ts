@@ -1,5 +1,5 @@
 // POST /functions/v1/wapi-session-action
-// Body: { id_sesion: number, action: 'logout' | 'restart' | 'delete' }
+// Body: { id_sesion: number, action: 'qr' | 'logout' | 'restart' | 'delete' }
 import { handleOptions, okResponse, errorResponse } from "../_shared/cors.ts";
 import { getAuthContext, assertStoreAccess } from "../_shared/auth.ts";
 import { wapi } from "../_shared/wapi_client.ts";
@@ -13,7 +13,7 @@ Deno.serve(async (req) => {
 
   const { id_sesion, action } = await req.json().catch(() => ({}));
   const idSesion = Number(id_sesion);
-  if (!Number.isFinite(idSesion) || !["logout", "restart", "delete"].includes(action)) {
+  if (!Number.isFinite(idSesion) || !["qr", "logout", "restart", "delete"].includes(action)) {
     return errorResponse("Parámetros inválidos", 400);
   }
 
@@ -22,6 +22,18 @@ Deno.serve(async (req) => {
   if (!ses) return errorResponse("Sesión no encontrada", 404);
   if (!(await assertStoreAccess(ctx, ses.id_tienda))) {
     return errorResponse("Sin acceso", 403);
+  }
+
+  if (action === "qr") {
+    const qrRes = await wapi.getQr(ses.wapi_session_id);
+    if (!qrRes.success) {
+      return errorResponse(
+        qrRes.error?.message ?? "No se pudo obtener el QR",
+        502,
+        qrRes.error?.code,
+      );
+    }
+    return okResponse({ ok: true, status: "SCAN_QR", qr: qrRes.data });
   }
 
   let apiRes;
@@ -34,6 +46,14 @@ Deno.serve(async (req) => {
     case "restart":
       apiRes = await wapi.restart(ses.wapi_session_id);
       newStatus = "INITIALIZING";
+      if (
+        !apiRes.success &&
+        apiRes.error?.code === "HTTP_400" &&
+        apiRes.error.message.toLowerCase().includes("already started")
+      ) {
+        apiRes = await wapi.getQr(ses.wapi_session_id);
+        newStatus = "SCAN_QR";
+      }
       break;
     case "delete":
       apiRes = await wapi.deleteSession(ses.wapi_session_id);
