@@ -1,9 +1,31 @@
 {
-  "current_version": "2.9.2",
-  "build": 291,
+  "current_version": "2.9.3",
+  "build": 292,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.9.3",
+      "date": "2026-10-12",
+      "title": "Corrección en precios vigentes y mejoras administrativas",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Dashboard de proveedores Carnaval",
+          "description": "Nuevo panel para proveedores de Carnaval con órdenes, productos vendidos, montos, estados, medios de pago, evolución diaria y productos destacados dentro del período seleccionado."
+        },
+        {
+          "type": "feature",
+          "title": "Depósitos bancarios, gestión de trabajadores y tasas personalizadas",
+          "description": "Se amplía la administración con depósitos bancarios, mejores controles en la gestión de trabajadores y la configuración de tasas de cambio personalizadas."
+        },
+        {
+          "type": "feature",
+          "title": "Exportaciones de inventario mejoradas",
+          "description": "El reporte de inventario ahora ofrece más información y nuevas opciones de exportación, con filtros más precisos."
+        }
+      ]
+    },
     {
       "version": "2.9.2",
       "date": "2026-09-27",

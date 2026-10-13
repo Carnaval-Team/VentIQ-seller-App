@@ -46,14 +46,13 @@ class TpvPriceService {
     final response =
         await _supabase
             .from('app_dat_precio_tpv')
-            .select('precio_venta_cup')
+            .select('id, precio_venta_cup')
             .eq('id_producto', productId)
             .eq('id_tpv', tpvId)
             .eq('es_activo', true)
             .isFilter('deleted_at', null)
-            .lte('fecha_desde', today)
             .or('fecha_hasta.is.null,fecha_hasta.gte.$today')
-            .order('fecha_desde', ascending: false)
+            .order('id', ascending: false)
             .limit(1)
             .maybeSingle();
 
@@ -67,11 +66,10 @@ class TpvPriceService {
     final response =
         await _supabase
             .from('app_dat_precio_venta')
-            .select('precio_venta_cup')
+            .select('id, precio_venta_cup')
             .eq('id_producto', productId)
-            .lte('fecha_desde', today)
             .or('fecha_hasta.is.null,fecha_hasta.gte.$today')
-            .order('fecha_desde', ascending: false)
+            .order('id', ascending: false)
             .limit(1)
             .maybeSingle();
 

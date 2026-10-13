@@ -1863,7 +1863,7 @@ class AdminInventoryService {
           .eq('id_tpv', tpvId)
           .isFilter('deleted_at', null)
           .eq('es_activo', true)
-          .order('fecha_desde', ascending: false)
+          .order('id', ascending: false)
           .limit(1)
           .maybeSingle();
 

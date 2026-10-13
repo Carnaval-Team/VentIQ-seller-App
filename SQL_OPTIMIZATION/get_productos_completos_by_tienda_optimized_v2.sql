@@ -241,7 +241,7 @@ BEGIN
 
         AND (fecha_hasta IS NULL OR fecha_hasta >= CURRENT_DATE)
 
-        ORDER BY id_producto, fecha_desde DESC
+        ORDER BY id_producto, id DESC
 
     ),
 

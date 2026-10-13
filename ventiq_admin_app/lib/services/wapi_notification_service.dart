@@ -101,7 +101,7 @@ class WapiNotificationService {
   /// Ejecuta una acción sobre la sesión y devuelve el status que reporta el
   /// backend tras ejecutarla (útil para saber si el reconectar requiere QR).
   Future<WapiStatus> sessionAction(int idSesion, String action) async {
-    assert(['logout', 'restart', 'delete'].contains(action));
+    assert(['qr', 'logout', 'restart', 'delete'].contains(action));
     final data = await _invoke('wapi-session-action', {
       'id_sesion': idSesion,
       'action': action,

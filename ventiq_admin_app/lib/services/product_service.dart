@@ -2350,17 +2350,21 @@ class ProductService {
       print('✅ Total subcategorías obtenidas: ${subcategoriasMapped.length}');
 
       // Obtener precio de venta (tabla separada)
-
+      // Criterio: precio vigente (fecha_hasta IS NULL OR >= hoy)
+      // con el ID mas alto (ultimo insertado).
       double precioVenta = 0.0;
 
       double? precioVentaUsd;
 
       try {
+        final today = DateTime.now().toIso8601String().split('T')[0];
+
         final precioVentaResponse = await _supabase
             .from('app_dat_precio_venta')
-            .select('precio_venta_cup, precio_venta_usd')
+            .select('id, precio_venta_cup, precio_venta_usd')
             .eq('id_producto', productId)
-            .order('fecha_desde', ascending: false)
+            .or('fecha_hasta.is.null,fecha_hasta.gte.$today')
+            .order('id', ascending: false)
             .limit(1);
 
         if (precioVentaResponse.isNotEmpty) {
@@ -2373,7 +2377,10 @@ class ProductService {
               (precioVentaResponse.first['precio_venta_usd'] as num?)
                   ?.toDouble();
 
-          print('💰 Precio CUP: $precioVenta | Precio USD: $precioVentaUsd');
+          print(
+            '💰 Precio vigente (id=${precioVentaResponse.first['id']}) '
+            'CUP: $precioVenta | USD: $precioVentaUsd',
+          );
         }
       } catch (e) {
         print('⚠️ Error obteniendo precio de venta: $e');

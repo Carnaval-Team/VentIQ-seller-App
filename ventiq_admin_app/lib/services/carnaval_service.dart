@@ -739,13 +739,15 @@ class CarnavalService {
           .eq('id', localProductId)
           .single();
 
-      // 2. Obtener precio actual (el más reciente activo)
+      // 2. Obtener precio actual (el más reciente activo por id)
+      final today = DateTime.now().toIso8601String().split('T')[0];
+
       final priceData = await _supabase
           .from('app_dat_precio_venta')
-          .select('precio_venta_cup')
+          .select('id, precio_venta_cup')
           .eq('id_producto', localProductId)
-          .lte('fecha_desde', DateTime.now().toIso8601String())
-          .order('fecha_desde', ascending: false)
+          .or('fecha_hasta.is.null,fecha_hasta.gte.$today')
+          .order('id', ascending: false)
           .limit(1)
           .maybeSingle();
 

@@ -270,6 +270,11 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
     try {
       switch (action) {
         case 'qr':
+          await _service.sessionAction(s.id, 'qr');
+          if (!mounted) return;
+          await WapiQrDialog.show(context,
+              idSesion: s.id, nombreBot: s.nombre);
+          break;
         case 'restart':
           // Reconectar de verdad: arranca el engine en el server WAPI
           // (/restart → fallback /start) y sólo entonces muestra el QR.

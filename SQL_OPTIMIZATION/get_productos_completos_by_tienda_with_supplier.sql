@@ -108,7 +108,7 @@ BEGIN
         FROM app_dat_precio_venta
         WHERE (id_variante IS NULL OR id_variante = 0)
         AND (fecha_hasta IS NULL OR fecha_hasta >= CURRENT_DATE)
-        ORDER BY id_producto, fecha_desde DESC
+        ORDER BY id_producto, id DESC
     )
     SELECT jsonb_build_object(
         'tienda_id', id_tienda_param,
