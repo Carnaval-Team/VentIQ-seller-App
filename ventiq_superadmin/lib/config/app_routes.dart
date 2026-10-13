@@ -57,6 +57,7 @@ class AppRoutes {
     AppRoute(route: '/flow-suscripciones', label: 'Suscripciones Flow', group: 'Flow'),
     AppRoute(route: '/flow-planes', label: 'Planes de suscripción Flow', group: 'Flow'),
     AppRoute(route: '/flow-config', label: 'Configuración de suscripciones', group: 'Flow'),
+    AppRoute(route: '/flow-categorias', label: 'Categorías y subcategorías Flow', group: 'Flow'),
     AppRoute(route: '/roles', label: 'Gestión de Roles', group: 'Sistema'),
     AppRoute(route: '/configuracion', label: 'Configuración', group: 'Sistema'),
   ];

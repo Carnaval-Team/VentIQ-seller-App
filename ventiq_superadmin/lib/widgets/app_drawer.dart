@@ -278,6 +278,11 @@ class AppDrawer extends StatelessWidget {
                       title: 'Configuración de suscripciones',
                       route: '/flow-config',
                     ),
+                    _DrawerItem(
+                      icon: Icons.account_tree_outlined,
+                      title: 'Categorías y subcategorías',
+                      route: '/flow-categorias',
+                    ),
                   ],
                 ),
                 _buildMenuSection(
@@ -463,7 +468,8 @@ class AppDrawer extends StatelessWidget {
                 item.route == '/roles' ||
                 item.route == '/flow-suscripciones' ||
                 item.route == '/flow-planes' ||
-                item.route == '/flow-config') {
+                item.route == '/flow-config' ||
+                item.route == '/flow-categorias') {
               Navigator.of(context).pushReplacementNamed(item.route);
             } else {
               // Para rutas que aún no están implementadas

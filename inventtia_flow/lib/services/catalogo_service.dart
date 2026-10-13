@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/servicio.dart';
+import 'tipo_actividad_service.dart';
 
 /// Centinela para distinguir "no toques este campo" de "ponlo a `null`".
 ///
@@ -70,17 +71,15 @@ class CatalogoService {
     return e;
   }
 
-  static Future<List<Map<String, dynamic>>> getTiposActividadServicio() async {
-    final res = await _supabase
-        .schema(_schema)
-        .from('nom_tipo_actividad_servicio')
-        .select('id, codigo, nombre')
-        .eq('activo', true)
-        .order('id');
-    return (res as List)
-        .map((item) => Map<String, dynamic>.from(item as Map))
-        .toList();
-  }
+  /// Nodos de la taxonomía activos (`flow.nom_tipo_actividad_servicio`).
+  ///
+  /// Delega en [TipoActividadService] a propósito: es el único sitio que sabe
+  /// leer `id_padre`/`orden` y degradar a taxonomía plana si la migración
+  /// `47_categorias_reales_subcategorias.sql` todavía no está aplicada. Antes
+  /// esta función repetía la consulta y el formulario de servicios se quedaba
+  /// sin saber a qué categoría pertenece cada subcategoría.
+  static Future<List<Map<String, dynamic>>> getTiposActividadServicio() =>
+      TipoActividadService.listarMapas(soloActivos: true);
 
   static Future<List<Servicio>> getServicios() async {
     try {

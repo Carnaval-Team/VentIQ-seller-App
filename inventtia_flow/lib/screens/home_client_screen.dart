@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -22,6 +23,7 @@ import '../widgets/net_image.dart';
 import '../widgets/notificaciones_bell.dart';
 import '../widgets/resenas.dart';
 import '../widgets/tarjeta_resena_reciente.dart';
+import 'espacio_patrocinado_screen.dart';
 import 'favoritos_screen.dart';
 import 'local_servicio_detail_screen.dart';
 
@@ -84,6 +86,12 @@ class HomeClientScreenState extends State<HomeClientScreen>
   int _sponsoredPage = 0;
   String _query = '';
   HomeCatalogCategory _category = HomeCatalogCategory.todas;
+
+  /// Subcategoría elegida dentro de [_category]. `null` = todas las de esa
+  /// categoría. Se limpia al cambiar de categoría: una subcategoría de Belleza
+  /// no existe bajo Transporte.
+  HomeCatalogCategory? _subcategoria;
+
   String? _provincia;
 
   /// Filtros del sheet (precio, moneda, provincia, valoración, establecimiento
@@ -187,6 +195,7 @@ class HomeClientScreenState extends State<HomeClientScreen>
         feed = await HomeCatalogService.fetchFeed(
           query: _query,
           category: _category,
+          subcategoria: _subcategoria,
           provincia: _provincia,
           idColeccion: _coleccionActiva?.id,
           topRated: _topRated,
@@ -263,6 +272,7 @@ class HomeClientScreenState extends State<HomeClientScreen>
       provinciaItem: item.provincia,
       ratingItem: item.totalResenas > 0 ? item.rating : null,
       idLocalItem: item.localServicio?.idLocal ?? item.localServicio?.local?.id,
+      idSubcategoriaItem: item.subcategoria?.id,
       abiertoItem: abierto,
     );
   }
@@ -272,6 +282,7 @@ class HomeClientScreenState extends State<HomeClientScreen>
     final precios = <OfertaPrecio>[];
     final provincias = <String>{};
     final locales = <int, LocalOpcion>{};
+    final subcategorias = <int, SubcategoriaOpcion>{};
     var hayValoraciones = false;
 
     for (final item in _feedItems) {
@@ -295,6 +306,22 @@ class HomeClientScreenState extends State<HomeClientScreen>
         );
       }
 
+      // [47] Solo las subcategorías con algún servicio en el catálogo cargado.
+      final subcategoria = item.subcategoria;
+      final idSubcategoria = subcategoria?.id;
+      final nombreSubcategoria = subcategoria?.nombre.trim() ?? '';
+      if (idSubcategoria != null && nombreSubcategoria.isNotEmpty) {
+        final categoria = item.category.nombre.trim();
+        subcategorias.putIfAbsent(
+          idSubcategoria,
+          () => SubcategoriaOpcion(
+            id: idSubcategoria,
+            nombre: nombreSubcategoria,
+            categoria: categoria.isEmpty ? null : categoria,
+          ),
+        );
+      }
+
       if (item.totalResenas > 0) hayValoraciones = true;
     }
 
@@ -303,11 +330,20 @@ class HomeClientScreenState extends State<HomeClientScreen>
       ..sort(
         (a, b) => a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase()),
       );
+    final listaSubcategorias = subcategorias.values.toList()
+      ..sort((a, b) {
+        final porCategoria = (a.categoria ?? '').toLowerCase().compareTo(
+          (b.categoria ?? '').toLowerCase(),
+        );
+        if (porCategoria != 0) return porCategoria;
+        return a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase());
+      });
 
     return OpcionesFiltros(
       precios: precios,
       provincias: listaProvincias,
       locales: listaLocales,
+      subcategorias: listaSubcategorias,
       hayValoraciones: hayValoraciones,
     );
   }
@@ -373,18 +409,39 @@ class HomeClientScreenState extends State<HomeClientScreen>
   /// categoría seleccionada sí desapareció (el superadmin la apagó), se quita el
   /// filtro **y se relee**, porque ahora es el servidor quien filtra: la muestra
   /// guardada correspondería a la categoría anterior.
+  ///
+  /// Lo mismo con la subcategoría: si la apagaron, o si ya no pertenece a la
+  /// categoría elegida, se limpia y se relee.
   void _aplicarCategorias(List<HomeCatalogCategory> categorias) {
     if (!mounted) return;
     final activa = _category;
+    final subActiva = _subcategoria;
     final desaparecio =
         !activa.esTodas && !categorias.any((c) => c.id == activa.id);
 
+    // La subcategoría se busca dentro de la categoría seleccionada: una
+    // subcategoría de Belleza no puede quedar activa con Transporte elegido.
+    final subcategorias = activa.tieneSubcategorias
+        ? activa.subcategorias
+        : (categorias
+              .where((c) => c.id == activa.id)
+              .expand((c) => c.subcategorias)
+              .toList(growable: false));
+    final subDesaparecio =
+        subActiva != null &&
+        !subcategorias.any((s) => s.id == subActiva.id);
+
     setState(() {
       _categories = categorias;
-      if (desaparecio) _category = HomeCatalogCategory.todas;
+      if (desaparecio) {
+        _category = HomeCatalogCategory.todas;
+        if (_subcategoria != null) _subcategoria = null;
+      } else if (subDesaparecio) {
+        _subcategoria = null;
+      }
     });
 
-    if (desaparecio) _loadPage(reset: true);
+    if (desaparecio || subDesaparecio) _loadPage(reset: true);
   }
 
   /// Ranking semanal real: lugares reservados en la semana en curso.
@@ -530,9 +587,42 @@ class HomeClientScreenState extends State<HomeClientScreen>
     });
   }
 
+  /// Filtra por categoría. Tocar la que ya está activa la quita (vuelve a
+  /// "Todas"), que es lo que el usuario espera de un chip de filtro.
+  ///
+  /// Al elegir una categoría se **limpia la subcategoría**: pertenecía a la
+  /// categoría anterior. Si la nueva tiene subcategorías, sus chips aparecen
+  /// debajo en el mismo sitio.
   void _selectCategory(HomeCatalogCategory category) {
-    if (_category.id == category.id) return;
-    setState(() => _category = category);
+    if (_category.id == category.id) {
+      if (_subcategoria != null) {
+        setState(() => _subcategoria = null);
+        _loadPage(reset: true);
+      }
+      return;
+    }
+    // La categoría puede venir del riel (sin hijos cargados) o del propio feed
+    // (con `subcategorias`). Se busca en `_categories` para quedarnos con la
+    // versión que sí trae los chips.
+    final completa = _categories.firstWhere(
+      (c) => c.id == category.id,
+      orElse: () => category,
+    );
+    setState(() {
+      _category = completa;
+      _subcategoria = null;
+    });
+    _loadPage(reset: true);
+  }
+
+  /// Filtra por subcategoría dentro de la categoría activa.
+  ///
+  /// `null` = todas las subcategorías. Es un filtro de servidor
+  /// (`p_id_subcategoria`), no de memoria: la categoría ya lo es, y tener dos
+  /// reglas distintas para lo mismo se contradice en cuanto el catálogo crezca.
+  void _selectSubcategoria(HomeCatalogCategory? subcategoria) {
+    if (_subcategoria?.id == subcategoria?.id) return;
+    setState(() => _subcategoria = subcategoria);
     _loadPage(reset: true);
   }
 
@@ -1066,6 +1156,75 @@ class HomeClientScreenState extends State<HomeClientScreen>
               },
             ),
           ),
+          // Chips de subcategorías de la categoría elegida. Aparecen debajo del
+          // riel en cuanto hay una categoría activa: tocar una filtra el feed por
+          // esa subcategoría, y "Todas" quita ese segundo filtro sin salir de la
+          // categoría.
+          _buildSubcategorias(),
+        ],
+      ),
+    );
+  }
+
+  /// Segunda fila de chips: subcategorías de la categoría activa.
+  ///
+  /// No se pinta con "Todas" ni si el nomenclador no trae subcategorías (por
+  /// ejemplo, con la migración `47_categorias_reales_subcategorias.sql` sin
+  /// aplicar): un riel vacío solo ocupa espacio.
+  Widget _buildSubcategorias() {
+    final categoria = _category;
+    if (categoria.esTodas || !categoria.tieneSubcategorias) {
+      return const SizedBox.shrink();
+    }
+    final subcategorias = categoria.subcategorias;
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 16, right: 16, bottom: 6),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.account_tree_outlined,
+                  size: 13,
+                  color: AppTheme.textSecondary,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Subcategorías de ${categoria.nombre}',
+                  style: const TextStyle(
+                    color: AppTheme.textSecondary,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 34,
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              itemCount: subcategorias.length + 1,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (_, index) {
+                final subcategoria = index == 0 ? null : subcategorias[index - 1];
+                final seleccionada =
+                    subcategoria == null
+                    ? _subcategoria == null
+                    : _subcategoria?.id == subcategoria.id;
+                return _SubcategoriaChip(
+                  nombre: subcategoria?.nombre ?? 'Todas',
+                  seleccionada: seleccionada,
+                  onTap: () => _selectSubcategoria(subcategoria),
+                );
+              },
+            ),
+          ),
         ],
       ),
     );
@@ -1148,7 +1307,7 @@ class HomeClientScreenState extends State<HomeClientScreen>
           _sectionHeading('Espacio patrocinado'),
           const SizedBox(height: 10),
           SizedBox(
-            height: 166,
+            height: 176,
             child: PageView.builder(
               controller: _sponsoredController,
               itemCount: campanas.length,
@@ -1192,13 +1351,28 @@ class HomeClientScreenState extends State<HomeClientScreen>
     );
   }
 
-  /// Abre el servicio destacado por una campaña.
+  /// Abre el espacio patrocinado de una campaña.
   ///
-  /// La campaña puede apuntar a un servicio que no esté en la página cargada,
-  /// así que se busca en el catálogo completo (ya cacheado) en vez de solo en
-  /// `_items`. Una campaña de entidad no tiene servicio que abrir: en ese caso
-  /// se indica al cliente en vez de no hacer nada.
+  /// Si la campaña apunta a un **local** (migración 49 aplicada), se abre la
+  /// vista de marketing del establecimiento: es lo que el espacio patrocinado
+  /// promete, y desde ahí se entra a cualquiera de sus servicios. Antes esto
+  /// abría el detalle de UN servicio y dejaba al resto del local invisible.
+  ///
+  /// Si no hay local resoluble se conserva el comportamiento anterior: buscar el
+  /// servicio destacado en el catálogo cacheado (una campaña puede apuntar a un
+  /// servicio que no esté en la página cargada).
   Future<void> _abrirCampana(CampanaPatrocinada campana) async {
+    final idLocal = campana.idLocal;
+    if (idLocal != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => EspacioPatrocinadoScreen(campana: campana),
+        ),
+      );
+      return;
+    }
+
     final idLocalServicio = campana.idLocalServicio;
     if (idLocalServicio == null) {
       _showToast(
@@ -1880,12 +2054,15 @@ class HomeClientScreenState extends State<HomeClientScreen>
     // Cuando hay una categoría (o una búsqueda) activa se dice **qué** no tiene
     // servicios: "No encontramos resultados" a secas deja al usuario pensando
     // que la app se quedó cargando.
+    final subcategoria = _subcategoria?.nombre;
     final categoria = _category.esTodas ? null : _category.nombre;
     final conFiltros = _filtros.hayAlgo;
     final titulo = hayError
         ? 'No pudimos cargar el catálogo'
         : conFiltros
         ? 'Ningún servicio con estos filtros'
+        : subcategoria != null
+        ? 'Sin servicios en «$subcategoria»'
         : categoria != null
         ? 'Sin servicios en «$categoria»'
         : 'No encontramos resultados';
@@ -1895,6 +2072,9 @@ class HomeClientScreenState extends State<HomeClientScreen>
         : conFiltros
         ? 'Ninguno de los servicios publicados cumple lo que pediste. '
               'Quita algún filtro para ampliar la búsqueda.'
+        : subcategoria != null
+        ? 'Todavía no hay servicios publicados en esta subcategoría. '
+              'Prueba con otra o toca «Todas».'
         : categoria != null
         ? 'Todavía no hay servicios publicados en esta categoría. '
               'Prueba con otra o quita los filtros.'
@@ -1913,6 +2093,8 @@ class HomeClientScreenState extends State<HomeClientScreen>
                   ? Icons.cloud_off_rounded
                   : conFiltros
                   ? Icons.filter_alt_off_rounded
+                  : subcategoria != null
+                  ? Icons.account_tree_outlined
                   : categoria != null
                   ? Icons.category_outlined
                   : Icons.search_off_rounded,
@@ -2274,134 +2456,250 @@ class _SponsoredCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = sponsored.colors;
+    final base = colors.first;
+    final imagen = sponsored.imagenUrl;
+
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: sponsored.colors,
+      // La tarjeta se recorta para que ni la imagen ni su desenfoque se salgan
+      // de las esquinas: el contenido nunca se "distorsiona" por el fondo.
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: colors,
+            ),
           ),
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x1A2B3A67),
-              blurRadius: 14,
-              offset: Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Stack(
-          children: [
-            Positioned(
-              right: 18,
-              top: 14,
-              child: Icon(
-                sponsored.icon,
-                color: Colors.white.withValues(alpha: 0.25),
-                size: 86,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (imagen != null && imagen.trim().isNotEmpty)
+                _buildFondo(imagen)
+              else
+                Positioned(
+                  right: 14,
+                  top: 10,
+                  child: Icon(
+                    sponsored.icon,
+                    color: Colors.white.withValues(alpha: 0.22),
+                    size: 92,
+                  ),
+                ),
+              // Velo de lectura: sólido a la izquierda (donde va el texto) y
+              // transparente a la derecha (donde la imagen se ve nítida).
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [
+                      base.withValues(alpha: 0.95),
+                      base.withValues(alpha: 0.78),
+                      base.withValues(alpha: 0.30),
+                      Colors.transparent,
+                    ],
+                    stops: const [0, 0.44, 0.74, 1],
+                  ),
+                ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(17, 14, 17, 14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.17),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Text(
-                          'PATROCINADO',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.7,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 13, 16, 13),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 4,
                           ),
-                        ),
-                      ),
-                      const Spacer(),
-                      // Antes decía "Verificado" sin que nada lo respaldara.
-                      // Ahora se muestra el local real de la campaña.
-                      if (sponsored.venue != null) ...[
-                        const Icon(
-                          Icons.place_outlined,
-                          color: Colors.white,
-                          size: 15,
-                        ),
-                        const SizedBox(width: 4),
-                        Flexible(
-                          child: Text(
-                            sponsored.venue!,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.17),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.22),
+                            ),
+                          ),
+                          child: const Text(
+                            'PATROCINADO',
+                            style: TextStyle(
                               color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.7,
                             ),
                           ),
                         ),
-                      ],
-                    ],
-                  ),
-                  const Spacer(),
-                  Text(
-                    sponsored.name,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    sponsored.subtitle,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.86),
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 11,
-                          vertical: 7,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Text(
-                          'Ver local  →',
-                          style: TextStyle(
-                            color: AppTheme.primary,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
+                        const Spacer(),
+                        if (sponsored.ubicacion != null) ...[
+                          const Icon(
+                            Icons.place_outlined,
+                            color: Colors.white,
+                            size: 14,
                           ),
+                          const SizedBox(width: 3),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 116),
+                            child: Text(
+                              sponsored.ubicacion!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const Spacer(),
+                    // Nombre COMPLETO del local: se permite una segunda línea en
+                    // vez de recortarlo, y la tarjeta tiene alto fijo para que
+                    // crecer el texto no deforme el carrusel.
+                    Text(
+                      sponsored.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 19,
+                        height: 1.12,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.3,
+                        shadows: [
+                          Shadow(
+                            color: Color(0x55000000),
+                            blurRadius: 8,
+                            offset: Offset(0, 1),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (sponsored.titular != null) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        sponsored.titular!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.92),
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ],
-                  ),
-                ],
+                    if (sponsored.subtitle.trim().isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        sponsored.subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.82),
+                          fontSize: 11.5,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 9),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 11,
+                            vertical: 7,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            children: [
+                              Text(
+                                sponsored.cta,
+                                style: const TextStyle(
+                                  color: AppTheme.primary,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              const Icon(
+                                Icons.arrow_forward_rounded,
+                                size: 13,
+                                color: AppTheme.primary,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
+
+  /// Imagen del local de fondo: **nítida a la derecha** y, hacia la izquierda,
+  /// va perdiendo nitidez hasta desaparecer.
+  ///
+  /// No hay `blur` progresivo en Flutter (sería un desenfoque distinto por
+  /// píxel), así que se cruzan dos capas de la MISMA imagen:
+  ///   * una **desenfocada**, visible solo en la mitad izquierda;
+  ///   * una **nítida**, visible solo en la derecha.
+  /// El cruce entre ambas da exactamente la lectura pedida: nítida a la derecha,
+  /// borrosa a la izquierda y, por debajo del velo, desaparece.
+  Widget _buildFondo(String url) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Capa borrosa (izquierda).
+        ImageFiltered(
+          imageFilter: ui.ImageFilter.blur(sigmaX: 7, sigmaY: 7),
+          child: ShaderMask(
+            blendMode: BlendMode.dstIn,
+            shaderCallback: (rect) => const LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: [Colors.white, Colors.white, Colors.transparent],
+              stops: [0, 0.28, 0.72],
+            ).createShader(rect),
+            child: _imagen(url),
+          ),
+        ),
+        // Capa nítida (derecha).
+        ShaderMask(
+          blendMode: BlendMode.dstIn,
+          shaderCallback: (rect) => const LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: [Colors.transparent, Colors.transparent, Colors.white],
+            stops: [0, 0.34, 1],
+          ).createShader(rect),
+          child: _imagen(url),
+        ),
+      ],
+    );
+  }
+
+  Widget _imagen(String url) => NetImage(
+    url: url,
+    fit: BoxFit.cover,
+    width: double.infinity,
+    height: double.infinity,
+    errorWidget: () => const SizedBox.shrink(),
+  );
 }
 
 /// Fecha corta `dd/mm/aaaa` para la vigencia de una promoción.
@@ -3223,7 +3521,14 @@ class _MediaPreview extends StatelessWidget {
   static String _emojiFor(HomeCatalogCategory category) =>
       switch (category.codigo) {
         'general' => '▦',
+        // Taxonomía real (migración 47).
+        'alojamiento' => '🛏',
+        'gastronomia' => '🍽',
         'belleza' => '✦',
+        'transporte' => '🚗',
+        'recreacion' => '🎡',
+        'juridicos' => '⚖',
+        // Subcategorías y códigos heredados.
         'unas' => '💅',
         'cejas_pestanas' => '✨',
         'peluqueria' => '💇',
@@ -3231,7 +3536,6 @@ class _MediaPreview extends StatelessWidget {
         'salud' => '🩺',
         'hogar' => '⌂',
         'mascotas' => '🐾',
-        'gastronomia' => '🍽',
         'eventos' => '🎉',
         'tecnologia' => '📱',
         'transporte_omnibus' => '🚌',
@@ -3347,13 +3651,24 @@ class _SectionTitleStyle extends TextStyle {
 
 /// Icono para un tipo de actividad.
 ///
-/// Se conocen los códigos sembrados por `22_categorias_marketplace.sql`; un
-/// código nuevo creado desde el panel admin cae al icono genérico sin romper
-/// nada.
+/// Icono del chip de categoría.
+///
+/// Cubre los dos juegos de códigos: los de la taxonomía REAL de la migración 47
+/// (`alojamiento`, `gastronomia`, `belleza`, `transporte`, `recreacion`,
+/// `juridicos`) y los que quedaron como subcategorías o como código legado
+/// (`unas`, `cejas_pestanas`, `transporte_omnibus`…). Un código nuevo creado
+/// desde el panel cae al icono genérico sin romper nada.
 IconData _iconoCategoria(HomeCatalogCategory category) =>
     switch (category.codigo) {
       'general' => Icons.grid_view_rounded,
+      // Taxonomía real (migración 47).
+      'alojamiento' => Icons.hotel_outlined,
+      'gastronomia' => Icons.restaurant_outlined,
       'belleza' => Icons.auto_awesome_rounded,
+      'transporte' => Icons.directions_car_filled_outlined,
+      'recreacion' => Icons.attractions_outlined,
+      'juridicos' => Icons.gavel_rounded,
+      // Subcategorías y códigos heredados.
       'unas' => Icons.back_hand_rounded,
       'cejas_pestanas' => Icons.remove_red_eye_outlined,
       'peluqueria' => Icons.content_cut_rounded,
@@ -3361,13 +3676,59 @@ IconData _iconoCategoria(HomeCatalogCategory category) =>
       'salud' => Icons.medical_services_outlined,
       'hogar' => Icons.home_repair_service_outlined,
       'mascotas' => Icons.pets_outlined,
-      'gastronomia' => Icons.restaurant_outlined,
       'eventos' => Icons.celebration_outlined,
       'tecnologia' => Icons.devices_other_outlined,
       'transporte_omnibus' => Icons.directions_bus_filled_outlined,
       'transporte_privado' => Icons.local_taxi_outlined,
+      'talleres_gasolineras' => Icons.local_gas_station_outlined,
       _ => Icons.category_outlined,
     };
+
+/// Chip de subcategoría del Home.
+///
+/// Más pequeño que el chip de categoría a propósito: representa un segundo
+/// nivel, no compite visualmente con el riel principal.
+class _SubcategoriaChip extends StatelessWidget {
+  const _SubcategoriaChip({
+    required this.nombre,
+    required this.seleccionada,
+    required this.onTap,
+  });
+
+  final String nombre;
+  final bool seleccionada;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: seleccionada
+              ? AppTheme.accent.withValues(alpha: 0.16)
+              : Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: seleccionada ? AppTheme.accent : AppTheme.border,
+            width: seleccionada ? 1.4 : 1,
+          ),
+        ),
+        child: Text(
+          nombre,
+          style: TextStyle(
+            color: seleccionada ? AppTheme.primaryDark : AppTheme.textPrimary,
+            fontSize: 11.5,
+            fontWeight: seleccionada ? FontWeight.w800 : FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// Opción del selector de provincia.
 class _OpcionUbicacion extends StatelessWidget {
@@ -3406,30 +3767,60 @@ class _Collection {
 }
 
 class _Sponsored {
+  /// Nombre que se pinta en grande. Es el del **establecimiento** cuando la
+  /// campaña apunta a uno: el espacio patrocinado presenta un local.
   final String name;
+
+  /// Titular de la campaña, debajo del nombre. `null` si la campaña no apunta a
+  /// un local concreto (entidad) porque entonces el titular ya es el nombre.
+  final String? titular;
+
   final String subtitle;
   final IconData icon;
   final List<Color> colors;
 
-  /// Local donde está el servicio destacado. Se pinta en la esquina.
-  final String? venue;
+  /// Ubicación del local (provincia, país), en la esquina.
+  final String? ubicacion;
+
+  /// Fondo de la tarjeta: la foto del **local**. Si la migración 49 no está
+  /// aplicada queda `null` y la tarjeta cae a su degradado con el icono.
+  final String? imagenUrl;
+
+  /// Texto del botón según lo que haya detrás: un local completo o un servicio.
+  final String cta;
 
   const _Sponsored(
     this.name,
     this.subtitle,
     this.icon,
     this.colors, {
-    this.venue,
+    this.titular,
+    this.ubicacion,
+    this.imagenUrl,
+    required this.cta,
   });
 
   /// Construye la tarjeta desde una campaña real de `flow.campana`.
+  ///
+  /// El nombre grande es el del local (completo, sin recortar en el modelo) y el
+  /// titular de la campaña pasa a segunda línea. El subtítulo solo se pinta si
+  /// aporta algo que no esté ya en la primera o la segunda línea.
   factory _Sponsored.deCampana(CampanaPatrocinada c) {
+    final esDeLocal = c.esDeLocal;
+    final nombre = esDeLocal ? c.local!.trim() : c.titulo.trim();
+    final titular = esDeLocal ? c.titulo.trim() : null;
+    final subtitulo = esDeLocal
+        ? (c.servicio?.trim() ?? '')
+        : c.subtituloONombre.trim();
     return _Sponsored(
-      c.titulo,
-      c.subtituloONombre,
+      nombre,
+      subtitulo,
       _iconoDeCampana(c.icono),
       _coloresDeCampana(c),
-      venue: c.local,
+      titular: (titular ?? '').isEmpty ? null : titular,
+      ubicacion: c.ubicacionLocal,
+      imagenUrl: c.imagenPrincipal,
+      cta: esDeLocal ? 'Ver establecimiento' : 'Ver más',
     );
   }
 

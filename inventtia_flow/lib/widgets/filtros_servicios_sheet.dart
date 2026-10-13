@@ -21,6 +21,8 @@ class FiltrosServicios {
     this.provincia,
     this.idLocal,
     this.nombreLocal,
+    this.idSubcategoria,
+    this.nombreSubcategoria,
     this.ratingMinimo,
     this.soloAbiertos = false,
     this.soloFavoritos = false,
@@ -42,6 +44,14 @@ class FiltrosServicios {
   /// pintar el chip sin volver a buscar el local.
   final int? idLocal;
   final String? nombreLocal;
+
+  /// Subcategoría concreta (`nom_tipo_actividad_servicio.id_padre is not null`).
+  /// `null` = todas las subcategorías de la categoría elegida.
+  ///
+  /// Vive aquí además de en el riel del Home porque el catálogo también filtra
+  /// por ella: así la regla de coincidencia es una sola para las dos pantallas.
+  final int? idSubcategoria;
+  final String? nombreSubcategoria;
 
   /// Valoración mínima (1..5). `null` = cualquiera.
   final double? ratingMinimo;
@@ -67,6 +77,8 @@ class FiltrosServicios {
     Object? provincia = _sinCambio,
     Object? idLocal = _sinCambio,
     Object? nombreLocal = _sinCambio,
+    Object? idSubcategoria = _sinCambio,
+    Object? nombreSubcategoria = _sinCambio,
     Object? ratingMinimo = _sinCambio,
     bool? soloAbiertos,
     bool? soloFavoritos,
@@ -86,6 +98,12 @@ class FiltrosServicios {
       nombreLocal: identical(nombreLocal, _sinCambio)
           ? this.nombreLocal
           : nombreLocal as String?,
+      idSubcategoria: identical(idSubcategoria, _sinCambio)
+          ? this.idSubcategoria
+          : idSubcategoria as int?,
+      nombreSubcategoria: identical(nombreSubcategoria, _sinCambio)
+          ? this.nombreSubcategoria
+          : nombreSubcategoria as String?,
       ratingMinimo: identical(ratingMinimo, _sinCambio)
           ? this.ratingMinimo
           : ratingMinimo as double?,
@@ -100,6 +118,7 @@ class FiltrosServicios {
       precioMax != null ||
       provincia != null ||
       idLocal != null ||
+      idSubcategoria != null ||
       ratingMinimo != null ||
       soloAbiertos ||
       soloFavoritos;
@@ -111,6 +130,7 @@ class FiltrosServicios {
     if (precioMin != null || precioMax != null) total++;
     if (provincia != null) total++;
     if (idLocal != null) total++;
+    if (idSubcategoria != null) total++;
     if (ratingMinimo != null) total++;
     if (soloAbiertos) total++;
     if (soloFavoritos) total++;
@@ -129,6 +149,7 @@ class FiltrosServicios {
     String? provinciaItem,
     double? ratingItem,
     int? idLocalItem,
+    int? idSubcategoriaItem,
     bool? abiertoItem,
     bool? esFavoritoItem,
   }) {
@@ -144,6 +165,12 @@ class FiltrosServicios {
     if (provincia != null && provinciaItem != provincia) return false;
 
     if (idLocal != null && idLocalItem != idLocal) return false;
+
+    // Un servicio en la categoría sin subcategoría no pasa un filtro de
+    // subcategoría: no se le supone una que no tiene.
+    if (idSubcategoria != null && idSubcategoriaItem != idSubcategoria) {
+      return false;
+    }
 
     if (ratingMinimo != null &&
         (ratingItem == null || ratingItem < ratingMinimo!)) {
@@ -181,6 +208,28 @@ class LocalOpcion {
   final String? provincia;
 }
 
+/// Una subcategoría elegible como filtro, con el nombre de su categoría.
+@immutable
+class SubcategoriaOpcion {
+  const SubcategoriaOpcion({
+    required this.id,
+    required this.nombre,
+    this.categoria,
+  });
+
+  final int id;
+  final String nombre;
+
+  /// Nombre de la categoría a la que pertenece. Se usa para agrupar la lista.
+  final String? categoria;
+
+  /// `"Belleza › Uñas / Manicure"`, o solo el nombre si no hay categoría.
+  String get etiqueta =>
+      (categoria == null || categoria!.trim().isEmpty)
+      ? nombre
+      : '${categoria!.trim()} › $nombre';
+}
+
 /// Lo que el sheet puede ofrecer, deducido de **los datos ya cargados**.
 ///
 /// No se inventa ninguna opción: si el catálogo no trae precios, la sección de
@@ -192,6 +241,7 @@ class OpcionesFiltros {
     this.precios = const <OfertaPrecio>[],
     this.provincias = const <String>[],
     this.locales = const <LocalOpcion>[],
+    this.subcategorias = const <SubcategoriaOpcion>[],
     this.hayValoraciones = false,
     this.hayFavoritos = false,
     this.totalFavoritos = 0,
@@ -200,6 +250,12 @@ class OpcionesFiltros {
   final List<OfertaPrecio> precios;
   final List<String> provincias;
   final List<LocalOpcion> locales;
+
+  /// Subcategorías presentes en el catálogo cargado (solo las que tienen algún
+  /// servicio). Si la migración 47 no está aplicada llega vacía y la sección no
+  /// se pinta.
+  final List<SubcategoriaOpcion> subcategorias;
+
   final bool hayValoraciones;
 
   /// Si el usuario tiene guardados y la tabla de favoritos está disponible. La
@@ -210,6 +266,7 @@ class OpcionesFiltros {
   bool get hayPrecios => precios.isNotEmpty;
   bool get hayProvincias => provincias.isNotEmpty;
   bool get hayLocales => locales.isNotEmpty;
+  bool get haySubcategorias => subcategorias.isNotEmpty;
 
   /// Monedas presentes, ordenadas según el catálogo de la app.
   List<String> get monedas {
@@ -248,6 +305,7 @@ class OpcionesFiltros {
       hayPrecios ||
       hayProvincias ||
       hayLocales ||
+      haySubcategorias ||
       hayValoraciones ||
       hayFavoritos;
 }
@@ -365,6 +423,10 @@ class _FiltrosSheetState extends State<_FiltrosSheet> {
                   if (widget.opciones.hayLocales) ...[
                     const SizedBox(height: 14),
                     _buildSeccionEstablecimiento(),
+                  ],
+                  if (widget.opciones.haySubcategorias) ...[
+                    const SizedBox(height: 14),
+                    _buildSeccionSubcategoria(),
                   ],
                   const SizedBox(height: 14),
                   _buildSeccionExtras(),
@@ -896,6 +958,57 @@ class _FiltrosSheetState extends State<_FiltrosSheet> {
                 label: Text('Ver los ${todos.length} establecimientos'),
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  /// Subcategoría: es un segundo nivel dentro de la categoría.
+  ///
+  /// Solo se ofrecen las que **tienen algún servicio en el catálogo cargado**:
+  /// elegir una subcategoría vacía llevaría a "0 resultados" sin explicación.
+  Widget _buildSeccionSubcategoria() {
+    final opciones = widget.opciones.subcategorias;
+    return _Seccion(
+      icono: Icons.account_tree_outlined,
+      color: AppTheme.accent,
+      titulo: 'Subcategoría',
+      subtitulo: 'Un nivel más fino dentro de la categoría del servicio.',
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          _ChipOpcion(
+            label: 'Todas',
+            seleccionado: _borrador.idSubcategoria == null,
+            onTap: () => _aplicar(
+              _borrador.copyWith(
+                idSubcategoria: null,
+                nombreSubcategoria: null,
+              ),
+            ),
+          ),
+          ...opciones.map(
+            (s) => _ChipOpcion(
+              label: s.etiqueta,
+              icono: Icons.label_outline_rounded,
+              seleccionado: _borrador.idSubcategoria == s.id,
+              onTap: () {
+                final yaEstaba = _borrador.idSubcategoria == s.id;
+                _aplicar(
+                  yaEstaba
+                      ? _borrador.copyWith(
+                          idSubcategoria: null,
+                          nombreSubcategoria: null,
+                        )
+                      : _borrador.copyWith(
+                          idSubcategoria: s.id,
+                          nombreSubcategoria: s.nombre,
+                        ),
+                );
+              },
+            ),
+          ),
         ],
       ),
     );

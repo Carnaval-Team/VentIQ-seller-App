@@ -51,6 +51,7 @@ import 'screens/roles_screen.dart';
 import 'screens/flow_suscripciones_screen.dart';
 import 'screens/flow_planes_screen.dart';
 import 'screens/flow_config_screen.dart';
+import 'screens/flow_categorias_screen.dart';
 import 'widgets/route_guard.dart';
 import 'services/auth_service.dart';
 
@@ -274,6 +275,11 @@ class VentIQSuperAdminApp extends StatelessWidget {
         '/flow-config': (context) => const RouteGuard(
               route: '/flow-config',
               child: FlowConfigScreen(),
+            ),
+        // Taxonomia de servicios: categorias y subcategorias del Home.
+        '/flow-categorias': (context) => const RouteGuard(
+              route: '/flow-categorias',
+              child: FlowCategoriasScreen(),
             ),
       },
     );

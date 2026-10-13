@@ -451,6 +451,9 @@
         (function () {
             var PLAY_URL = "https://play.google.com/store/apps/details?id=com.carnaval24&hl=es_419";
             var APPSTORE_URL = "https://apps.apple.com/es/app/carnaval-tienda/id6742862060";
+            // TEMPORAL: cuenta de Google Play inactiva. En Android se descarga
+            // el APK directo. Para reactivar Google Play, poner APK_URL = null.
+            var APK_URL = "https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk";
             var CLIPBOARD_PREFIX = "CARNAVAL-REF:";
 
             // Detección iOS / Android (iPadOS 13+ reporta MacIntel + touch).
@@ -458,8 +461,9 @@
             var isIOS = /iPad|iPhone|iPod/.test(ua) ||
                 (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
             var isAndroid = /Android/i.test(ua);
-            var STORE_URL = isIOS ? APPSTORE_URL : PLAY_URL;
-            var STORE_LABEL = isIOS ? "App Store" : "Google Play";
+            // APK_URL tiene prioridad en Android mientras la cuenta de Play esté inactiva.
+            var STORE_URL = isIOS ? APPSTORE_URL : (APK_URL || PLAY_URL);
+            var STORE_LABEL = isIOS ? "App Store" : (APK_URL ? "descarga directa" : "Google Play");
 
             var params = new URLSearchParams(window.location.search);
             var raw = (params.get("code") || "").trim().toUpperCase();
@@ -479,7 +483,7 @@
             // Etiqueta del CTA según plataforma
             ctaText.textContent = isIOS
                 ? "Descargar en App Store"
-                : (isAndroid ? "Descargar en Google Play" : "Descargar la app");
+                : (isAndroid ? (APK_URL ? "Descargar la app (APK)" : "Descargar en Google Play") : "Descargar la app");
 
             // Si trae código, lo mostramos como detalle (no como centro de la página).
             if (code) {
@@ -488,7 +492,9 @@
                 manualText.value = payload;
                 VentiqTracking.track('referral_visit', { code: code });
             } else {
-                ctaHint.textContent = "Te llevamos a la tienda oficial.";
+                ctaHint.textContent = (!isIOS && APK_URL)
+                    ? "Se descargará el archivo directo de la app (APK)."
+                    : "Te llevamos a la tienda oficial.";
             }
 
             // ---------- Estrategias de copia (silenciosas) ----------

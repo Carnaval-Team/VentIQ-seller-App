@@ -25,6 +25,18 @@ class CampanaPatrocinada {
     this.local,
     this.servicio,
     this.entidad,
+    this.idLocal,
+    this.localFoto,
+    this.localDescripcion,
+    this.localDireccion,
+    this.localProvincia,
+    this.localPais,
+    this.localHorarioAtencion,
+    this.localHorarioDetalle,
+    this.localCoordenadas,
+    this.idEntidadReal,
+    this.entidadTelefono,
+    this.entidadDireccion,
   });
 
   final int id;
@@ -51,6 +63,44 @@ class CampanaPatrocinada {
   final String? local;
   final String? servicio;
   final String? entidad;
+
+  /// `flow.app_dat_locales.id` del local destacado. `null` en una campaña de
+  /// entidad (no apunta a un establecimiento concreto).
+  final int? idLocal;
+
+  /// Imagen del LOCAL, no la de la campaña ([imageUrl]). Es la que se pinta de
+  /// fondo en la tarjeta del Home y en la cabecera de la vista de marketing.
+  /// Llega desde la migración `49_campanas_datos_local.sql`; si no está
+  /// aplicada, es `null` y se cae a [imageUrl].
+  final String? localFoto;
+  final String? localDescripcion;
+  final String? localDireccion;
+  final String? localProvincia;
+  final String? localPais;
+  final String? localHorarioAtencion;
+  final Map<String, dynamic>? localHorarioDetalle;
+  final Map<String, dynamic>? localCoordenadas;
+
+  /// Entidad real del destino: la del local si lo hay, si no la de la campaña.
+  final int? idEntidadReal;
+  final String? entidadTelefono;
+  final String? entidadDireccion;
+
+  /// Imagen de cabecera: la del local manda sobre la de la campaña.
+  String? get imagenPrincipal =>
+      (localFoto?.trim().isNotEmpty ?? false) ? localFoto : imageUrl;
+
+  bool get esDeLocal => (local?.trim().isNotEmpty ?? false);
+
+  /// Ubicación legible del local, sin duplicados ni comas sueltas.
+  String? get ubicacionLocal {
+    final partes = <String>[
+      if (localProvincia != null && localProvincia!.trim().isNotEmpty)
+        localProvincia!.trim(),
+      if (localPais != null && localPais!.trim().isNotEmpty) localPais!.trim(),
+    ];
+    return partes.isEmpty ? null : partes.join(', ');
+  }
 
   bool get tieneImagen => imageUrl != null && imageUrl!.trim().isNotEmpty;
 
@@ -79,6 +129,18 @@ class CampanaPatrocinada {
       local: json['local'] as String?,
       servicio: json['servicio'] as String?,
       entidad: json['entidad'] as String?,
+      idLocal: (json['id_local'] as num?)?.toInt(),
+      localFoto: json['local_foto'] as String?,
+      localDescripcion: json['local_descripcion'] as String?,
+      localDireccion: json['local_direccion'] as String?,
+      localProvincia: json['local_provincia'] as String?,
+      localPais: json['local_pais'] as String?,
+      localHorarioAtencion: json['local_horario_atencion'] as String?,
+      localHorarioDetalle: json['local_horario_detalle'] as Map<String, dynamic>?,
+      localCoordenadas: json['local_coordenadas'] as Map<String, dynamic>?,
+      idEntidadReal: (json['id_entidad_real'] as num?)?.toInt(),
+      entidadTelefono: json['entidad_telefono'] as String?,
+      entidadDireccion: json['entidad_direccion'] as String?,
     );
   }
 

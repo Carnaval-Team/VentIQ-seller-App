@@ -10,15 +10,16 @@ import 'promocion_service.dart';
 /// Categoría real del catálogo, tomada de `flow.nom_tipo_actividad_servicio`.
 ///
 /// No es una taxonomía inventada: es exactamente lo que el administrador asigna
-/// al crear un servicio. Antes de la migración
-/// `22_categorias_marketplace.sql` la tabla solo tenía `general` y
-/// `transporte_omnibus`; ahora tiene la taxonomía sembrada, y esta clase la
-/// representa sin cambios.
+/// al crear un servicio. Desde la migración
+/// `47_categorias_reales_subcategorias.sql` la tabla tiene dos niveles, así que
+/// cada categoría raíz trae sus [subcategorias] anidadas: el Home pinta el riel
+/// y, al tocar una categoría, los chips de debajo sin otra petición.
 class HomeCatalogCategory {
   const HomeCatalogCategory({
     required this.id,
     required this.codigo,
     required this.nombre,
+    this.subcategorias = const <HomeCatalogCategory>[],
   });
 
   /// `null` representa la opción "Todas".
@@ -26,7 +27,13 @@ class HomeCatalogCategory {
   final String codigo;
   final String nombre;
 
+  /// Subcategorías activas de esta categoría. Vacío en una subcategoría y en
+  /// "Todas".
+  final List<HomeCatalogCategory> subcategorias;
+
   bool get esTodas => id == null;
+
+  bool get tieneSubcategorias => subcategorias.isNotEmpty;
 
   static const HomeCatalogCategory todas = HomeCatalogCategory(
     id: null,
@@ -39,6 +46,15 @@ class HomeCatalogCategory {
         id: (json['id'] as num).toInt(),
         codigo: json['codigo'] as String? ?? '',
         nombre: json['nombre'] as String? ?? 'General',
+        subcategorias: ((json['subcategorias'] as List?) ?? const <dynamic>[])
+            .whereType<Map>()
+            .map(
+              (e) => HomeCatalogCategory.fromJson(
+                Map<String, dynamic>.from(e),
+              ),
+            )
+            .where((c) => c.nombre.trim().isNotEmpty)
+            .toList(growable: false),
       );
 }
 
@@ -57,6 +73,7 @@ class HomeCatalogItem {
     required this.title,
     required this.venue,
     required this.category,
+    this.subcategoria,
     this.price,
     this.currency,
     this.imageUrl,
@@ -84,8 +101,13 @@ class HomeCatalogItem {
   /// Nombre del local.
   final String venue;
 
-  /// Tipo de actividad real (`nom_tipo_actividad_servicio`).
+  /// Tipo de actividad real (`nom_tipo_actividad_servicio`). Desde la migración
+  /// 47 es la **categoría** (el padre), no la hoja a la que apunta el servicio.
   final HomeCatalogCategory category;
+
+  /// Subcategoría real del servicio, o `null` si quedó en la categoría sin
+  /// subcategoría. Lo resuelve el servidor en el feed.
+  final HomeCatalogCategory? subcategoria;
 
   /// Precio base de la moneda por defecto. `null` cuando el servicio no tiene
   /// precio configurado (`config_precio = '{}'`), caso frecuente en producción.
@@ -316,6 +338,7 @@ class HomeCatalogService {
   static Future<HomeFeed> fetchFeed({
     String query = '',
     HomeCatalogCategory category = HomeCatalogCategory.todas,
+    HomeCatalogCategory? subcategoria,
     String? provincia,
     int? idColeccion,
     bool topRated = false,
@@ -332,6 +355,11 @@ class HomeCatalogService {
                 : provincia.trim(),
             'p_id_coleccion': idColeccion,
             'p_mejor_valorados': topRated,
+            // Solo se envía cuando hay subcategoría elegida. Así el Home sigue
+            // funcionando contra la firma vieja del RPC (migración 48 sin
+            // aplicar) para todo lo que no dependa de subcategorías.
+            if (subcategoria != null && subcategoria.id != null)
+              'p_id_subcategoria': subcategoria.id,
           },
         );
 
@@ -341,11 +369,11 @@ class HomeCatalogService {
     final crudos = (json['items'] as List?) ?? const <dynamic>[];
 
     return HomeFeed(
-      items: _itemsDesdeCrudos(crudos),
+      items: itemsDesdeFeed(crudos),
       total: (json['total'] as num?)?.toInt() ?? crudos.length,
       hasMore: json['has_more'] as bool? ?? false,
       nextCursor: (json['next_cursor'] as num?)?.toInt(),
-      categorias: _categoriasDesdeFeed(json),
+      categorias: categoriasDesdeFeed(json),
       colecciones: _coleccionesDesdeFeed(json),
       patrocinados: _patrocinadosDesdeFeed(json),
       contadores: HomeContadores.fromJson(
@@ -375,18 +403,22 @@ class HomeCatalogService {
           params: <String, dynamic>{'p_limite': limite},
         );
     if (res is! List) return const <HomeCatalogItem>[];
-    return _itemsDesdeCrudos(res);
+    return itemsDesdeFeed(res);
   }
 
   /// Convierte la lista cruda del RPC en items, **filtrando** los que no están
   /// publicados.
+  ///
+  /// Es `static` y público a propósito: es el único sitio donde se interpreta el
+  /// contrato del RPC (categoría/subcategoría, `activo`, `tipo_actividad`), y se
+  /// cubre con tests sin tocar Supabase.
   ///
   /// Red de seguridad del punto 3/4: el servidor ya filtra con
   /// `flow._ls_disponible` (local, servicio y local-servicio activos), pero el
   /// feed puede llegar cacheado o con las columnas `activo` ausentes si la
   /// migración 40 aún no se aplicó. [LocalServicio.activoEfectivo] decide con los
   /// tres valores y, si faltan, asume publicado: nunca oculta de más.
-  static List<HomeCatalogItem> _itemsDesdeCrudos(List<dynamic> crudos) {
+  static List<HomeCatalogItem> itemsDesdeFeed(List<dynamic> crudos) {
     final items = <HomeCatalogItem>[];
     for (final crudo in crudos) {
       if (crudo is! Map) continue;
@@ -400,10 +432,12 @@ class HomeCatalogService {
 
   /// Riel de categorías a partir de `metadata.categorias`.
   ///
-  /// El servidor ya devuelve solo las activas y en el orden correcto ("General"
-  /// al final, que es el cajón de sastre). "Todas" lo añade el cliente porque no
-  /// es una categoría real, es la ausencia de filtro.
-  static List<HomeCatalogCategory> _categoriasDesdeFeed(
+  /// El servidor devuelve las raíces activas (cada una con sus subcategorías
+  /// anidadas) y en el orden curado por `orden`. "Todas" lo añade el cliente
+  /// porque no es una categoría real, es la ausencia de filtro.
+  ///
+  /// Público por el mismo motivo que [itemsDesdeFeed]: es contrato, no detalle.
+  static List<HomeCatalogCategory> categoriasDesdeFeed(
     Map<String, dynamic> json,
   ) {
     final meta = json['metadata'];
@@ -561,15 +595,30 @@ class HomeCatalogService {
     );
     final promocion = json['promocion'];
 
+    // [47] La hoja a la que apunta el servicio y su padre. El servidor emite la
+    // categoría ya resuelta (`categoria_*`), pero el `id` y el `codigo` de la
+    // categoría hay que tomarlos del padre cuando la hoja es una subcategoría:
+    // si no, el riel compararía el id de la hoja con el de la categoría y no
+    // marcaría nada como seleccionado.
+    final idHoja = servicio?.idTipoActividad;
+    final idPadre = servicio?.idPadreTipoActividad;
+    final codigoCategoria = _primeraNoVacia(
+      json['categoria_codigo'] as String?,
+      servicio?.tipoActividad,
+    );
+
+    final subcategoria = _subcategoriaDeItem(json, servicio, idHoja, idPadre);
+
     return HomeCatalogItem(
       id: item.id,
       title: servicio?.nombre ?? 'Servicio sin nombre',
       venue: local?.nombre ?? 'Local sin nombre',
       category: HomeCatalogCategory(
-        id: servicio?.idTipoActividad,
-        codigo: servicio?.tipoActividad ?? '',
+        id: idPadre ?? idHoja,
+        codigo: codigoCategoria ?? '',
         nombre: _nombreCategoriaDeItem(json, servicio),
       ),
+      subcategoria: subcategoria,
       price: precio?.precio,
       currency: precio?.moneda,
       imageUrl: _primeraNoVacia(servicio?.foto, local?.foto),
@@ -591,6 +640,26 @@ class HomeCatalogService {
       localServicio: item,
       // Solo lo manda `cliente_ranking_semanal`; el feed no lo trae.
       lugaresSemana: (json['lugares_semana'] as num?)?.toInt(),
+    );
+  }
+
+  /// Subcategoría del ítem, o `null` si el servicio quedó en la categoría.
+  ///
+  /// El id de la subcategoría es el de la HOJA (`servicio.id_tipo_actividad`),
+  /// que el feed ya manda: no hace falta un campo extra en el RPC.
+  static HomeCatalogCategory? _subcategoriaDeItem(
+    Map<String, dynamic> json,
+    Servicio? servicio,
+    int? idHoja,
+    int? idPadre,
+  ) {
+    if (idPadre == null || idHoja == null) return null;
+    final nombre = (json['subcategoria_nombre'] as String?)?.trim();
+    if (nombre == null || nombre.isEmpty) return null;
+    return HomeCatalogCategory(
+      id: idHoja,
+      codigo: (json['subcategoria_codigo'] as String?)?.trim() ?? '',
+      nombre: nombre,
     );
   }
 

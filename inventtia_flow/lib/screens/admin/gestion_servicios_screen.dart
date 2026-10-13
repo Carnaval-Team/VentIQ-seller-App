@@ -12,6 +12,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/auth_service.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/imagen_service.dart';
+import '../../services/tipo_actividad_service.dart';
 import '../../widgets/net_image.dart';
 import '../../widgets/opciones_list_editor.dart';
 import '../../widgets/preview_imagen.dart';
@@ -187,19 +188,36 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
   String _monedaDefault = 'USD';
   final Map<String, TextEditingController> _precioBaseCtrls = {};
   final List<_ReglaPrecioEditable> _reglasPrecio = [];
-  List<Map<String, dynamic>> _tiposActividad = [];
+  /// Taxonomía de dos niveles (migración 47): categorías y sus subcategorías.
+  /// Se lee una vez y se resuelve en memoria; si la migración no está aplicada
+  /// llega plana (todo raíces) y el formulario sigue funcionando con un solo
+  /// desplegable útil.
+  Taxonomia _taxonomia = Taxonomia.vacia;
+
+  /// Hoja guardada: es lo que se escribe en `app_dat_servicios.id_tipo_actividad`.
+  /// Puede ser una categoría sin subcategorías o una subcategoría.
   int? _idTipoActividad;
+
+  /// Selección de la interfaz en dos pasos.
+  int? _idCategoria;
+  int? _idSubcategoria;
+
   bool _cargandoTiposActividad = true;
   bool _aplicaPrecioIdaVueltaTodos = false;
 
-  bool get _esTransporteOmnibus {
-    for (final tipo in _tiposActividad) {
-      if ((tipo['id'] as num?)?.toInt() == _idTipoActividad) {
-        return tipo['codigo'] == 'transporte_omnibus';
-      }
-    }
-    return widget.servicio?.tipoActividad == 'transporte_omnibus';
-  }
+  /// Código de la hoja elegida, para las reglas que dependen de él (transporte
+  /// en ómnibus). Se apoya en la taxonomía y, si no está, en el código que trajo
+  /// el servicio.
+  String? get _codigoTipoActividad =>
+      _taxonomia.porId(_idTipoActividad)?.codigo ??
+      widget.servicio?.tipoActividad;
+
+  bool get _esTransporteOmnibus => _codigoTipoActividad == 'transporte_omnibus';
+
+  /// Subcategorías de la categoría elegida (vacío si no tiene o si la migración
+  /// 47 no está aplicada).
+  List<TipoActividad> get _subcategoriasDeCategoria =>
+      _taxonomia.subcategoriasDe(_idCategoria);
 
   @override
   void initState() {
@@ -232,21 +250,46 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
     _cargarTiposActividad();
   }
 
+  /// Carga la taxonomía y reparte la hoja guardada entre los dos desplegables.
+  ///
+  /// Si el servicio ya tenía una subcategoría, se abren los dos niveles con ella
+  /// seleccionada. Si tenía una categoría (o nada), se elige la primera
+  /// categoría asignable y el servicio queda **en la categoría**, que es válido:
+  /// un servicio puede no tener subcategoría.
   Future<void> _cargarTiposActividad() async {
     try {
-      final tipos = await CatalogoService.getTiposActividadServicio();
+      final taxonomia = await TipoActividadService.taxonomia(soloActivos: true);
       if (!mounted) return;
+
       final actual = widget.servicio?.idTipoActividad;
-      Map<String, dynamic>? general;
-      for (final tipo in tipos) {
-        if (tipo['codigo'] == 'general') {
-          general = tipo;
-          break;
-        }
+      final hoja = taxonomia.porId(actual);
+      final asignables = taxonomia.asignables;
+
+      int? idCategoria;
+      int? idSubcategoria;
+      int? idHoja;
+
+      if (hoja != null && hoja.esSubcategoria) {
+        idCategoria = hoja.idPadre;
+        idSubcategoria = hoja.id;
+        idHoja = hoja.id;
+      } else if (hoja != null) {
+        idCategoria = hoja.id;
+        idHoja = hoja.id;
+      } else if (asignables.isNotEmpty) {
+        // Sin tipo previo: la primera hoja asignable, igual que antes se
+        // proponía `general`. Si esa hoja tiene padre, se abre su categoría.
+        final primera = asignables.first;
+        idHoja = primera.id;
+        idCategoria = primera.idPadre ?? primera.id;
+        idSubcategoria = primera.esSubcategoria ? primera.id : null;
       }
+
       setState(() {
-        _tiposActividad = tipos;
-        _idTipoActividad = actual ?? (general?['id'] as num?)?.toInt();
+        _taxonomia = taxonomia;
+        _idTipoActividad = idHoja;
+        _idCategoria = idCategoria;
+        _idSubcategoria = idSubcategoria;
         _cargandoTiposActividad = false;
       });
     } catch (e) {
@@ -516,7 +559,7 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
     if (_idTipoActividad == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Selecciona la actividad del servicio'),
+          content: Text('Selecciona la categoría del servicio'),
           backgroundColor: AppTheme.error,
         ),
       );
@@ -737,25 +780,75 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
                   padding: EdgeInsets.only(bottom: 12),
                   child: LinearProgressIndicator(),
                 )
-              else
+              else ...[
+                // ── Categoría + Subcategoría (migración 47) ─────────
+                // Antes había un solo desplegable "Actividad". Ahora son dos
+                // niveles: la categoría agrupa y la subcategoría concreta. Un
+                // servicio SIN subcategoría es válido (queda en la categoría),
+                // por eso el segundo desplegable no es obligatorio y solo
+                // aparece si esa categoría tiene hijas.
                 DropdownButtonFormField<int>(
-                  initialValue: _idTipoActividad,
+                  initialValue: _idCategoria,
+                  isExpanded: true,
                   decoration: const InputDecoration(
-                    labelText: 'Actividad *',
+                    labelText: 'Categoría *',
                     prefixIcon: Icon(Icons.category_outlined),
                   ),
-                  items: _tiposActividad
+                  items: _taxonomia.raices
                       .map(
-                        (tipo) => DropdownMenuItem<int>(
-                          value: (tipo['id'] as num).toInt(),
-                          child: Text(tipo['nombre'] as String),
+                        (categoria) => DropdownMenuItem<int>(
+                          value: categoria.id,
+                          child: Text(categoria.nombre),
                         ),
                       )
                       .toList(),
-                  onChanged: (value) =>
-                      setState(() => _idTipoActividad = value),
-                  validator: (value) => value == null ? 'Requerido' : null,
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() {
+                      _idCategoria = value;
+                      _idSubcategoria = null;
+                      // Hasta que se elija subcategoría, el servicio vive en la
+                      // categoría: nunca queda sin tipo.
+                      _idTipoActividad = value;
+                    });
+                  },
+                  validator: (value) =>
+                      value == null ? 'Elige una categoría' : null,
                 ),
+                if (_subcategoriasDeCategoria.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<int?>(
+                    // Al cambiar de categoría hay que rehacer el campo: su
+                    // estado interno conservaría la subcategoría anterior, que
+                    // ya no pertenece a esta categoría.
+                    key: ValueKey<int?>(_idCategoria),
+                    initialValue: _idSubcategoria,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Subcategoría',
+                      helperText: 'Opcional. Sin ella, el servicio queda en la '
+                          'categoría.',
+                      prefixIcon: Icon(Icons.account_tree_outlined),
+                    ),
+                    items: <DropdownMenuItem<int?>>[
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text('Sin subcategoría'),
+                      ),
+                      ..._subcategoriasDeCategoria.map(
+                        (sub) => DropdownMenuItem<int?>(
+                          value: sub.id,
+                          child: Text(sub.nombre),
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) => setState(() {
+                      _idSubcategoria = value;
+                      _idTipoActividad = value ?? _idCategoria;
+                    }),
+                  ),
+                ],
+              ],
               const SizedBox(height: 12),
 
               // ── Publicación del servicio (punto 4) ─────────

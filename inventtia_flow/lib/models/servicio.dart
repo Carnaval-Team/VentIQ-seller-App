@@ -13,6 +13,27 @@ class Servicio {
   final int? idTipoActividad;
   final String? tipoActividad;
 
+  /// Nombre legible de la fila apuntada por [idTipoActividad]. Llega en el
+  /// payload del feed y de `cliente_obtener_servicios` desde la migración
+  /// `48_home_feed_categorias_subcategorias.sql`; sin ella se cae al código
+  /// embellecido, como antes.
+  final String? tipoActividadNombre;
+
+  /// `nom_tipo_actividad_servicio.id_padre` de la fila apuntada por
+  /// [idTipoActividad].
+  ///
+  /// Desde la migración `47_categorias_reales_subcategorias.sql` la taxonomía
+  /// tiene dos niveles y el servicio apunta a la HOJA:
+  ///
+  ///   * `null` → [tipoActividad] ya es una categoría.
+  ///   * con valor → [tipoActividad] es una **subcategoría** y su categoría es
+  ///     este id.
+  ///
+  /// Se guarda el id y no el nombre porque el nombre lo resuelve `Taxonomia` con
+  /// la lectura del nomenclador que la pantalla ya tiene: así este modelo no
+  /// depende de un join extra en cada RPC.
+  final int? idPadreTipoActividad;
+
   /// Si es false, el servicio no se muestra en NINGÚN local ni admite reservas.
   /// Se combina con [Local.activo] y [LocalServicio.activo] en
   /// [LocalServicio.activoEfectivo].
@@ -29,6 +50,8 @@ class Servicio {
     ConfigPrecio? configPrecio,
     this.idTipoActividad,
     this.tipoActividad,
+    this.tipoActividadNombre,
+    this.idPadreTipoActividad,
     this.activo = true,
   }) : camposAdicionales = camposAdicionales ?? [],
        configPrecio = configPrecio ?? ConfigPrecio();
@@ -54,10 +77,29 @@ class Servicio {
     tipoActividad:
         (json['tipo_actividad'] as Map?)?['codigo'] as String? ??
         json['tipo_actividad_codigo'] as String?,
+    tipoActividadNombre: _nombreTipoActividadDe(json),
+    // Solo llega cuando el payload incluye la fila del nomenclador con
+    // `id_padre` (feed del Home y `cliente_obtener_servicios`). Sin él, la
+    // pantalla resuelve la jerarquía con `Taxonomia.categoriaDe`.
+    idPadreTipoActividad:
+        (json['tipo_actividad'] as Map?)?['id_padre'] as int? ??
+        (json['id_padre_tipo_actividad'] as num?)?.toInt(),
     // `?? true`: los payloads antiguos (o PostgREST sin la columna) siguen
     // tratando el servicio como publicado en vez de ocultarlo por accidente.
     activo: (json['activo'] as bool?) ?? true,
   );
+
+  /// Nombre legible de la actividad, venga como objeto `tipo_actividad` o como
+  /// campo plano. `null` cuando el payload solo trae el código.
+  static String? _nombreTipoActividadDe(Map<String, dynamic> json) {
+    final objeto = json['tipo_actividad'];
+    if (objeto is Map) {
+      final nombre = (objeto['nombre'] as String?)?.trim();
+      if (nombre != null && nombre.isNotEmpty) return nombre;
+    }
+    final plano = (json['tipo_actividad_nombre'] as String?)?.trim();
+    return (plano == null || plano.isEmpty) ? null : plano;
+  }
 }
 
 class Local {

@@ -18,6 +18,7 @@ import '../services/promocion_service.dart';
 import '../services/resena_service.dart';
 import '../services/agenda_service.dart';
 import '../services/catalogo_service.dart';
+import '../services/tipo_actividad_service.dart';
 import '../utils/esquema_pendiente.dart';
 import '../utils/horario_atencion.dart';
 import '../utils/precio_reserva.dart';
@@ -85,6 +86,11 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
   /// `27_promociones.sql` no está aplicada.
   List<Promocion> _promociones = const [];
 
+  /// Taxonomía (migración 47) para poder decir "Categoría › Subcategoría" en vez
+  /// del código crudo. Si no está disponible, se pinta el nombre que trajo el
+  /// servicio (o el código embellecido, como antes).
+  Taxonomia _taxonomia = Taxonomia.vacia;
+
   @override
   void initState() {
     super.initState();
@@ -108,6 +114,20 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
     _checkDisponibilidad();
     _cargarResenas();
     _cargarPromociones();
+    _cargarTaxonomia();
+  }
+
+  /// Taxonomía para la fila "Tipo de actividad". Aislado: si la migración 47 no
+  /// está aplicada (o falla la red) la ficha se pinta igual con el dato que ya
+  /// trae el servicio.
+  Future<void> _cargarTaxonomia() async {
+    try {
+      final taxonomia = await TipoActividadService.taxonomia();
+      if (!mounted) return;
+      setState(() => _taxonomia = taxonomia);
+    } catch (e) {
+      debugPrint('[flow] LocalServicioDetailScreen._cargarTaxonomia ERROR: $e');
+    }
   }
 
   /// Promos vigentes del servicio. Aislado: si la tabla no existe todavía, el
@@ -1401,24 +1421,41 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
     );
   }
 
+  /// Texto de "Tipo de actividad", en orden de preferencia:
+  /// 1. la taxonomía real (`Categoría › Subcategoría`) si está cargada;
+  /// 2. el nombre legible que trajo el payload;
+  /// 3. el código con `_` convertidos en espacios y la inicial en mayúscula.
+  String? _etiquetaActividad(Servicio? servicio) {
+    if (servicio == null) return null;
+    final conTaxonomia = _taxonomia.etiquetaCompleta(servicio.idTipoActividad);
+    if (conTaxonomia.isNotEmpty) return conTaxonomia;
+    final nombre = servicio.tipoActividadNombre;
+    if (nombre != null && nombre.isNotEmpty) return nombre;
+    final codigo = servicio.tipoActividad;
+    if (codigo == null || codigo.isEmpty) return null;
+    return codigo
+        .split('_')
+        .map(
+          (word) => word.isEmpty
+              ? word
+              : '${word[0].toUpperCase()}${word.substring(1)}',
+        )
+        .join(' ');
+  }
+
   // ── Información del local y el servicio ──
   Widget _buildInfoCard(Local? local, Servicio? servicio) {
     final rows = <Widget>[];
 
-    if (servicio?.tipoActividad != null &&
-        servicio!.tipoActividad!.isNotEmpty) {
+    // "Belleza › Uñas / Manicure" con la taxonomía; si no está, el nombre que
+    // trajo el payload o el código embellecido de siempre.
+    final etiquetaActividad = _etiquetaActividad(servicio);
+    if (etiquetaActividad != null) {
       rows.add(
         _InfoRow(
           icon: Icons.category_outlined,
           label: 'Tipo de actividad',
-          value: servicio.tipoActividad!
-              .split('_')
-              .map(
-                (word) => word.isEmpty
-                    ? word
-                    : '${word[0].toUpperCase()}${word.substring(1)}',
-              )
-              .join(' '),
+          value: etiquetaActividad,
         ),
       );
     }

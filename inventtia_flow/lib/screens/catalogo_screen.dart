@@ -9,6 +9,7 @@ import '../models/servicio.dart';
 import '../providers/favoritos_provider.dart';
 import '../services/catalogo_service.dart';
 import '../services/resena_service.dart';
+import '../services/tipo_actividad_service.dart';
 import '../utils/horario_atencion.dart';
 import '../utils/precio_reserva.dart';
 import '../widgets/boton_favorito.dart';
@@ -52,6 +53,11 @@ class CatalogoScreenState extends State<CatalogoScreen> {
   /// Valoraciones reales por `local_servicio.id` (`flow.resena`). Vacío si el
   /// RPC no está disponible: entonces no se ofrece filtrar por valoración.
   Map<int, ResumenResenas> _resenas = const {};
+
+  /// Taxonomía (categorías y subcategorías) para poder ofrecer el filtro por
+  /// subcategoría y pintar "Categoría › Subcategoría" en cada tarjeta. Si la
+  /// migración `47` no está aplicada queda vacía y la pantalla sigue igual.
+  Taxonomia _taxonomia = Taxonomia.vacia;
 
   // Rate limiting: máx 5 refrescos por minuto
   static const int _maxRefrescosPorMinuto = 5;
@@ -136,10 +142,16 @@ class CatalogoScreenState extends State<CatalogoScreen> {
         ResenaService.porServicio().catchError(
           (_) => const <int, ResumenResenas>{},
         ),
+        // Si la taxonomía falla (migración sin aplicar), el catálogo se pinta
+        // igual: solo se pierde el filtro y la etiqueta de subcategoría.
+        TipoActividadService.taxonomia().catchError(
+          (_) => Taxonomia.vacia,
+        ),
       ]);
 
       final localServicios = resultados[0] as List<LocalServicio>;
       final resenas = resultados[1] as Map<int, ResumenResenas>;
+      final taxonomia = resultados[2] as Taxonomia;
 
       setState(() {
         // Red de seguridad: el RPC ya filtra por `flow._ls_disponible`, pero una
@@ -149,6 +161,7 @@ class CatalogoScreenState extends State<CatalogoScreen> {
             .where((ls) => ls.activoEfectivo)
             .toList(growable: false);
         _resenas = resenas;
+        _taxonomia = taxonomia;
         _isLoading = false;
       });
     } catch (e) {
@@ -202,6 +215,9 @@ class CatalogoScreenState extends State<CatalogoScreen> {
           provinciaItem: ls.local?.provincia,
           ratingItem: (resumen?.total ?? 0) > 0 ? resumen!.promedio : null,
           idLocalItem: ls.idLocal,
+          // El servicio apunta a la HOJA de la taxonomía (categoría o
+          // subcategoría): es el mismo id que ofrece el sheet.
+          idSubcategoriaItem: ls.servicio?.idTipoActividad,
           // Solo se evalúa el horario cuando el filtro lo pide: interpretar el
           // texto libre de cada local no es gratis.
           abiertoItem: filtros.soloAbiertos ? _estaAbierto(ls) : null,
@@ -243,6 +259,7 @@ class CatalogoScreenState extends State<CatalogoScreen> {
     final precios = <OfertaPrecio>[];
     final provincias = <String>{};
     final locales = <int, LocalOpcion>{};
+    final subcategorias = <int, SubcategoriaOpcion>{};
     var hayValoraciones = false;
 
     for (final ls in _localServicios) {
@@ -267,6 +284,20 @@ class CatalogoScreenState extends State<CatalogoScreen> {
         );
       }
 
+      // Solo se ofrece una subcategoría si de verdad hay un servicio en ella.
+      final idHoja = ls.servicio?.idTipoActividad;
+      final nombreSub = _taxonomia.subcategoriaNombre(idHoja);
+      if (idHoja != null && nombreSub != null) {
+        subcategorias.putIfAbsent(
+          idHoja,
+          () => SubcategoriaOpcion(
+            id: idHoja,
+            nombre: nombreSub,
+            categoria: _taxonomia.categoriaNombre(idHoja),
+          ),
+        );
+      }
+
       if ((_resenas[ls.id]?.total ?? 0) > 0) hayValoraciones = true;
     }
 
@@ -275,11 +306,20 @@ class CatalogoScreenState extends State<CatalogoScreen> {
       ..sort(
         (a, b) => a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase()),
       );
+    final listaSubcategorias = subcategorias.values.toList()
+      ..sort((a, b) {
+        final porCategoria = (a.categoria ?? '').toLowerCase().compareTo(
+          (b.categoria ?? '').toLowerCase(),
+        );
+        if (porCategoria != 0) return porCategoria;
+        return a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase());
+      });
 
     return OpcionesFiltros(
       precios: precios,
       provincias: listaProvincias,
       locales: listaLocales,
+      subcategorias: listaSubcategorias,
       hayValoraciones: hayValoraciones,
     );
   }
@@ -419,6 +459,18 @@ class CatalogoScreenState extends State<CatalogoScreen> {
       ));
     }
 
+    if (filtros.idSubcategoria != null) {
+      resumen.add((
+        etiqueta: filtros.nombreSubcategoria ?? 'Subcategoría',
+        quitar: () => setState(
+          () => _filtros = _filtros.copyWith(
+            idSubcategoria: null,
+            nombreSubcategoria: null,
+          ),
+        ),
+      ));
+    }
+
     if (filtros.soloAbiertos) {
       resumen.add((
         etiqueta: 'Abierto ahora',
@@ -469,6 +521,7 @@ class CatalogoScreenState extends State<CatalogoScreen> {
                               itemCount: lista.length,
                               itemBuilder: (_, i) => _LocalServicioCard(
                                 localServicio: lista[i],
+                                taxonomia: _taxonomia,
                                 esFavorito: ids.contains(lista[i].id),
                                 resenas: _resenas[lista[i].id],
                               ),
@@ -843,8 +896,13 @@ class _LocalServicioCard extends StatelessWidget {
   /// pinta ninguna valoración (no se inventa un 0).
   final ResumenResenas? resenas;
 
+  /// Taxonomía para pintar "Categoría › Subcategoría". Se pasa desde la pantalla
+  /// (una sola lectura para toda la lista) para no pedirla por tarjeta.
+  final Taxonomia taxonomia;
+
   const _LocalServicioCard({
     required this.localServicio,
+    required this.taxonomia,
     this.esFavorito = false,
     this.resenas,
   });
@@ -856,6 +914,11 @@ class _LocalServicioCard extends StatelessWidget {
     // La foto del servicio manda (punto 9); si no tiene, se cae a la del local,
     // igual que en el Home y en el detalle.
     final foto = servicio?.foto ?? local?.foto;
+    // "Belleza › Uñas / Manicure" cuando la migración 47 está aplicada; vacío
+    // (y la fila no se pinta) cuando no.
+    final etiquetaTaxonomia = taxonomia.etiquetaCompleta(
+      servicio?.idTipoActividad,
+    );
 
     return Container(
       margin: const EdgeInsets.only(top: 12),
@@ -963,6 +1026,33 @@ class _LocalServicioCard extends StatelessWidget {
                                   ],
                                 ],
                               ),
+                              // Categoría › Subcategoría: el segundo nivel que
+                              // antes no existía en el catálogo.
+                              if (etiquetaTaxonomia.isNotEmpty) ...[
+                                const SizedBox(height: 5),
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.account_tree_outlined,
+                                      size: 12,
+                                      color: AppTheme.textSecondary,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Flexible(
+                                      child: Text(
+                                        etiquetaTaxonomia,
+                                        style: const TextStyle(
+                                          fontSize: 11.5,
+                                          color: AppTheme.textSecondary,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                               // Secundario: nombre del local
                               if (local != null) ...[
                                 const SizedBox(height: 5),

@@ -84,6 +84,41 @@ helper de autorización:
 | 44 | `44_suscripciones_predicado_trial.sql` | `flow.entidad_activa(id)` (predicado único), `_ls_disponible` v2 que lo compone, trial automático al crear la entidad, `cliente_estado_suscripcion`, `cliente_planes_suscripcion`. |
 | 45 | `45_suscripciones_pagos.sql` | Circuito de pago: `cliente_crear_intent_suscripcion`, `cliente_reportar_pago_suscripcion` ("Ya he pagado"), `cliente_mis_pagos_suscripcion`, `admin_suscripcion_aprobar/rechazar_pago`, `admin_suscripcion_acreditar`, `suscripcion_expirar`. |
 | 46 | `46_suscripciones_admin_cron_seed.sql` | Panel: `admin_suscripcion_listar/detalle/inicializar/suspender/reactivar`, CRUD de planes y config, outbox de WhatsApp, cron cada 15 min, seed de 3 planes **desactivados**. |
+| 47 | `47_categorias_reales_subcategorias.sql` | Taxonomía de **dos niveles**: `id_padre` + `orden` en `nom_tipo_actividad_servicio`, trigger de máximo 2 niveles, RLS de escritura abierta al superadmin, RPC de gestión reescritos (`admin_guardar/alternar/eliminar_tipo_actividad`) y seed de las 6 categorías reales con 5 subcategorías cada una. Reasigna los servicios existentes. |
+| 48 | `48_home_feed_categorias_subcategorias.sql` | `cliente_home_feed` con `p_id_subcategoria` y nomenclador con `subcategorias` anidadas; `cliente_obtener_servicios` emite `id_padre` y `nombre` dentro de `tipo_actividad`. |
+| 49 | `49_campanas_datos_local.sql` | `campanas_activas` devuelve los datos del **local** de cada campaña patrocinada (foto, descripción, dirección, provincia, país, horario, coordenadas, teléfono). |
+
+### Taxonomía de dos niveles (migraciones 47, 48 y 49)
+
+Lo que un futuro lector no puede deducir del código:
+
+- **`id_padre` en la misma tabla, no una tabla de subcategorías.** El servicio
+  sigue apuntando a **una sola fila**: si esa fila tiene `id_padre`, es una
+  subcategoría y su categoría es el padre. No hay columna nueva en
+  `app_dat_servicios` ni migración de datos de servicios.
+- **Los códigos de las hojas NO cambian, y eso es obligatorio.** De
+  `transporte_omnibus` dependen `LocalServicio.esTransporteOmnibus`
+  (`lib/models/servicio.dart`) y los RPC de pasajes. Por eso las filas viejas
+  (`unas`, `cejas_pestanas`, `peluqueria`, `estetica_spa`, `transporte_omnibus`,
+  `transporte_privado`) se **reutilizan** como subcategorías conservando el
+  código: los servicios que ya las usaban quedan reclasificados sin mover una
+  fila.
+- **Máximo dos niveles** (trigger `trg_nom_tipo_actividad_jerarquia`): una
+  subcategoría no puede tener hijas y una categoría con hijas no puede
+  convertirse en subcategoría. Sin esa regla, "categoría → subcategoría →
+  servicio" dejaría de tener una interpretación única.
+- **Nada se borra: se desactiva.** La taxonomía de prueba (`salud`, `hogar`,
+  `mascotas`, `eventos`, `tecnologia`, `general`…) queda inactiva porque hay
+  reservas históricas y FK que referencian esos códigos. `general` sobrevive como
+  cajón de sastre inactivo.
+- **Apagar una categoría apaga sus subcategorías** (`admin_alternar_tipo_actividad`):
+  dejarlas encendidas las sacaría en un riel que ya no se muestra.
+- **La app degrada sin las migraciones.** `TipoActividadService` reintenta la
+  lectura sin `id_padre`/`orden` y cae al RPC de 4 argumentos; el Home, el
+  catálogo y el detalle se pintan igual, solo que sin segundo nivel.
+- **No se aplican solas.** El MCP de Supabase de este proyecto es de **solo
+  lectura**, así que los `.sql` se quedan en el repo y se ejecutan a mano en el
+  SQL Editor, **en orden 47 → 48 → 49**.
 
 Decisiones que un futuro lector no puede deducir del código:
 

@@ -201,7 +201,10 @@ class DetalleHeroHeader extends StatelessWidget {
 
   /// Cebecera + nombre + fichas (valoración, precio, modalidad, local).
   Widget _bloqueIdentidad() {
-    final tipo = (servicio?.tipoActividad ?? '').trim();
+    // El eyebrow usa el nombre legible cuando el payload lo trae (migración 48);
+    // si no, cae al código embellecido de siempre.
+    final tipo = (servicio?.tipoActividadNombre ?? servicio?.tipoActividad ?? '')
+        .trim();
     final eyebrow = tipo.isEmpty
         ? 'SERVICIO'
         : tipo

@@ -183,6 +183,63 @@ void main() {
       expect(conFavoritos.activos, 1);
       expect(conFavoritos.hayAlgo, isTrue);
     });
+
+    test('la subcategoría compara el id de la hoja del servicio', () {
+      // El catálogo pasa `servicio.idTipoActividad`, que apunta SIEMPRE a la
+      // hoja: si el servicio está en "Uñas / Manicure", la hoja es `unas`, no
+      // `belleza`.
+      const filtros = FiltrosServicios(
+        idSubcategoria: 7,
+        nombreSubcategoria: 'Uñas / Manicure',
+      );
+      expect(filtros.hayAlgo, isTrue);
+      expect(filtros.activos, 1);
+      expect(filtros.coincide(idSubcategoriaItem: 7), isTrue);
+      expect(filtros.coincide(idSubcategoriaItem: 6), isFalse);
+      // Un servicio sin tipo de actividad no puede verificarse: queda fuera.
+      expect(filtros.coincide(idSubcategoriaItem: null), isFalse);
+      expect(filtros.coincide(), isFalse);
+    });
+
+    test('la subcategoría se combina con el resto de filtros', () {
+      const filtros = FiltrosServicios(
+        idSubcategoria: 7,
+        moneda: 'USD',
+        precioMax: 100,
+      );
+      expect(
+        filtros.coincide(
+          idSubcategoriaItem: 7,
+          monedaItem: 'USD',
+          precioItem: 50,
+        ),
+        isTrue,
+      );
+      // Basta con que falle uno.
+      expect(
+        filtros.coincide(
+          idSubcategoriaItem: 7,
+          monedaItem: 'USD',
+          precioItem: 150,
+        ),
+        isFalse,
+      );
+      expect(
+        filtros.coincide(
+          idSubcategoriaItem: 8,
+          monedaItem: 'USD',
+          precioItem: 50,
+        ),
+        isFalse,
+      );
+    });
+
+    test('"Todas las subcategorías" (null) no filtra nada', () {
+      const filtros = FiltrosServicios.vacio;
+      expect(filtros.idSubcategoria, isNull);
+      expect(filtros.coincide(idSubcategoriaItem: 7), isTrue);
+      expect(filtros.coincide(idSubcategoriaItem: null), isTrue);
+    });
   });
 
   group('FiltrosServicios.copyWith', () {
@@ -245,6 +302,64 @@ void main() {
       expect(apagado.soloAbiertos, isFalse);
       expect(apagado.soloFavoritos, isFalse);
       expect(apagado.hayAlgo, isFalse);
+    });
+
+    test('la subcategoría se conserva cuando no se menciona', () {
+      const original = FiltrosServicios(
+        idSubcategoria: 7,
+        nombreSubcategoria: 'Uñas / Manicure',
+      );
+      final copia = original.copyWith(moneda: 'USD');
+      expect(copia.idSubcategoria, 7);
+      expect(copia.nombreSubcategoria, 'Uñas / Manicure');
+    });
+
+    test('la subcategoría se puede quitar con null', () {
+      // El chip "Todas" y el aspa del resumen usan exactamente esto: con un
+      // `int?` normal, `copyWith(idSubcategoria: null)` sería indistinguible de
+      // "no lo toques" y no habría forma de volver a todas las subcategorías.
+      const original = FiltrosServicios(
+        idSubcategoria: 7,
+        nombreSubcategoria: 'Uñas / Manicure',
+        moneda: 'USD',
+      );
+      final sinSub = original.copyWith(
+        idSubcategoria: null,
+        nombreSubcategoria: null,
+      );
+      expect(sinSub.idSubcategoria, isNull);
+      expect(sinSub.nombreSubcategoria, isNull);
+      // El resto del filtro sigue en pie.
+      expect(sinSub.moneda, 'USD');
+      expect(sinSub.hayAlgo, isTrue);
+    });
+  });
+
+  group('SubcategoriaOpcion', () {
+    test('la etiqueta antepone la categoría', () {
+      expect(
+        const SubcategoriaOpcion(
+          id: 7,
+          nombre: 'Uñas / Manicure',
+          categoria: 'Belleza',
+        ).etiqueta,
+        'Belleza › Uñas / Manicure',
+      );
+    });
+
+    test('sin categoría, o en blanco, deja solo el nombre', () {
+      expect(
+        const SubcategoriaOpcion(id: 7, nombre: 'Uñas / Manicure').etiqueta,
+        'Uñas / Manicure',
+      );
+      expect(
+        const SubcategoriaOpcion(
+          id: 7,
+          nombre: 'Uñas / Manicure',
+          categoria: '   ',
+        ).etiqueta,
+        'Uñas / Manicure',
+      );
     });
   });
 
@@ -355,6 +470,88 @@ void main() {
 
       expect(find.text('Todos los servicios están en 5 \$.'), findsOneWidget);
       expect(find.byType(RangeSlider), findsNothing);
+    });
+
+    testWidgets('sin subcategorías en los datos no aparece la sección', (
+      tester,
+    ) async {
+      // La regla del sheet: antes que un control que filtra a cero, no hay
+      // control. Un catálogo plano no debe mostrar el selector.
+      final capturado = <FiltrosServicios?>[];
+      await abrir(tester, capturado, contador: (_) => 1);
+
+      expect(find.text('Subcategoría'), findsNothing);
+    });
+
+    testWidgets('las subcategorías se ofrecen y se devuelven al filtrar', (
+      tester,
+    ) async {
+      final capturado = <FiltrosServicios?>[];
+      await abrir(
+        tester,
+        capturado,
+        opciones: const OpcionesFiltros(
+          subcategorias: [
+            SubcategoriaOpcion(
+              id: 7,
+              nombre: 'Uñas / Manicure',
+              categoria: 'Belleza',
+            ),
+            SubcategoriaOpcion(
+              id: 8,
+              nombre: 'Cejas y Pestañas',
+              categoria: 'Belleza',
+            ),
+          ],
+        ),
+        contador: (_) => 2,
+      );
+
+      expect(find.text('Subcategoría'), findsOneWidget);
+      expect(find.text('Belleza › Uñas / Manicure'), findsOneWidget);
+
+      await tester.tap(find.text('Belleza › Uñas / Manicure'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Ver 2 servicios'));
+      await tester.pumpAndSettle();
+
+      expect(capturado.single!.idSubcategoria, 7);
+      expect(capturado.single!.nombreSubcategoria, 'Uñas / Manicure');
+      expect(capturado.single!.activos, 1);
+    });
+
+    testWidgets('volver a tocar la subcategoría activa la quita', (
+      tester,
+    ) async {
+      final capturado = <FiltrosServicios?>[];
+      await abrir(
+        tester,
+        capturado,
+        actual: const FiltrosServicios(
+          idSubcategoria: 7,
+          nombreSubcategoria: 'Uñas / Manicure',
+        ),
+        opciones: const OpcionesFiltros(
+          subcategorias: [
+            SubcategoriaOpcion(
+              id: 7,
+              nombre: 'Uñas / Manicure',
+              categoria: 'Belleza',
+            ),
+          ],
+        ),
+        contador: (_) => 1,
+      );
+
+      expect(find.text('1 activo'), findsOneWidget);
+      await tester.tap(find.text('Belleza › Uñas / Manicure'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Ver 1 servicio'));
+      await tester.pumpAndSettle();
+      expect(capturado.single!.idSubcategoria, isNull);
+      expect(capturado.single!.nombreSubcategoria, isNull);
     });
 
     testWidgets('aplica la moneda y devuelve el filtro al confirmar', (
