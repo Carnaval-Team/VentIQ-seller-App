@@ -34,6 +34,7 @@ import '../widgets/sales_monitor_fab.dart';
 import '../widgets/notification_widget.dart';
 import '../widgets/sync_status_chip.dart';
 import '../widgets/bill_count_dialog.dart';
+import '../widgets/transfer_sms_confirmation_banner.dart';
 import '../models/product.dart';
 import '../services/category_service.dart';
 import '../services/product_service.dart';
@@ -2448,6 +2449,26 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         ),
                       ),
 
+                      // ── Confirmación SMS transferencia (órdenes pendientes)
+                      if (TransferSmsConfirmation.isPendingForSmsWatch(order) &&
+                          TransferSmsConfirmation.orderHasTransferencia(
+                            order,
+                          )) ...[
+                        const SizedBox(height: 12),
+                        _buildDetailSection(
+                          title: 'Transferencia',
+                          icon: Icons.sms_outlined,
+                          child: TransferSmsConfirmationBanner(
+                            expectedAmount:
+                                TransferSmsConfirmation.transferExpectedAmount(
+                                  order,
+                                  fallbackTotal: displayTotal,
+                                ),
+                            operationId: order.operationId,
+                          ),
+                        ),
+                      ],
+
                       // ── Acciones ──────────────────────────────────────────
                       const SizedBox(height: 12),
                       _buildActionButtons(
@@ -3459,6 +3480,24 @@ class _OrdersScreenState extends State<OrdersScreen> {
       Navigator.pop(context);
 
       if (result['success'] == true) {
+        // Si se confirma el pago de una orden con transferencia, intenta
+        // adjuntar el SMS (informativo; no bloquea si no hay match).
+        if ((newStatus == OrderStatus.completada ||
+                newStatus == OrderStatus.pagoConfirmado) &&
+            order.operationId != null &&
+            TransferSmsConfirmation.orderHasTransferencia(order)) {
+          final discountData = _getDiscountData(order);
+          final displayTotal =
+              discountData['finalTotal'] as double? ?? order.total;
+          await TransferSmsConfirmation.persistToOperation(
+            operationId: order.operationId!,
+            expectedAmount: TransferSmsConfirmation.transferExpectedAmount(
+              order,
+              fallbackTotal: displayTotal,
+            ),
+          );
+        }
+
         // Recargar órdenes. En offline no ir al servidor: el estado ya está
         // en memoria y en cache local.
         try {
@@ -6729,7 +6768,6 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
       final normalized = Map<String, dynamic>.from(op);
       if (normalized['op'] == 'add') {
         final payload = Map<String, dynamic>.from(normalized['payload'] as Map);
-        if (payload['id_medio_pago'] == 999) payload['id_medio_pago'] = 1;
         normalized['payload'] = payload;
         normalized.remove('item');
         normalized.remove('item_id');
@@ -6791,15 +6829,8 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
       setState(() {
         _categories = futures[0] as List<Category>;
         final online = futures[1] as List<PaymentMethod>;
-        final pagoRegular = PaymentMethod(
-          id: 999,
-          denominacion: 'Efectivo (sin descuento)',
-          esEfectivo: true,
-          esDigital: false,
-          esActivo: true,
-        );
-        final available = [pagoRegular, ...online];
-        _selectedPaymentMethod = _paymentMethodFromOrder(available);
+        // Solo métodos activos de BD/cache. Sin inyección de pseudo-métodos.
+        _selectedPaymentMethod = _paymentMethodFromOrder(online);
         _loadingCategories = false;
       });
     }
