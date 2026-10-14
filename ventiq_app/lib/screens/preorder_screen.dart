@@ -222,12 +222,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
           );
       print('✅ Métodos de pago cargados: ${paymentMethods.length}');
 
-      // Solo métodos activos de BD/cache. Sin inyección de pseudo-métodos.
-      // Temporalmente oculto: "Pago Pendiente" (cuenta por cobrar).
-      // if (isAdminSession || vendedoresPuedenCrearCxc) {
-      //   paymentMethods = [...paymentMethods, pm.PaymentMethod.pagoPendiente()];
-      // }
-
+      // Solo métodos activos de BD/cache. CxC (998) no se gestiona en el TPV.
       setState(() {
         _paymentMethods = paymentMethods;
         _loadingPaymentMethods = false;

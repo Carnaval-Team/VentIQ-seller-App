@@ -3431,13 +3431,13 @@ class AutoSyncService {
       if (operationId == null) continue;
 
       try {
-        if (await _operacionTienePagos(operationId)) {
+        if (await _pagosCoincidenConEsperado(operationId, pagos)) {
           orderData['pagos_registrados'] = true;
           await _persistPendingOrderSyncKeys(orderData);
           continue;
         }
         print(
-          '    🔧 Reparando app_dat_pago_venta faltante de op $operationId',
+          '    🔧 Reparando app_dat_pago_venta faltante/parcial de op $operationId',
         );
         await _registerPaymentBreakdownFromOfflineData(
           operationId,
@@ -3445,7 +3445,7 @@ class AutoSyncService {
           orderData,
           userId,
         );
-        if (await _operacionTienePagos(operationId)) {
+        if (await _pagosCoincidenConEsperado(operationId, pagos)) {
           orderData['pagos_registrados'] = true;
           await _persistPendingOrderSyncKeys(orderData);
         }
@@ -3685,7 +3685,7 @@ class AutoSyncService {
   }
 
   /// Pagos reales a persistir en app_dat_pago_venta.
-  /// Excluye CxC (998). El pseudo-método 999 se guarda como efectivo (1).
+  /// Excluye CxC (998). El método 999 viaja con su id real (catálogo).
   List<Map<String, dynamic>> _pagosParaSincronizar(
     Map<String, dynamic> orderData,
   ) {
@@ -3703,14 +3703,10 @@ class AutoSyncService {
       final monto = montoRaw?.toDouble() ?? 0;
       if (monto <= 0) return;
 
-      var id = rawId;
-      var tipo = tipoPago ?? 1;
-      if (id == 999) {
-        id = 1;
-        tipo = 2;
-      } else if (id != 1) {
-        tipo = tipoPago ?? 2;
-      }
+      // 999 ya es un método real del catálogo; se envía con su id.
+      // tipo_pago: 1 para efectivo oferta (id 1), 2 para el resto.
+      final id = rawId;
+      final tipo = tipoPago ?? (id == 1 ? 1 : 2);
 
       final normalizedCurrency = moneda?.toUpperCase() == 'USD' ? 'USD' : 'CUP';
       final rate = normalizedCurrency == 'USD' ? tasaUsd?.toDouble() : null;
@@ -3828,17 +3824,57 @@ class AutoSyncService {
     return false;
   }
 
-  Future<bool> _operacionTienePagos(int operationId) async {
+  /// Compara el desglose esperado con lo ya guardado en `app_dat_pago_venta`.
+  /// Agrupa por (id_medio_pago, moneda) y suma montos: un solo pago parcial
+  /// o un medio faltante → `false` (permite reparar con el RPC idempotente).
+  Future<bool> _pagosCoincidenConEsperado(
+    int operationId,
+    List<Map<String, dynamic>> expectedPagos,
+  ) async {
     try {
-      final existing = await Supabase.instance.client
+      final existingResponse = await Supabase.instance.client
           .from('app_dat_pago_venta')
-          .select('id')
-          .eq('id_operacion_venta', operationId)
-          .limit(1);
-      return existing is List && existing.isNotEmpty;
+          .select('id_medio_pago, moneda, monto')
+          .eq('id_operacion_venta', operationId);
+
+      if (existingResponse.isEmpty) return false;
+
+      final existing = <String, double>{};
+      for (final raw in existingResponse) {
+        final p = Map<String, dynamic>.from(raw);
+        final id = (p['id_medio_pago'] as num?)?.toInt();
+        if (id == null) continue;
+        final currency =
+            p['moneda']?.toString().toUpperCase() == 'USD' ? 'USD' : 'CUP';
+        final key = '$id|$currency';
+        existing[key] =
+            (existing[key] ?? 0.0) + ((p['monto'] as num?)?.toDouble() ?? 0.0);
+      }
+
+      final expected = <String, double>{};
+      for (final raw in expectedPagos) {
+        final p = Map<String, dynamic>.from(raw);
+        final id = (p['id_medio_pago'] as num?)?.toInt();
+        if (id == null) continue;
+        final currency =
+            p['moneda']?.toString().toUpperCase() == 'USD' ? 'USD' : 'CUP';
+        final key = '$id|$currency';
+        expected[key] =
+            (expected[key] ?? 0.0) + ((p['monto'] as num?)?.toDouble() ?? 0.0);
+      }
+
+      if (existing.length != expected.length) return false;
+
+      const tolerance = 0.0001;
+      for (final entry in expected.entries) {
+        final actual = existing[entry.key];
+        if (actual == null) return false;
+        if ((actual - entry.value).abs() > tolerance) return false;
+      }
+      return true;
     } catch (e) {
       print(
-        '    ⚠️ No se pudo verificar app_dat_pago_venta de op $operationId: $e',
+        '    ⚠️ No se pudo verificar desglose de pagos de op $operationId: $e',
       );
       return false;
     }
@@ -3972,10 +4008,22 @@ class AutoSyncService {
     dynamic response;
     var usedAtomicPagos = false;
     try {
-      response = await Supabase.instance.client.rpc(
-        'fn_registrar_venta_offline',
-        params: ventaParams,
-      );
+      try {
+        // Preferir v3: registra los pagos con fn_registrar_pago_venta_v2
+        // (idempotente) en lugar de la guarda binaria NOT EXISTS.
+        response = await Supabase.instance.client.rpc(
+          'fn_registrar_venta_offline_v3',
+          params: ventaParams,
+        );
+      } catch (e0) {
+        if (!_isRpcUnavailable(e0, functionName: 'fn_registrar_venta_offline_v3')) {
+          rethrow;
+        }
+        response = await Supabase.instance.client.rpc(
+          'fn_registrar_venta_offline',
+          params: ventaParams,
+        );
+      }
       usedAtomicPagos = pagos.isNotEmpty;
     } catch (e) {
       if (!_isRpcUnavailable(e)) rethrow;
@@ -4065,21 +4113,20 @@ class AutoSyncService {
         }
 
         if (pagos.isNotEmpty) {
-          var tienePagos =
-              response['pagos_registrados'] == true ||
-              await _operacionTienePagos(operationId);
-          if (!tienePagos && !usedAtomicPagos) {
+          // Siempre verificar el desglose completo (no basta "hay alguna fila").
+          var pagosOk = await _pagosCoincidenConEsperado(operationId, pagos);
+          if (!pagosOk) {
             await _registerPaymentBreakdownFromOfflineData(
               operationId,
               pagos,
               orderData,
               userId,
             );
-            tienePagos = await _operacionTienePagos(operationId);
+            pagosOk = await _pagosCoincidenConEsperado(operationId, pagos);
           }
-          if (!tienePagos) {
+          if (!pagosOk) {
             throw Exception(
-              'La operación $operationId se creó sin app_dat_pago_venta',
+              'La operación $operationId se creó sin el desglose completo de pagos',
             );
           }
           orderData['pagos_registrados'] = true;
@@ -4238,13 +4285,6 @@ class AutoSyncService {
     Map<String, dynamic> orderData,
     dynamic userId,
   ) async {
-    if (await _operacionTienePagos(operationId)) {
-      print(
-        '    ♻️ Pagos ya registrados en app_dat_pago_venta para op $operationId',
-      );
-      return;
-    }
-
     final refBase = orderData['client_uuid'] ?? orderData['id'] ?? operationId;
     final pagos = <Map<String, dynamic>>[];
 
@@ -4255,14 +4295,9 @@ class AutoSyncService {
       if (idMedio == null || idMedio == pm.PaymentMethod.pagoPendienteId) {
         continue;
       }
-      var id = idMedio;
-      var tipo = _asInt(paymentData['tipo_pago']) ?? 1;
-      if (id == 999) {
-        id = 1;
-        tipo = 2;
-      } else if (id != 1 && paymentData['tipo_pago'] == null) {
-        tipo = 2;
-      }
+      final id = idMedio;
+      final tipo =
+          _asInt(paymentData['tipo_pago']) ?? (id == 1 ? 1 : 2);
       pagos.add({
         'id_medio_pago': id,
         'monto': paymentData['monto'],
@@ -4283,6 +4318,14 @@ class AutoSyncService {
       );
     }
 
+    // Solo salimos temprano si el desglose completo ya coincide.
+    if (await _pagosCoincidenConEsperado(operationId, pagos)) {
+      print(
+        '    ♻️ Desglose de pagos ya completo para op $operationId',
+      );
+      return;
+    }
+
     var pagoUuid = orderData['client_uuid_pago']?.toString();
     if (pagoUuid == null || pagoUuid.isEmpty) {
       pagoUuid = UuidGenerator.v4();
@@ -4292,42 +4335,70 @@ class AutoSyncService {
 
     bool ok = false;
     try {
-      final resp = await Supabase.instance.client.rpc(
-        'fn_registrar_pago_venta_offline',
-        params: {
-          'p_client_uuid': pagoUuid,
-          'p_id_operacion_venta': operationId,
-          'p_pagos': pagos,
-          'p_uuid_usuario': userId,
-        },
-      );
-      ok = resp is Map && resp['success'] == true;
-      if (ok && resp['idempotent'] == true) {
-        print('    ♻️ Pagos ya registrados (idempotente) para op $operationId');
-      }
-    } catch (e) {
-      if (!_isRpcUnavailable(
-        e,
-        functionName: 'fn_registrar_pago_venta_offline',
-      )) {
-        rethrow;
-      }
-      print(
-        '    ⚠️ fn_registrar_pago_venta_offline no disponible ($e). Usando RPC original.',
-      );
-      if (await _operacionTienePagos(operationId)) {
-        return;
-      }
+      // Preferir v2: reescribe pagos no liquidados (repara desgloses parciales).
       final response = await Supabase.instance.client.rpc(
-        'fn_registrar_pago_venta',
+        'fn_registrar_pago_venta_v2',
         params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
       );
       ok = response == true;
+    } catch (e) {
+      if (!_isRpcUnavailable(e, functionName: 'fn_registrar_pago_venta_v2')) {
+        rethrow;
+      }
+      print(
+        '    ⚠️ fn_registrar_pago_venta_v2 no disponible ($e). Intentando offline/original.',
+      );
+      try {
+        final resp = await Supabase.instance.client.rpc(
+          'fn_registrar_pago_venta_offline',
+          params: {
+            'p_client_uuid': pagoUuid,
+            'p_id_operacion_venta': operationId,
+            'p_pagos': pagos,
+            'p_uuid_usuario': userId,
+          },
+        );
+        ok = resp is Map && resp['success'] == true;
+      } catch (e2) {
+        if (!_isRpcUnavailable(
+          e2,
+          functionName: 'fn_registrar_pago_venta_offline',
+        )) {
+          rethrow;
+        }
+        // Último recurso: solo si aún no hay NINGÚN pago (evita duplicar).
+        // Si hay desglose parcial, fallamos para reintentar cuando exista v2.
+        if (await _pagosCoincidenConEsperado(operationId, pagos)) {
+          return;
+        }
+        final existingAny = await Supabase.instance.client
+            .from('app_dat_pago_venta')
+            .select('id')
+            .eq('id_operacion_venta', operationId)
+            .limit(1);
+        if (existingAny is List && existingAny.isNotEmpty) {
+          throw Exception(
+            'Desglose parcial en op $operationId y fn_registrar_pago_venta_v2 '
+            'no disponible; no se puede reparar sin riesgo de duplicar',
+          );
+        }
+        final response = await Supabase.instance.client.rpc(
+          'fn_registrar_pago_venta',
+          params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
+        );
+        ok = response == true;
+      }
     }
 
-    if (ok) {
+    if (ok && await _pagosCoincidenConEsperado(operationId, pagos)) {
       print('    ✅ Desgloses de pago registrados para operación: $operationId');
       return;
+    }
+    if (ok) {
+      // El RPC dijo ok pero el desglose no cuadra (caso raro / carrera).
+      throw Exception(
+        'Pagos de op $operationId registrados pero el desglose no coincide',
+      );
     }
     throw Exception(
       'Error en el registro de pagos de la operación $operationId',

@@ -1919,15 +1919,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return;
     }
 
+    // CxC ya no se crea desde el TPV (se gestiona en admin). Si quedó un
+    // ítem con el sentinel 998 (cache viejo), abortamos en vez de abrir cartera.
     final tienePagoPendiente = widget.order.items.any(
       (item) => item.paymentMethod?.esPagoPendiente ?? false,
     );
     if (tienePagoPendiente) {
-      final validacion = await _validarPagoPendiente();
-      if (validacion != null) {
-        _showErrorMessage(validacion);
-        return;
-      }
+      _showErrorMessage(
+        'Cuentas por cobrar no están disponibles en el TPV. '
+        'Cambia el método de pago de los productos o gestiona la deuda desde administración.',
+      );
+      return;
     }
 
     setState(() {
