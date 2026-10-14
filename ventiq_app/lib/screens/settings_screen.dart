@@ -5296,12 +5296,21 @@ class _SyncDialogState extends State<_SyncDialog> {
       if (pagos.isNotEmpty) {
         print('💳 Pagos array: $pagos');
 
-        final response = await Supabase.instance.client.rpc(
-          'fn_registrar_pago_venta',
-          params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
-        );
+        dynamic response;
+        try {
+          response = await Supabase.instance.client.rpc(
+            'fn_registrar_pago_venta_v2',
+            params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
+          );
+        } catch (e) {
+          if (!_isRpcUnavailable(e, 'fn_registrar_pago_venta_v2')) rethrow;
+          response = await Supabase.instance.client.rpc(
+            'fn_registrar_pago_venta',
+            params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
+          );
+        }
 
-        print('📡 Respuesta fn_registrar_pago_venta: $response');
+        print('📡 Respuesta registro pagos: $response');
 
         if (response == true) {
           print('✅ Desgloses de pago registrados para operación: $operationId');
@@ -5315,6 +5324,17 @@ class _SyncDialogState extends State<_SyncDialog> {
       print('❌ Error registrando desgloses de pago: $e');
       // No lanzamos excepción para no interrumpir la sincronización
     }
+  }
+
+  /// Detecta el error de PostgREST cuando una función RPC no existe en la
+  /// base (PGRST202 / "could not find the function"), para caer a la versión
+  /// anterior sin tratarlo como fallo de negocio.
+  bool _isRpcUnavailable(Object error, String functionName) {
+    final text = error.toString().toLowerCase();
+    final fn = functionName.toLowerCase();
+    return text.contains('pgrst202') ||
+        text.contains('could not find the function') ||
+        (text.contains('does not exist') && text.contains(fn));
   }
 
   /// Mapear nombre de método de pago a ID
@@ -5848,6 +5868,17 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
     }
   }
 
+  /// Detecta el error de PostgREST cuando una función RPC no existe en la
+  /// base (PGRST202 / "could not find the function"), para caer a la versión
+  /// anterior sin tratarlo como fallo de negocio.
+  bool _isRpcUnavailable(Object error, String functionName) {
+    final text = error.toString().toLowerCase();
+    final fn = functionName.toLowerCase();
+    return text.contains('pgrst202') ||
+        text.contains('could not find the function') ||
+        (text.contains('does not exist') && text.contains(fn));
+  }
+
   /// Registrar desgloses de pago desde datos offline
   Future<void> _registerPaymentBreakdownFromOfflineData(
     int operationId,
@@ -5869,13 +5900,22 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
 
       print('💳 Pagos array: $pagos');
 
-      // Llamar a fn_registrar_pago_venta
-      final response = await Supabase.instance.client.rpc(
-        'fn_registrar_pago_venta',
-        params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
-      );
+      // Llamar al RPC de pagos (preferir v2 idempotente, caer a la original)
+      dynamic response;
+      try {
+        response = await Supabase.instance.client.rpc(
+          'fn_registrar_pago_venta_v2',
+          params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
+        );
+      } catch (e) {
+        if (!_isRpcUnavailable(e, 'fn_registrar_pago_venta_v2')) rethrow;
+        response = await Supabase.instance.client.rpc(
+          'fn_registrar_pago_venta',
+          params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
+        );
+      }
 
-      print('📡 Respuesta fn_registrar_pago_venta: $response');
+      print('📡 Respuesta registro pagos: $response');
 
       if (response == true) {
         print('✅ Desgloses de pago registrados para operación: $operationId');
