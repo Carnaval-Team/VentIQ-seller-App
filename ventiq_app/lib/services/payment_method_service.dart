@@ -82,7 +82,7 @@ class PaymentMethodService {
               .from('app_nom_medio_pago')
               .select('*')
               .eq('es_activo', true)
-              .eq('id', 1)
+              .eq('es_efectivo', true)
               .order('denominacion', ascending: true),
           description: 'Cargar métodos de pago (solo efectivo)',
         );

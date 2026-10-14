@@ -1600,23 +1600,11 @@ class OrderService {
             continue;
           }
 
-          // Convertir método especial "Pago Regular (Efectivo)" (ID 999) a efectivo (ID 1)
-          int actualMethodId = item.paymentMethod!.id;
-          int tipoPago = 1; // Por defecto tipo 1 (efectivo)
-
-          // Determinar el tipo de pago
-          if (actualMethodId == 999) {
-            // Método especial 999 -> convertir a efectivo (ID 1) con tipo 2
-            tipoPago = 2;
-            actualMethodId = 1; // Convertir a efectivo normal
-            print(
-              '🔄 Convirtiendo método especial "Pago Regular (Efectivo)" (ID 999) a método ID 1 (efectivo) con tipo_pago 2',
-            );
-          } else if (actualMethodId != 1) {
-            // Otros métodos de pago (no efectivo) -> tipo 2
-            tipoPago = 2;
-          }
-          // Si actualMethodId == 1 (efectivo normal), tipoPago = 1 (por defecto)
+          // Todos los métodos existen en app_nom_medio_pago (incluido 999
+          // "Pago Regular Efectivo"); se envía el id real.
+          // tipo_pago: 1 = efectivo oferta (id 1), 2 = resto.
+          final actualMethodId = item.paymentMethod!.id;
+          final tipoPago = actualMethodId == 1 ? 1 : 2;
 
           final itemTotal = item.subtotal;
 
@@ -1628,7 +1616,7 @@ class OrderService {
 
           print('Item: ${item.nombre}');
           print(
-            'Payment Method: ${item.paymentMethod!.denominacion} (Original ID: ${item.paymentMethod!.id}, Final ID: $actualMethodId, Tipo Pago: $tipoPago)',
+            'Payment Method: ${item.paymentMethod!.denominacion} (ID: $actualMethodId, Tipo Pago: $tipoPago)',
           );
           print('Item Total: \$${itemTotal.toStringAsFixed(2)}');
         } else {
@@ -1686,7 +1674,7 @@ class OrderService {
       Object? lastError;
 
       for (var attempt = 1; attempt <= maxAttempts; attempt++) {
-        if (await _pagosYaRegistrados(operationId)) {
+        if (await _pagosCoincidenConEsperado(operationId, pagos)) {
           print(
             '♻️ Pagos ya registrados para operación $operationId (idempotente, intento $attempt)',
           );
@@ -1698,13 +1686,25 @@ class OrderService {
         }
 
         try {
-          final response = await Supabase.instance.client.rpc(
-            'fn_registrar_pago_venta',
-            params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
-          );
+          // Preferir fn_registrar_pago_venta_v2 (idempotente: reescribe los
+          // pagos no liquidados). Si aún no está desplegada, caer a la
+          // función original.
+          dynamic response;
+          try {
+            response = await Supabase.instance.client.rpc(
+              'fn_registrar_pago_venta_v2',
+              params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
+            );
+          } catch (e) {
+            if (!_isRpcUnavailable(e, 'fn_registrar_pago_venta_v2')) rethrow;
+            response = await Supabase.instance.client.rpc(
+              'fn_registrar_pago_venta',
+              params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
+            );
+          }
 
           print(
-            'Respuesta fn_registrar_pago_venta (intento $attempt): $response',
+            'Respuesta registro pagos (intento $attempt): $response',
           );
 
           if (response == true) {
@@ -1727,7 +1727,7 @@ class OrderService {
 
       // Verificación final: quizá el último intento sí insertó pero la
       // respuesta no llegó (error de red al confirmar).
-      if (await _pagosYaRegistrados(operationId)) {
+      if (await _pagosCoincidenConEsperado(operationId, pagos)) {
         print(
           '✅ Verificación final: pagos presentes para operación $operationId',
         );
@@ -1752,18 +1752,76 @@ class OrderService {
     }
   }
 
-  /// Verifica si ya existen pagos en `app_dat_pago_venta` para una operación.
-  /// Usado como guarda idempotente para no duplicar pagos al reintentar.
-  Future<bool> _pagosYaRegistrados(int operationId) async {
+  /// Detecta el error de PostgREST cuando una función RPC no existe en la
+  /// base (PGRST202 / "could not find the function"), para poder caer a la
+  /// versión anterior sin tratarlo como fallo de negocio.
+  bool _isRpcUnavailable(Object error, String functionName) {
+    final text = error.toString().toLowerCase();
+    final fn = functionName.toLowerCase();
+    return text.contains('pgrst202') ||
+        text.contains('could not find the function') ||
+        (text.contains('does not exist') && text.contains(fn));
+  }
+
+  /// Verifica si los pagos esperados ya están registrados exactamente en
+  /// `app_dat_pago_venta` para una operación. Usado como guarda idempotente
+  /// para no duplicar pagos al reintentar.
+  ///
+  /// Compara por (id_medio_pago, moneda) y suma de montos. Si hay un pago
+  /// parcial o un desglose distinto, devuelve false para permitir la
+  /// reparación (el RPC correspondiente debe ser idempotente).
+  Future<bool> _pagosCoincidenConEsperado(
+    int operationId,
+    List<Map<String, dynamic>> expectedPagos,
+  ) async {
     try {
-      final existing = await Supabase.instance.client
+      final existingResponse = await Supabase.instance.client
           .from('app_dat_pago_venta')
-          .select('id')
-          .eq('id_operacion_venta', operationId)
-          .limit(1);
-      return existing is List && existing.isNotEmpty;
+          .select('id_medio_pago, moneda, monto')
+          .eq('id_operacion_venta', operationId);
+
+      if (existingResponse.isEmpty) {
+        return false;
+      }
+
+      final existing = <String, double>{};
+      for (final raw in existingResponse) {
+        final p = Map<String, dynamic>.from(raw);
+        final id = (p['id_medio_pago'] as num?)?.toInt();
+        if (id == null) continue;
+        final currency = (p['moneda']?.toString().toUpperCase() == 'USD')
+            ? 'USD'
+            : 'CUP';
+        final key = '$id|$currency';
+        existing[key] = (existing[key] ?? 0.0) +
+            ((p['monto'] as num?)?.toDouble() ?? 0.0);
+      }
+
+      final expected = <String, double>{};
+      for (final raw in expectedPagos) {
+        final p = Map<String, dynamic>.from(raw);
+        final id = (p['id_medio_pago'] as num?)?.toInt();
+        if (id == null) continue;
+        final currency = (p['moneda']?.toString().toUpperCase() == 'USD')
+            ? 'USD'
+            : 'CUP';
+        final key = '$id|$currency';
+        expected[key] = (expected[key] ?? 0.0) +
+            ((p['monto'] as num?)?.toDouble() ?? 0.0);
+      }
+
+      if (existing.length != expected.length) return false;
+
+      const tolerance = 0.0001;
+      for (final entry in expected.entries) {
+        final actual = existing[entry.key];
+        if (actual == null) return false;
+        if ((actual - entry.value).abs() > tolerance) return false;
+      }
+
+      return true;
     } catch (e) {
-      // Ante un error de verificación, asumimos que NO hay pagos para permitir
+      // Ante un error de verificación, asumimos que NO coinciden para permitir
       // el intento de registro (mejor reintentar que dejar la venta sin pago).
       print('⚠️ No se pudo verificar pagos existentes de op $operationId: $e');
       return false;
