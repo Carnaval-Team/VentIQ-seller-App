@@ -13,14 +13,28 @@ import '../../services/auth_service.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/imagen_service.dart';
 import '../../services/tipo_actividad_service.dart';
-import '../../widgets/net_image.dart';
+import '../../tutorial/tutorial_anchor.dart';
+import '../../utils/foto_obligatoria.dart';
+import '../../utils/parse_monto.dart';
+import '../../widgets/campo_foto_obligatoria.dart';
 import '../../widgets/opciones_list_editor.dart';
-import '../../widgets/preview_imagen.dart';
 import 'servicio_detail_screen.dart';
 
 class GestionServiciosScreen extends StatefulWidget {
   final Entidad entidad;
-  const GestionServiciosScreen({super.key, required this.entidad});
+
+  /// Abre el formulario de alta nada más entrar.
+  ///
+  /// Lo usa el tutorial: sus pasos de precio, datos adicionales, reglas y guardar
+  /// viven dentro del formulario, así que el destino `serviciosFormulario` lleva
+  /// al admin directo al alta en vez de dejarlo buscando el botón.
+  final bool abrirNuevoAlEntrar;
+
+  const GestionServiciosScreen({
+    super.key,
+    required this.entidad,
+    this.abrirNuevoAlEntrar = false,
+  });
 
   @override
   State<GestionServiciosScreen> createState() => _GestionServiciosScreenState();
@@ -34,6 +48,12 @@ class _GestionServiciosScreenState extends State<GestionServiciosScreen> {
   void initState() {
     super.initState();
     _cargar();
+    if (widget.abrirNuevoAlEntrar) {
+      // Post-frame: la hoja modal necesita el contexto ya montado.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _nuevoServicio();
+      });
+    }
   }
 
   Future<void> _cargar() async {
@@ -64,10 +84,13 @@ class _GestionServiciosScreenState extends State<GestionServiciosScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('Servicios · ${widget.entidad.denominacion}')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _nuevoServicio,
-        icon: const Icon(Icons.add),
-        label: const Text('Nuevo Servicio'),
+      floatingActionButton: TutorialAnchor(
+        id: 'admin_nuevo_servicio',
+        child: FloatingActionButton.extended(
+          onPressed: _nuevoServicio,
+          icon: const Icon(Icons.add),
+          label: const Text('Nuevo Servicio'),
+        ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -164,7 +187,11 @@ class _GestionServiciosScreenState extends State<GestionServiciosScreen> {
 class ServicioFormSheet extends StatefulWidget {
   final int idEntidad;
   final Servicio? servicio;
-  const ServicioFormSheet({required this.idEntidad, this.servicio});
+  const ServicioFormSheet({
+    super.key,
+    required this.idEntidad,
+    this.servicio,
+  });
 
   @override
   State<ServicioFormSheet> createState() => ServicioFormSheetState();
@@ -446,7 +473,9 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
     for (final m in _monedasHabilitadas) {
       final t = _precioBaseCtrls[m]?.text.trim() ?? '';
       if (t.isNotEmpty) {
-        final v = double.tryParse(t.replaceAll(',', '.'));
+        // `parseMonto` entiende es-CU y en-US: "1.500" → 1500 (antes se
+        // guardaba como 1,5) y "1,50" → 1,5.
+        final v = parseMonto(t);
         if (v == null) {
           _campoError = 'Precio base inválido para $m';
           return null;
@@ -465,7 +494,8 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
         for (final m in _monedasHabilitadas) {
           final t = r.preciosPorOpcion[opcion]?[m]?.text.trim() ?? '';
           if (t.isEmpty) continue;
-          final v = double.tryParse(t.replaceAll(',', '.'));
+          // Mismo parseo que el precio base: admite "1.500" y "1,50".
+          final v = parseMonto(t);
           if (v == null) {
             _campoError = 'Precio inválido para "$opcion"';
             return null;
@@ -556,6 +586,20 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+
+    // Defensa en profundidad: la foto la valida `CampoFotoObligatoria`, pero el
+    // alta no puede depender de que ese campo esté montado. Sin foto no se
+    // escribe nada, y menos una fila nueva.
+    if (errorFotoObligatoria(
+          queEs: 'servicio',
+          fotoGuardada: _fotoUrl,
+          archivoElegido: _imagenFile != null,
+        ) !=
+        null) {
+      setState(() {});
+      return;
+    }
+
     if (_idTipoActividad == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -608,6 +652,10 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
       String? fotoFinal = _fotoUrl;
       int idServicio;
       if (widget.servicio == null) {
+        // Se crea primero la fila (el path de la foto necesita su id) y después
+        // se sube la imagen. Si esa subida falla, el alta se **deshace**: la foto
+        // es obligatoria, así que un servicio recién creado sin ella no puede
+        // quedarse en el catálogo. Antes se quedaba, en silencio.
         final nuevo = await CatalogoService.createServicio(
           nombre: _nombreCtrl.text.trim(),
           descripcion: _descCtrl.text.trim().isEmpty
@@ -618,7 +666,7 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
           activo: _activo,
         );
         idServicio = nuevo.id;
-        if (_imagenFile != null) {
+        try {
           fotoFinal = await ImagenService.subirImagen(
             imagen: _imagenFile!,
             path: ImagenService.pathServicio(nuevo.id),
@@ -630,6 +678,18 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
             foto: fotoFinal,
             idTipoActividad: _idTipoActividad,
             activo: _activo,
+          );
+        } catch (e) {
+          final deshecho = await _deshacerAlta(
+            idServicio: nuevo.id,
+            pathSubido: ImagenService.pathServicio(nuevo.id),
+          );
+          throw Exception(
+            deshecho
+                ? 'No se pudo guardar la foto ($e), así que el servicio no se '
+                      'creó. Vuelve a intentarlo.'
+                : 'No se pudo guardar la foto ($e) y el servicio quedó creado '
+                      'SIN foto. Edítalo para añadirla.',
           );
         }
       } else {
@@ -663,8 +723,9 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
       // Punto 5: se devuelve el servicio RECIÉN leído, no `true`. El detalle lo
       // usa para repintarse en el sitio sin obligar a salir y volver a entrar.
       final actualizado = await CatalogoService.getServicio(idServicio);
-      // La foto se sube al mismo path, así que hay que invalidar la caché o se
-      // seguiría viendo la anterior (punto 9).
+      // La URL guardada ya trae su propio `?v=` (ver `ImagenService.subirImagen`),
+      // así que cualquier cliente descarga la foto nueva. `invalidar` queda como
+      // red de seguridad para una sesión que ya tenía la URL vieja en pantalla.
       ImagenService.invalidar(actualizado.foto);
       if (!mounted) return;
       Navigator.pop(context, actualizado);
@@ -672,9 +733,49 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
       setState(() => _saving = false);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.error),
+        SnackBar(
+          content: Text('Error: ${_mensajeLegible(e)}'),
+          backgroundColor: AppTheme.error,
+        ),
       );
     }
+  }
+
+  /// Deshace un alta que quedó a medias: la fila se creó pero la foto no llegó a
+  /// guardarse.
+  ///
+  /// Solo se llama desde la rama de **crear** y solo con el id que acaba de
+  /// devolver `createServicio`, y antes de guardar los datos adicionales: si el
+  /// que falla es `guardarDatosServicio`, el servicio ya tiene foto y no se
+  /// borra (el alta se conserva y el admin puede reeditarla).
+  ///
+  /// El orden importa: primero se borra la fila y **después** el archivo. Si el
+  /// borrado de la fila falla, el archivo se conserva — la fila sigue viva y su
+  /// foto con ella, así que el admin la arregla editando. Al revés se quedaría
+  /// una fila sin foto apuntando a un archivo que ya no está.
+  ///
+  /// Devuelve `true` si el alta quedó deshecha. Si el borrado falla, se registra
+  /// y el aviso al admin cambia: hay que decirle que el servicio existe sin
+  /// foto, no mentirle diciendo que no se creó.
+  Future<bool> _deshacerAlta({
+    required int idServicio,
+    required String pathSubido,
+  }) async {
+    try {
+      await CatalogoService.deleteServicio(idServicio);
+    } catch (e) {
+      debugPrint(
+        '[flow] ServicioFormSheet: no se pudo deshacer el alta $idServicio: $e',
+      );
+      return false;
+    }
+    try {
+      await ImagenService.eliminarImagen(pathSubido);
+    } catch (e) {
+      // Un archivo huérfano en el bucket es inofensivo; la fila ya no está.
+      debugPrint('[flow] ServicioFormSheet: no se pudo borrar $pathSubido: $e');
+    }
+    return true;
   }
 
   void _agregarCampo() {
@@ -728,53 +829,18 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
               ),
               const SizedBox(height: 16),
 
-              // ── Selector de imagen ────────────────────────
-              GestureDetector(
-                onTap: _showImagenPicker,
-                child: Container(
-                  height: 130,
-                  decoration: BoxDecoration(
-                    color: AppTheme.surface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(11),
-                    child: _imagenFile != null
-                        ? PreviewImagen(
-                            file: _imagenFile!,
-                            fit: BoxFit.cover,
-                            width: double.infinity,
-                          )
-                        : _fotoUrl != null
-                        ? NetImage(
-                            url: _fotoUrl!,
-                            fit: BoxFit.cover,
-                            width: double.infinity,
-                            placeholder: () => const Center(
-                              child: CircularProgressIndicator(),
-                            ),
-                            errorWidget: () => _SrvImagePlaceholder(),
-                          )
-                        : _SrvImagePlaceholder(),
-                  ),
-                ),
+              // ── Foto del servicio (obligatoria) ───────────
+              // El campo valida por su cuenta: es un `FormField`, así que el
+              // error de la foto sale junto a los demás al pulsar Guardar.
+              CampoFotoObligatoria(
+                queEs: 'servicio',
+                fotoGuardada: _fotoUrl,
+                archivo: _imagenFile,
+                alto: 130,
+                placeholder: _SrvImagePlaceholder(),
+                onElegir: _showImagenPicker,
               ),
-              Center(
-                child: TextButton.icon(
-                  onPressed: _showImagenPicker,
-                  icon: const Icon(
-                    Icons.add_photo_alternate_outlined,
-                    size: 16,
-                  ),
-                  label: Text(
-                    _imagenFile != null || _fotoUrl != null
-                        ? 'Cambiar imagen'
-                        : 'Agregar imagen',
-                  ),
-                ),
-              ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 8),
               if (_cargandoTiposActividad)
                 const Padding(
                   padding: EdgeInsets.only(bottom: 12),
@@ -909,73 +975,91 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
               const Divider(),
 
               // ── Precio del servicio ───────────────────────
-              const Text(
-                'Precio del servicio',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Monedas disponibles',
-                style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-              ),
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 6,
-                runSpacing: 4,
-                children: [
-                  for (final m in MonedasApp.todas)
-                    FilterChip(
-                      label: Text(
-                        MonedasApp.etiqueta(m),
-                        style: const TextStyle(fontSize: 11),
+              TutorialAnchor(
+                id: 'admin_precio',
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'Precio del servicio',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
                       ),
-                      selected: _monedasHabilitadas.contains(m),
-                      onSelected: (v) => _toggleMoneda(m, v),
                     ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              DropdownButtonFormField<String>(
-                value: _monedaDefault,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: 'Moneda por defecto',
-                  isDense: true,
-                  border: OutlineInputBorder(),
-                ),
-                items: _monedasHabilitadas
-                    .map(
-                      (m) => DropdownMenuItem(
-                        value: m,
-                        child: Text(MonedasApp.etiqueta(m)),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Monedas disponibles',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textSecondary,
                       ),
-                    )
-                    .toList(),
-                onChanged: (v) {
-                  if (v != null) setState(() => _monedaDefault = v);
-                },
-              ),
-              const SizedBox(height: 10),
-              const Text(
-                'Precio base',
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 6),
-              for (final m in _monedasHabilitadas)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: TextField(
-                    controller: _precioBaseCtrls[m],
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
                     ),
-                    decoration: InputDecoration(
-                      labelText: 'Precio base (${MonedasApp.simbolo(m)})',
-                      isDense: true,
-                      border: const OutlineInputBorder(),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        for (final m in MonedasApp.todas)
+                          FilterChip(
+                            label: Text(
+                              MonedasApp.etiqueta(m),
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                            selected: _monedasHabilitadas.contains(m),
+                            onSelected: (v) => _toggleMoneda(m, v),
+                          ),
+                      ],
                     ),
-                  ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      value: _monedaDefault,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Moneda por defecto',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                      ),
+                      items: _monedasHabilitadas
+                          .map(
+                            (m) => DropdownMenuItem(
+                              value: m,
+                              child: Text(MonedasApp.etiqueta(m)),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) {
+                        if (v != null) setState(() => _monedaDefault = v);
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Precio base',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    for (final m in _monedasHabilitadas)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: TextField(
+                          controller: _precioBaseCtrls[m],
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: 'Precio base (${MonedasApp.simbolo(m)})',
+                            isDense: true,
+                            border: const OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
+              ),
               if (_esTransporteOmnibus) ...[
                 const SizedBox(height: 8),
                 CheckboxListTile(
@@ -997,151 +1081,181 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
                 ),
               ],
               const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'Reglas de precio por dato adicional',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  TextButton.icon(
-                    onPressed: () {
-                      setState(
-                        () => _reglasPrecio.add(
-                          _ReglaPrecioEditable.nueva(_monedasHabilitadas),
+              TutorialAnchor(
+                id: 'admin_reglas_precio',
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Reglas de precio por dato adicional',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
-                      );
-                    },
-                    icon: const Icon(Icons.add, size: 16),
-                    label: const Text('Regla'),
-                  ),
-                ],
-              ),
-              const Padding(
-                padding: EdgeInsets.only(bottom: 6),
-                child: Text(
-                  'Configura un precio distinto para cada opción del campo seleccionable.',
-                  style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
-                ),
-              ),
-              Builder(
-                builder: (context) {
-                  final claves = <_CampoEditable, String>{};
-                  final usadas = <String>{};
-                  for (final c in _campos) {
-                    final etq = c.etiquetaCtrl.text.trim();
-                    if (etq.isEmpty) continue;
-                    var clave = CampoAdicional.slug(etq);
-                    final base = clave;
-                    var n = 2;
-                    while (usadas.contains(clave)) {
-                      clave = '${base}_$n';
-                      n++;
-                    }
-                    usadas.add(clave);
-                    claves[c] = clave;
-                  }
-                  final selects = _camposSelectParaPrecio(claves);
-                  if (selects.isEmpty && _reglasPrecio.isEmpty) {
-                    return const Padding(
-                      padding: EdgeInsets.only(bottom: 8),
+                        TextButton.icon(
+                          onPressed: () {
+                            setState(
+                              () => _reglasPrecio.add(
+                                _ReglaPrecioEditable.nueva(_monedasHabilitadas),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.add, size: 16),
+                          label: const Text('Regla'),
+                        ),
+                      ],
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 6),
                       child: Text(
-                        'Agrega campos tipo seleccionable para definir reglas.',
+                        'Configura un precio distinto para cada opción del campo '
+                        'seleccionable. Si dos reglas coinciden, se aplica la primera.',
                         style: TextStyle(
                           fontSize: 11,
                           color: AppTheme.textSecondary,
                         ),
                       ),
-                    );
-                  }
-                  return Column(
-                    children: [
-                      for (var i = 0; i < _reglasPrecio.length; i++)
-                        _ReglaPrecioTile(
-                          regla: _reglasPrecio[i],
-                          camposSelect: selects,
-                          monedas: _monedasHabilitadas,
-                          onChanged: () => setState(() {}),
-                          onRemove: () {
-                            setState(() {
-                              _reglasPrecio[i].dispose();
-                              _reglasPrecio.removeAt(i);
-                            });
-                          },
-                        ),
-                    ],
-                  );
-                },
+                    ),
+                    Builder(
+                      builder: (context) {
+                        final claves = <_CampoEditable, String>{};
+                        final usadas = <String>{};
+                        for (final c in _campos) {
+                          final etq = c.etiquetaCtrl.text.trim();
+                          if (etq.isEmpty) continue;
+                          var clave = CampoAdicional.slug(etq);
+                          final base = clave;
+                          var n = 2;
+                          while (usadas.contains(clave)) {
+                            clave = '${base}_$n';
+                            n++;
+                          }
+                          usadas.add(clave);
+                          claves[c] = clave;
+                        }
+                        final selects = _camposSelectParaPrecio(claves);
+                        if (selects.isEmpty && _reglasPrecio.isEmpty) {
+                          return const Padding(
+                            padding: EdgeInsets.only(bottom: 8),
+                            child: Text(
+                              'Agrega campos tipo seleccionable para definir reglas.',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: AppTheme.textSecondary,
+                              ),
+                            ),
+                          );
+                        }
+                        return Column(
+                          children: [
+                            for (var i = 0; i < _reglasPrecio.length; i++)
+                              _ReglaPrecioTile(
+                                regla: _reglasPrecio[i],
+                                camposSelect: selects,
+                                monedas: _monedasHabilitadas,
+                                onChanged: () => setState(() {}),
+                                onRemove: () {
+                                  setState(() {
+                                    _reglasPrecio[i].dispose();
+                                    _reglasPrecio.removeAt(i);
+                                  });
+                                },
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                  ],
+                ),
               ),
               const Divider(),
 
               // ── Datos adicionales ─────────────────────────
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'Datos adicionales',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
+              TutorialAnchor(
+                id: 'admin_datos_adicionales',
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Datos adicionales',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: _agregarCampo,
+                          icon: const Icon(Icons.add, size: 18),
+                          label: const Text('Agregar'),
+                        ),
+                      ],
+                    ),
+                    if (_campos.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Text(
+                          'Sin datos adicionales. El cliente solo verá lo básico.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  TextButton.icon(
-                    onPressed: _agregarCampo,
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Agregar'),
-                  ),
-                ],
+                    for (var i = 0; i < _campos.length; i++)
+                      _CampoEditableTile(
+                        key: ValueKey(_campos[i]),
+                        campo: _campos[i],
+                        todosCampos: _campos,
+                        onChanged: () => setState(() {}),
+                        onRemove: () => _quitarCampo(i),
+                      ),
+                    if (_campoError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          _campoError!,
+                          style: const TextStyle(
+                            color: AppTheme.error,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
-              if (_campos.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Text(
-                    'Sin datos adicionales. El cliente solo verá lo básico.',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.textSecondary,
-                    ),
-                  ),
-                ),
-              for (var i = 0; i < _campos.length; i++)
-                _CampoEditableTile(
-                  key: ValueKey(_campos[i]),
-                  campo: _campos[i],
-                  todosCampos: _campos,
-                  onChanged: () => setState(() {}),
-                  onRemove: () => _quitarCampo(i),
-                ),
-              if (_campoError != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    _campoError!,
-                    style: const TextStyle(color: AppTheme.error, fontSize: 12),
-                  ),
-                ),
 
               const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: _saving ? null : _submit,
-                child: _saving
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
+              TutorialAnchor(
+                id: 'admin_guardar_servicio',
+                child: ElevatedButton(
+                  onPressed: _saving ? null : _submit,
+                  child: _saving
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : Text(
+                          widget.servicio == null
+                              ? 'Crear Servicio'
+                              : 'Guardar',
+                          style: const TextStyle(fontSize: 16),
                         ),
-                      )
-                    : Text(
-                        widget.servicio == null ? 'Crear Servicio' : 'Guardar',
-                        style: const TextStyle(fontSize: 16),
-                      ),
+                ),
               ),
             ],
           ),
@@ -1884,4 +1998,12 @@ class _SrvChipInactivo extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Quita el prefijo `Exception: ` que Dart añade en `toString()`, para que el
+/// aviso al admin se lea como el mensaje real y no como un volcado técnico.
+String _mensajeLegible(Object e) {
+  const prefijo = 'Exception: ';
+  final texto = e.toString();
+  return texto.startsWith(prefijo) ? texto.substring(prefijo.length) : texto;
 }

@@ -22,11 +22,13 @@ import '../services/tipo_actividad_service.dart';
 import '../utils/esquema_pendiente.dart';
 import '../utils/horario_atencion.dart';
 import '../utils/precio_reserva.dart';
+import '../utils/rango_calendario.dart';
 import '../utils/turnos_servicio.dart';
 import '../widgets/boton_favorito.dart';
 import '../widgets/datos_adicionales_form.dart';
 import '../widgets/detalle_hero_header.dart';
 import '../widgets/resenas.dart';
+import '../tutorial/tutorial_anchor.dart';
 import 'reserva_transporte_sheet.dart';
 
 /// Día y turno elegidos en el calendario de disponibilidad
@@ -521,7 +523,7 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
     String uuid,
     DateTime fecha,
     int cantidad,
-    _DatosReserva datos,
+    DatosReserva datos,
     int? idTurno,
   ) async {
     setState(() => _isActing = true);
@@ -609,7 +611,7 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
   /// tercero), y si tiene campos adicionales los recolecta. Devuelve null si
   /// el usuario cancela. Si el servicio no requiere nada, devuelve datos vacíos
   /// sin mostrar diálogo.
-  Future<_DatosReserva?> _recolectarDatosReserva({
+  Future<DatosReserva?> _recolectarDatosReserva({
     int cantidad = 1,
     int? idTurno,
   }) async {
@@ -619,17 +621,17 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
     final configPrecio = servicio?.configPrecio ?? ConfigPrecio();
 
     if (!permiteTercero && campos.isEmpty && !configPrecio.tienePrecio) {
-      return const _DatosReserva(paraTercero: false, datosAdicionales: {});
+      return const DatosReserva(paraTercero: false, datosAdicionales: {});
     }
 
-    return showModalBottomSheet<_DatosReserva>(
+    return showModalBottomSheet<DatosReserva>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => _DatosReservaSheet(
+      builder: (_) => DatosReservaSheet(
         campos: campos,
         permiteTercero: permiteTercero,
         configPrecio: configPrecio,
@@ -1664,22 +1666,26 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
       ),
     );
 
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 16,
-            offset: Offset(0, -4),
+    // Ancla del tutorial (paso 4): la barra de acciones fija de abajo.
+    return TutorialAnchor(
+      id: 'detalle_acciones',
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Color(0x14000000),
+              blurRadius: 16,
+              offset: Offset(0, -4),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+            child: child,
           ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-          child: child,
         ),
       ),
     );
@@ -2111,7 +2117,7 @@ class _TurnoFila extends StatelessWidget {
 }
 
 /// Datos recolectados antes de reservar: tercero (si aplica) + datos adicionales.
-class _DatosReserva {
+class DatosReserva {
   final bool paraTercero;
   final String? tNombre;
   final String? tApellidos;
@@ -2120,7 +2126,7 @@ class _DatosReserva {
   final Map<String, dynamic> datosAdicionales;
   final String? moneda;
 
-  const _DatosReserva({
+  const DatosReserva({
     required this.paraTercero,
     this.tNombre,
     this.tApellidos,
@@ -2217,7 +2223,12 @@ class _CantidadDialogState extends State<_CantidadDialog> {
 
 /// Hoja para recolectar: ¿para ti o un tercero? + perfil del tercero + datos
 /// adicionales configurados por el admin.
-class _DatosReservaSheet extends StatefulWidget {
+///
+/// Es **pública a propósito**: la usa el asistente de reserva múltiple
+/// (`reserva_multiple_screen.dart`) para resolver las opciones de cada servicio
+/// sin duplicar el formulario ni —lo que importa más— la cotización contra el
+/// servidor, que es la única fuente del precio que se cobra.
+class DatosReservaSheet extends StatefulWidget {
   final List<CampoAdicional> campos;
   final bool permiteTercero;
   final ConfigPrecio configPrecio;
@@ -2228,7 +2239,8 @@ class _DatosReservaSheet extends StatefulWidget {
   final int idLocalServicio;
   final int? idTurno;
 
-  const _DatosReservaSheet({
+  const DatosReservaSheet({
+    super.key,
     required this.campos,
     required this.permiteTercero,
     required this.configPrecio,
@@ -2238,10 +2250,10 @@ class _DatosReservaSheet extends StatefulWidget {
   });
 
   @override
-  State<_DatosReservaSheet> createState() => _DatosReservaSheetState();
+  State<DatosReservaSheet> createState() => DatosReservaSheetState();
 }
 
-class _DatosReservaSheetState extends State<_DatosReservaSheet> {
+class DatosReservaSheetState extends State<DatosReservaSheet> {
   final _formKey = GlobalKey<FormState>();
   final _datosKey = GlobalKey<DatosAdicionalesFormState>();
   bool _paraTercero = false;
@@ -2322,7 +2334,7 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
       // Si la cotizacion falla se deja la anterior y se avisa: es mejor mostrar
       // un precio algo desactualizado que inventar uno.
       setState(() => _cotizando = false);
-      debugPrint('[flow] _DatosReservaSheet._cotizar ERROR: $e');
+      debugPrint('[flow] DatosReservaSheet._cotizar ERROR: $e');
     }
   }
 
@@ -2334,7 +2346,7 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
     final valores = _datosKey.currentState?.valores ?? {};
     Navigator.pop(
       context,
-      _DatosReserva(
+      DatosReserva(
         paraTercero: _paraTercero,
         tNombre: _paraTercero ? _nombreCtrl.text.trim() : null,
         tApellidos: _paraTercero ? _apellidosCtrl.text.trim() : null,
@@ -2519,15 +2531,18 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
                       style: TextStyle(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 8),
-                    DatosAdicionalesForm(
-                      key: _datosKey,
-                      campos: widget.campos,
-                      // Los campos adicionales pueden cambiar el precio (reglas
-                      // por opcion), asi que cada cambio recotiza.
-                      onChanged: (v) {
-                        setState(() => _valoresActuales = v);
-                        _cotizarProgramado();
-                      },
+                    TutorialAnchor(
+                      id: 'detalle_datos',
+                      child: DatosAdicionalesForm(
+                        key: _datosKey,
+                        campos: widget.campos,
+                        // Los campos adicionales pueden cambiar el precio (reglas
+                        // por opcion), asi que cada cambio recotiza.
+                        onChanged: (v) {
+                          setState(() => _valoresActuales = v);
+                          _cotizarProgramado();
+                        },
+                      ),
                     ),
                   ],
                 ],
@@ -2671,14 +2686,17 @@ class _DatosReservaSheetState extends State<_DatosReservaSheet> {
             ],
 
             const SizedBox(height: 8),
-            ElevatedButton(
-              onPressed: _confirmar,
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
-              child: const Text(
-                'Continuar',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            TutorialAnchor(
+              id: 'detalle_continuar',
+              child: ElevatedButton(
+                onPressed: _confirmar,
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: const Text(
+                  'Continuar',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
               ),
             ),
           ],
@@ -2729,14 +2747,35 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
       '${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
 
+  /// Meses navegables del calendario.
+  ///
+  /// Antes salían solo de los días con datos (`lastDay` = fin del mes del último
+  /// día con cupo), así que con planes únicamente del mes en curso el `PageView`
+  /// rebotaba: se veía el gesto de cambio de mes y volvía. El helper garantiza
+  /// un horizonte hacia delante (12 meses en la cola, 6 en reserva) y nunca
+  /// recorta un mes que ya tenga días con datos.
+  ({DateTime firstDay, DateTime lastDay}) get _rango => rangoCalendario(
+    diasDisponibles: widget.dias.map((d) => d.fecha).toList(),
+    paraEspera: widget.paraEspera,
+  );
+
+  /// Deja el foco dentro del rango: `TableCalendar` exige
+  /// `firstDay <= focusedDay <= lastDay`.
+  DateTime _clampearDia(DateTime dia) {
+    final r = _rango;
+    if (dia.isBefore(r.firstDay)) return r.firstDay;
+    if (dia.isAfter(r.lastDay)) return r.lastDay;
+    return dia;
+  }
+
   @override
   void initState() {
     super.initState();
     _porDia = {for (final d in widget.dias) _key(d.fecha): d};
     // Enfoca el primer día con cupo (o hoy si la lista está vacía).
-    _focusedDay = widget.dias.isNotEmpty
-        ? widget.dias.first.fecha
-        : DateTime.now();
+    _focusedDay = _clampearDia(
+      widget.dias.isNotEmpty ? widget.dias.first.fecha : DateTime.now(),
+    );
     if (widget.paraEspera) _cargarTurnosConfig();
   }
 
@@ -2835,12 +2874,7 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
   @override
   Widget build(BuildContext context) {
     final vacio = widget.dias.isEmpty;
-    final first = widget.dias.isNotEmpty
-        ? widget.dias.first.fecha
-        : DateTime.now();
-    final last = widget.dias.isNotEmpty
-        ? widget.dias.last.fecha
-        : DateTime.now().add(const Duration(days: 90));
+    final rango = _rango;
 
     return Padding(
       padding: EdgeInsets.only(
@@ -2928,137 +2962,141 @@ class _DisponibilidadSheetState extends State<_DisponibilidadSheet> {
               ),
             )
           else ...[
-            TableCalendar<DisponibilidadDia>(
-              locale: 'es_ES',
-              firstDay: DateTime.utc(first.year, first.month, 1),
-              lastDay: DateTime.utc(last.year, last.month + 1, 0),
-              focusedDay: _focusedDay,
-              eventLoader: (day) {
-                final d = _disp(day);
-                final now = DateTime.now();
-                final today = DateTime(now.year, now.month, now.day);
-                final selectedDay = DateTime(day.year, day.month, day.day);
+            TutorialAnchor(
+              id: 'detalle_calendario',
+              child: TableCalendar<DisponibilidadDia>(
+                locale: 'es_ES',
+                firstDay: rango.firstDay,
+                lastDay: rango.lastDay,
+                focusedDay: _focusedDay,
+                eventLoader: (day) {
+                  final d = _disp(day);
+                  final now = DateTime.now();
+                  final today = DateTime(now.year, now.month, now.day);
+                  final selectedDay = DateTime(day.year, day.month, day.day);
 
-                // Don't show events for current day
-                final isTomorrowOrLater = selectedDay.isAfter(today);
+                  // Don't show events for current day
+                  final isTomorrowOrLater = selectedDay.isAfter(today);
 
-                if (!isTomorrowOrLater) return [];
-                // En la cola se marca también el día lleno: saber que no hay
-                // cupo es la razón para anotarse.
-                if (widget.paraEspera) return d != null ? [d] : [];
-                return d != null && d.disponibles > 0 ? [d] : [];
-              },
-              enabledDayPredicate: (day) {
-                final d = _disp(day);
-                final now = DateTime.now();
-                final today = DateTime(now.year, now.month, now.day);
-                final selectedDay = DateTime(day.year, day.month, day.day);
+                  if (!isTomorrowOrLater) return [];
+                  // En la cola se marca también el día lleno: saber que no hay
+                  // cupo es la razón para anotarse.
+                  if (widget.paraEspera) return d != null ? [d] : [];
+                  return d != null && d.disponibles > 0 ? [d] : [];
+                },
+                enabledDayPredicate: (day) {
+                  final d = _disp(day);
+                  final now = DateTime.now();
+                  final today = DateTime(now.year, now.month, now.day);
+                  final selectedDay = DateTime(day.year, day.month, day.day);
 
-                // Disable current day and only allow from tomorrow onwards
-                final isTomorrowOrLater = selectedDay.isAfter(today);
+                  // Disable current day and only allow from tomorrow onwards
+                  final isTomorrowOrLater = selectedDay.isAfter(today);
 
-                if (!isTomorrowOrLater) return false;
-                if (widget.paraEspera) return true;
-                return d != null && d.disponibles > 0;
-              },
-              calendarStyle: CalendarStyle(
-                outsideDaysVisible: false,
-                disabledTextStyle: TextStyle(
-                  color: Colors.grey.shade300,
-                  fontSize: 14,
-                ),
-                defaultTextStyle: const TextStyle(fontSize: 15),
-                selectedTextStyle: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-                todayTextStyle: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.primary,
-                ),
-                weekendTextStyle: const TextStyle(fontSize: 15),
-                holidayTextStyle: const TextStyle(fontSize: 15),
-                markersMaxCount: 1,
-                markerDecoration: const BoxDecoration(
-                  color: AppTheme.success,
-                  shape: BoxShape.circle,
-                ),
-                todayDecoration: BoxDecoration(
-                  color: AppTheme.primary.withValues(alpha: 0.18),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: AppTheme.primary, width: 1.5),
-                ),
-                selectedDecoration: const BoxDecoration(
-                  color: AppTheme.primary,
-                  shape: BoxShape.circle,
-                ),
-                cellMargin: const EdgeInsets.all(4),
-                cellPadding: const EdgeInsets.all(8),
-                rowDecoration: BoxDecoration(
-                  border: Border.symmetric(
-                    horizontal: BorderSide(
-                      color: Colors.grey.shade200,
-                      width: 0.5,
+                  if (!isTomorrowOrLater) return false;
+                  if (widget.paraEspera) return true;
+                  return d != null && d.disponibles > 0;
+                },
+                calendarStyle: CalendarStyle(
+                  outsideDaysVisible: false,
+                  disabledTextStyle: TextStyle(
+                    color: Colors.grey.shade300,
+                    fontSize: 14,
+                  ),
+                  defaultTextStyle: const TextStyle(fontSize: 15),
+                  selectedTextStyle: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                  todayTextStyle: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.primary,
+                  ),
+                  weekendTextStyle: const TextStyle(fontSize: 15),
+                  holidayTextStyle: const TextStyle(fontSize: 15),
+                  markersMaxCount: 1,
+                  markerDecoration: const BoxDecoration(
+                    color: AppTheme.success,
+                    shape: BoxShape.circle,
+                  ),
+                  todayDecoration: BoxDecoration(
+                    color: AppTheme.primary.withValues(alpha: 0.18),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppTheme.primary, width: 1.5),
+                  ),
+                  selectedDecoration: const BoxDecoration(
+                    color: AppTheme.primary,
+                    shape: BoxShape.circle,
+                  ),
+                  cellMargin: const EdgeInsets.all(4),
+                  cellPadding: const EdgeInsets.all(8),
+                  rowDecoration: BoxDecoration(
+                    border: Border.symmetric(
+                      horizontal: BorderSide(
+                        color: Colors.grey.shade200,
+                        width: 0.5,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              calendarBuilders: CalendarBuilders(
-                markerBuilder: (context, day, events) {
-                  if (events.isEmpty) return null;
-                  final disp = events.first;
-                  final sinCupo = disp.disponibles <= 0;
-                  return Positioned(
-                    top: 2,
-                    right: 2,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 4,
-                        vertical: 1,
-                      ),
-                      decoration: BoxDecoration(
-                        // Ámbar cuando no queda cupo: en la cola es el dato que
-                        // importa, no un día "malo".
-                        color: sinCupo ? AppTheme.warning : AppTheme.success,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: Colors.white, width: 1),
-                      ),
-                      child: Text(
-                        '${disp.disponibles}',
-                        style: const TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
+                calendarBuilders: CalendarBuilders(
+                  markerBuilder: (context, day, events) {
+                    if (events.isEmpty) return null;
+                    final disp = events.first;
+                    final sinCupo = disp.disponibles <= 0;
+                    return Positioned(
+                      top: 2,
+                      right: 2,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          // Ámbar cuando no queda cupo: en la cola es el dato que
+                          // importa, no un día "malo".
+                          color: sinCupo ? AppTheme.warning : AppTheme.success,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.white, width: 1),
+                        ),
+                        child: Text(
+                          '${disp.disponibles}',
+                          style: const TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
-              ),
-              headerStyle: const HeaderStyle(
-                formatButtonVisible: false,
-                titleCentered: true,
-                headerPadding: EdgeInsets.symmetric(vertical: 12),
-                titleTextStyle: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.textPrimary,
+                    );
+                  },
                 ),
-                leftChevronIcon: Icon(Icons.chevron_left, size: 24),
-                rightChevronIcon: Icon(Icons.chevron_right, size: 24),
+                headerStyle: const HeaderStyle(
+                  formatButtonVisible: false,
+                  titleCentered: true,
+                  headerPadding: EdgeInsets.symmetric(vertical: 12),
+                  titleTextStyle: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.textPrimary,
+                  ),
+                  leftChevronIcon: Icon(Icons.chevron_left, size: 24),
+                  rightChevronIcon: Icon(Icons.chevron_right, size: 24),
+                ),
+                availableGestures: AvailableGestures.horizontalSwipe,
+                onPageChanged: (f) =>
+                    setState(() => _focusedDay = _clampearDia(f)),
+                onDaySelected: (selected, focused) => _confirmar(selected),
               ),
-              availableGestures: AvailableGestures.horizontalSwipe,
-              onPageChanged: (f) => setState(() => _focusedDay = f),
-              onDaySelected: (selected, focused) => _confirmar(selected),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
               child: Text(
                 widget.paraEspera
-                    ? 'Elige el día en que quieres entrar a la cola; si el servicio trabaja por turnos, te pediremos también el turno.'
-                    : 'Toca un día con cupo para reservar. El número indica los turnos libres.',
+                    ? 'Elige el día en que quieres entrar a la cola; puedes cambiar de mes para elegir cualquier fecha futura. Si el servicio trabaja por turnos, te pediremos también el turno.'
+                    : 'Toca un día con cupo para reservar; puedes cambiar de mes para ver más fechas. El número indica los turnos libres.',
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontSize: 13.5,

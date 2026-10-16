@@ -15,6 +15,7 @@ import '../../services/plan_config_service.dart';
 import '../../services/plan_servicio_service.dart';
 import '../../services/recurso_service.dart';
 import '../../services/agenda_admin_service.dart';
+import '../../tutorial/tutorial_anchor.dart';
 import '../../widgets/datos_adicionales_form.dart';
 import 'admin_reserva_transporte_sheet.dart';
 import 'config_plan_mensual_screen.dart';
@@ -216,10 +217,13 @@ class _PlanificacionScreenState extends State<PlanificacionScreen> {
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.add),
-            tooltip: 'Vincular servicio a local',
-            onPressed: _vincular,
+          TutorialAnchor(
+            id: 'admin_vincular',
+            child: IconButton(
+              icon: const Icon(Icons.add),
+              tooltip: 'Vincular servicio a local',
+              onPressed: _vincular,
+            ),
           ),
         ],
       ),
@@ -838,27 +842,33 @@ class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
                 ),
               ),
             // Toggle de reserva directa
-            SwitchListTile(
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 0,
-              ),
-              dense: true,
-              value: _permiteDirecta,
-              onChanged: _togglingDirecta ? null : _toggleReservaDirecta,
-              secondary: Icon(
-                _permiteDirecta ? Icons.flash_on : Icons.flash_off_outlined,
-                color: _permiteDirecta
-                    ? AppTheme.success
-                    : AppTheme.textSecondary,
-              ),
-              title: const Text(
-                'Reserva directa',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-              ),
-              subtitle: const Text(
-                'Permite reservar al instante si hay cupo (sin cola)',
-                style: TextStyle(fontSize: 11.5, color: AppTheme.textSecondary),
+            TutorialAnchor(
+              id: 'admin_reserva_directa',
+              child: SwitchListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 0,
+                ),
+                dense: true,
+                value: _permiteDirecta,
+                onChanged: _togglingDirecta ? null : _toggleReservaDirecta,
+                secondary: Icon(
+                  _permiteDirecta ? Icons.flash_on : Icons.flash_off_outlined,
+                  color: _permiteDirecta
+                      ? AppTheme.success
+                      : AppTheme.textSecondary,
+                ),
+                title: const Text(
+                  'Reserva directa',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                ),
+                subtitle: const Text(
+                  'Permite reservar al instante si hay cupo (sin cola)',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
               ),
             ),
             // Acceso a la configuración mensual recurrente
@@ -883,18 +893,24 @@ class _ServicioCalendarTileState extends State<_ServicioCalendarTile> {
             // Configuración de capacidades por reserva
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: OutlinedButton.icon(
-                onPressed: _abrirConfigCapacidades,
-                icon: const Icon(Icons.confirmation_number_outlined, size: 18),
-                label: const Text('Capacidades por reserva'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppTheme.accent,
-                  side: BorderSide(
-                    color: AppTheme.accent.withValues(alpha: 0.4),
+              child: TutorialAnchor(
+                id: 'admin_capacidades',
+                child: OutlinedButton.icon(
+                  onPressed: _abrirConfigCapacidades,
+                  icon: const Icon(
+                    Icons.confirmation_number_outlined,
+                    size: 18,
                   ),
-                  minimumSize: const Size.fromHeight(40),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                  label: const Text('Capacidades por reserva'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.accent,
+                    side: BorderSide(
+                      color: AppTheme.accent.withValues(alpha: 0.4),
+                    ),
+                    minimumSize: const Size.fromHeight(40),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                 ),
               ),

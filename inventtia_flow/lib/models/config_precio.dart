@@ -1,3 +1,16 @@
+/// Convierte un precio guardado en `config_precio` a `double`.
+///
+/// La BD (y el admin antiguo) han guardado precios como número **y** como
+/// string (`{"USD": "18.5"}`). El SQL los lee con `->>` + `::numeric`, así que
+/// si la app descartara los string cobraría distinto de lo que muestra. Se
+/// acepta `num` y string numérico con espacios alrededor; lo ilegible se
+/// descarta (como hoy).
+double? _precioDesdeJson(Object? v) {
+  if (v is num) return v.toDouble();
+  if (v is String) return double.tryParse(v.trim());
+  return null;
+}
+
 /// Monedas soportadas en la aplicación (configurables por servicio).
 class MonedasApp {
   MonedasApp._();
@@ -60,8 +73,8 @@ class ReglaPrecio {
     final precios = <String, double>{};
     if (raw is Map) {
       for (final e in raw.entries) {
-        final v = e.value;
-        if (v is num) precios[e.key.toString()] = v.toDouble();
+        final v = _precioDesdeJson(e.value);
+        if (v != null) precios[e.key.toString()] = v;
       }
     }
     return precios;
@@ -119,8 +132,8 @@ class ConfigPrecio {
     final base = <String, double>{};
     if (baseRaw is Map) {
       for (final e in baseRaw.entries) {
-        final v = e.value;
-        if (v is num) base[e.key.toString()] = v.toDouble();
+        final v = _precioDesdeJson(e.value);
+        if (v != null) base[e.key.toString()] = v;
       }
     }
     return ConfigPrecio(

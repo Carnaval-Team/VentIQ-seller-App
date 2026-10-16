@@ -16,7 +16,15 @@ import 'admin/gestion_locales_screen.dart';
 import 'admin/gestion_servicios_screen.dart';
 
 class PerfilScreen extends StatefulWidget {
-  const PerfilScreen({super.key});
+  const PerfilScreen({super.key, this.onRepetirTutorial});
+
+  /// Relanza el tutorial de primer uso del cliente.
+  ///
+  /// Lo inyecta `HomeShell` (y no se hace aquí) porque el recorrido empieza en
+  /// la pestaña Home: el shell es quien puede cambiar de pestaña antes de
+  /// arrancarlo. `null` = no se ofrece la entrada (admin y vendedor tienen sus
+  /// propios recorridos, con el suyo en la barra de «Gestión»).
+  final VoidCallback? onRepetirTutorial;
 
   @override
   State<PerfilScreen> createState() => PerfilScreenState();
@@ -222,6 +230,18 @@ class PerfilScreenState extends State<PerfilScreen> {
                                 builder: (_) => const FavoritosScreen(),
                               ),
                             ),
+                          ),
+                          const _SoftDivider(indent: 56),
+                        ],
+                        // Solo cliente: repetir el recorrido guiado de primer
+                        // uso (reservar / anotarse en la lista).
+                        if (widget.onRepetirTutorial != null) ...[
+                          _ActionTile(
+                            icon: Icons.school_outlined,
+                            title: 'Ver el tutorial otra vez',
+                            subtitle:
+                                'Repasa cómo buscar y reservar un servicio.',
+                            onTap: widget.onRepetirTutorial!,
                           ),
                           const _SoftDivider(indent: 56),
                         ],
@@ -462,10 +482,15 @@ class _SoftDivider extends StatelessWidget {
 class _ActionTile extends StatelessWidget {
   final IconData icon;
   final String title;
+
+  /// Línea secundaria opcional. Con `null` la fila se pinta exactamente igual
+  /// que el resto de opciones de la pantalla.
+  final String? subtitle;
   final VoidCallback onTap;
   const _ActionTile({
     required this.icon,
     required this.title,
+    this.subtitle,
     required this.onTap,
   });
 
@@ -491,13 +516,29 @@ class _ActionTile extends StatelessWidget {
               ),
               const SizedBox(width: 14),
               Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.textPrimary,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle!,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
               const Icon(Icons.chevron_right, color: AppTheme.textSecondary),

@@ -37,6 +37,10 @@ class NotificacionService {
           .from('notificaciones')
           .select()
           .eq('uuid_usuario', uuidUsuario)
+          // created_at DESC aprovecha el índice (uuid_usuario, created_at desc);
+          // el id es solo el desempate cuando varios avisos comparten la hora de
+          // transacción (D2).
+          .order('created_at', ascending: false)
           .order('id', ascending: false)
           .limit(limit);
       return (res as List)
@@ -118,7 +122,14 @@ class NotificacionService {
         .from('notificaciones')
         .stream(primaryKey: ['id'])
         .eq('uuid_usuario', uuidUsuario)
-        .order('id',ascending:false)
+        // Mismo orden que getMisNotificaciones: realtime y pull-to-refresh
+        // tienen que mostrar exactamente la misma lista (D2).
+        // Ojo: `SupabaseStreamBuilder.order()` guarda un único `_orderBy` (el
+        // segundo pisa al primero), así que del lado del stream el orden real lo
+        // impone `ordenarPorFecha` en NotificacionProvider; esta cadena deja
+        // constancia del criterio y coincide con el fetch.
+        .order('created_at', ascending: false)
+        .order('id', ascending: false)
         .map((rows) =>
             rows.map((e) => Notificacion.fromJson(e)).toList());
   }

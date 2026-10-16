@@ -199,15 +199,23 @@ class Taxonomia {
   }
 }
 
-/// Lectura y gestión de la taxonomía de servicios.
+/// Lectura de la taxonomía de servicios y visibilidad por entidad.
 ///
 /// La lectura va directo a la tabla (RLS `nom_tipo_actividad_select_all` es
-/// pública). La escritura pasa por RPC para validar el código, respetar los dos
-/// niveles y no permitir borrar algo que tenga servicios o subcategorías.
+/// pública).
+///
+/// **Este servicio NO gestiona la taxonomía.** Crear, editar, eliminar y
+/// desactivar categorías es exclusivo del superadmin (`ventiq_superadmin`, que
+/// tiene su propio `categoria_admin_service.dart`).
+///
+/// Lo único que puede hacer el admin de entidad es **ocultar** una categoría
+/// para sus propios servicios ([ocultarParaEntidad]): la categoría sigue activa y
+/// sigue pintada en el riel de filtros del Home, pero los servicios/locales de
+/// esa entidad en esa categoría dejan de aparecer en el catálogo del cliente.
 ///
 /// Los RPC **no** reciben el uuid del usuario: la autorización la resuelve
-/// `auth.uid()` en el servidor (admin de entidad o superadmin). Aun así hace
-/// falta estar autenticado, así que las pantallas comprueban la sesión antes.
+/// `auth.uid()` en el servidor. Aun así hace falta estar autenticado, así que las
+/// pantallas comprueban la sesión antes.
 class TipoActividadService {
   static final SupabaseClient _supabase = Supabase.instance.client;
   static const String _schema = 'flow';
@@ -259,115 +267,60 @@ class TipoActividadService {
   static Future<Taxonomia> taxonomia({bool soloActivos = false}) async =>
       Taxonomia(await listar(soloActivos: soloActivos));
 
-  /// Alta o edición. Devuelve el id del nodo guardado.
+  /// Tabla donde cada entidad apunta las categorías que oculta para sí misma.
+  static const String _tablaOcultas = 'entidad_categoria_oculta';
+
+  /// Nodos que [idEntidad] tiene ocultos (`flow.entidad_categoria_oculta`).
   ///
-  /// [idPadre] se envía **siempre** (aunque sea `null`): el RPC lo usa para
-  /// fijar el nivel, así que omitirlo convertiría una subcategoría en categoría
-  /// al guardar un cambio de nombre.
-  static Future<int> guardar({
-    required String nombre,
-    required String codigo,
-    required bool activo,
-    int? id,
-    int? idPadre,
-    int orden = 0,
-  }) async {
-    final params = <String, dynamic>{
-      'p_codigo': codigo,
-      'p_nombre': nombre,
-      'p_activo': activo,
-      'p_id_padre': idPadre,
-      'p_orden': orden,
-      if (id != null) 'p_id': id,
-    };
-
-    Map<String, dynamic> json;
-    try {
-      final res = await _supabase
-          .schema(_schema)
-          .rpc('admin_guardar_tipo_actividad', params: params);
-      json = res is Map
-          ? Map<String, dynamic>.from(res)
-          : const <String, dynamic>{};
-    } catch (e) {
-      // Migración 47 sin aplicar: el RPC solo acepta 4 argumentos. Se reintenta
-      // sin jerarquía para no romper la gestión que ya funcionaba.
-      if (!_esRpcSinParametrosNuevos(e)) rethrow;
-      final res = await _supabase
-          .schema(_schema)
-          .rpc(
-            'admin_guardar_tipo_actividad',
-            params: {
-              'p_codigo': codigo,
-              'p_nombre': nombre,
-              'p_activo': activo,
-              if (id != null) 'p_id': id,
-            },
-          );
-      json = res is Map
-          ? Map<String, dynamic>.from(res)
-          : const <String, dynamic>{};
-    }
-
-    if (json['ok'] != true) {
-      throw Exception(json['error'] ?? 'No se pudo guardar la categoría');
-    }
-    return ((json['data'] as Map<String, dynamic>)['id'] as num).toInt();
-  }
-
-  /// Enciende o apaga un nodo. Apagar una categoría apaga sus subcategorías
-  /// (lo hace el RPC): dejarlas encendidas las sacaría en un riel que ya no se
-  /// muestra.
-  static Future<void> alternar({required int id, required bool activo}) async {
-    try {
-      final res = await _supabase
-          .schema(_schema)
-          .rpc(
-            'admin_alternar_tipo_actividad',
-            params: {'p_id': id, 'p_activo': activo},
-          );
-      final json = res is Map
-          ? Map<String, dynamic>.from(res)
-          : const <String, dynamic>{};
-      if (json['ok'] != true) {
-        throw Exception(json['error'] ?? 'No se pudo cambiar el estado');
-      }
-      return;
-    } catch (e) {
-      // Migración 47 sin aplicar: se cae al RPC de guardado, que ya soporta
-      // cambiar `activo` sin tocar el resto.
-      if (!_esRpcSinParametrosNuevos(e)) rethrow;
-      final actual = await porId(id);
-      if (actual == null) throw Exception('Categoría inexistente');
-      await guardar(
-        id: actual.id,
-        nombre: actual.nombre,
-        codigo: actual.codigo,
-        activo: activo,
-        idPadre: actual.idPadre,
-        orden: actual.orden,
-      );
-    }
-  }
-
-  static Future<TipoActividad?> porId(int id) async {
-    final filas = await listarMapas();
-    for (final fila in filas) {
-      final nodo = TipoActividad.fromJson(fila);
-      if (nodo.id == id) return nodo;
-    }
-    return null;
-  }
-
-  static Future<void> eliminar({required int id}) async {
+  /// Devuelve ids del nomenclador, que pueden ser categorías raíz o
+  /// subcategorías. La lectura va directo a la tabla: la política
+  /// `entidad_categoria_oculta_select` deja ver solo las filas de las entidades
+  /// que administra el usuario.
+  ///
+  /// Si la migración `55_categorias_ocultas_por_entidad.sql` todavía no está
+  /// aplicada, la tabla no existe y esto lanza: el llamador decide si eso es un
+  /// error o solo "no hay nada oculto".
+  static Future<Set<int>> ocultasDeEntidad(int idEntidad) async {
     final res = await _supabase
         .schema(_schema)
-        .rpc('admin_eliminar_tipo_actividad', params: {'p_id': id});
+        .from(_tablaOcultas)
+        .select('id_tipo_actividad')
+        .eq('id_entidad', idEntidad);
+    return (res as List)
+        .map(
+          (e) =>
+              (Map<String, dynamic>.from(e as Map)['id_tipo_actividad'] as num)
+                  .toInt(),
+        )
+        .toSet();
+  }
+
+  /// Oculta ([oculto] = true) o vuelve a mostrar una categoría para los
+  /// servicios de [idEntidad].
+  ///
+  /// No toca el nomenclador: el nodo sigue activo y sigue en el riel del Home.
+  /// Solo hace desaparecer del catálogo del cliente los servicios de esa entidad
+  /// en ese nodo (y en sus subcategorías, si [idNodo] es una categoría raíz).
+  static Future<void> ocultarParaEntidad({
+    required int idEntidad,
+    required int idNodo,
+    required bool oculto,
+  }) async {
+    final res = await _supabase
+        .schema(_schema)
+        .rpc(
+          'admin_ocultar_categoria_entidad',
+          params: {
+            'p_id_entidad': idEntidad,
+            'p_id_tipo_actividad': idNodo,
+            'p_oculto': oculto,
+          },
+        );
     final json = res is Map
         ? Map<String, dynamic>.from(res)
         : const <String, dynamic>{};
     if (json['ok'] != true) {
-      throw Exception(json['error'] ?? 'No se pudo eliminar la categoría');
+      throw Exception(json['error'] ?? 'No se pudo cambiar la visibilidad');
     }
   }
 
@@ -379,15 +332,5 @@ class TipoActividadService {
         t.contains('id_padre') ||
         t.contains('"orden"') ||
         (t.contains('column') && t.contains('does not exist'));
-  }
-
-  /// `true` cuando el RPC existe pero no conoce los parámetros nuevos.
-  static bool _esRpcSinParametrosNuevos(Object e) {
-    final t = e.toString();
-    return t.contains('PGRST202') ||
-        t.contains('Could not find the function') ||
-        t.contains('schema cache') ||
-        t.contains('p_id_padre') ||
-        t.contains('p_orden');
   }
 }

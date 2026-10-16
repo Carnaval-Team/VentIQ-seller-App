@@ -9,7 +9,11 @@ import '../providers/favoritos_provider.dart';
 import '../providers/reservas_provider.dart';
 import '../providers/suscripcion_provider.dart';
 import '../services/auth_service.dart';
+import '../services/tutorial_service.dart';
 import '../services/update_service.dart';
+import '../tutorial/tutorial_destino.dart';
+import '../tutorial/tutorial_flujos.dart';
+import '../tutorial/tutorial_navegacion.dart';
 import '../widgets/aviso_suscripcion.dart';
 import 'catalogo_screen.dart';
 import 'home_client_screen.dart';
@@ -30,6 +34,10 @@ class _HomeShellState extends State<HomeShell> {
   int _currentIndex = 0;
   bool _isInitialLoading = true;
   bool _redirectingToLogin = false;
+
+  /// El tutorial de primer uso se intenta lanzar una sola vez por sesión de
+  /// shell; es el `TutorialService` el que recuerda si ya se vio (o se saltó).
+  bool _tutorialRevisado = false;
 
   // GlobalKeys para poder llamar reload() en las pantallas con IndexedStack
   final GlobalKey<HomeClientScreenState> _homeKey =
@@ -58,6 +66,10 @@ class _HomeShellState extends State<HomeShell> {
   static const int _idxListasNoAdmin = 2;
   static const int _idxTicketsNoAdmin = 3;
 
+  /// Pestaña del catálogo en el shell del cliente (`_screensNoAdmin`). El
+  /// tutorial la necesita para llevar al cliente al listado de servicios.
+  static const int _idxCatalogoCliente = 1;
+
   @override
   void initState() {
     super.initState();
@@ -75,7 +87,11 @@ class _HomeShellState extends State<HomeShell> {
       CatalogoScreen(key: _catalogoKey),
       MisListasScreen(key: _misListasKey),
       MisTicketsScreen(key: _misTicketsKey),
-      PerfilScreen(key: _perfilKey),
+      PerfilScreen(
+        key: _perfilKey,
+        // "Ver el tutorial otra vez" del perfil del cliente.
+        onRepetirTutorial: _repetirTutorialCliente,
+      ),
     ];
     _screensVendedor = [
       MisTicketsScreen(key: _misTicketsKey),
@@ -111,6 +127,99 @@ class _HomeShellState extends State<HomeShell> {
       });
     }
     _checkForUpdatesAfterNavigation();
+  }
+
+  /// Lanza el tutorial de primer uso la primera vez que se entra al shell.
+  ///
+  /// Cliente → recorrido «crear una reserva / anotarse en la lista».
+  /// Admin → recorrido «publicar el primer local, servicio y turnos», por
+  /// entidad (si crea otra entidad, el tutorial vuelve a mostrarse para ella).
+  ///
+  /// Se difiere a post-frame porque puede cambiar de pestaña antes de empezar
+  /// (el admin debe estar en «Gestión», que es donde viven sus anclas).
+  void _quizasLanzarTutorial({
+    required bool isAdmin,
+    required bool isVendedor,
+  }) {
+    if (_tutorialRevisado) return;
+    _tutorialRevisado = true;
+
+    final uuid = AuthService.currentUserId;
+    if (uuid == null) return;
+    final entidad = context.read<EntidadProvider>().entidadSeleccionada;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+
+      // Cliente puro (ni admin ni vendedor): el recorrido empieza en el Home.
+      if (!isAdmin && !isVendedor) {
+        if (_currentIndex != 0) setState(() => _currentIndex = 0);
+        if (!await TutorialService.debeMostrarCliente(uuid)) return;
+        if (!mounted) return;
+        TutorialFlujos.iniciarCliente(uuid, navegador: _navegarTutorial);
+        return;
+      }
+
+      if (!isAdmin || entidad == null) return;
+
+      // En el shell de admin+vendedor «Gestión» es la pestaña 1.
+      final idxGestion = isVendedor ? 1 : 0;
+      if (_currentIndex != idxGestion) setState(() => _currentIndex = idxGestion);
+
+      if (!await TutorialService.debeMostrarAdmin(uuid, entidad.id)) return;
+      if (!mounted) return;
+      TutorialFlujos.iniciarAdmin(
+        uuid,
+        entidad.id,
+        navegador: _navegarTutorial,
+      );
+    });
+  }
+
+  /// Relanza el tutorial del cliente desde el paso 1 ("Ver el tutorial otra vez"
+  /// del perfil).
+  ///
+  /// Cambia a la pestaña Home antes de arrancar: el primer elemento resaltado
+  /// (`home_buscar`) vive ahí y, sin ese cambio, la burbuja aparecería sobre una
+  /// pantalla sin el elemento a resaltar.
+  Future<void> _repetirTutorialCliente() async {
+    final uuid = AuthService.currentUserId;
+    if (uuid == null) return;
+    if (_currentIndex != 0) setState(() => _currentIndex = 0);
+    await TutorialFlujos.repetirCliente(uuid, navegador: _navegarTutorial);
+  }
+
+  /// Navegación del tutorial: deja la pantalla lista para el paso nuevo.
+  ///
+  /// El cliente se mueve entre las pestañas del shell (Home y catálogo) y el
+  /// detalle del primer servicio; el admin, entre los módulos de «Gestión». Es
+  /// lo que hace que «Siguiente» no se quede esperando a que el usuario navegue
+  /// por su cuenta. Solo se llama con los destinos del rol que toca: los del
+  /// cliente son de `_screensNoAdmin`.
+  Future<void> _navegarTutorial(TutorialDestino destino) async {
+    if (!mounted) return;
+
+    if (destino == TutorialDestino.home ||
+        destino == TutorialDestino.catalogo ||
+        destino == TutorialDestino.servicio) {
+      // Si había un detalle abierto (o cualquier ruta encima), se cierra: las
+      // anclas de una pestaña solo cuentan como visibles en la ruta actual.
+      TutorialNavegacion.volverAlShell(context);
+      final indice = destino == TutorialDestino.home ? 0 : _idxCatalogoCliente;
+      if (_currentIndex != indice) setState(() => _currentIndex = indice);
+      if (destino == TutorialDestino.servicio) {
+        // El paso vive en el detalle de un servicio concreto: se abre el
+        // primero del catálogo.
+        await _catalogoKey.currentState?.abrirPrimerServicio();
+      }
+      return;
+    }
+
+    await TutorialNavegacion.irAAdmin(
+      context,
+      context.read<EntidadProvider>().entidadSeleccionada,
+      destino,
+    );
   }
 
   void _redirectToLoginIfSignedOut() {
@@ -416,6 +525,9 @@ class _HomeShellState extends State<HomeShell> {
     if (_isInitialLoading || entidadProvider.isLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
+
+    // Tutorial guiado de primer uso: se decide aquí, con el rol ya resuelto.
+    _quizasLanzarTutorial(isAdmin: isAdmin, isVendedor: isVendedor);
 
     final List<Widget> screens;
     if (isAdmin && isVendedor) {

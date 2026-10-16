@@ -8,9 +8,10 @@ import '../../models/servicio.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/geonames_service.dart';
 import '../../services/imagen_service.dart';
+import '../../tutorial/tutorial_anchor.dart';
+import '../../utils/foto_obligatoria.dart';
 import '../../utils/horario_atencion.dart';
-import '../../widgets/net_image.dart';
-import '../../widgets/preview_imagen.dart';
+import '../../widgets/campo_foto_obligatoria.dart';
 
 class GestionLocalesScreen extends StatefulWidget {
   final Entidad entidad;
@@ -48,7 +49,7 @@ class _GestionLocalesScreenState extends State<GestionLocalesScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => _LocalFormSheet(idEntidad: widget.entidad.id),
+      builder: (_) => LocalFormSheet(idEntidad: widget.entidad.id),
     ).then((_) => _cargar());
   }
 
@@ -61,7 +62,7 @@ class _GestionLocalesScreenState extends State<GestionLocalesScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) =>
-          _LocalFormSheet(idEntidad: widget.entidad.id, local: local),
+          LocalFormSheet(idEntidad: widget.entidad.id, local: local),
     ).then((_) => _cargar());
   }
 
@@ -103,10 +104,13 @@ class _GestionLocalesScreenState extends State<GestionLocalesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('Locales · ${widget.entidad.denominacion}')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _nuevoLocal,
-        icon: const Icon(Icons.add),
-        label: const Text('Nuevo Local'),
+      floatingActionButton: TutorialAnchor(
+        id: 'admin_nuevo_local',
+        child: FloatingActionButton.extended(
+          onPressed: _nuevoLocal,
+          icon: const Icon(Icons.add),
+          label: const Text('Nuevo Local'),
+        ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -213,16 +217,16 @@ class _GestionLocalesScreenState extends State<GestionLocalesScreen> {
   }
 }
 
-class _LocalFormSheet extends StatefulWidget {
+class LocalFormSheet extends StatefulWidget {
   final int idEntidad;
   final Local? local;
-  const _LocalFormSheet({required this.idEntidad, this.local});
+  const LocalFormSheet({super.key, required this.idEntidad, this.local});
 
   @override
-  State<_LocalFormSheet> createState() => _LocalFormSheetState();
+  State<LocalFormSheet> createState() => LocalFormSheetState();
 }
 
-class _LocalFormSheetState extends State<_LocalFormSheet> {
+class LocalFormSheetState extends State<LocalFormSheet> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nombreCtrl;
   late final TextEditingController _descCtrl;
@@ -416,6 +420,19 @@ class _LocalFormSheetState extends State<_LocalFormSheet> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
+    // Defensa en profundidad: la foto la valida `CampoFotoObligatoria`, pero el
+    // alta no puede depender de que ese campo esté montado. Sin foto no se
+    // escribe nada, y menos una fila nueva.
+    if (errorFotoObligatoria(
+          queEs: 'local',
+          fotoGuardada: _fotoUrl,
+          archivoElegido: _imagenFile != null,
+        ) !=
+        null) {
+      setState(() {});
+      return;
+    }
+
     String? _v(TextEditingController c) =>
         c.text.trim().isEmpty ? null : c.text.trim();
 
@@ -455,7 +472,10 @@ class _LocalFormSheetState extends State<_LocalFormSheet> {
       String? fotoFinal = _fotoUrl;
 
       if (widget.local == null) {
-        // Crear primero, luego subir imagen con el ID generado
+        // Se crea primero la fila (el path de la foto necesita su id) y después
+        // se sube la imagen. Si esa subida falla, el alta se **deshace**: la foto
+        // es obligatoria, así que un local recién creado sin ella no puede
+        // quedarse en el catálogo. Antes se quedaba, en silencio.
         final nuevo = await CatalogoService.createLocal(
           nombre: _nombreCtrl.text.trim(),
           descripcion: _v(_descCtrl),
@@ -467,7 +487,7 @@ class _LocalFormSheetState extends State<_LocalFormSheet> {
           idEntidad: widget.idEntidad,
           activo: _activo,
         );
-        if (_imagenFile != null) {
+        try {
           fotoFinal = await ImagenService.subirImagen(
             imagen: _imagenFile!,
             path: ImagenService.pathLocal(nuevo.id),
@@ -483,6 +503,18 @@ class _LocalFormSheetState extends State<_LocalFormSheet> {
             provincia: nuevo.provincia,
             foto: fotoFinal,
             activo: _activo,
+          );
+        } catch (e) {
+          final deshecho = await _deshacerAlta(
+            idLocal: nuevo.id,
+            pathSubido: ImagenService.pathLocal(nuevo.id),
+          );
+          throw Exception(
+            deshecho
+                ? 'No se pudo guardar la foto ($e), así que el local no se creó. '
+                      'Vuelve a intentarlo.'
+                : 'No se pudo guardar la foto ($e) y el local quedó creado SIN '
+                      'foto. Edítalo para añadirla.',
           );
         }
       } else {
@@ -508,16 +540,56 @@ class _LocalFormSheetState extends State<_LocalFormSheet> {
         );
       }
       if (!mounted) return;
-      // La foto se sube al mismo path: sin esto se seguiría viendo la vieja.
+      // La URL guardada ya trae su propio `?v=` (ver `ImagenService.subirImagen`),
+      // así que cualquier cliente descarga la foto nueva. `invalidar` queda como
+      // red de seguridad para una sesión que ya tenía la URL vieja en pantalla.
       ImagenService.invalidar(fotoFinal);
       Navigator.pop(context);
     } catch (e) {
       setState(() => _saving = false);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.error),
+        SnackBar(
+          content: Text('Error: ${_mensajeLegible(e)}'),
+          backgroundColor: AppTheme.error,
+        ),
       );
     }
+  }
+
+  /// Deshace un alta que quedó a medias: la fila se creó pero la foto no llegó a
+  /// guardarse.
+  ///
+  /// Solo se llama desde la rama de **crear** y solo con el id que acaba de
+  /// devolver `createLocal`: en editar nunca se borra nada.
+  ///
+  /// El orden importa: primero se borra la fila y **después** el archivo. Si el
+  /// borrado de la fila falla, el archivo se conserva — la fila sigue viva y su
+  /// foto con ella, así que el admin la arregla editando. Al revés se quedaría
+  /// una fila sin foto apuntando a un archivo que ya no está.
+  ///
+  /// Devuelve `true` si el alta quedó deshecha. Si el borrado falla, se registra
+  /// y el aviso al admin cambia: hay que decirle que el local existe sin foto,
+  /// no mentirle diciendo que no se creó.
+  Future<bool> _deshacerAlta({
+    required int idLocal,
+    required String pathSubido,
+  }) async {
+    try {
+      await CatalogoService.deleteLocal(idLocal);
+    } catch (e) {
+      debugPrint(
+        '[flow] LocalFormSheet: no se pudo deshacer el alta $idLocal: $e',
+      );
+      return false;
+    }
+    try {
+      await ImagenService.eliminarImagen(pathSubido);
+    } catch (e) {
+      // Un archivo huérfano en el bucket es inofensivo; la fila ya no está.
+      debugPrint('[flow] LocalFormSheet: no se pudo borrar $pathSubido: $e');
+    }
+    return true;
   }
 
   @override
@@ -558,53 +630,18 @@ class _LocalFormSheetState extends State<_LocalFormSheet> {
               ),
               const SizedBox(height: 16),
 
-              // ── Selector de imagen ────────────────────────
-              GestureDetector(
-                onTap: _showImagenPicker,
-                child: Container(
-                  height: 140,
-                  decoration: BoxDecoration(
-                    color: AppTheme.surface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(11),
-                    child: _imagenFile != null
-                        ? PreviewImagen(
-                            file: _imagenFile!,
-                            fit: BoxFit.cover,
-                            width: double.infinity,
-                          )
-                        : _fotoUrl != null
-                        ? NetImage(
-                            url: _fotoUrl!,
-                            fit: BoxFit.cover,
-                            width: double.infinity,
-                            placeholder: () => const Center(
-                              child: CircularProgressIndicator(),
-                            ),
-                            errorWidget: () =>
-                                _ImagePlaceholder(icon: Icons.store_outlined),
-                          )
-                        : _ImagePlaceholder(icon: Icons.store_outlined),
-                  ),
+              // ── Foto del local (obligatoria) ──────────────
+              // El campo valida por su cuenta: es un `FormField`, así que el
+              // error de la foto sale junto al del nombre al pulsar Guardar.
+              CampoFotoObligatoria(
+                queEs: 'local',
+                fotoGuardada: _fotoUrl,
+                archivo: _imagenFile,
+                alto: 140,
+                placeholder: const _ImagePlaceholder(
+                  icon: Icons.store_outlined,
                 ),
-              ),
-              const SizedBox(height: 4),
-              Center(
-                child: TextButton.icon(
-                  onPressed: _showImagenPicker,
-                  icon: const Icon(
-                    Icons.add_photo_alternate_outlined,
-                    size: 16,
-                  ),
-                  label: Text(
-                    _imagenFile != null || _fotoUrl != null
-                        ? 'Cambiar imagen'
-                        : 'Agregar imagen',
-                  ),
-                ),
+                onElegir: _showImagenPicker,
               ),
               const SizedBox(height: 8),
 
@@ -1054,19 +1091,27 @@ class _SwitchActivo extends StatelessWidget {
               : AppTheme.warning.withValues(alpha: 0.4),
         ),
       ),
-      child: SwitchListTile(
-        value: valor,
-        onChanged: onChanged,
-        dense: true,
-        visualDensity: VisualDensity.compact,
-        activeThumbColor: AppTheme.primary,
-        title: Text(
-          titulo,
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-        ),
-        subtitle: Text(
-          ayuda,
-          style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+      // `Material` transparente: el `SwitchListTile` pinta su fondo y su splash
+      // en el `Material` más cercano, y el `Container` de arriba tiene color
+      // propio, así que sin esto los efectos quedaban ocultos (Flutter lo
+      // asevera en debug: "ListTile background color or ink splashes may be
+      // invisible").
+      child: Material(
+        color: Colors.transparent,
+        child: SwitchListTile(
+          value: valor,
+          onChanged: onChanged,
+          dense: true,
+          visualDensity: VisualDensity.compact,
+          activeThumbColor: AppTheme.primary,
+          title: Text(
+            titulo,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+          subtitle: Text(
+            ayuda,
+            style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+          ),
         ),
       ),
     );
@@ -1121,4 +1166,12 @@ class _ImagePlaceholder extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Quita el prefijo `Exception: ` que Dart añade en `toString()`, para que el
+/// aviso al admin se lea como el mensaje real y no como un volcado técnico.
+String _mensajeLegible(Object e) {
+  const prefijo = 'Exception: ';
+  final texto = e.toString();
+  return texto.startsWith(prefijo) ? texto.substring(prefijo.length) : texto;
 }

@@ -18,6 +18,25 @@ class ModoGestionResultado {
   final int tramosCreados;
 }
 
+/// Resultado de `guardarTurnoAuto`, con el recurso en el que quedó el turno.
+class TurnoAutoResultado {
+  const TurnoAutoResultado({
+    required this.id,
+    this.idRecurso,
+    this.ignoroRecursoElegido = false,
+  });
+
+  /// Id del turno creado o editado.
+  final int id;
+
+  /// Recurso en el que quedó el turno (lo devuelve la RPC).
+  final int? idRecurso;
+
+  /// `true` si se pidió un recurso concreto y la base lo ignoró porque todavía
+  /// no tiene aplicada la migración 52.
+  final bool ignoroRecursoElegido;
+}
+
 /// CRUD de recursos / tramos / turnos de un local_servicio.
 /// Envuelve las RPCs admin flow.admin_*_recurso / _tramo / _turno
 /// (ver docs/flow_schema/rpc admin/25_admin_recursos.sql).
@@ -221,10 +240,16 @@ class RecursoService {
   /// Crea (id == null) o actualiza un turno en modo simplificado.
   ///
   /// La RPC hace en UNA transacción lo que en modo avanzado serían tres viajes:
-  /// garantiza el recurso (el único del local_servicio, o uno oculto "Cupo"),
-  /// crea el tramo propio del turno si aún no lo tiene y enlaza `turno_tramo`.
-  /// Con esto la UI puede ofrecer "Solo configurar turnos" sin pedir tramos.
-  static Future<int> guardarTurnoAuto({
+  /// garantiza el recurso, crea el tramo propio del turno si aún no lo tiene y
+  /// enlaza `turno_tramo`. Con esto la UI puede ofrecer "Solo configurar turnos"
+  /// sin pedir tramos.
+  ///
+  /// [idRecurso] es el recurso al que debe ir el turno **nuevo**: con varios
+  /// recursos la RPC elegía siempre el primero del local_servicio (migración 52).
+  /// Si la base todavía no tiene esa migración el guardado **no se rompe**: se
+  /// reintenta sin el parámetro (comportamiento anterior) y el resultado lo
+  /// indica con [TurnoAutoResultado.ignoroRecursoElegido] para que la UI avise.
+  static Future<TurnoAutoResultado> guardarTurnoAuto({
     required String uuidUsuario,
     required int idLocalServicio,
     required String nombre,
@@ -234,28 +259,70 @@ class RecursoService {
     String? horaInicio,
     String? horaFin,
     int? id,
+    int? idRecurso,
   }) async {
-    final res = await _supabase
-        .schema(_schema)
-        .rpc(
-          'admin_guardar_turno_auto',
-          params: {
-            'p_uuid_usuario': uuidUsuario,
-            'p_id_local_servicio': idLocalServicio,
-            'p_nombre': nombre,
-            'p_orden': orden,
-            'p_activo': activo,
-            'p_precios': precios ?? const {},
-            'p_hora_inicio': _horaNullable(horaInicio),
-            'p_hora_fin': _horaNullable(horaFin),
-            'p_id': id,
-          },
-        );
+    final params = <String, dynamic>{
+      'p_uuid_usuario': uuidUsuario,
+      'p_id_local_servicio': idLocalServicio,
+      'p_nombre': nombre,
+      'p_orden': orden,
+      'p_activo': activo,
+      'p_precios': precios ?? const {},
+      'p_hora_inicio': _horaNullable(horaInicio),
+      'p_hora_fin': _horaNullable(horaFin),
+      'p_id': id,
+    };
+
+    // Sin recurso elegido (modo "solo configurar turnos") no se manda el
+    // parámetro: así funciona igual con la RPC de 9 o de 10 argumentos.
+    if (idRecurso == null) {
+      return _parsearTurnoAuto(await _rpcTurnoAuto(params));
+    }
+
+    try {
+      final res = await _rpcTurnoAuto({...params, 'p_id_recurso': idRecurso});
+      final guardado = _parsearTurnoAuto(res);
+      // La RPC devuelve el recurso real: si no es el pedido, la base ignoró el
+      // parámetro (migración 52 sin aplicar) y hay que avisar.
+      return guardado.idRecurso == null
+          ? TurnoAutoResultado(id: guardado.id, idRecurso: idRecurso)
+          : guardado;
+    } catch (e) {
+      if (!_esFaltaParametroRecurso(e)) rethrow;
+      // Base sin la migración 52: se guarda como antes para no bloquear al
+      // admin. `ignoroRecursoElegido` hace que la pantalla se lo diga claro.
+      final guardado = _parsearTurnoAuto(await _rpcTurnoAuto(params));
+      return TurnoAutoResultado(
+        id: guardado.id,
+        idRecurso: guardado.idRecurso,
+        ignoroRecursoElegido: true,
+      );
+    }
+  }
+
+  static Future<Object> _rpcTurnoAuto(Map<String, dynamic> params) =>
+      _supabase.schema(_schema).rpc('admin_guardar_turno_auto', params: params);
+
+  static TurnoAutoResultado _parsearTurnoAuto(Object res) {
     final json = res as Map<String, dynamic>;
     if (json['ok'] != true) {
       throw Exception(json['error'] ?? 'No se pudo guardar el turno');
     }
-    return (json['id'] as num).toInt();
+    return TurnoAutoResultado(
+      id: (json['id'] as num).toInt(),
+      idRecurso: (json['id_recurso'] as num?)?.toInt(),
+    );
+  }
+
+  /// ¿El error es "esa función no existe con esos parámetros"?
+  ///
+  /// PostgREST responde `PGRST202` (con "schema cache" en el texto) cuando la
+  /// base no conoce `p_id_recurso`: significa que falta la migración 52.
+  static bool _esFaltaParametroRecurso(Object error) {
+    final texto = error.toString().toLowerCase();
+    return texto.contains('pgrst202') ||
+        texto.contains('could not find the function') ||
+        (texto.contains('schema cache') && texto.contains('p_id_recurso'));
   }
 
   /// Activa o desactiva los modos simplificados del local_servicio.

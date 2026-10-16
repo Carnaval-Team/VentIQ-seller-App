@@ -4,7 +4,7 @@ class ResultadoPrecioReserva {
   final double total;
   final double unitario;
   final String moneda;
-  final String origen; // 'base' | 'regla' | 'sin_config'
+  final String origen; // 'base' | 'regla' | 'turno' | 'sin_config'
   final String? siClave;
 
   const ResultadoPrecioReserva({
@@ -20,16 +20,35 @@ class ResultadoPrecioReserva {
 class PrecioReserva {
   PrecioReserva._();
 
+  /// Precio unitario × [cantidad] para [datosAdicionales].
+  ///
+  /// Orden de resolución (idéntico al de `flow.calcular_precio_con_reglas`):
+  ///  1. **Base**: [baseUnitario] si viene (precio propio del turno, `origen`
+  ///     `'turno'`), si no `config.preciosBase` en la moneda elegida y, como
+  ///     respaldo, en la moneda por defecto.
+  ///  2. **Reglas** en orden: gana la primera que coincide y cuyo precio sea
+  ///     resoluble en la moneda elegida (o en la moneda por defecto). Una regla
+  ///     sin precio para ninguna de las dos se ignora y no devuelve `0`.
   static ResultadoPrecioReserva calcular({
     required ConfigPrecio config,
     required Map<String, dynamic> datosAdicionales,
     String? moneda,
     int cantidad = 1,
+    double? baseUnitario,
   }) {
     final cant = cantidad < 1 ? 1 : cantidad;
     final monedas = config.monedas.isEmpty ? ['USD'] : config.monedas;
     var mon = moneda ?? config.monedaDefault;
     if (!monedas.contains(mon)) mon = config.monedaDefault;
+
+    // La base es el precio propio del turno si viene (transporte), y si no el
+    // `precios_base` del servicio. Las reglas se aplican ENCIMA de esa base.
+    final unitBase = baseUnitario ??
+        config.preciosBase[mon] ??
+        config.preciosBase[config.monedaDefault];
+    final origenBase = baseUnitario != null
+        ? 'turno'
+        : (config.preciosBase.isEmpty ? 'sin_config' : 'base');
 
     for (final regla in config.reglas) {
       if (regla.siClave.isEmpty || regla.preciosOpcion.isEmpty) continue;
@@ -38,7 +57,11 @@ class PrecioReserva {
       final vs = valor.toString();
       final preciosOpc = regla.preciosOpcion[vs];
       if (preciosOpc == null || preciosOpc.isEmpty) continue;
-      final unit = preciosOpc[mon] ?? preciosOpc[config.monedaDefault] ?? 0;
+      // Una regla que casa pero no tiene precio para la moneda elegida ni para
+      // la moneda por defecto se IGNORA: nunca se cobra 0 por este motivo, se
+      // sigue con la base (o con la siguiente regla que sí tenga precio).
+      final unit = preciosOpc[mon] ?? preciosOpc[config.monedaDefault];
+      if (unit == null) continue;
       return ResultadoPrecioReserva(
         total: unit * cant,
         unitario: unit,
@@ -48,15 +71,12 @@ class PrecioReserva {
       );
     }
 
-    final unitBase =
-        config.preciosBase[mon] ??
-        config.preciosBase[config.monedaDefault] ??
-        0;
+    final unit = unitBase ?? 0;
     return ResultadoPrecioReserva(
-      total: unitBase * cant,
-      unitario: unitBase,
+      total: unit * cant,
+      unitario: unit,
       moneda: mon,
-      origen: config.preciosBase.isEmpty ? 'sin_config' : 'base',
+      origen: origenBase,
     );
   }
 

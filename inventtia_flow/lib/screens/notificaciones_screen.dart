@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../config/app_theme.dart';
 import '../models/notificacion.dart';
 import '../providers/notificacion_provider.dart';
+import '../utils/notificacion_orden.dart';
 
 class NotificacionesScreen extends StatelessWidget {
   const NotificacionesScreen({super.key});
@@ -15,6 +16,11 @@ class NotificacionesScreen extends StatelessWidget {
       body: Consumer<NotificacionProvider>(
         builder: (_, prov, __) {
           final items = prov.items;
+          // Agrupación por día (F1): una cabecera discreta delante de cada
+          // jornada. El orden se reafirma aquí con el helper puro — es
+          // idempotente y así las cabeceras nunca se repiten aunque la lista
+          // llegue desordenada por cualquier camino.
+          final filas = _filasPorDia(ordenarPorFecha(items));
           return Column(
             children: [
               _Hero(
@@ -32,11 +38,18 @@ class NotificacionesScreen extends StatelessWidget {
                       : ListView.builder(
                           physics: const AlwaysScrollableScrollPhysics(),
                           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                          itemCount: items.length,
-                          itemBuilder: (_, i) => _NotificacionCard(
-                            notif: items[i],
-                            onTap: () => prov.marcarLeida(items[i].id),
-                          ),
+                          itemCount: filas.length,
+                          itemBuilder: (_, i) {
+                            final fila = filas[i];
+                            if (fila is _CabeceraDia) {
+                              return _CabeceraDiaTile(etiqueta: fila.etiqueta);
+                            }
+                            final notif = (fila as _FilaNotificacion).notif;
+                            return _NotificacionCard(
+                              notif: notif,
+                              onTap: () => prov.marcarLeida(notif.id),
+                            );
+                          },
                         ),
                 ),
               ),
@@ -183,6 +196,76 @@ class _HeroIconButton extends StatelessWidget {
       ),
     );
     return tooltip == null ? btn : Tooltip(message: tooltip!, child: btn);
+  }
+}
+
+// ── Agrupación por día (F1) ──────────────────────────────────────────────────
+//
+// El feed se aplana a una lista de filas: o una cabecera de jornada o una
+// tarjeta. Se hace con dos clases y no con `List<Widget>` para no construir los
+// ~100 widgets de golpe y poder seguir usando `ListView.builder`.
+
+sealed class _FilaFeed {
+  const _FilaFeed();
+}
+
+class _CabeceraDia extends _FilaFeed {
+  final String etiqueta;
+  const _CabeceraDia(this.etiqueta);
+}
+
+class _FilaNotificacion extends _FilaFeed {
+  final Notificacion notif;
+  const _FilaNotificacion(this.notif);
+}
+
+/// Intercala una cabecera la primera vez que aparece cada día.
+///
+/// Como la lista viene ordenada de más reciente a más antigua, los avisos de un
+/// mismo día son consecutivos; basta comparar con la etiqueta anterior. Las
+/// etiquetas (`Hoy`, `Ayer`, `dd/MM/yyyy`) identifican un día de calendario
+/// único, así que no hay dos jornadas distintas con el mismo texto.
+List<_FilaFeed> _filasPorDia(List<Notificacion> items) {
+  final filas = <_FilaFeed>[];
+  String? etiquetaActual;
+  for (final n in items) {
+    final etiqueta = etiquetaDiaNotificacion(n.createdAt);
+    if (etiqueta != etiquetaActual) {
+      etiquetaActual = etiqueta;
+      filas.add(_CabeceraDia(etiqueta));
+    }
+    filas.add(_FilaNotificacion(n));
+  }
+  return filas;
+}
+
+/// Cabecera de día discreta: texto en `textSecondary` con una línea fina que
+/// rellena el ancho. Sin fondo ni tarjeta, para que no compita con las tarjetas.
+class _CabeceraDiaTile extends StatelessWidget {
+  final String etiqueta;
+
+  const _CabeceraDiaTile({required this.etiqueta});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, right: 4, top: 6, bottom: 10),
+      child: Row(
+        children: [
+          Text(
+            etiqueta,
+            style: const TextStyle(
+              color: AppTheme.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.4,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: Container(height: 1, color: AppTheme.border)),
+        ],
+      ),
+    );
   }
 }
 

@@ -12,6 +12,7 @@ import '../services/agenda_service.dart';
 import '../services/auth_service.dart';
 import '../services/catalogo_service.dart';
 import '../utils/precio_reserva.dart';
+import '../utils/reserva_listado.dart';
 import '../utils/telefono_contacto.dart';
 import '../widgets/datos_adicionales_view.dart';
 import '../widgets/notificaciones_bell.dart';
@@ -103,25 +104,25 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
     final uuid = AuthService.currentUserId ?? '';
     if (uuid.isEmpty) return;
 
-    final entidad = ticket.entidad;
-    final horas = entidad?.horasAnticipacionCancelacion ?? 0;
+    final ahora = DateTime.now();
 
-    // Si la entidad configuró horas de anticipación, validamos el plazo.
-    // Si no hay configuración (0 o null), el cliente puede cancelar en cualquier momento.
-    if (horas > 0) {
-      final ahora = DateTime.now();
-      final limite = ticket.fechaHoraReserva.subtract(Duration(hours: horas));
-      if (ahora.isAfter(limite)) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Solo puedes cancelar hasta $horas horas antes de la reserva',
-            ),
-            backgroundColor: AppTheme.error,
-          ),
-        );
-        return;
-      }
+    // Validación única antes de confirmar: estado, fecha no pasada y plazo de
+    // anticipación. Si no se puede, se explica el motivo exacto al cliente.
+    if (!puedeCancelarCliente(ticket, ahora: ahora)) {
+      final horas = ticket.entidad?.horasAnticipacionCancelacion ?? 0;
+      final motivo = switch (ticket.estado?.esReservado) {
+        // Ya no está en estado Reservado (cancelada o completada).
+        false => 'Esta reserva ya no se puede cancelar',
+        _ when !ahora.isBefore(ticket.fechaHoraReserva) =>
+          'Esta reserva ya pasó',
+        _ when horas > 0 =>
+          'Solo puedes cancelar hasta $horas horas antes de la reserva',
+        _ => 'Esta reserva ya no se puede cancelar',
+      };
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(motivo), backgroundColor: AppTheme.error),
+      );
+      return;
     }
 
     final confirm = await showDialog<bool>(
@@ -348,9 +349,10 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
         );
       } else {
         tickets = await AgendaService.getMisTickets(uuid);
-        tickets.sort(
-          (a, b) => a.fechaHoraReserva.compareTo(b.fechaHoraReserva),
-        );
+        // Activas primero, luego canceladas y al final completadas; dentro de
+        // cada grupo, la cita más cercana al día de hoy (utilidad del listado
+        // del cliente, no del panel del staff por día).
+        tickets = ordenarReservasCliente(tickets);
       }
       if (!mounted) return;
       setState(() {
@@ -426,7 +428,7 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
                           itemBuilder: (_, i) => _TicketCard(
                             ticket: _filteredTickets[i],
                             miUuid: context.read<AuthProvider>().user?.id ?? '',
-                            onCancelar: null,
+                            onCancelar: _esVendedor ? null : _cancelar,
                             esVendedor: _esVendedor,
                             onCompletarStaff: _esVendedor
                                 ? _completarStaff
@@ -933,7 +935,7 @@ class _TicketCard extends StatelessWidget {
   bool get _esCompletada =>
       ticket.estado?.esCompletado == true || ticket.idEstado == 3;
   bool get _esCancelada =>
-      ticket.estado?.nombre == 'cancelado' || ticket.idEstado == 2;
+      ticket.estado?.esCancelado == true || ticket.idEstado == 2;
   bool get _esActiva => !_esCompletada && !_esCancelada;
 
   Color get _estadoColor {
@@ -949,13 +951,9 @@ class _TicketCard extends StatelessWidget {
     }
   }
 
-  bool get _puedeCancelar {
-    if (ticket.estado?.nombre != 'reservado') return false;
-    final horas = ticket.entidad?.horasAnticipacionCancelacion ?? 0;
-    if (horas <= 0) return true;
-    final limite = ticket.fechaHoraReserva.subtract(Duration(hours: horas));
-    return DateTime.now().isBefore(limite);
-  }
+  // Una sola fuente de verdad (estado Reservado + reserva futura + plazo de
+  // anticipación de la entidad), compartida con la validación de `_cancelar`.
+  bool get _puedeCancelar => puedeCancelarCliente(ticket);
 
   IconData get _estadoIcon {
     switch (ticket.estado?.nombre) {

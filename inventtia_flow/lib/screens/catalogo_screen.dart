@@ -10,6 +10,7 @@ import '../providers/favoritos_provider.dart';
 import '../services/catalogo_service.dart';
 import '../services/resena_service.dart';
 import '../services/tipo_actividad_service.dart';
+import '../tutorial/tutorial_anchor.dart';
 import '../utils/horario_atencion.dart';
 import '../utils/precio_reserva.dart';
 import '../widgets/boton_favorito.dart';
@@ -28,6 +29,27 @@ class CatalogoScreen extends StatefulWidget {
 
 class CatalogoScreenState extends State<CatalogoScreen> {
   Future<void> reload() => _load();
+
+  /// Abre el detalle del primer servicio del listado.
+  ///
+  /// Lo usa el tutorial para llevar al cliente al detalle cuando el paso
+  /// siguiente vive ahí: hace exactamente la misma navegación que el toque de la
+  /// tarjeta. Si el catálogo todavía no tiene datos, fuerza una carga, porque el
+  /// ancla del paso necesita una tarjeta montada.
+  Future<void> abrirPrimerServicio() async {
+    if (_isLoading || _localServicios.isEmpty) {
+      await _load();
+    }
+    if (!mounted || _localServicios.isEmpty) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            LocalServicioDetailScreen(localServicio: _localServicios.first),
+      ),
+    );
+  }
+
   List<LocalServicio> _localServicios = [];
   bool _isLoading = true;
 
@@ -519,12 +541,23 @@ class CatalogoScreenState extends State<CatalogoScreen> {
                             child: ListView.builder(
                               padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                               itemCount: lista.length,
-                              itemBuilder: (_, i) => _LocalServicioCard(
-                                localServicio: lista[i],
-                                taxonomia: _taxonomia,
-                                esFavorito: ids.contains(lista[i].id),
-                                resenas: _resenas[lista[i].id],
-                              ),
+                              itemBuilder: (_, i) {
+                                final tarjeta = _LocalServicioCard(
+                                  localServicio: lista[i],
+                                  taxonomia: _taxonomia,
+                                  esFavorito: ids.contains(lista[i].id),
+                                  resenas: _resenas[lista[i].id],
+                                );
+                                // Un `id` de ancla solo puede registrarse una
+                                // vez: se marca la primera tarjeta de la lista.
+                                // Ojo: la lista es perezosa, así que el ancla no
+                                // existe hasta que esa tarjeta se construye.
+                                if (i != 0) return tarjeta;
+                                return TutorialAnchor(
+                                  id: 'catalogo_tarjeta',
+                                  child: tarjeta,
+                                );
+                              },
                             ),
                           ),
                   ),
