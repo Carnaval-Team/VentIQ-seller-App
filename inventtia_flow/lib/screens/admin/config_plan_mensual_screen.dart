@@ -7,6 +7,7 @@ import '../../models/servicio.dart';
 import '../../services/auth_service.dart';
 import '../../services/plan_config_service.dart';
 import '../../services/recurso_service.dart';
+import '../../tutorial/tutorial_anchor.dart';
 
 /// Configuración recurrente de capacidades por día de la semana para un
 /// local_servicio + generación de los planes de un mes en lote.
@@ -424,23 +425,26 @@ class _ConfigPlanMensualScreenState extends State<ConfigPlanMensualScreen> {
                   ),
                 ),
                 const SizedBox(height: 14),
-                ElevatedButton.icon(
-                  onPressed: _generando ? null : _generar,
-                  icon: _generando
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Icon(Icons.auto_awesome_motion_outlined),
-                  label: Text(
-                    _generando ? 'Generando...' : 'Generar planes del mes',
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.success,
+                TutorialAnchor(
+                  id: 'admin_config_mensual',
+                  child: ElevatedButton.icon(
+                    onPressed: _generando ? null : _generar,
+                    icon: _generando
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Icon(Icons.auto_awesome_motion_outlined),
+                    label: Text(
+                      _generando ? 'Generando...' : 'Generar planes del mes',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.success,
+                    ),
                   ),
                 ),
               ],

@@ -4,7 +4,8 @@
 import { handleOptions, okResponse, errorResponse } from "../_shared/cors.ts";
 import { getAuthContext, assertStoreAccess } from "../_shared/auth.ts";
 import { wapi } from "../_shared/wapi_client.ts";
-import { normalizeWapiStatus } from "../_shared/status.ts";
+import { normalizeWapiStatus, rawStatusKey } from "../_shared/status.ts";
+import { updateSessionState } from "../_shared/session_store.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return handleOptions();
@@ -74,14 +75,20 @@ Deno.serve(async (req) => {
     }
   }
 
-  // Persistir cambios
-  const updates: Record<string, unknown> = {
+  // Persistir cambios. Se guarda además el status CRUDO: es lo único que
+  // permite diagnosticar después un `action_required` (modal "What's new" de
+  // WhatsApp) o un `failed`, que el normalizado colapsa a DISCONNECTED/FAILED.
+  const res = await updateSessionState(ctx.admin, ses.id, {
     status,
-    last_status_at: new Date().toISOString(),
-  };
-  if (phoneNumber) updates.phone_number = phoneNumber;
-  if (qr?.image) updates.last_qr_image = qr.image;
-  await ctx.admin.from("app_wapi_sesion").update(updates).eq("id", ses.id);
+    rawStatus: sessionRes.success && sessionRes.data
+      ? (rawStatusKey(sessionRes.data.status) || null)
+      : (rawStatusKey(ses.raw_status) || null),
+    ...(phoneNumber ? { phoneNumber } : {}),
+    ...(qr?.image ? { lastQrImage: qr.image } : {}),
+  });
+  if (!res.ok) {
+    console.error(`[wapi-session-status] no se pudo guardar el estado: ${res.error}`);
+  }
 
   return okResponse({
     id_sesion: ses.id,
@@ -89,5 +96,9 @@ Deno.serve(async (req) => {
     status,
     phone_number: phoneNumber ?? null,
     qr: qr ?? null,
+    // Aviso explícito para la UI: `action_required` no se arregla reiniciando
+    // sin más, hay que confirmar el modal en el teléfono una vez.
+    requiere_confirmacion_manual: status === "DISCONNECTED" &&
+      rawStatusKey(sessionRes.data?.status) === "ACTION_REQUIRED",
   });
 });

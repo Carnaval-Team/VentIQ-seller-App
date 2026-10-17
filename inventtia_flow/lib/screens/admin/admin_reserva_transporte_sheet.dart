@@ -8,6 +8,7 @@ import '../../models/transporte.dart';
 import '../../services/agenda_admin_service.dart';
 import '../../services/transporte_service.dart';
 import '../../utils/precio_reserva.dart';
+import '../../utils/precio_turno.dart';
 import '../../widgets/datos_adicionales_form.dart';
 
 class AdminReservaTransporteSheet extends StatefulWidget {
@@ -152,16 +153,20 @@ class _AdminReservaTransporteSheetState
     String moneda,
   ) {
     final config = _configPrecio;
-    final base = PrecioReserva.calcular(
+    // El precio del turno es la BASE de las reglas por dato adicional (D5), no
+    // un atajo que sobrescribe el total: mismas cuentas que el servidor.
+    final baseTurno = precioBaseTurno(
+      precios: turno?.precios,
+      moneda: moneda,
+      monedaDefault: config.monedaDefault,
+    );
+    return PrecioReserva.calcular(
       config: config,
       datosAdicionales: {..._datosAdicionales, 'tipo_viaje': tipoViaje},
       cantidad: 1,
       moneda: moneda,
-    );
-    if (turno == null || turno.precios.isEmpty) return base.unitario;
-    return turno.precios[moneda] ??
-        turno.precios[config.monedaDefault] ??
-        turno.precios.values.first;
+      baseUnitario: baseTurno,
+    ).unitario;
   }
 
   DateTime get _diaInicialNormalizado => DateTime(

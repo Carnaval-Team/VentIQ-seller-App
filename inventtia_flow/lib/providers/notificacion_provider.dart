@@ -5,6 +5,7 @@ import '../models/notificacion.dart';
 import '../services/auth_service.dart';
 import '../services/local_notifications.dart';
 import '../services/notificacion_service.dart';
+import '../utils/notificacion_orden.dart';
 
 /// Estado global de notificaciones: mantiene la lista y el contador de no
 /// leidas (para el badge), escucha el realtime de Supabase mientras la app
@@ -60,8 +61,11 @@ class NotificacionProvider extends ChangeNotifier {
     notifyListeners();
 
     _sub = NotificacionService.watch(uuid).listen((rows) {
-      // El stream llega ascendente por created_at; la UI quiere descendente.
-      final ordenadas = rows.reversed.toList();
+      // El stream no garantiza un orden multicolumna (supabase solo aplica un
+      // `_orderBy`), así que el orden final se impone aquí con el helper puro:
+      // created_at DESC, desempate por id DESC (D2). Antes se hacía `reversed`
+      // creyendo que llegaba ascendente, y dejaba lo más viejo primero.
+      final ordenadas = ordenarPorFecha(rows);
 
       // Detecta novedades para disparar notificacion local. En el primer
       // snapshot solo registramos IDs (no notificamos historico).
@@ -118,7 +122,9 @@ class NotificacionProvider extends ChangeNotifier {
     final u = _uuid;
     if (u == null) return;
     try {
-      _items = await NotificacionService.getMisNotificaciones(u);
+      _items = ordenarPorFecha(
+        await NotificacionService.getMisNotificaciones(u),
+      );
       _conocidos
         ..clear()
         ..addAll(_items.map((n) => n.id));

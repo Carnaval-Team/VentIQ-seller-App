@@ -15,14 +15,18 @@ import '../services/coleccion_service.dart';
 import '../services/fidelidad_service.dart';
 import '../services/home_catalog_service.dart';
 import '../services/resena_service.dart';
+import '../tutorial/tutorial_anchor.dart';
 import '../utils/horario_atencion.dart';
 import '../widgets/boton_favorito.dart';
+import '../widgets/carrusel_tarjetas.dart';
 import '../widgets/filtros_servicios_sheet.dart';
 import '../widgets/home_hero_header.dart';
 import '../widgets/net_image.dart';
 import '../widgets/notificaciones_bell.dart';
 import '../widgets/resenas.dart';
+import '../widgets/tarjeta_coleccion.dart';
 import '../widgets/tarjeta_resena_reciente.dart';
+import 'coleccion_detail_screen.dart';
 import 'espacio_patrocinado_screen.dart';
 import 'favoritos_screen.dart';
 import 'local_servicio_detail_screen.dart';
@@ -114,11 +118,12 @@ class HomeClientScreenState extends State<HomeClientScreen>
   /// Colecciones temáticas vigentes (`flow.coleccion`), curadas por el
   /// superadmin. Vacío si la migración `30_colecciones.sql` no está aplicada: en
   /// ese caso la sección no se pinta.
+  ///
+  /// Una colección **ya no filtra** este feed: abre su propia vista
+  /// (`ColeccionDetailScreen`), donde está el listado curado y se reserva. Un
+  /// filtro dejaba al cliente en la misma lista de siempre, recortada, que no es
+  /// lo que promete una colección.
   List<Coleccion> _colecciones = const [];
-
-  /// Colección seleccionada. `null` = sin filtro. Cuando hay una, el feed se
-  /// limita a sus servicios (filtrado en memoria, como la categoría).
-  Coleccion? _coleccionActiva;
 
   /// Programa de fidelidad del usuario: saldo, regla vigente, beneficio de
   /// bienvenida pendiente y últimos movimientos (`flow.cliente_mi_fidelidad`).
@@ -197,7 +202,6 @@ class HomeClientScreenState extends State<HomeClientScreen>
           category: _category,
           subcategoria: _subcategoria,
           provincia: _provincia,
-          idColeccion: _coleccionActiva?.id,
           topRated: _topRated,
         );
         if (!mounted) return;
@@ -428,8 +432,7 @@ class HomeClientScreenState extends State<HomeClientScreen>
               .expand((c) => c.subcategorias)
               .toList(growable: false));
     final subDesaparecio =
-        subActiva != null &&
-        !subcategorias.any((s) => s.id == subActiva.id);
+        subActiva != null && !subcategorias.any((s) => s.id == subActiva.id);
 
     setState(() {
       _categories = categorias;
@@ -499,25 +502,12 @@ class HomeClientScreenState extends State<HomeClientScreen>
 
   /// Aplica las colecciones temáticas que vinieron dentro del feed.
   ///
-  /// Si la colección seleccionada desapareció (el superadmin la apagó o le quitó
-  /// todos los servicios), se quita el filtro **y se relee** para no dejar el
-  /// feed vacío sin explicación.
+  /// Solo se guardan: la sección las pinta como tarjetas que **abren** la vista
+  /// de la colección. Antes esto además gestionaba una colección "activa" que
+  /// filtraba el feed; ese filtro ya no existe, así que no hay nada que releer.
   void _aplicarColecciones(List<Coleccion> colecciones) {
     if (!mounted || !HomeFeatures.colecciones) return;
-
-    final activa = _coleccionActiva;
-    final sigueExistiendo =
-        activa != null && colecciones.any((c) => c.id == activa.id);
-
-    setState(() {
-      _colecciones = colecciones;
-      if (!sigueExistiendo) _coleccionActiva = null;
-    });
-
-    if (activa != null && !sigueExistiendo) {
-      // El filtro ya no aplica: releer para que el feed vuelva a estar completo.
-      _loadPage(reset: true);
-    }
+    setState(() => _colecciones = colecciones);
   }
 
   /// Saldo y movimientos de puntos, y el beneficio de bienvenida pendiente.
@@ -532,42 +522,18 @@ class HomeClientScreenState extends State<HomeClientScreen>
     setState(() => _fidelidad = fidelidad);
   }
 
-  /// Filtra el feed por una colección. Tocar la que ya está activa la quita.
-  void _selectColeccion(Coleccion coleccion) {
-    if (_coleccionActiva?.id == coleccion.id) {
-      _limpiarColeccion();
-      return;
-    }
-    setState(() => _coleccionActiva = coleccion);
-    _loadPage(reset: true);
-    _showToast('Mostrando ${coleccion.titulo}.');
-  }
-
-  void _limpiarColeccion() {
-    if (_coleccionActiva == null) return;
-    setState(() => _coleccionActiva = null);
-    _loadPage(reset: true);
-  }
-
-  /// Degradado de la tarjeta a partir de los colores que fijó el superadmin.
+  /// Abre la vista de la colección.
   ///
-  /// Si un color no es un `#RRGGBB` válido se cae al degradado por defecto en
-  /// vez de romper el pintado: el campo lo escribe una persona en un formulario.
-  List<Color> _degradadoDe(Coleccion coleccion) {
-    final inicio = _colorHex(coleccion.colorInicio);
-    final fin = _colorHex(coleccion.colorFin);
-    if (inicio == null && fin == null) {
-      return const [Color(0xFF2C3654), Color(0xFF1FA8B8)];
-    }
-    return [inicio ?? fin!, fin ?? inicio!];
-  }
-
-  static Color? _colorHex(String? valor) {
-    final v = valor?.trim().replaceFirst('#', '');
-    if (v == null || v.length != 6) return null;
-    final n = int.tryParse(v, radix: 16);
-    if (n == null) return null;
-    return Color(0xFF000000 | n);
+  /// Tocar una colección ya no filtra el feed de abajo: lleva a su propia
+  /// pantalla, donde están todos sus servicios agrupados por establecimiento y
+  /// se pueden reservar varios de una vez.
+  void _abrirColeccion(Coleccion coleccion) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ColeccionDetailScreen(coleccion: coleccion),
+      ),
+    );
   }
 
   void _onScroll() {
@@ -790,8 +756,6 @@ class HomeClientScreenState extends State<HomeClientScreen>
             // Secciones apagadas: su respaldo no existe todavía ni en la base
             // de datos ni en la administración. `lib/config/home_features.dart`
             // documenta qué falta para encender cada una.
-            if (HomeFeatures.colecciones)
-              SliverToBoxAdapter(child: _buildCollections()),
             if (HomeFeatures.patrocinados)
               SliverToBoxAdapter(child: _buildSponsoredCarousel()),
             if (HomeFeatures.ofertasRelampago)
@@ -802,6 +766,14 @@ class HomeClientScreenState extends State<HomeClientScreen>
               SliverToBoxAdapter(child: _buildWeeklyPopular()),
             if (HomeFeatures.resenas)
               SliverToBoxAdapter(child: _buildResenasRecientes()),
+            // Las colecciones van **debajo** de "Lo que dicen los clientes": el
+            // Home presenta primero lo que ya conoce el cliente (categorías,
+            // patrocinados, ofertas, establecimientos, reseñas) y la colección
+            // curada queda como propuesta de descubrimiento, justo antes del
+            // feed completo. En la portada competía con la cabecera y empujaba
+            // hacia abajo todo lo demás.
+            if (HomeFeatures.colecciones)
+              SliverToBoxAdapter(child: _buildCollections()),
             if (HomeFeatures.fidelidad)
               SliverToBoxAdapter(child: _buildLoyaltyBanner()),
             SliverToBoxAdapter(child: _buildHowItWorks()),
@@ -971,72 +943,79 @@ class HomeClientScreenState extends State<HomeClientScreen>
         ),
         child: Column(
           children: [
-            Container(
-              decoration: BoxDecoration(
-                color: AppTheme.surface,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppTheme.border),
-              ),
-              child: TextField(
-                controller: _searchController,
-                focusNode: _searchFocusNode,
-                onChanged: _onSearchChanged,
-                textInputAction: TextInputAction.search,
-                decoration: InputDecoration(
-                  hintText: 'Buscar servicio, local o categoría…',
-                  hintStyle: const TextStyle(
-                    color: AppTheme.textSecondary,
-                    fontSize: 12.5,
-                  ),
-                  prefixIcon: const Icon(
-                    Icons.search_rounded,
-                    color: AppTheme.primary,
-                    size: 21,
-                  ),
-                  suffixIcon: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (HomeFeatures.busquedaPorVoz)
+            TutorialAnchor(
+              id: 'home_buscar',
+              child: Container(
+                decoration: BoxDecoration(
+                  color: AppTheme.surface,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppTheme.border),
+                ),
+                child: TextField(
+                  controller: _searchController,
+                  focusNode: _searchFocusNode,
+                  onChanged: _onSearchChanged,
+                  textInputAction: TextInputAction.search,
+                  decoration: InputDecoration(
+                    hintText: 'Buscar servicio, local o categoría…',
+                    hintStyle: const TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontSize: 12.5,
+                    ),
+                    prefixIcon: const Icon(
+                      Icons.search_rounded,
+                      color: AppTheme.primary,
+                      size: 21,
+                    ),
+                    suffixIcon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (HomeFeatures.busquedaPorVoz)
+                          IconButton(
+                            tooltip: 'Buscar por voz',
+                            onPressed: () => _showToast(
+                              'La búsqueda por voz estará disponible pronto.',
+                            ),
+                            icon: const Icon(
+                              Icons.mic_none_rounded,
+                              color: AppTheme.textSecondary,
+                              size: 20,
+                            ),
+                          ),
+                        if (HomeFeatures.busquedaPorVoz)
+                          Container(
+                            width: 1,
+                            height: 20,
+                            color: AppTheme.border,
+                          ),
                         IconButton(
-                          tooltip: 'Buscar por voz',
-                          onPressed: () => _showToast(
-                            'La búsqueda por voz estará disponible pronto.',
-                          ),
-                          icon: const Icon(
-                            Icons.mic_none_rounded,
-                            color: AppTheme.textSecondary,
-                            size: 20,
-                          ),
-                        ),
-                      if (HomeFeatures.busquedaPorVoz)
-                        Container(width: 1, height: 20, color: AppTheme.border),
-                      IconButton(
-                        tooltip: 'Filtros avanzados',
-                        onPressed: _abrirFiltros,
-                        // Mismo lenguaje que el buscador del catálogo: con
-                        // filtros puestos, el botón lo dice.
-                        icon: _filtros.activos > 0
-                            ? Badge.count(
-                                count: _filtros.activos,
-                                backgroundColor: AppTheme.accent,
-                                child: const Icon(
+                          tooltip: 'Filtros avanzados',
+                          onPressed: _abrirFiltros,
+                          // Mismo lenguaje que el buscador del catálogo: con
+                          // filtros puestos, el botón lo dice.
+                          icon: _filtros.activos > 0
+                              ? Badge.count(
+                                  count: _filtros.activos,
+                                  backgroundColor: AppTheme.accent,
+                                  child: const Icon(
+                                    Icons.tune_rounded,
+                                    color: AppTheme.primary,
+                                    size: 20,
+                                  ),
+                                )
+                              : const Icon(
                                   Icons.tune_rounded,
                                   color: AppTheme.primary,
                                   size: 20,
                                 ),
-                              )
-                            : const Icon(
-                                Icons.tune_rounded,
-                                color: AppTheme.primary,
-                                size: 20,
-                              ),
-                      ),
-                    ],
+                        ),
+                      ],
+                    ),
+                    filled: true,
+                    fillColor: Colors.transparent,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                    border: InputBorder.none,
                   ),
-                  filled: true,
-                  fillColor: Colors.transparent,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 14),
-                  border: InputBorder.none,
                 ),
               ),
             ),
@@ -1212,9 +1191,10 @@ class HomeClientScreenState extends State<HomeClientScreen>
               itemCount: subcategorias.length + 1,
               separatorBuilder: (_, __) => const SizedBox(width: 8),
               itemBuilder: (_, index) {
-                final subcategoria = index == 0 ? null : subcategorias[index - 1];
-                final seleccionada =
-                    subcategoria == null
+                final subcategoria = index == 0
+                    ? null
+                    : subcategorias[index - 1];
+                final seleccionada = subcategoria == null
                     ? _subcategoria == null
                     : _subcategoria?.id == subcategoria.id;
                 return _SubcategoriaChip(
@@ -1232,55 +1212,70 @@ class HomeClientScreenState extends State<HomeClientScreen>
 
   /// Colecciones temáticas reales (`flow.coleccion`), curadas por el superadmin.
   ///
-  /// Antes eran cuatro tarjetas inventadas ("Pack Novia", "Self-care Sunday",
-  /// "Ruta & Transporte", "Ofertas del día") con recuentos, emojis y colores que
-  /// no respaldaba ninguna tabla, y el toque no abría la colección: llevaba a la
-  /// categoría "más cercana" y avisaba con un toast. Ahora, si el superadmin no
-  /// ha curado ninguna, la sección **no se pinta**.
+  /// Antes era una rejilla de dos columnas con tarjetas de 112 px: el mismo
+  /// degradado plano, un emoji suelto y dos líneas de texto. Ocupaba media
+  /// pantalla, se veía apagada y el toque **filtraba el propio feed**, que es
+  /// justo lo contrario de lo que promete una colección curada.
+  ///
+  /// Ahora es un riel de una sola fila (una tarjeta de altura, no N/2 filas) con
+  /// piezas editoriales —halo, marca de agua, brillo lento, dato duro del
+  /// recuento— y el toque **abre la colección** (`ColeccionDetailScreen`), que
+  /// es donde se ve todo lo que trae y se reserva.
+  ///
+  /// Con una sola colección la tarjeta ocupa el ancho completo y gana el
+  /// subtítulo: una tarjeta suelta en un riel se vería descolgada.
   Widget _buildCollections() {
     if (!HomeFeatures.colecciones || _colecciones.isEmpty) {
-      return const SizedBox.shrink();
+      return sinColecciones;
     }
     final colecciones = _colecciones;
+    final unica = colecciones.length == 1;
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 22),
+      padding: const EdgeInsets.only(bottom: 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Sin "Explorar": no hay una pantalla de colecciones a la que ir; la
-          // tarjeta filtra el propio feed.
-          _sectionHeading('Colecciones destacadas'),
+          _sectionHeading(
+            'Colecciones destacadas',
+            trailing: unica ? null : 'Desliza →',
+          ),
           const SizedBox(height: 4),
-          const Text(
-            'Experiencias curadas para ti',
-            style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
-          ),
-          const SizedBox(height: 11),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: colecciones.length,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
-              mainAxisExtent: 112,
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              'Experiencias curadas para ti',
+              style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
             ),
-            itemBuilder: (_, index) {
-              final coleccion = colecciones[index];
-              final icono = coleccion.icono?.trim() ?? '';
-              return _CollectionCard(
-                collection: _Collection(
-                  coleccion.titulo,
-                  coleccion.subtituloORecuento,
-                  icono.isNotEmpty ? icono : '✨',
-                  _degradadoDe(coleccion),
-                ),
-                seleccionada: _coleccionActiva?.id == coleccion.id,
-                onTap: () => _selectColeccion(coleccion),
-              );
-            },
           ),
+          const SizedBox(height: 12),
+          if (unica)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: TarjetaColeccion(
+                coleccion: colecciones.first,
+                expandida: true,
+                alto: 176,
+                animacion: _shineController,
+                onTap: () => _abrirColeccion(colecciones.first),
+              ),
+            )
+          else
+            SizedBox(
+              height: 158,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                physics: const BouncingScrollPhysics(),
+                itemCount: colecciones.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (_, index) => TarjetaColeccion(
+                  coleccion: colecciones[index],
+                  animacion: _shineController,
+                  onTap: () => _abrirColeccion(colecciones[index]),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -1306,26 +1301,22 @@ class HomeClientScreenState extends State<HomeClientScreen>
           // Sin "Ver todo": no existe una pantalla de patrocinados a la que ir.
           _sectionHeading('Espacio patrocinado'),
           const SizedBox(height: 10),
-          SizedBox(
-            height: 176,
-            child: PageView.builder(
-              controller: _sponsoredController,
-              itemCount: campanas.length,
-              onPageChanged: (index) => setState(() => _sponsoredPage = index),
-              itemBuilder: (_, index) {
-                final campana = campanas[index];
-                return Padding(
-                  padding: EdgeInsets.only(
-                    left: index == 0 ? 16 : 5,
-                    right: index == campanas.length - 1 ? 16 : 5,
-                  ),
-                  child: _SponsoredCard(
-                    sponsored: _Sponsored.deCampana(campana),
-                    onTap: () => _abrirCampana(campana),
-                  ),
-                );
-              },
-            ),
+          // `CarruselTarjetas` y no un `PageView` a mano: con
+          // `viewportFraction < 1` el `PageView` centra la página y la primera
+          // tarjeta arrancaba en ~41 px (debajo de la "a" de "Espacio
+          // patrocinado") en vez de en 16, como el resto de las secciones.
+          CarruselTarjetas(
+            controller: _sponsoredController,
+            alto: 176,
+            itemCount: campanas.length,
+            onPageChanged: (index) => setState(() => _sponsoredPage = index),
+            itemBuilder: (_, index) {
+              final campana = campanas[index];
+              return _SponsoredCard(
+                sponsored: _Sponsored.deCampana(campana),
+                onTap: () => _abrirCampana(campana),
+              );
+            },
           ),
           const SizedBox(height: 9),
           Row(
@@ -1463,6 +1454,8 @@ class HomeClientScreenState extends State<HomeClientScreen>
             trailing: 'Ver todo',
             // "Ver todo" abre la lista completa del catálogo.
             onTrailingTap: widget.onVerCatalogo,
+            // El enlace es el primer objetivo del tutorial del cliente.
+            trailingAnchorId: 'home_ver_todo',
           ),
           const SizedBox(height: 4),
           const Padding(
@@ -1954,97 +1947,31 @@ class HomeClientScreenState extends State<HomeClientScreen>
   }
 
   Widget _buildFeedHeader() {
-    final activa = _coleccionActiva;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 2, 16, 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  // Con una colección activa el título cambia: "Más servicios
-                  // para ti" describiría mal una lista curada y filtrada.
-                  activa == null ? 'Más servicios para ti' : activa.titulo,
-                  style: const _SectionTitleStyle(),
-                ),
+          const Expanded(
+            child: Text('Más servicios para ti', style: _SectionTitleStyle()),
+          ),
+          if (_items.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
               ),
-              if (_items.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 7,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primary.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    _total == 1 ? '1 servicio' : '$_total servicios',
-                    style: const TextStyle(
-                      color: AppTheme.primary,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          if (activa != null) ...[
-            const SizedBox(height: 8),
-            _buildColeccionActivaChip(activa),
-          ],
-        ],
-      ),
-    );
-  }
-
-  /// Aviso de que el feed está limitado a una colección, con botón para quitar
-  /// el filtro. Sin esto el cliente vería menos servicios de los normales sin
-  /// saber por qué.
-  Widget _buildColeccionActivaChip(Coleccion coleccion) {
-    final icono = coleccion.icono?.trim() ?? '';
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-          decoration: BoxDecoration(
-            color: AppTheme.primary.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (icono.isNotEmpty) ...[
-                Text(icono, style: const TextStyle(fontSize: 12)),
-                const SizedBox(width: 5),
-              ],
-              Text(
-                'Colección · ${coleccion.titulo}',
+              child: Text(
+                _total == 1 ? '1 servicio' : '$_total servicios',
                 style: const TextStyle(
                   color: AppTheme.primary,
-                  fontSize: 11,
+                  fontSize: 10,
                   fontWeight: FontWeight.w700,
                 ),
               ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 10),
-        GestureDetector(
-          onTap: _limpiarColeccion,
-          child: const Text(
-            'Quitar filtro',
-            style: TextStyle(
-              color: AppTheme.textSecondary,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              decoration: TextDecoration.underline,
             ),
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -2190,33 +2117,41 @@ class HomeClientScreenState extends State<HomeClientScreen>
     String title, {
     String? trailing,
     VoidCallback? onTrailingTap,
+    // Ancla del tutorial sobre el enlace de la derecha. `null` = se pinta como
+    // siempre (el botón no cambia ni de tamaño ni de estilo).
+    String? trailingAnchorId,
   }) {
+    Widget? accion;
+    if (trailing != null) {
+      final boton = TextButton(
+        // Sin destino real, el botón sigue avisando ("Desliza…") en vez de
+        // fingir una navegación que no existe.
+        onPressed:
+            onTrailingTap ?? () => _showToast('Desliza para ver más opciones.'),
+        style: TextButton.styleFrom(
+          padding: EdgeInsets.zero,
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        child: Text(
+          trailing,
+          style: const TextStyle(
+            color: AppTheme.accent,
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      );
+      final ancla = trailingAnchorId;
+      accion = ancla == null ? boton : TutorialAnchor(id: ancla, child: boton);
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
           Expanded(child: Text(title, style: const _SectionTitleStyle())),
-          if (trailing != null)
-            TextButton(
-              // Sin destino real, el botón sigue avisando ("Desliza…") en vez de
-              // fingir una navegación que no existe.
-              onPressed:
-                  onTrailingTap ??
-                  () => _showToast('Desliza para ver más opciones.'),
-              style: TextButton.styleFrom(
-                padding: EdgeInsets.zero,
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: Text(
-                trailing,
-                style: const TextStyle(
-                  color: AppTheme.accent,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
+          if (accion != null) accion,
         ],
       ),
     );
@@ -2348,101 +2283,6 @@ class _QuickChip extends StatelessWidget {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CollectionCard extends StatelessWidget {
-  final _Collection collection;
-  final VoidCallback onTap;
-
-  /// Marca la colección que está filtrando el feed ahora mismo.
-  final bool seleccionada;
-
-  const _CollectionCard({
-    required this.collection,
-    required this.onTap,
-    this.seleccionada = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: collection.colors,
-          ),
-          borderRadius: BorderRadius.circular(18),
-          border: seleccionada
-              ? Border.all(color: Colors.white, width: 2.5)
-              : null,
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x1A2B3A67),
-              blurRadius: 10,
-              offset: Offset(0, 5),
-            ),
-          ],
-        ),
-        child: Stack(
-          children: [
-            Positioned(
-              right: 10,
-              top: 6,
-              child: Text(
-                collection.emoji,
-                style: const TextStyle(fontSize: 28),
-              ),
-            ),
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(18),
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.44),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              left: 12,
-              right: 7,
-              bottom: 10,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    collection.title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    collection.subtitle,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.82),
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
         ),
       ),
     );
@@ -3756,14 +3596,6 @@ class _OpcionUbicacion extends StatelessWidget {
       onTap: onTap,
     );
   }
-}
-
-class _Collection {
-  final String title;
-  final String subtitle;
-  final String emoji;
-  final List<Color> colors;
-  const _Collection(this.title, this.subtitle, this.emoji, this.colors);
 }
 
 class _Sponsored {

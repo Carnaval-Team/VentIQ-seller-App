@@ -101,7 +101,9 @@ List<TotalCampo> calcularTotales(List<Agenda> reservasTodas) {
   return orden.map((k) => totales[k]!).toList();
 }
 
-/// Panel con totales de la vista: solo cantidades por tramo (Ida / Regreso).
+/// Panel con totales de la vista: cantidades por tramo (Ida / Regreso) y el
+/// desglose de los campos adicionales marcados como "Totalizar en reportes"
+/// (`contabilizar = true`, ver [calcularTotales]).
 /// Importes, locales (recogida/destino) y detalle fino van en el PDF/Excel.
 class TotalesPanel extends StatelessWidget {
   final List<Agenda> reservas;
@@ -117,11 +119,12 @@ class TotalesPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final paraMonto = reservas.where(_cuentaParaMonto).toList();
     final porTramo = calcularTotalesPorTramo(paraMonto);
+    final datos = calcularTotales(reservas);
     final nReservas =
         contarReservasAgrupadas(reservas, excluirCanceladas: false);
     final nActivas = contarReservasAgrupadas(reservas);
 
-    if (porTramo.tramos.isEmpty && nReservas == 0) {
+    if (porTramo.tramos.isEmpty && nReservas == 0 && datos.isEmpty) {
       return const SizedBox.shrink();
     }
 
@@ -159,6 +162,10 @@ class TotalesPanel extends StatelessWidget {
               const SizedBox(height: 10),
               ..._buildPorTramo(porTramo),
             ],
+            if (datos.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              ..._buildDatos(datos),
+            ],
           ],
         ),
       ),
@@ -190,5 +197,98 @@ class TotalesPanel extends StatelessWidget {
       ));
     }
     return out;
+  }
+
+  /// Desglose de los campos adicionales "contabilizables": un dato por línea y,
+  /// para select/texto, el conteo de cada opción usado.
+  List<Widget> _buildDatos(List<TotalCampo> datos) {
+    final out = <Widget>[
+      const Divider(height: 20),
+      Row(
+        children: const [
+          Icon(Icons.checklist_outlined, size: 20, color: AppTheme.primary),
+          SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'Datos adicionales (completadas)',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+                color: AppTheme.primary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    ];
+
+    for (final t in datos) {
+      out.add(Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                t.etiqueta,
+                style: const TextStyle(
+                    fontSize: 15, color: AppTheme.textSecondary),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(_valorTotal(t),
+                style: _estiloCantidad.copyWith(fontSize: 16)),
+          ],
+        ),
+      ));
+      if (t.tipo == TipoCampo.select || t.tipo == TipoCampo.texto) {
+        final entradas = t.porOpcion.entries.toList()
+          ..sort((a, b) {
+            final porConteo = b.value.compareTo(a.value);
+            return porConteo != 0 ? porConteo : a.key.compareTo(b.key);
+          });
+        for (final e in entradas) {
+          out.add(Padding(
+            padding: const EdgeInsets.only(left: 26, top: 2),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    e.key,
+                    style: const TextStyle(
+                        fontSize: 14, color: AppTheme.textSecondary),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text('${e.value}',
+                    style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textPrimary)),
+              ],
+            ),
+          ));
+        }
+      }
+    }
+    return out;
+  }
+
+  /// Número = suma (ya multiplicada por la cantidad de cada reserva);
+  /// booleano/texto/select = número de registros que lo traen.
+  String _valorTotal(TotalCampo t) {
+    switch (t.tipo) {
+      case TipoCampo.numero:
+        final v = t.suma;
+        return v == v.roundToDouble()
+            ? v.toStringAsFixed(0)
+            : v.toStringAsFixed(2);
+      case TipoCampo.booleano:
+        return '${t.conteoSi} sí';
+      case TipoCampo.select:
+      case TipoCampo.texto:
+        final total = t.porOpcion.values.fold<int>(0, (a, b) => a + b);
+        return '$total';
+    }
   }
 }

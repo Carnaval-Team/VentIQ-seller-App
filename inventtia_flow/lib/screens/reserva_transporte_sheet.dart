@@ -7,6 +7,7 @@ import '../models/servicio.dart';
 import '../models/transporte.dart';
 import '../services/transporte_service.dart';
 import '../utils/precio_reserva.dart';
+import '../utils/precio_turno.dart';
 import '../widgets/datos_adicionales_form.dart';
 
 class ReservaTransporteSheet extends StatefulWidget {
@@ -153,16 +154,22 @@ class _ReservaTransporteSheetState extends State<ReservaTransporteSheet> {
     String moneda,
   ) {
     final config = _configPrecio;
-    final base = PrecioReserva.calcular(
+    // El precio propio del turno ya NO sobrescribe el total: entra en
+    // `PrecioReserva.calcular` como `baseUnitario`, de modo que las reglas por
+    // dato adicional se evalúan ENCIMA de él, igual que en el servidor
+    // (`flow.calcular_precio_turno` + `flow.calcular_precio_con_reglas`, D5).
+    final baseTurno = precioBaseTurno(
+      precios: turno?.precios,
+      moneda: moneda,
+      monedaDefault: config.monedaDefault,
+    );
+    return PrecioReserva.calcular(
       config: config,
       datosAdicionales: {..._datosAdicionales, 'tipo_viaje': tipoViaje},
       cantidad: 1,
       moneda: moneda,
-    );
-    if (turno == null || turno.precios.isEmpty) return base.unitario;
-    return turno.precios[moneda] ??
-        turno.precios[config.monedaDefault] ??
-        turno.precios.values.first;
+      baseUnitario: baseTurno,
+    ).unitario;
   }
 
   @override

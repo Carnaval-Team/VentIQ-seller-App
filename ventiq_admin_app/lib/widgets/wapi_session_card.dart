@@ -3,26 +3,64 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../config/app_colors.dart';
 import '../models/wapi_session.dart';
+import '../utils/wapi_errores.dart';
 
 typedef WapiSessionAction = void Function(String action);
 
 /// Card visual de una sesión/bot WhatsApp.
-/// `action` puede ser: 'qr' | 'restart' | 'logout' | 'delete' | 'details' | 'docs'
+///
+/// QUÉ CAMBIÓ (UX para el cliente final)
+///   1. **El estado se explica, no solo se pinta**: bajo el nombre va una frase
+///      («Falta vincular el teléfono: sin eso no se envía nada.») para que nadie
+///      tenga que interpretar un punto de color.
+///   2. **Botón principal = la acción que resuelve el problema**: «Mostrar QR
+///      para vincular» o «Reconectar ahora». Antes había que adivinar entre las
+///      opciones del menú de tres puntos.
+///   3. **Aviso de estado viejo**: si la app lleva >10 min sin poder refrescar,
+///      lo dice en vez de afirmar que el bot está bien.
+///   4. **Último problema, traducido**: `wapi_errores.dart` convierte el código
+///      crudo en algo comprensible.
+///   5. El enlace de Documentación apuntaba al repo equivocado (wa-automate);
+///      ahora va al gateway que realmente usamos (OpenWA).
+///   6. Se respeta «reducir movimiento» del sistema.
 class WapiSessionCard extends StatelessWidget {
   final WapiSession session;
   final WapiSessionAction onAction;
   final bool compact;
+
+  /// Cuántos mensajes hay esperando en la cola de esta tienda. Se usa para
+  /// cuantificar el daño mientras el bot está caído ("hay 24 mensajes que no
+  /// van a salir hasta que reconectes").
+  final int mensajesEnEspera;
 
   const WapiSessionCard({
     super.key,
     required this.session,
     required this.onAction,
     this.compact = false,
+    this.mensajesEnEspera = 0,
   });
+
+  static const _docsUrl = 'https://github.com/rmyndharis/OpenWA';
 
   @override
   Widget build(BuildContext context) {
     final st = session.status;
+    final viejo = session.esEstadoViejo(DateTime.now());
+    final accion = st.accionSugerida;
+    final diagnostico = (session.lastErrorCode != null ||
+            session.lastErrorMessage != null)
+        ? diagnosticarError(
+            codigo: session.lastErrorCode,
+            mensaje: session.lastErrorMessage,
+          )
+        : null;
+
+    // Sólo mostramos el "último problema" cuando sigue habiendo problema: si el
+    // bot está conectado, un error viejo solo mete ruido.
+    final problema =
+        (st != WapiStatus.connected) ? diagnostico : null;
+
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surface,
@@ -43,15 +81,7 @@ class WapiSessionCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: st.color.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(st.icon, color: st.color),
-              ),
+              _IconoEstado(status: st, viejo: viejo),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -69,7 +99,7 @@ class WapiSessionCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      session.phoneNumber ?? 'Sin número asociado',
+                      session.phoneNumber ?? 'Sin teléfono vinculado',
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 12,
@@ -82,13 +112,12 @@ class WapiSessionCard extends StatelessWidget {
               _StatusBadge(status: st),
               const SizedBox(width: 4),
               PopupMenuButton<String>(
-                tooltip: 'Acciones',
+                tooltip: 'Más opciones',
                 icon: const Icon(Icons.more_vert, color: AppColors.textSecondary),
                 onSelected: (v) async {
                   if (v == 'docs') {
                     final ok = await launchUrl(
-                      Uri.parse(
-                          'https://github.com/open-wa/wa-automate-nodejs/wiki'),
+                      Uri.parse(_docsUrl),
                       mode: LaunchMode.externalApplication,
                     );
                     if (!ok) onAction('docs');
@@ -105,22 +134,22 @@ class WapiSessionCard extends StatelessWidget {
                         title: Text('Mostrar QR'),
                         dense: true,
                       ),
-                    )
-                  else if (st != WapiStatus.connected)
-                    const PopupMenuItem(
-                      value: 'restart',
-                      child: ListTile(
-                        leading: Icon(Icons.qr_code_2),
-                        title: Text('Reconectar / ver QR'),
-                        dense: true,
-                      ),
                     ),
-                  if (st == WapiStatus.connected || st == WapiStatus.scanQr)
+                  if (st != WapiStatus.connected)
                     const PopupMenuItem(
                       value: 'restart',
                       child: ListTile(
                         leading: Icon(Icons.refresh),
-                        title: Text('Reiniciar'),
+                        title: Text('Reconectar bot'),
+                        dense: true,
+                      ),
+                    ),
+                  if (st == WapiStatus.connected)
+                    const PopupMenuItem(
+                      value: 'restart',
+                      child: ListTile(
+                        leading: Icon(Icons.refresh),
+                        title: Text('Reiniciar conexión'),
                         dense: true,
                       ),
                     ),
@@ -142,10 +171,18 @@ class WapiSessionCard extends StatelessWidget {
                     ),
                   ),
                   const PopupMenuItem(
+                    value: 'health',
+                    child: ListTile(
+                      leading: Icon(Icons.monitor_heart_outlined),
+                      title: Text('Estado del servidor'),
+                      dense: true,
+                    ),
+                  ),
+                  const PopupMenuItem(
                     value: 'docs',
                     child: ListTile(
                       leading: Icon(Icons.menu_book_outlined),
-                      title: Text('Documentación'),
+                      title: Text('Ayuda'),
                       dense: true,
                     ),
                   ),
@@ -163,6 +200,59 @@ class WapiSessionCard extends StatelessWidget {
               ),
             ],
           ),
+
+          // ── Explicación del estado (una frase, sin tecnicismos) ───────
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: st.color.withOpacity(0.07),
+              borderRadius: BorderRadius.circular(9),
+              border: Border.all(color: st.color.withOpacity(0.2)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(st.icon, size: 15, color: st.color),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    _textoEstado(st, viejo),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textPrimary,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // ── Último problema detectado (traducido) ─────────────────────
+          if (problema != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(problema.icono, size: 14, color: problema.color),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Último problema: ${problema.titulo.toLowerCase()}.'
+                    '${problema.queHacer != null ? ' ${problema.queHacer}' : ''}',
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: AppColors.textSecondary,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+
           if (!compact) ...[
             const SizedBox(height: 10),
             // Wrap: si no caben en una línea bajan a la siguiente en vez de
@@ -176,26 +266,70 @@ class WapiSessionCard extends StatelessWidget {
                   label: session.wapiSessionId,
                 ),
                 _ChipMini(
-                  icon: Icons.schedule,
+                  icon: viejo ? Icons.history_toggle_off : Icons.schedule,
                   label: 'Actualizado ${_relative(session.lastStatusAt)}',
                 ),
+                if (!session.watchdogEnabled)
+                  const _ChipMini(
+                    icon: Icons.visibility_off_outlined,
+                    label: 'Vigilancia automática desactivada',
+                  ),
+                if (session.recoveryAttempts > 0)
+                  _ChipMini(
+                    icon: Icons.healing_outlined,
+                    label:
+                        'Reconexiones automáticas: ${session.recoveryAttempts}',
+                  ),
               ],
             ),
-            if (st == WapiStatus.scanQr) ...[
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () => onAction('qr'),
-                  icon: const Icon(Icons.qr_code_2),
-                  label: const Text('Mostrar QR'),
+          ],
+
+          // ── Acción principal: la que resuelve el estado ──────────────
+          if (!compact && accion != null) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => onAction(accion),
+                icon: Icon(
+                  accion == 'qr' ? Icons.qr_code_2 : Icons.refresh,
+                  size: 19,
+                ),
+                label: Text(accion == 'qr'
+                    ? 'Mostrar QR para vincular'
+                    : 'Reconectar ahora'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(0, 46),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  textStyle: const TextStyle(
+                      fontSize: 13.5, fontWeight: FontWeight.w700),
                 ),
               ),
-            ],
+            ),
           ],
         ],
       ),
     );
+  }
+
+  /// Frase que explica el estado y, si hay mensajes esperando, lo cuantifica.
+  String _textoEstado(WapiStatus st, bool viejo) {
+    final base = st.detalle;
+    if (viejo && st != WapiStatus.connected) {
+      return '$base (No pudimos consultar el bot '
+          '${_relative(session.lastStatusAt)}; pulsa «Actualizar».)';
+    }
+    if (st.bloqueaEnvios && mensajesEnEspera > 0) {
+      final cuantos = mensajesEnEspera == 1
+          ? '1 mensaje en cola no saldrá'
+          : '$mensajesEnEspera mensajes en cola no saldrán';
+      return '$base $cuantos hasta que se reconecte.';
+    }
+    return base;
   }
 
   String _relative(DateTime d) {
@@ -204,6 +338,38 @@ class WapiSessionCard extends StatelessWidget {
     if (diff.inMinutes < 60) return 'hace ${diff.inMinutes} min';
     if (diff.inHours < 24) return 'hace ${diff.inHours} h';
     return 'hace ${diff.inDays} d';
+  }
+}
+
+class _IconoEstado extends StatelessWidget {
+  final WapiStatus status;
+  final bool viejo;
+  const _IconoEstado({required this.status, required this.viejo});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = viejo ? AppColors.textLight : status.color;
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Icon(status.icon, color: color),
+          if (viejo)
+            const Positioned(
+              right: 2,
+              bottom: 2,
+              child: Icon(Icons.help_outline,
+                  size: 13, color: AppColors.textLight),
+            ),
+        ],
+      ),
+    );
   }
 }
 

@@ -4,7 +4,11 @@ import '../../config/app_theme.dart';
 import '../../models/entidad.dart';
 import '../../providers/entidad_provider.dart';
 import '../../services/auth_service.dart';
+import '../../tutorial/tutorial_anchor.dart';
+import '../../tutorial/tutorial_flujos.dart';
+import '../../tutorial/tutorial_navegacion.dart';
 import '../../widgets/dashboard_entidad.dart';
+import '../../widgets/notificaciones_bell.dart';
 import 'config_categorias_screen.dart';
 import 'entidad_detail_screen.dart';
 import 'gestion_locales_screen.dart';
@@ -46,31 +50,91 @@ class GestionScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppTheme.surface,
       appBar: AppBar(
-        title: _EntidadSelector(
-          entidades: entidadProv.misEntidades,
-          seleccionada: seleccionada,
-          onChanged: entidadProv.seleccionarEntidad,
+        // Degradado de marca (mismo lenguaje que `notificaciones_screen.dart`).
+        // El `AvisoSuscripcion`/`SafeArea` los sigue poniendo `home_shell.dart`
+        // por encima del IndexedStack; aquí solo se pinta la AppBar.
+        elevation: 0,
+        flexibleSpace: const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [AppTheme.primaryDark, AppTheme.primary],
+            ),
+          ),
+        ),
+        title: TutorialAnchor(
+          id: 'admin_selector_entidad',
+          child: EntidadSelector(
+            entidades: entidadProv.misEntidades,
+            seleccionada: seleccionada,
+            onChanged: entidadProv.seleccionarEntidad,
+          ),
+        ),
+        // Los cuatro accesos se reparten a los dos lados: con el selector de
+        // entidad ocupando el título, apilarlos todos a la derecha los dejaba
+        // amontonados y sin aire entre ellos en pantallas estrechas.
+        // A la IZQUIERDA van los dos de "contexto" (la configuración de la
+        // entidad y repasar el tutorial); a la DERECHA, los dos de "acción"
+        // (avisos y crear una entidad nueva).
+        // `leadingWidth` tiene que dar para dos `IconButton` (48 cada uno): el
+        // slot por defecto son 56 y el segundo icono se saldría.
+        leadingWidth: 104,
+        leading: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.settings_outlined),
+              tooltip: 'Configurar entidad',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => EntidadDetailScreen(entidad: seleccionada),
+                ),
+              ),
+            ),
+            // Repite el tutorial guiado del admin desde el primer paso, por si
+            // se cerró sin terminarlo o el usuario quiere repasarlo.
+            IconButton(
+              icon: const Icon(Icons.school_outlined),
+              tooltip: 'Ver el tutorial otra vez',
+              onPressed: () => _verTutorialOtraVez(context),
+            ),
+          ],
         ),
         actions: [
+          // El admin solo llegaba a sus avisos por Perfil: la campana es su
+          // acceso directo (misma pantalla `/notificaciones` que el cliente).
+          const NotificacionesBell(color: Colors.white),
+          const SizedBox(width: 4),
           IconButton(
             icon: const Icon(Icons.add_business_outlined),
             tooltip: 'Nueva entidad',
             onPressed: () => _nuevaEntidad(context, myUuid),
           ),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: 'Configurar entidad',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => EntidadDetailScreen(entidad: seleccionada),
-              ),
-            ),
-          ),
+          const SizedBox(width: 4),
         ],
       ),
       body: _GestionBody(entidad: seleccionada, myUuid: myUuid),
     );
+  }
+
+  /// Vuelve a lanzar el tutorial guiado del admin desde el primer paso.
+  ///
+  /// Se le pasa el mismo navegador que usa el shell: el recorrido del admin
+  /// cruza módulos y, sin él, «Siguiente» se quedaría esperando a que el usuario
+  /// los abriera por su cuenta.
+  Future<void> _verTutorialOtraVez(BuildContext context) async {
+    final uuid = AuthService.currentUserId;
+    final entidad = context.read<EntidadProvider>().entidadSeleccionada;
+    if (uuid != null && entidad != null) {
+      await TutorialFlujos.repetirAdmin(
+        uuid,
+        entidad.id,
+        navegador: (destino) =>
+            TutorialNavegacion.irAAdmin(context, entidad, destino),
+      );
+    }
   }
 
   void _nuevaEntidad(BuildContext context, String ownerUuid) {
@@ -86,12 +150,18 @@ class GestionScreen extends StatelessWidget {
 }
 
 // ── Selector de entidad en la AppBar ──────────────────────────
-class _EntidadSelector extends StatelessWidget {
+/// Selector de entidad que vive en el título del AppBar del Home del admin.
+///
+/// Es público (no `_EntidadSelector`) para poder montarlo solo en
+/// `test/entidad_selector_test.dart`: el contraste del botón cerrado depende de
+/// `selectedItemBuilder` y no se puede comprobar desde fuera de la pantalla.
+class EntidadSelector extends StatelessWidget {
   final List<Entidad> entidades;
   final Entidad seleccionada;
   final ValueChanged<Entidad> onChanged;
 
-  const _EntidadSelector({
+  const EntidadSelector({
+    super.key,
     required this.entidades,
     required this.seleccionada,
     required this.onChanged,
@@ -100,22 +170,61 @@ class _EntidadSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (entidades.length == 1) {
-      return Text(
-        seleccionada.denominacion,
-        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
-        overflow: TextOverflow.ellipsis,
+      // Una sola entidad: no hay nada que elegir, así que el título describe la
+      // pantalla y el nombre de la entidad va como subtítulo. Mismo patrón de
+      // dos líneas que `planificacion_screen.dart:207-217`. Blanco sobre el
+      // degradado primario: 6.4:1 el título y 4.9:1 el subtítulo al 82 %.
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'Gestión',
+            style: _tituloAppBar,
+            overflow: TextOverflow.ellipsis,
+          ),
+          Text(
+            seleccionada.denominacion,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w400,
+              color: Colors.white.withValues(alpha: 0.82),
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
       );
     }
 
     return DropdownButtonHideUnderline(
       child: DropdownButton<int>(
         value: seleccionada.id,
-        icon: const Icon(Icons.expand_more, color: AppTheme.textPrimary),
-        style: const TextStyle(
-          fontSize: 17,
-          fontWeight: FontWeight.w600,
-          color: AppTheme.textPrimary,
-        ),
+        // El botón vive sobre el degradado primario (texto/icono blancos);
+        // el desplegable se abre en blanco, y ahí el texto oscuro de marca
+        // (`textPrimary` sobre blanco = 13.2:1) es el que contrasta.
+        dropdownColor: Colors.white,
+        icon: const Icon(Icons.expand_more, color: Colors.white),
+        style: _tituloAppBar,
+        // El color del botón CERRADO no lo decide `style`, y esto es la clave:
+        // sin `selectedItemBuilder`, `DropdownButton` pinta el botón con el
+        // widget del item seleccionado (`dropdown.dart`: `items` → `IndexedStack`).
+        // Como los items van en `textPrimary` para que se lean dentro del menú
+        // blanco, el nombre de la entidad salía en azul marino sobre el
+        // degradado en cuanto había más de una entidad. El `DefaultTextStyle`
+        // blanco no puede ganarle: un `color` explícito en el `Text` manda.
+        // Con `selectedItemBuilder` el botón es blanco y el menú sigue oscuro.
+        selectedItemBuilder: (context) => entidades
+            .map(
+              (e) => Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  e.denominacion,
+                  overflow: TextOverflow.ellipsis,
+                  style: _tituloAppBar,
+                ),
+              ),
+            )
+            .toList(),
         onChanged: (id) {
           if (id == null) return;
           final e = entidades.firstWhere((e) => e.id == id);
@@ -125,7 +234,15 @@ class _EntidadSelector extends StatelessWidget {
             .map(
               (e) => DropdownMenuItem(
                 value: e.id,
-                child: Text(e.denominacion, overflow: TextOverflow.ellipsis),
+                child: Text(
+                  e.denominacion,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
               ),
             )
             .toList(),
@@ -133,6 +250,17 @@ class _EntidadSelector extends StatelessWidget {
     );
   }
 }
+
+/// Estilo del título/selector de la AppBar: blanco sobre el degradado de marca.
+const TextStyle _tituloAppBar = TextStyle(
+  fontSize: 18,
+  fontWeight: FontWeight.w800,
+  letterSpacing: -0.3,
+  color: Colors.white,
+  shadows: [
+    Shadow(color: Color(0x33000000), blurRadius: 4, offset: Offset(0, 1)),
+  ],
+);
 
 // ── Cuerpo principal de gestión ───────────────────────────────
 class _GestionBody extends StatelessWidget {
@@ -177,40 +305,52 @@ class _GestionBody extends StatelessWidget {
                   : w < 750
                   ? 3
                   : 4;
-              final modulos = [
-                _ModuloCard(
-                  icon: Icons.store_outlined,
-                  title: 'Locales',
-                  subtitle: 'Puntos de atención',
-                  color: const Color(0xFF4F7FFA),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => GestionLocalesScreen(entidad: entidad),
+              // `List<Widget>` explícito: las tarjetas van envueltas en
+              // `TutorialAnchor`, que no es un `_ModuloCard`.
+              final List<Widget> modulos = [
+                TutorialAnchor(
+                  id: 'admin_modulo_locales',
+                  child: _ModuloCard(
+                    icon: Icons.store_outlined,
+                    title: 'Locales',
+                    subtitle: 'Puntos de atención',
+                    color: const Color(0xFF4F7FFA),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => GestionLocalesScreen(entidad: entidad),
+                      ),
                     ),
                   ),
                 ),
-                _ModuloCard(
-                  icon: Icons.miscellaneous_services_outlined,
-                  title: 'Servicios',
-                  subtitle: 'Catálogo de servicios',
-                  color: const Color(0xFF7C5CFC),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => GestionServiciosScreen(entidad: entidad),
+                TutorialAnchor(
+                  id: 'admin_modulo_servicios',
+                  child: _ModuloCard(
+                    icon: Icons.miscellaneous_services_outlined,
+                    title: 'Servicios',
+                    subtitle: 'Catálogo de servicios',
+                    color: const Color(0xFF7C5CFC),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            GestionServiciosScreen(entidad: entidad),
+                      ),
                     ),
                   ),
                 ),
-                _ModuloCard(
-                  icon: Icons.account_tree_outlined,
-                  title: 'Planificación',
-                  subtitle: 'Servicios por local',
-                  color: const Color(0xFF34C759),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => PlanificacionScreen(entidad: entidad),
+                TutorialAnchor(
+                  id: 'admin_modulo_planificacion',
+                  child: _ModuloCard(
+                    icon: Icons.account_tree_outlined,
+                    title: 'Planificación',
+                    subtitle: 'Servicios por local',
+                    color: const Color(0xFF34C759),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PlanificacionScreen(entidad: entidad),
+                      ),
                     ),
                   ),
                 ),
@@ -229,12 +369,12 @@ class _GestionBody extends StatelessWidget {
                 _ModuloCard(
                   icon: Icons.category_outlined,
                   title: 'Categorías',
-                  subtitle: 'Tipos de actividad',
+                  subtitle: 'Qué ocultas al cliente',
                   color: const Color(0xFF00A3A3),
                   onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => const ConfigCategoriasScreen(),
+                      builder: (_) => ConfigCategoriasScreen(entidad: entidad),
                     ),
                   ),
                 ),

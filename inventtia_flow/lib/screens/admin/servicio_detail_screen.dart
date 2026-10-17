@@ -302,6 +302,14 @@ class _ServicioDetailScreenState extends State<ServicioDetailScreen> {
         ),
       ),
       const SizedBox(height: 4),
+      // D6: el orden de las reglas decide el precio (gana la primera que
+      // coincide con un dato del cliente). Se dice aquí en vez de dejarlo
+      // silencioso: cambiar el orden cambia importes ya guardados.
+      const Text(
+        'Si dos reglas coinciden, se aplica la primera.',
+        style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+      ),
+      const SizedBox(height: 4),
       ...cfg.reglas.expand((r) {
         return r.preciosOpcion.entries.map((op) {
           final precios = op.value.entries

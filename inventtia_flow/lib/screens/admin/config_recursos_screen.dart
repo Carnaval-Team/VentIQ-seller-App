@@ -4,6 +4,7 @@ import '../../models/recurso.dart';
 import '../../models/servicio.dart';
 import '../../services/auth_service.dart';
 import '../../services/recurso_service.dart';
+import '../../tutorial/tutorial_anchor.dart';
 
 /// Pantalla que envuelve el panel de configuración de recursos de un
 /// local_servicio.
@@ -23,9 +24,14 @@ class _ConfigRecursosScreenState extends State<ConfigRecursosScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Recursos y turnos')),
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: ConfigRecursosPanel(localServicio: widget.localServicio),
+      // El hueco del tutorial cubre todo el panel (modo simple, alta de
+      // recursos y turnos) para que el admin pueda interactuar con él.
+      body: TutorialAnchor(
+        id: 'admin_recursos_turnos',
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: ConfigRecursosPanel(localServicio: widget.localServicio),
+        ),
       ),
     );
   }
@@ -1541,10 +1547,14 @@ class _TurnoFormSheetState extends State<_TurnoFormSheet> {
 
     setState(() => _saving = true);
     try {
+      TurnoAutoResultado? guardado;
       if (widget.sinTramos) {
-        // Camino simple: la RPC resuelve el recurso oculto, el tramo propio del
-        // turno y (si es nuevo) el turno + su vínculo, todo en una transacción.
-        await RecursoService.guardarTurnoAuto(
+        // Camino simple: la RPC resuelve el tramo propio del turno y (si es
+        // nuevo) el turno + su vínculo, todo en una transacción.
+        // El recurso destino es el que el admin tiene delante: sin `idRecurso`
+        // la RPC elegía siempre el primero del local_servicio, así que con
+        // varios recursos el turno aparecía siempre en el mismo.
+        guardado = await RecursoService.guardarTurnoAuto(
           uuidUsuario: widget.uuid,
           idLocalServicio: widget.idLocalServicio,
           nombre: nombre,
@@ -1554,6 +1564,7 @@ class _TurnoFormSheetState extends State<_TurnoFormSheet> {
           horaInicio: _horaInicioTexto,
           horaFin: _horaFinTexto,
           id: widget.turno?.id,
+          idRecurso: widget.recurso?.id,
         );
       } else {
         await RecursoService.guardarTurno(
@@ -1568,12 +1579,31 @@ class _TurnoFormSheetState extends State<_TurnoFormSheet> {
           id: widget.turno?.id,
         );
       }
-      if (mounted) Navigator.pop(context, true);
+      if (!mounted) return;
+      if (guardado?.ignoroRecursoElegido == true) _avisoRecursoIgnorado();
+      Navigator.pop(context, true);
     } catch (e) {
       _err('$e');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  /// La base todavía no acepta el recurso elegido (migración 52 sin aplicar).
+  /// El turno se guardó, pero en el primer recurso del servicio: se dice claro
+  /// en vez de dejar al admin creyendo que quedó donde pidió.
+  void _avisoRecursoIgnorado() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 8),
+        backgroundColor: AppTheme.warning,
+        content: Text(
+          'El turno se guardó, pero en el primer recurso del servicio: falta '
+          'aplicar la migración 52 en Supabase'
+          '${widget.recurso == null ? '' : ' para que respete «${widget.recurso!.nombre}»'}.',
+        ),
+      ),
+    );
   }
 
   void _err(String m) => ScaffoldMessenger.of(

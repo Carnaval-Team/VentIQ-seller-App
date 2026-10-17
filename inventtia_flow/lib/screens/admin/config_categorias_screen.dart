@@ -1,25 +1,33 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../config/app_theme.dart';
+import '../../models/entidad.dart';
 import '../../services/auth_service.dart';
 import '../../services/tipo_actividad_service.dart';
+import '../../tutorial/tutorial_anchor.dart';
 
-/// Gestión de la taxonomía de servicios (`flow.nom_tipo_actividad_servicio`).
+/// Visibilidad de categorías para los servicios de **una entidad**.
 ///
-/// Son **dos niveles** (migración `47_categorias_reales_subcategorias.sql`):
-/// * **Categoría**: la raíz. Es lo que el Home pinta como filtro principal.
-/// * **Subcategoría**: hija de una categoría. El Home la ofrece en una segunda
-///   fila de chips y el catálogo la muestra como "Categoría › Subcategoría".
+/// Las categorías y subcategorías las gestiona **solo el superadmin**
+/// (`ventiq_superadmin`). Aquí la taxonomía es de **solo lectura**: no se crean,
+/// no se editan, no se eliminan y no se desactivan.
 ///
-/// Un servicio se asigna a una **hoja**: o a la categoría sin subcategoría, o a
-/// una de sus subcategorías. Aquí se gestionan las dos cosas: crear/editar/
-/// activar/eliminar categorías, y dentro de cada una sus subcategorías.
+/// Lo único que decide el admin de entidad en esta pantalla es qué categorías
+/// **oculta** para sus propios servicios. Ocultar NO toca el nomenclador: la
+/// categoría sigue activa y sigue pintada en el riel de filtros del Home. Lo que
+/// cambia es que los servicios/locales de esta entidad en esa categoría dejan de
+/// aparecer en el catálogo del cliente.
 ///
-/// La escritura va por RPC (la tabla no se toca a mano): el servidor valida el
-/// código, el máximo de dos niveles y que no se borre algo con servicios o hijas.
+/// Un servicio se clasifica por su **hoja**: la categoría raíz o una de sus
+/// subcategorías (`flow.nom_tipo_actividad_servicio.id_padre`). Por eso ocultar
+/// una categoría raíz esconde también sus subcategorías (lo evalúa el servidor
+/// comparando contra la hoja y contra su padre), y aquí los interruptores de las
+/// subcategorías se desactivan para dejarlo claro.
 class ConfigCategoriasScreen extends StatefulWidget {
-  const ConfigCategoriasScreen({super.key});
+  const ConfigCategoriasScreen({super.key, required this.entidad});
+
+  /// Entidad cuyos servicios se ocultan o se muestran.
+  final Entidad entidad;
 
   @override
   State<ConfigCategoriasScreen> createState() => _ConfigCategoriasScreenState();
@@ -27,15 +35,22 @@ class ConfigCategoriasScreen extends StatefulWidget {
 
 class _ConfigCategoriasScreenState extends State<ConfigCategoriasScreen> {
   Taxonomia _taxonomia = Taxonomia.vacia;
+
+  /// Ids del nomenclador que ESTA entidad tiene ocultos (raíces y/o hijas).
+  Set<int> _ocultas = <int>{};
+
   bool _cargando = true;
   String? _error;
+
+  /// `true` cuando falta la migración `55_categorias_ocultas_por_entidad.sql`:
+  /// la taxonomía se puede leer, pero el interruptor todavía no funciona.
+  bool _migracionPendiente = false;
 
   /// Categorías abiertas en el acordeón, para ver y gestionar sus subcategorías.
   final Set<int> _expandidas = <int>{};
 
-  /// `true` cuando los RPC de escritura todavía no existen (migración sin
-  /// aplicar). La lectura funciona igual, así que se avisa en vez de romper.
-  bool _migracionPendiente = false;
+  /// Nodos con un cambio en curso: su interruptor se deshabilita mientras viaja.
+  final Set<int> _cambiando = <int>{};
 
   @override
   void initState() {
@@ -48,12 +63,26 @@ class _ConfigCategoriasScreenState extends State<ConfigCategoriasScreen> {
       _cargando = true;
       _error = null;
     });
+    var migracionPendiente = false;
     try {
-      // Sin `soloActivos`: aquí hay que ver también lo apagado para reactivarlo.
-      final taxonomia = await TipoActividadService.taxonomia();
+      // Solo lo activo: es exactamente lo que el cliente puede ver en el riel.
+      // Las categorías que el superadmin desactivó no se listan aquí.
+      final taxonomia = await TipoActividadService.taxonomia(soloActivos: true);
+      Set<int> ocultas;
+      try {
+        ocultas = await TipoActividadService.ocultasDeEntidad(
+          widget.entidad.id,
+        );
+      } catch (e) {
+        if (!_esMigracion55Pendiente(e)) rethrow;
+        migracionPendiente = true;
+        ocultas = <int>{};
+      }
       if (!mounted) return;
       setState(() {
         _taxonomia = taxonomia;
+        _ocultas = ocultas;
+        _migracionPendiente = migracionPendiente;
         _cargando = false;
         // Si una categoría abierta desapareció, se deja de recordar.
         _expandidas.removeWhere(
@@ -71,111 +100,77 @@ class _ConfigCategoriasScreenState extends State<ConfigCategoriasScreen> {
 
   List<TipoActividad> get _categorias => _taxonomia.raices;
 
-  /// Abre el formulario de alta/edición de una categoría o subcategoría.
-  Future<void> _abrirFormulario({
-    TipoActividad? tipo,
-    int? idPadre,
-  }) async {
-    final esSubcategoria = tipo?.esSubcategoria ?? idPadre != null;
-    final guardado = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      showDragHandle: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (_) => _TipoActividadSheet(tipo: tipo, idPadre: idPadre),
-    );
-    if (guardado != true || !mounted) return;
-    await _cargar();
-    if (!mounted) return;
-    final que = esSubcategoria ? 'Subcategoría' : 'Categoría';
-    _avisar(tipo == null ? '$que creada.' : '$que actualizada.');
-  }
+  /// `true` si el nodo está oculto por sí mismo o porque lo está su categoría
+  /// padre. Es el estado que el cliente percibe.
+  bool _estaOculta(TipoActividad nodo) =>
+      _ocultas.contains(nodo.id) ||
+      (nodo.idPadre != null && _ocultas.contains(nodo.idPadre));
 
-  Future<void> _alternar(TipoActividad tipo) async {
+  /// `true` si el nodo no tiene fila propia pero su padre sí está oculto.
+  bool _ocultaPorPadre(TipoActividad nodo) =>
+      nodo.idPadre != null &&
+      !_ocultas.contains(nodo.id) &&
+      _ocultas.contains(nodo.idPadre);
+
+  Future<void> _alternar(TipoActividad nodo) async {
     if (AuthService.currentUserId == null) return;
-    final hijas = tipo.esSubcategoria
-        ? const <TipoActividad>[]
-        : _taxonomia.subcategoriasDe(tipo.id);
+    final ocultar = !_ocultas.contains(nodo.id);
+    setState(() => _cambiando.add(nodo.id));
     try {
-      await TipoActividadService.alternar(id: tipo.id, activo: !tipo.activo);
-      await _cargar();
+      await TipoActividadService.ocultarParaEntidad(
+        idEntidad: widget.entidad.id,
+        idNodo: nodo.id,
+        oculto: ocultar,
+      );
       if (!mounted) return;
-      if (tipo.activo) {
-        // Apagar una categoría apaga sus subcategorías (lo hace el RPC): se dice
-        // para que no sorprenda verlas apagadas después.
+      setState(() {
+        if (ocultar) {
+          _ocultas.add(nodo.id);
+        } else {
+          _ocultas.remove(nodo.id);
+        }
+        _cambiando.remove(nodo.id);
+      });
+      if (!ocultar) {
+        _avisar('«${nodo.nombre}» vuelve a mostrarse.');
+        return;
+      }
+      final hijas = nodo.esSubcategoria
+          ? 0
+          : _taxonomia.subcategoriasDe(nodo.id).length;
+      _avisar(
+        hijas == 0
+            ? '«${nodo.nombre}» oculta: tus servicios de esa categoría ya no '
+                  'aparecen en el catálogo.'
+            : '«${nodo.nombre}» oculta, con sus $hijas subcategorías: tus '
+                  'servicios ya no aparecen en el catálogo.',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _cambiando.remove(nodo.id));
+      if (_esMigracion55Pendiente(e)) {
+        setState(() => _migracionPendiente = true);
         _avisar(
-          hijas.isEmpty
-              ? '${tipo.nombre} desactivada: ya no aparece en el Home.'
-              : '${tipo.nombre} y sus ${hijas.length} subcategorías '
-                    'desactivadas: ya no aparecen en el Home.',
+          'Falta aplicar la migración 55_categorias_ocultas_por_entidad.sql '
+          'en Supabase.',
+          error: true,
         );
-      } else {
-        _avisar('${tipo.nombre} activada.');
+        return;
       }
-    } catch (e) {
-      _marcarMigracionSiAplica(e);
-      if (mounted) _avisar('No se pudo cambiar el estado: $e', error: true);
+      _avisar('$e'.replaceFirst('Exception: ', ''), error: true);
     }
   }
 
-  Future<void> _eliminar(TipoActividad tipo) async {
-    if (AuthService.currentUserId == null) return;
-    final esSubcategoria = tipo.esSubcategoria;
-    final confirmado = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(esSubcategoria ? 'Eliminar subcategoría' : 'Eliminar categoría'),
-        content: Text(
-          esSubcategoria
-              ? '¿Eliminar «${tipo.nombre}»? No se puede deshacer. Si algún '
-                    'servicio la usa, la operación se rechazará: reasígnalo '
-                    'antes.'
-              : '¿Eliminar «${tipo.nombre}»? No se puede deshacer. Si algún '
-                    'servicio la usa o todavía tiene subcategorías, la operación '
-                    'se rechazará.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
-    );
-    if (confirmado != true || !mounted) return;
-    try {
-      await TipoActividadService.eliminar(id: tipo.id);
-      await _cargar();
-      if (mounted) {
-        _avisar(esSubcategoria ? 'Subcategoría eliminada.' : 'Categoría eliminada.');
-      }
-    } catch (e) {
-      _marcarMigracionSiAplica(e);
-      if (mounted) _avisar('$e'.replaceFirst('Exception: ', ''), error: true);
-    }
-  }
-
-  void _marcarMigracionSiAplica(Object error) {
-    final texto = error.toString();
-    final esFaltaDeFuncion =
+  /// `true` cuando el error significa "la migración 55 no está aplicada" (ni la
+  /// tabla ni el RPC existen todavía).
+  static bool _esMigracion55Pendiente(Object e) {
+    final texto = e.toString();
+    return texto.contains('PGRST205') ||
         texto.contains('PGRST202') ||
-        texto.contains('Could not find the function') ||
-        texto.contains('admin_guardar_tipo_actividad') ||
-        texto.contains('admin_eliminar_tipo_actividad') ||
-        texto.contains('admin_alternar_tipo_actividad') ||
-        texto.contains('id_padre');
-    if (esFaltaDeFuncion && mounted) {
-      setState(() => _migracionPendiente = true);
-    }
+        texto.contains('entidad_categoria_oculta') ||
+        texto.contains('admin_ocultar_categoria_entidad') ||
+        texto.contains('Could not find the table') ||
+        texto.contains('Could not find the function');
   }
 
   void _avisar(String mensaje, {bool error = false}) {
@@ -197,17 +192,24 @@ class _ConfigCategoriasScreenState extends State<ConfigCategoriasScreen> {
     final totalSubcategorias = _taxonomia.todas
         .where((t) => t.esSubcategoria)
         .length;
+    final ocultasVisibles = _ocultas
+        .where((id) => _taxonomia.porId(id) != null)
+        .length;
+
+    final resumen = StringBuffer(
+      categorias.length == 1 ? '1 categoría' : '${categorias.length} categorías',
+    )
+      ..write(' · ')
+      ..write(
+        totalSubcategorias == 1
+            ? '1 subcategoría'
+            : '$totalSubcategorias subcategorías',
+      );
+    if (ocultasVisibles > 0) resumen.write(' · $ocultasVisibles ocultas');
 
     return Scaffold(
       backgroundColor: AppTheme.surface,
-      appBar: AppBar(title: const Text('Categorías y subcategorías')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _abrirFormulario(),
-        backgroundColor: AppTheme.primary,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('Nueva categoría'),
-      ),
+      appBar: AppBar(title: const Text('Categorías')),
       body: RefreshIndicator(
         color: AppTheme.primary,
         onRefresh: _cargar,
@@ -215,9 +217,14 @@ class _ConfigCategoriasScreenState extends State<ConfigCategoriasScreen> {
             ? const Center(child: CircularProgressIndicator())
             : ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                 children: [
-                  const _ExplicacionCard(),
+                  TutorialAnchor(
+                    id: 'admin_categorias',
+                    child: _ExplicacionCard(
+                      entidad: widget.entidad.denominacion,
+                    ),
+                  ),
                   if (_migracionPendiente) ...[
                     const SizedBox(height: 12),
                     const _AvisoMigracionCard(),
@@ -228,10 +235,7 @@ class _ConfigCategoriasScreenState extends State<ConfigCategoriasScreen> {
                   ],
                   const SizedBox(height: 16),
                   Text(
-                    categorias.length == 1
-                        ? '1 categoría · $totalSubcategorias subcategorías'
-                        : '${categorias.length} categorías · '
-                              '$totalSubcategorias subcategorías',
+                    resumen.toString(),
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.bold,
@@ -248,20 +252,18 @@ class _ConfigCategoriasScreenState extends State<ConfigCategoriasScreen> {
                         categoria: categoria,
                         subcategorias: _taxonomia.subcategoriasDe(categoria.id),
                         expandida: _expandidas.contains(categoria.id),
+                        oculta: _estaOculta(categoria),
+                        cambiando: _cambiando.contains(categoria.id),
                         onToggleExpandir: () => setState(() {
                           if (!_expandidas.remove(categoria.id)) {
                             _expandidas.add(categoria.id);
                           }
                         }),
-                        onEditar: () => _abrirFormulario(tipo: categoria),
                         onAlternar: () => _alternar(categoria),
-                        onEliminar: () => _eliminar(categoria),
-                        onNuevaSubcategoria: () =>
-                            _abrirFormulario(idPadre: categoria.id),
-                        onEditarSubcategoria: (sub) =>
-                            _abrirFormulario(tipo: sub),
-                        onAlternarSubcategoria: (sub) => _alternar(sub),
-                        onEliminarSubcategoria: (sub) => _eliminar(sub),
+                        subcategoriaOculta: _estaOculta,
+                        subcategoriaOcultaPorPadre: _ocultaPorPadre,
+                        subcategoriaCambiando: _cambiando.contains,
+                        onAlternarSubcategoria: _alternar,
                       ),
                     ),
                 ],
@@ -272,7 +274,10 @@ class _ConfigCategoriasScreenState extends State<ConfigCategoriasScreen> {
 }
 
 class _ExplicacionCard extends StatelessWidget {
-  const _ExplicacionCard();
+  const _ExplicacionCard({required this.entidad});
+
+  /// Denominación de la entidad cuyos servicios se ocultan.
+  final String entidad;
 
   @override
   Widget build(BuildContext context) {
@@ -298,13 +303,23 @@ class _ExplicacionCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Cada servicio pertenece a una categoría y, si quieres, a una '
-                  'de sus subcategorías. Las categorías activas son el riel de '
-                  'filtros del Home; al tocar una, el cliente ve sus '
-                  'subcategorías como chips debajo. Si desactivas una categoría '
-                  'se desactivan también sus subcategorías, y sus servicios '
-                  'siguen publicados pero dejan de aparecer bajo ese filtro.',
-                  style: TextStyle(
+                  'Las categorías y subcategorías las crea, edita y desactiva el '
+                  'superadmin: aquí no se añaden ni se eliminan.',
+                  style: const TextStyle(
+                    color: AppTheme.textSecondary,
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Lo que sí decides es qué categorías quieres ocultar para '
+                  '$entidad. Ocultar no la quita del riel de filtros del Home ni '
+                  'la desactiva: solo hace que tus servicios y locales de esa '
+                  'categoría dejen de aparecer en el catálogo del cliente, en los '
+                  'patrocinados y en las colecciones. Puedes volver a mostrarla '
+                  'cuando quieras.',
+                  style: const TextStyle(
                     color: AppTheme.textSecondary,
                     fontSize: 12,
                     height: 1.35,
@@ -338,11 +353,10 @@ class _AvisoMigracionCard extends StatelessWidget {
           SizedBox(width: 11),
           Expanded(
             child: Text(
-              'La lectura funciona, pero guardar, activar y eliminar todavía no: '
-              'falta aplicar en este proyecto de Supabase las migraciones '
-              '`22_categorias_marketplace.sql` y '
-              '`47_categorias_reales_subcategorias.sql`. Hasta entonces esta '
-              'pantalla es de solo consulta.',
+              'Falta aplicar en este proyecto de Supabase la migración '
+              '`55_categorias_ocultas_por_entidad.sql`. Hasta entonces la '
+              'taxonomía se puede consultar, pero ocultar y volver a mostrar no '
+              'funciona.',
               style: TextStyle(fontSize: 12, height: 1.35),
             ),
           ),
@@ -419,12 +433,13 @@ class _VacioCard extends StatelessWidget {
           ),
           SizedBox(height: 10),
           Text(
-            'Todavía no hay categorías',
+            'Todavía no hay categorías activas',
             style: TextStyle(fontWeight: FontWeight.w800),
           ),
           SizedBox(height: 4),
           Text(
-            'Crea la primera para que los servicios puedan clasificarse.',
+            'Las crea el superadmin. Cuando existan, aquí podrás decidir cuáles '
+            'ocultas para tus servicios.',
             textAlign: TextAlign.center,
             style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
           ),
@@ -439,41 +454,42 @@ class _CategoriaCard extends StatelessWidget {
   final TipoActividad categoria;
   final List<TipoActividad> subcategorias;
   final bool expandida;
+  final bool oculta;
+  final bool cambiando;
   final VoidCallback onToggleExpandir;
-  final VoidCallback onEditar;
   final VoidCallback onAlternar;
-  final VoidCallback onEliminar;
-  final VoidCallback onNuevaSubcategoria;
-  final void Function(TipoActividad) onEditarSubcategoria;
+
+  final bool Function(TipoActividad) subcategoriaOculta;
+  final bool Function(TipoActividad) subcategoriaOcultaPorPadre;
+  final bool Function(int) subcategoriaCambiando;
   final void Function(TipoActividad) onAlternarSubcategoria;
-  final void Function(TipoActividad) onEliminarSubcategoria;
 
   const _CategoriaCard({
     required this.categoria,
     required this.subcategorias,
     required this.expandida,
+    required this.oculta,
+    required this.cambiando,
     required this.onToggleExpandir,
-    required this.onEditar,
     required this.onAlternar,
-    required this.onEliminar,
-    required this.onNuevaSubcategoria,
-    required this.onEditarSubcategoria,
+    required this.subcategoriaOculta,
+    required this.subcategoriaOcultaPorPadre,
+    required this.subcategoriaCambiando,
     required this.onAlternarSubcategoria,
-    required this.onEliminarSubcategoria,
   });
 
   @override
   Widget build(BuildContext context) {
-    final activas = subcategorias.where((s) => s.activo).length;
+    final ocultasHijas = subcategorias.where(subcategoriaOculta).length;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: categoria.activo
-              ? AppTheme.border
-              : AppTheme.textSecondary.withValues(alpha: 0.35),
+          color: oculta
+              ? AppTheme.textSecondary.withValues(alpha: 0.35)
+              : AppTheme.border,
         ),
       ),
       child: Column(
@@ -483,10 +499,12 @@ class _CategoriaCard extends StatelessWidget {
             child: Row(
               children: [
                 // Desplegar solo tiene sentido si hay hijas, pero se deja también
-                // sin ellas para poder añadir la primera con un toque.
+                // sin ellas para poder ver qué implica ocultar la categoría.
                 IconButton(
                   onPressed: onToggleExpandir,
-                  tooltip: expandida ? 'Ocultar subcategorías' : 'Ver subcategorías',
+                  tooltip: expandida
+                      ? 'Ocultar subcategorías'
+                      : 'Ver subcategorías',
                   icon: Icon(
                     expandida
                         ? Icons.keyboard_arrow_down_rounded
@@ -507,15 +525,15 @@ class _CategoriaCard extends StatelessWidget {
                               style: TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 14.5,
-                                color: categoria.activo
-                                    ? AppTheme.textPrimary
-                                    : AppTheme.textSecondary,
+                                color: oculta
+                                    ? AppTheme.textSecondary
+                                    : AppTheme.textPrimary,
                               ),
                             ),
                           ),
-                          if (!categoria.activo) ...[
+                          if (oculta) ...[
                             const SizedBox(width: 7),
-                            const _EtiquetaInactiva(),
+                            const _EtiquetaOculta(),
                           ],
                         ],
                       ),
@@ -523,8 +541,9 @@ class _CategoriaCard extends StatelessWidget {
                       Text(
                         subcategorias.isEmpty
                             ? '${categoria.codigo} · sin subcategorías'
-                            : '${categoria.codigo} · $activas de '
-                                  '${subcategorias.length} subcategorías activas',
+                            : '${categoria.codigo} · $ocultasHijas de '
+                                  '${subcategorias.length} subcategorías '
+                                  'ocultas',
                         style: const TextStyle(
                           color: AppTheme.textSecondary,
                           fontSize: 11,
@@ -535,50 +554,9 @@ class _CategoriaCard extends StatelessWidget {
                   ),
                 ),
                 Switch.adaptive(
-                  value: categoria.activo,
+                  value: !oculta,
                   activeTrackColor: AppTheme.primary,
-                  onChanged: (_) => onAlternar(),
-                ),
-                PopupMenuButton<String>(
-                  tooltip: 'Opciones',
-                  onSelected: (valor) {
-                    if (valor == 'editar') onEditar();
-                    if (valor == 'nueva_sub') onNuevaSubcategoria();
-                    if (valor == 'eliminar') onEliminar();
-                  },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(
-                      value: 'editar',
-                      child: ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        leading: Icon(Icons.edit_outlined, size: 19),
-                        title: Text('Editar categoría'),
-                      ),
-                    ),
-                    PopupMenuItem(
-                      value: 'nueva_sub',
-                      child: ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        leading: Icon(Icons.add_rounded, size: 19),
-                        title: Text('Nueva subcategoría'),
-                      ),
-                    ),
-                    PopupMenuItem(
-                      value: 'eliminar',
-                      child: ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        leading: Icon(
-                          Icons.delete_outline_rounded,
-                          size: 19,
-                          color: AppTheme.error,
-                        ),
-                        title: Text('Eliminar'),
-                      ),
-                    ),
-                  ],
+                  onChanged: cambiando ? null : (_) => onAlternar(),
                 ),
               ],
             ),
@@ -597,6 +575,18 @@ class _CategoriaCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (oculta)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 6, bottom: 2),
+                      child: Text(
+                        'La categoría está oculta: sus subcategorías también '
+                        'quedan fuera del catálogo.',
+                        style: TextStyle(
+                          color: AppTheme.textSecondary,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                    ),
                   if (subcategorias.isEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 10),
@@ -613,16 +603,12 @@ class _CategoriaCard extends StatelessWidget {
                     ...subcategorias.map(
                       (sub) => _SubcategoriaTile(
                         subcategoria: sub,
-                        onEditar: () => onEditarSubcategoria(sub),
+                        oculta: subcategoriaOculta(sub),
+                        ocultaPorPadre: subcategoriaOcultaPorPadre(sub),
+                        cambiando: subcategoriaCambiando(sub.id),
                         onAlternar: () => onAlternarSubcategoria(sub),
-                        onEliminar: () => onEliminarSubcategoria(sub),
                       ),
                     ),
-                  TextButton.icon(
-                    onPressed: onNuevaSubcategoria,
-                    icon: const Icon(Icons.add_rounded, size: 18),
-                    label: const Text('Añadir subcategoría'),
-                  ),
                 ],
               ),
             ),
@@ -634,15 +620,17 @@ class _CategoriaCard extends StatelessWidget {
 
 class _SubcategoriaTile extends StatelessWidget {
   final TipoActividad subcategoria;
-  final VoidCallback onEditar;
+  final bool oculta;
+  final bool ocultaPorPadre;
+  final bool cambiando;
   final VoidCallback onAlternar;
-  final VoidCallback onEliminar;
 
   const _SubcategoriaTile({
     required this.subcategoria,
-    required this.onEditar,
+    required this.oculta,
+    required this.ocultaPorPadre,
+    required this.cambiando,
     required this.onAlternar,
-    required this.onEliminar,
   });
 
   @override
@@ -670,20 +658,22 @@ class _SubcategoriaTile extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
-                          color: subcategoria.activo
-                              ? AppTheme.textPrimary
-                              : AppTheme.textSecondary,
+                          color: oculta
+                              ? AppTheme.textSecondary
+                              : AppTheme.textPrimary,
                         ),
                       ),
                     ),
-                    if (!subcategoria.activo) ...[
+                    if (oculta) ...[
                       const SizedBox(width: 6),
-                      const _EtiquetaInactiva(),
+                      const _EtiquetaOculta(),
                     ],
                   ],
                 ),
                 Text(
-                  subcategoria.codigo,
+                  ocultaPorPadre
+                      ? '${subcategoria.codigo} · oculta con la categoría'
+                      : subcategoria.codigo,
                   style: const TextStyle(
                     color: AppTheme.textSecondary,
                     fontSize: 10.5,
@@ -694,40 +684,13 @@ class _SubcategoriaTile extends StatelessWidget {
             ),
           ),
           Switch.adaptive(
-            value: subcategoria.activo,
+            // Si la categoría padre está oculta, esta subcategoría ya no se
+            // muestra al cliente: el interruptor queda bloqueado para no dar a
+            // entender que se puede activar por separado. Al volver a mostrar la
+            // categoría, recupera su propio estado.
+            value: !oculta,
             activeTrackColor: AppTheme.primary,
-            onChanged: (_) => onAlternar(),
-          ),
-          PopupMenuButton<String>(
-            tooltip: 'Opciones',
-            onSelected: (valor) {
-              if (valor == 'editar') onEditar();
-              if (valor == 'eliminar') onEliminar();
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: 'editar',
-                child: ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.edit_outlined, size: 19),
-                  title: Text('Editar'),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'eliminar',
-                child: ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(
-                    Icons.delete_outline_rounded,
-                    size: 19,
-                    color: AppTheme.error,
-                  ),
-                  title: Text('Eliminar'),
-                ),
-              ),
-            ],
+            onChanged: (cambiando || ocultaPorPadre) ? null : (_) => onAlternar(),
           ),
         ],
       ),
@@ -735,8 +698,8 @@ class _SubcategoriaTile extends StatelessWidget {
   }
 }
 
-class _EtiquetaInactiva extends StatelessWidget {
-  const _EtiquetaInactiva();
+class _EtiquetaOculta extends StatelessWidget {
+  const _EtiquetaOculta();
 
   @override
   Widget build(BuildContext context) {
@@ -747,225 +710,11 @@ class _EtiquetaInactiva extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
       ),
       child: const Text(
-        'INACTIVA',
+        'OCULTA',
         style: TextStyle(
           fontSize: 9,
           fontWeight: FontWeight.w800,
           color: AppTheme.textSecondary,
-        ),
-      ),
-    );
-  }
-}
-
-/// Formulario de alta/edición de categoría **o** subcategoría.
-///
-/// El código se propone desde el nombre y se puede ajustar, pero no se puede
-/// cambiar al editar: es la clave que ya viaja en las reservas y en el RPC del
-/// catálogo (por ejemplo `transporte_omnibus`).
-class _TipoActividadSheet extends StatefulWidget {
-  final TipoActividad? tipo;
-
-  /// Categoría padre al **crear** una subcategoría. Al editar se usa la del
-  /// propio nodo, que es la que el RPC necesita para no cambiar de nivel.
-  final int? idPadre;
-
-  const _TipoActividadSheet({this.tipo, this.idPadre});
-
-  @override
-  State<_TipoActividadSheet> createState() => _TipoActividadSheetState();
-}
-
-class _TipoActividadSheetState extends State<_TipoActividadSheet> {
-  final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _nombre;
-  late final TextEditingController _codigo;
-  late final TextEditingController _orden;
-  late bool _activo;
-  bool _guardando = false;
-  bool _codigoEditadoAMano = false;
-
-  bool get _esEdicion => widget.tipo != null;
-
-  bool get _esSubcategoria =>
-      widget.tipo?.esSubcategoria ?? widget.idPadre != null;
-
-  /// Padre efectivo: el del nodo editado o el de creación.
-  int? get _idPadre => widget.tipo?.idPadre ?? widget.idPadre;
-
-  String get _que => _esSubcategoria ? 'subcategoría' : 'categoría';
-
-  @override
-  void initState() {
-    super.initState();
-    _nombre = TextEditingController(text: widget.tipo?.nombre ?? '');
-    _codigo = TextEditingController(text: widget.tipo?.codigo ?? '');
-    _orden = TextEditingController(
-      text: (widget.tipo?.orden ?? 0).toString(),
-    );
-    _activo = widget.tipo?.activo ?? true;
-    _codigoEditadoAMano = _esEdicion;
-  }
-
-  @override
-  void dispose() {
-    _nombre.dispose();
-    _codigo.dispose();
-    _orden.dispose();
-    super.dispose();
-  }
-
-  void _sugerirCodigo(String nombre) {
-    if (_codigoEditadoAMano) return;
-    _codigo.text = TipoActividad.codigoDesdeNombre(nombre);
-  }
-
-  Future<void> _guardar() async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
-    if (AuthService.currentUserId == null) return;
-    setState(() => _guardando = true);
-    try {
-      await TipoActividadService.guardar(
-        id: widget.tipo?.id,
-        nombre: _nombre.text.trim(),
-        codigo: _codigo.text.trim(),
-        activo: _activo,
-        idPadre: _idPadre,
-        orden: int.tryParse(_orden.text.trim()) ?? 0,
-      );
-      if (!mounted) return;
-      Navigator.pop(context, true);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _guardando = false);
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text('$e'.replaceFirst('Exception: ', '')),
-            backgroundColor: AppTheme.error,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final insets = MediaQuery.viewInsetsOf(context);
-    final titulo = _esEdicion
-        ? 'Editar $_que'
-        : (_esSubcategoria ? 'Nueva subcategoría' : 'Nueva categoría');
-    return Padding(
-      padding: EdgeInsets.fromLTRB(20, 4, 20, 20 + insets.bottom),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              titulo,
-              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              _esSubcategoria
-                  ? 'Segundo nivel dentro de la categoría. El cliente la verá '
-                        'como un chip al tocar la categoría.'
-                  : 'Aparecerá como filtro en el Home del cliente.',
-              style: const TextStyle(
-                color: AppTheme.textSecondary,
-                fontSize: 12.5,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _nombre,
-              textCapitalization: TextCapitalization.sentences,
-              onChanged: _sugerirCodigo,
-              decoration: InputDecoration(
-                labelText: 'Nombre visible',
-                hintText: _esSubcategoria
-                    ? 'Uñas / Manicure, Restaurantes…'
-                    : 'Belleza, Gastronomía, Transporte…',
-              ),
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Escribe un nombre' : null,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _codigo,
-              enabled: !_esEdicion,
-              onChanged: (_) => _codigoEditadoAMano = true,
-              decoration: InputDecoration(
-                labelText: 'Código interno',
-                helperText: _esEdicion
-                    ? 'El código no se puede cambiar una vez creado.'
-                    : 'Solo minúsculas, números y guion bajo.',
-              ),
-              validator: (v) {
-                final codigo = (v ?? '').trim();
-                if (codigo.isEmpty) return 'Escribe un código';
-                if (!TipoActividad.codigoValido(codigo)) {
-                  return 'Mínimo 3 caracteres: a-z, 0-9 o _';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _orden,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(
-                labelText: 'Orden',
-                helperText: 'Menor número = aparece antes. Los empates se '
-                    'ordenan por nombre.',
-              ),
-              validator: (v) {
-                final texto = (v ?? '').trim();
-                if (texto.isEmpty) return null;
-                return int.tryParse(texto) == null
-                    ? 'Solo números enteros'
-                    : null;
-              },
-            ),
-            const SizedBox(height: 6),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              value: _activo,
-              activeTrackColor: AppTheme.primary,
-              onChanged: (v) => setState(() => _activo = v),
-              title: const Text('Activa'),
-              subtitle: Text(
-                _esSubcategoria
-                    ? 'Solo las activas se ofrecen como chip en el Home.'
-                    : 'Solo las activas se ofrecen como filtro en el Home. Al '
-                          'desactivarla se desactivan sus subcategorías.',
-                style: const TextStyle(fontSize: 11.5),
-              ),
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: _guardando ? null : _guardar,
-                child: _guardando
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : Text(
-                        _esEdicion ? 'Guardar cambios' : 'Crear $_que',
-                      ),
-              ),
-            ),
-          ],
         ),
       ),
     );

@@ -1146,14 +1146,18 @@ class _VendedorScreenState extends State<VendedorScreen> {
               : DropdownButtonHideUnderline(
                   child: DropdownButton<int>(
                     value: entidad.id,
+                    // Igual que en el dashboard admin: el botón va sobre el
+                    // primario (blanco) y el desplegable se abre en blanco con
+                    // texto de marca (`textPrimary`), que es donde contrasta.
+                    dropdownColor: Colors.white,
                     icon: const Icon(
                       Icons.expand_more,
-                      color: AppTheme.textPrimary,
+                      color: Colors.white,
                     ),
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
-                      color: AppTheme.textPrimary,
+                      color: Colors.white,
                     ),
                     onChanged: _loading
                         ? null
@@ -1180,6 +1184,11 @@ class _VendedorScreenState extends State<VendedorScreen> {
                             child: Text(
                               e.denominacion,
                               overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.textPrimary,
+                              ),
                             ),
                           ),
                         )

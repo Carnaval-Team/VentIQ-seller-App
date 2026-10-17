@@ -17,6 +17,10 @@
 import { handleOptions, okResponse, errorResponse } from "../_shared/cors.ts";
 import { isServiceRoleCall, serviceClient } from "../_shared/auth.ts";
 import { invokeEdgeFunction } from "../_shared/invoke.ts";
+import { wapi } from "../_shared/wapi_client.ts";
+import { isSessionSendable, normalizeWapiStatus } from "../_shared/status.ts";
+import { runRecovery } from "../_shared/session_recovery.ts";
+import { updateSessionState } from "../_shared/session_store.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return handleOptions();
@@ -60,10 +64,86 @@ Deno.serve(async (req) => {
   if (!prog.activa) {
     return okResponse({ enviados: 0, fallidos: 0, skipped: true, reason: "inactive" });
   }
-  if (sesion.status !== "CONNECTED") {
-    return okResponse({
-      enviados: 0, fallidos: 0, skipped: true, reason: "session_not_connected",
-    });
+  // ── ¿Está la sesión conectada DE VERDAD? ─────────────────────────────
+  // Antes esto se decidía con la copia en BD, que puede estar obsoleta (el
+  // webhook llevaba meses registrado sin secret ni eventos `session.*`). El
+  // resultado era que la difusión diaria se saltaba EN SILENCIO: la
+  // programación 13 de la tienda 177 quedó con last_run_at del 2026-09-07 y
+  // nadie se enteró de que llevaba un mes sin enviar.
+  // Ahora: se pregunta a OpenWA, se intenta recuperar si hace falta y, si no
+  // se puede, se deja constancia en la BD y en los logs (además del 200 con
+  // `skipped`, que es lo que espera el cron).
+  let sesionLista = sesion.status === "CONNECTED";
+  let statusCrudo: string | null = null;
+  let recuperacion: string | null = null;
+
+  if (!sesionLista) {
+    const live = await wapi.getSession(sesion.wapi_session_id);
+    statusCrudo = live.success
+      ? ((live.data?.status as string | undefined) ?? null)
+      : null;
+
+    if (live.success && isSessionSendable(statusCrudo)) {
+      sesionLista = true;
+      await updateSessionState(admin, sesion.id, {
+        status: normalizeWapiStatus(statusCrudo, "CONNECTED"),
+        rawStatus: statusCrudo,
+        ...(live.data?.phoneNumber ? { phoneNumber: live.data.phoneNumber } : {}),
+        resetRecovery: true,
+      });
+      console.warn(
+        `[wapi-cron-dispatch] programación ${idProg}: la BD decía ` +
+          `"${sesion.status}" pero OpenWA responde "${statusCrudo}"`,
+      );
+    } else {
+      const outcome = await runRecovery(
+        wapi,
+        sesion.wapi_session_id,
+        statusCrudo ?? sesion.status,
+        {
+          lastRecoveryAt: (sesion as any).last_recovery_at ?? null,
+          recoveryAttempts: Number((sesion as any).recovery_attempts ?? 0),
+          linked: Boolean(live.data?.phoneNumber),
+        },
+      );
+      recuperacion = `${outcome.action}${outcome.ok ? " (ok)" : " (falló)"}`;
+      await updateSessionState(admin, sesion.id, {
+        status: normalizeWapiStatus(
+          outcome.finalRawStatus ?? statusCrudo,
+          "DISCONNECTED",
+        ),
+        rawStatus: outcome.finalRawStatus ?? statusCrudo,
+        recoveryAttempt: outcome.action !== "none" && outcome.action !== "cooldown",
+        errorCode: outcome.ok ? null : "BROADCAST_SKIPPED_SESSION_DOWN",
+        errorMessage: outcome.ok
+          ? null
+          : `difusión programada saltada: recuperación ${outcome.action} sin éxito`,
+      });
+
+      if (!outcome.ok) {
+        console.error(
+          `[wapi-cron-dispatch] DIFUSIÓN PROGRAMADA SALTADA (prog=${idProg}, ` +
+            `tienda=${prog.id_tienda}): la sesión no está conectada ` +
+            `(OpenWA="${statusCrudo ?? "?"}", recuperación: ${recuperacion}). ` +
+            `Esta programación NO envió nada.`,
+        );
+        return okResponse({
+          enviados: 0,
+          fallidos: 0,
+          skipped: true,
+          reason: "session_not_connected",
+          sesion_estado_openwa: statusCrudo,
+          recuperacion_intentada: recuperacion,
+          alerta: "La difusión programada se saltó por sesión caída. " +
+            "Revisa app_wapi_sesion.last_error_code y los logs de OpenWA.",
+        });
+      }
+      sesionLista = true;
+      console.warn(
+        `[wapi-cron-dispatch] sesión recuperada automáticamente ` +
+          `(${recuperacion}) → se envía la difusión programada ${idProg}`,
+      );
+    }
   }
 
   // Productos y destinos

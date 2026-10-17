@@ -19,7 +19,7 @@ An interface implementation that provides a specific capability. In OpenWA, adap
 
 - **Database Adapter**: SQLite, PostgreSQL
 - **Storage Adapter**: Local, S3
-- **Cache**: Redis (optional — `CacheService` is Redis-only; with Redis disabled it no-ops and callers fall through to the database)
+- **Cache**: Redis (optional — `CacheService` is Redis-only; with Redis disabled it no-ops)
 - **Engine Adapter**: whatsapp-web.js (default), Baileys
 
 ### API Key
@@ -28,7 +28,7 @@ Authentication token to access the OpenWA API. Sent via the `X-API-Key` header.
 
 ### Auth State
 
-WhatsApp Web session authentication data. On the whatsapp-web.js engine it is a Chrome profile (cookies, local/session storage) under `SESSION_DATA_PATH` — default `./data/sessions`, one `session-<name>` directory per session. On Baileys it is a set of credential JSON files under `BAILEYS_AUTH_DIR`, default `./data/baileys`. Losing it unlinks the WhatsApp account and requires a fresh QR scan.
+WhatsApp Web session authentication data. On the whatsapp-web.js engine it is a Chrome profile (cookies, local/session storage) under `SESSION_DATA_PATH` — default `./data/sessions`, one `session-<id>` directory per session, named after the session's UUID. On Baileys it is a set of credential JSON files under `BAILEYS_AUTH_DIR`, default `./data/baileys`, one `<id>` directory per session. Losing it unlinks the WhatsApp account and requires a fresh QR scan.
 
 ## B
 
@@ -73,7 +73,7 @@ Web interface to manage OpenWA without using the API directly. Built with React 
 
 ### Dead Letter Queue (DLQ)
 
-The durable record of deliveries abandoned after every retry. In OpenWA it is a **database table**, not a Redis queue: `webhook_delivery_failures` for outbound webhooks and `integration_delivery_failures` for plugin ingress. Used for debugging and manual redrive.
+The durable record of deliveries abandoned after every retry; an outbound-webhook row with `attempts: 0` was instead shed, oversize, failed preflight or refused at shutdown, and a later successful delivery of the event removes its row. In OpenWA it is a **database table**, not a Redis queue: `webhook_delivery_failures` for outbound webhooks and `integration_delivery_failures` for plugin ingress. Both support an ADMIN redrive: plugin ingress with `POST /api/integration/instances/:pluginId/:instanceId/redrive`, and outbound webhooks with `POST /api/webhooks/delivery-failures/redrive`, which replays only terminal rows recorded while `WEBHOOK_FAILURE_PAYLOAD_RETENTION_HOURS` > 0 (default 0 keeps no event data) and still inside that window. While `WEBHOOK_RECONCILE_INTERVAL_MS` > 0 the gateway also replays a shed or shutdown-refused delivery from its outbox on its own; with the sweep off such an event is not replayed, but turning the sweep back on replays it while its outbox record is pending. Neither path covers a delivery that was over the size cap or failed preflight, a shed or shutdown-refused one the sweep dropped because its webhook was removed, disabled or unsubscribed, nor an exhausted one recorded without event data or past its retention window: the provider or your own tooling must re-send that event.
 
 ### Docker
 
@@ -91,6 +91,7 @@ A system-emitted occurrence, for example:
 
 - `message.received`: New incoming message
 - `message.ack`: Message status changed
+- `message.receipt`: One recipient received, read or played a group or status message the account sent
 - `session.status`: Session status changed
 - `session.qr`: New QR code generated
 
@@ -118,7 +119,7 @@ Browser mode that runs without a GUI. Puppeteer runs Chrome in headless mode.
 
 ### Health Check
 
-Endpoints to check system health: `/api/health` (basic status and running version), `/api/health/live` (liveness) and `/api/health/ready` (readiness — probes both databases, and reports 503 while the process is draining). All three are public and exempt from rate limiting. The `/api` prefix is applied globally with no exclusions, so the unprefixed paths do not exist — container and Kubernetes probes must use the prefixed form.
+Endpoints to check system health: `/api/health` (basic status; the running version is added only for an authenticated caller), `/api/health/live` (liveness) and `/api/health/ready` (readiness — probes both databases, and reports 503 while the process is draining). All three are public and exempt from rate limiting. The `/api` prefix is applied globally with no exclusions, so the unprefixed paths do not exist — container and Kubernetes probes must use the prefixed form.
 
 ### Hook
 
@@ -134,7 +135,7 @@ Data stored in RAM. Fast but non-persistent — lost on restart. Independent of 
 
 ### JID (Jabber ID)
 
-WhatsApp's id format, inherited from XMPP; the user-facing "Chat ID" is a JID. The same entity can be addressed in more than one dialect: `<phone>@c.us` (whatsapp-web.js, and OpenWA's neutral form), `<phone>@s.whatsapp.net` (Baileys' raw form for the same user), `<id>@g.us` (a group), or `<lid>@lid` (a LID, a privacy id). OpenWA normalizes engine ids to a single neutral dialect at the engine boundary - see _System Architecture > WhatsApp Identity Contract_.
+WhatsApp's id format, inherited from XMPP; the user-facing "Chat ID" is a JID. The same entity can be addressed in more than one dialect: `<phone>@c.us` (whatsapp-web.js, and OpenWA's neutral form), `<phone>@s.whatsapp.net` (Baileys' raw form for the same user), `<id>@g.us` (a group), or `<lid>@lid` (a LID, a privacy id). WhatsApp also issues Meta-hosted dialects of the first and last of these (`@hosted`, `@hosted.lid`); they name the same account and normalize to the same neutral form. OpenWA normalizes engine ids to a single neutral dialect at the engine boundary - see _System Architecture > WhatsApp Identity Contract_.
 
 ### Job Queue
 

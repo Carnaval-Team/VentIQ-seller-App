@@ -15,6 +15,7 @@ import 'providers/reservas_provider.dart';
 import 'providers/suscripcion_provider.dart';
 import 'services/local_notifications.dart';
 import 'services/catalogo_service.dart';
+import 'tutorial/tutorial_overlay.dart';
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
@@ -78,6 +79,10 @@ class FlowApp extends StatelessWidget {
           GlobalCupertinoLocalizations.delegate,
         ],
         supportedLocales: const [Locale('es'), Locale('en')],
+        // El tutorial guiado se pinta por encima del Navigator (y por tanto
+        // también de las hojas modales), que es lo que necesita un recorrido
+        // que cruza varias pantallas.
+        builder: (context, child) => TutorialOverlayHost(child: child),
         initialRoute: '/splash',
         routes: {
           '/splash': (_) => const SplashScreen(),

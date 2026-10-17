@@ -61,6 +61,10 @@ class DatosAdicionalesFormState extends State<DatosAdicionalesForm> {
       if (_editadosPorUsuario.contains(c.clave)) continue;
       _aplicarDefault(c);
     }
+    // 3. Avisar al padre: con los defaults ya aplicados, una regla de precio
+    //    ligada a un campo con default debe cotizarse desde el primer render
+    //    (antes el precio no se actualizaba hasta que el usuario tocaba algo).
+    _notifyChange();
   }
 
   @override

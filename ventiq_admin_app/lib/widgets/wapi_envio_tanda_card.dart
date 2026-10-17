@@ -4,10 +4,22 @@ import 'package:intl/intl.dart';
 import '../config/app_colors.dart';
 import '../models/wapi_envio_log.dart';
 import '../models/wapi_envio_tanda.dart';
+import '../utils/wapi_errores.dart';
 
-/// Tarjeta de una tanda de envío. La tanda en curso se muestra expandida y
-/// animada (barra de progreso viva + pulso en el ícono); las terminadas se
-/// colapsan a un resumen compacto.
+/// Tarjeta de una tanda de envío.
+///
+/// QUÉ CAMBIÓ (UX para el cliente final)
+///   1. **Diagnóstico en castellano**: antes se mostraba el código crudo del
+///      servidor ("Error más frecuente: Session is not connected. The WhatsApp
+///      client is not ready. (tras 3 intento(s))"). Ahora se traduce a
+///      «El bot se desconectó» + qué pasó + qué hacer (ver `wapi_errores.dart`).
+///   2. **Reintentar sin buscar**: el botón «Reintentar N mensajes» y, cuando
+///      hace falta, «Reconectar bot» van SIEMPRE visibles en un pie de tarjeta.
+///      Antes vivían en un chip diminuto del encabezado y la explicación
+///      quedaba escondida tras expandir la tarjeta.
+///   3. **Por qué se detuvo, de un vistazo**: el pie dice el motivo y cuándo.
+///   4. Se respeta «reducir movimiento» del sistema: sin animaciones cuando el
+///      usuario las tiene desactivadas.
 class WapiEnvioTandaCard extends StatefulWidget {
   final WapiEnvioTanda tanda;
 
@@ -18,20 +30,29 @@ class WapiEnvioTandaCard extends StatefulWidget {
   final Map<String, String> etiquetas;
 
   /// Denominación por id de producto.
-  final Map<int, String> productos;
+  final String Function(int? id) productoNombre;
 
   /// Reanuda los mensajes que quedaron sin despachar. Si es null no se
   /// muestra el botón de reanudar.
   final Future<void> Function(WapiEnvioTanda tanda)? onReanudar;
+
+  /// Reconecta el bot de la sesión de esta tanda. Se ofrece cuando el
+  /// diagnóstico dice que el origen fue una sesión caída: reintentar sin
+  /// reconectar antes volvería a fallar.
+  final Future<void> Function()? onReconectar;
 
   const WapiEnvioTandaCard({
     super.key,
     required this.tanda,
     required this.destacada,
     this.etiquetas = const {},
-    this.productos = const {},
+    this.productoNombre = _productoPorDefecto,
     this.onReanudar,
+    this.onReconectar,
   });
+
+  static String _productoPorDefecto(int? id) =>
+      id == null ? 'Producto' : 'Producto #$id';
 
   @override
   State<WapiEnvioTandaCard> createState() => _WapiEnvioTandaCardState();
@@ -41,12 +62,17 @@ class _WapiEnvioTandaCardState extends State<WapiEnvioTandaCard>
     with TickerProviderStateMixin {
   late final AnimationController _pulse;
 
-  /// Parpadeo del botón "reanudar". Corre sólo cuando hay algo que reanudar,
+  /// Parpadeo del botón "Reintentar". Corre sólo cuando hay algo que reanudar,
   /// y es deliberadamente más rápido que [_pulse] para que llame la atención.
   late final AnimationController _blink;
 
   bool _expandida = false;
   bool _reanudando = false;
+  bool _reconectando = false;
+  bool _verDetalleTecnico = false;
+
+  /// El sistema pide menos movimiento (accesibilidad): apagamos parpadeos.
+  bool _movimientoReducido = false;
 
   @override
   void initState() {
@@ -60,6 +86,19 @@ class _WapiEnvioTandaCardState extends State<WapiEnvioTandaCard>
       duration: const Duration(milliseconds: 750),
     );
     _expandida = widget.destacada;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final reducido = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (reducido != _movimientoReducido) {
+      _movimientoReducido = reducido;
+      if (reducido) {
+        _pulse.stop();
+        _blink.stop();
+      }
+    }
     _sincronizarPulso();
   }
 
@@ -69,7 +108,7 @@ class _WapiEnvioTandaCardState extends State<WapiEnvioTandaCard>
     _sincronizarPulso();
   }
 
-  /// ¿Mostramos el botón de reanudar? Requiere callback, mensajes sin
+  /// ¿Mostramos las acciones de reintento? Requiere callback, mensajes sin
   /// entregar y que no haya un reanudar en vuelo.
   bool get _puedeReanudar =>
       widget.onReanudar != null &&
@@ -80,15 +119,15 @@ class _WapiEnvioTandaCardState extends State<WapiEnvioTandaCard>
   void _sincronizarPulso() {
     final activa =
         widget.tanda.estadoPara(DateTime.now()) == WapiTandaEstado.enCurso;
-    if (activa && !_pulse.isAnimating) {
+    if (activa && !_movimientoReducido && !_pulse.isAnimating) {
       _pulse.repeat(reverse: true);
-    } else if (!activa && _pulse.isAnimating) {
+    } else if ((!activa || _movimientoReducido) && _pulse.isAnimating) {
       _pulse.stop();
       _pulse.value = 0;
     }
 
     // Mismo criterio para el parpadeo: sólo mientras haya algo que reanudar.
-    final parpadea = _puedeReanudar && !_reanudando;
+    final parpadea = _puedeReanudar && !_reanudando && !_movimientoReducido;
     if (parpadea && !_blink.isAnimating) {
       _blink.repeat(reverse: true);
     } else if (!parpadea && _blink.isAnimating) {
@@ -109,6 +148,17 @@ class _WapiEnvioTandaCardState extends State<WapiEnvioTandaCard>
         setState(() => _reanudando = false);
         _sincronizarPulso();
       }
+    }
+  }
+
+  Future<void> _reconectar() async {
+    final cb = widget.onReconectar;
+    if (cb == null || _reconectando) return;
+    setState(() => _reconectando = true);
+    try {
+      await cb();
+    } finally {
+      if (mounted) setState(() => _reconectando = false);
     }
   }
 
@@ -137,19 +187,19 @@ class _WapiEnvioTandaCardState extends State<WapiEnvioTandaCard>
         return const _EstiloEstado(
           color: AppColors.warning,
           icono: Icons.error_outline_rounded,
-          rotulo: 'Con fallos',
+          rotulo: 'Terminó con fallos',
         );
       case WapiTandaEstado.fallida:
         return const _EstiloEstado(
           color: AppColors.error,
           icono: Icons.cancel_rounded,
-          rotulo: 'Falló',
+          rotulo: 'No se envió nada',
         );
       case WapiTandaEstado.interrumpida:
         return const _EstiloEstado(
-          color: AppColors.textLight,
+          color: AppColors.warning,
           icono: Icons.pause_circle_outline_rounded,
-          rotulo: 'Interrumpido',
+          rotulo: 'Se quedó a medias',
         );
     }
   }
@@ -160,24 +210,31 @@ class _WapiEnvioTandaCardState extends State<WapiEnvioTandaCard>
     // Fallback: los ids de grupo son larguísimos, mostramos algo acotado.
     if (chatId.endsWith('@g.us')) {
       final n = chatId.split('@').first;
-      return 'Grupo …${n.length > 4 ? n.substring(n.length - 4) : n}';
+      return 'Grupo ...${n.length > 4 ? n.substring(n.length - 4) : n}';
     }
     return chatId.split('@').first;
   }
 
-  String _nombreProducto(int? id) {
-    if (id == null) return 'Producto';
-    return widget.productos[id] ?? 'Producto #$id';
-  }
+  String _nombreProducto(int? id) => widget.productoNombre(id);
 
   String _hora(DateTime d) => DateFormat('dd/MM HH:mm').format(d.toLocal());
+
+  String _hace(DateTime d) {
+    final diff = DateTime.now().difference(d);
+    if (diff.inMinutes < 1) return 'hace un momento';
+    if (diff.inMinutes < 60) return 'hace ${diff.inMinutes} min';
+    if (diff.inHours < 24) return 'hace ${diff.inHours} h';
+    return 'hace ${diff.inDays} d';
+  }
 
   @override
   Widget build(BuildContext context) {
     final t = widget.tanda;
-    final estado = t.estadoPara(DateTime.now());
+    final ahora = DateTime.now();
+    final estado = t.estadoPara(ahora);
     final st = _estilo(estado);
     final enCurso = estado == WapiTandaEstado.enCurso;
+    final diag = diagnosticarTanda(t);
 
     return TweenAnimationBuilder<double>(
       // Al pasar de "en curso" a terminada, el realce se apaga suavemente en
@@ -214,20 +271,23 @@ class _WapiEnvioTandaCardState extends State<WapiEnvioTandaCard>
                   padding: const EdgeInsets.all(14),
                   child: Column(
                     children: [
-                      _encabezado(t, st, enCurso),
+                      _encabezado(t, st, enCurso, diag),
                       const SizedBox(height: 12),
                       _progreso(t, st, enCurso),
                       const SizedBox(height: 10),
-                      _chips(t, st, estado),
+                      _chips(t, estado),
                     ],
                   ),
                 ),
               ),
+              // Acciones SIEMPRE visibles (no dentro del desplegable).
+              if (!enCurso && _puedeReanudar)
+                _pieAcciones(t, estado, diag),
               AnimatedSize(
                 duration: const Duration(milliseconds: 280),
                 curve: Curves.easeInOut,
                 child: _expandida
-                    ? _detalle(t, estado)
+                    ? _detalle(t, estado, diag)
                     : const SizedBox(width: double.infinity),
               ),
             ],
@@ -247,7 +307,25 @@ class _WapiEnvioTandaCardState extends State<WapiEnvioTandaCard>
         ),
       );
 
-  Widget _encabezado(WapiEnvioTanda t, _EstiloEstado st, bool enCurso) {
+  Widget _encabezado(
+    WapiEnvioTanda t,
+    _EstiloEstado st,
+    bool enCurso,
+    WapiDiagnosticoTanda diag,
+  ) {
+    // Segunda línea: contexto útil en vez de solo metadatos. Cuando algo se
+    // quedó a medias, dice CUÁNDO y por qué en el mismo renglón.
+    final String subtitulo;
+    if (enCurso) {
+      subtitulo = 'Producto ${t.productosCompletados + 1} de '
+          '${t.productos.length} · ${_nombreProducto(t.productoActual)}';
+    } else if (diag.hayDiagnostico && diag.principal != null) {
+      subtitulo = '${diag.principal!.titulo} · ${_hace(t.ultimaActividad)}';
+    } else {
+      subtitulo = '${t.productos.length} producto(s) · '
+          '${t.chats.length} destino(s) · ${_hora(t.inicio)}';
+    }
+
     return Row(
       children: [
         // Ícono con halo pulsante mientras envía.
@@ -298,32 +376,30 @@ class _WapiEnvioTandaCardState extends State<WapiEnvioTandaCard>
                 ],
               ),
               const SizedBox(height: 2),
-              Text(
-                enCurso
-                    ? 'Producto ${t.productosCompletados + 1} de '
-                        '${t.productos.length} · ${_nombreProducto(t.productoActual)}'
-                    : '${t.productos.length} producto(s) · '
-                        '${t.chats.length} destino(s) · ${_hora(t.inicio)}',
-                style: const TextStyle(
-                    fontSize: 12, color: AppColors.textSecondary),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              Row(
+                children: [
+                  if (diag.hayDiagnostico && !enCurso) ...[
+                    Icon(
+                      diag.principal!.icono,
+                      size: 13,
+                      color: diag.principal!.color,
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                  Expanded(
+                    child: Text(
+                      subtitulo,
+                      style: const TextStyle(
+                          fontSize: 12, color: AppColors.textSecondary),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
         ),
-        // Botón de reanudar: va JUNTO al rótulo de estado ("Interrumpido")
-        // para que se lea como "esto se paró → dale play".
-        if (_puedeReanudar || _reanudando) ...[
-          const SizedBox(width: 6),
-          _BotonReanudar(
-            blink: _blink,
-            cargando: _reanudando,
-            pendientes: widget.tanda.logIdsSinEnviar.length,
-            onTap: _reanudar,
-          ),
-          const SizedBox(width: 2),
-        ],
         AnimatedRotation(
           turns: _expandida ? 0.5 : 0,
           duration: const Duration(milliseconds: 240),
@@ -346,11 +422,10 @@ class _WapiEnvioTandaCardState extends State<WapiEnvioTandaCard>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(prog ? Icons.schedule : Icons.touch_app,
-              size: 10, color: c),
+          Icon(prog ? Icons.schedule : Icons.touch_app, size: 10, color: c),
           const SizedBox(width: 3),
           Text(
-            prog ? 'AUTO' : 'MANUAL',
+            prog ? 'AUTOMÁTICO' : 'MANUAL',
             style: TextStyle(
                 fontSize: 9, fontWeight: FontWeight.w800, color: c),
           ),
@@ -402,8 +477,7 @@ class _WapiEnvioTandaCardState extends State<WapiEnvioTandaCard>
     );
   }
 
-  Widget _chips(
-      WapiEnvioTanda t, _EstiloEstado st, WapiTandaEstado estado) {
+  Widget _chips(WapiEnvioTanda t, WapiTandaEstado estado) {
     return Wrap(
       spacing: 6,
       runSpacing: 6,
@@ -411,18 +485,14 @@ class _WapiEnvioTandaCardState extends State<WapiEnvioTandaCard>
         _Contador(
           icono: Icons.check_circle_rounded,
           color: AppColors.success,
-          etiqueta: 'Enviados',
+          etiqueta: 'Entregados',
           valor: t.enviados,
         ),
         if (t.pendientes > 0)
           _Contador(
-            icono: estado == WapiTandaEstado.interrumpida
-                ? Icons.pause_circle_outline_rounded
-                : Icons.hourglass_top_rounded,
-            color: estado == WapiTandaEstado.interrumpida
-                ? AppColors.textLight
-                : AppColors.info,
-            etiqueta: 'Faltan',
+            icono: Icons.pause_circle_outline_rounded,
+            color: AppColors.warning,
+            etiqueta: 'Sin enviar',
             valor: t.pendientes,
             animado: estado == WapiTandaEstado.enCurso,
           ),
@@ -430,14 +500,130 @@ class _WapiEnvioTandaCardState extends State<WapiEnvioTandaCard>
           _Contador(
             icono: Icons.error_rounded,
             color: AppColors.error,
-            etiqueta: 'Fallidos',
+            etiqueta: 'Fallaron',
             valor: t.fallidos,
           ),
       ],
     );
   }
 
-  Widget _detalle(WapiEnvioTanda t, WapiTandaEstado estado) {
+  /// ── PIE DE ACCIONES ──────────────────────────────────────────────────
+  /// El corazón del arreglo de UX: cuando la tanda no terminó, aquí está el
+  /// motivo en una frase y los botones para arreglarlo, sin expandir nada.
+  Widget _pieAcciones(
+    WapiEnvioTanda t,
+    WapiTandaEstado estado,
+    WapiDiagnosticoTanda diag,
+  ) {
+    final d = diag.principal;
+    final color = d?.color ?? AppColors.warning;
+    final faltan = t.logIdsSinEnviar.length;
+    final necesitaReconectar =
+        diag.hayQueReconectar && widget.onReconectar != null;
+
+    // Motivo en una frase: "WhatsApp cortó la sesión..." / "N mensajes sin
+    // enviar porque...".
+    final motivo = d == null
+        ? 'Quedaron $faltan mensaje(s) sin enviar.'
+        : diag.totalFallidos > 0
+            ? '${d.titulo} · ${d.explicacion}'
+            : d.explicacion;
+
+    return Container(
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        color: AppColors.background,
+        border: Border(top: BorderSide(color: AppColors.border)),
+      ),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 13),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(d?.icono ?? Icons.info_outline_rounded,
+                  size: 15, color: color),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  motivo,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: AppColors.textPrimary,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (d?.queHacer != null) ...[
+            const SizedBox(height: 5),
+            Padding(
+              padding: const EdgeInsets.only(left: 22),
+              child: Text(
+                '👉 ${d!.queHacer}',
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                  height: 1.35,
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 11),
+          Row(
+            children: [
+              Expanded(
+                flex: necesitaReconectar ? 3 : 1,
+                child: _BotonReintentar(
+                  blink: _blink,
+                  cargando: _reanudando,
+                  pendientes: faltan,
+                  onTap: _reanudar,
+                ),
+              ),
+              if (necesitaReconectar) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: OutlinedButton.icon(
+                    onPressed: _reconectando ? null : _reconectar,
+                    icon: _reconectando
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.link_rounded, size: 17),
+                    label: Text(
+                      _reconectando ? 'Reconectando…' : 'Reconectar bot',
+                      style: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w700),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(0, 42),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      foregroundColor: AppColors.primary,
+                      side: const BorderSide(color: AppColors.primary),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _detalle(
+    WapiEnvioTanda t,
+    WapiTandaEstado estado,
+    WapiDiagnosticoTanda diag,
+  ) {
     // Desglose por destino: deja ver de un golpe si a algún grupo no le llegó.
     final porChat = <String, List<WapiEnvioLog>>{};
     for (final l in t.logs) {
@@ -445,6 +631,8 @@ class _WapiEnvioTandaCardState extends State<WapiEnvioTandaCard>
     }
     final entradas = porChat.entries.toList()
       ..sort((a, b) => _nombreChat(a.key).compareTo(_nombreChat(b.key)));
+
+    final d = diag.principal;
 
     return Container(
       width: double.infinity,
@@ -456,30 +644,22 @@ class _WapiEnvioTandaCardState extends State<WapiEnvioTandaCard>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (estado == WapiTandaEstado.interrumpida) ...[
+          // ── Diagnóstico completo ───────────────────────────────────────
+          if (d != null) ...[
+            _BloqueDiagnostico(
+              diagnostico: d,
+              totalFallidos: diag.totalFallidos,
+              verTecnico: _verDetalleTecnico,
+              onToggleTecnico: () =>
+                  setState(() => _verDetalleTecnico = !_verDetalleTecnico),
+            ),
+            const SizedBox(height: 12),
+          ] else if (estado == WapiTandaEstado.interrumpida) ...[
             _Aviso(
               color: AppColors.warning,
               icono: Icons.warning_amber_rounded,
-              texto:
-                  'El envío se detuvo con ${t.pendientes} mensaje(s) sin despachar. '
-                  'Pulsa ▶ Reanudar para completar sólo los que faltan.',
-            ),
-            const SizedBox(height: 12),
-          ] else if (_puedeReanudar && t.fallidos > 0) ...[
-            _Aviso(
-              color: AppColors.warning,
-              icono: Icons.replay_rounded,
-              texto:
-                  '${t.fallidos} mensaje(s) fallaron. Pulsa ▶ Reanudar para '
-                  'reintentar sólo esos.',
-            ),
-            const SizedBox(height: 12),
-          ],
-          if (t.errorPredominante != null) ...[
-            _Aviso(
-              color: AppColors.error,
-              icono: Icons.info_outline_rounded,
-              texto: 'Error más frecuente: ${t.errorPredominante}',
+              texto: 'El envío se detuvo con ${t.pendientes} mensaje(s) sin '
+                  'despachar. Reintenta sólo los que faltan.',
             ),
             const SizedBox(height: 12),
           ],
@@ -536,7 +716,7 @@ class _WapiEnvioTandaCardState extends State<WapiEnvioTandaCard>
                   ),
                   if (pend > 0) ...[
                     const SizedBox(width: 5),
-                    Text('· $pend en cola',
+                    Text('· $pend sin enviar',
                         style: const TextStyle(
                             fontSize: 10.5, color: AppColors.textLight)),
                   ],
@@ -550,16 +730,149 @@ class _WapiEnvioTandaCardState extends State<WapiEnvioTandaCard>
   }
 }
 
-/// Botón "play" que parpadea para que el usuario note que puede reanudar los
-/// mensajes que faltan. El parpadeo va sobre el halo y el color de fondo, no
-/// sobre la opacidad del icono, para que siga siendo legible en todo momento.
-class _BotonReanudar extends StatelessWidget {
+/// ── BLOQUE DE DIAGNÓSTICO ───────────────────────────────────────────────────
+/// Explica el problema en tres niveles: titular, qué pasó, qué hacer. El
+/// código técnico queda detrás de un desplegable para soporte.
+class _BloqueDiagnostico extends StatelessWidget {
+  final WapiDiagnostico diagnostico;
+  final int totalFallidos;
+  final bool verTecnico;
+  final VoidCallback onToggleTecnico;
+
+  const _BloqueDiagnostico({
+    required this.diagnostico,
+    required this.totalFallidos,
+    required this.verTecnico,
+    required this.onToggleTecnico,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final d = diagnostico;
+    final encabezado = d.repeticiones > 1
+        ? '${d.titulo} · ${d.repeticiones} de $totalFallidos mensaje(s)'
+        : d.titulo;
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: d.color.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: d.color.withOpacity(0.22)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(d.icono, size: 16, color: d.color),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  encabezado,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: d.color,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          Text(
+            d.explicacion,
+            style: const TextStyle(
+                fontSize: 11.5, color: AppColors.textPrimary, height: 1.35),
+          ),
+          if (d.queHacer != null) ...[
+            const SizedBox(height: 6),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.arrow_forward_rounded,
+                    size: 14, color: AppColors.textSecondary),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(
+                    d.queHacer!,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (d.detalle != null) ...[
+            const SizedBox(height: 4),
+            InkWell(
+              onTap: onToggleTecnico,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      verTecnico
+                          ? Icons.expand_less_rounded
+                          : Icons.expand_more_rounded,
+                      size: 15,
+                      color: AppColors.textSecondary,
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      verTecnico
+                          ? 'Ocultar detalle técnico'
+                          : 'Ver detalle técnico',
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        color: AppColors.textSecondary,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (verTecnico)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(top: 4),
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: SelectableText(
+                  d.detalle!,
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    color: AppColors.textSecondary,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Botón principal "Reintentar N mensajes". El parpadeo va sobre el halo y el
+/// fondo, no sobre la opacidad del texto, para que siga siendo legible.
+class _BotonReintentar extends StatelessWidget {
   final Animation<double> blink;
   final bool cargando;
   final int pendientes;
   final VoidCallback onTap;
 
-  const _BotonReanudar({
+  const _BotonReintentar({
     required this.blink,
     required this.cargando,
     required this.pendientes,
@@ -569,10 +882,14 @@ class _BotonReanudar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const c = AppColors.warning;
+    final label = pendientes == 1
+        ? 'Reintentar 1 mensaje'
+        : 'Reintentar $pendientes mensajes';
+
     return Tooltip(
       message: cargando
-          ? 'Reanudando…'
-          : 'Reanudar: enviar los $pendientes mensaje(s) que faltan',
+          ? 'Reintentando…'
+          : 'Vuelve a enviar los $pendientes mensaje(s) que no se entregaron',
       child: AnimatedBuilder(
         animation: blink,
         builder: (_, __) {
@@ -581,46 +898,52 @@ class _BotonReanudar extends StatelessWidget {
             color: Colors.transparent,
             child: InkWell(
               onTap: cargando ? null : onTap,
-              borderRadius: BorderRadius.circular(999),
+              borderRadius: BorderRadius.circular(10),
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 6),
+                height: 42,
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(
-                  color: c.withOpacity(0.12 + 0.20 * b),
-                  borderRadius: BorderRadius.circular(999),
+                  color: c.withOpacity(0.14 + 0.16 * b),
+                  borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: c.withOpacity(0.45 + 0.55 * b),
-                    width: 1 + b,
+                    color: c.withOpacity(0.55 + 0.45 * b),
+                    width: 1.2,
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: c.withOpacity(0.45 * b),
-                      blurRadius: 14 * b,
-                      spreadRadius: 1.5 * b,
-                    ),
-                  ],
+                  boxShadow: b > 0
+                      ? [
+                          BoxShadow(
+                            color: c.withOpacity(0.35 * b),
+                            blurRadius: 12 * b,
+                            spreadRadius: 0.5 * b,
+                          ),
+                        ]
+                      : null,
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (cargando)
                       const SizedBox(
-                        width: 14,
-                        height: 14,
+                        width: 15,
+                        height: 15,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
                           valueColor: AlwaysStoppedAnimation(c),
                         ),
                       )
                     else
-                      const Icon(Icons.play_arrow_rounded, size: 18, color: c),
-                    const SizedBox(width: 4),
-                    Text(
-                      cargando ? 'Reanudando' : 'Reanudar',
-                      style: const TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w800,
-                        color: c,
+                      const Icon(Icons.replay_rounded, size: 18, color: c),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        cargando ? 'Reintentando…' : label,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: c,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
@@ -646,7 +969,7 @@ class _EstiloEstado {
 }
 
 /// Chip contador. Con [animado] el número cambia con una transición vertical,
-/// para que se note cuando "faltan" baja en vivo.
+/// para que se note cuando "sin enviar" baja en vivo.
 class _Contador extends StatelessWidget {
   final IconData icono;
   final Color color;
@@ -666,8 +989,8 @@ class _Contador extends StatelessWidget {
     final numero = Text(
       '$valor',
       key: ValueKey(valor),
-      style: TextStyle(
-          fontSize: 12, fontWeight: FontWeight.w800, color: color),
+      style:
+          TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: color),
     );
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),

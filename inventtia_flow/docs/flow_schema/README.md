@@ -87,6 +87,13 @@ helper de autorización:
 | 47 | `47_categorias_reales_subcategorias.sql` | Taxonomía de **dos niveles**: `id_padre` + `orden` en `nom_tipo_actividad_servicio`, trigger de máximo 2 niveles, RLS de escritura abierta al superadmin, RPC de gestión reescritos (`admin_guardar/alternar/eliminar_tipo_actividad`) y seed de las 6 categorías reales con 5 subcategorías cada una. Reasigna los servicios existentes. |
 | 48 | `48_home_feed_categorias_subcategorias.sql` | `cliente_home_feed` con `p_id_subcategoria` y nomenclador con `subcategorias` anidadas; `cliente_obtener_servicios` emite `id_padre` y `nombre` dentro de `tipo_actividad`. |
 | 49 | `49_campanas_datos_local.sql` | `campanas_activas` devuelve los datos del **local** de cada campaña patrocinada (foto, descripción, dirección, provincia, país, horario, coordenadas, teléfono). |
+| 50 | `50_agenda_sala_espera_turno_on_delete.sql` | `on delete` que faltaba en las FK al turno: `agenda` → `SET NULL` (la reserva cobrada no se pierde) y el resto → `CASCADE`. Antes borrar un turno con reservas fallaba con `23503`. |
+| 51 | `51_precio_turno_con_reglas.sql` | `calcular_precio_turno` por fin mira `p_datos`: extrae el helper `calcular_precio_con_reglas` y deja de devolver 0 cuando falta el precio de la moneda elegida. |
+| 52 | `52_turno_auto_en_recurso_elegido.sql` | `admin_guardar_turno_auto` crea el turno en el recurso elegido en vez de caer siempre en el primero por `orden`. |
+| 53 | `53_imagenes_reemplazo_admin.sql` | Políticas del bucket `flow-imagenes` para que el admin de la entidad pueda **reemplazar** la foto de un local o servicio (antes "saltaban los RLS"). |
+| 54 | `54_admin_create_user_completo.sql` | `admin_create_user` inserta la **identidad de email** (el usuario creado ya puede iniciar sesión) y repara los usuarios que quedaron sin ella. No escribe `auth.identities.email` ni `auth.users.confirmed_at`: son `GENERATED ALWAYS`. |
+| 55 | `55_categorias_ocultas_por_entidad.sql` | Ocultar categorías **por entidad**: tabla `entidad_categoria_oculta`, RLS, RPC `admin_ocultar_categoria_entidad` y el predicado en `cliente_home_feed` / `cliente_obtener_servicios`. El admin de entidad deja de poder crear/editar/eliminar categorías y solo oculta. |
+| 56 | `56_patrocinados_y_rls_categorias_ocultas.sql` | Los tres agujeros que destapó la prueba real de la 55: los patrocinados (`campanas_activas`) y las tarjetas de colección (`colecciones_activas`) no pasaban por la ocultación, y el RLS de lectura impedía al cliente leer la tabla, así que el filtro no se aplicaba. |
 
 ### Taxonomía de dos niveles (migraciones 47, 48 y 49)
 
@@ -267,6 +274,38 @@ migrar, PostgREST responde `column "activo" does not exist` y el admin no puede
 guardar locales, servicios ni turnos. Aplica la 40 (y la 41, que crea las RPC
 nuevas) **antes** de abrir el admin. La 42 es la que permite al admin listar y
 reactivar lo desactivado.
+
+## Borrado de turnos, precio con reglas y turno en el recurso elegido (migraciones 50, 51 y 52)
+
+Las tres son **correctivas** (arreglan bugs reportados) y aditivas para el cliente. Se
+aplican **en orden**, a mano en el SQL Editor.
+
+- **50** (`migraciones/50_agenda_sala_espera_turno_on_delete.sql`): quita el error de
+  clave foránea (23503) al borrar un turno. `agenda.id_turno` → `ON DELETE SET NULL`
+  (la reserva ya cobrada no se pierde: conserva su historial y sólo queda sin vínculo
+  al turno), `sala_espera.id_turno` → `ON DELETE CASCADE` (una fila de cola sin turno
+  significaría "cualquier turno" para el bot) y se reafirma el cascade de `turno_tramo`.
+- **51** (`migraciones/51_precio_turno_con_reglas.sql`): extrae la aritmética a
+  `flow.calcular_precio_con_reglas`, que comparten `calcular_precio_reserva` y
+  `calcular_precio_turno`. Antes, en un servicio con turno de precio fijo las reglas de
+  `config_precio` por dato adicional **no se cobraban nunca**, y una regla sin precio
+  para la moneda elegida devolvía 0 en vez del precio base (ahora se ignora esa regla y
+  se sigue buscando; gana la **primera** coincidente, decisión D6 del plan).
+- **52** (`migraciones/52_turno_auto_en_recurso_elegido.sql`): `admin_guardar_turno_auto`
+  gana `p_id_recurso` (último parámetro, default `null`). En el modo "no uso tramos" los
+  recursos siguen visibles y cada tarjeta tiene su botón "Agregar turno", pero la RPC
+  elegía **siempre el primero** del local_servicio (`order by r.orden, r.id limit 1`):
+  con varios recursos el turno caía siempre en el mismo, eligiera el admin el que
+  eligiera. Con `p_id_recurso` el turno nuevo se crea en el recurso elegido (validando
+  que sea de ese local_servicio y esté bajo permiso del admin); sin él (modo "solo
+  configurar turnos") se mantiene el comportamiento anterior, y al **editar** un turno
+  el parámetro se ignora (manda el recurso del propio turno).
+
+**Tolerancia del cliente:** si la 52 no está aplicada, la app **no se rompe**. Antes de
+mandar el parámetro nuevo, `RecursoService.guardarTurnoAuto` reintenta la llamada sin él
+ante un `PGRST202` (PostgREST no encuentra la función con esos argumentos) y el aviso
+`TurnoAutoResultado.ignoroRecursoElegido` hace que la pantalla diga claramente que el
+turno se guardó en el primer recurso y que hay que aplicar la 52.
 
 ## El "bot" en segundo plano
 

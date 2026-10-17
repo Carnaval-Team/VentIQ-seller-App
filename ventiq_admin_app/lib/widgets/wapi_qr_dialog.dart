@@ -89,6 +89,7 @@ class _WapiQrDialogState extends State<WapiQrDialog> {
             phoneNumber: s.phoneNumber,
             qrImage: _last?.qrImage ?? s.qrImage,
             qrCode: _last?.qrCode ?? s.qrCode,
+            requiereConfirmacionManual: s.requiereConfirmacionManual,
           );
         }
         _error = null;
@@ -99,6 +100,8 @@ class _WapiQrDialogState extends State<WapiQrDialog> {
         await Future.delayed(const Duration(milliseconds: 600));
         if (mounted) Navigator.of(context).pop(true);
       } else if (s.status == WapiStatus.failed) {
+        // Se detiene el polling pero se puede reintentar desde el propio
+        // diálogo: antes había que cerrarlo y volver a empezar.
         _closed = true;
         _timer?.cancel();
       }
@@ -107,6 +110,19 @@ class _WapiQrDialogState extends State<WapiQrDialog> {
     } finally {
       _polling = false;
     }
+  }
+
+  /// Rearma el polling tras un fallo, sin cerrar el diálogo.
+  void _reintentar() {
+    setState(() {
+      _closed = false;
+      _error = null;
+      _lastQrAt = DateTime.fromMillisecondsSinceEpoch(0);
+      _last = null;
+    });
+    _timer?.cancel();
+    _timer = Timer.periodic(_statusInterval, (_) => _poll());
+    _poll(forceQr: true);
   }
 
   @override
@@ -138,14 +154,72 @@ class _WapiQrDialogState extends State<WapiQrDialog> {
         ],
       );
     } else if (st == WapiStatus.failed) {
-      body = const Column(
+      body = Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.error_outline, color: Colors.red, size: 60),
-          SizedBox(height: 12),
-          Text('No fue posible conectar el bot.\nIntenta reiniciar la sesión.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.textPrimary)),
+          const Icon(Icons.error_outline, color: Colors.red, size: 60),
+          const SizedBox(height: 12),
+          const Text(
+            'No se pudo conectar el bot.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w700,
+              fontSize: 15,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Suele resolverse reintentando. Si ya lo intentaste varias veces, '
+            'cierra esto y usa «Reconectar bot» en la tarjeta del bot.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 14),
+          OutlinedButton.icon(
+            onPressed: _reintentar,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Reintentar'),
+          ),
+        ],
+      );
+    } else if (s?.requiereConfirmacionManual == true) {
+      // `action_required`: OpenWA pide confirmar el aviso "What's new" del
+      // teléfono. Mostrar el QR aquí haría que el usuario escanee en vano: la
+      // sesión vuelve a caerse a los minutos.
+      body = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.phone_android, color: AppColors.warning, size: 60),
+          const SizedBox(height: 12),
+          const Text(
+            'Falta un paso en tu teléfono',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w700,
+              fontSize: 15,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            '1. Abre WhatsApp en el teléfono del bot.\n'
+            '2. Si aparece una ventana de "Novedades" / "What\'s new", '
+            'tócala y ciérrala.\n'
+            '3. Vuelve aquí y pulsa «Ya lo confirmé».',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 14),
+          ElevatedButton.icon(
+            onPressed: _reintentar,
+            icon: const Icon(Icons.check),
+            label: const Text('Ya lo confirmé, reintentar'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+          ),
         ],
       );
     } else if (qrImage != null) {
@@ -248,6 +322,15 @@ class _WapiQrDialogState extends State<WapiQrDialog> {
                           fontSize: 12)),
                 ],
               ),
+            ),
+            const SizedBox(height: 6),
+            // Explicación en palabras: el estado solo ("Falta escanear el QR")
+            // no dice qué hacer.
+            Text(
+              st.detalle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  fontSize: 11.5, color: AppColors.textSecondary, height: 1.3),
             ),
           ],
         ),

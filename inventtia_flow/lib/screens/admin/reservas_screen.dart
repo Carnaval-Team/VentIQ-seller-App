@@ -18,7 +18,10 @@ import '../../services/agenda_admin_service.dart';
 import '../../services/agenda_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/catalogo_service.dart';
+import '../../services/recurso_service.dart';
+import '../../tutorial/tutorial_anchor.dart';
 import '../../utils/precio_reserva.dart';
+import '../../utils/precio_turno.dart';
 import '../../utils/reserva_listado.dart';
 import '../../utils/telefono_contacto.dart';
 import '../../widgets/datos_adicionales_form.dart';
@@ -1167,34 +1170,40 @@ class _ReservasScreenState extends State<ReservasScreen> {
             ),
           ],
         ),
-        body: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 900),
-            child: Column(
-              children: [
-                _buildBarraFecha(),
-                _buildFiltrosColapsables(),
-                const Divider(height: 1),
-                Expanded(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onHorizontalDragEnd: (details) {
-                      if (_loading) return;
-                      final v = details.primaryVelocity ?? 0;
-                      if (v < -200) _irDia(1);
-                      if (v > 200) _irDia(-1);
-                    },
-                    child: _loading
-                        ? const Center(child: CircularProgressIndicator())
-                        : _reservas.isEmpty
-                        ? _buildEmpty()
-                        : RefreshIndicator(
-                            onRefresh: _load,
-                            child: _buildTabla(),
-                          ),
+        // Zona de gestión de reservas (cabecera de fecha, filtros y listado):
+        // el hueco del tutorial la abarca entera para que el admin pueda tocar
+        // los filtros y las tarjetas mientras el paso está activo.
+        body: TutorialAnchor(
+          id: 'admin_reservas',
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 900),
+              child: Column(
+                children: [
+                  _buildBarraFecha(),
+                  _buildFiltrosColapsables(),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onHorizontalDragEnd: (details) {
+                        if (_loading) return;
+                        final v = details.primaryVelocity ?? 0;
+                        if (v < -200) _irDia(1);
+                        if (v > 200) _irDia(-1);
+                      },
+                      child: _loading
+                          ? const Center(child: CircularProgressIndicator())
+                          : _reservas.isEmpty
+                          ? _buildEmpty()
+                          : RefreshIndicator(
+                              onRefresh: _load,
+                              child: _buildTabla(),
+                            ),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -1946,6 +1955,15 @@ class _EditarReservaSheetState extends State<_EditarReservaSheet> {
   Map<String, dynamic> _datosAdicionalesValores = {};
   bool _saving = false;
 
+  /// Precio propio del turno de la reserva (`{moneda: precio}`).
+  ///
+  /// La reserva solo guarda `id_turno`, así que se lee al abrir la hoja: es la
+  /// **base** sobre la que `admin_actualizar_datos_reserva` (RPC
+  /// `calcular_precio_turno`) evalúa las reglas por dato adicional. Si no se
+  /// puede leer (sin turno, sin permisos o sin red) queda vacío y el preview usa
+  /// el `precios_base` del servicio: nunca se inventa un importe.
+  Map<String, double> _preciosTurno = const {};
+
   Map<String, dynamic> get _datosCompletos {
     final datos = <String, dynamic>{
       ...?widget.reserva.datosAdicionales,
@@ -1962,12 +1980,20 @@ class _EditarReservaSheetState extends State<_EditarReservaSheet> {
 
   ResultadoPrecioReserva? get _precioPreview {
     final cfg = widget.reserva.localServicio?.servicio?.configPrecio;
-    if (cfg == null || !cfg.tienePrecio) return null;
+    if (cfg == null) return null;
+    // Con turno de precio propio el preview tiene sentido aunque el servicio no
+    // tenga `precios_base`: el servidor cobra el precio del turno.
+    if (!cfg.tienePrecio && _preciosTurno.isEmpty) return null;
     return PrecioReserva.calcular(
       config: cfg,
       datosAdicionales: _datosCompletos,
       moneda: widget.reserva.moneda,
       cantidad: widget.reserva.cantidad,
+      baseUnitario: precioBaseTurno(
+        precios: _preciosTurno,
+        moneda: widget.reserva.moneda,
+        monedaDefault: cfg.monedaDefault,
+      ),
     );
   }
 
@@ -2003,6 +2029,35 @@ class _EditarReservaSheetState extends State<_EditarReservaSheet> {
         if (widget.reserva.datosAdicionales?[c.clave] != null)
           c.clave: widget.reserva.datosAdicionales![c.clave],
     };
+    // El precio del turno llega por red: el preview se actualiza al llegar.
+    _cargarPrecioTurno();
+  }
+
+  /// Lee el precio propio del turno de la reserva con `admin_listar_recursos`
+  /// (el mismo que usa la pantalla de recursos). Nunca lanza: si falla, el
+  /// preview cae al `precios_base` del servicio —lo mostrado degrada, pero lo
+  /// cobrado lo decide siempre el servidor—.
+  Future<void> _cargarPrecioTurno() async {
+    final idTurno = widget.reserva.idTurno;
+    if (idTurno == null) return;
+    try {
+      final uuid = await AuthService.getCurrentUserId();
+      if (uuid == null) return;
+      final recursos = await RecursoService.listar(
+        uuidUsuario: uuid,
+        idLocalServicio: widget.reserva.idLocalServicio,
+      );
+      for (final recurso in recursos) {
+        for (final turno in recurso.turnos) {
+          if (turno.id != idTurno) continue;
+          if (!mounted) return;
+          setState(() => _preciosTurno = turno.precios);
+          return;
+        }
+      }
+    } catch (_) {
+      // Se conserva `_preciosTurno` vacío: el preview usa la base del servicio.
+    }
   }
 
   @override

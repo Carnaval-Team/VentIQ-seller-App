@@ -194,6 +194,40 @@ String etiquetaTrayectoUi(String? raw) {
   return s[0].toUpperCase() + s.substring(1);
 }
 
+/// ¿Puede el **cliente** cancelar esta reserva por su cuenta?
+///
+/// Fuente única de verdad para el botón "Cancelar reserva" del listado de
+/// tickets. Es una función pura (sin Supabase) para poder testearla con
+/// [ahora] inyectado.
+///
+/// Reglas (decisión D3 del plan):
+/// 1. Solo si el estado es `Reservado`: nunca se cancela algo ya cancelado
+///    ni algo ya completado.
+/// 2. La reserva no ha pasado: si la fecha/hora de la reserva es igual o
+///    anterior a [ahora], ya no se puede cancelar.
+/// 3. Si la entidad exige un plazo de anticipación
+///    (`horas_anticipacion_cancelacion > 0`), todavía debe quedar ese margen;
+///    con `0` o `null` se puede cancelar en cualquier momento hasta la propia
+///    hora de la reserva.
+bool puedeCancelarCliente(Agenda agenda, {DateTime? ahora}) {
+  // 1. Solo reservas en estado Reservado (ni canceladas ni completadas).
+  if (agenda.estado?.esReservado != true) return false;
+
+  final momento = ahora ?? DateTime.now();
+
+  // 2. La fecha/hora de la reserva debe seguir en el futuro.
+  if (!momento.isBefore(agenda.fechaHoraReserva)) return false;
+
+  // 3. Plazo de anticipación configurado por la entidad (0/null = sin plazo).
+  final horas = agenda.entidad?.horasAnticipacionCancelacion ?? 0;
+  if (horas > 0) {
+    final limite = agenda.fechaHoraReserva.subtract(Duration(hours: horas));
+    if (!momento.isBefore(limite)) return false;
+  }
+
+  return true;
+}
+
 /// Clave de tramo para totales: solo Ida o Regreso (nunca el paquete).
 String? claveTramoParaTotales(Agenda r) {
   final trayecto = r.tipoTrayecto?.toLowerCase().trim();
@@ -211,5 +245,53 @@ String? claveTramoParaTotales(Agenda r) {
   }
   // Turno combinado sin tipo_trayecto: no atribuir a un solo tramo aquí.
   return null;
+}
+
+/// Grupo de estado en el listado de reservas del cliente.
+///
+/// 0 = activas (las que aún importan), 1 = canceladas, 2 = completadas.
+/// Cualquier otro estado (o ninguno) cuenta como activo: es lo que el cliente
+/// necesita ver primero.
+int prioridadEstadoReserva(Agenda agenda) {
+  final estado = agenda.estado;
+  if (estado?.esCompletado == true) return 2;
+  if (estado?.esCancelado == true) return 1;
+  return 0;
+}
+
+/// Orden del listado de reservas del cliente.
+///
+/// 1. Primero las **activas** (reservado), después las **canceladas** y al final
+///    las **completadas** (ver [prioridadEstadoReserva]).
+/// 2. Dentro de cada grupo, por fecha **más cercana a [ahora]**: en las activas
+///    sale primero la próxima cita y en las completadas/canceladas la más
+///    reciente. Se compara la distancia absoluta a [ahora], así que una reserva
+///    de hoy se ve arriba aunque ya haya pasado su hora.
+/// 3. Desempate determinista: la más próxima en el futuro y, si coinciden,
+///    el `id` mayor (lo último creado).
+///
+/// Devuelve una **copia**: no reordena la lista que recibe.
+List<Agenda> ordenarReservasCliente(
+  List<Agenda> reservas, {
+  DateTime? ahora,
+}) {
+  final referencia = ahora ?? DateTime.now();
+  final copia = List<Agenda>.of(reservas);
+  copia.sort((a, b) {
+    final grupo = prioridadEstadoReserva(
+      a,
+    ).compareTo(prioridadEstadoReserva(b));
+    if (grupo != 0) return grupo;
+
+    final distanciaA = a.fechaHoraReserva.difference(referencia).abs();
+    final distanciaB = b.fechaHoraReserva.difference(referencia).abs();
+    final porDistancia = distanciaA.compareTo(distanciaB);
+    if (porDistancia != 0) return porDistancia;
+
+    final porFecha = a.fechaHoraReserva.compareTo(b.fechaHoraReserva);
+    if (porFecha != 0) return porFecha;
+    return b.id.compareTo(a.id);
+  });
+  return copia;
 }
 

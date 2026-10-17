@@ -29,16 +29,29 @@ class AppTheme {
       brightness: Brightness.light,
       dynamicSchemeVariant: DynamicSchemeVariant.tonalSpot,
     );
+    // Se calcula una sola vez: el `TextTheme` alimenta a la vez los textos
+    // generales y el `titleTextStyle` del AppBar (que así conserva Inter).
+    final textTheme = GoogleFonts.interTextTheme();
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
-      textTheme: GoogleFonts.interTextTheme(),
+      textTheme: textTheme,
       scaffoldBackgroundColor: scheme.surface,
       appBarTheme: AppBarTheme(
         backgroundColor: scheme.primary,
         foregroundColor: scheme.onPrimary,
         elevation: 0,
         centerTitle: true,
+        // Contraste: el título del AppBar se fija blanco (`onPrimary`) sobre el
+        // primario #405F90 → 6.4:1 (WCAG AA exige 4.5:1). Antes heredaba el
+        // `foregroundColor`, y cualquier `Text` con color propio (`textPrimary`
+        // #1A237E) caía a 2.05:1 al pintarse sobre ese fondo. Ver
+        // `test/appbar_contraste_test.dart`.
+        titleTextStyle: (textTheme.titleLarge ?? const TextStyle()).copyWith(
+          color: scheme.onPrimary,
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+        ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
