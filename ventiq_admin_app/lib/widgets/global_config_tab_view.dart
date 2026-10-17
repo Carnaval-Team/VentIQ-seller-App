@@ -35,6 +35,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   bool _allowDiscountOnVendedor = false;
   bool _vendedoresPuedenCrearCxc = false;
   bool _mostrarMetodoPagoTicket = true;
+  bool _mostrarSelectorMoneda = false;
   bool _allowPrintPending = false;
   bool _allowSellerMakeOrderModifications = false;
   bool _precioVentaRegidoPorUsd = false;
@@ -459,6 +460,8 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             config['vendedores_pueden_crear_cxc'] ?? false;
         _mostrarMetodoPagoTicket =
             config['mostrar_metodo_pago_ticket'] ?? true;
+        _mostrarSelectorMoneda =
+            config['mostrar_selector_moneda'] ?? false;
         _allowPrintPending = config['permitir_imprimir_pendientes'] ?? false;
         _allowSellerMakeOrderModifications =
             config['allow_seller_make_order_modifications'] ?? false;
@@ -698,6 +701,44 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
     } catch (e) {
       setState(() {
         _mostrarMetodoPagoTicket = !value;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuración: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateMostrarSelectorMonedaSetting(bool value) async {
+    if (_storeId == null) return;
+
+    try {
+      await StoreConfigService.updateStoreConfig(
+        _storeId!,
+        mostrarSelectorMoneda: value,
+      );
+      setState(() {
+        _mostrarSelectorMoneda = value;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              value
+                  ? 'El cajero puede seleccionar la moneda (CUP/USD) en cada venta'
+                  : 'Selector de moneda desactivado — todas las ventas serán en CUP',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _mostrarSelectorMoneda = !value;
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1806,6 +1847,21 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
 
           // Configuración de Precio Regido por USD
           _buildPrecioRegidoPorUsdCard(),
+
+          const SizedBox(height: 16),
+
+          // Selector de moneda (CUP/USD) en el checkout
+          _buildConfigCard(
+            icon: Icons.currency_exchange,
+            iconColor: Colors.amber[700]!,
+            title: 'Selector de moneda en ventas',
+            subtitle:
+                _mostrarSelectorMoneda
+                    ? '✅ El cajero puede elegir CUP o USD por método de pago en cada venta'
+                    : '🔒 Todas las ventas se registran en CUP',
+            value: _mostrarSelectorMoneda,
+            onChanged: _updateMostrarSelectorMonedaSetting,
+          ),
 
           const SizedBox(height: 24),
 

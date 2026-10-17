@@ -16,7 +16,12 @@
 --   tipo de la operación enlazada (recepción/extracción/control/conversión).
 -- * Entradas: operaciones de tipo (1,3,5,8,11) que no son venta, completadas
 --   (estado = 2) y con app_dat_operaciones.created_at en el rango.
--- * Extracciones: operaciones tipo 18 que no son venta, completadas en el rango.
+--   Incluye Ajuste Positivo (tipo 3).
+-- * Extracciones: operaciones tipo 18 (extracción) y tipo 4 (Ajuste Negativo)
+--   que no son venta, completadas en el rango.
+-- * Ajustes históricos sin id_control en el ledger (SIN_OP) se recuperan por
+--   match con app_dat_ajuste_inventario (producto + ubicación + mismo segundo
+--   + misma diferencia), igual que get_product_movements.
 -- * Ventas: operaciones con registro en app_dat_operacion_venta y estado
 --   Completada (2), Facturada (10) o Despachada (12), created_at en el rango.
 -- * Pendiente (cantidad_reservada): operaciones creadas en el rango cuyo estado
@@ -271,7 +276,8 @@ BEGIN
             AND ii.id_ubicacion = ifin.id_ubicacion
         )
     ),
-    -- Reconstruir id_operación desde cada línea de detalle vinculada
+    -- Reconstruir id_operación desde cada línea de detalle vinculada.
+    -- Incluye fallback por tiempo para ajustes legacy sin id_control en el ledger.
     movimientos_con_operacion AS (
         SELECT
             i.id_producto,
@@ -282,16 +288,54 @@ BEGIN
             i.origen_cambio,
             i.cantidad_inicial,
             i.cantidad_final,
-            COALESCE(rp.id_operacion, ep.id_operacion, cp.id_operacion, cvp.id_operacion, ai.id_operacion) AS id_operacion
+            COALESCE(
+                rp.id_operacion,
+                ep.id_operacion,
+                cp.id_operacion,
+                cvp.id_operacion,
+                ai.id_operacion,
+                ai_time.id_operacion
+            ) AS id_operacion
         FROM inventario_filtrado i
         LEFT JOIN app_dat_recepcion_productos rp ON rp.id = i.id_recepcion
         LEFT JOIN app_dat_extraccion_productos ep ON ep.id = i.id_extraccion
         LEFT JOIN app_dat_control_productos cp ON cp.id = i.id_control
         LEFT JOIN app_dat_conversion_presentacion cvp ON cvp.id = i.id_conversion
-        LEFT JOIN app_dat_ajuste_inventario ai ON ai.id_control = i.id_control
+        LEFT JOIN app_dat_ajuste_inventario ai
+            ON i.id_control IS NOT NULL
+           AND ai.id_control = i.id_control
+        LEFT JOIN LATERAL (
+            SELECT aj.id_operacion
+            FROM app_dat_ajuste_inventario aj
+            WHERE i.id_recepcion IS NULL
+              AND i.id_extraccion IS NULL
+              AND i.id_control IS NULL
+              AND COALESCE(i.id_conversion, 0) = 0
+              AND aj.id_producto = i.id_producto
+              AND aj.id_ubicacion IS NOT DISTINCT FROM i.id_ubicacion
+              AND date_trunc('second', aj.created_at)
+                  = date_trunc('second', i.created_at)
+              AND (
+                    aj.diferencia IS NOT DISTINCT FROM
+                        (i.cantidad_final - i.cantidad_inicial)
+                 OR (
+                        aj.cantidad_anterior IS NOT DISTINCT FROM i.cantidad_inicial
+                    AND aj.cantidad_nueva IS NOT DISTINCT FROM i.cantidad_final
+                    )
+              )
+            ORDER BY aj.id DESC
+            LIMIT 1
+        ) ai_time ON TRUE
         WHERE (v_fecha_desde_ts IS NULL OR i.created_at >= v_fecha_desde_ts)
           AND (v_fecha_hasta_ts IS NULL OR i.created_at <= v_fecha_hasta_ts)
-          AND COALESCE(rp.id_operacion, ep.id_operacion, cp.id_operacion, cvp.id_operacion, ai.id_operacion) IS NOT NULL
+          AND COALESCE(
+                rp.id_operacion,
+                ep.id_operacion,
+                cp.id_operacion,
+                cvp.id_operacion,
+                ai.id_operacion,
+                ai_time.id_operacion
+              ) IS NOT NULL
     ),
     ultimo_estado_operacion AS (
         SELECT DISTINCT ON (eo.id_operacion)
@@ -337,7 +381,7 @@ BEGIN
             COALESCE(mco.id_presentacion, 0),
             mco.id_ubicacion
     ),
-    -- Extracciones completadas (tipo 18)
+    -- Extracciones completadas (tipo 18) + Ajuste Negativo (tipo 4)
     extracciones_agg AS (
         SELECT
             mco.id_producto,
@@ -347,9 +391,10 @@ BEGIN
             mco.id_ubicacion,
             SUM(mco.cantidad_inicial - mco.cantidad_final) AS cantidad_extracciones
         FROM movimientos_con_tipo mco
-        WHERE mco.id_tipo_operacion = 18
+        WHERE mco.id_tipo_operacion IN (18, 4)
           AND NOT mco.es_venta
           AND mco.estado_actual = 2
+          AND mco.cantidad_inicial > mco.cantidad_final
         GROUP BY
             mco.id_producto,
             COALESCE(mco.id_variante, 0),

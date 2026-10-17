@@ -23,7 +23,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
   bool _isLoading = false;
   bool _isExporting = false;
   String? _selectedExportMethod = 'pdf'; // PDF seleccionado por defecto
-  String _selectedReportType = 'ventas'; // 'ventas' (v4) o 'movimientos' (v5)
+  String _selectedReportType = 'ventas'; // 'ventas' | 'movimientos' | 'con_movimientos'
   int? _selectedWarehouseId;
   String _selectedWarehouseName = 'Todos';
   DateTime? _selectedDate;
@@ -160,8 +160,9 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
 
       // Obtener datos del inventario según el tipo de reporte seleccionado
       final List<Map<String, dynamic>> inventoryData;
-      if (_selectedReportType == 'movimientos') {
-        inventoryData = await InventoryService.getInventarioMovimientos(
+      if (_selectedReportType == 'movimientos' ||
+          _selectedReportType == 'con_movimientos') {
+        final movimientosData = await InventoryService.getInventarioMovimientos(
           idAlmacen: _selectedWarehouseId,
           idTienda: storeId,
           fechaDesde: _selectedDate,
@@ -169,6 +170,19 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
           includeZero: _includeZeroStock,
           soloCompletadasEnPeriodo: _soloCompletadasEnPeriodo,
         );
+        if (_selectedReportType == 'con_movimientos') {
+          inventoryData = movimientosData.where((row) {
+            final extracciones =
+                (row['extracciones_periodo'] as num?)?.toDouble() ?? 0;
+            final ventas =
+                (row['ventas_periodo'] as num?)?.toDouble() ?? 0;
+            final pendientes =
+                (row['cantidad_reservada'] as num?)?.toDouble() ?? 0;
+            return extracciones > 0 || ventas > 0 || pendientes > 0;
+          }).toList();
+        } else {
+          inventoryData = movimientosData;
+        }
       } else {
         inventoryData = await InventoryService.getInventarioSimple(
           idAlmacen: _selectedWarehouseId,
@@ -475,6 +489,18 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                           onTap: () {
                             setState(() {
                               _selectedReportType = 'movimientos';
+                            });
+                          },
+                        ),
+                        _ExportMethodCard(
+                          icon: Icons.trending_up,
+                          label: 'Con movimientos',
+                          description: 'Solo productos con extracciones, ventas o pendientes',
+                          color: Colors.orange,
+                          isSelected: _selectedReportType == 'con_movimientos',
+                          onTap: () {
+                            setState(() {
+                              _selectedReportType = 'con_movimientos';
                             });
                           },
                         ),
@@ -962,7 +988,8 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                             contentPadding: EdgeInsets.zero,
                           ),
 
-                          if (_selectedReportType == 'movimientos') ...[
+                          if (_selectedReportType == 'movimientos' ||
+                              _selectedReportType == 'con_movimientos') ...[
                             const SizedBox(height: 8),
                             CheckboxListTile(
                               title: const Text(

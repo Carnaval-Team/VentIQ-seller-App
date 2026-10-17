@@ -58,8 +58,9 @@ class _SalesScreenState extends State<SalesScreen>
   // Tab TPVs: reporte por turno (fn_reporte_ventas_por_turno).
 
   /// Criterio de fecha para ventas de productos (tab Tiempo Real):
-  /// 'creacion' = o.created_at | 'completado' = eo.created_at del estado 2
-  String _productDateFilterMode = 'creacion';
+  /// 'creacion' = o.created_at | 'completado' = eo.created_at del estado 2 |
+  /// 'turnos_abiertos' = mismo criterio que tab TPVs (turnos abiertos en rango)
+  String _productDateFilterMode = 'turnos_abiertos';
   bool _useCurrentProductPrices = false;
   bool _filtersExpanded = false;
   double _totalSales = 0.0;
@@ -6149,9 +6150,11 @@ class _SalesScreenState extends State<SalesScreen>
 
   Widget _buildPeriodSelector({bool showDateBasisFilter = false}) {
     final isExpanded = showDateBasisFilter ? _filtersExpanded : true;
-    final dateBasisLabel = _productDateFilterMode == 'completado'
-        ? 'Fecha de completado'
-        : 'Fecha de creación';
+    final dateBasisLabel = switch (_productDateFilterMode) {
+      'completado' => 'Fecha de completado',
+      'turnos_abiertos' => 'Turnos abiertos',
+      _ => 'Fecha de creación',
+    };
 
     return Container(
       decoration: BoxDecoration(
@@ -6270,6 +6273,15 @@ class _SalesScreenState extends State<SalesScreen>
                             subtitle: 'Hist. de estados',
                             value: 'completado',
                             icon: Icons.check_circle_outline,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _buildDateBasisChip(
+                            label: 'Turnos',
+                            subtitle: 'Igual que TPVs',
+                            value: 'turnos_abiertos',
+                            icon: Icons.point_of_sale,
                           ),
                         ),
                       ],

@@ -381,7 +381,7 @@ class SalesService {
     DateTime? fechaDesde,
     DateTime? fechaHasta,
 
-    /// 'creacion' | 'completado'
+    /// 'creacion' | 'completado' | 'turnos_abiertos'
     String filtroFecha = 'creacion',
     bool useCurrentPrices = false,
 
@@ -403,7 +403,10 @@ class SalesService {
 
       final String? desde = fechaDesde?.toIso8601String().split('T')[0];
       final String? hasta = fechaHasta?.toIso8601String().split('T')[0];
-      final filtro = filtroFecha == 'completado' ? 'completado' : 'creacion';
+      final bool porTurnos = filtroFecha == 'turnos_abiertos';
+      final filtro = (!porTurnos && filtroFecha == 'completado')
+          ? 'completado'
+          : 'creacion';
       // FASE 3 presentaciones: la v5 devuelve UNA fila por producto.
       //
       // La v4 agrupa por presentacion Y por precio pero no expone ninguno de
@@ -414,19 +417,21 @@ class SalesService {
       // La v5 la envuelve, compacta, y agrega el desglose por presentacion mas
       // `equiv_unidades_base`. La v4 sigue viva y sin tocar para las apps que
       // no se han actualizado; ver presentaciones_inventario/29_reporte_ventas_v5.sql.
-      final rpcName = useCurrentPrices
-          ? 'fn_reporte_ventas_con_proveedor_precios_actuales'
-          : 'fn_reporte_ventas_con_proveedor5';
+      final rpcName = porTurnos
+          ? 'fn_reporte_ventas_con_proveedor_por_turno'
+          : useCurrentPrices
+              ? 'fn_reporte_ventas_con_proveedor_precios_actuales'
+              : 'fn_reporte_ventas_con_proveedor5';
       print('   RPC : $rpcName');
       print('   Tienda : $idTienda');
       print('   Desde  : ${desde ?? "(sin filtro)"}');
       print('   Hasta  : ${hasta ?? "(sin filtro)"}');
-      print('   Filtro : $filtro');
+      print('   Filtro : ${porTurnos ? 'turnos_abiertos' : filtro}');
 
       final Map<String, dynamic> params = {
         'p_id_tienda': idTienda,
-        'p_filtro_fecha': filtro,
       };
+      if (!porTurnos) params['p_filtro_fecha'] = filtro;
       if (desde != null) params['p_fecha_desde'] = desde;
       if (hasta != null) params['p_fecha_hasta'] = hasta;
 
