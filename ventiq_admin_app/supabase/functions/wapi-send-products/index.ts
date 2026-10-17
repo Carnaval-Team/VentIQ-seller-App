@@ -42,6 +42,9 @@ import {
 } from "../_shared/auth.ts";
 import { wapi } from "../_shared/wapi_client.ts";
 import { invokeEdgeFunction } from "../_shared/invoke.ts";
+import { isSessionSendable, normalizeWapiStatus } from "../_shared/status.ts";
+import { runRecovery } from "../_shared/session_recovery.ts";
+import { updateSessionState } from "../_shared/session_store.ts";
 
 interface Destino {
   tipo: "numero" | "grupo";
@@ -112,6 +115,43 @@ function esReintentable(code: string | undefined): boolean {
     return status === 408 || status === 429 || status >= 500;
   }
   return false;
+}
+
+/**
+ * ¿El error significa "la sesión de OpenWA se cayó / está caída"?
+ *
+ * Dos familias observadas en producción (4,995 filas `fallido`):
+ *   · HTTP_409 "Session is not connected. The WhatsApp client is not ready."
+ *     y el 409 "WhatsApp Web is reloading its page and the session is
+ *     re-injecting. Retry in a few seconds."
+ *   · HTTP_400 "Session '<uuid>' is not active. Start the session first."
+ *
+ * Antes esto se trataba como un fallo transitorio cualquiera: 3 reintentos con
+ * backoff, fila `fallido`, y a la siguiente. Así se llenaba el historial de
+ * fallos y nadie reiniciaba la sesión. Ahora dispara la escalera de
+ * recuperación (ver `dispatchOne`).
+ */
+function esErrorDeSesion(code: string | undefined, message: string | undefined): boolean {
+  const m = (message ?? "").toLowerCase();
+  const sesion =
+    m.includes("not connected") || m.includes("not ready") ||
+    m.includes("is not active") || m.includes("start the session") ||
+    m.includes("session is not") || m.includes("session not found") ||
+    m.includes("is re-injecting") || m.includes("reloading its page");
+  if (!sesion) return false;
+  if (code === "HTTP_400" || code === "HTTP_409" || code === "HTTP_404") return true;
+  // Algunas builds envuelven el 409 en un 500.
+  return code === "HTTP_500";
+}
+
+/** Hash estable (FNV-1a) para construir claves de idempotencia. */
+function fnv1a(texto: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < texto.length; i++) {
+    h ^= texto.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(36);
 }
 
 // Trunca caption (WhatsApp permite máx 1024 chars en captions de imagen)
@@ -629,8 +669,13 @@ async function sendTextConReintentos(
   chatId: string,
   text: string,
 ): Promise<boolean> {
+  // Clave de idempotencia estable por (destino, contenido): si un TIMEOUT
+  // provocó un reintento y el mensaje ya había salido, OpenWA devuelve el mismo
+  // mensaje en vez de mandar el resumen dos veces. Como la clave incluye el
+  // texto, un resumen con precios/stock distintos SÍ se vuelve a mandar.
+  const idemKey = `wa-sum-${chatId}-${fnv1a(text)}`;
   for (let intento = 1; intento <= RETRY_MAX_ATTEMPTS; intento++) {
-    const r = await wapi.sendText(wapiSessionId, chatId, text);
+    const r = await wapi.sendText(wapiSessionId, chatId, text, idemKey);
     if (r.success) return true;
 
     const code = r.error?.code ?? "SEND_ERROR";
@@ -1107,6 +1152,9 @@ export async function dispatchProducts(args: {
   let fallidos = 0;
   let productosDespachados = 0;
   let mensajesIntentados = 0;
+  /** Mensajes que quedaron `pendiente` por caída de sesión (NO son fallos:
+   *  son trabajo por hacer en cuanto la sesión vuelva). */
+  let pendientesPorSesion = 0;
   // batchId para correlación interna (no se envía al WAPI).
   const batchId = `b_${idTienda}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
 
@@ -1221,8 +1269,21 @@ export async function dispatchProducts(args: {
       (esReanudacion ? " modo=reanudar" : ""),
   );
   /** Resultado de un envío. `pacing` significa "WAPI pide una pausa que no
-   *  cabe en este worker": el chunk se corta y lo pendiente se reanuda. */
-  type EnvioResultado = { ok: boolean; pacing?: { retryAfterSeconds: number } };
+   *  cabe en este worker": el chunk se corta y lo pendiente se reanuda.
+   *  `sessionDown` significa "la sesión de OpenWA se cayó": se intentó
+   *  recuperar (una vez por worker) y, si no se pudo, se corta el chunk
+   *  dejando los mensajes en `pendiente` para poder reanudar. */
+  type EnvioResultado = {
+    ok: boolean;
+    pacing?: { retryAfterSeconds: number };
+    sessionDown?: { rawStatus: string | null; recuperada: boolean; action: string };
+  };
+
+  /** La escalera de recuperación se intenta UNA vez por worker: si la sesión
+   *  no vuelve con stop→start, insistir desde dentro del bucle sólo gasta
+   *  presupuesto y llena la BD de intentos. */
+  let recuperacionIntentada = false;
+  let sessionAbort: EnvioResultado["sessionDown"] | null = null;
 
   // Dispara UN mensaje y actualiza su fila de log.
   //
@@ -1230,17 +1291,27 @@ export async function dispatchProducts(args: {
   // mientras el error sea transitorio. El backoff también funciona como
   // anti-ban: si la sesión WAPI está rechazando conexiones, insistir de
   // inmediato sólo empeora las cosas.
+  //
+  // Si el error es "la sesión se cayó", NO se gasta un reintento a ciegas:
+  // primero se intenta recuperar la sesión y, si vuelve, se reintenta el
+  // mensaje. Eso es lo que antes hacía una persona a mano.
   const dispatchOne = async (e: Envio): Promise<EnvioResultado> => {
     let ultimoCode = "SEND_ERROR";
     let ultimoMsg = "Error desconocido";
+    let intentosHechos = 0;
 
     for (let intento = 1; intento <= RETRY_MAX_ATTEMPTS; intento++) {
+      intentosHechos = intento;
       const single = await wapi.sendImage(
         wapiSessionId,
         e.chatId,
         e.url,
         e.caption,
         e.mimetype,
+        // Idempotencia (OpenWA 0.25.0+): si un TIMEOUT hizo que el mensaje sí
+        // saliera, el reintento con la misma clave devuelve el mismo mensajeId
+        // en vez de mandar un duplicado. En builds viejas el header se ignora.
+        e.logId ? `wa-log-${e.logId}` : undefined,
       );
 
       if (single.success) {
@@ -1270,6 +1341,78 @@ export async function dispatchProducts(args: {
 
       ultimoCode = single.error?.code ?? "SEND_ERROR";
       ultimoMsg = single.error?.message ?? "Error desconocido";
+
+      // ── Sesión caída: recuperar y reintentar ───────────────────────────
+      // 4,995 de las filas `fallido` en producción son HTTP_409 "Session is
+      // not connected" / HTTP_400 "is not active" repetidos contra una sesión
+      // muerta. Aquí se intenta la escalera UNA vez por worker.
+      if (esErrorDeSesion(ultimoCode, ultimoMsg)) {
+        if (recuperacionIntentada) {
+          // Ya se intentó en este worker y sigue caída: no se marca `fallido`
+          // (es trabajo por hacer, no un fallo): la fila queda `pendiente`.
+          sessionAbort = {
+            rawStatus: sessionAbort?.rawStatus ?? null,
+            recuperada: false,
+            action: "ya-intentada",
+          };
+          return { ok: false, sessionDown: sessionAbort };
+        }
+        recuperacionIntentada = true;
+
+        const live = await wapi.getSession(wapiSessionId);
+        const rawActual = live.success
+          ? ((live.data?.status as string | undefined) ?? null)
+          : null;
+        console.error(
+          `[wapi-send-products] SESIÓN CAÍDA (${ultimoCode}: ${ultimoMsg}) ` +
+            `estado OpenWA=${rawActual ?? "?"} — intentando recuperarla ` +
+            `(prod=${e.idProducto} chat=${e.chatId})`,
+        );
+
+        const outcome = await runRecovery(wapi, wapiSessionId, rawActual, {
+          lastRecoveryAt: (ses.last_recovery_at as string | null) ?? null,
+          recoveryAttempts: Number(ses.recovery_attempts ?? 0),
+          // Si llegamos hasta aquí es porque la sesión estaba enviando: está
+          // vinculada. Marcarlo evita que el planificador la trate como
+          // "esperando QR" y no haga nada.
+          linked: true,
+        });
+
+        await updateSessionState(admin, ses.id, {
+          status: normalizeWapiStatus(
+            outcome.finalRawStatus ?? rawActual,
+            "DISCONNECTED",
+          ),
+          rawStatus: outcome.finalRawStatus ?? rawActual,
+          recoveryAttempt: outcome.action !== "none" && outcome.action !== "cooldown",
+          errorCode: outcome.ok ? null : "SESSION_DOWN",
+          errorMessage: outcome.ok
+            ? null
+            : `recuperación falló (${outcome.action}) tras ${ultimoCode}`,
+        });
+
+        if (outcome.ok) {
+          console.warn(
+            `[wapi-send-products] sesión recuperada (${outcome.action} → ` +
+              `${outcome.finalRawStatus}): reintentando el mensaje`,
+          );
+          // Se consume una vuelta del bucle para reintentar el MISMO mensaje.
+          continue;
+        }
+
+        sessionAbort = {
+          rawStatus: outcome.finalRawStatus ?? rawActual,
+          recuperada: false,
+          action: outcome.action,
+        };
+        console.error(
+          `[wapi-send-products] no se pudo recuperar la sesión ` +
+            `(${outcome.action}, estado final ${outcome.finalRawStatus}). ` +
+            `Se corta el chunk; los mensajes quedan pendientes de reanudar.`,
+        );
+        return { ok: false, sessionDown: sessionAbort };
+      }
+
       // ── 429 con pausa pedida por el server ─────────────────────────────
       // Dos casos, ambos con `retryAfterSeconds`: el rate limiter genérico
       // y el SEND_PACING (breaker por fallos consecutivos). Insistir antes
@@ -1325,7 +1468,11 @@ export async function dispatchProducts(args: {
         .update({
           estado: "fallido",
           error_code: ultimoCode,
-          error_message: `${ultimoMsg} (tras ${RETRY_MAX_ATTEMPTS} intentos)`,
+          // El conteo es el REAL, no RETRY_MAX_ATTEMPTS: cuando el bucle sale
+          // antes por falta de presupuesto o por error no reintentable, decir
+          // "tras 3 intentos" era simplemente falso (y entorpecía el
+          // diagnóstico: las 1,599 filas HTTP_500 lo decían todas).
+          error_message: `${ultimoMsg} (tras ${intentosHechos} intento(s))`,
         })
         .eq("id", e.logId);
     }
@@ -1370,10 +1517,22 @@ export async function dispatchProducts(args: {
       const r = await dispatchOne(envios[k]);
       mensajesIntentados++;
       if (r.ok) enviados++;
+      else if (r.sessionDown) pendientesPorSesion++;
       else if (!r.pacing) fallidos++;
       if (r.pacing) {
         // WAPI pide una pausa larga: cortar aquí y reanudar más tarde.
         pacingAbort = r.pacing;
+        remainingIds = effProductIds.slice(i + 1);
+        corteDeProducto = true;
+        break;
+      }
+      if (r.sessionDown) {
+        // La sesión de OpenWA se cayó y no se pudo recuperar. Este mensaje no
+        // se marca `fallido` a propósito: queda `pendiente` (trabajo por
+        // hacer, no un fallo) para que "reanudar" lo recoja cuando la sesión
+        // vuelva. Los destinos sin intentar del producto actual quedan
+        // igualmente en `pendiente`.
+        sessionAbort = r.sessionDown;
         remainingIds = effProductIds.slice(i + 1);
         corteDeProducto = true;
         break;
@@ -1418,7 +1577,7 @@ export async function dispatchProducts(args: {
     // decisión de cortar use medidas de ESTE envío, no una estimación fija.
     peorEnvioMs = Math.max(peorEnvioMs, Date.now() - inicioProducto);
     productosDespachados++;
-    if (pacingAbort) break;
+    if (pacingAbort || sessionAbort) break;
 
     // Delay aleatorio entre productos (anti-ban). No tras el último, ni si
     // no cabe: mejor guardar el tiempo para encolar la continuación.
@@ -1444,6 +1603,17 @@ export async function dispatchProducts(args: {
         `producto(s) quedan pendientes de reanudar`,
     );
     await registrarPendientes(remainingIds);
+  } else if (sessionAbort) {
+    // La sesión se cayó y la escalera de recuperación falló. Encadenar un
+    // worker nuevo sería inútil (haría lo mismo contra una sesión muerta) y
+    // gastaría una invocación: se registran los pendientes y se avisa.
+    console.error(
+      `[wapi-send-products] cortado por SESIÓN CAÍDA ` +
+        `(acción=${sessionAbort.action}, estado final=${sessionAbort.rawStatus ?? "?"}): ` +
+        `${remainingIds.length} producto(s) quedan pendientes de reanudar. ` +
+        `El watchdog (wapi-session-health) y el cron revisan la sesión.`,
+    );
+    await registrarPendientes(remainingIds);
   } else if (remainingIds.length > 0) {
     continuacionOk = await reinvokeRemaining();
     if (!continuacionOk) await registrarPendientes(remainingIds);
@@ -1451,19 +1621,21 @@ export async function dispatchProducts(args: {
 
   // El resumen sólo lo manda el ÚLTIMO chunk de la cadena. `cerrarConResumen`
   // decide por sí mismo si le cabe aquí o lo delega a un worker nuevo.
-  const esUltimoChunk = remainingIds.length === 0 && !pacingAbort;
+  const esUltimoChunk = remainingIds.length === 0 && !pacingAbort && !sessionAbort;
   const resumenEntregas = esUltimoChunk ? await cerrarConResumen() : 0;
 
   console.log(
     `[wapi-send-products] chunk cerrado en ${Math.round(elapsed() / 1000)}s: ` +
       `${productosDespachados} producto(s), ${mensajesIntentados} mensaje(s) ` +
-      `(${enviados} ok / ${fallidos} fallidos), ${skipped.length} descartado(s), ` +
+      `(${enviados} ok / ${fallidos} fallidos / ${pendientesPorSesion} pendientes ` +
+      `por sesión caída), ${skipped.length} descartado(s), ` +
       `restan ${remainingIds.length}`,
   );
 
   return {
     enviados,
     fallidos,
+    pendientes_por_sesion: pendientesPorSesion,
     batch_id: batchId,
     mode: "serie-por-producto",
     destinos: chatsValidos.length,
@@ -1474,6 +1646,15 @@ export async function dispatchProducts(args: {
     continuacion_encolada: continuacionOk,
     ...(pacingAbort
       ? { pacing_retry_after_seconds: pacingAbort.retryAfterSeconds }
+      : {}),
+    ...(sessionAbort
+      ? {
+        sesion_caida: {
+          accion: sessionAbort.action,
+          estado_final: sessionAbort.rawStatus,
+          recuperada: sessionAbort.recuperada,
+        },
+      }
       : {}),
     resumen_entregas: resumenEntregas,
   };
@@ -1547,8 +1728,84 @@ export async function handleSendProducts(req: Request): Promise<Response> {
   if (ctx && !(await assertStoreAccess(ctx, ses.id_tienda))) {
     return errorResponse("Sin acceso a la tienda", 403);
   }
-  if (ses.status !== "CONNECTED") {
-    return errorResponse("La sesión no está conectada a WhatsApp", 409, "NOT_CONNECTED");
+  // ── Puerta de entrada: ¿está la sesión realmente conectada? ──────────
+  // La columna `status` de la BD puede estar OBSOLETA: sólo se refresca
+  // cuando la app llama a wapi-session-status o cuando llega un webhook, y el
+  // webhook se registró mal durante meses (sin secret ni eventos session.*).
+  // Consecuencia real: o se rechazaba con 409 una sesión sana, o se creía
+  // CONNECTED una sesión muerta y todos los envíos fallaban.
+  // Ahora: se pregunta a OpenWA y, si hace falta, se intenta recuperar.
+  let sesionLista = ses.status === "CONNECTED";
+  let statusCrudo: string | null = null;
+
+  if (!sesionLista) {
+    const live = await wapi.getSession(ses.wapi_session_id);
+    statusCrudo = live.success
+      ? ((live.data?.status as string | undefined) ?? null)
+      : null;
+
+    if (live.success && isSessionSendable(statusCrudo)) {
+      // La BD mentía: la sesión está viva. Se corrige y se sigue.
+      sesionLista = true;
+      await updateSessionState(admin, ses.id, {
+        status: normalizeWapiStatus(statusCrudo, "CONNECTED"),
+        rawStatus: statusCrudo,
+        ...(live.data?.phoneNumber ? { phoneNumber: live.data.phoneNumber } : {}),
+        resetRecovery: true,
+      });
+      console.warn(
+        `[wapi-send-products] la BD decía status="${ses.status}" pero OpenWA ` +
+          `responde "${statusCrudo}": se corrige y se continúa`,
+      );
+    } else {
+      // Caída de verdad: intentar la escalera antes de rendirse. Antes esto
+      // devolvía 409 seco y el usuario tenía que pulsar "reiniciar".
+      const outcome = await runRecovery(
+        wapi,
+        ses.wapi_session_id,
+        statusCrudo ?? (ses.status as string),
+        {
+          lastRecoveryAt: (ses.last_recovery_at as string | null) ?? null,
+          recoveryAttempts: Number(ses.recovery_attempts ?? 0),
+          linked: Boolean(live.data?.phoneNumber ?? ses.phone_number),
+        },
+      );
+
+      await updateSessionState(admin, ses.id, {
+        status: normalizeWapiStatus(
+          outcome.finalRawStatus ?? statusCrudo,
+          "DISCONNECTED",
+        ),
+        rawStatus: outcome.finalRawStatus ?? statusCrudo,
+        recoveryAttempt: outcome.action !== "none" && outcome.action !== "cooldown",
+        errorCode: outcome.ok ? null : "NOT_CONNECTED",
+        errorMessage: outcome.ok
+          ? null
+          : `recuperación ${outcome.action} sin éxito`,
+      });
+
+      if (!outcome.ok) {
+        return errorResponse(
+          `La sesión no está conectada a WhatsApp (estado OpenWA: ` +
+            `${statusCrudo ?? "desconocido"}). Se intentó recuperarla ` +
+            `automáticamente (${outcome.action}) sin éxito. ` +
+            (outcome.needsHumanAck
+              ? "Hay que confirmar el modal \"What's new\" de WhatsApp en el " +
+                "teléfono una vez, y volver a intentarlo."
+              : outcome.terminal
+              ? "La sesión está en FAILED, que es terminal en OpenWA: puede " +
+                "hacer falta borrarla y volver a vincularla."
+              : "Revisa el servidor OpenWA (health / logs del contenedor)."),
+          409,
+          "NOT_CONNECTED",
+        );
+      }
+      console.warn(
+        `[wapi-send-products] sesión recuperada automáticamente ` +
+          `(${outcome.action} → ${outcome.finalRawStatus}): se continúa con el envío`,
+      );
+      sesionLista = true;
+    }
   }
 
   const delayMin = Math.max(5, Number(body.delay_min_seconds ?? 5));
@@ -1612,6 +1869,8 @@ export async function handleSendProducts(req: Request): Promise<Response> {
     queued: true,
     resumed: esReanudacion,
     summary_only: soloResumen,
+    sesion_lista: sesionLista,
+    sesion_estado_openwa: statusCrudo,
     total_mensajes_estimados: totalMensajes,
     tiempo_estimado_segundos: estimadoSeg,
     delay_segundos: { min: delayMin, max: delayMax },

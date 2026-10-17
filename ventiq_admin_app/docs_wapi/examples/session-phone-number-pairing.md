@@ -6,6 +6,8 @@ This flow returns an 8-character pairing code that the user enters in WhatsApp o
 
 > This does **not** create or register a new WhatsApp account. It only links an existing WhatsApp account as a companion device for an OpenWA session.
 
+> **On the whatsapp-web.js engine, request a code only for a number you are prepared to re-link.** A pairing request for a number that already has a linked session has been observed to end with WhatsApp revoking that device: within about a minute the linked session logs `WhatsApp unlinked this device (LOGOUT)`, its stored credentials are deleted, and it returns to `qr_ready` with no phone. The request runs inside the shared WhatsApp Web page and resets its linking mode before it asks for a code, so the blast radius is the account, not the session. Baileys has no such page and was not affected in the same tests. If a session of that number must stay up, link the new one by QR.
+
 ## Flow
 
 ```
@@ -13,6 +15,9 @@ This flow returns an 8-character pairing code that the user enters in WhatsApp o
       │
       ▼
 [Start Session]
+      │
+      ▼
+[Wait for status qr_ready]
       │
       ▼
 [Request Pairing Code]
@@ -44,7 +49,7 @@ curl -X POST http://localhost:2785/api/sessions/{sessionId}/start \
   -H "X-API-Key: $API_KEY"
 ```
 
-The session must be started before requesting a pairing code.
+The session must be started before requesting a pairing code, and the engine needs a moment to connect after `start` returns. Poll `GET /api/sessions/{sessionId}` until `status` is `qr_ready`: that is the point the engine can accept a pairing request. Requesting a code before that returns 409. Treat `qr_ready` as the signal to try, not a guarantee: on Baileys the socket can already be closing while the status has not caught up, so a 409 is still possible for a few seconds and is worth one retry.
 
 ## 3. Request a Pairing Code
 
@@ -91,6 +96,8 @@ After the code is accepted, the OpenWA session should move to a connected/ready 
 ## Troubleshooting
 
 - If OpenWA returns `Session is not started`, call `POST /api/sessions/{sessionId}/start` first.
-- If OpenWA returns `Session is already authenticated`, the account is already linked and no pairing code is needed.
+- If OpenWA returns `Session is already authenticated`, the account is already linked and no pairing code is needed. Nothing refuses a request whose number is linked to a DIFFERENT session, or to a device outside this gateway, and on whatsapp-web.js that is the request that can unlink it; see the warning at the top.
+- If OpenWA returns 409 `Session is not waiting to be linked`, the engine is still connecting (or reconnecting after a drop). Wait for `status` to read `qr_ready` and request again. After a code was accepted the same 409 is answered until the session is `ready`; do not request another code then. On Baileys the same 409 can also answer while `status` already reads `qr_ready`, for as long as the WebSocket takes to finish closing (up to 30 s on a silently dropped connection); retry rather than treating it as a bad state.
 - If the phone number is rejected, send digits only in international format, without `+`, spaces, or punctuation.
+- On the Baileys engine, if pairing keeps failing with a generic "check the phone number" rejection even though the number is correct and in the right format, WhatsApp is refusing the linked-device identity for that account rather than the number itself. The device name is carried into the pairing request, and some accounts reject a non-standard one. The default is `Ubuntu`; if `BAILEYS_BROWSER_NAME` was set to a custom brand, set it back to `Ubuntu` (or another standard OS name), restart OpenWA itself (the name is read at boot, so stopping and starting the session is not enough), and request a fresh code. whatsapp-web.js does not send this device name and never reads `BAILEYS_BROWSER_NAME`, so the variable has no effect there.
 - If you want to create a brand-new WhatsApp account programmatically, that is outside OpenWA's scope. OpenWA only links an existing WhatsApp account.

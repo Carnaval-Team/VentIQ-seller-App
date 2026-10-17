@@ -20,6 +20,7 @@ import '../widgets/wapi_destinatario_picker.dart';
 import '../widgets/wapi_envio_tanda_card.dart';
 import '../widgets/wapi_qr_dialog.dart';
 import '../widgets/wapi_session_card.dart';
+import '../utils/wapi_errores.dart';
 import 'wapi_product_selector_screen.dart';
 import 'wapi_schedule_config_screen.dart';
 
@@ -72,6 +73,44 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
     final ahora = DateTime.now();
     return _tandas
         .any((t) => t.estadoPara(ahora) == WapiTandaEstado.enCurso);
+  }
+
+  /// Total de mensajes que todavía no llegaron a destino en TODAS las tandas
+  /// (pendientes + fallidos reanudables). Se usa para cuantificar el daño
+  /// cuando el bot está caído y para el banner de atención.
+  int get _mensajesSinEntregar {
+    var total = 0;
+    for (final t in _tandas) {
+      total += t.logIdsSinEnviar.length;
+    }
+    return total;
+  }
+
+  /// La sesión que más urge atender: la primera que bloquea envíos y requiere
+  /// acción del usuario. Preferimos `disconnected`/`failed` (fallo real) sobre
+  /// `scanQr` (nunca se vinculó), porque el primero implica que el bot YA
+  /// funcionaba y dejó de hacerlo.
+  WapiSession? get _sesionQueUrge {
+    final conProblema = _sesiones.where((s) => s.status.requiereAccion).toList();
+    if (conProblema.isEmpty) return null;
+    conProblema.sort((a, b) {
+      int peso(WapiStatus s) {
+        switch (s) {
+          case WapiStatus.disconnected:
+          case WapiStatus.failed:
+            return 0;
+          case WapiStatus.unknown:
+            return 1;
+          case WapiStatus.scanQr:
+            return 2;
+          default:
+            return 3;
+        }
+      }
+
+      return peso(a.status).compareTo(peso(b.status));
+    });
+    return conProblema.first;
   }
 
   /// Enciende el timer sólo cuando hay algo que observar y lo apaga al
@@ -276,14 +315,24 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
               idSesion: s.id, nombreBot: s.nombre);
           break;
         case 'restart':
-          // Reconectar de verdad: arranca el engine en el server WAPI
-          // (/restart → fallback /start) y sólo entonces muestra el QR.
-          await _reconnectAndShowQr(s);
+          await _reconectar(s);
+          break;
+        case 'health':
+          await _showHealth(s);
           break;
         case 'logout':
+          // Desvincular borra las credenciales: después habrá que escanear el
+          // QR otra vez. Antes se hacía sin preguntar.
+          final seguro = await _confirm(
+            'Desconectar bot',
+            'El bot "${s.nombre}" dejará de enviar y perderá la vinculación '
+                'con WhatsApp. Para volver a usarlo tendrás que escanear el QR '
+                'otra vez.\n\n¿Continuar?',
+          );
+          if (seguro != true) return;
           await _service.sessionAction(s.id, 'logout');
-          ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Bot desconectado')));
+          _aviso('Bot desconectado. Vuelve a vincularlo con el QR.',
+              color: AppColors.warning);
           break;
         case 'delete':
           final ok = await _confirm(
@@ -292,8 +341,7 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
               'Esta acción no se puede deshacer.');
           if (ok != true) return;
           await _service.sessionAction(s.id, 'delete');
-          ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Bot eliminado')));
+          _aviso('Bot eliminado');
           break;
         case 'details':
           await _showDetails(s);
@@ -301,11 +349,44 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
       }
       await _reloadData();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
-      }
+      if (mounted) _mostrarError(e, s);
     }
+  }
+
+  /// Snackbar de error TRADUCIDO: si el problema pide reconectar, ofrece el
+  /// botón para hacerlo ahí mismo en vez de dejar al usuario solo con el texto.
+  void _mostrarError(Object e, [WapiSession? s]) {
+    final diag = diagnosticarExcepcion(e);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      backgroundColor: diag.color,
+      duration: const Duration(seconds: 6),
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(diag.titulo,
+              style: const TextStyle(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 2),
+          Text(diag.queHacer ?? diag.explicacion,
+              style: const TextStyle(fontSize: 12.5)),
+        ],
+      ),
+      action: (diag.requiereReconectar && s != null)
+          ? SnackBarAction(
+              label: 'Reconectar',
+              textColor: Colors.white,
+              onPressed: () => _reconectar(s),
+            )
+          : null,
+    ));
+  }
+
+  void _aviso(String texto, {Color? color}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      backgroundColor: color,
+      content: Text(texto),
+    ));
   }
 
   Future<bool?> _confirm(String title, String body) => showDialog<bool>(
@@ -327,60 +408,339 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
         ),
       );
 
-  /// Reconexión real de una sesión/bot:
-  ///   1. Arranca el engine en el server WAPI (restart → fallback /start).
-  ///   2. Espera unos segundos: el QR tarda un poco en generarse tras el start.
-  ///   3. Abre el diálogo de QR con polling hasta CONNECTED.
-  Future<void> _reconnectAndShowQr(WapiSession s) async {
+  /// Reconexión del bot, con la escalera completa del backend.
+  ///
+  /// Flujo pensado para que el usuario nunca se quede sin saber qué hacer:
+  ///   1. `restart` (stop → start; o force-kill → start si estaba en FAILED).
+  ///   2. Si el backend dice que hay que confirmar el aviso "What's new" en el
+  ///      teléfono (`action_required`), se lo decimos explícitamente: un QR no
+  ///      lo arregla.
+  ///   3. Si ya está conectado, celebración breve. Si no, abrimos el QR.
+  ///   4. Si falla, ofrecemos «Forzar reinicio» (mata el motor y reintenta),
+  ///      que es la segunda marcha que antes no existía en la app.
+  Future<void> _reconectar(WapiSession s, {bool forzado = false}) async {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
     try {
-      final status = await _service.sessionAction(s.id, 'restart');
+      if (forzado) {
+        // `force-kill` sólo detiene: hay que volver a arrancar después.
+        await _service.forzarReinicio(s.id);
+      }
+      final data = await _service.reconectar(s.id);
       // El engine tarda en levantar y generar el QR; sin esta pausa el
       // diálogo pediría /qr demasiado pronto y vería "sin QR aún".
       await Future.delayed(const Duration(seconds: 3));
       if (!mounted) return;
       Navigator.of(context).pop(); // cerrar loading
 
+      final status = WapiStatus.fromString(data['status'] as String?);
+      final requiereConfirmar =
+          data['requiere_confirmacion_manual'] == true;
+      final esperaSugerida =
+          (data['reintento_sugerido_en_segundos'] as num?)?.toInt();
+
+      if (requiereConfirmar) {
+        await _dialogoConfirmarEnTelefono(s);
+        return;
+      }
       if (status == WapiStatus.connected) {
-        // El server reutilizó la credencial previa: no hace falta QR.
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          backgroundColor: AppColors.success,
-          content: Text('✅ El bot ya está conectado.'),
-        ));
-      } else {
-        await WapiQrDialog.show(context,
-            idSesion: s.id, nombreBot: s.nombre);
+        _aviso('✅ El bot ya está conectado.', color: AppColors.success);
+        return;
       }
+      if (esperaSugerida != null && esperaSugerida > 0) {
+        _aviso(
+          'WhatsApp pidió esperar ${esperaSugerida}s antes de reintentar.',
+          color: AppColors.warning,
+        );
+      }
+      await WapiQrDialog.show(context, idSesion: s.id, nombreBot: s.nombre);
     } catch (e) {
-      if (mounted) {
-        Navigator.of(context).pop(); // cerrar loading
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('No se pudo reconectar: $e'),
-            backgroundColor: Colors.red));
-      }
+      if (!mounted) return;
+      Navigator.of(context).pop(); // cerrar loading
+      _diagReconexionFallida(e, s, forzado: forzado);
     }
   }
 
+  /// `action_required`: OpenWA pide confirmar el aviso "What's new" del
+  /// teléfono una vez. Sin eso, la sesión vuelve a caerse a los minutos —
+  /// explicarlo evita que el usuario reintente en bucle con el QR.
+  Future<void> _dialogoConfirmarEnTelefono(WapiSession s) {
+    return showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.phone_android, color: AppColors.warning),
+            SizedBox(width: 8),
+            Expanded(child: Text('Falta un paso en tu teléfono')),
+          ],
+        ),
+        content: const Text(
+          'WhatsApp pide que confirmes un aviso en el teléfono antes de dejar '
+          'el bot funcionando.\n\n'
+          '1. Abre WhatsApp en el teléfono del bot.\n'
+          '2. Si ves una ventana de "Novedades" o "What\'s new", tócala y '
+          'ciérrala.\n'
+          '3. Vuelve aquí y pulsa «Reconectar» otra vez.\n\n'
+          'Sin ese paso, el bot se vuelve a desconectar a los pocos minutos.',
+          style: TextStyle(height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Entendido'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _reconectar(s);
+            },
+            icon: const Icon(Icons.refresh),
+            label: const Text('Reconectar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Error reconectando: además del diagnóstico traducido, se ofrece el
+  /// force-kill como segunda oportunidad si aún no se ha probado.
+  void _diagReconexionFallida(Object e, WapiSession s, {required bool forzado}) {
+    final diag = diagnosticarExcepcion(e);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      backgroundColor: diag.color,
+      duration: const Duration(seconds: 8),
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(diag.titulo,
+              style: const TextStyle(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 2),
+          Text(diag.queHacer ?? diag.explicacion,
+              style: const TextStyle(fontSize: 12.5)),
+        ],
+      ),
+      action: forzado
+          ? null
+          : SnackBarAction(
+              label: 'Forzar reinicio',
+              textColor: Colors.white,
+              onPressed: () => _reconectar(s, forzado: true),
+            ),
+    ));
+  }
+
+  /// Estado del servidor OpenWA: sirve para distinguir "se cayó el bot" de
+  /// "se cayó el servidor entero". Antes era invisible desde la app.
+  Future<void> _showHealth(WapiSession s) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      final data = await _service.sessionHealth(s.id);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+
+      final version = data['version'] as String?;
+      final apiHealth = data['api_health'];
+      final apiReady = data['api_ready'];
+      final responde = apiHealth is Map && apiHealth['error'] == null;
+      final listo = apiReady is Map && apiReady['error'] == null;
+      final desactualizado = version != null && _versionMenor(version, '0.25.0');
+
+      await showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.monitor_heart_outlined, color: AppColors.primary),
+              SizedBox(width: 8),
+              Expanded(child: Text('Estado del servidor')),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _filaEstado('El servidor responde', responde),
+              _filaEstado('Puede recibir envíos', listo),
+              _filaEstado(
+                'Versión: ${version ?? 'no disponible'}',
+                version != null && !desactualizado,
+              ),
+              if (desactualizado)
+                Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: AppColors.warning.withOpacity(0.3)),
+                  ),
+                  child: const Text(
+                    'Hay una versión más nueva del servidor del bot con '
+                    'arreglos de desconexión (0.25.0 o superior). Conviene '
+                    'actualizarlo: reduce las caídas aleatorias.',
+                    style: TextStyle(fontSize: 12, height: 1.35),
+                  ),
+                ),
+              if (!responde)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Text(
+                    'Si el servidor no responde, el problema no es del bot sino '
+                    'del servicio donde vive (revisa que esté encendido).',
+                    style: TextStyle(
+                        fontSize: 12,
+                        height: 1.35,
+                        color: AppColors.textSecondary),
+                  ),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      _mostrarError(e, s);
+    }
+  }
+
+  Widget _filaEstado(String texto, bool ok) => Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Row(
+          children: [
+            Icon(
+              ok ? Icons.check_circle : Icons.error_outline,
+              size: 17,
+              color: ok ? AppColors.success : AppColors.error,
+            ),
+            const SizedBox(width: 7),
+            Expanded(
+              child: Text(texto,
+                  style: const TextStyle(
+                      fontSize: 12.5, color: AppColors.textPrimary)),
+            ),
+          ],
+        ),
+      );
+
+  /// ¿`a` es menor que `b`? Compara versiones tipo `0.25.0` sin dependencias.
+  bool _versionMenor(String a, String b) {
+    List<int> partes(String v) => v
+        .split(RegExp(r'[.\-+]'))
+        .map((p) => int.tryParse(p.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0)
+        .toList();
+    final pa = partes(a);
+    final pb = partes(b);
+    for (var i = 0; i < 3; i++) {
+      final x = i < pa.length ? pa[i] : 0;
+      final y = i < pb.length ? pb[i] : 0;
+      if (x != y) return x < y;
+    }
+    return false;
+  }
+
   Future<void> _showDetails(WapiSession s) {
+    final diag = (s.lastErrorCode != null || s.lastErrorMessage != null)
+        ? diagnosticarError(
+            codigo: s.lastErrorCode,
+            mensaje: s.lastErrorMessage,
+          )
+        : null;
+
     return showDialog(
       context: context,
       builder: (_) => AlertDialog(
         title: Text(s.nombre),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _detailRow('ID interno', '${s.id}'),
-            _detailRow('Session ID', s.wapiSessionId),
-            _detailRow('Estado', s.status.label),
-            _detailRow('Número', s.phoneNumber ?? '—'),
-            _detailRow('Actualizado', s.lastStatusAt.toLocal().toString()),
-            _detailRow('Creado', s.createdAt.toLocal().toString()),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // El estado en palabras, primero: es lo que el usuario vino a ver.
+              Row(
+                children: [
+                  Icon(s.status.icon, size: 17, color: s.status.color),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      s.status.detalle,
+                      style: const TextStyle(
+                          fontSize: 12.5,
+                          color: AppColors.textPrimary,
+                          height: 1.35),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (diag != null) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: diag.color.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: diag.color.withOpacity(0.25)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Último problema: ${diag.titulo}',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: diag.color)),
+                      const SizedBox(height: 3),
+                      Text(diag.explicacion,
+                          style: const TextStyle(
+                              fontSize: 11.5, height: 1.35)),
+                      if (diag.queHacer != null) ...[
+                        const SizedBox(height: 3),
+                        Text('👉 ${diag.queHacer}',
+                            style: const TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                height: 1.35)),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              _detailRow('Estado', '${s.status.label} (${s.status.apiValue})'),
+              if (s.rawStatus != null)
+                _detailRow('Estado en el servidor', s.rawStatus!),
+              _detailRow('ID interno', '${s.id}'),
+              _detailRow('Session ID', s.wapiSessionId),
+              _detailRow('Número', s.phoneNumber ?? '—'),
+              _detailRow('Actualizado', s.lastStatusAt.toLocal().toString()),
+              _detailRow('Creado', s.createdAt.toLocal().toString()),
+              _detailRow(
+                'Reconexiones automáticas',
+                s.watchdogEnabled
+                    ? '${s.recoveryAttempts} intentada(s), vigilancia activa'
+                    : '${s.recoveryAttempts} intentada(s), vigilancia OFF',
+              ),
+              if (s.lastErrorCode != null)
+                _detailRow('Código del último fallo', s.lastErrorCode!),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -675,6 +1035,10 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
         children: [
           _LicenseBadge(licencia: lic),
           const SizedBox(height: 14),
+          // Banner de atención: si el bot no puede enviar, esto es lo primero
+          // que ve el usuario, con el botón que lo arregla. Antes había que
+          // deducirlo del color de un punto en la tarjeta del bot.
+          _buildBannerAtencion(),
           _SectionHeader(
             icon: Icons.smart_toy,
             title: 'Bots activos',
@@ -734,6 +1098,42 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
     );
   }
 
+  Widget _buildBannerAtencion() {
+    final s = _sesionQueUrge;
+    if (s == null) return const SizedBox.shrink();
+    final esQr = s.status == WapiStatus.scanQr;
+    final sinEntregar = _mensajesSinEntregar;
+
+    final String mensaje;
+    if (esQr) {
+      mensaje = 'Escanea el QR con el WhatsApp del negocio para poder '
+          'difundir. Sin eso, los envíos no salen.';
+    } else if (!s.watchdogEnabled) {
+      mensaje = 'La reconexión automática está desactivada para este bot: hay '
+          'que reconectarlo a mano.';
+    } else if (sinEntregar > 0) {
+      mensaje = sinEntregar == 1
+          ? 'Hay 1 mensaje en cola que no va a salir hasta que lo reconectes. '
+              'El sistema lo intenta reconectar solo cada 5 minutos.'
+          : 'Hay $sinEntregar mensajes en cola que no van a salir hasta que lo '
+              'reconectes. El sistema lo intenta reconectar solo cada 5 minutos.';
+    } else {
+      mensaje = 'Los envíos no saldrán hasta que lo reconectes. El sistema lo '
+          'intenta reconectar solo cada 5 minutos.';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: _BannerAtencion(
+        titulo: esQr ? 'Falta vincular tu bot' : 'Tu bot está desconectado',
+        mensaje: mensaje,
+        accionLabel: esQr ? 'Mostrar QR para vincular' : 'Reconectar ahora',
+        onAccion: () => _onSessionAction(s, esQr ? 'qr' : 'restart'),
+        onDetalles: () => _showDetails(s),
+      ),
+    );
+  }
+
   Widget _buildSesionesGrid(bool isWeb) {
     if (_sesiones.isEmpty) {
       return _EmptyCard(
@@ -772,6 +1172,7 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
                       width: cardWidth,
                       child: WapiSessionCard(
                         session: s,
+                        mensajesEnEspera: _mensajesSinEntregar,
                         onAction: (a) => _onSessionAction(s, a),
                       ),
                     ))
@@ -786,6 +1187,7 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
                 padding: const EdgeInsets.only(bottom: 10),
                 child: WapiSessionCard(
                   session: s,
+                  mensajesEnEspera: _mensajesSinEntregar,
                   onAction: (a) => _onSessionAction(s, a),
                 ),
               ))
@@ -898,6 +1300,7 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
     if (idSesion == null || pendientes.isEmpty) return;
 
     final messenger = ScaffoldMessenger.of(context);
+    final sesion = _sesionDeTanda(tanda);
     try {
       final res = await _service.resumeTanda(
         idSesion: idSesion,
@@ -910,19 +1313,17 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
       messenger.showSnackBar(SnackBar(
         content: Text(
           (res['message'] as String?) ??
-              'Reanudando ${pendientes.length} mensaje(s)…',
+              'Reintentando ${pendientes.length} mensaje(s)…',
         ),
         backgroundColor: AppColors.success,
+        action: _accionVerEstado(res, sesion),
       ));
       // El backend ya devolvió los logs a `pendiente`; refrescamos para que la
       // tanda vuelva a "en curso" y arranque el auto-refresh.
       await _refrescarLogs();
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(SnackBar(
-        content: Text('No se pudo reanudar: $e'),
-        backgroundColor: Colors.red,
-      ));
+      _mostrarErrorReanudacion(e, sesion);
     }
   }
 
@@ -930,8 +1331,18 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
     if (_tandas.isEmpty) {
       return _EmptyCard(
         icon: Icons.inbox_outlined,
-        title: 'Sin envíos aún',
-        subtitle: 'Cuando difundas productos los verás aquí.',
+        title: 'Todavía no has difundido nada',
+        subtitle: 'Cuando envíes productos verás aquí cada envío con su '
+            'resultado, y podrás reintentar los que no lleguen.',
+        action: ElevatedButton.icon(
+          onPressed: _onSendNow,
+          icon: const Icon(Icons.send_rounded),
+          label: const Text('Enviar productos ahora'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+          ),
+        ),
       );
     }
 
@@ -954,11 +1365,72 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
             tanda: t,
             destacada: t.estadoPara(ahora) == WapiTandaEstado.enCurso,
             etiquetas: _etiquetasChat,
-            productos: _nombresProducto,
+            productoNombre: (id) => id == null
+                ? 'Producto'
+                : (_nombresProducto[id] ?? 'Producto #$id'),
             onReanudar: _reanudarTanda,
+            // Permite reconectar el bot desde la propia tarjeta cuando el
+            // motivo del corte fue la sesión caída: reintentar sin reconectar
+            // volvería a fallar.
+            onReconectar: _sesionDeTanda(t) == null
+                ? null
+                : () => _reconectar(_sesionDeTanda(t)!),
           ),
       ],
     );
+  }
+
+  /// Sesión asociada a una tanda (por el `id_sesion` de sus logs).
+  WapiSession? _sesionDeTanda(WapiEnvioTanda tanda) {
+    final idSesion = tanda.idSesion;
+    if (idSesion == null) return null;
+    for (final s in _sesiones) {
+      if (s.id == idSesion) return s;
+    }
+    return null;
+  }
+
+  /// Acción "Ver estado" de la snackbar de reanudación, sólo si el backend
+  /// tuvo que tocar la sesión para aceptar el envío.
+  SnackBarAction? _accionVerEstado(
+    Map<String, dynamic> res,
+    WapiSession? sesion,
+  ) {
+    if (sesion == null || res['sesion_estado_openwa'] == null) return null;
+    return SnackBarAction(
+      label: 'Ver estado',
+      textColor: Colors.white,
+      onPressed: () => _showDetails(sesion),
+    );
+  }
+
+  /// Error al reanudar, traducido. Si el origen es la sesión, ofrece
+  /// reconectar en el sitio.
+  void _mostrarErrorReanudacion(Object e, WapiSession? sesion) {
+    final messenger = ScaffoldMessenger.of(context);
+    final diag = diagnosticarExcepcion(e);
+    messenger.showSnackBar(SnackBar(
+      backgroundColor: diag.color,
+      duration: const Duration(seconds: 8),
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(diag.titulo,
+              style: const TextStyle(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 2),
+          Text(diag.queHacer ?? diag.explicacion,
+              style: const TextStyle(fontSize: 12.5)),
+        ],
+      ),
+      action: (diag.requiereReconectar && sesion != null)
+          ? SnackBarAction(
+              label: 'Reconectar',
+              textColor: Colors.white,
+              onPressed: () => _reconectar(sesion),
+            )
+          : null,
+    ));
   }
 }
 
@@ -1509,6 +1981,114 @@ class _PuntoVivoState extends State<_PuntoVivo>
               letterSpacing: 0.5,
               color: AppColors.info,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BannerAtencion extends StatelessWidget {
+  final String titulo;
+  final String mensaje;
+  final String accionLabel;
+  final VoidCallback onAccion;
+  final VoidCallback onDetalles;
+
+  const _BannerAtencion({
+    required this.titulo,
+    required this.mensaje,
+    required this.accionLabel,
+    required this.onAccion,
+    required this.onDetalles,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const color = AppColors.warning;
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withOpacity(0.35)),
+      ),
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.14),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: const Icon(Icons.warning_amber_rounded,
+                    color: color, size: 21),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      titulo,
+                      style: const TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      mensaje,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: AppColors.textPrimary,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: onAccion,
+                  icon: const Icon(Icons.refresh, size: 19),
+                  label: Text(accionLabel),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(0, 44),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    textStyle: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed: onDetalles,
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(0, 44),
+                  foregroundColor: AppColors.textSecondary,
+                ),
+                child: const Text('Detalles'),
+              ),
+            ],
           ),
         ],
       ),

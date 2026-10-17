@@ -105,17 +105,18 @@ at evalTypeScript (node:internal/process/execution:256:22)
 **Cause:** Node 22 routes `node -e` through its TypeScript evaluator which rejects arrow-function
 syntax. Podman also splits quoted shell commands on whitespace, truncating the `-e` argument.
 
-**Fix:** Use `curl` for the healthcheck instead of `node -e`:
+**Fix:** Use `curl` for the healthcheck instead of `node -e`. The shipped image, `docker-compose.yml`
+and `docker-compose.dev.yml` already do; this applies to a healthcheck you wrote yourself:
 
 ```dockerfile
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:2785/api/health || exit 1
+    CMD curl -f http://localhost:2785/api/health/ready || exit 1
 ```
 
 ```yaml
-# docker-compose.dev.yml
+# docker-compose healthcheck
 healthcheck:
-  test: ['CMD', 'curl', '-f', 'http://localhost:2785/api/health']
+  test: ['CMD', 'curl', '-f', 'http://localhost:2785/api/health/ready']
 ```
 
 Ensure `curl` is installed in the production stage:
@@ -166,7 +167,7 @@ docker compose up -d --build   # `docker compose pull` never updates it
 **Symptoms:**
 
 - The API is healthy (`curl http://<host>:2785/api/health` returns `200`) but the dashboard is blank
-- The startup log says `🖥️ Dashboard: serving bundled UI at …` — the UI _is_ being served
+- The startup log says `Dashboard: serving bundled UI at …` — the UI _is_ being served
 - The browser console shows script-loading errors; DevTools → Network shows the `/assets/*.js`
   requests going to `https://` even though you opened the page over `http://`
 - You reach the instance directly over plain HTTP (a host:port allocation, a private network, a
@@ -191,9 +192,9 @@ docker compose exec openwa-api printenv NODE_ENV CSP_UPGRADE_INSECURE_REQUESTS
 A production boot that serves the dashboard with the opt-out unset prints a warning naming this
 setting. If you are behind a TLS proxy, ignore that warning — the directive is doing its job.
 
-> The alternative is to front OpenWA with a TLS-terminating reverse proxy (the shipped
-> `docker-compose.yml` topology), which serves the dashboard over HTTPS and makes the upgrade a
-> no-op.
+> The alternative is to front OpenWA with your own TLS-terminating reverse proxy (the shipped
+> `docker-compose.yml` has none; see the nginx example in 12.8), which serves the dashboard over
+> HTTPS and makes the upgrade a no-op.
 
 ### Issue: Session Won't Connect
 
@@ -213,11 +214,11 @@ curl -H "X-API-Key: $API_KEY" \
 # Check WhatsApp engine logs
 docker compose logs openwa-api 2>&1 | grep -i "whatsapp\|puppeteer\|browser"
 
-# Check auth folder. Both engines key it on the session NAME, but the location differs:
-#   whatsapp-web.js → SESSION_DATA_PATH (default /app/data/sessions), dir `session-<name>`
-#   baileys         → BAILEYS_AUTH_DIR  (default /app/data/baileys),  dir `<name>` (no prefix)
-docker compose exec openwa-api ls -la /app/data/sessions/session-<name>/   # whatsapp-web.js
-docker compose exec openwa-api ls -la /app/data/baileys/<name>/            # baileys
+# Check auth folder. Both engines key it on the session UUID id, but the location differs:
+#   whatsapp-web.js → SESSION_DATA_PATH (default /app/data/sessions), dir `session-<id>`
+#   baileys         → BAILEYS_AUTH_DIR  (default /app/data/baileys),  dir `<id>` (no prefix)
+docker compose exec openwa-api ls -la /app/data/sessions/session-<id>/   # whatsapp-web.js
+docker compose exec openwa-api ls -la /app/data/baileys/<id>/            # baileys
 ```
 
 **Solutions:**
@@ -231,10 +232,10 @@ docker compose exec openwa-api ls -la /app/data/baileys/<name>/            # bai
 | WhatsApp blocked      | Set a per-session proxy (`proxyUrl`) |
 
 ```bash
-# Clear auth and restart (the profile dir carries the session NAME, not its UUID id).
+# Clear auth and restart (the profile dir carries the session's UUID id, not its name).
 # Remove the one that matches the session's engine — deleting the other path is a silent no-op.
-docker compose exec openwa-api rm -rf /app/data/sessions/session-<name>   # whatsapp-web.js
-docker compose exec openwa-api rm -rf /app/data/baileys/<name>            # baileys
+docker compose exec openwa-api rm -rf /app/data/sessions/session-<id>   # whatsapp-web.js
+docker compose exec openwa-api rm -rf /app/data/baileys/<id>            # baileys
 docker compose restart openwa-api
 ```
 
@@ -246,42 +247,93 @@ docker compose restart openwa-api
 > this document assume a source install (`npm run start:dev`) or that dev bind mount.
 
 Proxy egress (if WhatsApp is blocked on your network) is configured **per session** via the
-`proxyUrl`/`proxyType` fields on `POST /api/sessions` — it is **not** an environment variable, and an
-unreachable proxy silently blocks the WhatsApp WebSocket (see the _No QR code appears, or `/start`
-returns `504`_ entry below).
+`proxyUrl` field on `POST /api/sessions` or with `PATCH /api/sessions/:sessionId/proxy`, both of
+which need an ADMIN key. It is **not** an environment variable, and an unreachable proxy silently
+blocks the WhatsApp WebSocket on either engine (see the _No QR code appears, or `/start` returns `504`_
+entry below: on whatsapp-web.js `/start` returns `504`, on Baileys it succeeds and no QR arrives).
 
-### Issue: No QR code appears, or `POST /api/sessions/:id/start` returns `504`
+### Issue: Linking asks for a passkey and never completes (both engines)
 
 **Symptoms:**
 
-- `POST /api/sessions/:id/start` returns `504 Gateway Timeout`
+- The phone shows "Create a passkey to log in" or "Continue on your other device" during linking, by QR or by pairing code
+- The session stays `qr_ready` on both engines; on Baileys the log shows `408` or `428` close loops, and a pairing code never appears
+- On whatsapp-web.js the page shows a "Quick security check with Passkey" modal that never succeeds
+
+**Cause:** WhatsApp added a passkey (WebAuthn) step to its companion linking handshake for some
+accounts. That step is enforced server-side inside the linking frames, which live in the engine
+libraries; neither whatsapp-web.js 1.34.7 nor Baileys 7.0.0-rc14 implements it, and OpenWA passes the
+QR string and the pairing-code request straight through to those libraries. There is no OpenWA-side
+fix, and nothing on the client side changes the outcome: switching engine, using a pairing code instead
+of a QR, or presenting a different client identity (`BAILEYS_BROWSER_NAME` or otherwise) all end at the
+same gate. Re-registering the number as a different account type has also been tried by the community
+and did not hold; the block returned on its own within days. Tracked in
+[#560](https://github.com/rmyndharis/OpenWA/issues/560) and upstream in
+[WhiskeySockets/Baileys#2672](https://github.com/WhiskeySockets/Baileys/issues/2672); the only durable
+change will come from the engine libraries implementing the step.
+
+### Issue: Phone-number pairing fails with "Couldn't link device" (Baileys)
+
+**Symptoms:**
+
+- `POST /api/sessions/:sessionId/pairing-code` returns a code, but the phone answers "Couldn't link device" after it is entered
+- The engine log then shows a `401` close with `Session disconnected: logged out`, the auth directory is cleared, and the session comes back at `qr_ready` with no phone
+- Linking the same account by QR works
+
+**Cause:** the pairing request carries the linked-device identity, and some accounts reject a
+non-standard one. The default device name is `Ubuntu`; if `BAILEYS_BROWSER_NAME` is set to a custom
+brand, set it back to `Ubuntu` (or another standard OS name like `macOS` or `Windows`),
+restart OpenWA itself (the name is read at boot, so stopping and starting the session is not enough),
+and request a fresh code. The name applies to new pairings only; a session that is already linked
+keeps the name it was paired with until it is re-linked. See the phone-number pairing example in
+`docs/examples/session-phone-number-pairing.md`.
+
+### Issue: No QR code appears, or `POST /api/sessions/:sessionId/start` returns `504`
+
+**Symptoms:**
+
+- On whatsapp-web.js, `POST /api/sessions/:sessionId/start` returns `504 Gateway Timeout`
   (`WhatsApp Web authentication timed out...`)
-- No QR code is ever produced — `GET /api/sessions/:id/qr` never has one
-- Engine log shows `Session engine failed: auth timeout` after ~30s
+- On Baileys, `POST /api/sessions/:sessionId/start` succeeds and the session keeps retrying the connection
+- No QR code is ever produced — `GET /api/sessions/:sessionId/qr` never has one
+- On whatsapp-web.js, the engine log shows `Session engine failed: auth timeout` after ~30s
 
 **Cause:** The session was created with a `proxyUrl` that doesn't resolve to a real, reachable proxy
-(e.g. the `http://proxy.example.com:8080` placeholder copied from an example). The engine launches
-Chromium pinned to that proxy, the WhatsApp WebSocket can never connect, no QR is produced, and the
-auth poll times out.
+(e.g. the `http://proxy.example.com:8080` placeholder copied from an example). The engine sends its
+WhatsApp WebSocket through that proxy, so it can never connect and no QR is produced. On
+whatsapp-web.js, which launches Chromium pinned to the proxy, the auth poll then times out; Baileys
+keeps retrying the connection instead.
 
-**Fix:** Don't set a proxy unless your network actually requires one. Recreate the session without
-`proxyUrl`, or set it to a real, reachable proxy server:
+**Fix:** Don't set a proxy unless your network actually requires one. Clear `proxyUrl` in place, or
+set it to a real, reachable proxy server the same way, with an ADMIN key. The change applies on the
+next start, so stop and start the session afterwards:
 
 ```bash
 # No proxy needed (the common case):
-curl -X POST "$BASE/api/sessions" -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
-  -d '{ "name": "my-bot" }'
+curl -X PATCH "$BASE/api/sessions/{sessionId}/proxy" -H "X-API-Key: $ADMIN_API_KEY" \
+  -H "Content-Type: application/json" -d '{ "proxyUrl": null }'
+curl -X POST "$BASE/api/sessions/{sessionId}/stop" -H "X-API-Key: $API_KEY"
+curl -X POST "$BASE/api/sessions/{sessionId}/start" -H "X-API-Key: $API_KEY"
 ```
 
-> ℹ️ Proxy egress for the `whatsapp-web.js` engine is configured **per session** via the
-> `proxyUrl`/`proxyType` fields on `POST /api/sessions` — not via environment variables.
+> ℹ️ Proxy egress, on either engine, is configured **per session** via the
+> `proxyUrl` field on `POST /api/sessions` or `PATCH /api/sessions/:sessionId/proxy` (ADMIN key for
+> both), not via environment variables.
+
+> ℹ️ A `504` whose body starts with `Engine initialization timed out after ...` is a **different**
+> failure with a different fix: initialization never finished at all. That happens when WhatsApp Web,
+> the network or the session proxy is unreachable in a way that hangs the connection instead of
+> failing it, and when the browser stalls during startup (typically a container memory or resource
+> limit). Check egress to `web.whatsapp.com`, the session's `proxyUrl` and the container's memory
+> limit. The auth poll that produces the message above only starts once the page has loaded, so it
+> never fires for a connection that hangs before that.
 
 ### Issue: Session stuck at `authenticating`, never reaches `ready`
 
-> **Engine:** This issue applies to the `whatsapp-web.js` engine only. If you are using `ENGINE_TYPE=baileys`, skip this section.
+> **Engine:** This stall applies to the `whatsapp-web.js` engine only. Baileys also reports `authenticating`, but only for the seconds between WhatsApp accepting the link and the restart it requests; it cannot park there, so if you are using `ENGINE_TYPE=baileys`, skip this section.
 
 **Symptoms:** After scanning the QR the phone links the device, but the session stays at
-`authenticating` indefinitely and never becomes `ready`. `GET /sessions/:id/qr` returns 400 while
+`authenticating` indefinitely and never becomes `ready`. `GET /sessions/:sessionId/qr` returns 400 while
 stuck. Often seen on ARM64 (e.g. Raspberry Pi) after upgrading to v0.2.x.
 
 **Cause:** whatsapp-web.js auto-selects a WhatsApp Web client version, and an incompatible version
@@ -300,12 +352,42 @@ WWEBJS_WEB_VERSION=<a build from that registry's html/ folder>
 
 Restart the container after changing it. Pick the build from
 [wppconnect-team/wa-version](https://github.com/wppconnect-team/wa-version) (the `html/` folder) — a
-build the registry no longer serves is fetched, missed, and silently ignored, leaving you on the
-default behaviour rather than the pin you asked for. With
+build the registry no longer serves cannot be fetched, and the session starts on the live build rather
+than the pin you asked for, with a warning at start (action `web_version_html_unavailable`, naming the
+build, the URL and the reason). With
 `WWEBJS_WEB_VERSION` unset, `latest`, or `auto` (the default), OpenWA auto-resolves a settled build
 from that registry and pins its HTML — note this HTML is fetched from a third-party repository and
 executed inside the `web.whatsapp.com` origin without an integrity check. Set
-`WWEBJS_WEB_VERSION=off` to disable pinning and use the first-party build served by WhatsApp.
+`WWEBJS_WEB_VERSION=off` to disable pinning and use the first-party build served by WhatsApp. An
+unpinned session (this setting, or an auto-resolve that could not reach the registry) caches nothing to
+disk, so it also works on the image's read-only root filesystem. A pinned build's HTML is downloaded
+at start, with a 10 s bound, into `<SESSION_DATA_PATH>/.wa-web-cache/` on the writable data volume and
+served from there; a build no session has started on for a week is removed.
+
+A pin is not guaranteed to hold. whatsapp-web.js applies it by answering the page's document request
+with the pinned HTML, and that can miss in two ways: a pin whose HTML could not be fetched is dropped
+at start (the `web_version_html_unavailable` warning above) and the live build loads, and WhatsApp
+Web's service worker can serve its own cached build without the request reaching whatsapp-web.js. In
+the second case the page runs a different build than the one requested, while the startup line
+`Pinning WhatsApp Web version …` still names the requested build.
+When a session reaches `ready`, OpenWA reads the build the page reports and logs it (action
+`web_version_running`); when a pin was requested and the page runs a different build, it logs a
+warning naming both (action `web_version_pin_not_applied`). The comparison ignores the registry's
+suffix such as `-alpha`, so a pin and the same bare build count as a match.
+
+The warning changes nothing about the session. It reached `ready` on the build the warning names, so
+the pin did not cover that page load, and a session that works on that build needs no action.
+Whether the service worker answers can differ from one page load to the next, so a later restart may
+load the pin. When you report a problem with the session, include both builds.
+
+If the session is still `authenticating` 90 s after the link, OpenWA stops waiting. If WhatsApp Web
+reports the session connected but its event bridge never attached, the session is marked `failed` with
+the credentials kept (action `ready_reconcile_bridge_dead`), whether it was linked in that start or
+restored: restart it to relaunch the browser. Otherwise, a session linked by a QR or pairing code in
+that start has its saved credentials cleared once and comes back with a fresh QR. A session restored
+from saved credentials is marked `failed` with the credentials kept (action
+`ready_reconcile_timeout_restored`): restart it; to pair again, delete it (which clears the saved
+credentials) and create it anew; or pin `WWEBJS_WEB_VERSION`.
 
 ### Issue: QR generation times out on slow first boot (WSL2 / low-resource)
 
@@ -419,7 +501,7 @@ custom container that drops the `XDG_CONFIG_HOME` / `XDG_CACHE_HOME` setup or th
 
 **Cause D — Debian 12 OS Chromium SIGTRAP in non-root Pods.**
 If `Code: null` happens on Kubernetes, and the host kernel logs or `dmesg` shows `Trace/breakpoint trap (core dumped)` with exit code 133, the underlying Debian 12 OS `chromium` package has crashed due to strict non-root or seccomp constraints (even with `--no-zygote` or `Unconfined` seccomp).
-_Fix:_ On amd64, do not use the `chromium` package from Debian's `apt` — it SIGTRAPs under strict non-root/seccomp. Instead, download Chrome for Testing via Puppeteer during the Docker build (`./node_modules/.bin/puppeteer browsers install 'chrome@146.0.7680.31'`) and point `PUPPETEER_EXECUTABLE_PATH` to it. (Chrome for Testing has no linux-arm64 build, so arm64 keeps Debian's `chromium`, which ships a native arm64 binary.) The official `Dockerfile` implements this mixed approach.
+_Fix:_ On amd64, do not use the `chromium` package from Debian's `apt` — it SIGTRAPs under strict non-root/seccomp. Instead, download Chrome for Testing via Puppeteer during the Docker build (`./node_modules/.bin/puppeteer browsers install 'chrome@153.0.8010.36'`) and point `PUPPETEER_EXECUTABLE_PATH` to it. (arm64 keeps Debian's `chromium`, which ships a native arm64 binary, by choice: Chrome for Testing publishes linux-arm64 builds only from 153, and the image has not moved arm64 to one.) The official `Dockerfile` implements this mixed approach.
 
 **Quick triage:** run `docker stats openwa-api`, click **Start**, and watch which resource spikes toward its
 limit the instant before the failure — that tells you A vs B. If neither moves and you see the crashpad
@@ -437,7 +519,7 @@ show:
 Protocol error (Runtime.callFunctionOn): Execution context was destroyed.
 ```
 
-**Cause:** The session's persistent browser profile (`<SESSION_DATA_PATH>/session-<name>`, created by
+**Cause:** The session's persistent browser profile (`<SESSION_DATA_PATH>/session-<id>`, created by
 whatsapp-web.js's `LocalAuth`) was built with a different Chromium/Chrome binary than the one the new
 image runs. A browser profile carries binary-bound state (page caches, GPU shader caches, IndexedDB /
 Local Storage version markers) that is not safely portable across Chromium major versions or binary
@@ -448,16 +530,25 @@ reads like a Puppeteer bug and gives no hint that the profile is the cause — t
 advisory when it detects this error, and the session's `lastError` (the message the dashboard shows on
 the session card) carries a short form of it, so the pointer survives without reading the container log.
 
+**Rolling back to an older browser** does not raise this error. An older Chrome silently deletes the
+IndexedDB of a profile a newer Chrome has opened, and that is where whatsapp-web.js keeps the WhatsApp
+login: every previously linked session starts at a QR code instead of reconnecting, the log names no
+cause (0.23.3 and 0.23.4 log only a generic `relink_required` warning), and upgrading again does not bring
+the pairing back. On amd64 this follows a rollback from 0.23.5 or later (Chrome for Testing 153) to 0.23.4
+or earlier (146); on arm64, a rollback to an image built with an older Debian chromium major. Restoring
+`sessions/` from a backup taken before the first start on the newer image keeps the pairing (see the
+upgrade runbook's rollback in docs/11); without one, scan a new QR.
+
 **Fix:** delete the affected session's profile dir and start the session again to scan a new QR. The
 profile cannot be salvaged — clearing only the cache subdirs (`Cache`, `GPUCache`, `Code Cache`, …) is
 **not** enough, the taint is deeper than the caches — so a one-time re-authentication is required.
 
-The profile dir is named after the session **name**, while the REST API addresses a session by its
-**id** (a UUID) — so the two placeholders below are different values:
+The profile dir is named after the session **id** (the UUID the REST API addresses it by), so
+`GET /api/sessions` gives you the value for both commands below:
 
 ```bash
-docker exec openwa-api rm -rf /app/data/sessions/session-<name>
-# then POST /sessions/<id>/force-kill and POST /sessions/<id>/start (the session's UUID id), and scan the new QR
+docker exec openwa-api rm -rf /app/data/sessions/session-<id>
+# then POST /sessions/<id>/force-kill and POST /sessions/<id>/start, and scan the new QR
 ```
 
 Re-creating the session (`DELETE /sessions/<id>`) also purges its profile dir; create it again and
@@ -502,20 +593,21 @@ acknowledged before the companion device is allowed to stay linked. The adapter 
 and only gives up after five clicks that fail to land — at that point a human must click through it
 once, so the session stops instead of being silently unlinked by WhatsApp about five minutes later.
 
-> **If the modal is not in English:** the detector matches the English button label (`Continue`) and
-> heading ("What's new"). The language WhatsApp Web renders in follows the browser locale, which OpenWA
-> does not set, so it is whatever the browser the container launches defaults to
-> (`PUPPETEER_EXECUTABLE_PATH` — Chrome for Testing on amd64, Debian's `chromium` on arm64). You can
-> pin it yourself by appending `--lang=en-US` to `PUPPETEER_ARGS` — that variable **replaces** the
-> default list rather than adding to it, so repeat the existing flags too (dropping `--no-sandbox` in
-> a container stops Chromium launching at all). If your deployment does get a
-> localised modal, it is **not** auto-dismissed and the session never reaches `action_required` —
-> instead it links normally, then drops to `disconnected` with reason `LOGOUT` a few minutes later and
-> the device disappears from the phone's Linked devices list. That miss is no longer silent: when the
-> watcher finds a visible dialog it cannot match, it logs a warning (`action:
-onboarding_dialog_unrecognized`) carrying the dialog's heading and button labels — the label to add
-> via `WWEBJS_ONBOARDING_CONTINUE_LABELS`, and the heading worth reporting — minutes before the unlink
-> would happen. Because that path wipes the stored
+> **If the modal is not in English:** by default the detector matches only the English button label
+> (`Continue`) under the English heading ("What's new"). OpenWA appends `--lang=en-US` to the browser
+> flags unless `PUPPETEER_ARGS` already carries a `--lang`, but that sets the browser's language, and
+> WhatsApp Web may still render in the account's own language. For another language, add the modal's
+> confirm-button label to `WWEBJS_ONBOARDING_CONTINUE_LABELS` (for example `Continuar`) and restart
+> OpenWA itself: the value is read at boot, so stopping and starting the session is not enough. A
+> configured label is clicked
+> without the English heading check, but only on a button inside a visible dialog. If your deployment gets a
+> localised modal without a matching label, it is **not** auto-dismissed and the session never reaches
+> `action_required`; instead it links normally, then drops to `disconnected` with reason `LOGOUT` a few
+> minutes later and the device disappears from the phone's Linked devices list. That miss is not
+> silent: when the watcher finds a visible dialog it cannot match, it logs a warning
+> (`action: onboarding_dialog_unrecognized`) carrying the dialog's heading and button labels, including
+> the label to add, minutes before the unlink would happen. Copy that label as printed: a multi-word
+> label works, and whitespace runs compare as one space. Because that path wipes the stored
 > credentials, the automatic reconnect comes back with a fresh QR on its own, so the session is
 > usually already sitting at `qr_ready` rather than needing a manual start. Acknowledge the modal once
 > in a browser signed in as that account, then scan the QR. It does not recur — the modal is shown
@@ -528,8 +620,8 @@ onboarding_dialog_unrecognized`) carrying the dialog's heading and button labels
 > that warning, the page is gone and the stop → start below is required rather than optional.
 
 **Fix:** acknowledge the modal once (open WhatsApp Web in the account holder's own browser and click
-through the "What's new" screen), **then restart the session** (`POST /sessions/:id/stop` →
-`POST /sessions/:id/start`). Acknowledging alone does not return the session to `ready` — the status
+through the "What's new" screen), **then restart the session** (`POST /sessions/:sessionId/stop` →
+`POST /sessions/:sessionId/start`). Acknowledging alone does not return the session to `ready` — the status
 is deliberately sticky — but the restart re-drives the engine from the stored credentials, so no new
 QR scan is needed. If the modal never actually appeared (a false trip is possible but rare), the
 same stop → start clears it.
@@ -573,9 +665,14 @@ The reconnect backoff is configured **per session**, not by environment variable
 }
 ```
 
-`reconnectBaseDelay` is the exponential-backoff base in milliseconds (clamped to 1000–300000,
-default 5000). `maxReconnectAttempts` is clamped to 0–20 — `0` disables auto-reconnect entirely, and
-leaving it unset means unlimited retries with the delay parking at a 1-hour cap. Subscribe to the
+`reconnectBaseDelay` is the exponential-backoff base in milliseconds (1000–300000, default 5000).
+`maxReconnectAttempts` accepts 0–20 (a value outside the range is refused with a 400) — `0` disables
+auto-reconnect entirely, and leaving it unset means unlimited retries with the delay parking at a
+5-minute cap. Both keys bound the gateway's own reconnect, whose attempt count restarts only once
+the session has stayed READY for 5 minutes, so a session that keeps dropping sooner than that spends
+a finite cap and ends FAILED. On Baileys that is only the reconnect after a logged-out close: every
+other drop is retried inside the engine, with a fixed 1s to 60s backoff and no attempt cap, so a
+session behind an unreachable network keeps retrying there whatever these keys say. Subscribe to the
 `session.reconnect_loop` webhook to be alerted on every 5th consecutive attempt.
 
 On a slow host, raise the first-boot init wait with `WWEBJS_AUTH_TIMEOUT_MS` (see _QR generation
@@ -602,33 +699,34 @@ curl -H "X-API-Key: $API_KEY" \
 curl -H "X-API-Key: $API_KEY" \
   http://localhost:2785/api/infra/status
 
-# Rate limiting is global (throttler, env-configured) — there is no per-session rate-limit endpoint
+# Rate limiting is env-configured, per route and client IP; there is no per-session rate-limit endpoint
 ```
 
 **Common Causes:**
 
-| Cause                  | Symptom                | Solution                    |
-| ---------------------- | ---------------------- | --------------------------- |
-| Invalid phone number   | 400 error              | Format: `628123456789@c.us` |
-| Rate limited           | 429 error              | Reduce sending rate         |
-| Session disconnected   | 503 error              | Reconnect session           |
-| Media too large        | 413 error              | Compress or reduce size     |
-| Number not on WhatsApp | Message fails silently | Verify number first         |
+| Cause                            | Symptom                                                  | Solution                                                                          |
+| -------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Invalid phone number             | 400 error                                                | Format: `628123456789@c.us`                                                       |
+| Rate limited                     | 429 error                                                | Reduce sending rate                                                               |
+| Session not started or not ready | 400 (`is not active`) or 409                             | Start or reconnect the session                                                    |
+| Media too large                  | 413 error                                                | Compress or reduce size                                                           |
+| Number not on WhatsApp           | 400 when the recipient lookup reports it as unregistered | Verify the number first (`GET /api/sessions/{sessionId}/contacts/check/{number}`) |
 
 **Phone Number Validation:**
 
 ```typescript
 // Correct format
 const validFormats = [
-  '628123456789@c.us',      // Indonesian
-  '14155552671@c.us',       // US
+  '628123456789@c.us', // Indonesian
+  '14155552671@c.us', // US
   '628123456789-1234@g.us', // Group ID
 ];
+```
 
-// API to check if number exists
-// GET /api/sessions/{id}/contacts/check/{number}
+```bash
+# Check whether a number is on WhatsApp (needs an OPERATOR key; {sessionId} is the id from GET /api/sessions)
 curl -H "X-API-Key: $API_KEY" \
-  "http://localhost:2785/api/sessions/default/contacts/check/628123456789"
+  "http://localhost:2785/api/sessions/{sessionId}/contacts/check/628123456789"
 ```
 
 ### Issue: Sends return 500 "engine returned no message", and chats or media fail with `r: r`
@@ -638,7 +736,8 @@ curl -H "X-API-Key: $API_KEY" \
 - `POST /api/sessions/{id}/messages/send-text` returns `{"statusCode":500,"message":"Internal server error"}` — but the message _is_ delivered
 - Logs show `the engine returned no message for this send, so it may not have been delivered`
 - Unrelated operations fail with the minified error `r: r`: `GET /api/sessions/{id}/chats`, media downloads, typing indicators
-- Startup logs may contain `The installed whatsapp-web.js is missing the message-id backport…`
+- Startup logs may contain `The installed whatsapp-web.js is missing the message-id backport…`, or
+  `The installed whatsapp-web.js carries only part of the message-id backport…` after an interrupted install
 
 **Cause:** WhatsApp Web 2.3000.x renamed the internal message-id property that whatsapp-web.js
 reads. OpenWA ships a backport that restores it, applied at install time by
@@ -665,6 +764,86 @@ rm -rf node_modules/whatsapp-web.js && npm ci
 > Pinning `WWEBJS_WEB_VERSION` does **not** work around this — the rename is present in every
 > current WhatsApp Web build, so no pin avoids it.
 
+### Issue: Startup logs say install-time patches are missing
+
+**Symptoms:**
+
+- Startup logs contain `The installed whatsapp-web.js is missing N of OpenWA's install-time patches: …`,
+  or the same line naming `@whiskeysockets/baileys`
+- One capability fails while everything around it works: an unnamed `500` from a single route,
+  block/unblock refusing every id, a status media send that never arrives, a group description that
+  cannot be set, an app-state resync that never settles
+
+**Cause:** OpenWA applies twelve exact source transforms to its engine libraries at install time
+(docs/29 §29.3). The Docker image runs them without `--best-effort`, so a source shape a patcher
+cannot recognise fails the image build. A source install runs them through `scripts/postinstall.js`
+with `--best-effort`, where a patcher that cannot apply prints one line into a long `npm install`
+transcript and the install still succeeds. The usual causes are `npm install --ignore-scripts` and
+an upstream release whose shape a patcher no longer recognises. Each engine now checks its own
+patches as it starts and names the ones that did not land, so the report arrives on the machine that
+is actually affected rather than in an install log nobody kept.
+
+**Solution:**
+
+```bash
+# Which patches are missing? Works on every platform, including Windows without grep.
+node -e "const fs=require('fs'),p=require('path');for(const f of fs.readdirSync('scripts').filter(n=>n.startsWith('patch-')&&n.endsWith('.js')&&!n.endsWith('.spec.js')).sort()){const m=require('./scripts/'+f);if(typeof m.isApplied!=='function')continue;const k=f.startsWith('patch-wwebjs-')?'whatsapp-web.js':'@whiskeysockets/baileys';try{console.log((m.isApplied(p.dirname(require.resolve(k+'/package.json')))?'APPLIED    ':'NOT APPLIED')+' '+f)}catch{}}"
+
+# Apply each one it named, then restart
+node scripts/patch-wwebjs-group-description.js
+```
+
+If a patcher answers with an unsupported-shape error instead of applying, the installed library has
+moved and the transform needs re-evaluating against it. Reinstalling will not help; open an issue
+quoting the message it printed.
+
+> `patch-wwebjs-201832.js` is not in that list. It carries its own startup check and its own entry
+> above, because a partially applied backport needs different advice than one that never ran.
+
+> A patch that never applied is not fatal on its own: only the capability it repairs is affected and
+> the rest of the gateway runs normally, which is why this is easy to misread as a bug in one route.
+
+### Issue: Reads on a large account fail with `did not answer ... in time` or `Runtime.callFunctionOn timed out`
+
+> **Engine:** This issue applies to the `whatsapp-web.js` engine only (Chromium/Puppeteer-based). It does not affect `ENGINE_TYPE=baileys`.
+
+**Symptoms:**
+
+- `GET /api/sessions/{id}/chats`, `GET /api/sessions/{id}/groups` (or another read that walks the
+  whole store) fails on an account with thousands of chats, while smaller accounts on the same deployment are fine
+- The chat, group and contact lists answer `503` with `WhatsApp Web did not answer the chat list read in time`
+  (or `the contact list read`); another read may answer `500` with the raw error, which names a CDP
+  method and the setting: `Runtime.callFunctionOn timed out. Increase the 'protocolTimeout' setting in launch/connect calls for a higher timeout if needed.`
+- The session stays `ready` and the next request works, so the page did not die
+
+**Cause:** Puppeteer gives every browser command a time budget, 180 000 ms by default, and one
+read of the whole chat list over a very large store can run past it. The renderer is still working; only the
+command is dropped. That is also why this is **not** treated as a dead page — a transport death
+takes the session down with it, while this is just a slow command on a live page. The chat, group and
+contact lists answer it with a `503` as well, but the session stays `ready`.
+
+**Solution:** raise the budget for that deployment.
+
+```bash
+# 5 minutes, in .env or the environment. Unset means Puppeteer's own 180000.
+PUPPETEER_PROTOCOL_TIMEOUT_MS=300000
+```
+
+Raise it by as little as the account needs. The budget bounds a command that is slow but still
+running; it is not what protects you from a **wedged** browser. A page that stops answering is
+caught by the liveness watchdog, which probes every 60 s with a 15 s timeout and treats two
+consecutive failures as a disconnect, so a wedge is picked up in roughly 75 to 135 s whatever this
+value is. There is no measurement in this repo saying how large an account has to be before 180000
+is too small, so treat any value above it as an escape hatch you reached for after seeing the error
+above, not as a default worth pre-emptively setting.
+
+> Do not set it to `0`, and do not reach for a row of nines. The gateway refuses to boot on either.
+> Puppeteer only arms its timer for a truthy value, so `0` drops the bound altogether and a wedged
+> renderer will hold the command, and the request waiting on it, forever — a hung request is worse
+> than a failed one. Above `2147483647` Node's timer overflows, warns `TimeoutOverflowWarning`, and
+> fires after 1 ms instead, so every command in the launch handshake fails with this same error and
+> the browser never starts.
+
 ### Issue: Media Upload Fails
 
 **Symptoms:**
@@ -684,9 +863,22 @@ MEDIA_DOWNLOAD_MAX_BYTES=52428800
 # Default 25mb.
 BODY_SIZE_LIMIT=25mb
 
+# Behind nginx, raise client_max_body_size to match: its default is 1m, so a base64 media send
+# is refused with nginx's own HTML 413 before OpenWA sees it. Behind ingress-nginx, set the
+# nginx.ingress.kubernetes.io/proxy-body-size annotation (default 1m).
+
 # Note: send the body uncompressed. A request carrying Content-Encoding: gzip (or deflate/br)
 # is refused with 415 — the aggregate in-flight cap counts bytes on the wire, so a compressed
 # body would be admitted small and then inflated past the memory that cap exists to bound.
+
+# Note: one active API key may hold at most half the aggregate in-flight budget, wherever its
+# requests come from, and is refused with 503 + Retry-After past that even while the gateway as a
+# whole has room. A single declared body larger than that share gets 413 instead, since a retry
+# cannot help. Requests without a recognised key (ingress deliveries included) share a pool of a
+# quarter of the budget or twice BODY_SIZE_LIMIT, whichever is larger, and each client IP gets at
+# most half of that pool (never less than one full-size body). Behind a reverse proxy, set
+# TRUSTED_PROXIES: without it every unkeyed caller resolves to the proxy's own address and shares
+# a single IP's share of that pool.
 
 # Supported formats
 # Images: jpg, jpeg, png, gif, webp
@@ -725,8 +917,9 @@ curl -X POST http://localhost:2785/api/sessions/{id}/messages/send-image \
 curl -H "X-API-Key: $API_KEY" \
   http://localhost:2785/api/sessions/{sessionId}/webhooks
 
-# Abandoned deliveries, most recent first: those that exhausted every retry, plus those never
-# attempted at all (recorded with `attempts: 0`). Requires an ADMIN key — an OPERATOR key gets
+# Abandoned deliveries, most recent first: those that exhausted every retry, plus those recorded
+# with `attempts: 0`: never attempted, or (queue disabled) stopped by shutdown during a retry
+# backoff after earlier attempts. Requires an ADMIN key — an OPERATOR key gets
 # a 403, which reads like the endpoint does not exist. Rows older than
 # WEBHOOK_FAILURE_RETENTION_DAYS (default 90) are pruned.
 curl -H "X-API-Key: $ADMIN_API_KEY" \
@@ -764,13 +957,42 @@ curl -X POST http://localhost:2785/api/sessions/{sessionId}/webhooks \
   }'
 ```
 
-`retryCount` (0–5, default 3) is per webhook. The delivery timings are process-wide environment
-variables:
+`retryCount` (0–5, default 3) is per webhook and counts total delivery attempts, including the first, so `1`
+retries nothing. The delivery timings are process-wide environment variables:
 
 ```bash
 WEBHOOK_TIMEOUT=10000      # per-attempt HTTP timeout in ms (default 10000)
 WEBHOOK_RETRY_DELAY=5000   # base retry backoff in ms (default 5000)
 ```
+
+### Issue: An inbound sender arrives as an `@lid` id instead of a phone number
+
+**Symptoms:**
+
+- `message.received` carries `from` (or `author`, in a group) as `162878178984075@lid` rather than `628123456789@c.us`
+- The number cannot be matched against your own contact records, and replies have to be addressed by the `@lid` id
+- `contact.number` on the payload repeats the lid digits, so it is not the phone number either
+
+**Cause:** WhatsApp identifies some accounts by a privacy id (`@lid`) instead of their phone number,
+and the message itself carries no phone number to read. Mapping one back costs a lookup against the
+engine, so the gateway does not do it on every message unless you ask for it.
+
+**Solution:**
+
+```bash
+# Resolve a single id on demand — works whether or not the flag below is set
+curl -H "X-API-Key: $API_KEY" \
+  http://localhost:2785/api/sessions/{sessionId}/contacts/{contactId}/phone
+
+# Or have every inbound message carry it: adds `senderPhone` to the message.received webhook
+# and the websocket event. Set it in the `.env` next to docker-compose.yml (both compose files
+# already forward the variable), then restart the process — an env change is not picked up by a
+# session reload.
+RESOLVE_LID_TO_PHONE=true
+```
+
+`senderPhone` is `null` when the engine cannot map the id — an `@lid` the account has never seen has
+no mapping to return. Both engines support the lookup.
 
 ## 12.5 Performance Issues
 
@@ -804,18 +1026,16 @@ services:
   openwa-api:
     # The shipped compose already exposes this as mem_limit: ${OPENWA_MEM_LIMIT:-2g}
     mem_limit: 2g
-    environment:
-      # Optimize Puppeteer (whatsapp-web.js engine only)
-      - PUPPETEER_ARGS=--disable-dev-shm-usage,--disable-gpu,--no-sandbox
+    # Chromium already starts with --disable-dev-shm-usage and --disable-gpu by default, and
+    # PUPPETEER_ARGS replaces that list rather than adding to it.
 ```
 
 **Memory Optimization Tips:**
 
-| Optimization              | Impact                 | Trade-off               |
-| ------------------------- | ---------------------- | ----------------------- |
-| Reduce message history    | -20% RAM               | Less searchable history |
-| Headless Chrome flags     | -15% RAM (wwebjs only) | None                    |
-| Limit concurrent sessions | Linear                 | Fewer sessions          |
+| Optimization              | Impact   | Trade-off               |
+| ------------------------- | -------- | ----------------------- |
+| Reduce message history    | -20% RAM | Less searchable history |
+| Limit concurrent sessions | Linear   | Fewer sessions          |
 
 ### Issue: Slow API Response
 
@@ -843,27 +1063,30 @@ curl -H "X-API-Key: $API_KEY" \
 
 ```sql
 -- Indexes ship with the schema (migrations) — there is nothing to add by hand. `messages`
--- carries ("sessionId", "createdAt"), ("chatId"), ("status"), ("createdAt") and a unique
--- ("sessionId", "waMessageId").
+-- carries ("sessionId", "createdAt"), ("sessionId", "chatId", "createdAt"), ("chatId"),
+-- ("status"), ("createdAt"), the message-time indexes ("sessionId", "timestamp", "id"),
+-- ("sessionId", "chatId", "timestamp", "id") and ("sessionId", "direction", "timestamp", "id"),
+-- a partial ("mediaPath") where it is not null, a unique ("sessionId", "waMessageId"), and on
+-- PostgreSQL a GIN index on the full-text "body_ts" column.
 
 -- PostgreSQL: refresh planner statistics on the hot tables
 ANALYZE sessions;
 ANALYZE messages;
 ```
 
-Pooling and caching are environment variables — OpenWA has no config file:
+Pool size and Redis are set in Dashboard > Infrastructure, which saves them to `data/.env.generated`; an uncommented value in `.env` or the process environment pins them over the dashboard. The timeouts below are environment-only:
 
 ```bash
 # Connection pool + timeouts (applied to the PostgreSQL data connection)
-DATABASE_POOL_SIZE=10                 # max pooled connections (default 10)
+# DATABASE_POOL_SIZE=10               # max pooled connections (default 10)
 DATABASE_IDLE_TIMEOUT_MS=30000        # idle client eviction (default 30000)
 DATABASE_CONNECTION_TIMEOUT_MS=10000  # wait for a free connection (default 10000)
 DATABASE_STATEMENT_TIMEOUT_MS=30000   # server-side per-query cap (default 30000)
 
 # Redis caching (per-key TTLs are fixed in code — there is no cache TTL env var)
-REDIS_ENABLED=true
-REDIS_HOST=localhost
-REDIS_PORT=6379
+# REDIS_ENABLED=true
+# REDIS_HOST=localhost
+# REDIS_PORT=6379
 ```
 
 ## 12.6 Database Issues
@@ -890,8 +1113,11 @@ sqlite3 ./data/openwa.sqlite "PRAGMA journal_mode;"
 sqlite3 ./data/openwa.sqlite "PRAGMA journal_mode=WAL;"
 ```
 
-There is no `DATABASE_SQLITE_BUSY_TIMEOUT`-style env knob — busy handling comes from the
-`better-sqlite3` driver defaults. If locks persist under concurrent sessions, migrate to PostgreSQL.
+There is no `DATABASE_SQLITE_BUSY_TIMEOUT`-style env knob — both SQLite connections wait a
+fixed 30 s on a lock (`SQLITE_BUSY_TIMEOUT_MS`, matching `scripts/backup.sh`'s `.timeout 30000`)
+before failing with `SQLITE_BUSY`, and `better-sqlite3` waits synchronously, so the whole gateway
+stalls for as long as a write waits. If locks persist under concurrent sessions, migrate to
+PostgreSQL.
 
 **When to Migrate to PostgreSQL:**
 
@@ -917,7 +1143,7 @@ flowchart TD
 **Solutions:**
 
 ```bash
-# Show migration status (executed + pending)
+# From a source checkout: show migration status (executed + pending)
 npm run migration:show
 
 # Run all pending migrations
@@ -926,12 +1152,17 @@ npm run migration:run
 # Rollback last migration
 npm run migration:revert
 
+# Inside the released image, which has no ts-node, use the :prod variants against dist/
+docker compose run --rm openwa-api npm run migration:show:prod
+docker compose run --rm openwa-api npm run migration:run:prod
+
 # Schema is managed by migrations (there is no schema:sync)
 # The auth/audit DB has parallel :main variants, e.g.:
 npm run migration:run:main
+npm run migration:run:main:prod   # inside the released image
 ```
 
-**PostgreSQL crash-loop on boot after upgrade** — if logs show `column "id" is of type uuid but default expression is of type character varying` or `foreign key constraint ... cannot be implemented ... incompatible types: character varying and uuid`, the deployment was previously bootstrapped with `DATABASE_SYNCHRONIZE=true` (native `uuid` columns vs the migrations' `varchar`). A guard migration converts the columns automatically on the next boot; for large `messages` tables, run the migration against the stopped app (`npm run migration:run`) during a maintenance window. See [14.5 / 14.9 — PostgreSQL crash-loop after upgrading a `DATABASE_SYNCHRONIZE=true` deployment](./14-migration-guide.md). `DATABASE_SYNCHRONIZE=true` is unsupported on PostgreSQL for production.
+**PostgreSQL crash-loop on boot after upgrade** — if logs show `column "id" is of type uuid but default expression is of type character varying` or `foreign key constraint ... cannot be implemented ... incompatible types: character varying and uuid`, the deployment was previously bootstrapped with `DATABASE_SYNCHRONIZE=true` (native `uuid` columns vs the migrations' `varchar`). A guard migration converts the columns automatically on the next boot; for large `messages` tables, run the migration against the stopped app (`npm run migration:run` from a source checkout, `npm run migration:run:prod` in the image) during a maintenance window. See [14.5 / 14.9 — PostgreSQL crash-loop after upgrading a `DATABASE_SYNCHRONIZE=true` deployment](./14-migration-guide.md). `DATABASE_SYNCHRONIZE=true` is unsupported on PostgreSQL for production.
 
 ## 12.7 Docker Issues
 
@@ -945,18 +1176,26 @@ npm run migration:run:main
 
 **Solutions:**
 
+By default the entrypoint starts as root, re-owns `/app/data` to the `openwa` user (uid/gid 997) on
+every start, and then drops privileges with `gosu`. Keep that path intact:
+
+- Keep the `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `KILL`, `SETGID` and `SETUID` entries under `cap_add` in
+  `docker-compose.yml`; the entrypoint needs ownership and privilege-drop permissions, and
+  `dumb-init` needs `KILL` to forward shutdown signals to the process after its UID changes.
+- Setting `user:` on `openwa-api` (or `--user` on `docker run`) starts the entrypoint as that uid
+  instead. It then skips the `chown` and the drop, so `/app/data` must already be writable by that
+  uid: `user: "997:997"` works on a volume a root start has already re-owned, and the `cap_add` list
+  can then be removed. Any other uid needs the volume chowned to it first. When the volume is not
+  writable the container stops with `FATAL: /app/data is not writable by uid ...`.
+- On the default root start, a `chown` of the host directory is not a fix: the entrypoint re-owns
+  `/app/data` at the next start. A non-root start (above) is the case that needs one.
+- If the error persists on a bind mount, the host filesystem is refusing the `chown` (NFS with
+  `root_squash`, some rootless or SMB setups) or SELinux is denying access (add `:z` to the mount).
+  Use the named volume from the shipped `docker-compose.yml` instead.
+
 ```bash
-# Check current permissions
-ls -la ./data/
-
-# Fix ownership (use your user ID)
-sudo chown -R $(id -u):$(id -g) ./data/
-
-# Or use Docker's user mapping
-# docker-compose.yml
-services:
-  openwa-api:
-    user: "1000:1000"  # Your UID:GID
+# Look for the failing chown in the startup output
+docker compose logs openwa-api | head -20
 ```
 
 ### Issue: Container Networking
@@ -989,7 +1228,8 @@ networks:
 
 ```bash
 # Test connectivity from container
-docker exec openwa-api ping postgres
+docker exec openwa-api getent hosts postgres            # DNS: does the name resolve?
+docker exec openwa-api pg_isready -h postgres -p 5432    # TCP + PostgreSQL accepting connections
 docker exec openwa-api curl http://host.docker.internal:8080
 ```
 
@@ -1015,6 +1255,24 @@ docker exec openwa-api curl http://host.docker.internal:8080
 > - 8GB RAM: 15-20 sessions
 >
 > With `ENGINE_TYPE=baileys` (browser-free), RAM per session is significantly lower — you can run more sessions on the same hardware. Exact figures depend on message volume and group membership.
+>
+> A media burst adds roughly `INBOUND_MEDIA_CONCURRENCY` x `MEDIA_DOWNLOAD_MAX_BYTES` per session on top of that (4 x 50 MiB by default; about a third more on whatsapp-web.js, which holds each payload as base64). On whatsapp-web.js Chromium also holds each file being downloaded, encrypted and decrypted, and a download starts whenever the size the sender declares is within `MEDIA_DOWNLOAD_MAX_BYTES`, so a sender that understates it can make one download exceed that cap. Set `INBOUND_MEDIA_GLOBAL_CONCURRENCY` to cap concurrent inbound media downloads across all sessions. On whatsapp-web.js a download that times out keeps its slot until Puppeteer fails the call (`PUPPETEER_PROTOCOL_TIMEOUT_MS`, 180 s by default), since it cannot be aborted.
+>
+> On PostgreSQL media messages can also wait in memory after the download: received media, and the echo of media this account sends, which is downloaded the same way (every media send on whatsapp-web.js; on Baileys, media sent from a linked phone). Each payload is held as base64, about 4/3 of the file size (roughly 67 MiB for a 50 MiB file), until its message row is stored. A session downloads media only into one of `INBOUND_MEDIA_CONCURRENCY` slots, and a slot stays taken until the row is stored and the engine has let go of the payload, so one session holds at most `INBOUND_MEDIA_CONCURRENCY` x 4 x ceil(`MEDIA_DOWNLOAD_MAX_BYTES` / 3) bytes of payload: 279,620,272 bytes (about 267 MiB) at the defaults, 69,905,068 with `INBOUND_MEDIA_CONCURRENCY=1`. That holds however slow the inserts are, including one that never finishes, and across a reconnect of the session; size a process for sessions x that bound. It does not count a Baileys download in progress (the decoded file, up to `MEDIA_DOWNLOAD_MAX_BYTES`, while it is encoded), the copies the PostgreSQL driver makes while it writes a row, or anything that keeps a message after its row is stored (webhook deliveries, archiving, plugins). Each payload takes a whole slot whatever its size, and a chat's messages are stored in arrival order, so a text waits for media that arrived before it in its chat while other chats keep flowing. When no slot is freed for 2 x `MEDIA_DOWNLOAD_TIMEOUT_MS` (60 s by default), media still waiting for one arrives with the omitted marker, so a stalled database costs media rather than memory. A chat message the sender deletes for everyone before its row is stored is stored cleared on both engines, and media it had not downloaded yet is not downloaded. A delete, edit or reaction from another chat, an edit from someone other than the sender, and a delete from the other side of a one-to-one chat are ignored, as they are for a stored message (a reaction to a message the account sent to a broadcast list or posted as a status is excepted, since its recipients react from their own chats); a delete inside a group is checked for its chat only, since an admin may delete anyone's message. On SQLite this now also holds while the message is still being downloaded, where Baileys used to pass such a change on. On Baileys, a status post deleted meanwhile, or a message a history sync reports deleted, is dropped instead, as before. On whatsapp-web.js a held message also looks up its sender's contact and its quoted message before it is emitted, and its chat's later messages wait for it: each lookup waits at most `MEDIA_DOWNLOAD_TIMEOUT_MS`, and the message goes out without what did not arrive. On a local PostgreSQL 16 where a 50 MiB row took about 0.4 s to insert, 24 files of 50 MiB arriving at 8 per second held at most 4 payloads (267 MiB; without the slots 17 waited, 1.1 GiB), and a table lock that stalled every insert for 30 s held 4 for the whole stall (without the slots all 24, 1.6 GiB) and shed none, since the 60 s wait had not run out. On SQLite rows are written as messages arrive and none wait, except behind a slow `message:received` or `message:sent` plugin hook, or with `RESOLVE_LID_TO_PHONE=true` a slow phone lookup for a privacy-id sender: there those hold payloads for as long as they run, with no limit on how many, and the chat's later messages wait behind them. On PostgreSQL they run inside the slots: a slot is held until its message's commit settles, which covers the hook chain, the phone lookup, the insert and, on whatsapp-web.js, a timed-out page download (until `PUPPETEER_PROTOCOL_TIMEOUT_MS` fails it). A plugin loaded from the plugins directory delays a slot by at most 5 s per hook (`SANDBOX_HOOK_TIMEOUT_MS`), but a hook registered in-process has no time limit: one that never settles keeps its chat's later messages from being stored, and holds every slot they or its own message took, until the process restarts, since a reconnect does not free them. Once `INBOUND_MEDIA_CONCURRENCY` slots are stuck that way, every media message of the session arrives with the omitted marker. The [high memory runbook](./11-operational-runbooks.md#runbook-high-memory-usage) shows how to find the holder.
+>
+> - `MEDIA_DOWNLOAD_MAX_BYTES` caps each waiting payload (larger media arrive as the omitted marker), and with it the bound. It also caps outbound media sends.
+> - `MEDIA_DOWNLOAD_ENABLED=false` holds no payload at all; every media message arrives as the omitted marker.
+> - Lowering `INBOUND_MEDIA_CONCURRENCY` lowers the bound on PostgreSQL, at the cost of fewer media downloaded and stored at once. On SQLite it only limits downloads in progress.
+> - Archiving (`CHAT_MEDIA_ARCHIVE_ENABLED=true`) adds to it on either database, in both `MESSAGE_INLINE_MEDIA` modes. Each message is archived after its row is written, with no limit on how many archive at once, and each one holds its base64 payload and the decoded bytes until the upload finishes. `MESSAGE_INLINE_MEDIA=archive` also holds the read-back file, the re-read metadata and its snapshot, and saves no memory, since the row is still written with the inline copy first. Only media up to `CHAT_MEDIA_ARCHIVE_MAX_BYTES` (25 MiB by default) are archived; larger media add nothing, so lowering it bounds the cost per message, not how many archive at once. How many overlap grows with storage latency (such as S3) and with how fast downloads complete. On SQLite, 40 files of 20 MiB at 10 per second peaked at about 0.55 GiB RSS without archiving, and at 1.4 GiB with archiving in the default inline mode when each upload took 2 s (17 at once). In a burst of 24 files of 50 MiB at 8 per second, with `CHAT_MEDIA_ARCHIVE_MAX_BYTES` raised so the 50 MiB files were archived to local disk storage, peak RSS on SQLite rose from about 1 GiB to 2.1 to 3 GiB in inline mode and to 4.2 to 5.1 GiB in archive mode (up to 20 archives at once).
+>
+> With the queue off (`QUEUE_ENABLED=false`), every webhook delivery that is running, parked or waiting out a retry backoff also holds its event's payload, including inline media up to `WEBHOOK_MEDIA_INLINE_MAX_BYTES` (1 MiB by default) as base64. Up to `WEBHOOK_DISPATCH_CONCURRENCY` + `WEBHOOK_DISPATCH_MAX_QUEUED` deliveries (1016 by default) wait this way, so receivers that stop answering during a media burst can hold about 1.3 GiB per process at the defaults. Lower either dispatch setting or `WEBHOOK_MEDIA_INLINE_MAX_BYTES`, or enable the queue, which keeps those payloads in Redis instead.
+
+**Q: Can I run 10+ sessions in one container? Will they get banned for sharing one IP?**
+
+> A: Yes: there is no session limit by default (`MAX_CONCURRENT_SESSIONS` sets one); the practical ceiling is RAM/CPU (see the table above). Sharing one IP across sessions is not itself a ban trigger: carrier NAT already puts hundreds of ordinary users on a single IP, so WhatsApp cannot treat a shared IP as a violation. Ten sessions on one residential IP behave like ten phones on one home WiFi. What actually matters:
+>
+> - **IP reputation** — cheap datacenter IPs are flagged more aggressively than residential ones. A residential proxy (per-session, via the proxy settings) can help; it is not a license to spam.
+> - **Sending behavior** — bans follow message patterns (volume, identical templates, cold reachouts), not session count. See "How to avoid getting banned?" below.
 
 **Q: Can I use WhatsApp Business account?**
 
@@ -1080,6 +1338,11 @@ server {
     listen 443 ssl;
     server_name api.example.com;
 
+    # nginx refuses a request body over 1m by default, below the 25mb OpenWA itself accepts
+    # (BODY_SIZE_LIMIT), so base64 media sends would answer 413 before reaching OpenWA.
+    # Keep this at or above BODY_SIZE_LIMIT.
+    client_max_body_size 25m;
+
     location / {
         proxy_pass http://localhost:2785;
         proxy_http_version 1.1;
@@ -1098,6 +1361,16 @@ server {
     }
 }
 ```
+
+**Then set `TRUSTED_PROXIES` in your `.env`.** With it empty, OpenWA correctly refuses to trust the
+spoofable `X-Forwarded-For` header, which has a side effect worth knowing: every client appears as
+the proxy's address, so ALL traffic shares one rate-limit bucket (a single abuser rate-limits
+everyone) and per-key IP allowlists (`allowedIps`) evaluate the proxy for every caller. Name the
+proxy to key limits per client. For the bundled compose (whose published port traverses Docker's
+NAT, so the container sees the bridge gateway, not 127.0.0.1) use the compose network subnet, e.g.
+`TRUSTED_PROXIES=172.18.0.0/16`; a bare-metal nginx talking to the process directly can name
+`127.0.0.1`. OpenWA logs a one-time warning at the first proxied request when the header is present
+but the list is empty.
 
 **Q: How to run behind Traefik / Coolify?**
 
@@ -1143,13 +1416,34 @@ Remember OpenWA is **single-port**: the Dashboard, REST API, and Socket.IO all s
 **Q: How to backup sessions automatically?**
 
 ```bash
-# Add to crontab, for example: 0 */6 * * * cd /path/to/openwa && ./scripts/backup.sh
-BACKUP_DIR=/backups/openwa ./scripts/backup.sh
+# Production compose, whose data is the openwa-data volume: back up inside the container, then copy
+# the archive off the volume. In crontab, for example every six hours:
+# 0 */6 * * * docker exec -e BACKUP_DIR=/app/data/backups -e TMPDIR=/app/data/backups openwa-api ./scripts/backup.sh && docker cp openwa-api:/app/data/backups/. /backups/openwa/ && docker exec openwa-api sh -c 'rm -f /app/data/backups/openwa-backup-*.tar.gz'
+docker exec -e BACKUP_DIR=/app/data/backups -e TMPDIR=/app/data/backups openwa-api ./scripts/backup.sh
+docker cp openwa-api:/app/data/backups/. /backups/openwa/ \
+  && docker exec openwa-api sh -c 'rm -f /app/data/backups/openwa-backup-*.tar.gz'
+
+# Bare metal or docker-compose.dev.yml, whose data is ./data in the checkout:
+# 0 */6 * * * cd /path/to/openwa && BACKUP_DIR=/backups/openwa ./scripts/backup.sh
 ```
+
+Once an archive is copied off, the last command removes it from `/app/data/backups`, so archives do not pile up on the volume.
 
 The shipped script also covers `main.sqlite`, the selected data store, whatsapp-web.js state,
 `BAILEYS_AUTH_DIR` (default `./data/baileys`), media, plugin packages/state, and generated secrets. Apply
 retention/encryption to completed archives externally; see the [backup and restore runbooks](./11-operational-runbooks.md#runbook-database-backup).
+
+**Q: I lost the admin API key. How do I get back in?**
+
+> A: Keys are stored hashed, so the database cannot give it back. Try the key in `data/.api-key` (or `BOOTSTRAP_KEY_FILE`), or the `API_MASTER_KEY` value set when the key table was last seeded, which still works while that key is an active, unscoped ADMIN key. Failing that, use another unscoped ADMIN key to mint a replacement. With neither, stop the instance and write a new key's hash into the lost key's row in the main database, which keeps every other key working. The steps are in [Recovering a lost admin key](./04-security-design.md#recovering-a-lost-admin-key).
+
+**Q: The key from `data/.api-key` is refused with `Invalid API key`. What is wrong?**
+
+> A: A `401 Invalid API key` means the key's hash is not in the key table this instance reads. The usual
+> causes, in order: the pasted string is not the stored key (the file has no trailing newline, so a shell
+> prompt follows the key on the same line; copy only the key); another instance or database answers
+> than the one that generated it; or `API_KEY_PEPPER` was set or changed after the key was created, which
+> invalidates every key (see [Security](./04-security-design.md)).
 
 ### Webhook Questions
 
@@ -1161,6 +1455,7 @@ available_events:
   - message.received # New incoming message
   - message.sent # Message sent
   - message.ack # Message status update (sent, delivered, read)
+  - message.receipt # One recipient received/read/played a group or status message you sent (Baileys only; not included in "*", must be listed explicitly)
   - message.failed # Receipt resolved to failed
   - message.revoked # Message deleted
   - message.reaction # Reaction added, changed, or removed
@@ -1176,7 +1471,8 @@ available_events:
   - session.disconnected # Session disconnected
   - session.reconnect_loop # Every 5th consecutive reconnect attempt (payload: sessionId, attempts, nextDelayMs)
   - session.restriction # WhatsApp restricted the account, or lifted it (payload: sessionId, active, kind, code, expiresAt)
-  - presence.update # A subscribed chat's presence changed (payload: sessionId, chatId, participants, groupOnlineCount)
+  - presence.update # A subscribed chat's presence changed (Baileys only; the subscribe route answers 501 on whatsapp-web.js; payload: sessionId, chatId, participants, groupOnlineCount)
+  - event.response # A guest answered a WhatsApp event invitation (Baileys only; payload: sessionId, eventMessageId, chatId, responderId, response, responseMessageId, timestamp)
   - call.accepted # A ringing call was answered (Baileys only; payload: sessionId, callId, from, outcome, isVideo, isGroup, timestamp)
   - call.rejected # A ringing call was declined (Baileys only)
   - call.missed # A ringing call was never picked up (Baileys only)
@@ -1188,7 +1484,7 @@ available_events:
   - group.join_request # Someone asked to join a group this session administers
 
   # Calls
-  - call.received # Incoming call ringing (payload: callId, from, isVideo, isGroup, timestamp)
+  - call.received # Incoming call ringing (not reliable on whatsapp-web.js; payload: callId, from, isVideo, isGroup, timestamp)
 ```
 
 **Q: Webhook payload format?**
@@ -1197,44 +1493,48 @@ available_events:
 {
   "event": "message.received",
   "timestamp": "2026-02-02T10:30:00Z",
-  "sessionId": "sess_abc123",
-  "idempotencyKey": "msg_sess_abc123_ABC123_DEF456_f1e2d3c4-b5a6-7890-1234-567890abcdef",
+  "sessionId": "3f2a9c1e-7b4d-4e8a-9c2f-1d5e6a7b8c9d",
+  "idempotencyKey": "msg_3f2a9c1e-7b4d-4e8a-9c2f-1d5e6a7b8c9d_ABC123_DEF456_f1e2d3c4-b5a6-7890-1234-567890abcdef",
   "deliveryId": "dlv_550e8400-e29b-41d4-a716-446655440000",
   "data": {
     "id": "ABC123_DEF456",
     "from": "628123456789@c.us",
     "to": "628987654321@c.us",
+    "chatId": "628123456789@c.us",
     "body": "Hello!",
     "type": "text",
     "timestamp": 1706868600,
+    "fromMe": false,
     "isGroup": false,
-    "author": null,
-    "hasMedia": false,
-    "media": null
+    "kind": "individual"
   }
 }
 ```
+
+A media message also carries `media: { mimetype, filename?, data?, omitted?, sizeBytes? }`, and a group message carries `author` (the sender, since `from` is the group); neither is present on a 1:1 text message like this one. There is no `hasMedia` field: test for `media`.
 
 ## 12.9 Error Code Reference
 
 ### HTTP Error Codes
 
-| Code | Meaning             | Common Cause             | Solution                  |
-| ---- | ------------------- | ------------------------ | ------------------------- |
-| 400  | Bad Request         | Invalid parameters       | Check request body/params |
-| 401  | Unauthorized        | Missing/invalid API key  | Add X-API-Key header      |
-| 403  | Forbidden           | Insufficient permissions | Check API key permissions |
-| 404  | Not Found           | Invalid session/endpoint | Verify session exists     |
-| 409  | Conflict            | Session already exists   | Use different session ID  |
-| 413  | Payload Too Large   | File too large           | Reduce file size          |
-| 429  | Too Many Requests   | Rate limited             | Reduce request rate       |
-| 500  | Internal Error      | Server error             | Check logs                |
-| 503  | Service Unavailable | Session disconnected     | Reconnect session         |
+| Code | Meaning             | Common Cause                                                                                                                  | Solution                                                                                         |
+| ---- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| 400  | Bad Request         | Invalid parameters, or the session is not started                                                                             | Check request body/params; start the session                                                     |
+| 401  | Unauthorized        | Missing/invalid API key                                                                                                       | Add X-API-Key header                                                                             |
+| 403  | Forbidden           | Insufficient permissions                                                                                                      | Check API key permissions                                                                        |
+| 404  | Not Found           | Invalid session/endpoint                                                                                                      | Verify session exists                                                                            |
+| 409  | Conflict            | Session name already exists, the session is not ready (retryable), or an idempotent send is in progress or of unknown outcome | Use a different session name, wait for `ready`, or follow the `code` (docs/06, idempotent sends) |
+| 422  | Unprocessable       | An `Idempotency-Key` reused with another route or body                                                                        | Use a new key for a different send                                                               |
+| 413  | Payload Too Large   | File too large                                                                                                                | Reduce file size                                                                                 |
+| 429  | Too Many Requests   | Rate limited                                                                                                                  | Reduce request rate                                                                              |
+| 500  | Internal Error      | Server error                                                                                                                  | Check logs                                                                                       |
+| 503  | Service Unavailable | The engine transport died during a read, or a media fetch through the session proxy failed                                    | Retry; restart the session if it persists                                                        |
 
 ### Error Body Shape
 
 There are no machine-readable WhatsApp error codes. Errors use the NestJS default shape, so match on
-`statusCode` (above) and read `message` for the human-readable cause:
+`statusCode` (above) and read `message` for the human-readable cause. A few refusals also carry a stable
+`code` (see the error response section of docs/06):
 
 ```json
 {
@@ -1257,7 +1557,7 @@ There are no machine-readable WhatsApp error codes. Errors use the NestJS defaul
 
 When creating GitHub issue, include:
 
-```markdown
+````markdown
 ## Environment
 
 - OpenWA version: x.x.x
@@ -1285,25 +1585,23 @@ When creating GitHub issue, include:
 [What actually happens]
 
 ## Logs
+
 ```
-
 [Paste relevant logs here]
-
-````
+```
 
 ## Configuration
+
 ```yaml
 # Sanitized docker-compose.yml or .env
-````
-
 ```
+````
 
 ### Community Resources
 
 - **GitHub Issues**: [github.com/rmyndharis/OpenWA/issues](https://github.com/rmyndharis/OpenWA/issues)
 - **Discussions**: [github.com/rmyndharis/OpenWA/discussions](https://github.com/rmyndharis/OpenWA/discussions)
-- **Discord**: [discord.gg/openwa](https://discord.gg/openwa) (if available)
-- **Stack Overflow**: Tag with `openwa`
+
 ---
 
 <div align="center">
@@ -1311,4 +1609,3 @@ When creating GitHub issue, include:
 [← 11 - Operational Runbooks](./11-operational-runbooks.md) · [Documentation Index](./README.md) · [Next: 13 - Horizontal Scaling Guide →](./13-horizontal-scaling.md)
 
 </div>
-```

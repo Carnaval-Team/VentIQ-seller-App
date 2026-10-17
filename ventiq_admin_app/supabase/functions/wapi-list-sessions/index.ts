@@ -4,7 +4,11 @@
 import { handleOptions, okResponse, errorResponse } from "../_shared/cors.ts";
 import { getAuthContext, assertStoreAccess } from "../_shared/auth.ts";
 import { wapi } from "../_shared/wapi_client.ts";
-import { normalizeWapiStatus } from "../_shared/status.ts";
+import { normalizeWapiStatus, rawStatusKey } from "../_shared/status.ts";
+import { updateSessionState } from "../_shared/session_store.ts";
+
+/** El gateway es UNA instancia: no le lanzamos N getSession en paralelo. */
+const LOTE_SINCRONIZACION = 4;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return handleOptions();
@@ -25,18 +29,42 @@ Deno.serve(async (req) => {
     .eq("id_tienda", idTienda)
     .order("created_at", { ascending: false });
 
-  // Sincronizar status con WAPI (best-effort)
+  // Sincronizar status con WAPI (best-effort).
+  // En lotes: antes era un `Promise.all` sobre TODAS las sesiones, es decir N
+  // peticiones simultáneas contra la única instancia de Puppeteer del gateway.
   if (localSesiones && localSesiones.length) {
-    await Promise.all(localSesiones.map(async (s) => {
-      const r = await wapi.getSession(s.wapi_session_id);
-      if (r.success && r.data) {
-        await ctx.admin.from("app_wapi_sesion").update({
+    for (let i = 0; i < localSesiones.length; i += LOTE_SINCRONIZACION) {
+      const lote = localSesiones.slice(i, i + LOTE_SINCRONIZACION);
+      await Promise.all(lote.map(async (s) => {
+        const r = await wapi.getSession(s.wapi_session_id);
+        if (!r.success || !r.data) {
+          // Si el sondeo falla NO se inventa un estado: se deja el que había
+          // pero se registra, porque un fallo del gateway no es lo mismo que
+          // una sesión caída.
+          console.warn(
+            `[wapi-list-sessions] no se pudo leer la sesión ${s.id} ` +
+              `(${r.error?.code}): ${r.error?.message}`,
+          );
+          return;
+        }
+        const raw = rawStatusKey(r.data.status);
+        const guardado = await updateSessionState(ctx.admin, s.id, {
           status: normalizeWapiStatus(r.data.status, s.status),
-          phone_number: r.data.phoneNumber ?? s.phone_number,
-          last_status_at: new Date().toISOString(),
-        }).eq("id", s.id);
-      }
-    }));
+          rawStatus: raw || null,
+          ...(r.data.phoneNumber ? { phoneNumber: r.data.phoneNumber } : {}),
+          // Volvió a estar sana: se limpia la contabilidad de recuperación para
+          // que el watchdog no arrastre intentos viejos.
+          ...(normalizeWapiStatus(r.data.status, s.status) === "CONNECTED"
+            ? { resetRecovery: true, errorCode: null, errorMessage: null }
+            : {}),
+        });
+        if (!guardado.ok) {
+          console.error(
+            `[wapi-list-sessions] no se pudo guardar el estado de ${s.id}: ${guardado.error}`,
+          );
+        }
+      }));
+    }
   }
 
   // Re-read tras sync

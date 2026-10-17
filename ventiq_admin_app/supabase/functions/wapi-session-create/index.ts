@@ -1,10 +1,35 @@
 // POST /functions/v1/wapi-session-create
 // Body: { id_tienda: number, nombre: string }
-// Crea una sesión en la API WAPI y la registra en app_wapi_sesion.
-import { corsHeaders, handleOptions, okResponse, errorResponse } from "../_shared/cors.ts";
+// Crea una sesión en la API WAPI (OpenWA) y la registra en app_wapi_sesion.
+//
+// CAMBIOS CLAVE (ver docs/AUDITORIA_WAPI_EDGE_FUNCTIONS.md)
+//   1. Se envía el `config` de reconexión por sesión, que antes no se mandaba
+//      nunca: `{ reconnectBaseDelay, maxReconnectAttempts }`. Es la única
+//      palanca oficial de reconexión, y sin ella el gateway usa sus defaults
+//      (reintentos ilimitados con el delay estacionado en 5 minutos).
+//   2. El webhook se registra por la ruta DOCUMENTADA,
+//      `POST /api/sessions/:id/webhooks`, y **con `secret`**:
+//        · antes se metía en el body de `POST /api/sessions` (no documentado),
+//          que sólo admite `message.received`/`message.sent` → nunca llegaban
+//          los eventos `session.*` y la BD no se enteraba de que la sesión se
+//          caía;
+//        · y no se mandaba secret, así que las firmas contra
+//          WAPI_WEBHOOK_SECRET no podían validar (401 en cada entrega).
+//      Ahora se declaran `session.status`, `session.disconnected`,
+//      `session.reconnect_loop`, `session.restriction`, `message.ack`, ...
+//   3. Se persiste el status CRUDO (`raw_status`) para poder diagnosticar
+//      después (p. ej. `action_required` vs `qr_ready`).
+import { handleOptions, okResponse, errorResponse } from "../_shared/cors.ts";
 import { getAuthContext, assertStoreAccess } from "../_shared/auth.ts";
-import { wapi } from "../_shared/wapi_client.ts";
+import { wapi, WAPI_WEBHOOK_EVENTS } from "../_shared/wapi_client.ts";
 import { normalizeWapiStatus } from "../_shared/status.ts";
+import { updateSessionState } from "../_shared/session_store.ts";
+
+/** Defaults documentados por OpenWA si no se configura nada. */
+const RECONNECT_BASE_DELAY_MS =
+  Number(Deno.env.get("WAPI_RECONNECT_BASE_DELAY_MS") ?? 5000);
+const MAX_RECONNECT_ATTEMPTS =
+  Number(Deno.env.get("WAPI_MAX_RECONNECT_ATTEMPTS") ?? 10);
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return handleOptions();
@@ -41,30 +66,37 @@ Deno.serve(async (req) => {
       .slice(0, 32) || "bot";
   const wapiName = `t${idTienda}-${slug}-${Date.now().toString(36)}`;
 
-  // Webhook apuntando a nuestra función receptora.
-  // Si SUPABASE_URL no está set o no es https, omitimos el webhook
-  // (WAPI rechaza URLs no-HTTPS o no alcanzables con HTTP 400).
   const supaUrl = (Deno.env.get("SUPABASE_URL") ?? "").replace(/\/$/, "");
   const webhookUrl =
     supaUrl.startsWith("https://")
       ? `${supaUrl}/functions/v1/wapi-webhook?tienda=${idTienda}`
       : undefined;
+  const webhookSecret = Deno.env.get("WAPI_WEBHOOK_SECRET") ?? "";
 
   console.log(
-    `[wapi-session-create] tienda=${idTienda} name=${wapiName} webhook=${webhookUrl ?? "(omitted)"}`,
+    `[wapi-session-create] tienda=${idTienda} name=${wapiName} ` +
+      `webhook=${webhookUrl ?? "(omitted)"} secret=${webhookSecret ? "sí" : "NO"} ` +
+      `reconnect=[base=${RECONNECT_BASE_DELAY_MS}ms max=${MAX_RECONNECT_ATTEMPTS}]`,
   );
 
-  // Intento 1: con webhook
-  let res = await wapi.createSession(wapiName, webhookUrl);
+  // Crear SIN webhook inline: el webhook se registra aparte por la ruta
+  // documentada (y con secret). Así no dependemos del body no documentado ni
+  // de su fallback "crear otra vez sin webhook".
+  const config = {
+    ...(Number.isFinite(RECONNECT_BASE_DELAY_MS) && RECONNECT_BASE_DELAY_MS > 0
+      ? { reconnectBaseDelay: RECONNECT_BASE_DELAY_MS }
+      : {}),
+    ...(Number.isFinite(MAX_RECONNECT_ATTEMPTS) && MAX_RECONNECT_ATTEMPTS >= 0
+      ? { maxReconnectAttempts: MAX_RECONNECT_ATTEMPTS }
+      : {}),
+  };
 
-  // Intento 2: si falló y se mandó webhook, reintentar sin él
-  // (el webhook puede registrarse después vía /api/sessions/:id/webhooks)
-  if ((!res.success || !res.data) && webhookUrl) {
-    console.warn(
-      `[wapi-session-create] retry sin webhook (causa: ${res.error?.code} ${res.error?.message})`,
-    );
-    res = await wapi.createSession(wapiName);
-  }
+  const res = await wapi.createSession(
+    wapiName,
+    undefined,
+    undefined,
+    Object.keys(config).length > 0 ? config : undefined,
+  );
 
   if (!res.success || !res.data) {
     return errorResponse(
@@ -86,9 +118,32 @@ Deno.serve(async (req) => {
   }
   const dtoLatest = startRes.success && startRes.data ? startRes.data : dto;
 
+  // Registro del webhook por la ruta documentada. Best-effort: si falla, la
+  // sesión sigue siendo usable (la app sondea el estado), pero se avisa fuerte
+  // porque sin eventos `session.*` una caída no se detecta sola.
+  let webhookOk = false;
+  let webhookError: string | null = null;
+  if (webhookUrl) {
+    const wh = await wapi.registerWebhook(dto.id, {
+      url: webhookUrl,
+      events: [...WAPI_WEBHOOK_EVENTS],
+      ...(webhookSecret ? { secret: webhookSecret } : {}),
+    });
+    webhookOk = wh.success;
+    if (!wh.success) {
+      webhookError = `${wh.error?.code}: ${wh.error?.message}`;
+      console.error(
+        `[wapi-session-create] NO se pudo registrar el webhook (${webhookError}). ` +
+          `La sesión quedará sin eventos session.*: una caída no se detectará ` +
+          `sola. Se puede reintentar con wapi-session-action action=register-webhook.`,
+      );
+    }
+  }
+
   const status = normalizeWapiStatus(dtoLatest.status, "INITIALIZING");
   console.log(
-    `[wapi-session-create] sesión creada wapi_id=${dto.id} status_raw=${dtoLatest.status} status_norm=${status}`,
+    `[wapi-session-create] sesión creada wapi_id=${dto.id} ` +
+      `status_raw=${dtoLatest.status} status_norm=${status} webhook_ok=${webhookOk}`,
   );
 
   // Insertar en DB (service_role para evitar problemas si RLS bloquea)
@@ -111,10 +166,23 @@ Deno.serve(async (req) => {
     return errorResponse(`Error guardando sesión: ${insErr.message}`, 500);
   }
 
+  // El status crudo va aparte: si la migración de recuperación aún no está
+  // aplicada, `updateSessionState` degrada en vez de romper.
+  const patch = await updateSessionState(ctx.admin, inserted.id, {
+    rawStatus: dtoLatest.status ? String(dtoLatest.status) : null,
+  });
+  if (!patch.ok) {
+    console.warn(`[wapi-session-create] no se pudo guardar raw_status: ${patch.error}`);
+  }
+
   return okResponse({
     id_sesion: inserted.id,
     wapi_session_id: inserted.wapi_session_id,
     status: inserted.status,
     nombre: inserted.nombre,
+    webhook_registrado: webhookOk,
+    webhook_error: webhookError,
+    reconexion_configurada: config,
+    requiere_qr: status !== "CONNECTED",
   });
 });

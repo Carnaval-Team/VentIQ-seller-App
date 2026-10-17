@@ -1,0 +1,195 @@
+# 31 — Session Lifecycle: Invariant Catalog
+
+> **Status:** living design note. This document maps the race windows the session lifecycle
+> defends against to the code that defends them and the spec that pins each one. It is the
+> companion to `docs/03` §_Engine Lifecycle State Machine_, which describes the WHAT; this
+> describes the WHY-NOT-THE-OBVIOUS-THING. Anchors reference **spec files by name** (stable) —
+> not line numbers (they rot).
+
+The lifecycle is split across three files with one rule each:
+
+| File                                                                                | Owns                                                                                                  |
+| ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `session-engine-lifecycle.service.ts`                                               | Engine creation/initialization, status transitions, the reconnect loop (`executeReconnect`), teardown |
+| `session-engine-controls.ts`                                                        | The seven control verbs (start/stop/logout/forceKill/delete/shutdown/stopOrphanEngines)               |
+| `session-ownership.service.ts` + `src/modules/takeover/session-takeover.service.ts` | Cross-node leases, adoption, orphan reaping                                                           |
+
+---
+
+## 31.1 The invariant catalog
+
+Each entry: the interleaving that would break a naive implementation → where it is defended →
+which spec pins it. **If you change one of these files, re-read the rows that cite it.**
+
+### INV-1 — Double-start cannot orphan the first engine
+
+**Interleaving:** two `POST /start` for the same session race; both pass the "not already
+starting" read; two engines come up; one is leaked forever (registry holds the second).
+**Defense:** `initializingSessions` is reserved SYNCHRONOUSLY (before any `await`) in
+`session-engine-controls.ts` — the second request observes the reservation and fails fast.
+**Pinned by:** `session.service.spec.ts` (the maxConcurrent/double-start cases, incl. the concurrent-start
+claim-holding verbs at
+`'%s() keeps the claim when a concurrent start still holds the session here'`).
+**The naive fix that is wrong:** checking session.status instead — status is written to the DB
+and read back with an await in between; the reservation map is the only synchronous view.
+
+### INV-2 — INITIALIZING is persisted before `initialize()`, and retirement can await that write
+
+**Interleaving:** a stop/logout lands while `initialize()` is in flight; the control sees status
+`READY` (stale) and skips teardown of an engine that is actually mid-boot.
+**Defense:** the INITIALIZING row is written and its promise tracked
+(`session-engine-lifecycle.service.ts`, `initializeEngine`); a retiring control awaits the
+pending write before deciding what it is retiring.
+**Pinned by:** `session.service.spec.ts` (the stop/delete-during-start teardown cases).
+
+### INV-3 — Ownership is re-validated by object identity, not by session id
+
+**Interleaving:** control A starts engine #1; engine #1 fails and is destroyed; control B (a
+retry) starts engine #2; a stale callback from #1 arrives and mutates registry state owned by #2.
+**Defense:** `EngineRegistry` keys by session id but validates liveness by object identity
+(`isLive` / `deleteIfLive`) — a superseded engine's late callback cannot act.
+**Pinned by:** `engine-registry.service.spec.ts` (isLive / deleteIfLive cases); the registry
+is the single most repeated invariant in the module.
+
+### INV-4 — Init timeout evicts and 504s; init rejection propagates as FAILED
+
+**Interleaving:** whatsapp-web.js calls `page.goto(..., {timeout: 0})` — a hung browser never
+rejects, and neither does a navigation that never completes because WhatsApp Web is unreachable, so
+a plain `await` hangs the start forever. The engine's own `authTimeoutMs` poll does not cover that
+case: whatsapp-web.js only starts it in `inject()`, after the page has loaded.
+**Defense:** `Promise.race` deadline in `initializeEngine`; on timeout the engine is evicted +
+force-destroyed + status DISCONNECTED + 504 to the caller. The eviction, the recorded error and the
+DISCONNECTED write apply only while that engine is still the live one: a stale deadline (a stop +
+start replaced it mid-init) force-destroys its own engine and 504s, and leaves the replacement alone.
+A REAL rejection is NOT treated as a timeout: it propagates so `start()` records FAILED with the
+reason.
+**Pinned by:** `session.service.spec.ts` (start failure-path cases; the timeout/rejection
+split lives in `session.service.spec.ts`'s init-timeout describes).
+**Do not "simplify" the two paths into one** — the distinction is why a bad proxy config returns
+FAILED + reason while an init that never completes returns 504 + eviction.
+
+### INV-5 — Delete racing a start re-purges auth directories after init resolves
+
+**Interleaving:** delete runs (purges dirs, removes the session row and its child rows in one
+transaction); the in-flight start's `initialize()` resolves and re-creates the auth dir; a phantom
+session lingers on disk.
+**Defense:** the post-init guards in `start()` (`session-engine-controls.ts`) and `executeReconnect`
+(`session-engine-lifecycle.service.ts`) call `isSessionRetired`, which treats a stop mark or a missing
+row as retired (delete clears its mark before a slow init resolves), then tear down the
+just-registered engine and re-purge with `purgeAuthDirsIfDeleted`.
+**Pinned by:** `session.service.spec.ts` ('re-purges the auth dirs when a start completes after its
+row was deleted (init re-created them)' for `start()`, and 'tears down an engine created when a
+delete lands during init (session row gone, mark cleared)' for `executeReconnect`). The opposite half,
+that a stop retirement does not purge, is pinned by 'tears down the just-initialized engine if a
+stop/delete lands during start() (no resurrection to READY)'.
+
+### INV-6 — Lease loss tears down local engines only; it never writes session rows
+
+**Interleaving:** node A holds session X's lease; node B adopts it after A's lease lapses; a
+stale in-flight write from A would clobber B's status.
+**Defense:** on lease loss, `stopOrphanEngines` destroys local engines; the session row is the
+owning node's alone (`session.service.ts` boot path). The one exception is the takeover sweep's
+`markLapsedDisconnected`, which marks a row disconnected only under the predicate it read (same
+`nodeId`, same status, lease expired more than two TTLs ago, and for a `qr_ready` row still no
+phone), so a row B has claimed, or a pairing that completed meanwhile, matches nothing. A `qr_ready`
+row with a phone is never marked: the adoption sweep would take the resulting disconnected row over.
+**Pinned by:** `src/modules/takeover/session-takeover.service.spec.ts` +
+`session-ownership.service.spec.ts` + `session-ownership-status-fence.spec.ts` + the real-database
+predicate spec for `markLapsedDisconnected` in `src/modules/session/session.service.spec.ts`.
+
+### INV-7 — FAILED sessions are deliberately NOT adopted by takeover
+
+**Interleaving:** a session that failed on node A (real engine error) would be adopted by node B
+and quietly retried, hiding the failure from the operator.
+**Defense:** the adoption sweep skips FAILED rows — a human decides.
+**Pinned by:** `src/modules/takeover/session-takeover.service.spec.ts` ('skips sessions not
+worth resuming: unauthenticated, mid-pairing, or operator-flagged failed').
+
+### INV-8 — Logout teardown races nothing: the browser must be gone before dir removal
+
+**Interleaving:** `client.logout()` chains `authStrategy.logout()` → `fs.rm(userDataDir)` while
+the Chromium process still holds file handles → rm fails or races a browser re-write.
+**Defense:** whatsapp-web.js's own `Client.logout()` closes the browser and polls up to ~1 s for it
+to disconnect before LocalAuth removes the profile dir. OpenWA's part is the name-keyed
+credential-teardown fence: `teardownEngineSafely` registers the whole `engine.logout()` promise under
+the session name, and `start()`, `delete()` and `executeReconnect` wait for it through
+`awaitPendingTeardown` (bounded at 10 s and fail-closed: a timeout is a 409 for `start()`/`delete()`
+and a failed attempt for a reconnect), so no new engine or purge races the rm.
+**Pinned by:** `logout-teardown-race.spec.ts`, which enumerates that fence's interleavings. Read it
+before touching anything in the logout/forceKill path.
+
+### INV-9 — The reconnect loop bounds itself: backoff with jitter, clamp ≤ 5 min and ≤ setTimeout's 32-bit range, alert every 5 consecutive attempts
+
+**Defense:** `reconnect-policy.ts` — a pure decision function (attempt budget, loop alerts)
+consumed by the lifecycle, which resets the budget only when the session held READY for
+`STABLE_READY_MS` (5 min) before its next drop or its next READY, so a session that flaps keeps
+backing off and still alerts. The stretch ends where the engine first reports a non-READY state
+(`readyEndedAt`), so a Baileys in-engine reconnect between two READYs is not counted as READY time;
+the clamps exist because a naive `delay * 2^attempt` reaches values
+`setTimeout` silently truncates, and overflows to `Infinity` on a long enough streak.
+**Pinned by:** `reconnect-policy.spec.ts`, `session.service.spec.ts` (scheduleReconnect cases).
+
+### INV-10 — Boot auto-start is sequential, staggered (2s per Chromium), and detached from bootstrap
+
+**Why:** ten Chromium instances launching simultaneously on boot would hold the HTTP port closed
+for minutes; detaching from bootstrap means the API answers while engines warm.
+**Pinned by:** `session.service.spec.ts` (boot auto-start ordering/staggering cases).
+
+---
+
+## 31.2 Status-transition ownership
+
+Every transition has a known, enumerated set of writers. When debugging a status surprise, find the
+writer before anything else:
+
+| Transition                      | Writers                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| → `INITIALIZING`                | `initializeEngine` (persisted before `initialize()`)                                                                                                                                                                                                                                                                                                                              |
+| → `QR_READY` / `AUTHENTICATING` | engine callbacks (wired in the lifecycle delegate), via the registry's liveness check                                                                                                                                                                                                                                                                                             |
+| → `READY`                       | `handleEngineReady` (also drops a recorded failure reason, see INV-7's rationale comment)                                                                                                                                                                                                                                                                                         |
+| → `DISCONNECTED`                | init-timeout eviction, graceful stop, logout, forceKill, a delete whose teardown fence times out, the engine `onDisconnected` callback and the liveness watchdog (`handleEngineDisconnected`), the boot reset, a backup import (active rows restored as disconnected), engine-reported `DISCONNECTED` via `onStateChanged`, the takeover sweep's `markLapsedDisconnected` (INV-6) |
+| → `ACTION_REQUIRED`             | engine-reported `ACTION_REQUIRED` via `onStateChanged` (ownership-fenced status write; the whatsapp-web.js onboarding-modal fallback), and `onActionRequired` records the reason                                                                                                                                                                                                  |
+| → `FAILED`                      | five terminal paths only, all ownership-fenced: see below                                                                                                                                                                                                                                                                                                                         |
+
+`FAILED` is the one worth spelling out, because it is terminal (neither the boot reset nor the
+takeover sweep resumes a FAILED row, INV-7) and because more than one path reaches it:
+
+1. `start()`'s own rejection path, when `initializeEngine` throws (`session-engine-controls.ts`).
+2. The engine's `onError` callback, which is terminal by definition: it cancels any pending
+   reconnect before persisting, because a re-scan is required (`session-engine-event-wiring.ts`).
+3. The engine reporting `EngineStatus.FAILED` through `onStateChanged`, which the status map
+   forwards verbatim (`session-engine-event-wiring.ts`).
+4. A reconnect chain that EXHAUSTS its attempts, so the session is not left silently stuck
+   `DISCONNECTED` with no engine (`session-engine-lifecycle.service.ts`).
+5. `rejectRebind`, when a different WhatsApp account scans a bound session's QR: it logs that account
+   out and lands `FAILED` with the reason (`session-engine-lifecycle.service.ts`).
+
+What still holds, and is load-bearing, is the narrower claim: no reconnect ATTEMPT writes FAILED.
+Only the exhaustion of the whole chain does. A loop that marked each failed attempt would turn every
+transient network blip into an operator-visible terminal state and defeat INV-7's signal. All five
+paths are fenced on `ownsSession`, so a dying generation cannot park a peer's session in a status
+nothing resets automatically.
+
+## 31.3 Comments that exist because the obvious fix is wrong
+
+Collected here so they survive refactors of the code around them:
+
+- `session-engine-lifecycle.service.ts` (init deadline region): the do-not-reorder note — the
+  ownership re-validation window between the status write and `initialize()` is _narrowed, not
+  closed_; moving the re-validation after init reopens INV-2.
+- `session-engine-controls.ts` (start): the reconnect knobs read from the client-writable
+  `session.config` are coerced and clamped by `resolveReconnectConfig`, so a poisoned value cannot
+  become a NaN delay (a zero-delay relaunch storm) or a NaN attempt cap that never trips.
+- `EngineRegistry`: identity-based `deleteIfLive` rather than `delete(id)` — see INV-3; every
+  site that bypassed this in the past created the same phantom-callback bug. The eviction
+  helpers go through it too: `evictAndForceDestroy`, the init-timeout branch, and `start()`'s catch.
+  `start()` identifies its own engine by capturing the registry entry right after calling
+  `initializeEngine` (which registers it before its first await), not by a lookup in the catch: a
+  mid-init disconnect can schedule a reconnect that registers a replacement first.
+
+## 31.4 What this document is NOT
+
+- Not a state machine diagram (docs/03 has it).
+- Not exhaustive per-file documentation — the source comments carry the local detail; this maps
+  the SYSTEM of invariants and where each lives.
+- Not a spec: where this document and a spec disagree, the spec is right — fix this document.

@@ -10,6 +10,20 @@ import '../models/wapi_programacion.dart';
 import '../models/wapi_session.dart';
 import '../utils/timezone_helper.dart';
 
+/// Acciones que acepta `wapi-session-action`. Se listan aquí para que un
+/// typo falle en desarrollo en vez de llegar al backend (que responde 400).
+const _accionesSesion = <String>{
+  'qr',
+  'logout',
+  'restart',
+  'recover',
+  'delete',
+  'stop',
+  'force-kill',
+  'health',
+  'register-webhook',
+};
+
 /// Servicio que centraliza todas las operaciones del módulo
 /// "Notificación a Clientes" (difusión WhatsApp).
 ///
@@ -99,15 +113,48 @@ class WapiNotificationService {
   }
 
   /// Ejecuta una acción sobre la sesión y devuelve el status que reporta el
-  /// backend tras ejecutarla (útil para saber si el reconectar requiere QR).
+  /// backend tras ejecutarla (útil para saber si reconectar requiere QR).
+  ///
+  /// Usa [sessionActionRaw] si necesitas la respuesta completa: `restart`
+  /// devuelve además `requiere_qr`, `requiere_confirmacion_manual`, los pasos
+  /// ejecutados y `reintento_sugerido_en_segundos`.
   Future<WapiStatus> sessionAction(int idSesion, String action) async {
-    assert(['qr', 'logout', 'restart', 'delete'].contains(action));
-    final data = await _invoke('wapi-session-action', {
+    final data = await sessionActionRaw(idSesion, action);
+    return WapiStatus.fromString(data['status'] as String?);
+  }
+
+  /// Respuesta completa de `wapi-session-action`.
+  Future<Map<String, dynamic>> sessionActionRaw(
+    int idSesion,
+    String action,
+  ) async {
+    assert(
+      _accionesSesion.contains(action),
+      'Acción de sesión no soportada: $action',
+    );
+    return _invoke('wapi-session-action', {
       'id_sesion': idSesion,
       'action': action,
     });
-    return WapiStatus.fromString(data['status'] as String?);
   }
+
+  /// Estado del servidor OpenWA (health + versión).
+  ///
+  /// La `version` sólo viene si el backend tiene `WAPI_API_KEY`: sirve para
+  /// saber si el gateway está atrasado respecto a los arreglos de reconexión.
+  Future<Map<String, dynamic>> sessionHealth(int idSesion) =>
+      sessionActionRaw(idSesion, 'health');
+
+  /// Reconecta el bot con la escalera completa (stop→start, o force-kill→start
+  /// si está en FAILED). Devuelve la respuesta cruda para poder avisar si hace
+  /// falta escanear el QR o confirmar algo en el teléfono.
+  Future<Map<String, dynamic>> reconectar(int idSesion) =>
+      sessionActionRaw(idSesion, 'restart');
+
+  /// Reintenta reconectar matando primero el motor del servidor. Es la segunda
+  /// oportunidad cuando un `restart` normal no levanta el bot.
+  Future<Map<String, dynamic>> forzarReinicio(int idSesion) =>
+      sessionActionRaw(idSesion, 'force-kill');
 
   // =========================================================================
   // Grupos

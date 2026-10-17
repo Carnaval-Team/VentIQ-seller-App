@@ -5,6 +5,18 @@
 // Configuración por env vars (supabase secrets set ...):
 //   WAPI_BASE_URL  -> ej. http://3.238.37.3:2786
 //   WAPI_API_KEY   -> clave API privada (opcional si la API no la exige)
+//
+// Nota sobre rutas (verificado contra la doc upstream de OpenWA, v0.25.0):
+//   · El ciclo de vida de una sesión es
+//       POST /api/sessions/:id/start | /stop | /logout | /force-kill
+//       DELETE /api/sessions/:id
+//     **No existe `/restart`** — el runbook oficial dice literalmente
+//     "Try session restart (stop then start — there is no /restart route)".
+//     Por eso `restart()` aquí está implementado como stop → start.
+//   · Health: GET /api/health, /api/health/live, /api/health/ready,
+//     /api/infra/health.
+//   · Webhooks se registran en POST /api/sessions/:id/webhooks (no en el body
+//     de POST /api/sessions) y aceptan `secret` + `retryCount`.
 
 const BASE = (Deno.env.get("WAPI_BASE_URL") ?? "").replace(/\/$/, "");
 const API_KEY = Deno.env.get("WAPI_API_KEY") ?? "";
@@ -42,16 +54,30 @@ export interface WapiResult<T> {
 const TIMEOUT_DEFAULT_MS = 20_000;
 /** Los envíos con media son más lentos: WAPI descarga la imagen y la sube. */
 const TIMEOUT_MEDIA_MS = 45_000;
+/** El health debe contestar rápido o el watchdog se queda colgado. */
+const TIMEOUT_HEALTH_MS = 8_000;
+
+interface CallOptions {
+  timeoutMs?: number;
+  /** Header `Idempotency-Key` (OpenWA 0.25.0+). Se ignora en builds viejas. */
+  idempotencyKey?: string;
+}
 
 async function call<T>(
-  method: "GET" | "POST" | "DELETE",
+  method: "GET" | "POST" | "PUT" | "DELETE",
   path: string,
   body?: unknown,
-  timeoutMs: number = TIMEOUT_DEFAULT_MS,
+  timeoutOrOpts: number | CallOptions = TIMEOUT_DEFAULT_MS,
 ): Promise<WapiResult<T>> {
+  const opts: CallOptions = typeof timeoutOrOpts === "number"
+    ? { timeoutMs: timeoutOrOpts }
+    : timeoutOrOpts;
+  const timeoutMs = opts.timeoutMs ?? TIMEOUT_DEFAULT_MS;
+
   const url = `${BASE}${path.startsWith("/") ? "" : "/"}${path}`;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (API_KEY) headers["X-API-Key"] = API_KEY;
+  if (opts.idempotencyKey) headers["Idempotency-Key"] = opts.idempotencyKey;
 
   // AbortController manual (en vez de AbortSignal.timeout) para poder limpiar
   // el temporizador: un timer huérfano mantiene vivo el isolate sin motivo.
@@ -145,8 +171,9 @@ async function call<T>(
 export interface WapiSessionDto {
   id: string;            // sess_xxx
   name: string;
-  status: string;        // INITIALIZING | SCAN_QR | CONNECTING | CONNECTED | DISCONNECTED | FAILED
+  status: string;        // created|initializing|qr_ready|authenticating|ready|disconnected|action_required|failed
   phoneNumber?: string;
+  engineLoaded?: boolean;
   createdAt?: string;
   qr?: string | null;    // a veces incluido en respuestas
 }
@@ -182,15 +209,95 @@ export interface WapiBulkAcceptedDto {
   totalMessages: number;
 }
 
+export interface WapiHealthDto {
+  status?: string;       // "ok"
+  version?: string;      // sólo presente si se manda una key válida
+  uptime?: number;
+  [k: string]: unknown;
+}
+
+export interface WapiWebhookDto {
+  id: string;
+  url: string;
+  events: string[];
+  retryCount?: number;
+  active?: boolean;
+  createdAt?: string;
+}
+
+/** Configuración de reconexión por sesión (OpenWA). */
+export interface WapiReconnectConfig {
+  /** ms, 1000–300000. Default del server: 5000. */
+  reconnectBaseDelay?: number;
+  /** 0–20. 0 desactiva el auto-reconnect; sin poner: ilimitado (tope 5 min). */
+  maxReconnectAttempts?: number;
+}
+
+/**
+ * Eventos de webhook que nos interesan.
+ *
+ * IMPORTANTE: los eventos `session.*` son los que nos avisan de que la sesión
+ * se está muriendo. La versión anterior de `wapi-session-create` sólo podía
+ * declarar message.received/message.sent, así que la BD nunca se enteraba de
+ * una caída (ver docs/AUDITORIA_WAPI_EDGE_FUNCTIONS.md).
+ */
+export const WAPI_WEBHOOK_EVENTS = [
+  "session.status",
+  "session.authenticated",
+  "session.disconnected",
+  "session.reconnect_loop",
+  "session.restriction",
+  "session.qr",
+  "message.ack",
+  "message.failed",
+] as const;
+
+/** Margen entre `/stop` y `/start`: el engine necesita soltar el socket. */
+const STOP_SETTLE_MS = 2_500;
+
+/**
+ * Reinicio soportado: `/stop` → margen → `/start`.
+ *
+ * Se implementa como función suelta (no como método que use `this`) para que
+ * seguir funcionando aunque alguien destructure `const { restart } = wapi`.
+ * El `/stop` puede devolver 400 ("no hay engine vivo") o 502
+ * SESSION_STOP_INCOMPLETE: ninguno de los dos impide intentar el `/start`.
+ */
+async function restartByStopStart(
+  sessionId: string,
+): Promise<WapiResult<WapiSessionDto>> {
+  const stop = await call<{ ok?: boolean }>(
+    "POST",
+    `/api/sessions/${encodeURIComponent(sessionId)}/stop`,
+  );
+  if (!stop.success) {
+    console.warn(
+      `[wapi_client] /stop no confirmó (${stop.error?.code}): ${stop.error?.message} ` +
+        `— se intenta /start de todas formas`,
+    );
+  }
+  await new Promise((r) => setTimeout(r, STOP_SETTLE_MS));
+  return await call<WapiSessionDto>(
+    "POST",
+    `/api/sessions/${encodeURIComponent(sessionId)}/start`,
+  );
+}
+
 export const wapi = {
   // ── Sesiones ───────────────────────────────────────────────────────
-  createSession(name: string, webhookUrl?: string, webhookEvents?: string[]) {
+  createSession(
+    name: string,
+    webhookUrl?: string,
+    webhookEvents?: string[],
+    config?: WapiReconnectConfig,
+  ) {
     // La API valida estrictamente los eventos. Usamos sólo los que la
     // documentación marca como ejemplo explícito en POST /api/sessions
-    // ("message.received","message.sent"). Eventos adicionales pueden
-    // registrarse después vía POST /api/sessions/:id/webhooks.
+    // ("message.received","message.sent") para el webhook inline; el resto
+    // (session.*) se registra aparte con registerWebhook().
     return call<WapiSessionDto>("POST", "/api/sessions", {
       name,
+      ...(config ? { config } : {}),
       ...(webhookUrl
         ? {
             webhook: {
@@ -202,8 +309,11 @@ export const wapi = {
     });
   },
 
-  listSessions() {
-    return call<WapiSessionDto[]>("GET", "/api/sessions");
+  listSessions(limit?: number) {
+    return call<WapiSessionDto[]>(
+      "GET",
+      `/api/sessions${limit ? `?limit=${encodeURIComponent(String(limit))}` : ""}`,
+    );
   },
 
   getSession(sessionId: string) {
@@ -223,16 +333,109 @@ export const wapi = {
     );
   },
 
+  /**
+   * Detiene el engine sin desvincular la cuenta (a diferencia de `logout`).
+   * Es la primera mitad del reinicio soportado. Puede responder
+   * 502 SESSION_STOP_INCOMPLETE (reintentable) o 400 si no hay engine vivo.
+   */
+  stopSession(sessionId: string) {
+    return call<{ ok?: boolean }>(
+      "POST",
+      `/api/sessions/${encodeURIComponent(sessionId)}/stop`,
+    );
+  },
+
+  /**
+   * Mata a la fuerza un engine colgado (segunda marcha de la escalada).
+   * Devuelve 400 si no había engine vivo (que es el caso bueno) y
+   * 502 SESSION_FORCE_KILL_INCOMPLETE si no pudo.
+   */
+  forceKill(sessionId: string) {
+    return call<{ ok?: boolean }>(
+      "POST",
+      `/api/sessions/${encodeURIComponent(sessionId)}/force-kill`,
+    );
+  },
+
   logout(sessionId: string) {
     return call<{ ok: boolean }>("POST", `/api/sessions/${encodeURIComponent(sessionId)}/logout`);
   },
 
-  restart(sessionId: string) {
-    return call<{ ok: boolean }>("POST", `/api/sessions/${encodeURIComponent(sessionId)}/restart`);
+  /**
+   * "Reiniciar" en OpenWA = **stop → start**. No existe `/restart`: la ruta
+   * documentada es el par stop/start, y sobre una sesión ya arrancada `/start`
+   * responde 400 "already started" (que el caller debe tolerar).
+   *
+   * Para la escalada completa (force-kill → start, cooldowns, verificación)
+   * usa `_shared/session_recovery.ts`.
+   */
+  restart(sessionId: string): Promise<WapiResult<WapiSessionDto>> {
+    return restartByStopStart(sessionId);
   },
 
   deleteSession(sessionId: string) {
     return call<{ ok: boolean }>("DELETE", `/api/sessions/${encodeURIComponent(sessionId)}`);
+  },
+
+  // ── Health / diagnóstico ───────────────────────────────────────────
+  /** `GET /api/health` — la única que devuelve `version` (con key válida). */
+  health() {
+    return call<WapiHealthDto>("GET", "/api/health", undefined, TIMEOUT_HEALTH_MS);
+  },
+  /** `GET /api/health/live` — siempre ok, incluso durante el teardown. */
+  healthLive() {
+    return call<WapiHealthDto>("GET", "/api/health/live", undefined, TIMEOUT_HEALTH_MS);
+  },
+  /** `GET /api/health/ready` — 503 mientras drena o si una BD está caída. */
+  healthReady() {
+    return call<WapiHealthDto>("GET", "/api/health/ready", undefined, TIMEOUT_HEALTH_MS);
+  },
+  /** `GET /api/infra/health` — 503 cuando empieza el teardown. */
+  healthInfra() {
+    return call<WapiHealthDto>("GET", "/api/infra/health", undefined, TIMEOUT_HEALTH_MS);
+  },
+
+  // ── Webhooks ───────────────────────────────────────────────────────
+  listWebhooks(sessionId: string) {
+    return call<WapiWebhookDto[]>(
+      "GET",
+      `/api/sessions/${encodeURIComponent(sessionId)}/webhooks`,
+    );
+  },
+
+  /**
+   * Registra el webhook por la ruta documentada. `secret` es write-only: la API
+   * nunca lo devuelve, así que para rotarlo hay que re-registrar (PUT) o borrar
+   * y crear. `retryCount` documentado: 0–5, default 3.
+   */
+  registerWebhook(
+    sessionId: string,
+    body: { url: string; events: string[]; secret?: string; retryCount?: number },
+  ) {
+    return call<WapiWebhookDto>(
+      "POST",
+      `/api/sessions/${encodeURIComponent(sessionId)}/webhooks`,
+      body,
+    );
+  },
+
+  updateWebhook(
+    sessionId: string,
+    webhookId: string,
+    body: { url?: string; events?: string[]; secret?: string; retryCount?: number },
+  ) {
+    return call<WapiWebhookDto>(
+      "PUT",
+      `/api/sessions/${encodeURIComponent(sessionId)}/webhooks/${encodeURIComponent(webhookId)}`,
+      body,
+    );
+  },
+
+  deleteWebhook(sessionId: string, webhookId: string) {
+    return call<{ ok?: boolean }>(
+      "DELETE",
+      `/api/sessions/${encodeURIComponent(sessionId)}/webhooks/${encodeURIComponent(webhookId)}`,
+    );
   },
 
   // ── Grupos ─────────────────────────────────────────────────────────
@@ -244,19 +447,30 @@ export const wapi = {
   },
 
   // ── Mensajes ───────────────────────────────────────────────────────
-  sendText(sessionId: string, chatId: string, text: string) {
+  /**
+   * `idempotencyKey` (OpenWA 0.25.0+): si el envío se reintenta tras un
+   * TIMEOUT, el server reconoce la clave y responde con el mismo mensaje en vez
+   * de mandar dos veces. En builds anteriores el header se ignora sin daño.
+   */
+  sendText(
+    sessionId: string,
+    chatId: string,
+    text: string,
+    idempotencyKey?: string,
+  ) {
     return call<WapiSendResultDto>(
       "POST",
       `/api/sessions/${encodeURIComponent(sessionId)}/messages/send-text`,
       { chatId, text },
+      { idempotencyKey },
     );
   },
 
   /**
-   * Envía una imagen. ATENCIÓN: la doc oficial (docs_wapi/06-api-specification.md)
-   * muestra `{chatId, image:{url}, caption}` pero el server real espera el
-   * payload FLAT: `{chatId, url, caption}`. Validado contra el endpoint en vivo
-   * (cualquier variante anidada devuelve 400 Bad Request).
+   * Envía una imagen. ATENCIÓN: la doc oficial muestra `{chatId, image:{url},
+   * caption}` pero el server real espera el payload FLAT: `{chatId, url,
+   * caption}`. Validado contra el endpoint en vivo (cualquier variante anidada
+   * devuelve 400 Bad Request).
    */
   sendImage(
     sessionId: string,
@@ -264,6 +478,7 @@ export const wapi = {
     imageUrl: string,
     caption?: string,
     _mimetype?: string, // ignorado: el server actual no lo requiere
+    idempotencyKey?: string,
   ) {
     const body: Record<string, unknown> = {
       chatId,
@@ -274,7 +489,7 @@ export const wapi = {
       "POST",
       `/api/sessions/${encodeURIComponent(sessionId)}/messages/send-image`,
       body,
-      TIMEOUT_MEDIA_MS,
+      { timeoutMs: TIMEOUT_MEDIA_MS, idempotencyKey },
     );
   },
 
@@ -283,6 +498,10 @@ export const wapi = {
    * La API WAPI procesa el batch en su lado, así que el teléfono del
    * usuario NO necesita estar encendido — la sesión vive en el servidor
    * WAPI que mantiene la conexión persistente con WhatsApp Web.
+   *
+   * OJO: máximo 100 mensajes por batch (OpenWA). No lo usa `dispatchProducts`
+   * porque colapsa los chatId repetidos (N productos al mismo grupo son N
+   * mensajes al mismo chatId).
    */
   sendBulk(
     sessionId: string,
@@ -304,6 +523,12 @@ export const wapi = {
       stopOnError?: boolean;
     },
   ) {
+    if (messages.length > 100) {
+      console.warn(
+        `[wapi_client] sendBulk con ${messages.length} mensajes: OpenWA acepta ` +
+          `como máximo 100 por batch — hay que trocear.`,
+      );
+    }
     return call<WapiBulkAcceptedDto>(
       "POST",
       `/api/sessions/${encodeURIComponent(sessionId)}/messages/send-bulk`,
