@@ -71,6 +71,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Map<String, dynamic>? _globalPromotionData;
   double _usdRate = 0.0;
   bool _isLoadingUsdRate = false;
+  bool _mostrarSelectorMoneda = false;
   final Map<int, String> _paymentCurrencyByMethodId = {};
 
   // ===== Confirmación de pago por SMS (PAGOxMOVIL) =====
@@ -199,6 +200,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               !SalesModeService.mostradorActivo;
           _solicitarImagenOperacion =
               config['solicitar_imagen_operacion'] ?? false;
+          _mostrarSelectorMoneda =
+              config['mostrar_selector_moneda'] ?? false;
           print(
             '✅ Configuración cargada desde cache - No solicitar cliente: $_noSolicitarCliente, Modo restaurante: $_modoRestaurante',
           );
@@ -216,6 +219,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               !SalesModeService.mostradorActivo;
           _solicitarImagenOperacion =
               await StoreConfigService.getSolicitarImagenOperacion(storeId);
+          _mostrarSelectorMoneda =
+              await StoreConfigService.getMostrarSelectorMoneda(storeId);
           print(
             '✅ Configuración cargada desde Supabase - No solicitar cliente: $_noSolicitarCliente, Modo restaurante: $_modoRestaurante',
           );
@@ -821,7 +826,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         ],
                       ),
                     ),
-                    if (methodId != null && !esPendiente && _usdRate > 0) ...[
+                    if (methodId != null && !esPendiente && _usdRate > 0 && _mostrarSelectorMoneda) ...[
                       _buildCurrencyToggle(methodId, currency),
                       const SizedBox(width: 8),
                     ],

@@ -163,8 +163,15 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen>
         _service.getFacturas(id),
         _service.getEstados(),
       ]);
+      final facturas = results[0] as List<ProveedorFactura>;
+      facturas.sort((a, b) {
+        // Las finalizadas siempre al final; dentro de cada grupo, las más recientes primero.
+        if (a.esFinalizada && !b.esFinalizada) return 1;
+        if (!a.esFinalizada && b.esFinalizada) return -1;
+        return b.createdAt.compareTo(a.createdAt);
+      });
       setState(() {
-        _facturas = results[0] as List<ProveedorFactura>;
+        _facturas = facturas;
         _estados = results[1] as List<EstadoFacturaProveedor>;
         _isLoadingFacturas = false;
       });

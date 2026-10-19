@@ -158,6 +158,11 @@ class ProveedorFactura {
     );
   }
 
+  bool get esFinalizada {
+    final d = denominacionEstado?.toLowerCase().trim() ?? '';
+    return d == 'finalizado' || d == 'finalizada';
+  }
+
   ProveedorFactura copyWith({List<FacturaFotoProveedor>? fotos}) {
     return ProveedorFactura(
       id: id,

@@ -1716,6 +1716,22 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                 color: Color(0xFF4A90E2),
                               ),
                             ),
+                            if (detailUsdRate > 0)
+                              _buildDetailRowNew(
+                                detailCurrency == 'USD'
+                                    ? 'Equiv. CUP'
+                                    : 'Equiv. USD',
+                                // displayTotal siempre es CUP (viene de order.total / descuento).
+                                // Cuando detailCurrency=='USD' el total ya se mostró
+                                // dividido por tasa, así que el equivalente CUP es displayTotal tal cual.
+                                detailCurrency == 'USD'
+                                    ? '${displayTotal.toStringAsFixed(2)} CUP'
+                                    : '${(displayTotal / detailUsdRate).toStringAsFixed(2)} USD',
+                                valueStyle: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey[500],
+                                ),
+                              ),
                             if (hasDiscount) ...[
                               _buildDetailRowNew(
                                 'Precio original',
@@ -1994,9 +2010,31 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       const SizedBox(height: 12),
                       Builder(
                         builder: (context) {
+                          // Primero los productos por defecto, luego el resto
+                          // alfabéticamente.
+                          final defaultIds =
+                              _defaultOrderItems
+                                  .map((e) {
+                                    try {
+                                      return Product.fromJson(
+                                        e['product'] as Map<String, dynamic>,
+                                      ).id;
+                                    } catch (_) {
+                                      return null;
+                                    }
+                                  })
+                                  .whereType<int>()
+                                  .toSet();
                           final visibleItems =
                               order.items.where((i) => i.cantidad > 0).toList()
-                                ..sort((a, b) => a.nombre.compareTo(b.nombre));
+                                ..sort((a, b) {
+                                  final aD =
+                                      defaultIds.contains(a.producto.id);
+                                  final bD =
+                                      defaultIds.contains(b.producto.id);
+                                  if (aD != bD) return aD ? -1 : 1;
+                                  return a.nombre.compareTo(b.nombre);
+                                });
                           return _buildDetailSection(
                             title: 'Productos (${visibleItems.length})',
                             icon: Icons.shopping_bag_outlined,
@@ -7659,8 +7697,30 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
       );
     }
 
+    // Primero los productos por defecto, luego el resto; dentro de cada grupo
+    // se ordena alfabéticamente por nombre.
+    final defaultProductIds =
+        widget.defaultOrderItems
+            .map((e) {
+              try {
+                return Product.fromJson(
+                  e['product'] as Map<String, dynamic>,
+                ).id;
+              } catch (_) {
+                return null;
+              }
+            })
+            .whereType<int>()
+            .toSet();
     final sorted = List<OrderItem>.from(_items)
-      ..sort((a, b) => a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase()));
+      ..sort((a, b) {
+        final aDefault =
+            defaultProductIds.contains(a.producto.id) || _isGhostItem(a);
+        final bDefault =
+            defaultProductIds.contains(b.producto.id) || _isGhostItem(b);
+        if (aDefault != bDefault) return aDefault ? -1 : 1;
+        return a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase());
+      });
 
     return ListView.separated(
       controller: ctrl,
