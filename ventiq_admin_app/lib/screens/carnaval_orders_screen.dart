@@ -54,6 +54,7 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
   int? _carnavalStoreId;
   int? _ventiqStoreId;
   bool _isAdmin = false;
+  bool _isGerente = false;
   bool _canExport = false;
   List<Map<String, dynamic>> _orders = [];
   Map<int, int> _ventiqOps = {}; // carnaval order id -> ventiq operation id
@@ -113,7 +114,9 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       }
       _carnavalStoreId = carnavalId;
       _isAdmin = _adminIds.contains(carnavalId);
-      _canExport = await PermissionsService().canPerformAction(
+      final permissionsService = PermissionsService();
+      _isGerente = await permissionsService.getUserRole() == UserRole.gerente;
+      _canExport = await permissionsService.canPerformAction(
         'carnaval.export',
       );
       _repartidores = await CarnavalService.getRepartidoresMap();
@@ -412,6 +415,7 @@ class _CarnavalOrdersScreenState extends State<CarnavalOrdersScreen> {
       builder: (_) => CarnavalOrderDetailSheet(
         order: order,
         isAdmin: _isAdmin,
+        isGerente: _isGerente,
         carnavalStoreId: _carnavalStoreId!,
         ventiqStoreId: _ventiqStoreId,
         onOrderUpdated: _loadOrders,

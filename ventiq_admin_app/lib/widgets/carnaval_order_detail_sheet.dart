@@ -13,6 +13,7 @@ import 'bitacora_tile.dart';
 class CarnavalOrderDetailSheet extends StatefulWidget {
   final Map<String, dynamic> order;
   final bool isAdmin;
+  final bool isGerente;
   final int carnavalStoreId;
   final int? ventiqStoreId;
   final VoidCallback onOrderUpdated;
@@ -21,6 +22,7 @@ class CarnavalOrderDetailSheet extends StatefulWidget {
     Key? key,
     required this.order,
     required this.isAdmin,
+    this.isGerente = false,
     required this.carnavalStoreId,
     this.ventiqStoreId,
     required this.onOrderUpdated,
@@ -165,12 +167,15 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
 
   String get _status => _order['status'] as String? ?? '';
 
-  bool get _canEditProducts => const [
-    'Nuevo',
-    'En Revision',
-    'Procesando',
-    'Pendiente de Pago',
-  ].contains(_status);
+  bool get _canEditProducts =>
+      widget.isGerente ||
+      (widget.isAdmin &&
+          const [
+            'Nuevo',
+            'En Revision',
+            'Procesando',
+            'Pendiente de Pago',
+          ].contains(_status));
 
   Color _statusColor(String? status) {
     switch (status) {
@@ -1698,7 +1703,7 @@ class _CarnavalOrderDetailSheetState extends State<CarnavalOrderDetailSheet> {
         final price = (d['price'] as num?)?.toDouble() ?? 0;
         final subtotal = price * qty;
 
-        final canEdit = widget.isAdmin && _canEditProducts;
+        final canEdit = _canEditProducts;
 
         return Container(
           margin: const EdgeInsets.only(bottom: 8),
