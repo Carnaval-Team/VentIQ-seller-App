@@ -220,7 +220,6 @@ class _SplashScreenState extends State<SplashScreen>
             width: 132,
             height: 132,
             decoration: BoxDecoration(
-              color: Colors.white,
               borderRadius: BorderRadius.circular(36),
               boxShadow: [
                 BoxShadow(
@@ -235,10 +234,12 @@ class _SplashScreenState extends State<SplashScreen>
                 ),
               ],
             ),
-            padding: const EdgeInsets.all(20),
-            child: Image.asset(
-              'assets/images/logonew_nobg.png',
-              fit: BoxFit.contain,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(36),
+              child: Image.asset(
+                'assets/images/logonew_nobg.png',
+                fit: BoxFit.contain,
+              ),
             ),
           ),
         ),
