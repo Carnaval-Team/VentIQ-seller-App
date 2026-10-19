@@ -179,10 +179,6 @@ BEGIN
        AND NOT (id = ANY(v_payment_ids));
 
     IF cardinality(v_payment_ids) > 0 THEN
-        IF v_total_equivalente_anterior <= 0 AND v_total_final > 0 THEN
-            RAISE EXCEPTION 'Los pagos existentes no tienen un total válido para redistribuir';
-        END IF;
-
         FOR v_pago IN
             SELECT *
               FROM jsonb_to_recordset(v_payment_snapshot) AS p(
@@ -206,6 +202,8 @@ BEGIN
             v_equivalente_nuevo := CASE
                 WHEN v_total_equivalente_anterior > 0
                     THEN round(v_total_final * v_equivalente_anterior / v_total_equivalente_anterior, 2)
+                WHEN v_id_ajuste IS NULL
+                    THEN v_total_final
                 ELSE 0
             END;
             v_importe_sin_descuento := CASE
