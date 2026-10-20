@@ -143,17 +143,25 @@ WapiDiagnostico diagnosticarError({
       );
 
   // ── 1. La sesión del bot (el caso más frecuente y el más confuso) ─────
-  if (_alguna(raw, [
+  // Se reconocen TANTO los mensajes de OpenWA en inglés COMO los que devuelve
+  // nuestro propio backend en español ("La sesión no está conectada a
+  // WhatsApp (estado OpenWA: disconnected)"), además de los códigos propios.
+  if (code == 'NOT_CONNECTED' ||
+      code == 'SESSION_DOWN' ||
+      code == 'RECOVERY_FAILED' ||
+      code == 'BROADCAST_SKIPPED_SESSION_DOWN' ||
+      _alguna(raw, [
         'not connected',
         'is not ready',
         'session is not',
         'not active',
         'start the session',
         'not found or not connected',
-      ]) ||
-      code == 'SESSION_DOWN' ||
-      code == 'RECOVERY_FAILED' ||
-      code == 'BROADCAST_SKIPPED_SESSION_DOWN') {
+        'no está conectada',
+        'no esta conectada',
+        'no está activa',
+        'no esta activa',
+      ])) {
     return d(
       WapiDiagTipo.sesion,
       'El bot se desconectó',

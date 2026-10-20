@@ -457,6 +457,48 @@ Activar **`AUTO_START_SESSIONS`** para que las sesiones registradas se levanten 
 
 ---
 
+## 11. UX para el cliente final (fase 2 — ya en la app)
+
+Desplegado el backend, el problema que quedaba era de **comprensión**: la app
+mostraba códigos crudos (`HTTP_409`, `PRODUCT_TIMEOUT`) y el botón *Reanudar*
+vivía escondido tras expandir la tarjeta. Cambios en `ventiq_admin_app/lib/`:
+
+| Archivo | Qué resuelve |
+|---|---|
+| `utils/wapi_errores.dart` **(nuevo)** | Traduce `(código, mensaje)` a un diagnóstico con titular, explicación, **qué hacer**, si hay que reconectar y si reintentar sirve. Reconoce tanto los mensajes de OpenWA en inglés como los de nuestro backend en español. El texto técnico no se pierde: queda en `detalle` (desplegable «Ver detalle técnico»). Incluye `diagnosticarTanda()` (agrupa por **código**, no por mensaje, para que el ruido `(tras 3 intento(s))` no fragmente el mismo problema) y `diagnosticarExcepcion()` |
+| `widgets/wapi_envio_tanda_card.dart` | **Pie de acciones siempre visible** cuando la tanda no terminó: «Reintentar N mensajes» + «Reconectar bot» (sólo si el diagnóstico dice que el origen fue la sesión). Motivo en una frase y en castellano. Chips renombrados (`Entregados` / `Sin enviar` / `Fallaron`). Respeta «reducir movimiento» |
+| `widgets/wapi_session_card.dart` | Cada estado trae su frase (`WapiStatus.detalle`), un **botón principal con la acción que lo resuelve** («Mostrar QR para vincular» / «Reconectar ahora»), aviso de estado viejo (>10 min sin refrescar), cuantificación de la cola («N mensajes en cola no saldrán»), «Último problema» traducido y chip de vigilancia desactivada. El enlace de ayuda apuntaba al repo equivocado (`wa-automate`); ahora va a OpenWA |
+| `screens/wapi_notifications_screen.dart` | **Banner de atención** arriba del todo (sólo cuando el bot no puede enviar) con el botón que lo arregla y el aviso de que el sistema reintenta cada 5 min. Errores de reanudación/reconexión **traducidos y con acción** en la propia snackbar. `_reconectar()` usa la escalera nueva y, si falla, ofrece **«Forzar reinicio»**; si el backend pide `action_required`, explica que hay que confirmar el aviso en el teléfono (un QR no lo arregla). Acción **«Estado del servidor»** (health + versión, avisa si es < 0.25.0) y **Detalles** con status crudo, último error y contador de reconexiones. `logout` ahora pide confirmación. Estado vacío con CTA |
+| `widgets/wapi_qr_dialog.dart` | Panel específico para `action_required` («Falta un paso en tu teléfono») y botón **Reintentar** sin cerrar el diálogo; el texto bajo el chip pasa a explicar el estado |
+| `models/wapi_session.dart` | `rawStatus`, `lastErrorCode`, `lastErrorMessage`, `recoveryAttempts`, `watchdogEnabled`, `requiereConfirmacionManual`, y los ayudantes `detalle`, `accionSugerida`, `esEstadoViejo`, `estaVinculado` |
+| `services/wapi_notification_service.dart` | `sessionActionRaw()`, `sessionHealth()`, `reconectar()`, `forzarReinicio()` y la lista de acciones válidas ampliada a las 9 del backend |
+
+**Verificación:** `flutter analyze` sobre los archivos tocados → **sin errores**
+(sólo `info` por `withOpacity`, deprecación preexistente en toda la app).
+**28 pruebas en verde**:
+
+```bash
+# desde ventiq_admin_app/
+flutter test test/wapi_errores_test.dart \
+             test/wapi_envio_tanda_card_test.dart \
+             test/wapi_session_card_test.dart
+```
+
+- `test/wapi_errores_test.dart` (17): cada familia de error, el sufijo
+  `(tras N intento(s))`, la agrupación por código y el caso desconocido.
+- `test/wapi_envio_tanda_card_test.dart` (6): el botón de reintentar se ve
+  **sin expandir**, el 409 se traduce y **nunca** se muestra el texto crudo en
+  inglés, aparece «Reconectar bot» cuando corresponde, `PRODUCT_TIMEOUT` se
+  presenta como «no fue un error» y una tanda completa no ofrece reintento.
+- `test/wapi_session_card_test.dart` (5): copy de cada estado, botón principal
+  correcto, cuantificación de la cola y aviso de vigilancia apagada.
+
+> Pendiente de decisión (no implementado): que el backend **alerte** cuando el
+> watchdog agota sus intentos (ver §10.8). Hoy el aviso es visible en la app,
+> pero nadie recibe un push.
+
+---
+
 ## Fuentes
 
 - Repo OpenWA: <https://github.com/rmyndharis/OpenWA>
