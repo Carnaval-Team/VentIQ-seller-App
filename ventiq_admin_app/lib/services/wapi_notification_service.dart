@@ -145,11 +145,75 @@ class WapiNotificationService {
   Future<Map<String, dynamic>> sessionHealth(int idSesion) =>
       sessionActionRaw(idSesion, 'health');
 
-  /// Reconecta el bot con la escalera completa (stop→start, o force-kill→start
-  /// si está en FAILED). Devuelve la respuesta cruda para poder avisar si hace
-  /// falta escanear el QR o confirmar algo en el teléfono.
+  /// Reconecta el bot con la escalera real (`_shared/session_recovery.ts`):
+  /// sólo `/start` si el motor está apagado, `stop → start` si está colgado, y
+  /// `force-kill → start` si la sesión quedó en FAILED.
+  ///
+  /// **No pide QR**: reusa las credenciales guardadas en el volumen de OpenWA.
+  /// Devuelve la respuesta cruda para poder avisar si hay que confirmar algo en
+  /// el teléfono (`requiere_confirmacion_manual`).
+  ///
+  /// Antes esto llamaba a `restart` (siempre `stop → start`, que tira el motor y
+  /// con él el Chromium entero). `recover` decide según el estado REAL: si el
+  /// motor ya estaba apagado se ahorra el `stop` y levanta antes.
   Future<Map<String, dynamic>> reconectar(int idSesion) =>
-      sessionActionRaw(idSesion, 'restart');
+      sessionActionRaw(idSesion, 'recover');
+
+  /// Espera a que el motor termine de levantar después de [reconectar].
+  ///
+  /// `recover` contesta en cuanto OpenWA acepta el arranque, pero el motor
+  /// (Chromium + WhatsApp Web) tarda ~15-25 s en llegar a `ready`. La pantalla
+  /// esperaba 3 s y acto seguido abría el diálogo del QR: el cliente creía que
+  /// había que volver a escanear cuando en realidad sólo faltaba esperar.
+  ///
+  /// Sondea `wapi-session-status` (barato: una sesión) hasta que llega a
+  /// `CONNECTED`, aparece un estado que ya no se resuelve esperando, o vence
+  /// [timeout]. Devuelve la última foto (o `null` si no se pudo leer) y llama a
+  /// [onTick] en cada vuelta para que la UI pueda ir contando.
+  Future<WapiSessionStatus?> esperarConexion(
+    int idSesion, {
+    Duration timeout = const Duration(seconds: 90),
+    Duration intervalo = const Duration(seconds: 4),
+    void Function(WapiSessionStatus?)? onTick,
+  }) async {
+    final limite = DateTime.now().add(timeout);
+    WapiSessionStatus? ultima;
+    var ticks = 0;
+    var estancado = 0;
+    while (DateTime.now().isBefore(limite)) {
+      await Future.delayed(intervalo);
+      try {
+        ultima = await getStatus(idSesion);
+        onTick?.call(ultima);
+      } catch (_) {
+        // Un tick que falle no debe cortar la espera.
+        continue;
+      }
+      ticks++;
+      switch (ultima.status) {
+        case WapiStatus.connected:
+          return ultima;
+        case WapiStatus.failed:
+          // Estado terminal en OpenWA: esperar más no cambia nada.
+          return ultima;
+        case WapiStatus.scanQr:
+          // Sin teléfono guardado el QR es el único camino: no esperamos más.
+          final tel = ultima.phoneNumber?.trim();
+          if (tel == null || tel.isEmpty) return ultima;
+          estancado = 0;
+        case WapiStatus.disconnected:
+          // `recover` puede reportar `disconnected` un instante mientras el
+          // motor arranca; sólo lo damos por perdido si se queda ahí.
+          estancado++;
+          if (ticks >= 3 && estancado >= 2) return ultima;
+        case WapiStatus.initializing:
+        case WapiStatus.connecting:
+        case WapiStatus.unknown:
+          estancado = 0; // sigue arrancando: otra vuelta
+      }
+    }
+    return ultima;
+  }
 
   /// Reintenta reconectar matando primero el motor del servidor. Es la segunda
   /// oportunidad cuando un `restart` normal no levanta el bot.

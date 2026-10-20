@@ -56,6 +56,9 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
   /// contadores "enviados / faltan" avancen sin que el usuario haga pull.
   Timer? _autoRefresh;
 
+  /// Evita lanzar dos autorrecuperaciones a la vez (una por cada refresco).
+  bool _autoRecuperando = false;
+
   @override
   void initState() {
     super.initState();
@@ -213,6 +216,42 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
       _etiquetasChat = results[3] as Map<String, String>;
     });
     _sincronizarAutoRefresh();
+    _autoRecuperarSiHaceFalta();
+  }
+
+  /// Si hay un bot **ya vinculado** que quedó caído, lo levantamos nosotros.
+  ///
+  /// Es el caso típico: se reinició el servidor de WhatsApp y OpenWA dejó la
+  /// sesión en `disconnected`. Como las credenciales siguen guardadas, `/start`
+  /// la levanta **sin QR** — no tiene sentido esperar a que el cliente pulse
+  /// nada (ni, mucho menos, pedirle que reescanee).
+  ///
+  /// Bots sin teléfono guardado se dejan en paz: ahí el QR es el único camino.
+  /// Se respeta además el contador del watchdog para no insistir en bucle.
+  void _autoRecuperarSiHaceFalta() {
+    if (_autoRecuperando || _loading) return;
+    if (_licencia?.isActive != true) return;
+
+    WapiSession? caida;
+    for (final s in _sesiones) {
+      if (s.status == WapiStatus.disconnected || s.status == WapiStatus.failed) {
+        if (s.estaVinculado && s.recoveryAttempts < 3) {
+          caida = s;
+          break;
+        }
+      }
+    }
+    if (caida == null) return;
+
+    _autoRecuperando = true;
+    final objetivo = caida;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await _reconectar(objetivo, automatico: true);
+      } finally {
+        _autoRecuperando = false;
+      }
+    });
   }
 
   // ── Gating: cualquier acción WAPI requiere licencia activa ─────────────
@@ -315,6 +354,9 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
               idSesion: s.id, nombreBot: s.nombre);
           break;
         case 'restart':
+        case 'recover':
+          // Ambas levantan el bot con las credenciales guardadas: `recover` es
+          // la buena (decide según el estado real y no tira el motor de más).
           await _reconectar(s);
           break;
         case 'health':
@@ -415,39 +457,89 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
   ///   2. Si el backend dice que hay que confirmar el aviso "What's new" en el
   ///      teléfono (`action_required`), se lo decimos explícitamente: un QR no
   ///      lo arregla.
-  ///   3. Si ya está conectado, celebración breve. Si no, abrimos el QR.
-  ///   4. Si falla, ofrecemos «Forzar reinicio» (mata el motor y reintenta),
-  ///      que es la segunda marcha que antes no existía en la app.
-  Future<void> _reconectar(WapiSession s, {bool forzado = false}) async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
+  ///   3. **Espera a que el motor levante** (hasta ~90 s) en vez de asumir que
+  ///      hace falta QR: el motor (Chromium + WhatsApp Web) tarda ~20 s en
+  ///      llegar a `ready`. Antes se esperaban 3 s fijos y se abría el diálogo
+  ///      del QR siempre, así que el cliente creía que tenía que reescanear.
+  ///   4. **Sólo se pide QR si de verdad no hay teléfono vinculado.** Si el bot
+  ///      ya estaba vinculado, `recover` reusa las credenciales guardadas en el
+  ///      servidor (y con `AUTO_START_SESSIONS=true` OpenWA incluso lo levanta
+  ///      solo al reiniciar el contenedor).
+  ///   5. Si aun así no levanta, se ofrece «Forzar reinicio» (mata el motor y
+  ///      reintenta), que es la segunda marcha que antes no existía en la app.
+  ///
+  /// [automatico] lo usa la autorrecuperación al abrir la pantalla: sin diálogos
+  /// (sólo un aviso), y sólo para bots que ya estaban vinculados.
+  Future<void> _reconectar(
+    WapiSession s, {
+    bool forzado = false,
+    bool automatico = false,
+  }) async {
+    if (!automatico) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text(
+                  'Reconectando el bot…\n'
+                  'Puede tardar hasta un minuto. No hace falta escanear el QR.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } else {
+      _aviso(
+        'El bot estaba caído. Reconectando con la sesión guardada (sin QR)…',
+        color: AppColors.warning,
+      );
+    }
+
     try {
       if (forzado) {
         // `force-kill` sólo detiene: hay que volver a arrancar después.
         await _service.forzarReinicio(s.id);
       }
       final data = await _service.reconectar(s.id);
-      // El engine tarda en levantar y generar el QR; sin esta pausa el
-      // diálogo pediría /qr demasiado pronto y vería "sin QR aún".
-      await Future.delayed(const Duration(seconds: 3));
-      if (!mounted) return;
-      Navigator.of(context).pop(); // cerrar loading
-
-      final status = WapiStatus.fromString(data['status'] as String?);
-      final requiereConfirmar =
-          data['requiere_confirmacion_manual'] == true;
+      final requiereConfirmar = data['requiere_confirmacion_manual'] == true;
       final esperaSugerida =
           (data['reintento_sugerido_en_segundos'] as num?)?.toInt();
+
+      // El motor tarda: sondeamos hasta que llegue a CONNECTED antes de decidir.
+      final ultima = await _service.esperarConexion(s.id);
+      if (!mounted) return;
+      if (!automatico) Navigator.of(context).pop(); // cerrar loading
+
+      // Refrescar tarjetas/banner con lo que diga ahora el servidor.
+      await _reloadData();
+      if (!mounted) return;
+
+      final estado =
+          ultima?.status ?? WapiStatus.fromString(data['status'] as String?);
+      final tel = ultima?.phoneNumber?.trim();
+      final vinculado = (tel != null && tel.isNotEmpty) || s.estaVinculado;
 
       if (requiereConfirmar) {
         await _dialogoConfirmarEnTelefono(s);
         return;
       }
-      if (status == WapiStatus.connected) {
-        _aviso('✅ El bot ya está conectado.', color: AppColors.success);
+      if (estado == WapiStatus.connected) {
+        _aviso(
+          forzado
+              ? '✅ El bot volvió a conectarse tras forzar el reinicio.'
+              : '✅ El bot ya está conectado. No hizo falta escanear nada.',
+          color: AppColors.success,
+        );
         return;
       }
       if (esperaSugerida != null && esperaSugerida > 0) {
@@ -456,12 +548,59 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
           color: AppColors.warning,
         );
       }
-      await WapiQrDialog.show(context, idSesion: s.id, nombreBot: s.nombre);
+      // El QR sólo cuando de verdad no hay credenciales guardadas.
+      if (estado == WapiStatus.scanQr && !vinculado) {
+        await WapiQrDialog.show(context, idSesion: s.id, nombreBot: s.nombre);
+        return;
+      }
+      // Sigue arrancando: no es un error, sólo hay que darle tiempo.
+      if (estado == WapiStatus.connecting ||
+          estado == WapiStatus.initializing ||
+          estado == WapiStatus.unknown) {
+        _aviso(
+          'El bot sigue arrancando en el servidor. Espera un minuto y pulsa '
+          '«Actualizar».',
+          color: AppColors.warning,
+        );
+        return;
+      }
+      _avisoReconexionNoLevanto(s, forzado: forzado);
     } catch (e) {
       if (!mounted) return;
-      Navigator.of(context).pop(); // cerrar loading
+      if (!automatico) Navigator.of(context).pop(); // cerrar loading
       _diagReconexionFallida(e, s, forzado: forzado);
     }
+  }
+
+  /// El bot (ya vinculado) sigue caído tras reconectar: ofrecemos la segunda
+  /// marcha sin mandar a nadie al QR.
+  void _avisoReconexionNoLevanto(WapiSession s, {required bool forzado}) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      backgroundColor: AppColors.warning,
+      duration: const Duration(seconds: 10),
+      content: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('El bot no terminó de conectarse',
+              style: TextStyle(fontWeight: FontWeight.w700)),
+          SizedBox(height: 2),
+          Text(
+            'El teléfono sigue vinculado, así que no hay que escanear nada: '
+            'pulsa «Forzar reinicio» para matar el motor del servidor y '
+            'arrancarlo de nuevo.',
+            style: TextStyle(fontSize: 12.5),
+          ),
+        ],
+      ),
+      action: forzado
+          ? null
+          : SnackBarAction(
+              label: 'Forzar reinicio',
+              textColor: Colors.white,
+              onPressed: () => _reconectar(s, forzado: true),
+            ),
+    ));
   }
 
   /// `action_required`: OpenWA pide confirmar el aviso "What's new" del
@@ -1101,13 +1240,20 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
   Widget _buildBannerAtencion() {
     final s = _sesionQueUrge;
     if (s == null) return const SizedBox.shrink();
-    final esQr = s.status == WapiStatus.scanQr;
+    // `scanQr` sólo significa "hay que vincular" cuando NO hay teléfono
+    // guardado. Si el bot ya estaba vinculado, `scanQr` es un estado de paso
+    // mientras restaura la sesión: se reconecta, no se reescanea nada.
+    final esQr = s.status == WapiStatus.scanQr && !s.estaVinculado;
     final sinEntregar = _mensajesSinEntregar;
 
     final String mensaje;
     if (esQr) {
       mensaje = 'Escanea el QR con el WhatsApp del negocio para poder '
           'difundir. Sin eso, los envíos no salen.';
+    } else if (s.puedeReconectarSinQr) {
+      mensaje = 'El bot ya está vinculado a tu teléfono, así que no hay que '
+          'escanear nada: se reconecta solo con la sesión guardada.'
+          '${sinEntregar > 0 ? ' Hay $sinEntregar mensaje(s) en cola esperando.' : ''}';
     } else if (!s.watchdogEnabled) {
       mensaje = 'La reconexión automática está desactivada para este bot: hay '
           'que reconectarlo a mano.';
@@ -1128,7 +1274,7 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
         titulo: esQr ? 'Falta vincular tu bot' : 'Tu bot está desconectado',
         mensaje: mensaje,
         accionLabel: esQr ? 'Mostrar QR para vincular' : 'Reconectar ahora',
-        onAccion: () => _onSessionAction(s, esQr ? 'qr' : 'restart'),
+        onAccion: () => _onSessionAction(s, esQr ? 'qr' : 'recover'),
         onDetalles: () => _showDetails(s),
       ),
     );

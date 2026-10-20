@@ -224,6 +224,30 @@ class WapiSession {
   bool get estaVinculado =>
       (phoneNumber != null && phoneNumber!.trim().isNotEmpty) ||
       status == WapiStatus.connected;
+
+  /// Acción que resuelve el estado, sabiendo además si el teléfono YA está
+  /// vinculado.
+  ///
+  /// Diferencia con [WapiStatus.accionSugerida]: un bot **ya vinculado nunca
+  /// pide QR**. Si OpenWA reporta `qr_ready` mientras está restaurando la
+  /// sesión (es exactamente lo que pasa tras reiniciar el servidor), lo correcto
+  /// es reconectar con las credenciales que siguen guardadas en el volumen del
+  /// gateway, no mandar al cliente a escanear un QR que no hace falta.
+  ///
+  /// Nota: OpenWA reusa la sesión solo. Con `AUTO_START_SESSIONS=true` la
+  /// levanta al arrancar el contenedor, y si se cae en caliente la escalera de
+  /// `recover` la arranca sin QR.
+  String? get accionSugerida =>
+      (status == WapiStatus.scanQr && estaVinculado)
+          ? 'recover'
+          : status.accionSugerida;
+
+  /// ¿Está caído pero tenemos credenciales para levantarlo sin QR?
+  bool get puedeReconectarSinQr =>
+      estaVinculado &&
+      (status == WapiStatus.disconnected ||
+          status == WapiStatus.failed ||
+          status == WapiStatus.scanQr);
 }
 
 /// Resultado de `wapi-session-status`.
