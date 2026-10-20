@@ -34,6 +34,7 @@ import '../widgets/sales_monitor_fab.dart';
 import '../widgets/notification_widget.dart';
 import '../widgets/sync_status_chip.dart';
 import '../widgets/bill_count_dialog.dart';
+import '../widgets/transfer_sms_confirmation_banner.dart';
 import '../models/product.dart';
 import '../services/category_service.dart';
 import '../services/product_service.dart';
@@ -1715,6 +1716,22 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                 color: Color(0xFF4A90E2),
                               ),
                             ),
+                            if (detailUsdRate > 0)
+                              _buildDetailRowNew(
+                                detailCurrency == 'USD'
+                                    ? 'Equiv. CUP'
+                                    : 'Equiv. USD',
+                                // displayTotal siempre es CUP (viene de order.total / descuento).
+                                // Cuando detailCurrency=='USD' el total ya se mostró
+                                // dividido por tasa, así que el equivalente CUP es displayTotal tal cual.
+                                detailCurrency == 'USD'
+                                    ? '${displayTotal.toStringAsFixed(2)} CUP'
+                                    : '${(displayTotal / detailUsdRate).toStringAsFixed(2)} USD',
+                                valueStyle: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey[500],
+                                ),
+                              ),
                             if (hasDiscount) ...[
                               _buildDetailRowNew(
                                 'Precio original',
@@ -1993,9 +2010,31 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       const SizedBox(height: 12),
                       Builder(
                         builder: (context) {
+                          // Primero los productos por defecto, luego el resto
+                          // alfabéticamente.
+                          final defaultIds =
+                              _defaultOrderItems
+                                  .map((e) {
+                                    try {
+                                      return Product.fromJson(
+                                        e['product'] as Map<String, dynamic>,
+                                      ).id;
+                                    } catch (_) {
+                                      return null;
+                                    }
+                                  })
+                                  .whereType<int>()
+                                  .toSet();
                           final visibleItems =
                               order.items.where((i) => i.cantidad > 0).toList()
-                                ..sort((a, b) => a.nombre.compareTo(b.nombre));
+                                ..sort((a, b) {
+                                  final aD =
+                                      defaultIds.contains(a.producto.id);
+                                  final bD =
+                                      defaultIds.contains(b.producto.id);
+                                  if (aD != bD) return aD ? -1 : 1;
+                                  return a.nombre.compareTo(b.nombre);
+                                });
                           return _buildDetailSection(
                             title: 'Productos (${visibleItems.length})',
                             icon: Icons.shopping_bag_outlined,
@@ -2447,6 +2486,26 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           ],
                         ),
                       ),
+
+                      // ── Confirmación SMS transferencia (órdenes pendientes)
+                      if (TransferSmsConfirmation.isPendingForSmsWatch(order) &&
+                          TransferSmsConfirmation.orderHasTransferencia(
+                            order,
+                          )) ...[
+                        const SizedBox(height: 12),
+                        _buildDetailSection(
+                          title: 'Transferencia',
+                          icon: Icons.sms_outlined,
+                          child: TransferSmsConfirmationBanner(
+                            expectedAmount:
+                                TransferSmsConfirmation.transferExpectedAmount(
+                                  order,
+                                  fallbackTotal: displayTotal,
+                                ),
+                            operationId: order.operationId,
+                          ),
+                        ),
+                      ],
 
                       // ── Acciones ──────────────────────────────────────────
                       const SizedBox(height: 12),
@@ -3459,6 +3518,24 @@ class _OrdersScreenState extends State<OrdersScreen> {
       Navigator.pop(context);
 
       if (result['success'] == true) {
+        // Si se confirma el pago de una orden con transferencia, intenta
+        // adjuntar el SMS (informativo; no bloquea si no hay match).
+        if ((newStatus == OrderStatus.completada ||
+                newStatus == OrderStatus.pagoConfirmado) &&
+            order.operationId != null &&
+            TransferSmsConfirmation.orderHasTransferencia(order)) {
+          final discountData = _getDiscountData(order);
+          final displayTotal =
+              discountData['finalTotal'] as double? ?? order.total;
+          await TransferSmsConfirmation.persistToOperation(
+            operationId: order.operationId!,
+            expectedAmount: TransferSmsConfirmation.transferExpectedAmount(
+              order,
+              fallbackTotal: displayTotal,
+            ),
+          );
+        }
+
         // Recargar órdenes. En offline no ir al servidor: el estado ya está
         // en memoria y en cache local.
         try {
@@ -6729,7 +6806,6 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
       final normalized = Map<String, dynamic>.from(op);
       if (normalized['op'] == 'add') {
         final payload = Map<String, dynamic>.from(normalized['payload'] as Map);
-        if (payload['id_medio_pago'] == 999) payload['id_medio_pago'] = 1;
         normalized['payload'] = payload;
         normalized.remove('item');
         normalized.remove('item_id');
@@ -6791,15 +6867,8 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
       setState(() {
         _categories = futures[0] as List<Category>;
         final online = futures[1] as List<PaymentMethod>;
-        final pagoRegular = PaymentMethod(
-          id: 999,
-          denominacion: 'Efectivo (sin descuento)',
-          esEfectivo: true,
-          esDigital: false,
-          esActivo: true,
-        );
-        final available = [pagoRegular, ...online];
-        _selectedPaymentMethod = _paymentMethodFromOrder(available);
+        // Solo métodos activos de BD/cache. Sin inyección de pseudo-métodos.
+        _selectedPaymentMethod = _paymentMethodFromOrder(online);
         _loadingCategories = false;
       });
     }
@@ -7628,8 +7697,30 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
       );
     }
 
+    // Primero los productos por defecto, luego el resto; dentro de cada grupo
+    // se ordena alfabéticamente por nombre.
+    final defaultProductIds =
+        widget.defaultOrderItems
+            .map((e) {
+              try {
+                return Product.fromJson(
+                  e['product'] as Map<String, dynamic>,
+                ).id;
+              } catch (_) {
+                return null;
+              }
+            })
+            .whereType<int>()
+            .toSet();
     final sorted = List<OrderItem>.from(_items)
-      ..sort((a, b) => a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase()));
+      ..sort((a, b) {
+        final aDefault =
+            defaultProductIds.contains(a.producto.id) || _isGhostItem(a);
+        final bDefault =
+            defaultProductIds.contains(b.producto.id) || _isGhostItem(b);
+        if (aDefault != bDefault) return aDefault ? -1 : 1;
+        return a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase());
+      });
 
     return ListView.separated(
       controller: ctrl,

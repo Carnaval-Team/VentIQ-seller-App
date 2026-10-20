@@ -24,6 +24,7 @@ import '../utils/price_utils.dart';
 import '../utils/promotion_rules.dart';
 import '../utils/uuid_generator.dart';
 import '../utils/package_image_picker.dart' as web_picker;
+import '../widgets/transfer_sms_confirmation_banner.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
@@ -70,11 +71,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Map<String, dynamic>? _globalPromotionData;
   double _usdRate = 0.0;
   bool _isLoadingUsdRate = false;
+  bool _mostrarSelectorMoneda = false;
   final Map<int, String> _paymentCurrencyByMethodId = {};
 
   // ===== Confirmación de pago por SMS (PAGOxMOVIL) =====
-  final BankSmsService _bankSmsService = BankSmsService();
-  StreamSubscription<BankSmsPayment>? _smsSub;
+  final GlobalKey<TransferSmsConfirmationBannerState> _smsBannerKey =
+      GlobalKey<TransferSmsConfirmationBannerState>();
   // Pago capturado y casado con el total de esta orden. Informativo: si es
   // null al crear la orden, la venta se cierra igual sin confirmar.
   BankSmsPayment? _confirmedPayment;
@@ -93,7 +95,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     _loadProductPromotions();
     _loadGlobalPromotion();
     _loadUsdRate();
-    _initSmsPaymentWatch();
   }
 
   /// `true` si algún producto de la orden se paga por transferencia.
@@ -113,94 +114,31 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return total > 0 ? total : finalTotal;
   }
 
-  /// Arranca (o reengancha) la escucha del SMS de confirmación y se suscribe a
-  /// los pagos entrantes. Todo best-effort: la confirmación es informativa.
-  Future<void> _initSmsPaymentWatch() async {
-    if (!_tieneTransferencia || !BankSmsService.isSupported) return;
-
-    // La escucha pudo haberse iniciado en PreorderScreen antes de navegar
-    // aquí; startListening es idempotente y solo reinicia el temporizador.
-    await _bankSmsService.startListening();
-
-    // Respaldo: si Android mató el proceso y el receiver no se disparó,
-    // recuperamos del inbox los pagos recientes. Luego intentamos casar.
-    await _bankSmsService.reconcileFromInbox();
-    await _tryMatchPending();
-
-    _smsSub = _bankSmsService.onPayment.listen((_) => _tryMatchPending());
-  }
-
-  /// Busca en el buffer un pago cuyo monto coincida con la parte transferencia
-  /// y, si lo encuentra, lo marca como confirmado en la UI.
-  Future<void> _tryMatchPending() async {
-    if (_confirmedPayment != null) return;
-    final match = await _bankSmsService.findMatchingPayment(
-      transferExpectedAmount,
-    );
-    if (match == null || !mounted) return;
-    setState(() {
-      _confirmedPayment = match;
-    });
-    _showSuccessMessage(
-      '✅ Pago de \$${match.monto.toStringAsFixed(2)} confirmado por SMS '
-      '(${match.banco})',
-    );
-  }
-
   /// Resuelve el pago SMS a persistir en el momento de crear la orden.
-  ///
-  /// Hace un último intento de casar por si el SMS llegó entre que el cajero
-  /// vio la pantalla y pulsó "Crear Orden". Devuelve null si no hay
-  /// transferencia, no hay soporte, o no llegó ningún SMS que cuadre — en
-  /// todos esos casos la venta se cierra igual (confirmación informativa).
   Future<BankSmsPayment?> _resolveSmsPayment() async {
     if (!_tieneTransferencia) return null;
-    if (_confirmedPayment != null) return _confirmedPayment;
-    if (!BankSmsService.isSupported) return null;
-    await _bankSmsService.reconcileFromInbox();
-    return _bankSmsService.findMatchingPayment(transferExpectedAmount);
+    final fromBanner = await _smsBannerKey.currentState?.resolveNow();
+    if (fromBanner != null) return fromBanner;
+    return TransferSmsConfirmation.resolvePayment(
+      transferExpectedAmount,
+      alreadyConfirmed: _confirmedPayment,
+    );
   }
 
-  /// Detiene la escucha y saca el pago del buffer una vez asociado a la venta.
   Future<void> _finishSmsWatch(BankSmsPayment? payment) async {
     if (payment != null) {
-      await _bankSmsService.removePendingPayment(payment.nroTransaccionBanco);
+      await BankSmsService().removePendingPayment(payment.nroTransaccionBanco);
     }
-    _bankSmsService.stopListening();
+    BankSmsService().stopListening();
   }
 
-  /// Adjunta el SMS de confirmación a la operación de venta recién creada
-  /// (online) vía `fn_confirmar_pago_sms`. Best-effort: cualquier fallo se
-  /// loguea pero no interrumpe el cierre de la venta.
   Future<void> _persistSmsConfirmation(int operationId) async {
-    final payment = await _resolveSmsPayment();
-    if (payment == null) {
-      _bankSmsService.stopListening();
-      return;
-    }
-    try {
-      final resp = await Supabase.instance.client.rpc(
-        'fn_confirmar_pago_sms',
-        params: {
-          'p_id_operacion': operationId,
-          'p_sms_json': payment.toJson(),
-          'p_tolerancia': BankSmsService.amountTolerance,
-        },
-      );
-      final status = (resp is Map) ? resp['status'] : null;
-      if (status == 'success') {
-        print(
-          '✅ Pago SMS ${payment.nroTransaccionBanco} vinculado a op '
-          '$operationId',
-        );
-      } else {
-        print('⚠️ fn_confirmar_pago_sms devolvió: $resp');
-      }
-    } catch (e) {
-      print('❌ Error vinculando pago SMS a operación $operationId: $e');
-    } finally {
-      await _finishSmsWatch(payment);
-    }
+    await TransferSmsConfirmation.persistToOperation(
+      operationId: operationId,
+      expectedAmount: transferExpectedAmount,
+      alreadyConfirmed:
+          _confirmedPayment ?? _smsBannerKey.currentState?.confirmedPayment,
+    );
   }
 
   Future<void> _loadUsdRate() async {
@@ -262,6 +200,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               !SalesModeService.mostradorActivo;
           _solicitarImagenOperacion =
               config['solicitar_imagen_operacion'] ?? false;
+          _mostrarSelectorMoneda =
+              config['mostrar_selector_moneda'] ?? false;
           print(
             '✅ Configuración cargada desde cache - No solicitar cliente: $_noSolicitarCliente, Modo restaurante: $_modoRestaurante',
           );
@@ -279,6 +219,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               !SalesModeService.mostradorActivo;
           _solicitarImagenOperacion =
               await StoreConfigService.getSolicitarImagenOperacion(storeId);
+          _mostrarSelectorMoneda =
+              await StoreConfigService.getMostrarSelectorMoneda(storeId);
           print(
             '✅ Configuración cargada desde Supabase - No solicitar cliente: $_noSolicitarCliente, Modo restaurante: $_modoRestaurante',
           );
@@ -393,11 +335,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     _buyerNameController.dispose();
     _buyerPhoneController.dispose();
     _extraContactsController.dispose();
-    // Solo cancelamos nuestra suscripción; NO detenemos la escucha global:
-    // el SMS puede llegar tras salir del checkout y el propio servicio la
-    // apaga por inactividad (20 min). La escucha sí se detiene al crear la
-    // orden (ver _createOrder).
-    _smsSub?.cancel();
+    // No detenemos la escucha global aquí: el SMS puede llegar tras salir
+    // del checkout (p.ej. orden pendiente) y el servicio la apaga por
+    // inactividad (20 min). Se detiene al asociar el SMS a la operación.
     super.dispose();
   }
 
@@ -481,7 +421,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             .where((item) => !(item.paymentMethod?.esPagoPendiente ?? false))
             .map((item) {
               final id = item.paymentMethod?.id;
-              return id == 999 ? 1 : id;
+              return id;
             })
             .whereType<int>()
             .toSet();
@@ -520,7 +460,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     for (final item in widget.order.items) {
       final method = item.paymentMethod;
       if (method == null || method.esPagoPendiente) continue;
-      final methodId = method.id == 999 ? 1 : method.id;
+      final methodId = method.id;
       final currency = _paymentCurrencyByMethodId[methodId] ?? 'CUP';
       final cupAmount = _calculateItemPrice(item);
       final line = grouped.putIfAbsent(
@@ -531,7 +471,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           'monto': 0.0,
           'moneda': currency,
           'tasa_usd': currency == 'USD' ? _usdRate : null,
-          'tipo_pago': methodId == 1 && method.id != 999 ? 1 : 2,
+          'tipo_pago': methodId == 1 ? 1 : 2,
         },
       );
       line['monto'] =
@@ -585,7 +525,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               _buildFinalTotalSection(),
               if (_tieneTransferencia) ...[
                 const SizedBox(height: 16),
-                _buildSmsConfirmationSection(),
+                TransferSmsConfirmationBanner(
+                  key: _smsBannerKey,
+                  expectedAmount: transferExpectedAmount,
+                  onConfirmedChanged: (payment) {
+                    _confirmedPayment = payment;
+                    if (mounted) setState(() {});
+                  },
+                ),
               ],
               if (_solicitarImagenOperacion) ...[
                 const SizedBox(height: 20),
@@ -844,27 +791,47 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               final methodName = entry.key;
               final amount = entry.value;
               final icon = _getPaymentMethodIcon(methodName);
+              final methodInfo = _paymentMethodInfoForName(methodName);
+              final methodId = methodInfo?.id;
+              final esPendiente = methodInfo?.esPagoPendiente ?? false;
+              final currency =
+                  methodId == null
+                      ? 'CUP'
+                      : (_paymentCurrencyByMethodId[methodId] ?? 'CUP');
+              final displayAmount =
+                  currency == 'USD' && _usdRate > 0
+                      ? amount / _usdRate
+                      : amount;
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Row(
-                      children: [
-                        Text(icon, style: const TextStyle(fontSize: 16)),
-                        const SizedBox(width: 8),
-                        Text(
-                          methodName,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: Color(0xFF1F2937),
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Text(icon, style: const TextStyle(fontSize: 16)),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              methodName,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF1F2937),
+                              ),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
+                    if (methodId != null && !esPendiente && _usdRate > 0 && _mostrarSelectorMoneda) ...[
+                      _buildCurrencyToggle(methodId, currency),
+                      const SizedBox(width: 8),
+                    ],
                     Text(
-                      '${amount.toStringAsFixed(2)} CUP',
+                      '${displayAmount.toStringAsFixed(2)} $currency',
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -902,6 +869,68 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  /// Busca el método de pago asociado a un nombre del desglose para obtener
+  /// su id real y si es Pago Pendiente.
+  ({int id, bool esPagoPendiente})? _paymentMethodInfoForName(String name) {
+    for (final item in widget.order.items) {
+      final method = item.paymentMethod;
+      if (method != null && method.denominacion == name) {
+        return (id: method.id, esPagoPendiente: method.esPagoPendiente);
+      }
+    }
+    return null;
+  }
+
+  /// Toggle compacto CUP/USD para que el cajero elija la moneda de cobro de
+  /// cada método en esta venta. Actualiza [_paymentCurrencyByMethodId], que
+  /// usan `_currencyPaymentLines` y el desglose offline al persistir.
+  Widget _buildCurrencyToggle(int methodId, String currency) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey[100],
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.grey[300]!),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children:
+            ['CUP', 'USD'].map((c) {
+              final selected = c == currency;
+              return GestureDetector(
+                onTap: () {
+                  setState(() {
+                    if (c == 'CUP') {
+                      _paymentCurrencyByMethodId.remove(methodId);
+                    } else {
+                      _paymentCurrencyByMethodId[methodId] = 'USD';
+                    }
+                  });
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color:
+                        selected ? const Color(0xFF4A90E2) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  child: Text(
+                    c,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: selected ? Colors.white : Colors.grey[700],
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
       ),
     );
   }
@@ -1475,122 +1504,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
-  Widget _buildSmsConfirmationSection() {
-    final confirmed = _confirmedPayment;
-
-    if (confirmed != null) {
-      return Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.green.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.green.withOpacity(0.4)),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.verified, color: Colors.green, size: 28),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Pago confirmado por SMS',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF1B5E20),
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${confirmed.banco} · \$${confirmed.monto.toStringAsFixed(2)} ${confirmed.moneda}',
-                    style: TextStyle(fontSize: 13, color: Colors.grey[800]),
-                  ),
-                  Text(
-                    'Tx: ${confirmed.nroTransaccionBanco}',
-                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // Plataforma sin soporte de SMS (iOS/Windows/Web): no prometemos algo
-    // que no podemos cumplir; solo un aviso discreto.
-    if (!BankSmsService.isSupported) {
-      return Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.grey.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.withOpacity(0.3)),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.info_outline, color: Colors.grey[600], size: 20),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'Confirmación automática de transferencia solo disponible en '
-                'Android. Verifica el pago manualmente.',
-                style: TextStyle(fontSize: 12, color: Colors.grey[700]),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // Esperando el SMS.
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.orange.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.orange.withOpacity(0.4)),
-      ),
-      child: Row(
-        children: [
-          const SizedBox(
-            width: 22,
-            height: 22,
-            child: CircularProgressIndicator(
-              strokeWidth: 2.5,
-              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFE65100)),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Esperando confirmación de transferencia…',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFFE65100),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'Buscando SMS de PAGOxMOVIL por '
-                  '\$${transferExpectedAmount.toStringAsFixed(2)}. '
-                  'Puedes crear la orden sin esperar.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[700]),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildOperationPhotoSection() {
     final hasPhoto = _fotoOperacionBytes != null;
     return Container(
@@ -2011,15 +1924,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return;
     }
 
+    // CxC ya no se crea desde el TPV (se gestiona en admin). Si quedó un
+    // ítem con el sentinel 998 (cache viejo), abortamos en vez de abrir cartera.
     final tienePagoPendiente = widget.order.items.any(
       (item) => item.paymentMethod?.esPagoPendiente ?? false,
     );
     if (tienePagoPendiente) {
-      final validacion = await _validarPagoPendiente();
-      if (validacion != null) {
-        _showErrorMessage(validacion);
-        return;
-      }
+      _showErrorMessage(
+        'Cuentas por cobrar no están disponibles en el TPV. '
+        'Cambia el método de pago de los productos o gestiona la deuda desde administración.',
+      );
+      return;
     }
 
     setState(() {
@@ -2117,7 +2032,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
         // Agrupar por método de pago
         final rawMethodId = item.paymentMethod?.id;
-        final normalizedMethodId = rawMethodId == 999 ? 1 : rawMethodId;
+        final normalizedMethodId = rawMethodId;
         final paymentMethodId = normalizedMethodId?.toString() ?? 'sin_metodo';
         final currency =
             normalizedMethodId == null

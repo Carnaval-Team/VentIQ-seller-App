@@ -85,6 +85,7 @@ class StoreConfigService {
     bool? mostrarMetodoPagoTicket,
     bool? modoRestaurante,
     bool? cocinaActiva,
+    bool? mostrarSelectorMoneda,
   }) async {
     try {
       print('🔧 Actualizando configuración para tienda ID: $storeId');
@@ -239,6 +240,10 @@ class StoreConfigService {
       if (mostrarMetodoPagoTicket != null) {
         updateData['mostrar_metodo_pago_ticket'] = mostrarMetodoPagoTicket;
         print('  - mostrar_metodo_pago_ticket: $mostrarMetodoPagoTicket');
+      }
+      if (mostrarSelectorMoneda != null) {
+        updateData['mostrar_selector_moneda'] = mostrarSelectorMoneda;
+        print('  - mostrar_selector_moneda: $mostrarSelectorMoneda');
       }
       if (modoRestaurante != null) {
         updateData['modo_restaurante'] = modoRestaurante;

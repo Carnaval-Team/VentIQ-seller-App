@@ -26,6 +26,7 @@ import '../utils/uuid_generator.dart';
 import '../widgets/bill_count_dialog.dart';
 import 'checkout_screen.dart';
 import 'orders_screen.dart';
+import 'payment_method_picker_screen.dart';
 
 class PreorderScreen extends StatefulWidget {
   const PreorderScreen({Key? key}) : super(key: key);
@@ -221,26 +222,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
           );
       print('✅ Métodos de pago cargados: ${paymentMethods.length}');
 
-      // Agregar método especial "Pago Regular (Efectivo)" hardcoded
-      final pagoRegularEfectivo = pm.PaymentMethod(
-        id: 999, // ID especial para diferenciarlo
-        denominacion: 'Pago Regular (Efectivo)',
-        descripcion: 'Pago en efectivo sin descuento aplicado',
-        esDigital: false,
-        esEfectivo: true,
-        esActivo: true,
-      );
-
-      // Agregar al inicio de la lista para que aparezca primero
-      final methodsWithSpecial = [pagoRegularEfectivo, ...paymentMethods];
-
-      // Temporalmente oculto: "Pago Pendiente" (cuenta por cobrar).
-      // if (isAdminSession || vendedoresPuedenCrearCxc) {
-      //   methodsWithSpecial.add(pm.PaymentMethod.pagoPendiente());
-      // }
-
+      // Solo métodos activos de BD/cache. CxC (998) no se gestiona en el TPV.
       setState(() {
-        _paymentMethods = methodsWithSpecial;
+        _paymentMethods = paymentMethods;
         _loadingPaymentMethods = false;
       });
     } catch (e) {
@@ -795,108 +779,17 @@ class _PreorderScreenState extends State<PreorderScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          Container(
-            height: 40,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey[300]!),
-              borderRadius: BorderRadius.circular(8),
-              color: Colors.white,
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<pm.PaymentMethod>(
-                isExpanded: true,
-                value: item.paymentMethod,
-                hint: const Text(
-                  'Seleccionar método de pago',
-                  style: TextStyle(fontSize: 14, color: Colors.grey),
-                ),
-                style: const TextStyle(fontSize: 14, color: Colors.black87),
-                items:
-                    _paymentMethods.map((pm.PaymentMethod method) {
-                      // Identificar si es el método especial "Pago Regular (Efectivo)"
-                      final isSpecialCash = method.id == 999;
-
-                      return DropdownMenuItem<pm.PaymentMethod>(
-                        value: method,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 4,
-                            horizontal: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color:
-                                isSpecialCash
-                                    ? Colors.red.withOpacity(0.1)
-                                    : null,
-                            borderRadius: BorderRadius.circular(6),
-                            border:
-                                isSpecialCash
-                                    ? Border.all(
-                                      color: Colors.red.withOpacity(0.3),
-                                      width: 1,
-                                    )
-                                    : null,
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                method.typeIcon,
-                                size: 18,
-                                color:
-                                    isSpecialCash
-                                        ? Colors.red[700]
-                                        : Colors.grey[600],
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  method.displayName,
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color:
-                                        isSpecialCash
-                                            ? Colors.red[700]
-                                            : Colors.black87,
-                                    fontWeight:
-                                        isSpecialCash
-                                            ? FontWeight.w600
-                                            : FontWeight.normal,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              if (isSpecialCash) ...[
-                                const SizedBox(width: 4),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.red,
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: const Text(
-                                    'SIN DESC.',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                onChanged: (pm.PaymentMethod? newMethod) {
-                  _updateItemPaymentMethod(item.id, newMethod);
-                },
-              ),
-            ),
+          PaymentMethodPickerField(
+            methods: _paymentMethods,
+            value: item.paymentMethod,
+            hint: 'Seleccionar método de pago',
+            pickerTitle: 'Método de pago',
+            pickerSubtitle: item.nombre,
+            accentColor:
+                hasPaymentMethod
+                    ? const Color(0xFF10B981)
+                    : const Color(0xFF4A90E2),
+            onSelected: (method) => _updateItemPaymentMethod(item.id, method),
           ),
         ],
       ),
@@ -2663,15 +2556,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
           ),
           const SizedBox(height: 12),
           Container(
-            height: 48,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
-              border: Border.all(
-                color: const Color(0xFF4A90E2).withOpacity(0.4),
-                width: 1.5,
-              ),
               borderRadius: BorderRadius.circular(10),
-              color: Colors.white,
               boxShadow: [
                 BoxShadow(
                   color: const Color(0xFF4A90E2).withOpacity(0.1),
@@ -2680,114 +2566,15 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 ),
               ],
             ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<pm.PaymentMethod>(
-                isExpanded: true,
-                value: _globalPaymentMethod,
-                hint: const Text(
-                  'Seleccionar método para aplicar a todos',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: Colors.black87,
-                  fontWeight: FontWeight.w500,
-                ),
-                items:
-                    _paymentMethods.map((pm.PaymentMethod method) {
-                      // Identificar si es el método especial "Pago Regular (Efectivo)"
-                      final isSpecialCash = method.id == 999;
-
-                      return DropdownMenuItem<pm.PaymentMethod>(
-                        value: method,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 4,
-                            horizontal: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color:
-                                isSpecialCash
-                                    ? Colors.red.withOpacity(0.1)
-                                    : null,
-                            borderRadius: BorderRadius.circular(6),
-                            border:
-                                isSpecialCash
-                                    ? Border.all(
-                                      color: Colors.red.withOpacity(0.3),
-                                      width: 1,
-                                    )
-                                    : null,
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: BoxDecoration(
-                                  color:
-                                      isSpecialCash
-                                          ? Colors.red.withOpacity(0.2)
-                                          : Colors.grey[100],
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Icon(
-                                  method.typeIcon,
-                                  size: 18,
-                                  color:
-                                      isSpecialCash
-                                          ? Colors.red[700]
-                                          : const Color(0xFF4A90E2),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  method.displayName,
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                    color:
-                                        isSpecialCash
-                                            ? Colors.red[700]
-                                            : Colors.black87,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              if (isSpecialCash) ...[
-                                const SizedBox(width: 4),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.red,
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: const Text(
-                                    'SIN DESC.',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                onChanged: (pm.PaymentMethod? newMethod) {
-                  _applyGlobalPaymentMethod(newMethod);
-                },
-              ),
+            child: PaymentMethodPickerField(
+              methods: _paymentMethods,
+              value: _globalPaymentMethod,
+              hint: 'Seleccionar método para aplicar a todos',
+              pickerTitle: 'Aplicar a todos los productos',
+              pickerSubtitle:
+                  'El método elegido se asignará a cada producto del carrito',
+              accentColor: const Color(0xFF4A90E2),
+              onSelected: _applyGlobalPaymentMethod,
             ),
           ),
           if (_globalPaymentMethod != null) ...[

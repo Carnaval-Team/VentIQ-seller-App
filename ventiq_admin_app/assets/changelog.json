@@ -1,9 +1,31 @@
 {
-  "current_version": "2.9.3",
-  "build": 292,
+  "current_version": "2.9.4",
+  "build": 293,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.9.4",
+      "date": "2026-10-17",
+      "title": "Selector de moneda, reporte por turnos e inventario con movimientos",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Reporte de ventas por turnos abiertos",
+          "description": "El reporte de ventas de productos añade el criterio 'Turnos' para contar las ventas usando el mismo rango de operaciones que el reporte por TPVs, evitando diferencias entre ambas vistas."
+        },
+        {
+          "type": "feature",
+          "title": "Exportar solo productos con movimientos",
+          "description": "En la exportación de inventario se agregó la opción 'Con movimientos', que muestra únicamente los productos que tuvieron extracciones, ventas o pendientes dentro del período filtrado."
+        },
+        {
+          "type": "improvement",
+          "title": "Confirmación de transferencia por SMS más robusta",
+          "description": "Se refactorizó el banner de confirmación de pagos por transferencia para unificar la lógica entre el checkout y las órdenes pendientes, haciendo más confiable la detección y vinculación del SMS."
+        }
+      ]
+    },
     {
       "version": "2.9.3",
       "date": "2026-10-12",

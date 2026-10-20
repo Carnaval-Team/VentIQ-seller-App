@@ -11,6 +11,7 @@ import '../services/store_config_service.dart';
 import '../services/turno_service.dart';
 import '../services/user_preferences_service.dart';
 import 'checkout_screen.dart';
+import 'payment_method_picker_screen.dart';
 
 /// Entrada dual litros ↔ monto + método de pago, luego checkout de 1 línea.
 class ServicentroCantidadScreen extends StatefulWidget {
@@ -75,21 +76,10 @@ class _ServicentroCantidadScreenState extends State<ServicentroCantidadScreen> {
         isOfflineModeEnabled: useLocal,
       );
 
-      // Mismo set especial que PreorderScreen.
-      final pagoRegularEfectivo = pm.PaymentMethod(
-        id: 999,
-        denominacion: 'Pago Regular (Efectivo)',
-        descripcion: 'Pago en efectivo sin descuento aplicado',
-        esDigital: false,
-        esEfectivo: true,
-        esActivo: true,
-      );
-      final withSpecial = <pm.PaymentMethod>[pagoRegularEfectivo, ...methods];
-
-      // Temporalmente oculto: "Pago Pendiente" (cuenta por cobrar).
+      // Solo métodos activos de BD/cache. Sin inyección de pseudo-métodos.
 
       if (!mounted) return;
-      if (withSpecial.isEmpty) {
+      if (methods.isEmpty) {
         setState(() {
           _paymentMethods = [];
           _selectedPayment = null;
@@ -102,10 +92,10 @@ class _ServicentroCantidadScreenState extends State<ServicentroCantidadScreen> {
       }
 
       setState(() {
-        _paymentMethods = withSpecial;
-        _selectedPayment = withSpecial.firstWhere(
-          (m) => m.id == 999 || m.esEfectivo,
-          orElse: () => withSpecial.first,
+        _paymentMethods = methods;
+        _selectedPayment = methods.firstWhere(
+          (m) => m.esEfectivo,
+          orElse: () => methods.first,
         );
         _loadingPayments = false;
         _error = null;
@@ -505,36 +495,34 @@ class _ServicentroCantidadScreenState extends State<ServicentroCantidadScreen> {
       );
     }
 
-    return InputDecorator(
-      decoration: InputDecoration(
-        border: const OutlineInputBorder(),
-        prefixIcon: Icon(
+    return Row(
+      children: [
+        Icon(
           hasPayment ? Icons.check_circle : Icons.payment,
           color: hasPayment ? const Color(0xFF10B981) : Colors.red[600],
         ),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<pm.PaymentMethod>(
-          isExpanded: true,
-          value: _selectedPayment,
-          hint: const Text('Seleccionar…'),
-          items: _paymentMethods.map((method) {
-            return DropdownMenuItem<pm.PaymentMethod>(
-              value: method,
-              child: Text(
-                method.denominacion,
-                overflow: TextOverflow.ellipsis,
-              ),
-            );
-          }).toList(),
-          onChanged: (method) {
-            setState(() {
-              _selectedPayment = method;
-              _error = null;
-            });
-          },
+        const SizedBox(width: 10),
+        Expanded(
+          child: PaymentMethodPickerField(
+            methods: _paymentMethods,
+            value: _selectedPayment,
+            hint: 'Seleccionar…',
+            pickerTitle: 'Método de pago',
+            pickerSubtitle: widget.fuel.denominacion,
+            height: 48,
+            accentColor:
+                hasPayment
+                    ? const Color(0xFF10B981)
+                    : const Color(0xFF4A90E2),
+            onSelected: (method) {
+              setState(() {
+                _selectedPayment = method;
+                _error = null;
+              });
+            },
+          ),
         ),
-      ),
+      ],
     );
   }
 }

@@ -399,9 +399,9 @@ class MesaCuentaService {
     required int idItem,
     required PaymentMethod? metodo,
   }) async {
-    // Si paymentMethod es el "Pago Regular (Efectivo)" especial (id=999) lo
-    // tratamos como null para que sea capturado al cerrar la nota.
-    final id = (metodo == null || metodo.id == 999) ? null : metodo.id;
+    // 999 ("Pago Regular Efectivo") ya es un método real del catálogo; se
+    // envía su id como cualquier otro.
+    final id = metodo?.id;
     await _supabase.rpc(
       'fn_actualizar_metodo_pago_item_cuenta',
       params: {'p_id_item': idItem, 'p_id_metodo_pago': id},

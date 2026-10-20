@@ -334,6 +334,20 @@ class StoreConfigService {
     }
   }
 
+  /// Si el checkout muestra el toggle CUP/USD por método de pago.
+  /// Default `false` — la tienda debe habilitarlo explícitamente.
+  static Future<bool> getMostrarSelectorMoneda(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      final value = config?['mostrar_selector_moneda'];
+      if (value == null) return false;
+      return value == true;
+    } catch (e) {
+      print('❌ Error al obtener mostrar_selector_moneda: $e');
+      return false;
+    }
+  }
+
   /// Obtiene el valor de permitir_imprimir_pendientes
   static Future<bool> getAllowPrintPending(int storeId) async {
     try {

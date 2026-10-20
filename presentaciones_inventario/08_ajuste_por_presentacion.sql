@@ -102,6 +102,7 @@ AS $$
 DECLARE
   v_id_operacion    BIGINT;
   v_id_ajuste       BIGINT;
+  v_id_control      BIGINT;
   v_diferencia      NUMERIC;
   v_id_tienda       BIGINT;
   -- NUEVO
@@ -216,7 +217,28 @@ BEGIN
     'Ajuste de inventario completado'
   );
 
-  -- PASO 3: Insertar en tabla de ajuste CON id_operacion
+  -- PASO 3: control_productos — enlace canónico operación ↔ ledger.
+  -- Sin esto el kardex/export dejan el movimiento como SIN_OP (origen_cambio=3
+  -- sin id_recepcion/id_extraccion/id_control) y no entra en Entradas/Extracciones.
+  IF v_diferencia <> 0 THEN
+    INSERT INTO app_dat_control_productos (
+      id_operacion,
+      id_producto,
+      id_ubicacion,
+      id_presentacion,
+      cantidad,
+      created_at
+    ) VALUES (
+      v_id_operacion,
+      p_id_producto,
+      p_id_ubicacion,
+      v_id_presentacion,
+      ABS(v_diferencia),
+      NOW()
+    ) RETURNING id INTO v_id_control;
+  END IF;
+
+  -- PASO 4: Insertar en tabla de ajuste CON id_operacion + id_control
   -- cantidad_anterior = el saldo REAL leido, no el que declaro el cliente.
   INSERT INTO app_dat_ajuste_inventario (
     id_producto,
@@ -225,6 +247,7 @@ BEGIN
     cantidad_anterior,
     cantidad_nueva,
     diferencia,
+    id_control,
     id_operacion,
     uuid_usuario,
     created_at
@@ -235,12 +258,13 @@ BEGIN
     v_saldo_real,
     p_cantidad_nueva,
     v_diferencia,
+    v_id_control,
     v_id_operacion,
     p_uuid_usuario,
     NOW()
   ) RETURNING id INTO v_id_ajuste;
 
-  -- ── PASO 4 (Fase 1): el movimiento lo escriben los helpers ───────────────
+  -- ── PASO 5 (Fase 1): el movimiento lo escriben los helpers ───────────────
   -- Antes se hacia un INSERT directo con cantidad_inicial = lo declarado por el
   -- cliente. Eso rompia la cadena de saldos (202 casos en produccion) y podia
   -- dejar negativos.
@@ -283,12 +307,39 @@ BEGIN
       USING ERRCODE = 'P0001';
   END IF;
 
+  -- PASO 6: enlazar el snapshot del ledger con id_control.
+  -- Los helpers aún no aceptan p_id_control (cambiar firma rompe callers);
+  -- se pinta la fila recién escrita en esta misma transacción.
+  IF v_id_control IS NOT NULL
+     AND COALESCE(v_movimiento->>'sin_cambios', 'false') <> 'true' THEN
+    UPDATE app_dat_inventario_productos i
+    SET id_control = v_id_control
+    WHERE i.id = (
+      SELECT i2.id
+      FROM app_dat_inventario_productos i2
+      WHERE i2.id_producto = p_id_producto
+        AND i2.id_ubicacion IS NOT DISTINCT FROM p_id_ubicacion
+        AND i2.id_presentacion = v_id_presentacion
+        AND i2.origen_cambio = 3
+        AND i2.id_control IS NULL
+        AND i2.id_extraccion IS NULL
+        AND i2.id_recepcion IS NULL
+        AND COALESCE(i2.id_conversion, 0) = 0
+        AND i2.created_at >= (
+          SELECT o.created_at FROM app_dat_operaciones o WHERE o.id = v_id_operacion
+        )
+      ORDER BY i2.id DESC
+      LIMIT 1
+    );
+  END IF;
+
   -- Retornar éxito
   RETURN jsonb_build_object(
     'status',          'success',
     'message',         'Ajuste de inventario registrado correctamente',
     'id_operacion',    v_id_operacion,
     'id_ajuste',       v_id_ajuste,
+    'id_control',      v_id_control,
     'diferencia',      v_diferencia,
     'id_presentacion', v_id_presentacion,
     'saldo_anterior',  v_saldo_real,
@@ -312,8 +363,10 @@ COMMENT ON FUNCTION public.fn_insertar_ajuste_inventario2(
   'Ajusta el inventario de UNA presentacion en una ubicacion. Fase 1 de '
   'presentaciones: lee el saldo previo real (ignora el declarado por el cliente '
   'y lo anota si difiere), valida id_presentacion, y aplica la diferencia con '
-  'fn_ingresar_presentacion / fn_descontar_con_rebalanceo. El conteo mixto '
-  'completo de varias presentaciones a la vez es la Fase 5.';
+  'fn_ingresar_presentacion / fn_descontar_con_rebalanceo. También crea '
+  'app_dat_control_productos y enlaza id_control en ajuste + ledger para que '
+  'export/kardex no dejen el movimiento como SIN_OP. El conteo mixto completo '
+  'de varias presentaciones a la vez es la Fase 5.';
 
 
 -- ============================================================================
