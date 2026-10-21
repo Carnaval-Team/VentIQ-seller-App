@@ -508,3 +508,234 @@ flutter test test/wapi_errores_test.dart \
 - CHANGELOG: <https://raw.githubusercontent.com/rmyndharis/OpenWA/main/CHANGELOG.md>
 
 Documentación **local** (desactualizada, era v0.11.1): `ventiq_admin_app/docs_wapi/`.
+
+### Fuentes del incidente §12
+
+- Issue OpenWA #1636 — <https://github.com/rmyndharis/OpenWA/issues/1636>
+- PR OpenWA #1670 (el arreglo) — <https://github.com/rmyndharis/OpenWA/pull/1670>
+- Patcher del bug — <https://github.com/rmyndharis/OpenWA/blob/v0.25.0/scripts/patch-wwebjs-media-id.js>
+- PR upstream de whatsapp-web.js #201923 (la misma línea, sin release) — <https://github.com/whatsapp-web.js/whatsapp-web.js/pull/201923>
+
+---
+
+## 12. Incidente 2026-10-20: los productos (imagen) daban HTTP 500 y sólo llegaba el resumen
+
+### 12.1 Síntoma
+
+- A los grupos llegaba el **resumen** (mensaje de texto) pero **ningún mensaje por producto**
+  (imagen).
+- En `app_wapi_envio_log`: ids 24428–24457 y anteriores con `error_code = HTTP_500`,
+  `error_message = "Internal server error (tras 3 intento(s))"`.
+- El 500 volvía en **~1 s por intento** (no era timeout) y ocurría con **todos** los destinos y
+  **todas** las imágenes.
+
+### 12.2 Evidencia recogida
+
+**1) El payload quedó descartado** (pruebas contra el endpoint en vivo, `scripts/diag_openwa_send_image.mjs`):
+
+| Petición                                                                     | Respuesta                                   |
+| ---------------------------------------------------------------------------- | ------------------------------------------- |
+| `send-image` con payload **plano** `{chatId,url,caption}`                    | `500`                                       |
+| `send-image` con payload **anidado** `{chatId,image:{url}}`                  | `400 Bad Request` (campo desconocido)       |
+| `send-image` sin `url` ni `base64`                                           | `400 Either url or base64 must be provided` |
+| `send-image` con URL irresoluble                                             | `400 Destination address is not allowed`    |
+
+⇒ **el payload plano que usa `wapi_client.ts` es el correcto**, tanto en 0.23.4 como en 0.25.0.
+
+**2) Matriz de aislamiento sobre el chat propio** (`self`, destino `<numero>@c.us`, sin molestar a clientes):
+
+| Caso                                                 | Resultado |
+| ---------------------------------------------------- | --------- |
+| `send-text` (antes y después de la matriz)           | **201**   |
+| `send-image` con `url` (JPEG real del producto)      | `500`     |
+| `send-image` con `base64` JPEG + `mimetype`          | `500`     |
+| `send-image` con `base64` PNG 1x1                    | `500`     |
+| `send-image` con `url` de un PNG servido como `.jpg` | `500`     |
+| `send-document` con el mismo JPEG                    | `500`     |
+
+⇒ **ninguna imagen ni documento salía; el texto sí**. No depende de la imagen, ni de la URL, ni del
+destinatario.
+
+**3) Stack trace del contenedor** (`docker logs openwa-api`):
+
+```
+Error: Data passed to getter must include an id property (it's how we memoize) but got undefined
+    at ... static.whatsapp.net/rsrc.php/v4/yA/r/-CdGRzkBY84.js:85:180   <-- bundle de WhatsApp Web
+    at async Client.sendMessage (whatsapp-web.js/src/Client.js:1544:25)
+    at async WwebjsMessaging.sendMediaMessage (dist/engine/adapters/wwebjs-messaging.js:207:21)
+    at async MessageSendService.sendImage (dist/modules/message/message-send.service.js:148:22)
+```
+
+El `throw` ocurre **dentro del bundle de WhatsApp Web**, no en código nuestro ni de OpenWA.
+
+### 12.3 Causa raíz
+
+Bug **conocido y ya arreglado por OpenWA** — [issue #1636](https://github.com/rmyndharis/OpenWA/issues/1636)
+→ [PR #1670](https://github.com/rmyndharis/OpenWA/pull/1670):
+
+- Desde los builds de WhatsApp Web del **2026-09-17**, el modelo de media que devuelve
+  `processMediaData` trae un `__x_id` privado **enumerable**. `window.WWebJS.sendMessage` lo esparce
+  (`...mediaOptions`) en el objeto del mensaje saliente y **pisa el `id`** al inicializarse el modelo
+  `Msg` → WA Web lanza `Data passed to getter must include an id property`.
+- Afecta a **todos** los envíos de media del engine `whatsapp-web.js` (imagen, vídeo, audio, nota de
+  voz, documento, sticker y estados). **El texto no pasa por esa ruta**, por eso el resumen sí salía.
+- El arreglo oficial es de una línea (`delete message.__x_id;`) y vive en
+  `scripts/patch-wwebjs-media-id.js`, que OpenWA aplica **al construir la imagen**.
+- **El servidor corría OpenWA 0.23.4** (imagen construida el 2026-09-10), que **no incluye ese
+  patcher** → el bug seguía vivo aunque los textos funcionaran.
+
+### 12.4 Arreglo aplicado en el servidor
+
+En `/root/OpenWA` del VPS, **con respaldo previo**:
+
+1. Respaldo: rama y tag de git `backup-vendor-20261020-190753` (estado anterior `ce51f9f1`), tar del
+   volumen de datos `openwa_openwa-data` en `/root/openwa-backups/`, y la imagen anterior etiquetada
+   `openwa-openwa-api:pre-media-fix`.
+2. `git reset --hard origin/main` → `a3fc0ae4` (`package.json` 0.25.0+, con
+   `scripts/patch-wwebjs-media-id.js` presente; la instalación estaba 3.088 commits por detrás).
+3. `docker compose up -d --build openwa-api`.
+
+> **OJO — el reset revierte un ajuste del proveedor.** El `docker-compose.yml` oficial publica la API
+> en `127.0.0.1:2785`, es decir **sólo local**. En esta instalación el proveedor lo tenía en
+> `0.0.0.0:2785` porque **las edge functions viven en la nube y necesitan llegar al gateway por
+> internet**. Tras el reset hubo que volver a poner `0.0.0.0` (la línea
+> `- '0.0.0.0:${API_PORT:-2785}:2785'`; los puertos de MinIO se dejaron en `127.0.0.1`, como en el
+> original) y recrear el contenedor. **Cualquier `git pull`/`reset` futuro volverá a romper el
+> acceso remoto** — revisar `git diff docker-compose.yml` después de actualizar.
+>
+> Síntoma si se olvida: el contenedor está `healthy` y `curl localhost:2785` funciona **dentro** del
+> VPS, pero desde fuera la conexión se resetea y las edge functions fallan con `NETWORK_ERROR`.
+
+**Resultado (2026-10-20 16:37 UTC):** `app_wapi_envio_log` ids 24457/24458/24459 (`id_producto`
+10447/5260/7345, grupo `120363423044527374@g.us`, los mismos que fallaban) pasaron a **`enviado` con
+`mensaje_id` no nulo**.
+
+### 12.5 Cómo verificar el arreglo
+
+```bash
+# 1) El parche está en la imagen (debe imprimir 1)
+docker exec openwa-api grep -c 'delete message.__x_id' \
+  /app/node_modules/whatsapp-web.js/src/util/Injected/Utils.js
+
+# 2) El gateway es alcanzable desde fuera (no sólo desde el VPS)
+ss -lntp | grep 2785        # debe decir 0.0.0.0:2785, no 127.0.0.1:2785
+
+# 3) Prueba real contra el chat propio (no molesta a clientes): todo debe dar 201
+cd ventiq_admin_app && OWA_SELF=<numero de la sesión> node scripts/diag_openwa_send_image.mjs self
+cd ventiq_admin_app && OWA_SELF=<numero de la sesión> node scripts/diag_openwa_send_image.mjs capt
+
+# 4) En la BD, los reintentos deben pasar a 'enviado' con mensaje_id no nulo
+```
+
+Verificado el 2026-10-20: `send-text`, `send-image` (url), `send-image` (base64 JPEG), `send-image`
+(base64 PNG), `send-image` (PNG servido como `.jpg`) y `send-document` → **201**; y la petición con
+el caption exacto de producción → **201**. Cero errores `Data passed to getter` tras el reinicio.
+
+### 12.6 Cómo volver atrás
+
+```bash
+cd /root/OpenWA
+git reset --hard backup-vendor-20261020-190753
+docker tag openwa-openwa-api:pre-media-fix openwa-openwa-api:latest
+docker compose up -d --force-recreate openwa-api
+```
+
+### 12.7 Lecciones para nuestro lado (edge function / app)
+
+- **Reintentar no ayuda con este tipo de error.** El fallo es global y permanente mientras el
+  servidor esté desactualizado; los 3 reintentos por mensaje sólo añadían ~15 s de espera y
+  ensuciaban la bitácora con el mismo texto. Mejora pendiente: que `wapi-send-products` trate un
+  `HTTP_500` de media como **definitivo** (sin reintento) y lo marque con un diagnóstico del tipo
+  «el servidor de WhatsApp no puede enviar imágenes; avisa al soporte».
+- **Comprobar la versión del gateway antes de culpar a nuestro payload.** `GET /api/health` devuelve
+  `version`; el servidor decía `0.23.4` mientras nuestra documentación sincronizada era de `0.25.0`.
+  Vale la pena que el watchdog registre esa versión (ya la devuelve la acción `health` de
+  `wapi-session-action`) y que la app avise si el gateway está por debajo de la versión con el
+  patcher de media.
+- **Las pruebas de diagnóstico deben usar el chat propio** (`<numero>@c.us`). Un `chatId`
+  inexistente devuelve 500 para *cualquier* envío (también texto) y habría llevado a una conclusión
+  falsa.
+
+### 12.8 Efectos colaterales del salto a 0.25.0 (importante para el próximo upgrade)
+
+El `git reset` a `origin/main` **pisa dos ajustes locales** que esta instalación necesita porque se
+llega al gateway por **HTTP plano y desde fuera** (las edge functions están en la nube):
+
+| Ajuste                            | Valor que necesita esta instalación    | Por qué falta                                                                                                                              | Dónde quedó                                     |
+| --------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------- |
+| Publicación del puerto            | `0.0.0.0:${API_PORT:-2785}:2785`       | El compose oficial publica en `127.0.0.1` → inalcanzable desde Supabase, las edge functions fallan con `NETWORK_ERROR`                     | `docker-compose.yml` (**se pierde** con `git pull`) |
+| `CSP_UPGRADE_INSECURE_REQUESTS`   | `false`                                | En producción OpenWA manda la CSP `upgrade-insecure-requests`; por HTTP el navegador sube los assets a `https://` y el dashboard queda en blanco (`SSL_ERROR_RX_RECORD_TOO_LONG`) | `/root/OpenWA/.env` (**no se pierde**: `.gitignore:17` lo excluye) |
+| `AUTO_START_SESSIONS`             | `true`                                 | Por defecto OpenWA deja TODAS las sesiones en `disconnected` al arrancar (`SessionService: Reset N session(s) to disconnected on startup`): el bot no envía hasta que alguien pulsa «Reconectar». Con `true` las levanta solas usando las credenciales del volumen — **sin QR** | `/root/OpenWA/.env` (**no se pierde**) |
+
+Comprobaciones después de cualquier actualización:
+
+```bash
+cd /root/OpenWA
+git diff docker-compose.yml     # debe seguir la línea 0.0.0.0:${API_PORT:-2785}:2785
+ss -lntp | grep 2785            # debe decir 0.0.0.0:2785 (no 127.0.0.1:2785)
+cat .env                        # debe seguir CSP_UPGRADE_INSECURE_REQUESTS=false y AUTO_START_SESSIONS=true
+docker exec openwa-api sh -c \
+  'curl -sS -D - -o /dev/null http://localhost:2785/ | grep -i content-security-policy'
+# -> NO debe aparecer 'upgrade-insecure-requests'
+docker exec openwa-api printenv NODE_ENV CSP_UPGRADE_INSECURE_REQUESTS AUTO_START_SESSIONS
+# -> production / false / true
+
+# Arranque automático: tras recrear el contenedor, la sesión debe llegar a
+# `ready` por sí sola (sin llamar a /start) y el log debe decir:
+#   Auto-starting 1 previously authenticated session(s) -> Auto-started session
+docker compose up -d --no-deps openwa-api
+docker logs --since 5m openwa-api 2>&1 | grep -iE 'auto-start|Auto-started'
+```
+
+Síntomas si falta alguno: el primero rompe el envío **completo** (la app dirá que la sesión está
+caída aunque el gateway esté sano); el segundo sólo deja el **dashboard** en blanco — el bot sigue
+funcionando.
+
+Nota operativa: **cada reinicio del contenedor resetea la sesión a `disconnected`**
+(`SessionService: Reset N session(s) to disconnected on startup`) y hay que arrancarla. No pide QR
+porque la carpeta de autenticación persiste en el volumen (`openwa_openwa-data`), y el watchdog
+`wapi-session-health` / la acción `recover` la levantan solos; aun así, tras un reinicio conviene
+comprobar `GET /api/sessions` hasta ver `status: "ready"`.
+
+```bash
+SID=<uuid de la sesión>
+docker exec openwa-api sh -c \
+  'curl -sS -X POST -H "X-API-Key: $(cat /app/data/.api-key)" \
+   http://localhost:2785/api/sessions/'"$SID"'/start'
+```
+
+### 12.9 La app también reconecta sin QR (fase 3)
+
+Reconectar **nunca** debería pedir QR si el teléfono sigue vinculado: las credenciales
+(`session-t177-.../Default`) viven en el volumen `openwa_openwa-data` y sobreviven a reinicios
+del contenedor, del Docker y del servidor. Eso ya lo hace el gateway por su cuenta
+(`AUTO_START_SESSIONS=true`), pero la app tenía un fallo de UX que empujaba al cliente a
+reescanear:
+
+**El fallo:** `_reconectar()` llamaba a `restart`, esperaba **3 s fijos** y, si la sesión no
+estaba todavía en `CONNECTED`, abría directamente el diálogo del QR. Pero whatsapp-web.js
+tarda **~15-25 s** en levantar Chromium + WhatsApp Web. Resultado: el cliente veía el QR en
+cada reconexión y creía que había que volver a escanear.
+
+**Lo que se cambió:**
+
+| Archivo | Cambio |
+| --- | --- |
+| `lib/services/wapi_notification_service.dart` | `reconectar()` usa la acción **`recover`** (escalera real: `/start` si el motor está apagado, `stop→start` si está colgado, `force-kill→start` si quedó en FAILED) en vez de `restart`; nuevo `esperarConexion()` que sondea `wapi-session-status` hasta `CONNECTED` (máx. 90 s) |
+| `lib/screens/wapi_notifications_screen.dart` | `_reconectar()` espera de verdad y **sólo** abre el QR si el backend lo pide **y** no hay teléfono guardado; nuevo `_autoRecuperarSiHaceFalta()` que levanta solo, al abrir/refrescar la pantalla, un bot **ya vinculado** que esté caído |
+| `lib/models/wapi_session.dart` | `WapiSession.accionSugerida`: `scanQr` + teléfono vinculado → `'recover'` (nunca `'qr'`); nuevo `puedeReconectarSinQr` |
+| `lib/widgets/wapi_session_card.dart` | usa `session.accionSugerida` (no la del enum) y, si el bot está vinculado, el texto del estado dice «está retomando la sesión que ya tenías vinculada: no hay que escanear nada» |
+| `lib/screens/wapi_notifications_screen.dart` (banner) | `_buildBannerAtencion()` distingue «falta vincular» de «está reconectando»: `esQr` es `scanQr && !estaVinculado` |
+
+**Flujo que ve ahora el cliente** cuando se cae el bot (o se reinicia el servidor):
+
+1. Al abrir la pantalla, la app detecta el bot vinculado caído y lanza `recover` sola; avisa
+   «El bot estaba caído. Reconectando con la sesión guardada (sin QR)…».
+2. Mientras arranca (hasta ~90 s) sondea el estado; si llega a `CONNECTED` avisa
+   «✅ El bot ya está conectado. No hizo falta escanear nada.».
+3. Sólo si de verdad no hay teléfono guardado se abre el QR.
+4. Si sigue sin levantar, ofrece **«Forzar reinicio»** (mata el motor y reintenta) sin
+   mencionar el QR.
+
+Cubierto por 5 tests nuevos en `test/wapi_session_card_test.dart` (`scanQr` + vinculado
+reconecta y no pide QR; `scanQr` sin teléfono sí pide QR; desconectado/conectado).

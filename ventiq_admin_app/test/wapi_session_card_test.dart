@@ -113,6 +113,58 @@ void main() {
     expect(find.text('Sin teléfono vinculado'), findsOneWidget);
   });
 
+  testWidgets(
+      'scanQr con el teléfono YA vinculado: reconecta, no manda a escanear',
+      (tester) async {
+    String? selectedAction;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: WapiSessionCard(
+            // Caso real: se reinició el servidor y OpenWA reporta `qr_ready`
+            // mientras restaura la sesión, pero el teléfono sigue vinculado.
+            session: session(WapiStatus.scanQr, phone: '5363464544'),
+            onAction: (action) => selectedAction = action,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Reconectar ahora'), findsOneWidget);
+    expect(find.text('Mostrar QR para vincular'), findsNothing);
+    expect(find.textContaining('no hay que escanear nada'), findsOneWidget);
+
+    await tester.tap(find.text('Reconectar ahora'));
+    expect(selectedAction, 'recover');
+  });
+
+  group('accionSugerida con teléfono guardado (nunca pedir QR de más)', () {
+    test('scanQr + vinculado -> recover', () {
+      final s = session(WapiStatus.scanQr, phone: '5363464544');
+      expect(s.accionSugerida, 'recover');
+      expect(s.puedeReconectarSinQr, isTrue);
+    });
+
+    test('scanQr sin teléfono -> qr (hay que vincular de verdad)', () {
+      final s = session(WapiStatus.scanQr);
+      expect(s.accionSugerida, 'qr');
+      expect(s.puedeReconectarSinQr, isFalse);
+    });
+
+    test('desconectado con teléfono -> se puede reconectar sin QR', () {
+      final s = session(WapiStatus.disconnected, phone: '5363464544');
+      expect(s.accionSugerida, 'restart');
+      expect(s.puedeReconectarSinQr, isTrue);
+    });
+
+    test('conectado -> no hay nada que hacer', () {
+      final s = session(WapiStatus.connected, phone: '5363464544');
+      expect(s.accionSugerida, isNull);
+      expect(s.puedeReconectarSinQr, isFalse);
+    });
+  });
+
   testWidgets('avisa cuando la vigilancia automática está apagada',
       (tester) async {
     await tester.pumpWidget(

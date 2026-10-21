@@ -47,7 +47,7 @@ class WapiSessionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final st = session.status;
     final viejo = session.esEstadoViejo(DateTime.now());
-    final accion = st.accionSugerida;
+    final accion = session.accionSugerida;
     final diagnostico = (session.lastErrorCode != null ||
             session.lastErrorMessage != null)
         ? diagnosticarError(
@@ -318,7 +318,14 @@ class WapiSessionCard extends StatelessWidget {
 
   /// Frase que explica el estado y, si hay mensajes esperando, lo cuantifica.
   String _textoEstado(WapiStatus st, bool viejo) {
-    final base = st.detalle;
+    // Un bot YA vinculado que reporta `scanQr` está restaurando la sesión que
+    // ya existía, no pidiendo un QR nuevo (es lo que reporta OpenWA mientras
+    // levanta el motor tras un reinicio del servidor). El texto genérico del
+    // enum mandaría al cliente a escanear sin necesidad.
+    final base = (st == WapiStatus.scanQr && session.estaVinculado)
+        ? 'El bot está retomando la sesión que ya tenías vinculada: '
+            'no hay que escanear nada.'
+        : st.detalle;
     if (viejo && st != WapiStatus.connected) {
       return '$base (No pudimos consultar el bot '
           '${_relative(session.lastStatusAt)}; pulsa «Actualizar».)';
