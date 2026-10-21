@@ -942,6 +942,7 @@ class _ReservasScreenState extends State<ReservasScreen> {
     _AlcanceExportacion alcance,
   ) async {
     final excel = xl.Excel.createExcel();
+    excel.delete('Sheet1');
     final sheet = excel['Reservas'];
 
     final cols = _columnasDatos(reservas);

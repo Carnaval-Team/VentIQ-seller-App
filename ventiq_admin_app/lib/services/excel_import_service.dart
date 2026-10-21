@@ -1101,6 +1101,7 @@ class ExcelImportService {
   /// Genera template Excel para descarga con todos los campos disponibles
   static Future<Uint8List> generateTemplate() async {
     final excel = Excel.createExcel();
+    excel.delete('Sheet1');
     final sheet = excel['Productos'];
     
     // Encabezados del template - solo campos que se vinculan al importar

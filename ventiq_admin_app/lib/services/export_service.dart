@@ -794,6 +794,7 @@ class ExportService {
     List<InventoryProduct> products,
   ) async {
     final excel = Excel.createExcel();
+    excel.delete('Sheet1');
     final sheet = excel['Inventario'];
 
     // Configurar el ancho de las columnas (incluyendo SKU)
@@ -988,6 +989,7 @@ class ExportService {
   }) async {
     try {
       final excel = Excel.createExcel();
+      excel.delete('Sheet1');
       final sheet = excel['Inventario'];
 
       // Configurar el ancho de las columnas

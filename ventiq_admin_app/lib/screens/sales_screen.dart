@@ -4657,6 +4657,7 @@ class _SalesScreenState extends State<SalesScreen>
     setState(() => _isExportingProductHistory = true);
     try {
       final workbook = excel.Excel.createExcel();
+      workbook.delete('Sheet1');
       final sheet = workbook['Ventas por producto'];
       sheet.appendRow([excel.TextCellValue('Reporte de Ventas por Producto')]);
       sheet.appendRow([
@@ -4906,6 +4907,7 @@ class _SalesScreenState extends State<SalesScreen>
     try {
       final events = await _loadProductHistoryForExport(product);
       final workbook = excel.Excel.createExcel();
+      workbook.delete('Sheet1');
       final sheet = workbook['Historial'];
       sheet.appendRow([
         excel.TextCellValue('Producto'),
@@ -10321,6 +10323,7 @@ class _SalesScreenState extends State<SalesScreen>
       }
 
       final excelSheet = excel.Excel.createExcel();
+      excelSheet.delete('Sheet1');
       final sheet = excelSheet['Detalle'];
       // Segunda hoja dedicada solo a órdenes (más fácil de revisar).
       final ordersSheet = excelSheet['Ordenes'];

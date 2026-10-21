@@ -87,7 +87,20 @@ BEGIN
                     IF FOUND THEN
                         RAISE NOTICE '   📦 Proveedor encontrado: ID=%', v_id_proveedor;
                     ELSE
-                        RAISE NOTICE '   ⚠️ Proveedor no encontrado: "%"', v_nombre_proveedor;
+                        -- Crear el proveedor automáticamente (sku_codigo es NOT NULL)
+                        INSERT INTO app_dat_proveedor (
+                            denominacion,
+                            sku_codigo,
+                            idtienda
+                        ) VALUES (
+                            v_nombre_proveedor,
+                            'P' || p_id_tienda || '-' ||
+                                UPPER(LEFT(REGEXP_REPLACE(v_nombre_proveedor, '[^A-Za-z0-9]', '', 'g'), 6)) ||
+                                RIGHT(EXTRACT(EPOCH FROM now())::BIGINT::TEXT, 6),
+                            p_id_tienda
+                        ) RETURNING id INTO v_id_proveedor;
+
+                        RAISE NOTICE '   🆕 Proveedor creado automáticamente: "%" (ID=%)', v_nombre_proveedor, v_id_proveedor;
                     END IF;
                 END IF;
                 
