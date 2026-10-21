@@ -33,13 +33,11 @@ class ExcelFileWrapper {
 class ExcelImportService {
   static const int maxBatchSize = 50; // Procesar en lotes de 50 productos
 
-  /// Campos obligatorios para importación
+  /// Campos obligatorios para importación.
+  /// La categoría se selecciona obligatoriamente en la app (un Excel por categoría);
+  /// sku se autogenera, descripcion cae a denominacion y los precios caen a 0.
   static const List<String> requiredFields = [
     'denominacion',
-    'descripcion',
-    'categoria_id',
-    'sku',
-    'precio_venta',
   ];
 
   /// Mapeo de columnas Excel a campos del modelo Product
@@ -345,7 +343,7 @@ class ExcelImportService {
     bool importWithStock = false,
     Map<String, dynamic>? stockConfig,
     String priceCurrency = 'USD',
-    double? exchangeRate,
+    double? usdToCupRate,
     Function(int, int)? onProgress,
   }) async {
     try {
@@ -388,54 +386,24 @@ class ExcelImportService {
         throw Exception('No se encontró ID de tienda');
       }
       
-      // ✅ NUEVO: Obtener tasa de cambio SIEMPRE (necesaria para ambas direcciones de conversión)
-      double? finalExchangeRate = exchangeRate;
-      if (finalExchangeRate == null) {
+      // ✅ Tasa efectiva del negocio: 1 USD = X CUP.
+      // Usa la tasa personalizada de la tienda (tasa_cambio_extraoficial) si existe,
+      // si no la global de tasas_conversion (moneda_origen='USD', moneda_destino='CUP').
+      // Operaciones: CUP → USD = valor / usdToCup · USD → CUP = valor * usdToCup
+      double? usdToCup = usdToCupRate;
+      if (usdToCup == null || usdToCup <= 0) {
         try {
-          print('💱 Obteniendo tasa de cambio desde CurrencyService...');
-          print('   - Moneda seleccionada en Excel: $priceCurrency');
-          final rates = await CurrencyService.getCurrentRatesFromDatabase();
-          
-          print('   - Tasas obtenidas de BD: ${rates.length} registros');
-          for (final rate in rates) {
-            print('     • ${rate['moneda_origen']} → ${rate['tasa']} USD');
-          }
-          
-          // Buscar la tasa correcta según la moneda seleccionada
-          // La tasa en BD puede estar en dos formatos:
-          // Formato 1: moneda_origen='CUP', tasa=0.002061855670103093 (1 CUP = X USD)
-          // Formato 2: moneda_origen='USD', tasa=485 (1 USD = X CUP)
-          
-          var rateData = rates.firstWhere(
-            (rate) => rate['moneda_origen'] == 'CUP',
-            orElse: () => <String, dynamic>{},
-          );
-          
-          if (rateData.isEmpty) {
-            // Si no está en formato CUP→USD, buscar en formato USD→CUP
-            rateData = rates.firstWhere(
-              (rate) => rate['moneda_origen'] == 'USD',
-              orElse: () => <String, dynamic>{},
-            );
-            
-            if (rateData.isNotEmpty) {
-              // Invertir la tasa: si 1 USD = 485 CUP, entonces 1 CUP = 1/485 USD
-              final tasaUsdACup = (rateData['tasa'] as num?)?.toDouble() ?? 0;
-              finalExchangeRate = 1.0 / tasaUsdACup;
-              print('✅ Tasa invertida de BD: 1 USD = $tasaUsdACup CUP → 1 CUP = $finalExchangeRate USD');
-            }
-          } else {
-            finalExchangeRate = (rateData['tasa'] as num?)?.toDouble();
-            print('✅ Tasa obtenida de BD: 1 CUP = $finalExchangeRate USD');
-          }
-          
-          if (finalExchangeRate == null || finalExchangeRate == 0) {
-            print('⚠️ No se pudo obtener tasa válida de BD');
-            print('   - Tasas disponibles: ${rates.map((r) => '${r['moneda_origen']}=${r['tasa']}').toList()}');
-          }
+          print('💱 Obteniendo tasa efectiva USD→CUP del negocio...');
+          usdToCup = await CurrencyService.getEffectiveUsdToCupRate();
+          print('✅ Tasa efectiva: 1 USD = $usdToCup CUP');
         } catch (e) {
           print('❌ Error obteniendo tasa de cambio: $e');
+          usdToCup = null;
         }
+      }
+      if (usdToCup == null || usdToCup <= 0) {
+        print('⚠️ No se pudo obtener una tasa USD→CUP válida');
+        usdToCup = null;
       }
 
       final results = ImportResult();
@@ -497,38 +465,52 @@ class ExcelImportService {
             double precioVentaConvertido = precioVentaOriginal;
             double? precioCostoConvertido = precioCostoOriginal;
             
-            if (priceCurrency == 'CUP' && finalExchangeRate != null && finalExchangeRate > 0) {
-              // ✅ CORRECCIÓN: Excel en CUP
-              // - precio_venta: guardar como está (ya en CUP)
-              // - precio_costo: convertir a USD (CUP × tasa = USD)
-              print('💱 Excel en CUP - Conversión de costo a USD:');
+            double? precioVentaUsd;
+
+            if (priceCurrency == 'CUP' && usdToCup != null && usdToCup > 0) {
+              // ✅ Excel en CUP (tasa: 1 USD = usdToCup CUP)
+              // - precio_venta_cup: guardar como está (ya en CUP)
+              // - precio_venta_usd: CUP ÷ tasa = USD
+              // - precio_costo: CUP ÷ tasa = USD
+              print('💱 Excel en CUP - Conversión a USD (tasa: 1 USD = $usdToCup CUP):');
               print('   - Precio venta: $precioVentaOriginal CUP (se guarda como está)');
-              
+
+              if (precioVentaOriginal > 0) {
+                precioVentaUsd = precioVentaOriginal / usdToCup;
+                print('   - Precio venta USD: $precioVentaOriginal CUP → \$${precioVentaUsd.toStringAsFixed(2)} USD');
+              }
+
               if (precioCostoOriginal != null && precioCostoOriginal > 0) {
-                precioCostoConvertido = precioCostoOriginal * finalExchangeRate;
+                precioCostoConvertido = precioCostoOriginal / usdToCup;
                 print('   - Precio costo: $precioCostoOriginal CUP → \$${precioCostoConvertido.toStringAsFixed(2)} USD');
               }
-              
+
               productData['precio_venta_original_cup'] = precioVentaOriginal;  // CUP como está
               productData['precio_costo'] = precioCostoConvertido;  // Convertido a USD
-              
-            } else if (priceCurrency == 'USD' && finalExchangeRate != null && finalExchangeRate > 0) {
-              // ✅ CORRECCIÓN: Excel en USD
-              // - precio_venta: convertir a CUP (USD ÷ tasa = CUP)
+
+            } else if (priceCurrency == 'USD' && usdToCup != null && usdToCup > 0) {
+              // ✅ Excel en USD (tasa: 1 USD = usdToCup CUP)
+              // - precio_venta_usd: guardar como está (ya en USD)
+              // - precio_venta_cup: USD × tasa = CUP
               // - precio_costo: guardar como está (ya en USD)
-              print('💱 Excel en USD - Conversión de venta a CUP:');
-              
-              precioVentaConvertido = precioVentaOriginal / finalExchangeRate;
+              print('💱 Excel en USD - Conversión de venta a CUP (tasa: 1 USD = $usdToCup CUP):');
+
+              precioVentaConvertido = precioVentaOriginal * usdToCup;
               print('   - Precio venta: \$${precioVentaOriginal.toStringAsFixed(2)} USD → ${precioVentaConvertido.toStringAsFixed(2)} CUP');
               print('   - Precio costo: \$${precioCostoOriginal?.toStringAsFixed(2)} USD (se guarda como está)');
-              
+
               productData['precio_venta_original_cup'] = precioVentaConvertido;  // Convertido a CUP
+              precioVentaUsd = precioVentaOriginal > 0 ? precioVentaOriginal : null;
               // precioCostoUsd ya tiene el valor correcto (no necesita conversión)
-              
+
             } else {
               // Sin tasa de conversión disponible
               print('⚠️ Sin tasa de conversión disponible para $priceCurrency');
               productData['precio_venta_original_cup'] = precioVentaOriginal;
+              // Si el Excel estaba en USD, al menos guardar el USD original
+              if (priceCurrency == 'USD' && precioVentaOriginal > 0) {
+                precioVentaUsd = precioVentaOriginal;
+              }
             }
 
             // Preparar producto para RPC masivo
@@ -552,6 +534,7 @@ class ExcelImportService {
               'es_inventariable': productData['es_inventariable'],
               'es_servicio': productData['es_servicio'],
               'precio_venta_cup': productData['precio_venta_original_cup'],
+              'precio_venta_usd': precioVentaUsd,
               'precio_costo_usd': productData['precio_costo'],
               'nombre_proveedor': nombreProveedor,
             };
@@ -693,7 +676,7 @@ class ExcelImportService {
             idTienda: idTienda,
             warnings: results.warnings,
             priceCurrency: priceCurrency,
-            exchangeRate: finalExchangeRate,
+            usdToCupRate: usdToCup,
           );
           print('✅ Recepción masiva creada exitosamente');
           // 📊 FASE 4: Reportar progreso recepción completada (100%)
@@ -1045,6 +1028,9 @@ class ExcelImportService {
     productData['es_comprable'] ??= true;
     productData['es_inventariable'] ??= true;
     productData['precio_venta'] ??= 0.0;
+    productData['precio_costo'] ??= 0.0;
+    productData['costo_real'] ??= 0.0;
+    productData['um'] ??= 'und';
 
     return productData;
   }
@@ -1117,48 +1103,34 @@ class ExcelImportService {
     final excel = Excel.createExcel();
     final sheet = excel['Productos'];
     
-    // Encabezados del template - CAMPOS COMPLETOS
+    // Encabezados del template - solo campos que se vinculan al importar
     final headers = [
       // Obligatorios
       'denominacion',
       'descripcion',
-      'categoria_id',
       'sku',
       'precio_venta',
       // Información adicional
       'denominacion_corta',
-      'descripcion_corta',
       'nombre_comercial',
       'codigo_barras',
-      'imagen',
       // Unidad de medida
       'unidad_medida',
       // Propiedades de almacenamiento
       'es_refrigerado',
       'es_fragil',
       'es_peligroso',
-      'es_por_lotes',
       // Propiedades comerciales
       'es_vendible',
       'es_comprable',
       'es_inventariable',
       'es_servicio',
-      // Control de stock
-      'stock_minimo',
-      'stock_maximo',
-      'dias_alert_caducidad',
-      // Ofertas
-      'es_oferta',
-      'precio_oferta',
-      'fecha_inicio_oferta',
-      'fecha_fin_oferta',
-      // Productos elaborados
-      'es_elaborado',
-      'costo_produccion',
       // Precios y costos adicionales
       'precio_costo',
       // Proveedor
       'proveedor',
+      // Stock inicial (opcional, se usa al importar con stock)
+      'cantidad',
     ];
     
     // Agregar encabezados
@@ -1171,19 +1143,15 @@ class ExcelImportService {
       // Obligatorios
       'Producto Ejemplo',
       'Descripción completa del producto ejemplo',
-      '1',
       'PROD001',
       '25.50',
       // Información adicional
       'Prod Ej',
-      'Desc corta',
       'Marca Ejemplo',
       '1234567890123',
-      'https://ejemplo.com/imagen.jpg',
       // Unidad de medida
       'und',
       // Propiedades de almacenamiento
-      'false',
       'false',
       'false',
       'false',
@@ -1192,22 +1160,12 @@ class ExcelImportService {
       'true',
       'true',
       'false',
-      // Control de stock
-      '10',
-      '100',
-      '30',
-      // Ofertas
-      'false',
-      '0',
-      '',
-      '',
-      // Productos elaborados
-      'false',
-      '0',
       // Precios y costos adicionales
       '12.50',
       // Proveedor
       'Proveedor Ejemplo',
+      // Stock inicial
+      '10',
     ];
     
     for (int i = 0; i < exampleData.length; i++) {
@@ -1255,7 +1213,7 @@ class ExcelImportService {
     required int idTienda,
     List<ImportWarning>? warnings,
     String priceCurrency = 'USD',
-    double? exchangeRate,
+    double? usdToCupRate,
   }) async {
     final columnMapping = stockConfig['columnMapping'] as Map<String, String>;
     final locationId = stockConfig['locationId'] as int;
@@ -1317,9 +1275,9 @@ class ExcelImportService {
           print('   💵 Precio: "$precioRaw" -> $precioCompra');
           
           // ✅ NUEVO: Convertir precio si es necesario
-          if (priceCurrency != 'USD' && exchangeRate != null && exchangeRate > 0 && precioCompra != null) {
+          if (priceCurrency != 'USD' && usdToCupRate != null && usdToCupRate > 0 && precioCompra != null) {
             final precioOriginal = precioCompra;
-            precioCompra = precioCompra * exchangeRate;  // ✅ Convertir a USD
+            precioCompra = precioCompra / usdToCupRate;  // ✅ CUP → USD (tasa: 1 USD = X CUP)
             print('   💱 Precio convertido: $precioOriginal $priceCurrency → \$${precioCompra.toStringAsFixed(2)} USD');
           } else if (priceCurrency == 'USD') {
             print('   💵 Precio ya está en USD: \$${precioCompra?.toStringAsFixed(2)}');

@@ -112,12 +112,15 @@ BEGIN
                     'id_proveedor', v_id_proveedor
                 );
                 
-                -- Preparar precios (precio_venta_cup)
+                -- Preparar precios (precio_venta_cup + precio_venta_usd ya calculado en Dart)
                 v_precios_data := NULL;
-                IF v_producto->>'precio_venta_cup' IS NOT NULL AND 
-                   (v_producto->>'precio_venta_cup')::NUMERIC > 0 THEN
+                IF (v_producto->>'precio_venta_cup' IS NOT NULL AND 
+                    (v_producto->>'precio_venta_cup')::NUMERIC > 0) OR
+                   (v_producto->>'precio_venta_usd' IS NOT NULL AND 
+                    (v_producto->>'precio_venta_usd')::NUMERIC > 0) THEN
                     v_precios_data := ARRAY[jsonb_build_object(
-                        'precio_venta_cup', (v_producto->>'precio_venta_cup')::NUMERIC,
+                        'precio_venta_cup', COALESCE((v_producto->>'precio_venta_cup')::NUMERIC, 0),
+                        'precio_venta_usd', (v_producto->>'precio_venta_usd')::NUMERIC,
                         'fecha_desde', CURRENT_DATE
                     )];
                 END IF;
