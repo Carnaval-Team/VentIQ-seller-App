@@ -5,6 +5,7 @@ import '../models/mesa_cuenta.dart';
 import '../models/pedido_resultado.dart';
 import '../utils/promotion_rules.dart';
 import '../utils/price_utils.dart';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
 import 'mesa_cuenta_service.dart';
@@ -1439,10 +1440,17 @@ class OrderService {
         if (useMesaRpc) 'p_id_mesa': idMesa,
       };
 
-      final rpcName =
+      // Fase 3 del plan (decisión 1B): la app debe usar la cadena corregida
+      // `_v3`. GATE: si el backend todavía NO tiene aplicadas las RPC nuevas,
+      // el fallback mantiene la app funcionando, pero el bug SQL de consumo de
+      // ingredientes por equivalente base SIGUE VIVO en las funciones viejas.
+      final rpcNameV3 =
+          useMesaRpc ? 'fn_registrar_venta_mesa_v3' : 'fn_registrar_venta_v3';
+      final rpcNameLegacy =
           useMesaRpc ? 'fn_registrar_venta_mesa' : 'fn_registrar_venta';
+      var rpcName = rpcNameV3;
 
-      print('=== PARAMETROS RPC $rpcName ===');
+      print('=== PARAMETROS RPC $rpcNameV3 ===');
       print('p_codigo_promocion: ${rpcParams['p_codigo_promocion']}');
       print('p_denominacion: ${rpcParams['p_denominacion']}');
       print('p_estado_inicial: ${rpcParams['p_estado_inicial']}');
@@ -1454,11 +1462,24 @@ class OrderService {
       if (useMesaRpc) print('p_id_mesa: ${rpcParams['p_id_mesa']}');
       print('========================================');
 
-      // Llamar al RPC apropiado
-      final response = await Supabase.instance.client.rpc(
-        rpcName,
-        params: rpcParams,
-      );
+      // Llamar al RPC apropiado: primero la versión nueva (`_v3`), y sólo si
+      // PostgREST confirma que no existe, la función viva del mismo nombre.
+      dynamic response;
+      try {
+        response = await Supabase.instance.client.rpc(
+          rpcNameV3,
+          params: rpcParams,
+        );
+      } catch (e) {
+        if (!_isRpcUnavailable(e, rpcNameV3)) rethrow;
+        rpcName = rpcNameLegacy;
+        debugPrint('⚠️ $rpcNameV3 no disponible ($e). Usando $rpcNameLegacy.');
+        response = await Supabase.instance.client.rpc(
+          rpcNameLegacy,
+          params: rpcParams,
+        );
+      }
+      debugPrint('✅ RPC de venta usada: $rpcName');
 
       print('Respuesta $rpcName: $response');
 
@@ -1760,6 +1781,7 @@ class OrderService {
     final fn = functionName.toLowerCase();
     return text.contains('pgrst202') ||
         text.contains('could not find the function') ||
+        text.contains('schema cache') ||
         (text.contains('does not exist') && text.contains(fn));
   }
 
@@ -2870,14 +2892,33 @@ class OrderService {
         return {'success': false, 'error': 'Usuario no encontrado'};
       }
 
-      final response = await Supabase.instance.client.rpc(
-        'fn_actualizar_cantidad_producto_orden',
-        params: {
-          'p_id_extraccion': idExtraccion,
-          'p_nueva_cantidad': nuevaCantidad,
-          'p_uuid_usuario': userId,
-        },
-      );
+      // Fase 2 (decisión 1B): `_v2` convierte la cantidad a equivalente base.
+      // GATE: sin las RPC nuevas aplicadas, el fallback mantiene la app, pero
+      // el bug SQL de consumo (C5) sigue vivo.
+      final params = <String, dynamic>{
+        'p_id_extraccion': idExtraccion,
+        'p_nueva_cantidad': nuevaCantidad,
+        'p_uuid_usuario': userId,
+      };
+      dynamic response;
+      try {
+        response = await Supabase.instance.client.rpc(
+          'fn_actualizar_cantidad_producto_orden_v2',
+          params: params,
+        );
+      } catch (e) {
+        if (!_isRpcUnavailable(e, 'fn_actualizar_cantidad_producto_orden_v2')) {
+          rethrow;
+        }
+        debugPrint(
+          '⚠️ fn_actualizar_cantidad_producto_orden_v2 no disponible ($e). '
+          'Usando fn_actualizar_cantidad_producto_orden.',
+        );
+        response = await Supabase.instance.client.rpc(
+          'fn_actualizar_cantidad_producto_orden',
+          params: params,
+        );
+      }
 
       if (response != null && response['status'] == 'success') {
         return {
@@ -2908,10 +2949,28 @@ class OrderService {
         return {'success': false, 'error': 'Usuario no encontrado'};
       }
 
-      final response = await Supabase.instance.client.rpc(
-        'fn_eliminar_producto_orden',
-        params: {'p_id_extraccion': idExtraccion, 'p_uuid_usuario': userId},
-      );
+      // Fase 4 (decisión 1B): `_v2` devuelve a la presentación base.
+      final params = <String, dynamic>{
+        'p_id_extraccion': idExtraccion,
+        'p_uuid_usuario': userId,
+      };
+      dynamic response;
+      try {
+        response = await Supabase.instance.client.rpc(
+          'fn_eliminar_producto_orden_v2',
+          params: params,
+        );
+      } catch (e) {
+        if (!_isRpcUnavailable(e, 'fn_eliminar_producto_orden_v2')) rethrow;
+        debugPrint(
+          '⚠️ fn_eliminar_producto_orden_v2 no disponible ($e). '
+          'Usando fn_eliminar_producto_orden.',
+        );
+        response = await Supabase.instance.client.rpc(
+          'fn_eliminar_producto_orden',
+          params: params,
+        );
+      }
 
       if (response != null && response['status'] == 'success') {
         return {
@@ -2943,14 +3002,31 @@ class OrderService {
         return {'success': false, 'error': 'Usuario no encontrado'};
       }
 
-      final response = await Supabase.instance.client.rpc(
-        'fn_agregar_producto_orden_pendiente',
-        params: {
-          'p_id_operacion': operationId,
-          'p_producto': producto,
-          'p_uuid_usuario': userId,
-        },
-      );
+      // Fase 2 (decisión 1B): `_v2` convierte la cantidad a equivalente base.
+      final params = <String, dynamic>{
+        'p_id_operacion': operationId,
+        'p_producto': producto,
+        'p_uuid_usuario': userId,
+      };
+      dynamic response;
+      try {
+        response = await Supabase.instance.client.rpc(
+          'fn_agregar_producto_orden_pendiente_v2',
+          params: params,
+        );
+      } catch (e) {
+        if (!_isRpcUnavailable(e, 'fn_agregar_producto_orden_pendiente_v2')) {
+          rethrow;
+        }
+        debugPrint(
+          '⚠️ fn_agregar_producto_orden_pendiente_v2 no disponible ($e). '
+          'Usando fn_agregar_producto_orden_pendiente.',
+        );
+        response = await Supabase.instance.client.rpc(
+          'fn_agregar_producto_orden_pendiente',
+          params: params,
+        );
+      }
 
       if (response != null && response['status'] == 'success') {
         return {

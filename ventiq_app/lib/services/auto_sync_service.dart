@@ -4008,22 +4008,47 @@ class AutoSyncService {
     dynamic response;
     var usedAtomicPagos = false;
     try {
-      try {
-        // Preferir v3: registra los pagos con fn_registrar_pago_venta_v2
-        // (idempotente) en lugar de la guarda binaria NOT EXISTS.
-        response = await Supabase.instance.client.rpc(
-          'fn_registrar_venta_offline_v3',
-          params: ventaParams,
-        );
-      } catch (e0) {
-        if (!_isRpcUnavailable(e0, functionName: 'fn_registrar_venta_offline_v3')) {
-          rethrow;
+      // Fase 3 (decisión 1B): preferir v4, que registra los pagos con
+        // fn_registrar_pago_venta_v2 (idempotente) sobre la cadena de
+        // presentaciones corregida. Cadena: v4 → v3 → viva → fn_registrar_venta.
+        // GATE: si las RPC nuevas no están aplicadas, el fallback mantiene la
+        // app, pero el bug SQL de consumo por equivalente base sigue vivo.
+        try {
+          response = await Supabase.instance.client.rpc(
+            'fn_registrar_venta_offline_v4',
+            params: ventaParams,
+          );
+        } catch (eV4) {
+          if (!_isRpcUnavailable(
+            eV4,
+            functionName: 'fn_registrar_venta_offline_v4',
+          )) {
+            rethrow;
+          }
+          print(
+            '⚠️ fn_registrar_venta_offline_v4 no disponible ($eV4). '
+            'Usando la cadena previa (_v3 → viva).',
+          );
+          // Preferir v3: registra los pagos con fn_registrar_pago_venta_v2
+          // (idempotente) en lugar de la guarda binaria NOT EXISTS.
+          try {
+            response = await Supabase.instance.client.rpc(
+              'fn_registrar_venta_offline_v3',
+              params: ventaParams,
+            );
+          } catch (e0) {
+            if (!_isRpcUnavailable(
+              e0,
+              functionName: 'fn_registrar_venta_offline_v3',
+            )) {
+              rethrow;
+            }
+            response = await Supabase.instance.client.rpc(
+              'fn_registrar_venta_offline',
+              params: ventaParams,
+            );
+          }
         }
-        response = await Supabase.instance.client.rpc(
-          'fn_registrar_venta_offline',
-          params: ventaParams,
-        );
-      }
       usedAtomicPagos = pagos.isNotEmpty;
     } catch (e) {
       if (!_isRpcUnavailable(e)) rethrow;

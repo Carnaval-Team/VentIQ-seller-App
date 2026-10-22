@@ -1,0 +1,3908 @@
+{
+  "target": "C:\\Users\\cesar\\Documents\\VentIQ-seller-App\\ventiq_landing\\r.html",
+  "hardFails": 1,
+  "softFails": 22,
+  "results": [
+    {
+      "scenario": "C1 tracking.js ABSENT + code present  (whole-init survival)",
+      "href": "https://ventiqa.example/r.html?code=ABC123",
+      "clipboard": "ok",
+      "trackingPresent": false,
+      "observations": {
+        "load": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterLoadTimers": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterGesture": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Invitación copiada · abriendo descarga directa",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterAffordance": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Invitación copiada al portapapeles",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        }
+      },
+      "copyLog": [
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 0,
+          "ok": true
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 2400,
+          "ok": true
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 23200,
+          "ok": true
+        }
+      ],
+      "errors": [],
+      "trackingCalls": [],
+      "navigations": [
+        {
+          "to": "https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk",
+          "at": 2750
+        }
+      ],
+      "consoleLog": [],
+      "unknownApi": [],
+      "assertions": [
+        {
+          "id": "no-errors",
+          "ok": true,
+          "detail": "no uncaught errors",
+          "hard": true
+        },
+        {
+          "id": "harness-parsed-dom",
+          "ok": true,
+          "detail": "ctaBtn found in parsed DOM",
+          "hard": false
+        },
+        {
+          "id": "payload-on-gesture",
+          "ok": true,
+          "detail": "a copy API must receive the exact payload AND succeed; expected \"CARNAVAL-REF:ABC123\"; attempted=true; copyLog=[{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":0,\"ok\":true},{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":2400,\"ok\":true},{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": true
+        },
+        {
+          "id": "payload-offered-manually",
+          "ok": true,
+          "detail": "manualShown=false manualVal=undefined copyBtn={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "execCommand-fallback",
+          "ok": false,
+          "detail": "routes: [\"clipboard.writeText\",\"clipboard.writeText\",\"clipboard.writeText\"]",
+          "hard": false
+        },
+        {
+          "id": "manual-affordance",
+          "ok": true,
+          "detail": "manualShown=false copyButton={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "manual-has-payload",
+          "ok": true,
+          "detail": "manual value=undefined",
+          "hard": false
+        },
+        {
+          "id": "still-functional",
+          "ok": true,
+          "detail": "navigations=[{\"to\":\"https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk\",\"at\":2750}] manualShown=false",
+          "hard": false
+        },
+        {
+          "id": "no-bare-payload",
+          "ok": true,
+          "detail": "payloads=[\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\"]",
+          "hard": false
+        },
+        {
+          "id": "affordance-no-bare-payload",
+          "ok": true,
+          "detail": "copy-button clicks -> [{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "copy-button-works",
+          "ok": true,
+          "detail": "clicking the visible copy affordance must produce the exact payload; saw [{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "reentry-attempts-copy",
+          "ok": true,
+          "detail": "copy attempts=3 (taps=1)",
+          "hard": false
+        },
+        {
+          "id": "pageshow-no-throw",
+          "ok": true,
+          "detail": "errors=0",
+          "hard": false
+        }
+      ]
+    },
+    {
+      "scenario": "C2 tracking.js ABSENT + NO code  (CTA must still work)",
+      "href": "https://ventiqa.example/r.html",
+      "clipboard": "ok",
+      "trackingPresent": false,
+      "observations": {
+        "load": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": null,
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterLoadTimers": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": null,
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterGesture": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": null,
+          "toast": "Abriendo descarga directa...",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterAffordance": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": null,
+          "toast": "Abriendo descarga directa...",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        }
+      },
+      "copyLog": [],
+      "errors": [],
+      "trackingCalls": [],
+      "navigations": [
+        {
+          "to": "https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk",
+          "at": 2750
+        }
+      ],
+      "consoleLog": [],
+      "unknownApi": [],
+      "assertions": [
+        {
+          "id": "no-errors",
+          "ok": true,
+          "detail": "no uncaught errors",
+          "hard": true
+        },
+        {
+          "id": "harness-parsed-dom",
+          "ok": true,
+          "detail": "ctaBtn found in parsed DOM",
+          "hard": false
+        },
+        {
+          "id": "execCommand-fallback",
+          "ok": false,
+          "detail": "routes: []",
+          "hard": false
+        },
+        {
+          "id": "manual-affordance",
+          "ok": true,
+          "detail": "manualShown=false copyButton={\"id\":\"copyBtn\",\"text\":\"\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "manual-has-payload",
+          "ok": true,
+          "detail": "manual value=undefined",
+          "hard": false
+        },
+        {
+          "id": "still-functional",
+          "ok": true,
+          "detail": "navigations=[{\"to\":\"https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk\",\"at\":2750}] manualShown=false",
+          "hard": true
+        },
+        {
+          "id": "no-bare-payload",
+          "ok": true,
+          "detail": "payloads=[]",
+          "hard": false
+        },
+        {
+          "id": "affordance-no-bare-payload",
+          "ok": true,
+          "detail": "copy-button clicks -> []",
+          "hard": false
+        },
+        {
+          "id": "reentry-attempts-copy",
+          "ok": false,
+          "detail": "copy attempts=0 (taps=1)",
+          "hard": false
+        },
+        {
+          "id": "pageshow-no-throw",
+          "ok": true,
+          "detail": "errors=0",
+          "hard": false
+        }
+      ]
+    },
+    {
+      "scenario": "control: tracking PRESENT / clipboard ok / load+gesture",
+      "href": "https://ventiqa.example/r.html?code=ABC123",
+      "clipboard": "ok",
+      "trackingPresent": true,
+      "observations": {
+        "load": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterLoadTimers": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterGesture": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Invitación copiada · abriendo descarga directa",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterAffordance": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Invitación copiada al portapapeles",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        }
+      },
+      "copyLog": [
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 0,
+          "ok": true
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 2400,
+          "ok": true
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 23200,
+          "ok": true
+        }
+      ],
+      "errors": [],
+      "trackingCalls": [
+        {
+          "evt": "referral_visit",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 0
+        },
+        {
+          "evt": "play_store_click",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_ok",
+          "extra": {
+            "code": "ABC123",
+            "via": "clipboard-api"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_ok",
+          "extra": {
+            "code": "ABC123",
+            "via": "clipboard-api"
+          },
+          "at": 23200
+        }
+      ],
+      "navigations": [
+        {
+          "to": "https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk",
+          "at": 2750
+        }
+      ],
+      "consoleLog": [],
+      "unknownApi": [],
+      "assertions": [
+        {
+          "id": "no-errors",
+          "ok": true,
+          "detail": "no uncaught errors",
+          "hard": true
+        },
+        {
+          "id": "harness-parsed-dom",
+          "ok": true,
+          "detail": "ctaBtn found in parsed DOM",
+          "hard": false
+        },
+        {
+          "id": "payload-on-gesture",
+          "ok": true,
+          "detail": "a copy API must receive the exact payload AND succeed; expected \"CARNAVAL-REF:ABC123\"; attempted=true; copyLog=[{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":0,\"ok\":true},{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":2400,\"ok\":true},{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": true
+        },
+        {
+          "id": "payload-offered-manually",
+          "ok": true,
+          "detail": "manualShown=false manualVal=undefined copyBtn={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "execCommand-fallback",
+          "ok": false,
+          "detail": "routes: [\"clipboard.writeText\",\"clipboard.writeText\",\"clipboard.writeText\"]",
+          "hard": false
+        },
+        {
+          "id": "manual-affordance",
+          "ok": true,
+          "detail": "manualShown=false copyButton={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "manual-has-payload",
+          "ok": true,
+          "detail": "manual value=undefined",
+          "hard": false
+        },
+        {
+          "id": "still-functional",
+          "ok": true,
+          "detail": "navigations=[{\"to\":\"https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk\",\"at\":2750}] manualShown=false",
+          "hard": false
+        },
+        {
+          "id": "no-bare-payload",
+          "ok": true,
+          "detail": "payloads=[\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\"]",
+          "hard": false
+        },
+        {
+          "id": "affordance-no-bare-payload",
+          "ok": true,
+          "detail": "copy-button clicks -> [{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "copy-button-works",
+          "ok": true,
+          "detail": "clicking the visible copy affordance must produce the exact payload; saw [{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "reentry-attempts-copy",
+          "ok": true,
+          "detail": "copy attempts=3 (taps=1)",
+          "hard": false
+        },
+        {
+          "id": "pageshow-no-throw",
+          "ok": true,
+          "detail": "errors=0",
+          "hard": false
+        }
+      ]
+    },
+    {
+      "scenario": "C11 no code param -> must not write a bare prefix",
+      "href": "https://ventiqa.example/r.html",
+      "clipboard": "ok",
+      "trackingPresent": true,
+      "observations": {
+        "load": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": null,
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterLoadTimers": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": null,
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterGesture": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": null,
+          "toast": "Abriendo descarga directa...",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterAffordance": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": null,
+          "toast": "Abriendo descarga directa...",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        }
+      },
+      "copyLog": [],
+      "errors": [],
+      "trackingCalls": [
+        {
+          "evt": "play_store_click",
+          "extra": {
+            "code": null
+          },
+          "at": 2400
+        }
+      ],
+      "navigations": [
+        {
+          "to": "https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk",
+          "at": 2750
+        }
+      ],
+      "consoleLog": [],
+      "unknownApi": [],
+      "assertions": [
+        {
+          "id": "no-errors",
+          "ok": true,
+          "detail": "no uncaught errors",
+          "hard": true
+        },
+        {
+          "id": "harness-parsed-dom",
+          "ok": true,
+          "detail": "ctaBtn found in parsed DOM",
+          "hard": false
+        },
+        {
+          "id": "execCommand-fallback",
+          "ok": false,
+          "detail": "routes: []",
+          "hard": false
+        },
+        {
+          "id": "manual-affordance",
+          "ok": true,
+          "detail": "manualShown=false copyButton={\"id\":\"copyBtn\",\"text\":\"\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "manual-has-payload",
+          "ok": true,
+          "detail": "manual value=undefined",
+          "hard": false
+        },
+        {
+          "id": "still-functional",
+          "ok": true,
+          "detail": "navigations=[{\"to\":\"https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk\",\"at\":2750}] manualShown=false",
+          "hard": false
+        },
+        {
+          "id": "no-bare-payload",
+          "ok": true,
+          "detail": "payloads=[]",
+          "hard": true
+        },
+        {
+          "id": "affordance-no-bare-payload",
+          "ok": true,
+          "detail": "copy-button clicks -> []",
+          "hard": false
+        },
+        {
+          "id": "reentry-attempts-copy",
+          "ok": false,
+          "detail": "copy attempts=0 (taps=1)",
+          "hard": false
+        },
+        {
+          "id": "pageshow-no-throw",
+          "ok": true,
+          "detail": "errors=0",
+          "hard": false
+        }
+      ]
+    },
+    {
+      "scenario": "C11 empty code param -> must not write a bare prefix",
+      "href": "https://ventiqa.example/r.html?code=",
+      "clipboard": "ok",
+      "trackingPresent": true,
+      "observations": {
+        "load": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": null,
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterLoadTimers": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": null,
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterGesture": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": null,
+          "toast": "Abriendo descarga directa...",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterAffordance": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": null,
+          "toast": "Abriendo descarga directa...",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        }
+      },
+      "copyLog": [],
+      "errors": [],
+      "trackingCalls": [
+        {
+          "evt": "play_store_click",
+          "extra": {
+            "code": null
+          },
+          "at": 2400
+        }
+      ],
+      "navigations": [
+        {
+          "to": "https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk",
+          "at": 2750
+        }
+      ],
+      "consoleLog": [],
+      "unknownApi": [],
+      "assertions": [
+        {
+          "id": "no-errors",
+          "ok": true,
+          "detail": "no uncaught errors",
+          "hard": true
+        },
+        {
+          "id": "harness-parsed-dom",
+          "ok": true,
+          "detail": "ctaBtn found in parsed DOM",
+          "hard": false
+        },
+        {
+          "id": "execCommand-fallback",
+          "ok": false,
+          "detail": "routes: []",
+          "hard": false
+        },
+        {
+          "id": "manual-affordance",
+          "ok": true,
+          "detail": "manualShown=false copyButton={\"id\":\"copyBtn\",\"text\":\"\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "manual-has-payload",
+          "ok": true,
+          "detail": "manual value=undefined",
+          "hard": false
+        },
+        {
+          "id": "still-functional",
+          "ok": true,
+          "detail": "navigations=[{\"to\":\"https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk\",\"at\":2750}] manualShown=false",
+          "hard": false
+        },
+        {
+          "id": "no-bare-payload",
+          "ok": true,
+          "detail": "payloads=[]",
+          "hard": true
+        },
+        {
+          "id": "affordance-no-bare-payload",
+          "ok": true,
+          "detail": "copy-button clicks -> []",
+          "hard": false
+        },
+        {
+          "id": "reentry-attempts-copy",
+          "ok": false,
+          "detail": "copy attempts=0 (taps=1)",
+          "hard": false
+        },
+        {
+          "id": "pageshow-no-throw",
+          "ok": true,
+          "detail": "errors=0",
+          "hard": false
+        }
+      ]
+    },
+    {
+      "scenario": "C11 punctuation-only code -> must not write a bare prefix",
+      "href": "https://ventiqa.example/r.html?code=---",
+      "clipboard": "ok",
+      "trackingPresent": true,
+      "observations": {
+        "load": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": null,
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterLoadTimers": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": null,
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterGesture": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": null,
+          "toast": "Abriendo descarga directa...",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterAffordance": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": null,
+          "toast": "Abriendo descarga directa...",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        }
+      },
+      "copyLog": [],
+      "errors": [],
+      "trackingCalls": [
+        {
+          "evt": "play_store_click",
+          "extra": {
+            "code": null
+          },
+          "at": 2400
+        }
+      ],
+      "navigations": [
+        {
+          "to": "https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk",
+          "at": 2750
+        }
+      ],
+      "consoleLog": [],
+      "unknownApi": [],
+      "assertions": [
+        {
+          "id": "no-errors",
+          "ok": true,
+          "detail": "no uncaught errors",
+          "hard": true
+        },
+        {
+          "id": "harness-parsed-dom",
+          "ok": true,
+          "detail": "ctaBtn found in parsed DOM",
+          "hard": false
+        },
+        {
+          "id": "execCommand-fallback",
+          "ok": false,
+          "detail": "routes: []",
+          "hard": false
+        },
+        {
+          "id": "manual-affordance",
+          "ok": true,
+          "detail": "manualShown=false copyButton={\"id\":\"copyBtn\",\"text\":\"\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "manual-has-payload",
+          "ok": true,
+          "detail": "manual value=undefined",
+          "hard": false
+        },
+        {
+          "id": "still-functional",
+          "ok": true,
+          "detail": "navigations=[{\"to\":\"https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk\",\"at\":2750}] manualShown=false",
+          "hard": false
+        },
+        {
+          "id": "no-bare-payload",
+          "ok": true,
+          "detail": "payloads=[]",
+          "hard": true
+        },
+        {
+          "id": "affordance-no-bare-payload",
+          "ok": true,
+          "detail": "copy-button clicks -> []",
+          "hard": false
+        },
+        {
+          "id": "reentry-attempts-copy",
+          "ok": false,
+          "detail": "copy attempts=0 (taps=1)",
+          "hard": false
+        },
+        {
+          "id": "pageshow-no-throw",
+          "ok": true,
+          "detail": "errors=0",
+          "hard": false
+        }
+      ]
+    },
+    {
+      "scenario": "C6 writeText REJECTS -> execCommand fallback",
+      "href": "https://ventiqa.example/r.html?code=ABC123",
+      "clipboard": "reject",
+      "execCommand": true,
+      "trackingPresent": true,
+      "observations": {
+        "load": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterLoadTimers": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterGesture": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Invitación copiada · abriendo descarga directa",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterAffordance": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Invitación copiada al portapapeles",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        }
+      },
+      "copyLog": [
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 0,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 0,
+          "ok": true
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 2400,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 2400,
+          "ok": true
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 23200,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 23200,
+          "ok": true
+        }
+      ],
+      "errors": [],
+      "trackingCalls": [
+        {
+          "evt": "referral_visit",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 0
+        },
+        {
+          "evt": "play_store_click",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_ok",
+          "extra": {
+            "code": "ABC123",
+            "via": "execCommand"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_ok",
+          "extra": {
+            "code": "ABC123",
+            "via": "execCommand"
+          },
+          "at": 23200
+        }
+      ],
+      "navigations": [
+        {
+          "to": "https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk",
+          "at": 2750
+        }
+      ],
+      "consoleLog": [],
+      "unknownApi": [],
+      "assertions": [
+        {
+          "id": "no-errors",
+          "ok": true,
+          "detail": "no uncaught errors",
+          "hard": true
+        },
+        {
+          "id": "harness-parsed-dom",
+          "ok": true,
+          "detail": "ctaBtn found in parsed DOM",
+          "hard": false
+        },
+        {
+          "id": "payload-on-gesture",
+          "ok": true,
+          "detail": "a copy API must receive the exact payload AND succeed; expected \"CARNAVAL-REF:ABC123\"; attempted=true; copyLog=[{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":0,\"ok\":false},{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":0,\"ok\":true},{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":2400,\"ok\":false},{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":2400,\"ok\":true},{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":false},{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": true
+        },
+        {
+          "id": "payload-offered-manually",
+          "ok": true,
+          "detail": "manualShown=false manualVal=undefined copyBtn={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "execCommand-fallback",
+          "ok": true,
+          "detail": "routes: [\"clipboard.writeText\",\"document.execCommand\",\"clipboard.writeText\",\"document.execCommand\",\"clipboard.writeText\",\"document.execCommand\"]",
+          "hard": true
+        },
+        {
+          "id": "manual-affordance",
+          "ok": true,
+          "detail": "manualShown=false copyButton={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "manual-has-payload",
+          "ok": true,
+          "detail": "manual value=undefined",
+          "hard": false
+        },
+        {
+          "id": "still-functional",
+          "ok": true,
+          "detail": "navigations=[{\"to\":\"https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk\",\"at\":2750}] manualShown=false",
+          "hard": false
+        },
+        {
+          "id": "no-bare-payload",
+          "ok": true,
+          "detail": "payloads=[\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\"]",
+          "hard": false
+        },
+        {
+          "id": "affordance-no-bare-payload",
+          "ok": true,
+          "detail": "copy-button clicks -> [{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":false},{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "copy-button-works",
+          "ok": true,
+          "detail": "clicking the visible copy affordance must produce the exact payload; saw [{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":false},{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "reentry-attempts-copy",
+          "ok": true,
+          "detail": "copy attempts=6 (taps=1)",
+          "hard": false
+        },
+        {
+          "id": "pageshow-no-throw",
+          "ok": true,
+          "detail": "errors=0",
+          "hard": false
+        }
+      ]
+    },
+    {
+      "scenario": "C5 navigator.clipboard ABSENT -> execCommand",
+      "href": "https://ventiqa.example/r.html?code=ABC123",
+      "clipboard": "absent",
+      "execCommand": true,
+      "trackingPresent": true,
+      "observations": {
+        "load": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterLoadTimers": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterGesture": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Invitación copiada · abriendo descarga directa",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterAffordance": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Invitación copiada al portapapeles",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        }
+      },
+      "copyLog": [
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 0,
+          "ok": true
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 2400,
+          "ok": true
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 23200,
+          "ok": true
+        }
+      ],
+      "errors": [],
+      "trackingCalls": [
+        {
+          "evt": "referral_visit",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 0
+        },
+        {
+          "evt": "play_store_click",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_ok",
+          "extra": {
+            "code": "ABC123",
+            "via": "execCommand"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_ok",
+          "extra": {
+            "code": "ABC123",
+            "via": "execCommand"
+          },
+          "at": 23200
+        }
+      ],
+      "navigations": [
+        {
+          "to": "https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk",
+          "at": 2750
+        }
+      ],
+      "consoleLog": [],
+      "unknownApi": [],
+      "assertions": [
+        {
+          "id": "no-errors",
+          "ok": true,
+          "detail": "no uncaught errors",
+          "hard": true
+        },
+        {
+          "id": "harness-parsed-dom",
+          "ok": true,
+          "detail": "ctaBtn found in parsed DOM",
+          "hard": false
+        },
+        {
+          "id": "payload-on-gesture",
+          "ok": true,
+          "detail": "a copy API must receive the exact payload AND succeed; expected \"CARNAVAL-REF:ABC123\"; attempted=true; copyLog=[{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":0,\"ok\":true},{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":2400,\"ok\":true},{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": true
+        },
+        {
+          "id": "payload-offered-manually",
+          "ok": true,
+          "detail": "manualShown=false manualVal=undefined copyBtn={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "execCommand-fallback",
+          "ok": true,
+          "detail": "routes: [\"document.execCommand\",\"document.execCommand\",\"document.execCommand\"]",
+          "hard": true
+        },
+        {
+          "id": "manual-affordance",
+          "ok": true,
+          "detail": "manualShown=false copyButton={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "manual-has-payload",
+          "ok": true,
+          "detail": "manual value=undefined",
+          "hard": false
+        },
+        {
+          "id": "still-functional",
+          "ok": true,
+          "detail": "navigations=[{\"to\":\"https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk\",\"at\":2750}] manualShown=false",
+          "hard": false
+        },
+        {
+          "id": "no-bare-payload",
+          "ok": true,
+          "detail": "payloads=[\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\"]",
+          "hard": false
+        },
+        {
+          "id": "affordance-no-bare-payload",
+          "ok": true,
+          "detail": "copy-button clicks -> [{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "copy-button-works",
+          "ok": true,
+          "detail": "clicking the visible copy affordance must produce the exact payload; saw [{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "reentry-attempts-copy",
+          "ok": true,
+          "detail": "copy attempts=3 (taps=1)",
+          "hard": false
+        },
+        {
+          "id": "pageshow-no-throw",
+          "ok": true,
+          "detail": "errors=0",
+          "hard": false
+        }
+      ]
+    },
+    {
+      "scenario": "C5 navigator.clipboard GETTER THROWS (hostile webview)",
+      "href": "https://ventiqa.example/r.html?code=ABC123",
+      "clipboard": "getter-throws",
+      "execCommand": true,
+      "trackingPresent": true,
+      "observations": {
+        "load": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterLoadTimers": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterGesture": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Invitación copiada · abriendo descarga directa",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterAffordance": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Invitación copiada al portapapeles",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        }
+      },
+      "copyLog": [
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 0,
+          "ok": true
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 2400,
+          "ok": true
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 23200,
+          "ok": true
+        }
+      ],
+      "errors": [],
+      "trackingCalls": [
+        {
+          "evt": "referral_visit",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 0
+        },
+        {
+          "evt": "play_store_click",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_ok",
+          "extra": {
+            "code": "ABC123",
+            "via": "execCommand"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_ok",
+          "extra": {
+            "code": "ABC123",
+            "via": "execCommand"
+          },
+          "at": 23200
+        }
+      ],
+      "navigations": [
+        {
+          "to": "https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk",
+          "at": 2750
+        }
+      ],
+      "consoleLog": [],
+      "unknownApi": [
+        "navigator.clipboard getter threw (simulated webview)"
+      ],
+      "assertions": [
+        {
+          "id": "no-errors",
+          "ok": true,
+          "detail": "no uncaught errors",
+          "hard": true
+        },
+        {
+          "id": "harness-parsed-dom",
+          "ok": true,
+          "detail": "ctaBtn found in parsed DOM",
+          "hard": false
+        },
+        {
+          "id": "payload-on-gesture",
+          "ok": true,
+          "detail": "a copy API must receive the exact payload AND succeed; expected \"CARNAVAL-REF:ABC123\"; attempted=true; copyLog=[{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":0,\"ok\":true},{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":2400,\"ok\":true},{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": true
+        },
+        {
+          "id": "payload-offered-manually",
+          "ok": true,
+          "detail": "manualShown=false manualVal=undefined copyBtn={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "execCommand-fallback",
+          "ok": true,
+          "detail": "routes: [\"document.execCommand\",\"document.execCommand\",\"document.execCommand\"]",
+          "hard": false
+        },
+        {
+          "id": "manual-affordance",
+          "ok": true,
+          "detail": "manualShown=false copyButton={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "manual-has-payload",
+          "ok": true,
+          "detail": "manual value=undefined",
+          "hard": false
+        },
+        {
+          "id": "still-functional",
+          "ok": true,
+          "detail": "navigations=[{\"to\":\"https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk\",\"at\":2750}] manualShown=false",
+          "hard": false
+        },
+        {
+          "id": "no-bare-payload",
+          "ok": true,
+          "detail": "payloads=[\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\"]",
+          "hard": false
+        },
+        {
+          "id": "affordance-no-bare-payload",
+          "ok": true,
+          "detail": "copy-button clicks -> [{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "copy-button-works",
+          "ok": true,
+          "detail": "clicking the visible copy affordance must produce the exact payload; saw [{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "reentry-attempts-copy",
+          "ok": true,
+          "detail": "copy attempts=3 (taps=1)",
+          "hard": false
+        },
+        {
+          "id": "pageshow-no-throw",
+          "ok": true,
+          "detail": "errors=0",
+          "hard": false
+        }
+      ]
+    },
+    {
+      "scenario": "C16 ALL copy routes FAIL -> manual affordance required",
+      "href": "https://ventiqa.example/r.html?code=ABC123",
+      "clipboard": "reject",
+      "execCommand": false,
+      "trackingPresent": true,
+      "observations": {
+        "load": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterLoadTimers": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterGesture": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Abriendo descarga directa · copia tu código al volver",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterAffordance": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Mantén pulsado el código y elige «Copiar»",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        }
+      },
+      "copyLog": [
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 0,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 0,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 0,
+          "ok": false
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 2400,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 2400,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 2400,
+          "ok": false
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 23200,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 23200,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 23200,
+          "ok": false
+        }
+      ],
+      "errors": [],
+      "trackingCalls": [
+        {
+          "evt": "referral_visit",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 0
+        },
+        {
+          "evt": "play_store_click",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_fail",
+          "extra": {
+            "code": "ABC123",
+            "via": "visible-selection"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_fail",
+          "extra": {
+            "code": "ABC123",
+            "via": "visible-selection"
+          },
+          "at": 23200
+        }
+      ],
+      "navigations": [
+        {
+          "to": "https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk",
+          "at": 2750
+        }
+      ],
+      "consoleLog": [],
+      "unknownApi": [],
+      "assertions": [
+        {
+          "id": "no-errors",
+          "ok": true,
+          "detail": "no uncaught errors",
+          "hard": true
+        },
+        {
+          "id": "harness-parsed-dom",
+          "ok": true,
+          "detail": "ctaBtn found in parsed DOM",
+          "hard": false
+        },
+        {
+          "id": "payload-on-gesture",
+          "ok": true,
+          "detail": "N/A: this scenario forces every automatic copy route to fail on purpose; the requirement under test here is the visible affordance, asserted separately",
+          "hard": false
+        },
+        {
+          "id": "payload-offered-manually",
+          "ok": true,
+          "detail": "manualShown=false manualVal=undefined copyBtn={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "execCommand-fallback",
+          "ok": true,
+          "detail": "routes: [\"clipboard.writeText\",\"document.execCommand\",\"document.execCommand\",\"clipboard.writeText\",\"document.execCommand\",\"document.execCommand\",\"clipboard.writeText\",\"document.execCommand\",\"document.execCommand\"]",
+          "hard": false
+        },
+        {
+          "id": "manual-affordance",
+          "ok": true,
+          "detail": "manualShown=false copyButton={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": true
+        },
+        {
+          "id": "manual-has-payload",
+          "ok": true,
+          "detail": "manual value=undefined",
+          "hard": true
+        },
+        {
+          "id": "still-functional",
+          "ok": true,
+          "detail": "navigations=[{\"to\":\"https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk\",\"at\":2750}] manualShown=false",
+          "hard": true
+        },
+        {
+          "id": "no-bare-payload",
+          "ok": true,
+          "detail": "payloads=[\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\"]",
+          "hard": false
+        },
+        {
+          "id": "affordance-no-bare-payload",
+          "ok": true,
+          "detail": "copy-button clicks -> [{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":false},{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":false},{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":false}]",
+          "hard": false
+        },
+        {
+          "id": "reentry-attempts-copy",
+          "ok": true,
+          "detail": "copy attempts=9 (taps=1)",
+          "hard": false
+        },
+        {
+          "id": "pageshow-no-throw",
+          "ok": true,
+          "detail": "errors=0",
+          "hard": false
+        }
+      ]
+    },
+    {
+      "scenario": "C7 writeText NEVER SETTLES -> must not wedge the CTA",
+      "href": "https://ventiqa.example/r.html?code=ABC123",
+      "clipboard": "never",
+      "execCommand": true,
+      "trackingPresent": true,
+      "observations": {
+        "load": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterLoadTimers": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiado ✓",
+            "shown": true
+          }
+        },
+        "afterGesture": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Invitación copiada · abriendo descarga directa",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterAffordance": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Invitación copiada al portapapeles",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        }
+      },
+      "copyLog": [
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 0,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 600,
+          "ok": true
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 2400,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 3000,
+          "ok": true
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 23200,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 23800,
+          "ok": true
+        }
+      ],
+      "errors": [],
+      "trackingCalls": [
+        {
+          "evt": "referral_visit",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 0
+        },
+        {
+          "evt": "play_store_click",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_ok",
+          "extra": {
+            "code": "ABC123",
+            "via": "execCommand"
+          },
+          "at": 3000
+        },
+        {
+          "evt": "referral_copy_ok",
+          "extra": {
+            "code": "ABC123",
+            "via": "execCommand"
+          },
+          "at": 23800
+        }
+      ],
+      "navigations": [
+        {
+          "to": "https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk",
+          "at": 3350
+        }
+      ],
+      "consoleLog": [],
+      "unknownApi": [],
+      "assertions": [
+        {
+          "id": "no-errors",
+          "ok": true,
+          "detail": "no uncaught errors",
+          "hard": true
+        },
+        {
+          "id": "harness-parsed-dom",
+          "ok": true,
+          "detail": "ctaBtn found in parsed DOM",
+          "hard": false
+        },
+        {
+          "id": "payload-on-gesture",
+          "ok": true,
+          "detail": "a copy API must receive the exact payload AND succeed; expected \"CARNAVAL-REF:ABC123\"; attempted=true; copyLog=[{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":0,\"ok\":false},{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":600,\"ok\":true},{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":2400,\"ok\":false},{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":3000,\"ok\":true},{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":false},{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23800,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "payload-offered-manually",
+          "ok": true,
+          "detail": "manualShown=false manualVal=undefined copyBtn={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "execCommand-fallback",
+          "ok": true,
+          "detail": "routes: [\"clipboard.writeText\",\"document.execCommand\",\"clipboard.writeText\",\"document.execCommand\",\"clipboard.writeText\",\"document.execCommand\"]",
+          "hard": false
+        },
+        {
+          "id": "manual-affordance",
+          "ok": true,
+          "detail": "manualShown=false copyButton={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "manual-has-payload",
+          "ok": true,
+          "detail": "manual value=undefined",
+          "hard": false
+        },
+        {
+          "id": "still-functional",
+          "ok": true,
+          "detail": "navigations=[{\"to\":\"https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk\",\"at\":3350}] manualShown=false",
+          "hard": true
+        },
+        {
+          "id": "no-bare-payload",
+          "ok": true,
+          "detail": "payloads=[\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\"]",
+          "hard": false
+        },
+        {
+          "id": "affordance-no-bare-payload",
+          "ok": true,
+          "detail": "copy-button clicks -> [{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":false},{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23800,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "copy-button-works",
+          "ok": true,
+          "detail": "clicking the visible copy affordance must produce the exact payload; saw [{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":false},{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23800,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "reentry-attempts-copy",
+          "ok": true,
+          "detail": "copy attempts=6 (taps=1)",
+          "hard": false
+        },
+        {
+          "id": "pageshow-no-throw",
+          "ok": true,
+          "detail": "errors=0",
+          "hard": false
+        }
+      ]
+    },
+    {
+      "scenario": "C12 re-entry: 3 taps with every route failing",
+      "href": "https://ventiqa.example/r.html?code=ABC123",
+      "clipboard": "reject",
+      "execCommand": false,
+      "trackingPresent": true,
+      "observations": {
+        "load": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterLoadTimers": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterGesture": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Abriendo descarga directa · copia tu código al volver",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterAffordance": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Mantén pulsado el código y elige «Copiar»",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        }
+      },
+      "copyLog": [
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 0,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 0,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 0,
+          "ok": false
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 2400,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 2400,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 2400,
+          "ok": false
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 7200,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 7200,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 7200,
+          "ok": false
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 12000,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 12000,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 12000,
+          "ok": false
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 32800,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 32800,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 32800,
+          "ok": false
+        }
+      ],
+      "errors": [],
+      "trackingCalls": [
+        {
+          "evt": "referral_visit",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 0
+        },
+        {
+          "evt": "play_store_click",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_fail",
+          "extra": {
+            "code": "ABC123",
+            "via": "visible-selection"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "play_store_click",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 7200
+        },
+        {
+          "evt": "referral_copy_fail",
+          "extra": {
+            "code": "ABC123",
+            "via": "visible-selection"
+          },
+          "at": 7200
+        },
+        {
+          "evt": "play_store_click",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 12000
+        },
+        {
+          "evt": "referral_copy_fail",
+          "extra": {
+            "code": "ABC123",
+            "via": "visible-selection"
+          },
+          "at": 12000
+        },
+        {
+          "evt": "referral_copy_fail",
+          "extra": {
+            "code": "ABC123",
+            "via": "visible-selection"
+          },
+          "at": 32800
+        }
+      ],
+      "navigations": [
+        {
+          "to": "https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk",
+          "at": 2750
+        },
+        {
+          "to": "https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk",
+          "at": 7550
+        },
+        {
+          "to": "https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk",
+          "at": 12350
+        }
+      ],
+      "consoleLog": [],
+      "unknownApi": [],
+      "assertions": [
+        {
+          "id": "no-errors",
+          "ok": true,
+          "detail": "no uncaught errors",
+          "hard": true
+        },
+        {
+          "id": "harness-parsed-dom",
+          "ok": true,
+          "detail": "ctaBtn found in parsed DOM",
+          "hard": false
+        },
+        {
+          "id": "payload-on-gesture",
+          "ok": true,
+          "detail": "N/A: this scenario forces every automatic copy route to fail on purpose; the requirement under test here is the visible affordance, asserted separately",
+          "hard": false
+        },
+        {
+          "id": "payload-offered-manually",
+          "ok": true,
+          "detail": "manualShown=false manualVal=undefined copyBtn={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "execCommand-fallback",
+          "ok": true,
+          "detail": "routes: [\"clipboard.writeText\",\"document.execCommand\",\"document.execCommand\",\"clipboard.writeText\",\"document.execCommand\",\"document.execCommand\",\"clipboard.writeText\",\"document.execCommand\",\"document.execCommand\",\"clipboard.writeText\",\"document.execCommand\",\"document.execCommand\",\"clipboard.writeText\",\"document.execCommand\",\"document.execCommand\"]",
+          "hard": false
+        },
+        {
+          "id": "manual-affordance",
+          "ok": true,
+          "detail": "manualShown=false copyButton={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": true
+        },
+        {
+          "id": "manual-has-payload",
+          "ok": true,
+          "detail": "manual value=undefined",
+          "hard": false
+        },
+        {
+          "id": "still-functional",
+          "ok": true,
+          "detail": "navigations=[{\"to\":\"https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk\",\"at\":2750},{\"to\":\"https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk\",\"at\":7550},{\"to\":\"https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk\",\"at\":12350}] manualShown=false",
+          "hard": true
+        },
+        {
+          "id": "no-bare-payload",
+          "ok": true,
+          "detail": "payloads=[\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\"]",
+          "hard": false
+        },
+        {
+          "id": "affordance-no-bare-payload",
+          "ok": true,
+          "detail": "copy-button clicks -> [{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":32800,\"ok\":false},{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":32800,\"ok\":false},{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":32800,\"ok\":false}]",
+          "hard": false
+        },
+        {
+          "id": "reentry-attempts-copy",
+          "ok": true,
+          "detail": "copy attempts=15 (taps=3)",
+          "hard": true
+        },
+        {
+          "id": "pageshow-no-throw",
+          "ok": true,
+          "detail": "errors=0",
+          "hard": false
+        }
+      ]
+    },
+    {
+      "scenario": "C10 code lowercase/dash/underscore -> payload must preserve it",
+      "href": "https://ventiqa.example/r.html?code=abc-123_xy",
+      "clipboard": "ok",
+      "trackingPresent": true,
+      "observations": {
+        "load": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123XY",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterLoadTimers": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123XY",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterGesture": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123XY",
+          "toast": "Invitación copiada · abriendo descarga directa",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterAffordance": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123XY",
+          "toast": "Invitación copiada al portapapeles",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        }
+      },
+      "copyLog": [
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123XY",
+          "at": 0,
+          "ok": true
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123XY",
+          "at": 2400,
+          "ok": true
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123XY",
+          "at": 23200,
+          "ok": true
+        }
+      ],
+      "errors": [],
+      "trackingCalls": [
+        {
+          "evt": "referral_visit",
+          "extra": {
+            "code": "ABC123XY"
+          },
+          "at": 0
+        },
+        {
+          "evt": "play_store_click",
+          "extra": {
+            "code": "ABC123XY"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_ok",
+          "extra": {
+            "code": "ABC123XY",
+            "via": "clipboard-api"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_ok",
+          "extra": {
+            "code": "ABC123XY",
+            "via": "clipboard-api"
+          },
+          "at": 23200
+        }
+      ],
+      "navigations": [
+        {
+          "to": "https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk",
+          "at": 2750
+        }
+      ],
+      "consoleLog": [],
+      "unknownApi": [],
+      "assertions": [
+        {
+          "id": "no-errors",
+          "ok": true,
+          "detail": "no uncaught errors",
+          "hard": true
+        },
+        {
+          "id": "harness-parsed-dom",
+          "ok": true,
+          "detail": "ctaBtn found in parsed DOM",
+          "hard": false
+        },
+        {
+          "id": "payload-on-gesture",
+          "ok": false,
+          "detail": "a copy API must receive the exact payload AND succeed; expected \"CARNAVAL-REF:abc-123_xy\"; attempted=false; copyLog=[{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123XY\",\"at\":0,\"ok\":true},{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123XY\",\"at\":2400,\"ok\":true},{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123XY\",\"at\":23200,\"ok\":true}]",
+          "hard": true
+        },
+        {
+          "id": "payload-offered-manually",
+          "ok": true,
+          "detail": "manualShown=false manualVal=undefined copyBtn={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "starts-with-prefix",
+          "ok": false,
+          "detail": "payload(s) [\"CARNAVAL-REF:ABC123XY\",\"CARNAVAL-REF:ABC123XY\",\"CARNAVAL-REF:ABC123XY\"] -- MUTATED",
+          "hard": false
+        },
+        {
+          "id": "execCommand-fallback",
+          "ok": false,
+          "detail": "routes: [\"clipboard.writeText\",\"clipboard.writeText\",\"clipboard.writeText\"]",
+          "hard": false
+        },
+        {
+          "id": "manual-affordance",
+          "ok": true,
+          "detail": "manualShown=false copyButton={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "manual-has-payload",
+          "ok": true,
+          "detail": "manual value=undefined",
+          "hard": false
+        },
+        {
+          "id": "still-functional",
+          "ok": true,
+          "detail": "navigations=[{\"to\":\"https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk\",\"at\":2750}] manualShown=false",
+          "hard": false
+        },
+        {
+          "id": "no-bare-payload",
+          "ok": true,
+          "detail": "payloads=[\"CARNAVAL-REF:ABC123XY\",\"CARNAVAL-REF:ABC123XY\",\"CARNAVAL-REF:ABC123XY\"]",
+          "hard": false
+        },
+        {
+          "id": "affordance-no-bare-payload",
+          "ok": true,
+          "detail": "copy-button clicks -> [{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123XY\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "copy-button-works",
+          "ok": false,
+          "detail": "clicking the visible copy affordance must produce the exact payload; saw [{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123XY\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "reentry-attempts-copy",
+          "ok": true,
+          "detail": "copy attempts=3 (taps=1)",
+          "hard": false
+        },
+        {
+          "id": "pageshow-no-throw",
+          "ok": true,
+          "detail": "errors=0",
+          "hard": false
+        }
+      ]
+    },
+    {
+      "scenario": "C17b iOS Safari UA (gesture path)",
+      "href": "https://ventiqa.example/r.html?code=ABC123",
+      "clipboard": "reject",
+      "execCommand": true,
+      "trackingPresent": true,
+      "observations": {
+        "load": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar en App Store",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterLoadTimers": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar en App Store",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterGesture": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Invitación copiada · abriendo App Store",
+          "ctaText": "Descargar en App Store",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterAffordance": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Invitación copiada al portapapeles",
+          "ctaText": "Descargar en App Store",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        }
+      },
+      "copyLog": [
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 0,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 0,
+          "ok": true
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 2400,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 2400,
+          "ok": true
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 23200,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 23200,
+          "ok": true
+        }
+      ],
+      "errors": [],
+      "trackingCalls": [
+        {
+          "evt": "referral_visit",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 0
+        },
+        {
+          "evt": "play_store_click",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_ok",
+          "extra": {
+            "code": "ABC123",
+            "via": "execCommand"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_ok",
+          "extra": {
+            "code": "ABC123",
+            "via": "execCommand"
+          },
+          "at": 23200
+        }
+      ],
+      "navigations": [
+        {
+          "to": "https://apps.apple.com/es/app/carnaval-tienda/id6742862060",
+          "at": 2750
+        }
+      ],
+      "consoleLog": [],
+      "unknownApi": [],
+      "assertions": [
+        {
+          "id": "no-errors",
+          "ok": true,
+          "detail": "no uncaught errors",
+          "hard": true
+        },
+        {
+          "id": "harness-parsed-dom",
+          "ok": true,
+          "detail": "ctaBtn found in parsed DOM",
+          "hard": false
+        },
+        {
+          "id": "payload-on-gesture",
+          "ok": true,
+          "detail": "a copy API must receive the exact payload AND succeed; expected \"CARNAVAL-REF:ABC123\"; attempted=true; copyLog=[{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":0,\"ok\":false},{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":0,\"ok\":true},{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":2400,\"ok\":false},{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":2400,\"ok\":true},{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":false},{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": true
+        },
+        {
+          "id": "payload-offered-manually",
+          "ok": true,
+          "detail": "manualShown=false manualVal=undefined copyBtn={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "execCommand-fallback",
+          "ok": true,
+          "detail": "routes: [\"clipboard.writeText\",\"document.execCommand\",\"clipboard.writeText\",\"document.execCommand\",\"clipboard.writeText\",\"document.execCommand\"]",
+          "hard": true
+        },
+        {
+          "id": "manual-affordance",
+          "ok": true,
+          "detail": "manualShown=false copyButton={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "manual-has-payload",
+          "ok": true,
+          "detail": "manual value=undefined",
+          "hard": false
+        },
+        {
+          "id": "still-functional",
+          "ok": true,
+          "detail": "navigations=[{\"to\":\"https://apps.apple.com/es/app/carnaval-tienda/id6742862060\",\"at\":2750}] manualShown=false",
+          "hard": false
+        },
+        {
+          "id": "no-bare-payload",
+          "ok": true,
+          "detail": "payloads=[\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\"]",
+          "hard": false
+        },
+        {
+          "id": "affordance-no-bare-payload",
+          "ok": true,
+          "detail": "copy-button clicks -> [{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":false},{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "copy-button-works",
+          "ok": true,
+          "detail": "clicking the visible copy affordance must produce the exact payload; saw [{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":false},{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "reentry-attempts-copy",
+          "ok": true,
+          "detail": "copy attempts=6 (taps=1)",
+          "hard": false
+        },
+        {
+          "id": "pageshow-no-throw",
+          "ok": true,
+          "detail": "errors=0",
+          "hard": false
+        }
+      ]
+    },
+    {
+      "scenario": "C4 pageshow (persisted) re-copy with every route failing",
+      "href": "https://ventiqa.example/r.html?code=ABC123",
+      "clipboard": "reject",
+      "execCommand": false,
+      "trackingPresent": true,
+      "observations": {
+        "load": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterLoadTimers": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterGesture": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Abriendo descarga directa · copia tu código al volver",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterAffordance": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Mantén pulsado el código y elige «Copiar»",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        }
+      },
+      "copyLog": [
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 0,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 0,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 0,
+          "ok": false
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 2400,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 2400,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 2400,
+          "ok": false
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 23200,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 23200,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 23200,
+          "ok": false
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 28000,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 28000,
+          "ok": false
+        },
+        {
+          "via": "document.execCommand",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 28000,
+          "ok": false
+        }
+      ],
+      "errors": [],
+      "trackingCalls": [
+        {
+          "evt": "referral_visit",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 0
+        },
+        {
+          "evt": "play_store_click",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_fail",
+          "extra": {
+            "code": "ABC123",
+            "via": "visible-selection"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_fail",
+          "extra": {
+            "code": "ABC123",
+            "via": "visible-selection"
+          },
+          "at": 23200
+        }
+      ],
+      "navigations": [
+        {
+          "to": "https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk",
+          "at": 2750
+        }
+      ],
+      "consoleLog": [],
+      "unknownApi": [],
+      "assertions": [
+        {
+          "id": "no-errors",
+          "ok": true,
+          "detail": "no uncaught errors",
+          "hard": true
+        },
+        {
+          "id": "harness-parsed-dom",
+          "ok": true,
+          "detail": "ctaBtn found in parsed DOM",
+          "hard": false
+        },
+        {
+          "id": "payload-on-gesture",
+          "ok": true,
+          "detail": "N/A: this scenario forces every automatic copy route to fail on purpose; the requirement under test here is the visible affordance, asserted separately",
+          "hard": false
+        },
+        {
+          "id": "payload-offered-manually",
+          "ok": true,
+          "detail": "manualShown=false manualVal=undefined copyBtn={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "execCommand-fallback",
+          "ok": true,
+          "detail": "routes: [\"clipboard.writeText\",\"document.execCommand\",\"document.execCommand\",\"clipboard.writeText\",\"document.execCommand\",\"document.execCommand\",\"clipboard.writeText\",\"document.execCommand\",\"document.execCommand\",\"clipboard.writeText\",\"document.execCommand\",\"document.execCommand\"]",
+          "hard": false
+        },
+        {
+          "id": "manual-affordance",
+          "ok": true,
+          "detail": "manualShown=false copyButton={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": true
+        },
+        {
+          "id": "manual-has-payload",
+          "ok": true,
+          "detail": "manual value=undefined",
+          "hard": false
+        },
+        {
+          "id": "still-functional",
+          "ok": true,
+          "detail": "navigations=[{\"to\":\"https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk\",\"at\":2750}] manualShown=false",
+          "hard": false
+        },
+        {
+          "id": "no-bare-payload",
+          "ok": true,
+          "detail": "payloads=[\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\"]",
+          "hard": false
+        },
+        {
+          "id": "affordance-no-bare-payload",
+          "ok": true,
+          "detail": "copy-button clicks -> [{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":false},{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":false},{\"via\":\"document.execCommand\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":false}]",
+          "hard": false
+        },
+        {
+          "id": "reentry-attempts-copy",
+          "ok": true,
+          "detail": "copy attempts=12 (taps=1)",
+          "hard": false
+        },
+        {
+          "id": "pageshow-no-throw",
+          "ok": true,
+          "detail": "errors=0",
+          "hard": true
+        }
+      ]
+    },
+    {
+      "scenario": "C9 probe: ?ref=CODE",
+      "href": "https://ventiqa.example/r.html?ref=ABC123",
+      "clipboard": "ok",
+      "trackingPresent": true,
+      "observations": {
+        "load": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterLoadTimers": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterGesture": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Invitación copiada · abriendo descarga directa",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterAffordance": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Invitación copiada al portapapeles",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        }
+      },
+      "copyLog": [
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 0,
+          "ok": true
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 2400,
+          "ok": true
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 23200,
+          "ok": true
+        }
+      ],
+      "errors": [],
+      "trackingCalls": [
+        {
+          "evt": "referral_visit",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 0
+        },
+        {
+          "evt": "play_store_click",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_ok",
+          "extra": {
+            "code": "ABC123",
+            "via": "clipboard-api"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_ok",
+          "extra": {
+            "code": "ABC123",
+            "via": "clipboard-api"
+          },
+          "at": 23200
+        }
+      ],
+      "navigations": [
+        {
+          "to": "https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk",
+          "at": 2750
+        }
+      ],
+      "consoleLog": [],
+      "unknownApi": [],
+      "assertions": [
+        {
+          "id": "no-errors",
+          "ok": true,
+          "detail": "no uncaught errors",
+          "hard": true
+        },
+        {
+          "id": "harness-parsed-dom",
+          "ok": true,
+          "detail": "ctaBtn found in parsed DOM",
+          "hard": false
+        },
+        {
+          "id": "payload-on-gesture",
+          "ok": true,
+          "detail": "a copy API must receive the exact payload AND succeed; expected \"CARNAVAL-REF:ABC123\"; attempted=true; copyLog=[{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":0,\"ok\":true},{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":2400,\"ok\":true},{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "payload-offered-manually",
+          "ok": true,
+          "detail": "manualShown=false manualVal=undefined copyBtn={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "execCommand-fallback",
+          "ok": false,
+          "detail": "routes: [\"clipboard.writeText\",\"clipboard.writeText\",\"clipboard.writeText\"]",
+          "hard": false
+        },
+        {
+          "id": "manual-affordance",
+          "ok": true,
+          "detail": "manualShown=false copyButton={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "manual-has-payload",
+          "ok": true,
+          "detail": "manual value=undefined",
+          "hard": false
+        },
+        {
+          "id": "still-functional",
+          "ok": true,
+          "detail": "navigations=[{\"to\":\"https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk\",\"at\":2750}] manualShown=false",
+          "hard": false
+        },
+        {
+          "id": "no-bare-payload",
+          "ok": true,
+          "detail": "payloads=[\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\"]",
+          "hard": false
+        },
+        {
+          "id": "affordance-no-bare-payload",
+          "ok": true,
+          "detail": "copy-button clicks -> [{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "copy-button-works",
+          "ok": true,
+          "detail": "clicking the visible copy affordance must produce the exact payload; saw [{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "reentry-attempts-copy",
+          "ok": true,
+          "detail": "copy attempts=3 (taps=1)",
+          "hard": false
+        },
+        {
+          "id": "pageshow-no-throw",
+          "ok": true,
+          "detail": "errors=0",
+          "hard": false
+        },
+        {
+          "id": "code-resolved-via-this-route",
+          "ok": true,
+          "detail": "codeText=\"ABC123\" chip=true copyLog=[\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\"]",
+          "hard": false
+        }
+      ]
+    },
+    {
+      "scenario": "C9 probe: #code=CODE (hash)",
+      "href": "https://ventiqa.example/r.html#code=ABC123",
+      "clipboard": "ok",
+      "trackingPresent": true,
+      "observations": {
+        "load": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterLoadTimers": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterGesture": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Invitación copiada · abriendo descarga directa",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterAffordance": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Invitación copiada al portapapeles",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        }
+      },
+      "copyLog": [
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 0,
+          "ok": true
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 2400,
+          "ok": true
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 23200,
+          "ok": true
+        }
+      ],
+      "errors": [],
+      "trackingCalls": [
+        {
+          "evt": "referral_visit",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 0
+        },
+        {
+          "evt": "play_store_click",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_ok",
+          "extra": {
+            "code": "ABC123",
+            "via": "clipboard-api"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_ok",
+          "extra": {
+            "code": "ABC123",
+            "via": "clipboard-api"
+          },
+          "at": 23200
+        }
+      ],
+      "navigations": [
+        {
+          "to": "https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk",
+          "at": 2750
+        }
+      ],
+      "consoleLog": [],
+      "unknownApi": [],
+      "assertions": [
+        {
+          "id": "no-errors",
+          "ok": true,
+          "detail": "no uncaught errors",
+          "hard": true
+        },
+        {
+          "id": "harness-parsed-dom",
+          "ok": true,
+          "detail": "ctaBtn found in parsed DOM",
+          "hard": false
+        },
+        {
+          "id": "payload-on-gesture",
+          "ok": true,
+          "detail": "a copy API must receive the exact payload AND succeed; expected \"CARNAVAL-REF:ABC123\"; attempted=true; copyLog=[{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":0,\"ok\":true},{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":2400,\"ok\":true},{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "payload-offered-manually",
+          "ok": true,
+          "detail": "manualShown=false manualVal=undefined copyBtn={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "execCommand-fallback",
+          "ok": false,
+          "detail": "routes: [\"clipboard.writeText\",\"clipboard.writeText\",\"clipboard.writeText\"]",
+          "hard": false
+        },
+        {
+          "id": "manual-affordance",
+          "ok": true,
+          "detail": "manualShown=false copyButton={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "manual-has-payload",
+          "ok": true,
+          "detail": "manual value=undefined",
+          "hard": false
+        },
+        {
+          "id": "still-functional",
+          "ok": true,
+          "detail": "navigations=[{\"to\":\"https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk\",\"at\":2750}] manualShown=false",
+          "hard": false
+        },
+        {
+          "id": "no-bare-payload",
+          "ok": true,
+          "detail": "payloads=[\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\"]",
+          "hard": false
+        },
+        {
+          "id": "affordance-no-bare-payload",
+          "ok": true,
+          "detail": "copy-button clicks -> [{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "copy-button-works",
+          "ok": true,
+          "detail": "clicking the visible copy affordance must produce the exact payload; saw [{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "reentry-attempts-copy",
+          "ok": true,
+          "detail": "copy attempts=3 (taps=1)",
+          "hard": false
+        },
+        {
+          "id": "pageshow-no-throw",
+          "ok": true,
+          "detail": "errors=0",
+          "hard": false
+        },
+        {
+          "id": "code-resolved-via-this-route",
+          "ok": true,
+          "detail": "codeText=\"ABC123\" chip=true copyLog=[\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\"]",
+          "hard": false
+        }
+      ]
+    },
+    {
+      "scenario": "C9 probe: ?invite=CODE",
+      "href": "https://ventiqa.example/r.html?invite=ABC123",
+      "clipboard": "ok",
+      "trackingPresent": true,
+      "observations": {
+        "load": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": null,
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterLoadTimers": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": null,
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterGesture": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": null,
+          "toast": "Abriendo descarga directa...",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterAffordance": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": null,
+          "toast": "Abriendo descarga directa...",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        }
+      },
+      "copyLog": [],
+      "errors": [],
+      "trackingCalls": [
+        {
+          "evt": "play_store_click",
+          "extra": {
+            "code": null
+          },
+          "at": 2400
+        }
+      ],
+      "navigations": [
+        {
+          "to": "https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk",
+          "at": 2750
+        }
+      ],
+      "consoleLog": [],
+      "unknownApi": [],
+      "assertions": [
+        {
+          "id": "no-errors",
+          "ok": true,
+          "detail": "no uncaught errors",
+          "hard": true
+        },
+        {
+          "id": "harness-parsed-dom",
+          "ok": true,
+          "detail": "ctaBtn found in parsed DOM",
+          "hard": false
+        },
+        {
+          "id": "payload-on-gesture",
+          "ok": false,
+          "detail": "a copy API must receive the exact payload AND succeed; expected \"CARNAVAL-REF:ABC123\"; attempted=false; copyLog=[]",
+          "hard": false
+        },
+        {
+          "id": "payload-offered-manually",
+          "ok": true,
+          "detail": "manualShown=false manualVal=undefined copyBtn={\"id\":\"copyBtn\",\"text\":\"\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "execCommand-fallback",
+          "ok": false,
+          "detail": "routes: []",
+          "hard": false
+        },
+        {
+          "id": "manual-affordance",
+          "ok": true,
+          "detail": "manualShown=false copyButton={\"id\":\"copyBtn\",\"text\":\"\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "manual-has-payload",
+          "ok": true,
+          "detail": "manual value=undefined",
+          "hard": false
+        },
+        {
+          "id": "still-functional",
+          "ok": true,
+          "detail": "navigations=[{\"to\":\"https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk\",\"at\":2750}] manualShown=false",
+          "hard": false
+        },
+        {
+          "id": "no-bare-payload",
+          "ok": true,
+          "detail": "payloads=[]",
+          "hard": false
+        },
+        {
+          "id": "affordance-no-bare-payload",
+          "ok": true,
+          "detail": "copy-button clicks -> []",
+          "hard": false
+        },
+        {
+          "id": "copy-button-works",
+          "ok": false,
+          "detail": "clicking the visible copy affordance must produce the exact payload; saw []",
+          "hard": false
+        },
+        {
+          "id": "reentry-attempts-copy",
+          "ok": false,
+          "detail": "copy attempts=0 (taps=1)",
+          "hard": false
+        },
+        {
+          "id": "pageshow-no-throw",
+          "ok": true,
+          "detail": "errors=0",
+          "hard": false
+        },
+        {
+          "id": "code-resolved-via-this-route",
+          "ok": false,
+          "detail": "codeText=null chip=true copyLog=[]",
+          "hard": false
+        }
+      ]
+    },
+    {
+      "scenario": "C9 probe: ?c=CODE",
+      "href": "https://ventiqa.example/r.html?c=ABC123",
+      "clipboard": "ok",
+      "trackingPresent": true,
+      "observations": {
+        "load": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterLoadTimers": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterGesture": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Invitación copiada · abriendo descarga directa",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterAffordance": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Invitación copiada al portapapeles",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        }
+      },
+      "copyLog": [
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 0,
+          "ok": true
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 2400,
+          "ok": true
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 23200,
+          "ok": true
+        }
+      ],
+      "errors": [],
+      "trackingCalls": [
+        {
+          "evt": "referral_visit",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 0
+        },
+        {
+          "evt": "play_store_click",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_ok",
+          "extra": {
+            "code": "ABC123",
+            "via": "clipboard-api"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_ok",
+          "extra": {
+            "code": "ABC123",
+            "via": "clipboard-api"
+          },
+          "at": 23200
+        }
+      ],
+      "navigations": [
+        {
+          "to": "https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk",
+          "at": 2750
+        }
+      ],
+      "consoleLog": [],
+      "unknownApi": [],
+      "assertions": [
+        {
+          "id": "no-errors",
+          "ok": true,
+          "detail": "no uncaught errors",
+          "hard": true
+        },
+        {
+          "id": "harness-parsed-dom",
+          "ok": true,
+          "detail": "ctaBtn found in parsed DOM",
+          "hard": false
+        },
+        {
+          "id": "payload-on-gesture",
+          "ok": true,
+          "detail": "a copy API must receive the exact payload AND succeed; expected \"CARNAVAL-REF:ABC123\"; attempted=true; copyLog=[{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":0,\"ok\":true},{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":2400,\"ok\":true},{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "payload-offered-manually",
+          "ok": true,
+          "detail": "manualShown=false manualVal=undefined copyBtn={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "execCommand-fallback",
+          "ok": false,
+          "detail": "routes: [\"clipboard.writeText\",\"clipboard.writeText\",\"clipboard.writeText\"]",
+          "hard": false
+        },
+        {
+          "id": "manual-affordance",
+          "ok": true,
+          "detail": "manualShown=false copyButton={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "manual-has-payload",
+          "ok": true,
+          "detail": "manual value=undefined",
+          "hard": false
+        },
+        {
+          "id": "still-functional",
+          "ok": true,
+          "detail": "navigations=[{\"to\":\"https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk\",\"at\":2750}] manualShown=false",
+          "hard": false
+        },
+        {
+          "id": "no-bare-payload",
+          "ok": true,
+          "detail": "payloads=[\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\"]",
+          "hard": false
+        },
+        {
+          "id": "affordance-no-bare-payload",
+          "ok": true,
+          "detail": "copy-button clicks -> [{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "copy-button-works",
+          "ok": true,
+          "detail": "clicking the visible copy affordance must produce the exact payload; saw [{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "reentry-attempts-copy",
+          "ok": true,
+          "detail": "copy attempts=3 (taps=1)",
+          "hard": false
+        },
+        {
+          "id": "pageshow-no-throw",
+          "ok": true,
+          "detail": "errors=0",
+          "hard": false
+        },
+        {
+          "id": "code-resolved-via-this-route",
+          "ok": true,
+          "detail": "codeText=\"ABC123\" chip=true copyLog=[\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\"]",
+          "hard": false
+        }
+      ]
+    },
+    {
+      "scenario": "C9 probe: code only in localStorage (no param)",
+      "href": "https://ventiqa.example/r.html",
+      "clipboard": "ok",
+      "trackingPresent": true,
+      "observations": {
+        "load": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "",
+            "shown": true
+          }
+        },
+        "afterLoadTimers": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": null,
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterGesture": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Invitación copiada · abriendo descarga directa",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        },
+        "afterAffordance": {
+          "chipShown": true,
+          "manualShown": false,
+          "codeText": "ABC123",
+          "toast": "Invitación copiada al portapapeles",
+          "ctaText": "Descargar la app",
+          "copyButton": {
+            "id": "copyBtn",
+            "text": "Copiar código",
+            "shown": true
+          }
+        }
+      },
+      "copyLog": [
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 0,
+          "ok": true
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 2400,
+          "ok": true
+        },
+        {
+          "via": "clipboard.writeText",
+          "payload": "CARNAVAL-REF:ABC123",
+          "at": 23200,
+          "ok": true
+        }
+      ],
+      "errors": [],
+      "trackingCalls": [
+        {
+          "evt": "referral_visit",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 0
+        },
+        {
+          "evt": "play_store_click",
+          "extra": {
+            "code": "ABC123"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_ok",
+          "extra": {
+            "code": "ABC123",
+            "via": "clipboard-api"
+          },
+          "at": 2400
+        },
+        {
+          "evt": "referral_copy_ok",
+          "extra": {
+            "code": "ABC123",
+            "via": "clipboard-api"
+          },
+          "at": 23200
+        }
+      ],
+      "navigations": [
+        {
+          "to": "https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk",
+          "at": 2750
+        }
+      ],
+      "consoleLog": [],
+      "unknownApi": [],
+      "assertions": [
+        {
+          "id": "no-errors",
+          "ok": true,
+          "detail": "no uncaught errors",
+          "hard": true
+        },
+        {
+          "id": "harness-parsed-dom",
+          "ok": true,
+          "detail": "ctaBtn found in parsed DOM",
+          "hard": false
+        },
+        {
+          "id": "payload-on-gesture",
+          "ok": true,
+          "detail": "a copy API must receive the exact payload AND succeed; expected \"CARNAVAL-REF:ABC123\"; attempted=true; copyLog=[{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":0,\"ok\":true},{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":2400,\"ok\":true},{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "payload-offered-manually",
+          "ok": true,
+          "detail": "manualShown=false manualVal=undefined copyBtn={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "execCommand-fallback",
+          "ok": false,
+          "detail": "routes: [\"clipboard.writeText\",\"clipboard.writeText\",\"clipboard.writeText\"]",
+          "hard": false
+        },
+        {
+          "id": "manual-affordance",
+          "ok": true,
+          "detail": "manualShown=false copyButton={\"id\":\"copyBtn\",\"text\":\"Copiar código\",\"shown\":true}",
+          "hard": false
+        },
+        {
+          "id": "manual-has-payload",
+          "ok": true,
+          "detail": "manual value=undefined",
+          "hard": false
+        },
+        {
+          "id": "still-functional",
+          "ok": true,
+          "detail": "navigations=[{\"to\":\"https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk\",\"at\":2750}] manualShown=false",
+          "hard": false
+        },
+        {
+          "id": "no-bare-payload",
+          "ok": true,
+          "detail": "payloads=[\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\"]",
+          "hard": false
+        },
+        {
+          "id": "affordance-no-bare-payload",
+          "ok": true,
+          "detail": "copy-button clicks -> [{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "copy-button-works",
+          "ok": true,
+          "detail": "clicking the visible copy affordance must produce the exact payload; saw [{\"via\":\"clipboard.writeText\",\"payload\":\"CARNAVAL-REF:ABC123\",\"at\":23200,\"ok\":true}]",
+          "hard": false
+        },
+        {
+          "id": "reentry-attempts-copy",
+          "ok": true,
+          "detail": "copy attempts=3 (taps=1)",
+          "hard": false
+        },
+        {
+          "id": "pageshow-no-throw",
+          "ok": true,
+          "detail": "errors=0",
+          "hard": false
+        },
+        {
+          "id": "code-resolved-via-this-route",
+          "ok": true,
+          "detail": "codeText=\"ABC123\" chip=true copyLog=[\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\",\"CARNAVAL-REF:ABC123\"]",
+          "hard": false
+        }
+      ]
+    }
+  ]
+}

@@ -1,8 +1,9 @@
 /* =========================================================
    INVENTTIA · Premium v3 motion layer
-   Lenis smooth scroll · GSAP reveals · magnetic CTAs ·
-   scroll progress · mouse spotlight · 3D phone tilt · word reveals
-   All gated by prefers-reduced-motion.
+   Optional Lenis smooth scroll · CSS reveals · magnetic CTAs ·
+   scroll progress · mouse spotlight · 3D phone tilt · word reveals ·
+   sticky-stack depth (native scroll + rAF)
+   Every effect is CDN-independent and gated by prefers-reduced-motion.
    ========================================================= */
 
 (function () {
@@ -16,7 +17,7 @@
             else nav.classList.remove('is-stuck');
         };
         // Passive scroll listener only for the nav class swap — single boolean, no per-frame work.
-        // (Position-driven anims use ScrollTrigger / IntersectionObserver below.)
+        // (Position-driven anims use native scroll + IntersectionObserver below.)
         window.addEventListener('scroll', onScroll, { passive: true });
         onScroll();
     }
@@ -96,6 +97,10 @@
     if (heroHeadline && !REDUCE) {
         splitTextIntoWords(heroHeadline);
         requestAnimationFrame(() => heroHeadline.classList.add('is-revealed'));
+        // Release the per-word overflow clip once the reveal has settled, otherwise
+        // descenders/overhang of words like "que" or "y" stay chopped. Not tied to
+        // any CDN: this always runs, whatever happens with the optional script loads.
+        window.setTimeout(() => heroHeadline.classList.add('is-revealed-settled'), 1400);
     }
 
     // ---------- 3. Magnetic CTAs (mouse only) ----------
@@ -119,12 +124,21 @@
             const tick = () => {
                 cx += (tx - cx) * 0.18;
                 cy += (ty - cy) * 0.18;
-                el.style.transform = `translate3d(${cx.toFixed(2)}px, ${cy.toFixed(2)}px, 0)`;
-                if (Math.abs(tx - cx) > 0.1 || Math.abs(ty - cy) > 0.1) {
-                    raf = requestAnimationFrame(tick);
-                } else {
+                if (Math.abs(tx - cx) <= 0.1 && Math.abs(ty - cy) <= 0.1) {
                     raf = null;
+                    if (tx === 0 && ty === 0) {
+                        // At rest with the pointer away: drop the inline transform so the
+                        // CSS :hover lift (translateY(-2px)) is not permanently overridden.
+                        cx = 0;
+                        cy = 0;
+                        el.style.transform = '';
+                    } else {
+                        el.style.transform = `translate3d(${cx.toFixed(2)}px, ${cy.toFixed(2)}px, 0)`;
+                    }
+                    return;
                 }
+                el.style.transform = `translate3d(${cx.toFixed(2)}px, ${cy.toFixed(2)}px, 0)`;
+                raf = requestAnimationFrame(tick);
             };
             el.addEventListener('pointermove', onMove);
             el.addEventListener('pointerleave', onLeave);
@@ -137,106 +151,147 @@
         initPhoneTilt();
     }
 
-    // ---------- 4. Lenis + GSAP (lazy-load, only if !reduced) ----------
+    // ---------- 4. Sticky-stack depth (vanilla: native scroll + one rAF loop) ----------
+    // CSS `position: sticky` does all the pinning; this only writes --stack-progress so
+    // each card eases back as the next one arrives. Works with or without Lenis, because
+    // Lenis drives native scroll and nothing here waits on a CDN.
     if (REDUCE) return;
 
-    Promise.all([
-        loadScript('https://cdn.jsdelivr.net/npm/lenis@1.0.43/dist/lenis.min.js'),
-        loadScript('https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js'),
-        loadScript('https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js'),
-    ]).then(() => {
-        const { Lenis } = window;
-        const gsap = window.gsap;
-        const ScrollTrigger = window.ScrollTrigger;
-        gsap.registerPlugin(ScrollTrigger);
+    const stackCards = Array.from(document.querySelectorAll('.v2-stack-card'));
+    const stackSection = document.querySelector('.v2-stack');
+    // Exact complement of the CSS un-stick breakpoints (max-width: 880px / max-height: 720px).
+    const stackSticky = window.matchMedia('(min-width: 881px) and (min-height: 721px)');
+    if (stackCards.length > 1) {
+        const NAV_OFFSET = 88;
+        let stackTops = [];
+        let stackRaf = null;
+        let stackNeedsMeasure = true;
+        const lastProgress = [];
 
-        // Lenis smooth scroll
-        const lenis = new Lenis({
-            duration: 1.1,
-            easing: (t) => 1 - Math.pow(1 - t, 3),
-            smoothWheel: true,
-            smoothTouch: false,
-        });
-        // Exposed so the drawer can pause smooth scroll while it's open.
-        window.__v2Lenis = lenis;
-        function raf(time) {
-            lenis.raf(time);
+        // Only touch the DOM when the value actually changes (keeps mobile scrolling cheap).
+        const setProgress = (card, i, value) => {
+            const text = value.toFixed(3);
+            if (lastProgress[i] === text) return;
+            lastProgress[i] = text;
+            card.style.setProperty('--stack-progress', text);
+        };
+
+        // Natural (document-space) tops of the cards, derived from LAYOUT ONLY:
+        //   anchor = the non-sticky intro's layout top + its height + its margin
+        //   then each card = previous top + its own layout height + its margin
+        // offsetTop of non-sticky boxes, offsetHeight and computed margins are all
+        // scroll-invariant — sticky offsets and transforms never leak into them.
+        // NEVER use getBoundingClientRect() here: on a stuck card the rect tracks the
+        // scroll position, which makes (scrollY + 88 - cardTop) constant and freezes
+        // --stack-progress in place. The loop below is pure arithmetic on these tops.
+        const chainTop = (el) => {
+            let top = 0;
+            let node = el;
+            while (node) {
+                top += node.offsetTop || 0;
+                node = node.offsetParent;
+            }
+            return top;
+        };
+        const bottomMargin = (el) => parseFloat(window.getComputedStyle(el).marginBottom) || 0;
+
+        const measureStack = () => {
+            const first = stackCards[0];
+            const intro = (stackSection && stackSection.querySelector('.v2-stack-intro')) ||
+                          first.previousElementSibling;
+            let top = intro
+                ? chainTop(intro) + intro.offsetHeight + bottomMargin(intro)
+                : chainTop(first);
+            stackTops = stackCards.map((card) => {
+                const here = top;
+                top += card.offsetHeight + bottomMargin(card);
+                return here;
+            });
+            lastProgress.length = 0;
+        };
+
+        const updateStack = () => {
+            stackRaf = null;
+            if (stackNeedsMeasure) {
+                measureStack();
+                stackNeedsMeasure = false;
+            }
+            if (!stackSticky.matches) {
+                stackCards.forEach((card, i) => setProgress(card, i, 0));
+                return;
+            }
+            const scrollTop = window.scrollY || document.documentElement.scrollTop || 0;
+            for (let i = 0; i < stackCards.length - 1; i += 1) {
+                const from = stackTops[i];
+                const to = stackTops[i + 1];
+                const span = to - from;
+                const raw = span > 0 ? (scrollTop + NAV_OFFSET - from) / span : 0;
+                setProgress(stackCards[i], i, Math.min(1, Math.max(0, raw)));
+            }
+            // The last card has nothing to recede behind: keep it fully visible.
+            setProgress(stackCards[stackCards.length - 1], stackCards.length - 1, 0);
+        };
+
+        const queueStackUpdate = () => {
+            if (stackRaf === null) stackRaf = requestAnimationFrame(updateStack);
+        };
+        const refreshStack = () => {
+            stackNeedsMeasure = true;
+            queueStackUpdate();
+        };
+
+        window.addEventListener('scroll', queueStackUpdate, { passive: true });
+        window.addEventListener('resize', refreshStack);
+        window.addEventListener('load', refreshStack);
+        if (document.fonts && document.fonts.ready) {
+            document.fonts.ready.then(refreshStack).catch(() => {});
+        }
+        if (stackSection && 'ResizeObserver' in window) {
+            new ResizeObserver(refreshStack).observe(stackSection);
+        }
+        refreshStack();
+    }
+
+    // ---------- 5. Lenis smooth scroll (optional enhancement, never required) ----------
+    // Fire-and-forget. Nothing above depends on it: if the CDN is blocked, slow or
+    // missing, scrolling and every animation still work, because they are driven by
+    // native scroll, IntersectionObserver and CSS only.
+    loadScript('https://cdn.jsdelivr.net/npm/lenis@1.0.43/dist/lenis.min.js')
+        .then(() => {
+            const { Lenis } = window;
+            if (typeof Lenis !== 'function') {
+                console.warn('[premium-v3] Lenis loaded but not constructable — skipping');
+                return;
+            }
+            const lenis = new Lenis({
+                duration: 1.1,
+                easing: (t) => 1 - Math.pow(1 - t, 3),
+                smoothWheel: true,
+                smoothTouch: false,
+            });
+            // Exposed so the drawer can pause smooth scroll while it's open.
+            window.__v2Lenis = lenis;
+            const raf = (time) => {
+                lenis.raf(time);
+                requestAnimationFrame(raf);
+            };
             requestAnimationFrame(raf);
-        }
-        requestAnimationFrame(raf);
-        lenis.on('scroll', ScrollTrigger.update);
-
-        // ---------- Sticky-stack (canonical skeleton, Section 5.A) ----------
-        // Skip on small/short screens: CSS already stacks cards vertically and pinning
-        // fights the natural document flow on phones/tablets or short desktop viewports.
-        const cards = gsap.utils.toArray('.v2-stack-card');
-        const enableStickyStack = !window.matchMedia('(max-width: 880px)').matches &&
-                                  !window.matchMedia('(max-height: 720px)').matches;
-        if (enableStickyStack) cards.forEach((card, i) => {
-            if (i === cards.length - 1) return;
-            ScrollTrigger.create({
-                trigger: card,
-                start: 'top top+=120',    // give more breathing room below the nav
-                end: '+=130%',            // longer pin duration so users can read before the next card overlaps
-                pin: true,
-                pinSpacing: false,
-            });
-            gsap.to(card, {
-                scale: 0.94,
-                opacity: 0.55,
-                y: -20,
-                ease: 'none',
-                scrollTrigger: {
-                    trigger: cards[i + 1],
-                    start: 'top bottom',
-                    end: 'top top+=88',
-                    scrub: true,
-                },
-            });
-        });
-
-        // ---------- Hero entrance (once) ----------
-        const heroBits = document.querySelectorAll('[data-hero-in]');
-        if (heroBits.length) {
-            gsap.fromTo(
-                heroBits,
-                { y: 32, opacity: 0 },
-                {
-                    y: 0,
-                    opacity: 1,
-                    duration: 0.9,
-                    ease: 'power3.out',
-                    stagger: 0.08,
-                    delay: 0.05,
-                }
-            );
-        }
-
-        // ---------- Bento tile stagger ----------
-        const tiles = gsap.utils.toArray('.v2-tile');
-        if (tiles.length) {
-            gsap.from(tiles, {
-                y: 36,
-                opacity: 0,
-                duration: 0.8,
-                ease: 'power3.out',
-                stagger: 0.06,
-                scrollTrigger: {
-                    trigger: tiles[0].parentNode,
-                    start: 'top 80%',
-                },
-            });
-        }
-
-        // Refresh ScrollTrigger when images / fonts settle
-        window.addEventListener('load', () => ScrollTrigger.refresh());
-    }).catch((err) => console.warn('[premium-v2] motion bundle failed', err));
+        })
+        .catch((err) => console.warn('[premium-v3] smooth scroll unavailable', err));
 
     // ---------- helpers ----------
     function loadScript(src) {
         return new Promise((resolve, reject) => {
             const existing = document.querySelector(`script[src="${src}"]`);
-            if (existing) { existing.addEventListener('load', resolve); return; }
+            if (existing) {
+                // A tag with this src is already in the document. `load` does not fire
+                // again once it completed, so waiting on it would leave this promise
+                // pending forever — resolve straight away instead. The Lenis caller
+                // re-checks `typeof window.Lenis === 'function'` before using it, so an
+                // early resolve can never throw.
+                resolve();
+                return;
+            }
             const s = document.createElement('script');
             s.src = src;
             s.async = true;

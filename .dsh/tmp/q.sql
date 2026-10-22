@@ -1,0 +1,1 @@
+SELECT substring(pg_get_functiondef('public.fn_obtener_ingredientes_recursivos(bigint,numeric)'::regprocedure) from 1 for 260) AS def

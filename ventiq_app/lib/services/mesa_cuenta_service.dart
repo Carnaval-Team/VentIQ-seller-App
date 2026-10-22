@@ -279,32 +279,45 @@ class MesaCuentaService {
     String? uuidVendedor,
     bool forzarSinStock = false,
   }) async {
-    final response = await _supabase.rpc(
-      'fn_pedir_item_cuenta',
-      params: {
-        'p_id_cuenta': idCuenta,
-        'p_id_producto': idProducto,
-        'p_cantidad': cantidad,
-        'p_precio_unitario': precioUnitario,
-        'p_id_variante': idVariante,
-        'p_id_opcion_variante': idOpcionVariante,
-        'p_id_presentacion': idPresentacion,
-        'p_id_ubicacion': idUbicacion,
-        'p_precio_base': precioBase,
-        'p_id_metodo_pago': idMetodoPago,
-        'p_promotion_data': promotionData,
-        'p_inventory_data': inventoryData,
-        'p_notas': notas,
-        'p_sku_producto': skuProducto,
-        'p_sku_ubicacion': skuUbicacion,
-        'p_uuid_vendedor': uuidVendedor,
-        'p_forzar_sin_stock': forzarSinStock,
-      },
-    );
+    // Fase 2 del plan (decisión 1B): `_v2` convierte la cantidad a equivalente
+    // base. GATE: si el backend no tiene la RPC nueva, el fallback mantiene la
+    // app, pero el bug SQL de consumo (C5) sigue vivo en la función viva.
+    const fnNueva = 'fn_pedir_item_cuenta_v2';
+    const fnViva = 'fn_pedir_item_cuenta';
+    var fnUsada = fnNueva;
+    final params = <String, dynamic>{
+      'p_id_cuenta': idCuenta,
+      'p_id_producto': idProducto,
+      'p_cantidad': cantidad,
+      'p_precio_unitario': precioUnitario,
+      'p_id_variante': idVariante,
+      'p_id_opcion_variante': idOpcionVariante,
+      'p_id_presentacion': idPresentacion,
+      'p_id_ubicacion': idUbicacion,
+      'p_precio_base': precioBase,
+      'p_id_metodo_pago': idMetodoPago,
+      'p_promotion_data': promotionData,
+      'p_inventory_data': inventoryData,
+      'p_notas': notas,
+      'p_sku_producto': skuProducto,
+      'p_sku_ubicacion': skuUbicacion,
+      'p_uuid_vendedor': uuidVendedor,
+      'p_forzar_sin_stock': forzarSinStock,
+    };
+
+    dynamic response;
+    try {
+      response = await _supabase.rpc(fnNueva, params: params);
+    } catch (e) {
+      if (!_isRpcUnavailable(e, fnNueva)) rethrow;
+      fnUsada = fnViva;
+      print('⚠️ $fnNueva no disponible ($e). Usando $fnViva.');
+      response = await _supabase.rpc(fnViva, params: params);
+    }
 
     final mapa = _comoMapa(response);
     if (mapa == null) {
-      throw Exception('fn_pedir_item_cuenta devolvió formato inesperado: $response');
+      throw Exception('$fnUsada devolvió formato inesperado: $response');
     }
 
     if (mapa['status'] != 'success') {
@@ -358,14 +371,27 @@ class MesaCuentaService {
     required int idItem,
     String? motivo,
   }) async {
-    final response = await _supabase.rpc(
-      'fn_cancelar_item_pedido',
-      params: {'p_id_item': idItem, 'p_motivo': motivo},
-    );
+    // Fase 4 del plan (decisión 1B): `_v2` devuelve el stock a la presentación
+    // base. GATE: sin la RPC nueva, el fallback mantiene la app, pero el bug
+    // SQL de devolución (C7) sigue vivo.
+    const fnNueva = 'fn_cancelar_item_pedido_v2';
+    const fnViva = 'fn_cancelar_item_pedido';
+    var fnUsada = fnNueva;
+    final params = <String, dynamic>{'p_id_item': idItem, 'p_motivo': motivo};
+
+    dynamic response;
+    try {
+      response = await _supabase.rpc(fnNueva, params: params);
+    } catch (e) {
+      if (!_isRpcUnavailable(e, fnNueva)) rethrow;
+      fnUsada = fnViva;
+      print('⚠️ $fnNueva no disponible ($e). Usando $fnViva.');
+      response = await _supabase.rpc(fnViva, params: params);
+    }
 
     final mapa = _comoMapa(response);
     if (mapa == null) {
-      throw Exception('fn_cancelar_item_pedido devolvió formato inesperado: $response');
+      throw Exception('$fnUsada devolvió formato inesperado: $response');
     }
 
     if (mapa['status'] != 'success') {
@@ -373,6 +399,20 @@ class MesaCuentaService {
     }
 
     return CancelacionResultado.fromJson(mapa);
+  }
+
+  /// Detecta el error de PostgREST cuando una RPC nueva (`_v2`) todavía no
+  /// está aplicada en el backend (PGRST202 / "could not find the function" /
+  /// "schema cache"), para caer a la función viva del mismo nombre sin tratarlo
+  /// como fallo de negocio. Mismo criterio que
+  /// `AutoSyncService._isRpcUnavailable`.
+  bool _isRpcUnavailable(Object error, String functionName) {
+    final text = error.toString().toLowerCase();
+    final fn = functionName.toLowerCase();
+    return text.contains('pgrst202') ||
+        text.contains('could not find the function') ||
+        text.contains('schema cache') ||
+        (text.contains('does not exist') && text.contains(fn));
   }
 
   /// Normaliza la respuesta de una RPC que devuelve jsonb: Supabase puede

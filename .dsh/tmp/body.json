@@ -1,0 +1,1 @@
+{"method":"tools/call","params":{"arguments":{"query":"SELECT substring(pg_get_functiondef(\u0027public.fn_obtener_ingredientes_recursivos(bigint,numeric)\u0027::regprocedure) from 1 for 260) AS def"},"name":"execute_sql"},"id":2,"jsonrpc":"2.0"}

@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/product.dart';
+// FASE 7 P0: cascada de presentaciones local (replica `fn_presentaciones_producto`)
+// para resolver el equivalente base de cada ingrediente. Ver
+// `getProductIngredients` y `docs/PLAN_CONSUMO_INGREDIENTES_ELABORADOS_PRESENTACIONES.md`.
+import '../utils/presentacion_cadena_local.dart';
 import 'user_preferences_service.dart';
 
 class ProductDetailService {
@@ -11,6 +15,32 @@ class ProductDetailService {
 
   final SupabaseClient _supabase = Supabase.instance.client;
   final UserPreferencesService _userPrefs = UserPreferencesService();
+
+  /// Alcance con el que `getProductIngredients` midió el stock.
+  ///
+  /// FASE 7 P1 (task-12): el servidor valida con UN almacén
+  /// (`fn_validar_ingredientes_elaborado(..., p_id_almacen)`), así que el
+  /// cliente debe medir con el mismo. Estos valores viajan en el mapa de cada
+  /// ingrediente bajo `alcance_stock` para que la UI no mienta.
+  ///
+  /// - [alcanceAlmacenTpv]: se midió con el almacén que la venta va a usar, el
+  ///   que resuelve `fn_resolver_origen_venta(elaborado, tpv)`: normalmente el
+  ///   del TPV y el de la cocina en las rutas de cocina. Es el caso bueno.
+  /// - [alcanceTodosLosAlmacenes]: no se pudo resolver el almacén, se midió con
+  ///   `p_id_almacen = NULL`. Puede SOBREESTIMAR respecto al servidor.
+  /// - [alcanceDesconocido]: fallback (sin cadena de presentaciones o RPC no
+  ///   disponible): una sola fila, sin alcance de almacén.
+  /// - [alcanceCacheOffline]: dato del cache offline, no del servidor.
+  /// - [alcanceTienda]: RESERVADO. Si la decisión pendiente del plan (Fase 5,
+  ///   «alcance del consumo») pasa a tienda, `p_alcance` deberá propagarse aquí:
+  ///   el punto de cambio es `_disponibleBaseIngrediente`, que hoy llama
+  ///   `fn_stock_producto_almacen_detalle` (p_id_almacen). Mientras esa decisión
+  ///   no exista, NO se usa.
+  static const String alcanceAlmacenTpv = 'almacen_tpv';
+  static const String alcanceTodosLosAlmacenes = 'todos_los_almacenes';
+  static const String alcanceDesconocido = 'desconocido';
+  static const String alcanceCacheOffline = 'cache_offline';
+  static const String alcanceTienda = 'tienda_reservado';
 
   /// Fetch detailed product information.
   ///
@@ -502,10 +532,58 @@ class ProductDetailService {
     }
   }
 
-  /// Obtiene los ingredientes de un producto elaborado con su cantidad disponible actual
+  /// Obtiene los ingredientes de un producto elaborado con su cantidad
+  /// disponible actual **en unidades base**.
+  ///
+  /// FASE 7 P0 de `docs/PLAN_CONSUMO_INGREDIENTES_ELABORADOS_PRESENTACIONES.md`
+  /// (§0 y §2-bis).
+  ///
+  /// Defecto que corrige: antes se leía UNA sola fila
+  /// (`created_at DESC LIMIT 1`) y su `cantidad_final` cruda se devolvía como si
+  /// fuera el total. Con Arroz (Unidad 2000 + Kilogramo 2000) eso da 2000 y el
+  /// preorden bloquea una venta que necesita 6000 base, mientras el servidor
+  /// (`fn_validar_ingredientes_elaborado`) la aprueba con 2.002.000.
+  ///
+  /// Ahora:
+  ///  - `cantidad_disponible` = equivalente base =
+  ///    Σ (cantidad_final × factor_rel) de las filas **vigentes** por
+  ///    ubicación/variante/opción/presentación. Es lo que se compara contra
+  ///    `cantidad_necesaria` (la receta viene en unidades base).
+  ///  - `cantidad_disponible_fisica` = Σ cantidad_final sin factor (informativo).
+  ///  - `desglose_presentaciones` = detalle por presentación para la UI.
+  ///  - `unidad_medida` se rellena con el nombre de la presentación base cuando
+  ///    la receta lo trae nulo (caso real: la receta de Arroz Moro).
+  ///
+  /// Las filas vigentes se piden al servidor con
+  /// `fn_stock_producto_almacen_detalle` —la MISMA fuente que usa
+  /// `fn_stock_producto_almacen` y con ella la validación del servidor— en vez
+  /// de bajar el ledger completo: `app_dat_inventario_productos` tiene ~402k
+  /// filas y hay productos con más de 7.900. El factor se aplica con
+  /// `PresentacionCadenaLocal`, que replica `fn_presentaciones_producto`.
+  ///
+  /// Alcance: `idAlmacen` es el **almacén del TPV activo** (mismo origen que
+  /// usa la venta: `app_dat_tpv.id_almacen` / `UserPreferencesService.getIdAlmacen()`).
+  /// Se pasa tal cual a `fn_stock_producto_almacen_detalle(p_id_almacen)`, que
+  /// es lo que hace el servidor al validar. Si es `null` (no se pudo resolver),
+  /// se mide con todos los almacenes y cada ingrediente se etiqueta con
+  /// [alcanceTodosLosAlmacenes] para no mentir. Parámetro opcional: la firma
+  /// pública previa (`getProductIngredients(id)`) sigue funcionando.
+  ///
+  /// FALLBACK (no empeorar): si el ingrediente no tiene cadena de
+  /// presentaciones o si la RPC falla, se devuelve el comportamiento anterior
+  /// (una sola fila, la más reciente por `created_at`) etiquetado como
+  /// [alcanceDesconocido].
+  ///
+  /// ⚠️ GATE DE RELEASE — NO PUBLICAR este cambio sin las Fases 0.5 + 1 + 3
+  /// aplicadas en AMBOS proyectos. Con el descuento SQL actual
+  /// (`fn_descontar_ingredientes_elaborado` con el `LEAST` mixto y
+  /// `fn_registrar_venta` que RETORNA el error sin `RAISE`) permitir esta venta
+  /// descuenta 2500 u + 2500 kg de Frijoles y deja el almacén saqueado (§0).
+  /// Primero el SQL, después este APK.
   Future<List<Map<String, dynamic>>> getProductIngredients(
-    int productId,
-  ) async {
+    int productId, {
+    int? idAlmacen,
+  }) async {
     try {
       debugPrint(
         '🍽️ Obteniendo ingredientes para producto elaborado: $productId',
@@ -534,50 +612,119 @@ class ProductDetailService {
         return [];
       }
 
-      // Transform the response and fetch inventory for each ingredient
+      // Ids de ingredientes (sin duplicados): una sola consulta de cadenas.
+      final idsIngredientes = <int>[];
+      for (final item in response) {
+        final id = (item['id_ingrediente'] as num?)?.toInt();
+        if (id != null && !idsIngredientes.contains(id)) {
+          idsIngredientes.add(id);
+        }
+      }
+
+      // Cadena de presentaciones de TODOS los ingredientes: de ahí sale
+      // `factor_rel` (el equivalente base) y el nombre de la presentación base.
+      final cadenas = await _cadenasDePresentaciones(idsIngredientes);
+
       final List<Map<String, dynamic>> ingredients = [];
 
       for (final item in response) {
         final producto =
             item['app_dat_producto'] as Map<String, dynamic>? ?? {};
-        final idIngrediente = item['id_ingrediente'] as int?;
+        final idIngrediente = (item['id_ingrediente'] as num?)?.toInt();
 
-        // Obtener cantidad disponible actual del inventario
-        double? cantidadDisponible;
+        double? cantidadDisponible; // equivalente base
+        double? cantidadFisica;
+        var desglose = const <Map<String, dynamic>>[];
+        var unidadDePresentacion = '';
+        var disponibleResuelto = false;
+        // Se etiqueta el alcance real de la medición (task-12): almacén del TPV,
+        // todos los almacenes o desconocido (fallback).
+        var alcanceStock = ProductDetailService.alcanceDesconocido;
+        int? almacenMedido;
+
         if (idIngrediente != null) {
-          try {
-            final inventoryResponse = await _supabase
-                .from('app_dat_inventario_productos')
-                .select('cantidad_final')
-                .eq('id_producto', idIngrediente)
-                .order('created_at', ascending: false)
-                .limit(1);
+          final cadena = cadenas[idIngrediente] ?? const <PresentacionLocal>[];
+          unidadDePresentacion =
+              PresentacionCadenaLocal.base(cadena)?.nombre ?? '';
 
-            if (inventoryResponse.isNotEmpty) {
-              cantidadDisponible =
-                  (inventoryResponse.first['cantidad_final'] as num?)
-                      ?.toDouble();
+          if (cadena.isNotEmpty) {
+            final resuelto = await _disponibleBaseIngrediente(
+              idIngrediente,
+              cadena,
+              idAlmacen,
+            );
+            if (resuelto != null) {
+              disponibleResuelto = true;
+              cantidadDisponible = resuelto.totalBase;
+              cantidadFisica = resuelto.totalFisica;
+              desglose = resuelto.desglose;
+              almacenMedido = idAlmacen;
+              alcanceStock = idAlmacen == null
+                  ? ProductDetailService.alcanceTodosLosAlmacenes
+                  : ProductDetailService.alcanceAlmacenTpv;
               debugPrint(
-                '📊 Ingrediente ${producto['denominacion']}: cantidad disponible = $cantidadDisponible',
+                '📊 Ingrediente ${producto['denominacion']}: '
+                'base=$cantidadDisponible (física=$cantidadFisica, '
+                'almacén=${idAlmacen ?? 'todos'})',
               );
             }
-          } catch (e) {
-            debugPrint(
-              '⚠️ Error obteniendo inventario para ingrediente $idIngrediente: $e',
-            );
+          }
+
+          if (!disponibleResuelto) {
+            // FALLBACK: comportamiento anterior (una sola fila, la más
+            // reciente). Se conserva para no empeorar si el ingrediente no
+            // tiene cadena o si la RPC no está disponible en el proyecto.
+            try {
+              final inventoryResponse = await _supabase
+                  .from('app_dat_inventario_productos')
+                  .select('cantidad_final')
+                  .eq('id_producto', idIngrediente)
+                  .order('created_at', ascending: false)
+                  .limit(1);
+
+              if (inventoryResponse.isNotEmpty) {
+                cantidadDisponible =
+                    (inventoryResponse.first['cantidad_final'] as num?)
+                        ?.toDouble();
+                debugPrint(
+                  '📊 Ingrediente ${producto['denominacion']} (fallback, fila '
+                  'única): cantidad disponible = $cantidadDisponible',
+                );
+              }
+            } catch (e) {
+              debugPrint(
+                '⚠️ Error obteniendo inventario (fallback) para ingrediente '
+                '$idIngrediente: $e',
+              );
+            }
           }
         }
+
+        // La unidad que ve el vendedor: la de la receta si existe; si no (caso
+        // real, receta con `unidad_medida = null`), la presentación base.
+        final unidadReceta = (item['unidad_medida'] as String?)?.trim() ?? '';
+        final unidadMostrada =
+            unidadReceta.isNotEmpty ? unidadReceta : unidadDePresentacion;
 
         ingredients.add({
           'producto_id': producto['id'],
           'producto_nombre':
               producto['denominacion'] ?? 'Ingrediente desconocido',
           'cantidad_necesaria': item['cantidad_necesaria'] ?? 0,
-          'unidad_medida': item['unidad_medida'] ?? '',
+          'unidad_medida': unidadMostrada,
           'sku': producto['sku'] ?? '',
           'imagen': producto['imagen'],
-          'cantidad_disponible':
-              cantidadDisponible, // Cantidad actual en inventario
+          // EQUIVALENTE BASE (Σ cantidad_final × factor_rel). Es lo que debe
+          // compararse contra `cantidad_necesaria`, que viene en base.
+          'cantidad_disponible': cantidadDisponible,
+          // Σ cantidad_final sin factor, solo informativo para la UI.
+          'cantidad_disponible_fisica': cantidadFisica,
+          'presentacion_base': unidadDePresentacion,
+          'desglose_presentaciones': desglose,
+          // Alcance real de la medición (task-12). `id_almacen` null con
+          // `alcanceTodosLosAlmacenes` = no se pudo resolver el almacén del TPV.
+          'id_almacen': almacenMedido,
+          'alcance_stock': alcanceStock,
         });
       }
 
@@ -590,6 +737,145 @@ class ProductDetailService {
       debugPrint('❌ Error obteniendo ingredientes del producto $productId: $e');
       return [];
     }
+  }
+
+  /// Cadena de presentaciones de cada ingrediente, en UNA sola consulta.
+  ///
+  /// Devuelve solo los ingredientes con cadena utilizable; los que falten usan
+  /// el fallback de [getProductIngredients].
+  Future<Map<int, List<PresentacionLocal>>> _cadenasDePresentaciones(
+    List<int> idsIngredientes,
+  ) async {
+    final out = <int, List<PresentacionLocal>>{};
+    if (idsIngredientes.isEmpty) return out;
+
+    try {
+      final response = await _supabase
+          .from('app_dat_producto_presentacion')
+          .select('''
+            id,
+            id_producto,
+            cantidad,
+            es_base,
+            presentacion:app_nom_presentacion!inner(
+              id,
+              denominacion,
+              sku_codigo
+            )
+          ''')
+          .inFilter('id_producto', idsIngredientes);
+
+      final crudasPorProducto = <int, List<Map<String, dynamic>>>{};
+      for (final raw in response) {
+        final fila = Map<String, dynamic>.from(raw);
+        final idProducto = (fila['id_producto'] as num?)?.toInt();
+        if (idProducto == null) continue;
+        (crudasPorProducto[idProducto] ??= []).add(fila);
+      }
+
+      for (final entry in crudasPorProducto.entries) {
+        // Misma cascada que `fn_presentaciones_producto` (base, orden y
+        // factor_rel), sin duplicarla aquí.
+        final cadena = PresentacionCadenaLocal.resolverDesdeCrudas(entry.value);
+        if (cadena.isNotEmpty) out[entry.key] = cadena;
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error obteniendo cadenas de presentaciones: $e');
+    }
+    return out;
+  }
+
+  /// Equivalente base de un ingrediente = Σ (cantidad_final × factor_rel).
+  ///
+  /// Las filas vigentes (una por ubicación/variante/opción/presentación, la de
+  /// mayor `id`, con `cantidad_final > 0`) las devuelve
+  /// `fn_stock_producto_almacen_detalle`, la misma fuente que
+  /// `fn_stock_producto_almacen` usa para validar.
+  ///
+  /// [idAlmacen] acota al almacén del TPV (lo mismo que valida el servidor); si
+  /// es `null`, la RPC suma todos los almacenes.
+  ///
+  /// Punto de cambio reservado: si la Fase 5 decide alcance «tienda», `p_alcance`
+  /// debe propagarse aquí (hoy la RPC solo acepta `p_id_almacen`).
+  ///
+  /// Devuelve `null` si la RPC falla; el llamador cae al comportamiento previo.
+  Future<
+    ({double totalBase, double totalFisica, List<Map<String, dynamic>> desglose})?
+  >
+  _disponibleBaseIngrediente(
+    int idIngrediente,
+    List<PresentacionLocal> cadena,
+    int? idAlmacen,
+  ) async {
+    try {
+      final response = await _supabase.rpc(
+        'fn_stock_producto_almacen_detalle',
+        params: {'p_id_producto': idIngrediente, 'p_id_almacen': idAlmacen},
+      );
+
+      final filas = response is List
+          ? response
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList()
+          : <Map<String, dynamic>>[];
+
+      final factorPorPresentacion = <int, double>{
+        for (final p in cadena) p.idPresentacion: p.factorRel,
+      };
+
+      var totalBase = 0.0;
+      var totalFisica = 0.0;
+      final desglose = <Map<String, dynamic>>[];
+
+      for (final fila in filas) {
+        final cantidad = (fila['cantidad_final'] as num?)?.toDouble() ?? 0.0;
+        // La RPC ya filtra `> 0`; defensivo, igual que el SQL.
+        if (cantidad <= 0) continue;
+
+        final idPresentacion = (fila['id_presentacion'] as num?)?.toInt();
+        // Igual que el SQL: COALESCE(factor_rel, 1) si la presentación no
+        // aparece en la cadena conocida.
+        final factor = idPresentacion == null
+            ? 1.0
+            : (factorPorPresentacion[idPresentacion] ?? 1.0);
+
+        totalFisica += cantidad;
+        totalBase += cantidad * factor;
+
+        desglose.add({
+          'id_presentacion': idPresentacion,
+          'presentacion': _nombrePresentacion(cadena, idPresentacion),
+          'cantidad_final': cantidad,
+          'factor_rel': factor,
+          'equivalente_base': FormatoPresentacion.redondear(cantidad * factor),
+        });
+      }
+
+      return (
+        totalBase: FormatoPresentacion.redondear(totalBase),
+        totalFisica: FormatoPresentacion.redondear(totalFisica),
+        desglose: desglose,
+      );
+    } catch (e) {
+      debugPrint(
+        '⚠️ fn_stock_producto_almacen_detalle falló para ingrediente '
+        '$idIngrediente: $e',
+      );
+      return null;
+    }
+  }
+
+  /// Nombre de la presentación de la cadena por el id de la fila de inventario.
+  String _nombrePresentacion(
+    List<PresentacionLocal> cadena,
+    int? idPresentacion,
+  ) {
+    if (idPresentacion == null) return '';
+    for (final p in cadena) {
+      if (p.idPresentacion == idPresentacion) return p.nombre;
+    }
+    return '';
   }
 
   /// Muestra un diálogo con los ingredientes del producto elaborado
@@ -643,11 +929,20 @@ class ProductDetailService {
                             'Ingrediente desconocido';
                         final cantidadNecesaria =
                             ingredient['cantidad_necesaria'] ?? 0;
-                        final unidad = ingredient['unidad_medida'] ?? '';
+                        final unidadReceta =
+                            (ingredient['unidad_medida'] as String?)?.trim();
+                        final unidad =
+                            (unidadReceta == null || unidadReceta.isEmpty)
+                                ? (ingredient['presentacion_base'] as String? ??
+                                      '')
+                                : unidadReceta;
                         final cantidadDisponible =
-                            ingredient['cantidad_disponible'] as double?;
+                            (ingredient['cantidad_disponible'] as num?)
+                                ?.toDouble();
 
-                        // Determinar si hay suficiente stock
+                        // FASE 7 P0: la comparación es base vs base
+                        // (`cantidad_disponible` es el equivalente base y
+                        // `cantidad_necesaria` viene en unidades base).
                         final bool tieneSuficiente =
                             cantidadDisponible != null &&
                             cantidadDisponible >= cantidadNecesaria;

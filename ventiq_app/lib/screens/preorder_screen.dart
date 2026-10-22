@@ -1268,6 +1268,21 @@ class _PreorderScreenState extends State<PreorderScreen> {
   /// Para productos elaborados/servicios, verifica el stock de sus ingredientes.
   /// Para productos normales, verifica directamente en inventario.
   /// Retorna lista de problemas: [{nombre, cantidad_pedida, stock_disponible, diferencia, presentacion}]
+  ///
+  /// FASE 7 P0 (docs/PLAN_CONSUMO_INGREDIENTES_ELABORADOS_PRESENTACIONES.md §0):
+  /// para elaborados la comparación es en UNIDADES BASE, con el
+  /// `cantidad_disponible` que ya devuelve `getProductIngredients`.
+  ///
+  /// task-12 (FASE 7 P1): además se mide con el almacén del TPV que usará la
+  /// venta (`fn_resolver_origen_venta`); si no se puede resolver con certeza, se
+  /// mide con todos los almacenes y el cartel lo etiqueta.
+  ///
+  /// ⚠️ GATE DE RELEASE — NO PUBLICAR este cambio sin las Fases 0.5 + 1 + 3
+  /// aplicadas en AMBOS proyectos: con el descuento SQL actual
+  /// (`fn_descontar_ingredientes_elaborado`, `LEAST` mixto, y
+  /// `fn_registrar_venta` que RETORNA el error sin `RAISE`) dejar pasar esta
+  /// venta descuenta 2500 u + 2500 kg de Frijoles y saquea el almacén.
+  /// Primero el SQL, después este APK.
   Future<List<Map<String, dynamic>>> _checkInventoryAvailability(
     List<OrderItem> items, {
     bool forceOffline = false,
@@ -1340,20 +1355,45 @@ class _PreorderScreenState extends State<PreorderScreen> {
               final cantidadDisponible = stockIngrediente ?? 0.0;
 
               if (cantidadDisponible < cantidadNecesaria) {
+                final unidadIngrediente = _unidadDeIngrediente(ing);
                 problems.add({
                   'nombre': '${item.nombre} → $nombreIngrediente',
                   'cantidad_pedida': cantidadNecesaria,
                   'stock_disponible': cantidadDisponible,
                   'diferencia': cantidadNecesaria - cantidadDisponible,
                   'ubicacion': item.ubicacionAlmacen,
-                  'presentacion': ' (ingrediente • cache offline)',
+                  'unidad': unidadIngrediente,
+                  // Fuera de línea no hay almacén de venta resoluble: el dato
+                  // viene del cache y se etiqueta como tal (task-12).
+                  'alcance_stock': ProductDetailService.alcanceCacheOffline,
+                  'presentacion':
+                      ' (ingrediente • cache offline${unidadIngrediente.isEmpty ? '' : ' • $unidadIngrediente'})',
                 });
               }
             }
           } else {
             // ONLINE: verificar stock de cada ingrediente en Supabase
+            //
+            // task-12 (FASE 7 P1): el servidor valida con UN almacén, resuelto
+            // por `fn_resolver_origen_venta(elaborado, tpv)` — el mismo origen
+            // que usa la venta (order_service manda solo `p_id_tpv` y el
+            // servidor resuelve la ruta, barra o cocina). Se mide con el mismo
+            // almacén para no sobreestimar y provocar un bloqueo confuso del
+            // servidor. Si no se resuelve con certeza, `idAlmacen` va null, se
+            // mide con todos los almacenes y cada ingrediente queda etiquetado
+            // como tal (`alcance_stock`).
+            // Un servicio puro no tiene receta que medir (`fn_resolver_origen_venta`
+            // devolvería `descontar: nada`): no se resuelve la ruta y se ahorra
+            // una RPC por item.
+            final idAlmacenVenta =
+                (item.producto.esServicio && !item.producto.esElaborado)
+                ? null
+                : await _resolverAlmacenDeVenta(item.producto.id);
             final ingredientes = await _productDetailService
-                .getProductIngredients(item.producto.id);
+                .getProductIngredients(
+                  item.producto.id,
+                  idAlmacen: idAlmacenVenta,
+                );
 
             if (ingredientes.isEmpty) {
               print(
@@ -1368,12 +1408,20 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   ((ingrediente['cantidad_necesaria'] as num?)?.toDouble() ??
                       0.0) *
                   item.cantidad;
+              // FASE 7 P0/P1: `cantidad_disponible` ya es el EQUIVALENTE BASE
+              // (Σ cantidad_final × factor_rel de las presentaciones vigentes
+              // del alcance medido), calculado por `getProductIngredients`; por
+              // eso se compara directamente contra `cantidad_necesaria`, que la
+              // receta trae en unidades base. Antes esto comparaba una sola fila
+              // del ledger (p. ej. 2000 Unidad) contra 6000 base y bloqueaba la
+              // venta. Ver docs/PLAN_CONSUMO_INGREDIENTES_ELABORADOS_PRESENTACIONES.md §0.
               final cantidadDisponible =
                   (ingrediente['cantidad_disponible'] as num?)?.toDouble() ??
                   0.0;
               final nombreIngrediente =
                   ingrediente['producto_nombre'] as String? ??
                   'Ingrediente desconocido';
+              final unidadIngrediente = _unidadDeIngrediente(ingrediente);
 
               if (idIngrediente == null) continue;
 
@@ -1384,7 +1432,13 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   'stock_disponible': cantidadDisponible,
                   'diferencia': cantidadNecesaria - cantidadDisponible,
                   'ubicacion': item.ubicacionAlmacen,
-                  'presentacion': ' (ingrediente)',
+                  'unidad': unidadIngrediente,
+                  // task-12: con qué alcance se midió (almacén del TPV,
+                  // todos los almacenes o desconocido). La UI lo etiqueta.
+                  'id_almacen': ingrediente['id_almacen'],
+                  'alcance_stock': ingrediente['alcance_stock'],
+                  'presentacion':
+                      ' (ingrediente${unidadIngrediente.isEmpty ? '' : ' • $unidadIngrediente'})',
                 });
               }
             }
@@ -1575,6 +1629,94 @@ class _PreorderScreenState extends State<PreorderScreen> {
     return problems;
   }
 
+  /// Unidad/presentación que se muestra en los carteles de ingredientes.
+  ///
+  /// FASE 7 P0: la receta del caso real trae `unidad_medida = null`, así que la
+  /// unidad sale de la presentación base que resolvió `getProductIngredients`
+  /// (`presentacion_base`). Nunca se muestra una cadena vacía si hay base.
+  String _unidadDeIngrediente(Map<String, dynamic> ingrediente) {
+    final unidad = (ingrediente['unidad_medida'] as String?)?.trim() ?? '';
+    if (unidad.isNotEmpty) return unidad;
+    return (ingrediente['presentacion_base'] as String?)?.trim() ?? '';
+  }
+
+  /// Almacén con el que la VENTA va a validar/descontar este elaborado.
+  ///
+  /// task-12 (FASE 7 P1): el servidor no recibe el almacén desde la app
+  /// (`order_service` manda solo `p_id_tpv`), lo resuelve con
+  /// `fn_resolver_origen_venta(elaborado, tpv)` —barra o cocina—. Se usa esa
+  /// misma función para medir el ingrediente en el mismo almacén y que el
+  /// cartel no sobreestime.
+  ///
+  /// Devuelve `null` si no se puede resolver **con certeza** (sin TPV en prefs,
+  /// ruta con error o RPC no disponible): en ese caso la medición se hace con
+  /// todos los almacenes y se etiqueta como tal. Preferimos sobreestimar —y que
+  /// el servidor bloquee— antes que bloquear en falso midiendo el almacén
+  /// equivocado (p. ej. una ruta de cocina).
+  ///
+  /// `SECURITY DEFINER` + `SET search_path = public` + grant a `authenticated`:
+  /// es de solo lectura y no depende del guard (no le afecta C9).
+  Future<int?> _resolverAlmacenDeVenta(int idProductoElaborado) async {
+    try {
+      final idTpv = await _userPreferencesService.getIdTpv();
+      if (idTpv == null) {
+        debugPrint('⚠️ Sin TPV en prefs: no se puede resolver el almacén');
+        return null;
+      }
+
+      final ruta = await Supabase.instance.client.rpc(
+        'fn_resolver_origen_venta',
+        params: {'p_id_producto': idProductoElaborado, 'p_id_tpv': idTpv},
+      );
+      if (ruta is! Map) return null;
+
+      final mapa = Map<String, dynamic>.from(ruta);
+      if (mapa['status']?.toString() != 'success') {
+        debugPrint(
+          '⚠️ fn_resolver_origen_venta sin ruta para $idProductoElaborado: '
+          '${mapa['error_code'] ?? mapa['message']}',
+        );
+        return null;
+      }
+
+      final idAlmacen = (mapa['id_almacen'] as num?)?.toInt();
+      if (idAlmacen == null || idAlmacen <= 0) return null;
+      debugPrint(
+        '🏬 Elaborado $idProductoElaborado: almacén de venta $idAlmacen '
+        '(origen=${mapa['origen']})',
+      );
+      return idAlmacen;
+    } catch (e) {
+      debugPrint(
+        '⚠️ fn_resolver_origen_venta falló para $idProductoElaborado: $e',
+      );
+      return null;
+    }
+  }
+
+  /// Texto humano del alcance con el que se midió un ingrediente (task-12).
+  ///
+  /// Devuelve `null` si el dato no trae alcance (productos no elaborados), para
+  /// no añadir ruido al cartel.
+  String? _etiquetaAlcanceStock(Map<String, dynamic> datos) {
+    final alcance = datos['alcance_stock']?.toString();
+    if (alcance == null || alcance.isEmpty) return null;
+    if (alcance == ProductDetailService.alcanceAlmacenTpv) {
+      return 'almacén del TPV';
+    }
+    if (alcance == ProductDetailService.alcanceTodosLosAlmacenes) {
+      return 'todos los almacenes';
+    }
+    if (alcance == ProductDetailService.alcanceCacheOffline) {
+      return 'cache offline';
+    }
+    if (alcance == ProductDetailService.alcanceTienda) {
+      // Reservado para la decisión de alcance «tienda» (Fase 5).
+      return 'toda la tienda';
+    }
+    return 'alcance no determinado';
+  }
+
   bool _isNetworkError(Object error) {
     if (error is SocketException) return true;
     if (error is TimeoutException) return true;
@@ -1675,6 +1817,18 @@ class _PreorderScreenState extends State<PreorderScreen> {
                     final cantPedida = (p['cantidad_pedida'] as double);
                     final stock = (p['stock_disponible'] as double);
                     final diff = (p['diferencia'] as double);
+                    // FASE 7 P0/P1: la unidad/presentación de los números y el
+                    // alcance real de la medición. En elaborados son unidades
+                    // base del ingrediente (p. ej. "Unidad"); sale de la
+                    // presentación base cuando la receta trae
+                    // `unidad_medida = null`. Si el almacén del TPV no se pudo
+                    // resolver, se dice "todos los almacenes" (task-12).
+                    final unidad = (p['unidad'] as String?)?.trim() ?? '';
+                    final etiquetaAlcance = _etiquetaAlcanceStock(p);
+                    final nota = <String>[
+                      if (unidad.isNotEmpty) 'Unidad base: $unidad',
+                      if (etiquetaAlcance != null) etiquetaAlcance,
+                    ].join(' · ');
                     return Container(
                       margin: const EdgeInsets.only(bottom: 10),
                       padding: const EdgeInsets.all(10),
@@ -1724,6 +1878,16 @@ class _PreorderScreenState extends State<PreorderScreen> {
                               ),
                             ],
                           ),
+                          if (nota.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              nota,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     );
@@ -2640,6 +2804,18 @@ class _PreorderScreenState extends State<PreorderScreen> {
   }
 
   /// Verifica la disponibilidad de ingredientes para productos elaborados
+  ///
+  /// FASE 7 P0: la comparación es en UNIDADES BASE (`cantidad_disponible` es el
+  /// equivalente base que resuelve `getProductIngredients`; `cantidad_necesaria`
+  /// es la cantidad de receta, también en base). La unidad mostrada sale de la
+  /// presentación base cuando la receta trae `unidad_medida = null`.
+  ///
+  /// ⚠️ GATE DE RELEASE — NO PUBLICAR sin las Fases 0.5 + 1 + 3 en ambos
+  /// proyectos (ver §0 del plan).
+  ///
+  /// task-12: se mide con el almacén que usará la venta
+  /// (`fn_resolver_origen_venta`); si no se resuelve, con todos los almacenes y
+  /// el alcance viaja en cada alerta para poder etiquetarlo.
   Future<void> _checkIngredientsAvailability(
     List<Map<String, dynamic>> productosElaborados,
   ) async {
@@ -2654,15 +2830,16 @@ class _PreorderScreenState extends State<PreorderScreen> {
 
         final ingredientes = await _productDetailService.getProductIngredients(
           productId,
+          idAlmacen: await _resolverAlmacenDeVenta(productId),
         );
 
         for (final ingrediente in ingredientes) {
           final cantidadNecesaria =
-              (ingrediente['cantidad_necesaria'] as num).toDouble();
+              (ingrediente['cantidad_necesaria'] as num?)?.toDouble() ?? 0.0;
           final cantidadDisponible =
-              ingrediente['cantidad_disponible'] as double?;
+              (ingrediente['cantidad_disponible'] as num?)?.toDouble();
           final nombreIngrediente = ingrediente['producto_nombre'] as String;
-          final unidadMedida = ingrediente['unidad_medida'] as String;
+          final unidadMedida = _unidadDeIngrediente(ingrediente);
 
           final cantidadTotalNecesaria = cantidadNecesaria * cantidadProducto;
 
@@ -2673,7 +2850,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
             continue;
           }
 
-          // Verificar si no hay stock suficiente
+          // Verificar si no hay stock suficiente (base vs base)
           if (cantidadDisponible < cantidadTotalNecesaria) {
             ingredientesSinStock.add({
               'nombre': nombreIngrediente,
@@ -2681,6 +2858,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
               'necesaria': cantidadTotalNecesaria,
               'disponible': cantidadDisponible,
               'unidad': unidadMedida,
+              // task-12: alcance real de la medición (la UI lo etiqueta).
+              'alcance_stock': ingrediente['alcance_stock'],
             });
           }
           // Verificar si está próximo a agotarse (menos del 20% extra de lo necesario)
@@ -2691,6 +2870,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
               'necesaria': cantidadTotalNecesaria,
               'disponible': cantidadDisponible,
               'unidad': unidadMedida,
+              // task-12: alcance real de la medición (la UI lo etiqueta).
+              'alcance_stock': ingrediente['alcance_stock'],
             });
           }
         }
@@ -2767,7 +2948,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   final producto = ing['producto'] as String;
                   final necesaria = ing['necesaria'] as double;
                   final disponible = ing['disponible'] as double;
-                  final unidad = ing['unidad'] as String;
+                  final unidad = (ing['unidad'] as String?)?.trim() ?? '';
+                  // task-12: alcance real de la medición; `null` si el dato no
+                  // lo trae (no se inventa nada).
+                  final etiquetaAlcance = _etiquetaAlcanceStock(ing);
 
                   return Container(
                     margin: const EdgeInsets.only(bottom: 8),
@@ -2837,6 +3021,16 @@ class _PreorderScreenState extends State<PreorderScreen> {
                             ),
                           ],
                         ),
+                        if (etiquetaAlcance != null) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Medido en: $etiquetaAlcance',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey[700],
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   );
