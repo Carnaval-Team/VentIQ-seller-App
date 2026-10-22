@@ -10,7 +10,7 @@ import '../../services/catalogo_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/entidad_service.dart';
 import '../../services/perfil_service.dart';
-import 'gestion_locales_screen.dart';
+import 'locales_servicios_screen.dart';
 import 'gestion_servicios_screen.dart';
 
 class EntidadDetailScreen extends StatefulWidget {
@@ -219,7 +219,7 @@ class _EntidadDetailScreenState extends State<EntidadDetailScreen> {
                           onTap: () => Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => GestionLocalesScreen(
+                              builder: (_) => LocalesServiciosScreen(
                                   entidad: _entidad),
                             ),
                           ).then((_) => _cargar()),

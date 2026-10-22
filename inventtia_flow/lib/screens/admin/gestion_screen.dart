@@ -11,9 +11,8 @@ import '../../widgets/dashboard_entidad.dart';
 import '../../widgets/notificaciones_bell.dart';
 import 'config_categorias_screen.dart';
 import 'entidad_detail_screen.dart';
-import 'gestion_locales_screen.dart';
 import 'gestion_servicios_screen.dart';
-import 'planificacion_screen.dart';
+import 'locales_servicios_screen.dart';
 import 'reservas_screen.dart';
 
 class GestionScreen extends StatelessWidget {
@@ -172,7 +171,7 @@ class EntidadSelector extends StatelessWidget {
     if (entidades.length == 1) {
       // Una sola entidad: no hay nada que elegir, así que el título describe la
       // pantalla y el nombre de la entidad va como subtítulo. Mismo patrón de
-      // dos líneas que `planificacion_screen.dart:207-217`. Blanco sobre el
+      // dos líneas que la AppBar de `locales_servicios_screen.dart`. Blanco sobre el
       // degradado primario: 6.4:1 el título y 4.9:1 el subtítulo al 82 %.
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -308,17 +307,20 @@ class _GestionBody extends StatelessWidget {
               // `List<Widget>` explícito: las tarjetas van envueltas en
               // `TutorialAnchor`, que no es un `_ModuloCard`.
               final List<Widget> modulos = [
+                // Locales, sus servicios y la planificación de cada uno viven
+                // en un único módulo; el catálogo sigue aparte porque un mismo
+                // servicio se ofrece en varios locales.
                 TutorialAnchor(
                   id: 'admin_modulo_locales',
                   child: _ModuloCard(
                     icon: Icons.store_outlined,
-                    title: 'Locales',
-                    subtitle: 'Puntos de atención',
+                    title: 'Locales y servicios',
+                    subtitle: 'Qué ofrece cada local',
                     color: const Color(0xFF4F7FFA),
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => GestionLocalesScreen(entidad: entidad),
+                        builder: (_) => LocalesServiciosScreen(entidad: entidad),
                       ),
                     ),
                   ),
@@ -327,29 +329,14 @@ class _GestionBody extends StatelessWidget {
                   id: 'admin_modulo_servicios',
                   child: _ModuloCard(
                     icon: Icons.miscellaneous_services_outlined,
-                    title: 'Servicios',
-                    subtitle: 'Catálogo de servicios',
+                    title: 'Catálogo',
+                    subtitle: 'Servicios de la entidad',
                     color: const Color(0xFF7C5CFC),
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (_) =>
                             GestionServiciosScreen(entidad: entidad),
-                      ),
-                    ),
-                  ),
-                ),
-                TutorialAnchor(
-                  id: 'admin_modulo_planificacion',
-                  child: _ModuloCard(
-                    icon: Icons.account_tree_outlined,
-                    title: 'Planificación',
-                    subtitle: 'Servicios por local',
-                    color: const Color(0xFF34C759),
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => PlanificacionScreen(entidad: entidad),
                       ),
                     ),
                   ),

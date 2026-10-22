@@ -12,7 +12,7 @@ import '../services/update_service.dart';
 import 'favoritos_screen.dart';
 import 'perfil_setup_screen.dart';
 import 'admin/entidad_detail_screen.dart';
-import 'admin/gestion_locales_screen.dart';
+import 'admin/locales_servicios_screen.dart';
 import 'admin/gestion_servicios_screen.dart';
 
 class PerfilScreen extends StatefulWidget {
@@ -803,7 +803,7 @@ class _EntidadAdminSection extends StatelessWidget {
                           context,
                           MaterialPageRoute(
                             builder: (_) =>
-                                GestionLocalesScreen(entidad: seleccionada),
+                                LocalesServiciosScreen(entidad: seleccionada),
                           ),
                         ),
                       ),

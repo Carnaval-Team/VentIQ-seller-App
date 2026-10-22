@@ -18,17 +18,20 @@ enum TutorialDestino {
   /// Pantalla «Gestión» del admin (raíz de sus módulos).
   gestion,
 
-  /// Módulo de locales.
+  /// Módulo «Locales y servicios» (lista de locales).
   locales,
 
-  /// Módulo de servicios (listado).
+  /// Detalle del primer local: sus servicios y «Añadir servicio».
+  localDetalle,
+
+  /// Configuración del primer servicio vinculado a un local.
+  servicioLocal,
+
+  /// Catálogo de servicios (listado).
   servicios,
 
-  /// Módulo de servicios con el formulario de alta ya abierto.
+  /// Catálogo de servicios con el formulario de alta ya abierto.
   serviciosFormulario,
-
-  /// Módulo de planificación.
-  planificacion,
 
   /// Módulo de reservas.
   reservas,

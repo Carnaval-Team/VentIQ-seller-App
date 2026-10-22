@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../models/entidad.dart';
 import '../screens/admin/config_categorias_screen.dart';
-import '../screens/admin/gestion_locales_screen.dart';
 import '../screens/admin/gestion_servicios_screen.dart';
-import '../screens/admin/planificacion_screen.dart';
+import '../screens/admin/local_servicio_admin_screen.dart';
+import '../screens/admin/locales_servicios_screen.dart';
 import '../screens/admin/reservas_screen.dart';
+import '../services/catalogo_service.dart';
 import 'tutorial_destino.dart';
 
 /// Traduce el destino de un paso del tutorial en navegación real.
@@ -45,6 +46,10 @@ class TutorialNavegacion {
       return;
     }
 
+    // Se capta el navegador antes de cualquier espera: tras un `await` el
+    // `context` puede haberse desmontado.
+    final navegador = Navigator.of(context, rootNavigator: true);
+
     // Se parte siempre del shell: evita apilar módulos unos encima de otros
     // cuando el usuario va y viene con «Siguiente» / «Atrás».
     volverAlShell(context);
@@ -53,13 +58,14 @@ class TutorialNavegacion {
     if (entidad == null) return;
 
     final Widget? pantalla = switch (destino) {
-      TutorialDestino.locales => GestionLocalesScreen(entidad: entidad),
+      TutorialDestino.locales => LocalesServiciosScreen(entidad: entidad),
+      TutorialDestino.localDetalle => await _primerLocal(entidad),
+      TutorialDestino.servicioLocal => await _primerServicioLocal(entidad),
       TutorialDestino.servicios => GestionServiciosScreen(entidad: entidad),
       TutorialDestino.serviciosFormulario => GestionServiciosScreen(
         entidad: entidad,
         abrirNuevoAlEntrar: true,
       ),
-      TutorialDestino.planificacion => PlanificacionScreen(entidad: entidad),
       TutorialDestino.reservas => ReservasScreen(entidad: entidad),
       TutorialDestino.categorias => ConfigCategoriasScreen(entidad: entidad),
       TutorialDestino.home ||
@@ -70,8 +76,46 @@ class TutorialNavegacion {
     };
     if (pantalla == null) return;
 
-    Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute(builder: (_) => pantalla),
-    );
+    navegador.push(MaterialPageRoute(builder: (_) => pantalla));
+  }
+
+  /// Módulo de locales con el primero ya abierto. Si aún no hay locales se
+  /// queda en la lista, donde está el botón para crearlo.
+  static Future<Widget> _primerLocal(Entidad entidad) async {
+    try {
+      final locales = await CatalogoService.getLocalesByEntidad(entidad.id);
+      if (locales.isNotEmpty) {
+        return LocalesServiciosScreen(
+          entidad: entidad,
+          idLocalInicial: locales.first.id,
+        );
+      }
+    } catch (_) {
+      // Navegar es "best effort": sin datos se abre la lista.
+    }
+    return LocalesServiciosScreen(entidad: entidad);
+  }
+
+  /// Configuración del primer servicio ofrecido en un local. Sin ninguno, el
+  /// detalle del primer local, que es donde se añade.
+  static Future<Widget> _primerServicioLocal(Entidad entidad) async {
+    try {
+      final pares = await CatalogoService.getLocalServicios(
+        idEntidad: entidad.id,
+        incluirInactivos: true,
+      );
+      if (pares.isNotEmpty) {
+        // Se relee completo: el detalle necesita el tipo de actividad.
+        final ls = await CatalogoService.getLocalServicio(pares.first.id);
+        return LocalServicioAdminScreen(
+          localServicio: ls,
+          entidadId: entidad.id,
+          pestanaInicial: PestanaLocalServicio.configuracion,
+        );
+      }
+    } catch (_) {
+      // Sin datos se cae al detalle del local.
+    }
+    return _primerLocal(entidad);
   }
 }

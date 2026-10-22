@@ -5,9 +5,9 @@ import '../../models/config_precio.dart';
 import '../../models/servicio.dart';
 import '../../services/catalogo_service.dart';
 import '../../widgets/net_image.dart';
-import 'config_recursos_screen.dart';
 import 'gestion_servicios_screen.dart';
-import 'promociones_screen.dart';
+import 'local_servicio_admin_screen.dart';
+import 'planificacion_sheets.dart';
 
 class ServicioDetailScreen extends StatefulWidget {
   final Servicio servicio;
@@ -165,25 +165,56 @@ class _ServicioDetailScreenState extends State<ServicioDetailScreen> {
     if (_error != null && _items.isEmpty) {
       return Center(child: Text('Error: $_error'));
     }
-    if (_items.isEmpty) {
-      return const Center(
-        child: Text(
-          'Este servicio aún no está vinculado a ningún local.\n'
-          'Vincúlalo en Planificación para ver sus recursos y turnos.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: AppTheme.textSecondary),
-        ),
-      );
-    }
     return RefreshIndicator(
       onRefresh: _cargar,
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _buildInfoSection(),
-          const SizedBox(height: 24),
-          ..._items.map((ls) => _buildLocalCard(ls)),
-        ],
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(16),
+            children: [
+              _buildInfoSection(),
+              const SizedBox(height: 24),
+              const Text(
+                'SE OFRECE EN',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1,
+                  color: AppTheme.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (_items.isEmpty)
+                const Text(
+                  'Todavía no se ofrece en ningún local. Añádelo desde '
+                  '«Locales y servicios», dentro del local donde lo atiendes.',
+                  style: TextStyle(color: AppTheme.textSecondary),
+                )
+              else
+                Card(
+                  elevation: 0,
+                  margin: EdgeInsets.zero,
+                  clipBehavior: Clip.antiAlias,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: BorderSide(color: Colors.grey.shade200),
+                  ),
+                  child: Column(
+                    children: [
+                      for (var i = 0; i < _items.length; i++) ...[
+                        if (i > 0)
+                          const Divider(height: 1, indent: 16, endIndent: 16),
+                        _buildLocalTile(_items[i]),
+                      ],
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -514,66 +545,39 @@ class _ServicioDetailScreenState extends State<ServicioDetailScreen> {
     );
   }
 
-  Widget _buildLocalCard(LocalServicio ls) {
+  /// Un local donde se ofrece el servicio. Los recursos, turnos, calendario y
+  /// promociones de ese local se gestionan en `LocalServicioAdminScreen`; aquí
+  /// solo se lista y se lleva hasta allí.
+  Widget _buildLocalTile(LocalServicio ls) {
     final local = ls.local;
-    final localNombre = local?.nombre ?? 'Local #${ls.idLocal}';
-    final title = localNombre == _servicio.nombre
-        ? 'Recursos y turnos'
-        : 'Recursos y turnos · $localNombre';
-    return Card(
-      margin: const EdgeInsets.only(bottom: 14),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: BorderSide(color: Colors.grey.shade200),
+    return ListTile(
+      leading: const Icon(Icons.store_outlined, color: AppTheme.primary),
+      title: Text(local?.nombre ?? 'Local #${ls.idLocal}'),
+      subtitle: local?.ubicacion.isNotEmpty == true
+          ? Text(local!.ubicacion)
+          : null,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ChipEstado(
+            texto: ls.activoEfectivo ? 'Publicado' : 'Oculto',
+            color: ls.activoEfectivo ? AppTheme.success : AppTheme.warning,
+          ),
+          const Icon(Icons.chevron_right),
+        ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => LocalServicioAdminScreen(
+              localServicio: ls.copyWith(servicio: _servicio),
+              entidadId: widget.idEntidad,
             ),
-            if (local?.ubicacion.isNotEmpty == true) ...[
-              const SizedBox(height: 4),
-              Text(
-                local!.ubicacion,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppTheme.textSecondary,
-                ),
-              ),
-            ],
-            const SizedBox(height: 12),
-            ConfigRecursosPanel(
-              localServicio: ls,
-              showHeader: false,
-              onUpdated: () => _cargar(),
-            ),
-            const SizedBox(height: 8),
-            // Las promociones son por local-servicio, no por recurso, así que
-            // viven aquí y no dentro de `ConfigRecursosPanel`.
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => PromocionesScreen(
-                      idLocalServicio: ls.id,
-                      nombreServicio: '${_servicio.nombre} · $localNombre',
-                    ),
-                  ),
-                ),
-                icon: const Icon(Icons.local_offer_outlined, size: 18),
-                label: const Text('Promociones'),
-              ),
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+        await _cargar();
+      },
     );
   }
 }
