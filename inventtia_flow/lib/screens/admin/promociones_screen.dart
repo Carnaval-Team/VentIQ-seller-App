@@ -14,10 +14,15 @@ class PromocionesScreen extends StatefulWidget {
   final int idLocalServicio;
   final String nombreServicio;
 
+  /// `true` cuando vive dentro de una pestaña de otra pantalla: la barra
+  /// superior la pone el contenedor, así que aquí se omite.
+  final bool embebida;
+
   const PromocionesScreen({
     super.key,
     required this.idLocalServicio,
     required this.nombreServicio,
+    this.embebida = false,
   });
 
   @override
@@ -165,7 +170,9 @@ class _PromocionesScreenState extends State<PromocionesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.surface,
-      appBar: AppBar(title: const Text('Promociones')),
+      appBar: widget.embebida
+          ? null
+          : AppBar(title: const Text('Promociones')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _abrirFormulario(),
         backgroundColor: AppTheme.primary,

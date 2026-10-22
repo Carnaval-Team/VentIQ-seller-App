@@ -1,7 +1,11 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import '../services/web_download_stub.dart'
+    if (dart.library.html) '../services/web_download_web.dart'
+    as web_download;
 import 'package:ventiq_admin_app/services/product_service.dart';
 import '../config/app_colors.dart';
 import '../services/excel_import_service.dart';
@@ -39,7 +43,7 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
   
   // Price currency configuration
   String _priceCurrency = 'USD'; // Moneda del precio_venta (USD o CUP)
-  double? _exchangeRate; // Tasa de cambio si el precio está en CUP
+  double? _exchangeRate; // Tasa efectiva del negocio: 1 USD = X CUP
 
   final _categoryController = TextEditingController();
   final _unitController = TextEditingController();
@@ -141,6 +145,16 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
   Future<void> _downloadTemplate() async {
     try {
       final bytes = await ExcelImportService.generateTemplate();
+
+      if (kIsWeb) {
+        web_download.downloadFileWeb(
+          bytes,
+          'plantilla_productos_ventiq.xlsx',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        );
+        return;
+      }
+
       final directory = await getApplicationDocumentsDirectory();
       final filePath = '${directory.path}/plantilla_productos_ventiq.xlsx';
       final file = File(filePath);
@@ -215,7 +229,9 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
             style: TextStyle(fontSize: 16),
           ),
           const SizedBox(height: 20),
-          Row(
+          Wrap(
+            spacing: 16,
+            runSpacing: 12,
             children: [
               ElevatedButton.icon(
                 onPressed: _selectFile,
@@ -226,7 +242,6 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
                   foregroundColor: Colors.white,
                 ),
               ),
-              const SizedBox(width: 16),
               ElevatedButton.icon(
                 onPressed: _downloadTemplate,
                 icon: const Icon(Icons.download),
@@ -1130,8 +1145,9 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
       }
     }
 
-    // ✅ NUEVO: Mostrar diálogo para seleccionar moneda del precio_venta
-    if (_finalColumnMapping.containsValue('precio_venta')) {
+    // ✅ NUEVO: Mostrar diálogo para seleccionar moneda de los precios
+    if (_finalColumnMapping.containsValue('precio_venta') ||
+        _finalColumnMapping.containsValue('precio_costo')) {
       final currencySelected = await _showPriceCurrencyDialog();
       if (currencySelected == null) {
         return; // Usuario canceló
@@ -1161,7 +1177,7 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
           'columnMapping': _stockColumnMapping,
         } : null,
         priceCurrency: _priceCurrency,
-        exchangeRate: _exchangeRate,
+        usdToCupRate: _exchangeRate,
         onProgress: (current, total) {
           setState(() => _importProgress = current / total);
         },
@@ -1190,7 +1206,7 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
                 children: [
                   Icon(Icons.currency_exchange, color: Colors.blue),
                   SizedBox(width: 12),
-                  Text('Moneda del Precio de Venta'),
+                  Text('Moneda de los Precios'),
                 ],
               ),
               content: Column(
@@ -1198,8 +1214,13 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    '¿En qué moneda está el precio_venta en el archivo Excel?',
+                    '¿En qué moneda están los precios en el archivo Excel?',
                     style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Las columnas precio_venta y precio_costo deben estar en la misma moneda.',
+                    style: TextStyle(fontSize: 13, color: Colors.black87),
                   ),
                   const SizedBox(height: 16),
                   Container(
@@ -1210,7 +1231,7 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Text(
-                      '⚠️ Importante: El sistema guarda los precios en USD. Si están en otra moneda, se convertirán automáticamente.',
+                      '⚠️ Importante: precio_venta y precio_costo se interpretan en la misma moneda. Si no es la moneda de almacenamiento, se convierten automáticamente.',
                       style: TextStyle(fontSize: 12, color: Colors.blue),
                     ),
                   ),
@@ -1247,10 +1268,6 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
                       DropdownMenuItem(
                         value: 'CUP',
                         child: Text('CUP - Peso Cubano'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'EUR',
-                        child: Text('EUR - Euro'),
                       ),
                     ],
                     onChanged: (value) {
@@ -1298,11 +1315,12 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
                     // Actualizar la moneda seleccionada en el estado principal
                     _priceCurrency = selectedCurrency;
                     
-                    // Si seleccionó CUP o EUR, obtener tasa de cambio
+                    // Si seleccionó CUP, obtener la tasa efectiva USD→CUP del negocio
                     if (_priceCurrency != 'USD') {
                       try {
-                        _exchangeRate = await _getExchangeRate(_priceCurrency);
-                        print('💱 Tasa de cambio obtenida: $_exchangeRate');
+                        _exchangeRate =
+                            await CurrencyService.getEffectiveUsdToCupRate();
+                        print('💱 Tasa efectiva USD→CUP obtenida: $_exchangeRate');
                       } catch (e) {
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -1338,90 +1356,17 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
       if (currency == 'USD') {
         return '💵 USD: Sin conversión, los precios se guardan tal cual.';
       }
-      
-      // Cargar tasas reales desde CurrencyService
-      final rates = await CurrencyService.getCurrentRatesFromDatabase();
-      
-      // Buscar la tasa para la moneda seleccionada
-      final rateData = rates.firstWhere(
-        (rate) => rate['moneda_origen'] == currency,
-        orElse: () => <String, dynamic>{},
-      );
-      
-      if (rateData.isNotEmpty) {
-        final tasa = (rateData['tasa'] as num?)?.toDouble() ?? 0;
-        
-        switch (currency) {
-          case 'CUP':
-            return '💱 CUP: 1 CUP = ${tasa.toStringAsFixed(6)} USD\nLos precios se convertirán multiplicando por $tasa.';
-          case 'EUR':
-            return '💶 EUR: 1 EUR = ${tasa.toStringAsFixed(2)} CUP\nLos precios se convertirán dividiendo entre $tasa.';
-          default:
-            return '💱 $currency: Tasa = $tasa';
-        }
-      } else {
-        // Si no encuentra la tasa, buscar en formato inverso (USD→CUP)
-        final inverseRate = rates.firstWhere(
-          (rate) => rate['moneda_origen'] == 'USD',
-          orElse: () => <String, dynamic>{},
-        );
-        
-        if (inverseRate.isNotEmpty) {
-          final tasaUsdACup = (inverseRate['tasa'] as num?)?.toDouble() ?? 0;
-          final tasaCupAUsd = 1.0 / tasaUsdACup;
-          return '💱 $currency: 1 USD = ${tasaUsdACup.toStringAsFixed(2)} CUP (1 CUP = ${tasaCupAUsd.toStringAsFixed(6)} USD)';
-        }
-        
-        return '⚠️ No se encontró tasa para $currency en la base de datos.';
+
+      // Tasa efectiva del negocio: 1 USD = X CUP (incluye la personalizada de la tienda)
+      final tasaUsdACup = await CurrencyService.getEffectiveUsdToCupRate();
+      if (tasaUsdACup > 0) {
+        final tasaCupAUsd = 1.0 / tasaUsdACup;
+        return '💱 CUP: 1 USD = ${tasaUsdACup.toStringAsFixed(2)} CUP (1 CUP = ${tasaCupAUsd.toStringAsFixed(6)} USD)\nLos precios CUP se convertirán dividiendo entre $tasaUsdACup.';
       }
+
+      return '⚠️ No se encontró tasa para $currency en la base de datos.';
     } catch (e) {
       return '❌ Error al cargar la tasa: $e';
-    }
-  }
-
-  /// Obtener tasa de cambio usando CurrencyService
-  Future<double> _getExchangeRate(String fromCurrency) async {
-    try {
-      print('📊 Obteniendo tasa de cambio de $fromCurrency a USD usando CurrencyService...');
-      
-      // Si es USD, retornar 1.0 (no hay conversión)
-      if (fromCurrency == 'USD') {
-        print('✅ Moneda es USD, no requiere conversión');
-        return 1.0;
-      }
-      
-      // Si es CUP, usar CurrencyService para obtener la tasa USD→CUP y luego invertir
-      if (fromCurrency == 'CUP') {
-        final usdToCupRate = await CurrencyService.getEffectiveUsdToCupRate();
-        print('💱 Tasa USD→CUP obtenida de CurrencyService: $usdToCupRate');
-        final cupToUsdRate = 1.0 / usdToCupRate;
-        print('✅ Tasa de cambio CUP→USD: $cupToUsdRate');
-        return cupToUsdRate;
-      }
-      
-      // Para otras monedas, obtener de la tabla tasas_conversion usando CurrencyService
-      print('🔍 Buscando tasa de conversión para $fromCurrency en BD...');
-      final rates = await CurrencyService.getEffectiveRatesFromDatabase();
-      
-      // Buscar la tasa de fromCurrency a USD
-      final rateData = rates.firstWhere(
-        (rate) => rate['moneda_origen'] == fromCurrency && 
-                  (rate['moneda_destino'] == 'USD' || rate['moneda_destino'] == null),
-        orElse: () => <String, dynamic>{},
-      );
-      
-      if (rateData.isEmpty) {
-        print('⚠️ No se encontró tasa de conversión para $fromCurrency → USD');
-        throw Exception('Moneda no soportada: $fromCurrency. Solo se soportan USD y CUP.');
-      }
-      
-      final rate = (rateData['tasa'] as num?)?.toDouble() ?? 1.0;
-      print('✅ Tasa de cambio (desde BD): 1 $fromCurrency = $rate USD');
-      return rate;
-      
-    } catch (e) {
-      print('❌ Error obteniendo tasa de cambio: $e');
-      rethrow;
     }
   }
 

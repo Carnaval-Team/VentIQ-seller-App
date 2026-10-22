@@ -87,7 +87,20 @@ BEGIN
                     IF FOUND THEN
                         RAISE NOTICE '   📦 Proveedor encontrado: ID=%', v_id_proveedor;
                     ELSE
-                        RAISE NOTICE '   ⚠️ Proveedor no encontrado: "%"', v_nombre_proveedor;
+                        -- Crear el proveedor automáticamente (sku_codigo es NOT NULL)
+                        INSERT INTO app_dat_proveedor (
+                            denominacion,
+                            sku_codigo,
+                            idtienda
+                        ) VALUES (
+                            v_nombre_proveedor,
+                            'P' || p_id_tienda || '-' ||
+                                UPPER(LEFT(REGEXP_REPLACE(v_nombre_proveedor, '[^A-Za-z0-9]', '', 'g'), 6)) ||
+                                RIGHT(EXTRACT(EPOCH FROM now())::BIGINT::TEXT, 6),
+                            p_id_tienda
+                        ) RETURNING id INTO v_id_proveedor;
+
+                        RAISE NOTICE '   🆕 Proveedor creado automáticamente: "%" (ID=%)', v_nombre_proveedor, v_id_proveedor;
                     END IF;
                 END IF;
                 
@@ -112,12 +125,15 @@ BEGIN
                     'id_proveedor', v_id_proveedor
                 );
                 
-                -- Preparar precios (precio_venta_cup)
+                -- Preparar precios (precio_venta_cup + precio_venta_usd ya calculado en Dart)
                 v_precios_data := NULL;
-                IF v_producto->>'precio_venta_cup' IS NOT NULL AND 
-                   (v_producto->>'precio_venta_cup')::NUMERIC > 0 THEN
+                IF (v_producto->>'precio_venta_cup' IS NOT NULL AND 
+                    (v_producto->>'precio_venta_cup')::NUMERIC > 0) OR
+                   (v_producto->>'precio_venta_usd' IS NOT NULL AND 
+                    (v_producto->>'precio_venta_usd')::NUMERIC > 0) THEN
                     v_precios_data := ARRAY[jsonb_build_object(
-                        'precio_venta_cup', (v_producto->>'precio_venta_cup')::NUMERIC,
+                        'precio_venta_cup', COALESCE((v_producto->>'precio_venta_cup')::NUMERIC, 0),
+                        'precio_venta_usd', (v_producto->>'precio_venta_usd')::NUMERIC,
                         'fecha_desde', CURRENT_DATE
                     )];
                 END IF;

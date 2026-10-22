@@ -115,7 +115,7 @@ void main() {
           id: 'b',
           titulo: 'B',
           mensaje: 'b',
-          destino: TutorialDestino.planificacion,
+          destino: TutorialDestino.localDetalle,
         ),
       ],
       navegador: navegador,
@@ -126,7 +126,7 @@ void main() {
     c.siguiente();
     await tester.pump();
 
-    expect(pedidos, <TutorialDestino>[TutorialDestino.planificacion]);
+    expect(pedidos, <TutorialDestino>[TutorialDestino.localDetalle]);
 
     await dejarPasarLaEspera(tester);
   });

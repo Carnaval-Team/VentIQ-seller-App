@@ -1022,6 +1022,7 @@ class _VendedorScreenState extends State<VendedorScreen> {
     _AlcanceExportacionVendedor alcance,
   ) async {
     final excel = xl.Excel.createExcel();
+    excel.delete('Sheet1');
     final sheet = excel['Reservas'];
     final cols = _columnasDatos(reservas);
 

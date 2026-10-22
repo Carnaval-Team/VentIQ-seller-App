@@ -48,8 +48,8 @@ void main() {
     expect(
       opcionales,
       containsAll(<String>[
-        'admin_reserva_directa', // interruptor dentro del ExpansionTile
-        'admin_capacidades', // botón dentro del ExpansionTile
+        'admin_reserva_directa', // solo existe con un servicio en un local
+        'admin_capacidades', // ídem
         'admin_reservas', // módulo del dashboard
         'admin_categorias', // módulo del dashboard
       ]),
@@ -82,7 +82,18 @@ void main() {
       _destinoDe(admin, 'admin_reglas_precio'),
       TutorialDestino.serviciosFormulario,
     );
-    expect(_destinoDe(admin, 'admin_vincular'), TutorialDestino.planificacion);
+    expect(
+      _destinoDe(admin, 'admin_anadir_servicio'),
+      TutorialDestino.localDetalle,
+    );
+    expect(
+      _destinoDe(admin, 'admin_reserva_directa'),
+      TutorialDestino.servicioLocal,
+    );
+    expect(
+      _destinoDe(admin, 'admin_recursos_turnos'),
+      TutorialDestino.servicioLocal,
+    );
     expect(_destinoDe(admin, 'admin_reservas'), TutorialDestino.reservas);
     expect(_destinoDe(admin, 'admin_categorias'), TutorialDestino.categorias);
   });

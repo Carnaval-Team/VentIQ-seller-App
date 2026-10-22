@@ -96,22 +96,24 @@ class TutorialFlujos {
         TutorialPaso(
           id: 'admin_modulo_locales',
           titulo: '1. Crea tu local',
-          mensaje: 'Empieza por el local: es el sitio físico donde atiendes.',
+          mensaje: 'Empieza por el local: es el sitio físico donde atiendes. '
+              'Aquí también verás qué servicios ofrece cada uno y su '
+              'planificación.',
           destino: TutorialDestino.gestion,
         ),
         TutorialPaso(
           id: 'admin_nuevo_local',
           titulo: 'Nuevo local',
-          mensaje: 'Pon nombre, dirección, teléfono, ubicación y el horario con '
-              'apertura y cierre por día. Activa «Disponible para clientes» '
-              'cuando esté listo.',
+          mensaje: 'Pon nombre, foto, dirección, ubicación y el horario con '
+              'apertura y cierre. Activa «Local activo» cuando esté listo.',
           destino: TutorialDestino.locales,
         ),
         TutorialPaso(
           id: 'admin_modulo_servicios',
           titulo: '2. Crea el servicio',
           mensaje: 'El servicio es lo que el cliente reserva: un corte, una '
-              'consulta, un viaje…',
+              'consulta, un viaje… En el catálogo lo defines una vez y luego '
+              'lo ofreces en los locales que quieras.',
           destino: TutorialDestino.gestion,
         ),
         TutorialPaso(
@@ -154,48 +156,25 @@ class TutorialFlujos {
           destino: TutorialDestino.serviciosFormulario,
         ),
         TutorialPaso(
-          id: 'admin_modulo_planificacion',
-          titulo: '3. Planifica',
-          mensaje: 'Aquí unes tu servicio con un local, generas los días y los '
-              'cupos que verá el cliente.',
-          destino: TutorialDestino.gestion,
+          id: 'admin_anadir_servicio',
+          titulo: '3. Ofrécelo en tu local',
+          mensaje: 'Dentro de tu local toca «Añadir servicio»: elige uno del '
+              'catálogo o créalo en el momento.',
+          destino: TutorialDestino.localDetalle,
         ),
-        TutorialPaso(
-          id: 'admin_vincular',
-          titulo: 'Vincula el servicio',
-          mensaje: 'Toca aquí y elige qué servicio se ofrece en qué local.',
-          destino: TutorialDestino.planificacion,
-        ),
+        // Lo que sigue vive en la pestaña «Configuración» de un servicio ya
+        // ofrecido en un local. Sin ninguno todavía, el destino cae en el
+        // detalle del local, que es donde se añade.
         TutorialPaso(
           id: 'admin_reserva_directa',
           titulo: 'Reserva directa',
-          // Opcional a propósito: el interruptor vive dentro de la tarjeta
-          // plegable de cada servicio vinculado, así que su ancla no existe
-          // hasta que esa vinculación existe y se despliega la tarjeta.
-          mensaje: 'Es un extra: despliega la tarjeta de un servicio vinculado y '
-              'activa «Reserva directa» si el cliente puede reservar una hora '
-              'exacta. Si lo dejas apagado, el cliente se anota en la lista de '
+          // Opcional a propósito: el interruptor solo existe cuando ya hay un
+          // servicio ofrecido en algún local.
+          mensaje: 'Es un extra: actívala si el cliente puede reservar una hora '
+              'exacta. Si la dejas apagada, el cliente se anota en la lista de '
               'espera.',
           opcional: true,
-          destino: TutorialDestino.planificacion,
-        ),
-        // Recursos y turnos, el mes y las capacidades se abren desde la propia
-        // planificación, ya dentro de un servicio vinculado.
-        TutorialPaso(
-          id: 'admin_recursos_turnos',
-          titulo: 'Recursos y turnos',
-          mensaje: 'Crea recursos (sillas, carros, mesas) y sus turnos con '
-              'nombre, horario y precio propio. Si no usas tramos, activa el '
-              'modo simple.',
-          destino: TutorialDestino.planificacion,
-        ),
-        TutorialPaso(
-          id: 'admin_config_mensual',
-          titulo: 'Publica el mes',
-          mensaje: 'Elige el mes, pon la capacidad por defecto y toca «Generar '
-              'planes del mes»: hasta que no lo hagas, los días no están '
-              'disponibles para reservar.',
-          destino: TutorialDestino.planificacion,
+          destino: TutorialDestino.servicioLocal,
         ),
         TutorialPaso(
           id: 'admin_capacidades',
@@ -203,7 +182,25 @@ class TutorialFlujos {
           mensaje: 'Define cuánta gente entra en una misma reserva, para cuando '
               'el cliente pueda reservar para varios.',
           opcional: true,
-          destino: TutorialDestino.planificacion,
+          destino: TutorialDestino.servicioLocal,
+        ),
+        // Recursos y turnos y el plan mensual se abren tocando su fila en la
+        // misma pestaña: el recorrido espera a que el usuario entre.
+        TutorialPaso(
+          id: 'admin_recursos_turnos',
+          titulo: 'Recursos y turnos',
+          mensaje: 'Abre «Recursos y turnos» y crea recursos (sillas, carros, '
+              'mesas) y sus turnos con nombre, horario y precio propio. Si no '
+              'usas tramos, activa el modo simple.',
+          destino: TutorialDestino.servicioLocal,
+        ),
+        TutorialPaso(
+          id: 'admin_config_mensual',
+          titulo: 'Publica el mes',
+          mensaje: 'Abre «Plan mensual», elige el mes, pon la capacidad por '
+              'defecto y toca «Generar planes del mes»: hasta que no lo hagas, '
+              'los días no están disponibles para reservar.',
+          destino: TutorialDestino.servicioLocal,
         ),
         TutorialPaso(
           id: 'admin_reservas',

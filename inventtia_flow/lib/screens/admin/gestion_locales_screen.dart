@@ -1,221 +1,16 @@
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../config/app_theme.dart';
-import '../../models/entidad.dart';
 import '../../models/servicio.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/geonames_service.dart';
 import '../../services/imagen_service.dart';
-import '../../tutorial/tutorial_anchor.dart';
 import '../../utils/foto_obligatoria.dart';
 import '../../utils/horario_atencion.dart';
 import '../../widgets/campo_foto_obligatoria.dart';
 
-class GestionLocalesScreen extends StatefulWidget {
-  final Entidad entidad;
-  const GestionLocalesScreen({super.key, required this.entidad});
-
-  @override
-  State<GestionLocalesScreen> createState() => _GestionLocalesScreenState();
-}
-
-class _GestionLocalesScreenState extends State<GestionLocalesScreen> {
-  List<Local> _locales = [];
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _cargar();
-  }
-
-  Future<void> _cargar() async {
-    setState(() => _loading = true);
-    try {
-      _locales = await CatalogoService.getLocalesByEntidad(widget.entidad.id);
-    } catch (e) {
-      print('[flow] GestionLocalesScreen _cargar ERROR: $e');
-    }
-    if (mounted) setState(() => _loading = false);
-  }
-
-  void _nuevoLocal() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      enableDrag: false,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => LocalFormSheet(idEntidad: widget.entidad.id),
-    ).then((_) => _cargar());
-  }
-
-  void _editarLocal(Local local) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      enableDrag: false,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) =>
-          LocalFormSheet(idEntidad: widget.entidad.id, local: local),
-    ).then((_) => _cargar());
-  }
-
-  Future<void> _eliminarLocal(Local local) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Eliminar Local'),
-        content: Text(
-          '¿Eliminar "${local.nombre}"? Se eliminarán sus servicios y colas asociados.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
-    );
-    if (confirm == true) {
-      try {
-        await CatalogoService.deleteLocal(local.id);
-        await _cargar();
-      } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.error),
-        );
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Locales · ${widget.entidad.denominacion}')),
-      floatingActionButton: TutorialAnchor(
-        id: 'admin_nuevo_local',
-        child: FloatingActionButton.extended(
-          onPressed: _nuevoLocal,
-          icon: const Icon(Icons.add),
-          label: const Text('Nuevo Local'),
-        ),
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _locales.isEmpty
-          ? const Center(
-              child: Text(
-                'Sin locales registrados',
-                style: TextStyle(color: AppTheme.textSecondary),
-              ),
-            )
-          : RefreshIndicator(
-              onRefresh: _cargar,
-              child: ListView.separated(
-                padding: const EdgeInsets.all(16),
-                itemCount: _locales.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
-                itemBuilder: (_, i) {
-                  final l = _locales[i];
-                  return Card(
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      side: BorderSide(color: Colors.grey.shade200),
-                    ),
-                    // Un local desactivado sigue en la lista (el admin tiene
-                    // que poder reactivarlo) pero se atenúa para que se note
-                    // de un vistazo que los clientes no lo ven.
-                    child: Opacity(
-                      opacity: l.activo ? 1 : 0.6,
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: AppTheme.surface,
-                          backgroundImage: l.foto != null
-                              ? (kIsWeb
-                                    ? NetworkImage(
-                                            ImagenService.conVersion(l.foto),
-                                          )
-                                          as ImageProvider
-                                    : CachedNetworkImageProvider(
-                                        ImagenService.conVersion(l.foto),
-                                      ))
-                              : null,
-                          child: l.foto == null
-                              ? const Icon(
-                                  Icons.store_outlined,
-                                  color: AppTheme.primary,
-                                )
-                              : null,
-                        ),
-                        title: Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                l.nombre,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            if (!l.activo)
-                              const Padding(
-                                padding: EdgeInsets.only(left: 6),
-                                child: _ChipInactivo(),
-                              ),
-                          ],
-                        ),
-                        subtitle: l.direccion != null
-                            ? Text(
-                                l.direccion!,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 12),
-                              )
-                            : null,
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(
-                                Icons.edit_outlined,
-                                size: 20,
-                                color: AppTheme.primary,
-                              ),
-                              onPressed: () => _editarLocal(l),
-                            ),
-                            IconButton(
-                              icon: const Icon(
-                                Icons.delete_outline,
-                                size: 20,
-                                color: AppTheme.error,
-                              ),
-                              onPressed: () => _eliminarLocal(l),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-    );
-  }
-}
+/// Formulario de alta y edición de un local (y sus piezas: horario, país y
+/// provincia, publicación). Lo abre el módulo «Locales y servicios».
 
 class LocalFormSheet extends StatefulWidget {
   final int idEntidad;
@@ -261,6 +56,7 @@ class LocalFormSheetState extends State<LocalFormSheet> {
   late bool _textoLibre;
 
   bool _saving = false;
+  String? _error;
 
   @override
   void initState() {
@@ -423,13 +219,13 @@ class LocalFormSheetState extends State<LocalFormSheet> {
     // Defensa en profundidad: la foto la valida `CampoFotoObligatoria`, pero el
     // alta no puede depender de que ese campo esté montado. Sin foto no se
     // escribe nada, y menos una fila nueva.
-    if (errorFotoObligatoria(
-          queEs: 'local',
-          fotoGuardada: _fotoUrl,
-          archivoElegido: _imagenFile != null,
-        ) !=
-        null) {
-      setState(() {});
+    final errorFoto = errorFotoObligatoria(
+      queEs: 'local',
+      fotoGuardada: _fotoUrl,
+      archivoElegido: _imagenFile != null,
+    );
+    if (errorFoto != null) {
+      setState(() => _error = errorFoto);
       return;
     }
 
@@ -446,14 +242,10 @@ class LocalFormSheetState extends State<LocalFormSheet> {
     } else {
       final detalle = _detalleActual;
       if (detalle == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Revisa el horario: elige al menos un día y la hora de apertura '
-              'y de cierre.',
-            ),
-            backgroundColor: AppTheme.error,
-          ),
+        setState(
+          () => _error =
+              'Revisa el horario: elige al menos un día y la hora de '
+              'apertura y de cierre.',
         );
         return;
       }
@@ -461,7 +253,10 @@ class LocalFormSheetState extends State<LocalFormSheet> {
       horarioJson = detalle.toJson();
     }
 
-    setState(() => _saving = true);
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
     final paisNombre = _selectedCountry != null
         ? _selectedCountry!['countryName'] as String
         : null;
@@ -546,14 +341,15 @@ class LocalFormSheetState extends State<LocalFormSheet> {
       ImagenService.invalidar(fotoFinal);
       Navigator.pop(context);
     } catch (e) {
-      setState(() => _saving = false);
+      // El error se muestra DENTRO del sheet, no en un SnackBar: el snackbar se
+      // pinta en el Scaffold de atrás y el modal lo tapa, así que el admin veía
+      // el botón "cargar" y nada más — sin saber qué falló.
+      debugPrint('[flow] LocalFormSheet _submit ERROR: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: ${_mensajeLegible(e)}'),
-          backgroundColor: AppTheme.error,
-        ),
-      );
+      setState(() {
+        _saving = false;
+        _error = _mensajeLegible(e);
+      });
     }
   }
 
@@ -755,6 +551,44 @@ class LocalFormSheetState extends State<LocalFormSheet> {
                 onChanged: (v) => setState(() => _activo = v),
               ),
               const SizedBox(height: 12),
+
+              // Error inline: visible aunque el sheet esté abierto encima del
+              // Scaffold (un SnackBar quedaría tapado por el modal).
+              if (_error != null)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppTheme.error.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: AppTheme.error.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        size: 18,
+                        color: AppTheme.error,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _error!,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: AppTheme.error,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
 
               // Botón guardar
               ElevatedButton(
@@ -1112,30 +946,6 @@ class _SwitchActivo extends StatelessWidget {
             ayuda,
             style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Chip "Inactivo" para las listas del admin.
-class _ChipInactivo extends StatelessWidget {
-  const _ChipInactivo();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: AppTheme.warning.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: const Text(
-        'Inactivo',
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          color: AppTheme.warning,
         ),
       ),
     );
