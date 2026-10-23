@@ -1,8 +1,45 @@
 {
-  "current_version": "2.6.0",
-  "build": 850,
+  "current_version": "2.7.0",
+  "build": 851,
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.7.0",
+      "date": "2026-10-14",
+      "title": "Cobros más claros y métodos de pago desde catálogo",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Elige el método de pago en pantalla completa",
+          "description": "Al tocar el método de pago del carrito o del servicentro se abre una lista amplia y fácil de tocar, en lugar del menú desplegable apretado. También puedes aplicar el mismo método a todos los productos desde esa pantalla."
+        },
+        {
+          "type": "feature",
+          "title": "Fotos de operación editables en el detalle",
+          "description": "Si tu tienda pide foto de la operación, puedes agregarla, cambiarla o eliminarla desde el detalle de la orden. En modo offline la venta se crea sin exigir foto, con un aviso claro."
+        },
+        {
+          "type": "improvement",
+          "title": "Edición de órdenes pendientes en un solo paso",
+          "description": "Agregar, quitar o cambiar cantidades en una orden pendiente se aplica de forma atómica, con totales y descuentos recalculados correctamente al guardar."
+        },
+        {
+          "type": "improvement",
+          "title": "Confirmación SMS de transferencia más visible",
+          "description": "Al cobrar o editar con transferencia, el aviso de espera del SMS de PAGOxMOVIL es más claro y se integra mejor en el flujo del vendedor."
+        },
+        {
+          "type": "improvement",
+          "title": "Catálogo sin productos que no se pueden vender",
+          "description": "La búsqueda y el listado ocultan productos sin disponibilidad real (stock equivalente, reservas de Carnaval, servicios e ilimitados se respetan como corresponde)."
+        },
+        {
+          "type": "fix",
+          "title": "Cambios de estado offline ya no inventan un id de operación",
+          "description": "Las órdenes creadas sin conexión esperan a tener su id real del servidor antes de subir cambios de estado, evitando errores al sincronizar."
+        }
+      ]
+    },
     {
       "version": "2.6.0",
       "date": "2026-09-19",

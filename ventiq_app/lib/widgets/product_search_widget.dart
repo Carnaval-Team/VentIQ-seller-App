@@ -117,7 +117,7 @@ class _ProductSearchWidgetState extends State<ProductSearchWidget> {
             esVendible: productData['es_vendible'] ?? true,
             esComprable: true, // Default value
             esInventariable: true, // Default value
-            esPorLotes: false, // Default value
+            esPorLotes: productData['es_por_lotes'] as bool? ?? false,
             esElaborado: (metadata != null && metadata['es_elaborado'] != null)
                 ? metadata['es_elaborado'] as bool
                 : false,

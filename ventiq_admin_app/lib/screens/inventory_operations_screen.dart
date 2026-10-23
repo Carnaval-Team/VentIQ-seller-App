@@ -1826,6 +1826,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                       _buildFormattedDetails(
                         operation['detalles'],
                         observaciones: operation['observaciones'],
+                        precioEsUnidadBase: _linePrecioEsUnidadBase(operation),
                       ),
                     ],
 
@@ -2398,7 +2399,31 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     final n = cruda is num ? cruda : num.tryParse(cruda.toString());
     if (n == null) return 'Cant: $cruda';
 
+    final pres = _presentationNameOf(item);
+    if (pres != null) {
+      return 'Cant: ${StockMixtoFormatter.linea(n, pres)}';
+    }
     return 'Cant: ${StockMixtoFormatter.cantidad(n)}';
+  }
+
+  String? _presentationNameOf(Map<String, dynamic> item) {
+    for (final key in const [
+      'presentacion_nombre',
+      'presentacion',
+      'nombre_presentacion',
+      'denominacion_presentacion',
+    ]) {
+      final v = item[key]?.toString().trim();
+      if (v != null && v.isNotEmpty) return v;
+    }
+    final info = item['presentacion_original_info'] ?? item['presentation_info'];
+    if (info is Map) {
+      for (final key in const ['denominacion', 'presentacion', 'nombre']) {
+        final v = info[key]?.toString().trim();
+        if (v != null && v.isNotEmpty) return v;
+      }
+    }
+    return null;
   }
 
   /// Etiqueta de la presentacion de una linea: "Caja (= 12 base)".
@@ -2409,8 +2434,11 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   /// el factor visible es justamente lo que permite detectar el problema desde
   /// la lista.
   String _getPresentacionTexto(Map<String, dynamic> item) {
-    final nombre = item['presentacion_nombre']?.toString() ?? '';
-    final factorRaw = item['presentacion_factor'];
+    final nombre = _presentationNameOf(item) ?? '';
+    if (nombre.isEmpty) return '';
+
+    final factorRaw =
+        item['presentacion_factor_rel'] ?? item['presentacion_factor'];
     final factor = factorRaw is num
         ? factorRaw
         : num.tryParse(factorRaw?.toString() ?? '');
@@ -2446,7 +2474,11 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     return 'Producto sin nombre';
   }
 
-  Widget _buildFormattedDetails(dynamic detalles, {dynamic observaciones}) {
+  Widget _buildFormattedDetails(
+    dynamic detalles, {
+    dynamic observaciones,
+    bool precioEsUnidadBase = false,
+  }) {
     if (detalles == null) return const Text('Sin detalles específicos');
 
     if (detalles is Map<String, dynamic>) {
@@ -2482,7 +2514,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
-              _buildProductsList(extItems),
+              // Extracción de transferencia: precio de inventario = unidad base.
+              _buildProductsList(extItems, precioEsUnidadBase: true),
               const SizedBox(height: 12),
             ],
             if (recItems != null && recItems.isNotEmpty) ...[
@@ -2491,7 +2524,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
-              _buildProductsList(recItems),
+              // Recepción: precio por presentación recibida, sin re-escalar.
+              _buildProductsList(recItems, precioEsUnidadBase: false),
             ],
           ] else if (detalles['items'] != null &&
               detalles['items'] is List) ...[
@@ -2500,7 +2534,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
               style: TextStyle(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
-            _buildProductsList(detalles['items']),
+            _buildProductsList(
+              detalles['items'],
+              precioEsUnidadBase: precioEsUnidadBase,
+            ),
           ],
         ],
       );
@@ -2657,7 +2694,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     );
   }
 
-  Widget _buildProductsList(List<dynamic> items) {
+  Widget _buildProductsList(
+    List<dynamic> items, {
+    bool precioEsUnidadBase = false,
+  }) {
     // Ordenar productos alfabéticamente por nombre
     final sortedItems = List<dynamic>.from(items);
     sortedItems.sort((a, b) {
@@ -2728,11 +2768,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                               ),
                             ),
                           ],
-                          // FASE 2: la presentacion de la linea. Con
-                          // factor <> 1 se muestra la equivalencia, que es
-                          // el dato que faltaba para leer "2 Cajas" sin
-                          // tener que abrir la ficha del producto.
-                          if (item['presentacion_nombre'] != null) ...[
+                          // Presentación de la línea (RPC 12 / helper item_json).
+                          if (_getPresentacionTexto(item).isNotEmpty) ...[
                             const SizedBox(height: 4),
                             Text(
                               _getPresentacionTexto(item),
@@ -2757,7 +2794,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                           if (item['precio_unitario'] != null) ...[
                             const SizedBox(height: 4),
                             Text(
-                              'Precio: \$${_formatFieldValue(item['precio_unitario'])}',
+                              'Precio: \$${_formatFieldValue(_itemDisplayUnitPrice(item, precioEsUnidadBase: precioEsUnidadBase))}',
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
@@ -2800,17 +2837,28 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                             ),
                           ),
                         ),
-                        if (item['importe'] != null) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            '\$${_formatFieldValue(item['importe'])}',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF1F2937),
-                            ),
-                          ),
-                        ],
+                        Builder(
+                          builder: (_) {
+                            final lineTotal = _itemLineTotal(
+                              item,
+                              precioEsUnidadBase: precioEsUnidadBase,
+                            );
+                            if (lineTotal <= 0) {
+                              return const SizedBox.shrink();
+                            }
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: Text(
+                                '\$${lineTotal.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF1F2937),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                       ],
                     ),
                   ],
@@ -2987,6 +3035,74 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     return value.toString();
   }
 
+  double _asItemNum(dynamic v) {
+    if (v == null) return 0;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString()) ?? 0;
+  }
+
+  /// Unidades "de conteo" de una línea: preferir equivalente en base cuando
+  /// hay presentaciones mixtas (sumar 5 cajas + 10 blísteres como enteros
+  /// distintos infla/rompe el total).
+  double _itemCountUnits(Map<String, dynamic> item) {
+    final equiv = _asItemNum(item['equivalente_base']);
+    if (equiv > 0) return equiv;
+    return _asItemNum(item['cantidad'] ?? item['cantidad_fisica']);
+  }
+
+  /// En extracción/transferencia el `precio_unitario` viene del inventario =
+  /// precio de la unidad base. La cantidad está en la presentación de la línea
+  /// → importe = precio_base × equivalente_base.
+  ///
+  /// En venta el TPV ya guarda `precio_base × factor`; en recepción el precio
+  /// es el de la presentación recibida. Ahí no se vuelve a escalar.
+  bool _linePrecioEsUnidadBase(Map<String, dynamic> operation) {
+    final tipo =
+        (operation['tipo_operacion_nombre'] ?? '').toString().toLowerCase();
+    final accion =
+        (operation['tipo_operacion_accion'] ?? '').toString().toLowerCase();
+    if (tipo.contains('venta')) return false;
+    if (tipo.contains('recepcion') || tipo.contains('recepción')) return false;
+    if (accion == 'entrada') return false;
+    if (accion == 'transferencia' || tipo.contains('transfer')) return true;
+    if (tipo.contains('extraccion') || tipo.contains('extracción')) return true;
+    // Merma, consumo, devolución proveedor, etc. (salida de inventario).
+    return accion == 'salida';
+  }
+
+  /// Precio a mostrar junto a la cantidad de la línea (por 1 de esa presentación).
+  double _itemDisplayUnitPrice(
+    Map<String, dynamic> item, {
+    bool precioEsUnidadBase = false,
+  }) {
+    final precio = _asItemNum(item['precio_unitario'] ?? item['costo_unitario']);
+    if (!precioEsUnidadBase || precio <= 0) return precio;
+    final factor = _asItemNum(item['presentacion_factor_rel']);
+    if (factor > 0) return precio * factor;
+    return precio;
+  }
+
+  double _itemLineTotal(
+    Map<String, dynamic> item, {
+    bool precioEsUnidadBase = false,
+  }) {
+    final precio = _asItemNum(item['precio_unitario'] ?? item['costo_unitario']);
+    final cant = _asItemNum(item['cantidad'] ?? item['cantidad_fisica']);
+    final equiv = _asItemNum(item['equivalente_base']);
+    final factor = _asItemNum(item['presentacion_factor_rel']);
+    final importe = _asItemNum(item['importe']);
+
+    if (precioEsUnidadBase && precio > 0) {
+      if (equiv > 0) return equiv * precio;
+      if (factor > 0 && cant > 0) return cant * factor * precio;
+    }
+
+    if (importe != 0) return importe;
+    if (precio == 0) return 0;
+    // Venta / recepción: precio ya es de la presentación de la línea.
+    return cant * precio;
+  }
+
   // Helper methods to calculate dynamic totals from products
   int _calculateTotalItems(Map<String, dynamic> operation) {
     try {
@@ -2995,21 +3111,13 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         final detalles = operation['detalles'] as Map<String, dynamic>;
         if (detalles['items'] != null && detalles['items'] is List) {
           final items = detalles['items'] as List<dynamic>;
-          int totalItems = 0;
+          double totalItems = 0;
           for (var item in items) {
             if (item is Map<String, dynamic>) {
-              final cantidad = item['cantidad'];
-              if (cantidad != null) {
-                final cantidadNum = (cantidad is int)
-                    ? cantidad
-                    : (cantidad is double)
-                    ? cantidad.toInt()
-                    : int.tryParse(cantidad.toString()) ?? 0;
-                totalItems += cantidadNum;
-              }
+              totalItems += _itemCountUnits(item);
             }
           }
-          return totalItems;
+          return totalItems.round();
         }
       }
     } catch (e) {
@@ -3024,6 +3132,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       if (operation['detalles'] != null &&
           operation['detalles'] is Map<String, dynamic>) {
         final detalles = operation['detalles'] as Map<String, dynamic>;
+        final precioEsBase = _linePrecioEsUnidadBase(operation);
 
         // Para operaciones de ajuste, calcular el total basado en los items
         if (detalles['items'] != null && detalles['items'] is List) {
@@ -3032,28 +3141,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
           for (var item in items) {
             if (item is Map<String, dynamic>) {
-              // Intentar obtener el importe (precio total del item)
-              final importe = item['importe'];
-              if (importe != null) {
-                final importeNum = (importe is double)
-                    ? importe
-                    : double.tryParse(importe.toString()) ?? 0.0;
-                totalPrice += importeNum;
-              } else {
-                // Si no hay importe, intentar calcular cantidad * precio_unitario
-                final cantidad =
-                    item['cantidad'] ?? item['cantidad_fisica'] ?? 0;
-                final precioUnitario = item['precio_unitario'] ?? 0;
-
-                final cantidadNum = (cantidad is double)
-                    ? cantidad
-                    : double.tryParse(cantidad.toString()) ?? 0.0;
-                final precioNum = (precioUnitario is double)
-                    ? precioUnitario
-                    : double.tryParse(precioUnitario.toString()) ?? 0.0;
-
-                totalPrice += (cantidadNum * precioNum);
-              }
+              totalPrice += _itemLineTotal(
+                item,
+                precioEsUnidadBase: precioEsBase,
+              );
             }
           }
 

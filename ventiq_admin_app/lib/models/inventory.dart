@@ -118,6 +118,65 @@ class InventoryProduct {
     }
   }
 
+  /// Copia con cantidades agregadas (p. ej. suma de varios lotes).
+  InventoryProduct copyWithSums({
+    double? cantidadInicial,
+    double? cantidadFinal,
+    double? stockDisponible,
+    double? stockReservado,
+    double? stockDisponibleAjustado,
+    DateTime? fechaUltimaActualizacion,
+  }) {
+    return InventoryProduct(
+      id: id,
+      idProducto: idProducto,
+      skuProducto: skuProducto,
+      nombreProducto: nombreProducto,
+      denominacionCorta: denominacionCorta,
+      nombreComercial: nombreComercial,
+      descripcion: descripcion,
+      descripcionCorta: descripcionCorta,
+      idCategoria: idCategoria,
+      categoria: categoria,
+      idSubcategoria: idSubcategoria,
+      subcategoria: subcategoria,
+      idTienda: idTienda,
+      tienda: tienda,
+      idAlmacen: idAlmacen,
+      almacen: almacen,
+      idUbicacion: idUbicacion,
+      ubicacion: ubicacion,
+      idVariante: idVariante,
+      variante: variante,
+      idOpcionVariante: idOpcionVariante,
+      opcionVariante: opcionVariante,
+      idPresentacion: idPresentacion,
+      presentacion: presentacion,
+      cantidadInicial: cantidadInicial ?? this.cantidadInicial,
+      cantidadFinal: cantidadFinal ?? this.cantidadFinal,
+      entradasPeriodo: entradasPeriodo,
+      extraccionesPeriodo: extraccionesPeriodo,
+      ventasPeriodo: ventasPeriodo,
+      stockDisponible: stockDisponible ?? this.stockDisponible,
+      stockReservado: stockReservado ?? this.stockReservado,
+      stockDisponibleAjustado:
+          stockDisponibleAjustado ?? this.stockDisponibleAjustado,
+      esVendible: esVendible,
+      esInventariable: esInventariable,
+      esElaborado: esElaborado,
+      precioVenta: precioVenta,
+      costoPromedio: costoPromedio,
+      margenActual: margenActual,
+      clasificacionAbc: clasificacionAbc,
+      abcDescripcion: abcDescripcion,
+      fechaUltimaActualizacion:
+          fechaUltimaActualizacion ?? this.fechaUltimaActualizacion,
+      totalCount: totalCount,
+      resumenInventario: resumenInventario,
+      infoPaginacion: infoPaginacion,
+    );
+  }
+
   InventoryProduct({
     required this.id,
     required this.idProducto,

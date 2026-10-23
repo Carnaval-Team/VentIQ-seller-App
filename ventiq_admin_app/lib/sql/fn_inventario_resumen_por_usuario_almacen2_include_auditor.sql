@@ -112,8 +112,9 @@ BEGIN
                     ip.id_variante,
                     ip.id_opcion_variante,
                     ip.id_ubicacion,
-                    ip.id_presentacion
-                ORDER BY ip.created_at DESC
+                    ip.id_presentacion,
+                    COALESCE(ip.id_lote, 0)
+                ORDER BY ip.created_at DESC, ip.id DESC
             ) AS rn
         FROM app_dat_inventario_productos ip
         JOIN inventario_con_acceso ia ON ip.id_ubicacion = ia.id_ubicacion
@@ -243,8 +244,9 @@ BEGIN
                     ip.id_variante,
                     ip.id_opcion_variante,
                     ip.id_ubicacion,
-                    ip.id_presentacion
-                ORDER BY ip.created_at DESC
+                    ip.id_presentacion,
+                    COALESCE(ip.id_lote, 0)
+                ORDER BY ip.created_at DESC, ip.id DESC
             ) AS rn
         FROM app_dat_inventario_productos ip
         JOIN inventario_con_acceso ia ON ip.id_ubicacion = ia.id_ubicacion

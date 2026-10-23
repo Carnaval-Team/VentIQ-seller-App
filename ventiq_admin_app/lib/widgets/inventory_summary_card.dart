@@ -1,17 +1,21 @@
 import 'package:flutter/material.dart';
 import '../models/inventory.dart';
+import '../models/lote_stock.dart';
 import '../config/app_colors.dart';
 import '../utils/stock_mixto_formatter.dart';
+import 'lote_expiry_widgets.dart';
 
 class InventorySummaryCard extends StatelessWidget {
   final InventorySummaryByUser summary;
   final StockBreakdown? breakdown;
+  final List<LoteStockInfo> lotes;
   final VoidCallback? onTap;
 
   const InventorySummaryCard({
     Key? key,
     required this.summary,
     this.breakdown,
+    this.lotes = const [],
     this.onTap,
   }) : super(key: key);
 
@@ -170,6 +174,7 @@ class InventorySummaryCard extends StatelessWidget {
                               ),
                             ),
                           ],
+                          if (lotes.isNotEmpty) LoteExpirySubtitle(lotes: lotes),
                         ],
                       ),
                     ),
@@ -349,19 +354,23 @@ class InventorySummaryCard extends StatelessWidget {
 class InventorySummaryList extends StatelessWidget {
   final List<InventorySummaryByUser> summaries;
   final Map<int, StockBreakdown> breakdowns;
+  final Map<int, List<LoteStockInfo>> lotesByProduct;
   final Function(InventorySummaryByUser)? onItemTap;
   final bool isLoading;
   final String? errorMessage;
   final VoidCallback? onRetry;
+  final Future<void> Function()? onRefresh;
 
   const InventorySummaryList({
     Key? key,
     required this.summaries,
     this.breakdowns = const {},
+    this.lotesByProduct = const {},
     this.onItemTap,
     this.isLoading = false,
     this.errorMessage,
     this.onRetry,
+    this.onRefresh,
   }) : super(key: key);
 
   @override
@@ -424,35 +433,50 @@ class InventorySummaryList extends StatelessWidget {
 
     if (summaries.isEmpty) {
       print('📭 Showing empty state');
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.inventory_2_outlined,
-                size: 48,
-                color: AppColors.textSecondary,
+      final empty = ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: const [
+          SizedBox(height: 120),
+          Center(
+            child: Padding(
+              padding: EdgeInsets.all(32),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.inventory_2_outlined,
+                    size: 48,
+                    color: AppColors.textSecondary,
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    'No hay productos en inventario',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'No se encontraron productos con stock disponible',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
               ),
-              SizedBox(height: 16),
-              Text(
-                'No hay productos en inventario',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              SizedBox(height: 8),
-              Text(
-                'No se encontraron productos con stock disponible',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
-              ),
-            ],
+            ),
           ),
-        ),
+        ],
+      );
+      if (onRefresh == null) return empty;
+      return RefreshIndicator(
+        onRefresh: onRefresh!,
+        color: AppColors.primary,
+        child: empty,
       );
     }
 
@@ -464,16 +488,25 @@ class InventorySummaryList extends StatelessWidget {
       );
     }
 
-    return ListView.builder(
+    final list = ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
       itemCount: summaries.length,
       itemBuilder: (context, index) {
         final summary = summaries[index];
         return InventorySummaryCard(
           summary: summary,
           breakdown: breakdowns[summary.idProducto],
+          lotes: lotesByProduct[summary.idProducto] ?? const [],
           onTap: onItemTap != null ? () => onItemTap!(summary) : null,
         );
       },
+    );
+
+    if (onRefresh == null) return list;
+    return RefreshIndicator(
+      onRefresh: onRefresh!,
+      color: AppColors.primary,
+      child: list,
     );
   }
 }

@@ -289,12 +289,18 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
             final incomingId = productData['id_producto'] ?? productData['id'];
             final incomingPresId = productData['id_presentacion'];
 
+            final incomingLote =
+                (productData['codigo_lote'] as String?)?.trim() ?? '';
+
             final existingIndex = _selectedProducts.indexWhere((p) {
               final existingId = p['id_producto'] ?? p['id'];
               final existingPresId = p['id_presentacion'];
+              final existingLote =
+                  (p['codigo_lote'] as String?)?.trim() ?? '';
               return existingId != null &&
                   existingId == incomingId &&
-                  existingPresId == incomingPresId;
+                  existingPresId == incomingPresId &&
+                  existingLote.toLowerCase() == incomingLote.toLowerCase();
             });
 
             if (existingIndex != -1) {
@@ -368,6 +374,16 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
       if (cantidad == null || cantidad <= 0) {
         _showError(
           'Producto "${product['denominacion']}" tiene cantidad inválida',
+        );
+        return;
+      }
+
+      // Si el payload trae codigo_lote (producto por lotes), exigir fecha.
+      final codigoLote = (product['codigo_lote'] as String?)?.trim() ?? '';
+      final fechaVenc = (product['fecha_vencimiento'] as String?)?.trim() ?? '';
+      if (codigoLote.isNotEmpty && fechaVenc.isEmpty) {
+        _showError(
+          'Producto "${product['denominacion']}" tiene lote sin fecha de vencimiento',
         );
         return;
       }
@@ -655,6 +671,11 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                     esVendible: productData['es_vendible'] ?? true,
                     esElaborado: productData['es_elaborado'] ?? false,
                     esServicio: productData['es_servicio'] ?? false,
+                    esPorLotes: productData['es_por_lotes'] == true,
+                    diasAlertCaducidad:
+                        (productData['dias_alert_caducidad'] as num?)
+                            ?.toInt() ??
+                        0,
                     stockDisponible: productData['stock_disponible'] ?? false,
                     presentaciones:
                         (productData['presentaciones'] as List?)
@@ -734,6 +755,19 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                           _buildPriceDisplay(item),
                           style: TextStyle(fontWeight: FontWeight.w500),
                         ),
+                        if ((item['codigo_lote'] as String?)
+                                ?.trim()
+                                .isNotEmpty ==
+                            true)
+                          Text(
+                            'Lote: ${item['codigo_lote']}'
+                            '${item['fecha_vencimiento'] != null ? ' · Vence: ${item['fecha_vencimiento']}' : ''}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
                         if (item['precio_referencia'] != null &&
                             item['precio_referencia'] > 0)
                           Text(

@@ -22,6 +22,11 @@ class InventoryExtractionScreen extends StatefulWidget {
 
 class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _scrollController = ScrollController();
+  final _motivoKey = GlobalKey();
+  final _autorizadoKey = GlobalKey();
+  final _locationKey = GlobalKey();
+  final _productsKey = GlobalKey();
   final _autorizadoPorController = TextEditingController();
   final _observacionesController = TextEditingController();
 
@@ -56,9 +61,92 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _autorizadoPorController.dispose();
     _observacionesController.dispose();
     super.dispose();
+  }
+
+  /// Nombre de presentación desde cualquiera de los alias del payload.
+  String? _presentationLabel(Map<String, dynamic> product) {
+    for (final key in const [
+      'presentacion',
+      'presentacion_nombre',
+      'denominacion_presentacion',
+    ]) {
+      final v = product[key]?.toString().trim();
+      if (v != null && v.isNotEmpty) return v;
+    }
+    for (final infoKey in const [
+      'presentacion_original_info',
+      'presentation_info',
+    ]) {
+      final info = product[infoKey];
+      if (info is Map) {
+        for (final key in const [
+          'denominacion',
+          'presentacion',
+          'presentacion_nombre',
+          'nombre',
+        ]) {
+          final v = info[key]?.toString().trim();
+          if (v != null && v.isNotEmpty) return v;
+        }
+      }
+    }
+    return null;
+  }
+
+  Future<void> _scrollToKey(GlobalKey key) async {
+    final ctx = key.currentContext;
+    if (ctx == null) return;
+    await Scrollable.ensureVisible(
+      ctx,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeInOut,
+      alignment: 0.08,
+    );
+  }
+
+  /// Valida campos en orden y lleva el scroll al primero faltante.
+  Future<bool> _validateExtractionForm({bool showSnack = true}) async {
+    void snack(String msg) {
+      if (!showSnack || !mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    }
+
+    if (_selectedMotivo == null) {
+      snack('Debe seleccionar un motivo de extracción');
+      await _scrollToKey(_motivoKey);
+      _formKey.currentState?.validate();
+      return false;
+    }
+
+    if (_autorizadoPorController.text.trim().isEmpty) {
+      snack('Debe indicar quién autoriza la extracción');
+      await _scrollToKey(_autorizadoKey);
+      _formKey.currentState?.validate();
+      return false;
+    }
+
+    if (_selectedSourceLocation == null) {
+      snack('Debe seleccionar una zona de origen');
+      await _scrollToKey(_locationKey);
+      return false;
+    }
+
+    if (_selectedProducts.isEmpty) {
+      snack('Debe seleccionar al menos un producto');
+      await _scrollToKey(_productsKey);
+      return false;
+    }
+
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      await _scrollToKey(_motivoKey);
+      return false;
+    }
+
+    return true;
   }
 
   void _addProductToExtraction(Map<String, dynamic> product) {
@@ -122,7 +210,10 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
     });
   }
 
-  void _showExtractionConfirmation() {
+  Future<void> _showExtractionConfirmation() async {
+    if (!await _validateExtractionForm()) return;
+    if (!mounted) return;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -209,17 +300,17 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
                             fontSize: 12,
                           ),
                         ),
-                      if (productData['presentacion'] != null &&
-                          productData['presentacion'].toString().isNotEmpty)
+                      if (_presentationLabel(productData) != null)
                         Text(
-                          'Presentación: ${productData['presentacion']}',
+                          'Presentación: ${_presentationLabel(productData)}',
                           style: TextStyle(
                             color: AppColors.warning.withOpacity(0.6),
                             fontSize: 12,
                           ),
                         ),
                       Text(
-                        'Cantidad: ${productData['cantidad']}',
+                        'Cantidad: ${productData['cantidad']}'
+                        '${_presentationLabel(productData) != null ? ' ${_presentationLabel(productData)}' : ''}',
                         style: const TextStyle(fontWeight: FontWeight.w500),
                       ),
                       Text(
@@ -282,9 +373,10 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
             child: const Text('Cancelar'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
-              _submitExtraction();
+              if (!await _validateExtractionForm()) return;
+              await _submitExtraction();
             },
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.warning),
             child: const Text('Confirmar Extracción'),
@@ -295,27 +387,7 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
   }
 
   Future<void> _submitExtraction() async {
-    if (!_formKey.currentState!.validate()) return;
-    if (_selectedProducts.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Debe seleccionar al menos un producto')),
-      );
-      return;
-    }
-    if (_selectedSourceLocation == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Debe seleccionar una zona de origen')),
-      );
-      return;
-    }
-    if (_selectedMotivo == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Debe seleccionar un motivo de extracción'),
-        ),
-      );
-      return;
-    }
+    if (!await _validateExtractionForm(showSnack: true)) return;
 
     setState(() => _isLoading = true);
     _savePersistedValues();
@@ -342,15 +414,21 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
       }
 
       final productos = _selectedProducts.map((product) {
-        return {
+        final payload = <String, dynamic>{
           'id_producto': product['id_producto'],
           'id_variante': product['id_variante'],
           'id_opcion_variante': product['id_opcion_variante'],
-          'id_ubicacion': product['id_ubicacion'],
+          'id_ubicacion': product['id_ubicacion'] ??
+              _selectedSourceLocation?.id,
           'id_presentacion': product['id_presentacion'],
           'cantidad': product['cantidad'],
+          // Precio de la unidad base (inventario). El importe de listado
+          // escala con factor_rel / equivalente_base.
           'precio_unitario': product['precio_unitario'],
         };
+        final importe = product['importe'];
+        if (importe != null) payload['importe'] = importe;
+        return payload;
       }).toList();
       final requestPayloadSignature = [
         _autorizadoPorController.text.trim(),
@@ -364,14 +442,40 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
         _requestPayloadSignature = requestPayloadSignature;
       }
 
-      final result = await InventoryService.insertCompleteExtractionV2(
-        autorizadoPor: _autorizadoPorController.text.trim(),
-        idMotivoOperacion: idMotivo,
-        idTienda: idTienda,
-        observaciones: _observacionesController.text.trim(),
-        productos: productos,
-        clientRequestUuid: _clientRequestUuid!,
-      );
+      // v2 (rebalanceo por presentación) NO particiona por id_lote: mezcla
+      // cadenas y puede inventar cantidad_inicial (p.ej. 50→350). Si hay
+      // productos por lotes, usar v1 FEFO que sí escribe id_lote.
+      final productIds = productos
+          .map((p) => int.tryParse('${p['id_producto']}') ?? 0)
+          .where((id) => id > 0)
+          .toSet()
+          .toList();
+      final needsFefo = productIds.isEmpty
+          ? false
+          : await InventoryService.anyProductRequiresLotes(productIds);
+
+      final Map<String, dynamic> result;
+      if (needsFefo) {
+        print('📦 Extracción FEFO (v1): productos con es_por_lotes');
+        result = await InventoryService.insertCompleteExtraction(
+          autorizadoPor: _autorizadoPorController.text.trim(),
+          estadoInicial: 1,
+          idMotivoOperacion: idMotivo,
+          idTienda: idTienda,
+          observaciones: _observacionesController.text.trim(),
+          productos: productos,
+          uuid: userUuid,
+        );
+      } else {
+        result = await InventoryService.insertCompleteExtractionV2(
+          autorizadoPor: _autorizadoPorController.text.trim(),
+          idMotivoOperacion: idMotivo,
+          idTienda: idTienda,
+          observaciones: _observacionesController.text.trim(),
+          productos: productos,
+          clientRequestUuid: _clientRequestUuid!,
+        );
+      }
 
       if (result['status'] != 'success') {
         throw Exception(result['message'] ?? 'Error desconocido');
@@ -441,42 +545,48 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
             const SizedBox(height: 16),
 
             // Motivo
-            DropdownButtonFormField<Map<String, dynamic>>(
-              value: _selectedMotivo,
-              decoration: const InputDecoration(
-                labelText: 'Motivo',
-                border: OutlineInputBorder(),
+            KeyedSubtree(
+              key: _motivoKey,
+              child: DropdownButtonFormField<Map<String, dynamic>>(
+                value: _selectedMotivo,
+                decoration: const InputDecoration(
+                  labelText: 'Motivo *',
+                  border: OutlineInputBorder(),
+                ),
+                items: _motivoOptions.map((motivo) {
+                  return DropdownMenuItem(
+                    value: motivo,
+                    child: Text(motivo['denominacion'] ?? ''),
+                  );
+                }).toList(),
+                onChanged: (motivo) {
+                  setState(() => _selectedMotivo = motivo);
+                },
+                validator: (value) {
+                  if (value == null) return 'Campo requerido';
+                  return null;
+                },
               ),
-              items: _motivoOptions.map((motivo) {
-                return DropdownMenuItem(
-                  value: motivo,
-                  child: Text(motivo['denominacion'] ?? ''),
-                );
-              }).toList(),
-              onChanged: (motivo) {
-                setState(() => _selectedMotivo = motivo);
-              },
-              validator: (value) {
-                if (value == null) return 'Campo requerido';
-                return null;
-              },
             ),
 
             const SizedBox(height: 12),
 
             // Autorizado por
-            TextFormField(
-              controller: _autorizadoPorController,
-              decoration: const InputDecoration(
-                labelText: 'Autorizado por',
-                border: OutlineInputBorder(),
+            KeyedSubtree(
+              key: _autorizadoKey,
+              child: TextFormField(
+                controller: _autorizadoPorController,
+                decoration: const InputDecoration(
+                  labelText: 'Autorizado por *',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Campo requerido';
+                  }
+                  return null;
+                },
               ),
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Campo requerido';
-                }
-                return null;
-              },
             ),
 
             const SizedBox(height: 12),
@@ -498,21 +608,15 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
 
   Widget _buildLocationSelectionSection() {
     return Card(
+      key: _locationKey,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            /*const Text(
-              'Seleccionar Ubicación',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),*/
-            /*
-            const SizedBox(height: 16),
-*/
             LocationSelectorWidget(
               type: LocationSelectorType.single,
-              title: 'Seleccionar Zona',
+              title: 'Seleccionar Zona *',
               subtitle: 'Desde donde se extraerán los productos',
               selectedLocation: _selectedSourceLocation,
               onLocationChanged: (location) {
@@ -535,6 +639,7 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
     final isEnabled = _selectedSourceLocation != null;
 
     return Card(
+      key: _productsKey,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -701,6 +806,16 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
                                         ),
                                       ),
                                     ),
+                                    if (_presentationLabel(product) != null)
+                                      Text(
+                                        'Presentación: ${_presentationLabel(product)}',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: AppColors.warning.withOpacity(
+                                            0.5,
+                                          ),
+                                        ),
+                                      ),
                                     if (product['zona_nombre'] != null)
                                       Text(
                                         'Zona: ${product['zona_nombre']}',
@@ -712,7 +827,8 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
                                         ),
                                       ),
                                     Text(
-                                      'Cant: ${product['cantidad']}',
+                                      'Cant: ${product['cantidad']}'
+                                      '${_presentationLabel(product) != null ? ' ${_presentationLabel(product)}' : ''}',
                                       style: TextStyle(
                                         fontSize: 10,
                                         color: AppColors.warning.withOpacity(
@@ -861,11 +977,23 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
                             overflow: TextOverflow.ellipsis,
                             maxLines: 1,
                           ),
+                          if (_presentationLabel(product) != null) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              'Presentación: ${_presentationLabel(product)}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: AppColors.warning.withOpacity(0.7),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 4),
                           Row(
                             children: [
                               Text(
-                                'Cantidad: ${product['cantidad']}',
+                                'Cantidad: ${product['cantidad']}'
+                                '${_presentationLabel(product) != null ? ' ${_presentationLabel(product)}' : ''}',
                                 style: TextStyle(
                                   fontSize: 11,
                                   color: AppColors.warning.withOpacity(0.6),
@@ -958,6 +1086,7 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
                 children: [
                   Expanded(
                     child: SingleChildScrollView(
+                      controller: _scrollController,
                       padding: const EdgeInsets.all(16),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1229,20 +1358,6 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
         : _presentationChain.last.nombre;
   }
 
-  String _presentationDetail(Map<String, dynamic> presentation) {
-    final name = presentation['denominacion']?.toString() ?? 'Presentación';
-    final physical = _formatQuantity(_asDouble(presentation['cantidad_final']));
-    final available = _formatQuantity(
-      _asDouble(presentation['stock_disponible']),
-    );
-    final equivalence = presentation['es_base'] == true
-        ? 'base'
-        : presentation['factor_rel'] == null
-        ? 'equivalencia no disponible'
-        : '1 $name = ${_formatQuantity(_asDouble(presentation['factor_rel']))} $_basePresentationName';
-    return '$name · $equivalence · físico: $physical · disponible: $available';
-  }
-
   String _identityLabel(Map<String, dynamic> identity) {
     final variant = identity['variante_nombre']?.toString() ?? 'Unidad';
     final option = identity['opcion_variante_nombre']?.toString() ?? 'Única';
@@ -1344,8 +1459,13 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
   }
 
   Future<bool> _confirmPhysicalPlan(PlanCumplimiento plan) async {
+    final requestedName =
+        _selectedPresentation?['denominacion']?.toString() ??
+            _selectedPresentation?['presentacion_nombre']?.toString() ??
+            'Presentación';
+    final requestedQty = _quantityController.text.trim();
     final lines = plan.lineasFisicas
-        .map((line) => '${_formatQuantity(line.cantidad)} ${line.nombre}')
+        .map((line) => '• ${_formatQuantity(line.cantidad)} ${line.nombre}')
         .join('\n');
     final conversions = plan.conversiones.isEmpty
         ? 'No requiere abrir ni reempaquetar presentaciones.'
@@ -1354,7 +1474,10 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
           context: context,
           builder: (dialogContext) => AlertDialog(
             title: const Text('Confirmar despacho físico'),
-            content: Text('$lines\n\n$conversions'),
+            content: Text(
+              'Solicitado: $requestedQty $requestedName\n\n'
+              'Se despachará físicamente:\n$lines\n\n$conversions',
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext, false),
@@ -1397,394 +1520,442 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      contentPadding: EdgeInsets.zero,
+    final media = MediaQuery.of(context);
+    final narrow = media.size.width < 420;
+    final compact = media.size.height < 700 || narrow;
+    final hPad = narrow ? 8.0 : 20.0;
+    final vPad = compact ? 10.0 : 16.0;
+    final title =
+        widget.product['denominacion'] ??
+        widget.product['nombre_producto'] ??
+        'Extraer Producto';
+
+    return Dialog(
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: narrow ? 8 : 24,
+        vertical: narrow ? 12 : 24,
+      ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      content: Container(
-        width: MediaQuery.of(context).size.width * 0.9,
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.8,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Header
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
+      clipBehavior: Clip.antiAlias,
+      child: SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 560,
+            // Usa casi toda la altura útil en pantallas chicas
+            maxHeight: media.size.height * (narrow ? 0.94 : 0.88),
+            minWidth: 0,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: EdgeInsets.fromLTRB(hPad, vPad, 4, vPad),
                 color: AppColors.warning,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(16),
-                  topRight: Radius.circular(16),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.inventory_2, color: Colors.white, size: 24),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      widget.product['denominacion'] ??
-                          widget.product['nombre_producto'] ??
-                          'Extraer Producto',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(
-                      Icons.close,
-                      color: Colors.white,
-                      size: 24,
-                    ),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                ],
-              ),
-            ),
-
-            // Content
-            Flexible(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
-                    // Product Info Card
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: AppColors.grey.shade50,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.border),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.info_outline,
-                                color: AppColors.primary,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Información del Producto',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                  color: AppColors.primary,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          ..._buildProductInfoRows(),
-                        ],
+                    const Icon(Icons.inventory_2, color: Colors.white, size: 22),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        title.toString(),
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: narrow ? 15 : 17,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-
-                    const SizedBox(height: 20),
-
-                    // Aviso para producto elaborado
-                    if (widget.product['es_elaborado'] == true)
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          '⚠️ Producto elaborado - se extraerán ingredientes automáticamente',
-                          style: TextStyle(
-                            color: Colors.orange.shade700,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-
-                    const SizedBox(height: 20),
-
-                    if (_isLoading)
-                      const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(20),
-                          child: CircularProgressIndicator(),
-                        ),
-                      )
-                    else if (_loadError != null)
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: AppColors.error.withOpacity(0.08),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: AppColors.error.withOpacity(0.3),
-                          ),
-                        ),
-                        child: Column(
-                          children: [
-                            Text(
-                              _loadError!,
-                              style: TextStyle(color: AppColors.error),
-                            ),
-                            const SizedBox(height: 8),
-                            TextButton.icon(
-                              onPressed: _loadDialogData,
-                              icon: const Icon(Icons.refresh),
-                              label: const Text('Reintentar'),
-                            ),
-                          ],
-                        ),
-                      )
-                    else ...[
-                      if (_availableIdentities.length > 1) ...[
-                        const Text(
-                          'Seleccionar Variante',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
-                            color: AppColors.black87,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<Map<String, dynamic>>(
-                          value: _selectedIdentity,
-                          isExpanded: true,
-                          decoration: _selectorDecoration(Icons.tune),
-                          hint: const Text('Seleccione variante y opción'),
-                          items: _availableIdentities
-                              .map(
-                                (identity) => DropdownMenuItem(
-                                  value: identity,
-                                  child: Text(
-                                    _identityLabel(identity),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              )
-                              .toList(growable: false),
-                          onChanged: (value) {
-                            setState(() {
-                              _selectedIdentity = value;
-                              _refreshPresentations();
-                              _quantityController.clear();
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 20),
-                      ],
-                      if (_selectedIdentity == null)
-                        _buildSelectionNotice(
-                          'Seleccione una variante para ver sus presentaciones y saldos.',
-                        )
-                      else if (_availablePresentations.isEmpty)
-                        _buildSelectionNotice(
-                          'No hay presentaciones configuradas para esta variante.',
-                        )
-                      else ...[
-                        const Text(
-                          'Seleccionar Presentación',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
-                            color: AppColors.black87,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<Map<String, dynamic>>(
-                          value: _selectedPresentation,
-                          isExpanded: true,
-                          decoration: _selectorDecoration(Icons.category),
-                          hint: const Text('Seleccionar presentación'),
-                          items: _availablePresentations
-                              .map(
-                                (presentation) => DropdownMenuItem(
-                                  value: presentation,
-                                  child: Text(
-                                    _presentationDetail(presentation),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              )
-                              .toList(growable: false),
-                          onChanged: (value) {
-                            setState(() {
-                              _selectedPresentation = value;
-                              _quantityController.clear();
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                        ..._availablePresentations.map(
-                          (presentation) => _buildPresentationStockRow(
-                            presentation,
-                            selected: identical(
-                              presentation,
-                              _selectedPresentation,
-                            ),
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 20),
-                    ],
-
-                    // Quantity Input
-                    Text(
-                      'Cantidad a Extraer',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                        color: AppColors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _quantityController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      decoration: InputDecoration(
-                        hintText: 'Ingrese la cantidad',
-                        hintStyle: TextStyle(
-                          color: AppColors.grey.shade500,
-                          fontWeight: FontWeight.normal,
-                        ),
-                        prefixIcon: Icon(
-                          Icons.inventory,
-                          color: AppColors.primary,
-                        ),
-                        suffixText:
-                            _selectedPresentation?['denominacion']
-                                ?.toString() ??
-                            '',
-                        suffixStyle: TextStyle(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: AppColors.border),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(
-                            color: AppColors.primary,
-                            width: 2,
-                          ),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 16,
-                        ),
-                        filled: true,
-                        fillColor: Colors.white,
-                      ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Ingrese una cantidad';
-                        }
-                        final quantity = double.tryParse(value);
-                        if (quantity == null || quantity <= 0) {
-                          return 'La cantidad debe ser mayor a 0';
-                        }
-                        return null;
-                      },
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      visualDensity: VisualDensity.compact,
                     ),
                   ],
                 ),
               ),
-            ),
-
-            // Action Buttons
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: AppColors.grey.shade50,
-                borderRadius: const BorderRadius.only(
-                  bottomLeft: Radius.circular(16),
-                  bottomRight: Radius.circular(16),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(hPad, vPad, hPad, vPad),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        padding: EdgeInsets.all(compact ? 10 : 14),
+                        decoration: BoxDecoration(
+                          color: AppColors.grey.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.info_outline,
+                                  color: AppColors.primary,
+                                  size: 18,
+                                ),
+                                const SizedBox(width: 6),
+                                const Flexible(
+                                  child: Text(
+                                    'Información del Producto',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                      color: AppColors.primary,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            ..._buildProductInfoRows(compact: compact),
+                          ],
+                        ),
+                      ),
+                      if (widget.product['es_elaborado'] == true) ...[
+                        SizedBox(height: compact ? 10 : 14),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            'Producto elaborado: se extraerán ingredientes automáticamente',
+                            style: TextStyle(
+                              color: Colors.orange.shade700,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                      SizedBox(height: compact ? 12 : 16),
+                      if (_isLoading)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 24),
+                          child: Center(child: CircularProgressIndicator()),
+                        )
+                      else if (_loadError != null)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppColors.error.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppColors.error.withOpacity(0.3),
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              Text(
+                                _loadError!,
+                                style: TextStyle(
+                                  color: AppColors.error,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              TextButton.icon(
+                                onPressed: _loadDialogData,
+                                icon: const Icon(Icons.refresh, size: 18),
+                                label: const Text('Reintentar'),
+                              ),
+                            ],
+                          ),
+                        )
+                      else ...[
+                        if (_availableIdentities.length > 1) ...[
+                          Text(
+                            'Variante',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: compact ? 14 : 15,
+                              color: AppColors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          DropdownButtonFormField<Map<String, dynamic>>(
+                            value: _selectedIdentity,
+                            isExpanded: true,
+                            decoration: _selectorDecoration(Icons.tune),
+                            hint: const Text('Seleccione variante'),
+                            items: _availableIdentities
+                                .map(
+                                  (identity) => DropdownMenuItem(
+                                    value: identity,
+                                    child: Text(
+                                      _identityLabel(identity),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                )
+                                .toList(growable: false),
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedIdentity = value;
+                                _refreshPresentations();
+                                _quantityController.clear();
+                              });
+                            },
+                          ),
+                          SizedBox(height: compact ? 12 : 16),
+                        ],
+                        if (_selectedIdentity == null)
+                          _buildSelectionNotice(
+                            'Seleccione una variante para ver presentaciones y saldos.',
+                          )
+                        else if (_availablePresentations.isEmpty)
+                          _buildSelectionNotice(
+                            'No hay presentaciones configuradas para esta variante.',
+                          )
+                        else ...[
+                          Text(
+                            'Presentación',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: compact ? 14 : 15,
+                              color: AppColors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          DropdownButtonFormField<Map<String, dynamic>>(
+                            value: _selectedPresentation,
+                            isExpanded: true,
+                            decoration: _selectorDecoration(Icons.category),
+                            hint: const Text('Seleccionar presentación'),
+                            selectedItemBuilder: (context) =>
+                                _availablePresentations
+                                    .map(
+                                      (p) => Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: Text(
+                                          p['denominacion']?.toString() ??
+                                              'Presentación',
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    )
+                                    .toList(growable: false),
+                            items: _availablePresentations
+                                .map(
+                                  (presentation) => DropdownMenuItem(
+                                    value: presentation,
+                                    child: Text(
+                                      // En el menú: nombre corto; detalle en filas abajo
+                                      presentation['denominacion']
+                                              ?.toString() ??
+                                          'Presentación',
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                )
+                                .toList(growable: false),
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedPresentation = value;
+                                _quantityController.clear();
+                              });
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                          ..._availablePresentations.map(
+                            (presentation) => _buildPresentationStockRow(
+                              presentation,
+                              selected: identical(
+                                presentation,
+                                _selectedPresentation,
+                              ),
+                              compact: compact,
+                            ),
+                          ),
+                        ],
+                        SizedBox(height: compact ? 12 : 16),
+                      ],
+                      Text(
+                        'Cantidad a extraer',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: compact ? 14 : 15,
+                          color: AppColors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: _quantityController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        decoration: InputDecoration(
+                          hintText: 'Cantidad',
+                          hintStyle: TextStyle(
+                            color: AppColors.grey.shade500,
+                            fontWeight: FontWeight.normal,
+                          ),
+                          prefixIcon: Icon(
+                            Icons.inventory,
+                            color: AppColors.primary,
+                          ),
+                          suffixText:
+                              _selectedPresentation?['denominacion']
+                                  ?.toString() ??
+                              '',
+                          suffixStyle: TextStyle(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w500,
+                            fontSize: 12,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: AppColors.border),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: AppColors.primary,
+                              width: 2,
+                            ),
+                          ),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: compact ? 12 : 14,
+                          ),
+                          filled: true,
+                          fillColor: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(color: AppColors.grey.shade300),
-                        ),
-                      ),
-                      child: Text(
-                        'Cancelar',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.grey.shade600,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: ElevatedButton(
-                      onPressed:
-                          _isLoading ||
-                              _loadError != null ||
-                              _selectedIdentity == null ||
-                              _selectedPresentation == null ||
-                              _isPreviewing
-                          ? null
-                          : _previewAndAddProduct,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.warning,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: 0,
-                      ),
-                      child: _isPreviewing
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Text(
-                              'Agregar Producto',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
+              Container(
+                width: double.infinity,
+                padding: EdgeInsets.fromLTRB(hPad, 10, hPad, hPad),
+                decoration: BoxDecoration(
+                  color: AppColors.grey.shade50,
+                  border: Border(top: BorderSide(color: AppColors.border)),
+                ),
+                child: narrow
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          ElevatedButton(
+                            onPressed:
+                                _isLoading ||
+                                    _loadError != null ||
+                                    _selectedIdentity == null ||
+                                    _selectedPresentation == null ||
+                                    _isPreviewing
+                                ? null
+                                : _previewAndAddProduct,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.warning,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
                             ),
-                    ),
-                  ),
-                ],
+                            child: _isPreviewing
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Text(
+                                    'Agregar Producto',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Cancelar'),
+                          ),
+                        ],
+                      )
+                    : Row(
+                        children: [
+                          Expanded(
+                            child: TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              style: TextButton.styleFrom(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  side: BorderSide(
+                                    color: AppColors.grey.shade300,
+                                  ),
+                                ),
+                              ),
+                              child: Text(
+                                'Cancelar',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.grey.shade600,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            flex: 2,
+                            child: ElevatedButton(
+                              onPressed:
+                                  _isLoading ||
+                                      _loadError != null ||
+                                      _selectedIdentity == null ||
+                                      _selectedPresentation == null ||
+                                      _isPreviewing
+                                  ? null
+                                  : _previewAndAddProduct,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.warning,
+                                foregroundColor: Colors.white,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                elevation: 0,
+                              ),
+                              child: _isPreviewing
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Text(
+                                      'Agregar Producto',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                            ),
+                          ),
+                        ],
+                      ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1813,7 +1984,19 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
   Widget _buildPresentationStockRow(
     Map<String, dynamic> presentation, {
     required bool selected,
+    bool compact = false,
   }) {
+    final name = presentation['denominacion']?.toString() ?? 'Presentación';
+    final physical = _formatQuantity(_asDouble(presentation['cantidad_final']));
+    final available = _formatQuantity(
+      _asDouble(presentation['stock_disponible']),
+    );
+    final equivalence = presentation['es_base'] == true
+        ? 'base'
+        : presentation['factor_rel'] == null
+        ? 'sin equivalencia'
+        : '1 = ${_formatQuantity(_asDouble(presentation['factor_rel']))} $_basePresentationName';
+
     return GestureDetector(
       onTap: () {
         setState(() {
@@ -1824,7 +2007,10 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
       child: Container(
         width: double.infinity,
         margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 10 : 12,
+          vertical: compact ? 8 : 10,
+        ),
         decoration: BoxDecoration(
           color: selected ? AppColors.primary.withOpacity(0.08) : Colors.white,
           borderRadius: BorderRadius.circular(10),
@@ -1844,13 +2030,29 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                _presentationDetail(presentation),
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                  color: selected ? AppColors.primary : AppColors.black87,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                      color: selected ? AppColors.primary : AppColors.black87,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '$equivalence · físico $physical · disp. $available',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AppColors.grey.shade700,
+                    ),
+                    softWrap: true,
+                  ),
+                ],
               ),
             ),
           ],
@@ -1867,7 +2069,7 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
     return fallback;
   }
 
-  List<Widget> _buildProductInfoRows() {
+  List<Widget> _buildProductInfoRows({bool compact = false}) {
     final row =
         _selectedInventoryRow ??
         (_inventoryRows.isEmpty ? null : _inventoryRows.first);
@@ -1896,6 +2098,31 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
       widget.product['subcategoria'],
       widget.product['nombre_subcategoria'],
     ], fallback: '');
+    final presentationName =
+        _selectedPresentation?['denominacion']?.toString().trim() ??
+            _selectedPresentation?['presentacion_nombre']?.toString().trim() ??
+            '';
+
+    // En pantallas chicas: solo lo esencial para no comerse el scroll
+    if (compact) {
+      return [
+        _buildInfoRow('Producto', name, compact: true),
+        _buildInfoRow('SKU', sku, compact: true),
+        _buildInfoRow(
+          'Ubicación',
+          widget.sourceLocation?.name ?? 'N/A',
+          compact: true,
+        ),
+        if (_selectedIdentity != null)
+          _buildInfoRow(
+            'Variante',
+            _identityLabel(_selectedIdentity!),
+            compact: true,
+          ),
+        if (presentationName.isNotEmpty)
+          _buildInfoRow('Presentación', presentationName, compact: true),
+      ];
+    }
     return [
       _buildInfoRow('Producto', name),
       _buildInfoRow('SKU', sku),
@@ -1905,37 +2132,48 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
       if (subcategory.isNotEmpty) _buildInfoRow('Subcategoría', subcategory),
       if (_selectedIdentity != null)
         _buildInfoRow('Variante', _identityLabel(_selectedIdentity!)),
+      if (presentationName.isNotEmpty)
+        _buildInfoRow('Presentación', presentationName),
     ];
   }
 
-  Widget _buildInfoRow(String label, String value, {Color? valueColor}) {
+  Widget _buildInfoRow(
+    String label,
+    String value, {
+    Color? valueColor,
+    bool compact = false,
+  }) {
+    final labelStyle = TextStyle(
+      fontSize: compact ? 12 : 13,
+      color: AppColors.grey.shade600,
+      fontWeight: FontWeight.w500,
+    );
+    final valueStyle = TextStyle(
+      fontSize: compact ? 12 : 13,
+      fontWeight: FontWeight.w600,
+      color: valueColor ?? AppColors.black87,
+    );
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 90,
-            child: Text(
-              '$label:',
-              style: TextStyle(
-                fontSize: 13,
-                color: AppColors.grey.shade600,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: valueColor ?? AppColors.black87,
-              ),
-            ),
-          ),
-        ],
+      padding: EdgeInsets.only(bottom: compact ? 6 : 8),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth < 280 || compact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('$label:', style: labelStyle),
+                Text(value, style: valueStyle, softWrap: true),
+              ],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(width: 88, child: Text('$label:', style: labelStyle)),
+              Expanded(child: Text(value, style: valueStyle, softWrap: true)),
+            ],
+          );
+        },
       ),
     );
   }

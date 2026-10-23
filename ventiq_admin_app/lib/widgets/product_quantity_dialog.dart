@@ -38,6 +38,8 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
   final _descuentoPorcentajeController = TextEditingController();
   final _descuentoMontoController = TextEditingController();
   final _bonificacionCantidadController = TextEditingController();
+  final _codigoLoteController = TextEditingController();
+  DateTime? _fechaVencimiento;
 
   List<Map<String, dynamic>> _availableVariants = [];
   List<Map<String, dynamic>> _availablePresentations = [];
@@ -70,6 +72,11 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
   /// Tasa USD→CUP para convertir los precios mixtos. Se lee una vez.
   double? _usdToCupRate;
 
+  /// Flag real de lotes: el selector de recepción a menudo no trae
+  /// `es_por_lotes` en el Map → Product queda en false. Se resuelve al abrir.
+  bool _esPorLotes = false;
+  bool _cargandoFlagLotes = true;
+
   @override
   void initState() {
     super.initState();
@@ -79,12 +86,53 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
     print('  - name: ${widget.product.name}');
     print('  - sku: "${widget.product.sku}"');
     print('  - sku.isEmpty: ${widget.product.sku.isEmpty}');
+    print('  - esPorLotes (payload): ${widget.product.esPorLotes}');
 
+    _esPorLotes = widget.product.esPorLotes;
     _finalCurrency = widget.invoiceCurrency;
     _monedaEntradaMixta = widget.invoiceCurrency;
     _initializeVariantsAndPresentations();
     _loadLastPurchasePrice();
     _cargarCadenaMixta();
+    _resolverEsPorLotes();
+  }
+
+  /// Confirma `es_por_lotes` desde BD si el Product llegó sin el flag.
+  Future<void> _resolverEsPorLotes() async {
+    if (widget.product.esPorLotes) {
+      if (mounted) {
+        setState(() {
+          _esPorLotes = true;
+          _cargandoFlagLotes = false;
+        });
+      }
+      return;
+    }
+
+    final idProducto = int.tryParse(widget.product.id);
+    if (idProducto == null) {
+      if (mounted) setState(() => _cargandoFlagLotes = false);
+      return;
+    }
+
+    try {
+      final row = await Supabase.instance.client
+          .from('app_dat_producto')
+          .select('es_por_lotes')
+          .eq('id', idProducto)
+          .maybeSingle();
+      final flag = row != null && row['es_por_lotes'] == true;
+      print('🎯 es_por_lotes desde BD (id=$idProducto): $flag');
+      if (mounted) {
+        setState(() {
+          _esPorLotes = flag;
+          _cargandoFlagLotes = false;
+        });
+      }
+    } catch (e) {
+      print('⚠️ No se pudo leer es_por_lotes: $e');
+      if (mounted) setState(() => _cargandoFlagLotes = false);
+    }
   }
 
   /// Lee la cadena de presentaciones y decide si ofrecer captura mixta.
@@ -140,7 +188,44 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
     _descuentoPorcentajeController.dispose();
     _descuentoMontoController.dispose();
     _bonificacionCantidadController.dispose();
+    _codigoLoteController.dispose();
     super.dispose();
+  }
+
+  bool get _requiereLote => _esPorLotes;
+
+  /// Campos de lote para el payload de recepción (Fase 1 vencimientos).
+  Map<String, dynamic> _lotePayload() {
+    if (!_requiereLote) return const {};
+    final codigo = _codigoLoteController.text.trim();
+    final fecha = _fechaVencimiento;
+    return {
+      if (codigo.isNotEmpty) 'codigo_lote': codigo,
+      if (fecha != null)
+        'fecha_vencimiento':
+            '${fecha.year.toString().padLeft(4, '0')}-'
+            '${fecha.month.toString().padLeft(2, '0')}-'
+            '${fecha.day.toString().padLeft(2, '0')}',
+    };
+  }
+
+  bool _validarLoteSiAplica() {
+    if (_cargandoFlagLotes) {
+      _mostrarError('Cargando datos del producto, espere un momento…');
+      return false;
+    }
+    if (!_requiereLote) return true;
+    if (_codigoLoteController.text.trim().isEmpty) {
+      _mostrarError('Este producto es por lotes: indique el código de lote');
+      return false;
+    }
+    if (_fechaVencimiento == null) {
+      _mostrarError(
+        'Este producto es por lotes: indique la fecha de vencimiento',
+      );
+      return false;
+    }
+    return true;
   }
 
   void _initializeVariantsAndPresentations() {
@@ -321,6 +406,8 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
     }
 
     if (_formKey.currentState!.validate()) {
+      if (!_validarLoteSiAplica()) return;
+
       final cantidad =
           double.tryParse(
             _quantityController.text.trim().replaceAll(',', '.'),
@@ -351,6 +438,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
           'denominacion': widget.product.name,
           'sku_producto': widget.product.sku,
           'moneda_precio': monedaGuardar,
+          ..._lotePayload(),
         };
 
         if (_selectedVariant != null) {
@@ -392,6 +480,8 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
       return;
     }
 
+    if (!_validarLoteSiAplica()) return;
+
     // Todas las lineas necesitan precio: sin el, la recepcion entra con costo 0
     // y arruina el precio_promedio ponderado.
     final sinPrecio = _lineasMixtas
@@ -411,6 +501,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
     final descuentoMonto = double.tryParse(_descuentoMontoController.text) ?? 0;
     final bonificacionCantidad =
         double.tryParse(_bonificacionCantidadController.text) ?? 0;
+    final loteFields = _lotePayload();
 
     try {
       for (final linea in _lineasMixtas) {
@@ -434,6 +525,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
           'denominacion': widget.product.name,
           'sku_producto': widget.product.sku,
           'moneda_precio': 'USD',
+          ...loteFields,
         };
 
         if (_selectedVariant != null) {
@@ -483,194 +575,252 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final narrow = media.size.width < 420;
+    final compact = narrow || media.size.height < 700;
+    final hPad = narrow ? 12.0 : 20.0;
+    final vPad = compact ? 10.0 : 16.0;
+
     return Dialog(
       backgroundColor: Colors.white,
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: narrow ? 8 : 24,
+        vertical: narrow ? 12 : 24,
+      ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        width: MediaQuery.of(context).size.width * 0.9,
-        height: MediaQuery.of(context).size.height * 0.85,
-        child: Column(
-          children: [
-            // Header
-            Container(
-              padding: EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(16),
-                  topRight: Radius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 560,
+            maxHeight: media.size.height * (narrow ? 0.94 : 0.88),
+            minWidth: 0,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                padding: EdgeInsets.fromLTRB(hPad, vPad, 4, vPad),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border(
+                    bottom: BorderSide(color: AppColors.border, width: 1),
+                  ),
                 ),
-                border: Border(
-                  bottom: BorderSide(color: AppColors.border, width: 1),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: EdgeInsets.all(compact ? 6 : 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        Icons.add_shopping_cart,
+                        color: AppColors.primary,
+                        size: compact ? 20 : 24,
+                      ),
+                    ),
+                    SizedBox(width: compact ? 8 : 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Agregar Producto',
+                            style: TextStyle(
+                              fontSize: narrow ? 15 : 18,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          Container(
+                            margin: const EdgeInsets.only(top: 4),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              'Factura en ${widget.invoiceCurrency}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.blue[700],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: Icon(Icons.close, color: AppColors.textSecondary),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ],
                 ),
               ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      Icons.add_shopping_cart,
-                      color: AppColors.primary,
-                      size: 24,
-                    ),
-                  ),
-                  SizedBox(width: 12),
-                  Expanded(
+              Expanded(
+                child: Form(
+                  key: _formKey,
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(hPad, vPad, hPad, vPad),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Agregar Producto',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textPrimary,
+                        _buildProductInfo(compact: compact),
+                        if (!_cargandoCadenaMixta &&
+                            !_modoMixto &&
+                            int.tryParse(widget.product.id) != null)
+                          PresentacionEquivalenciaBanner(
+                            productId: int.parse(widget.product.id),
+                            productPresentaciones:
+                                widget.product.presentaciones,
+                            unidadMedida: widget.product.um,
                           ),
-                        ),
-
-                        // ← NUEVO: Mostrar moneda de factura
-                        Container(
-                          margin: EdgeInsets.only(top: 4),
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            'Factura en ${widget.invoiceCurrency}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.blue[700],
-                              fontWeight: FontWeight.w500,
+                        SizedBox(height: compact ? 14 : 20),
+                        _buildInputSection(compact: compact),
+                        SizedBox(height: compact ? 12 : 16),
+                        if (_cargandoFlagLotes)
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 12),
+                            child: Row(
+                              children: [
+                                SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                                SizedBox(width: 8),
+                                Flexible(
+                                  child: Text(
+                                    'Verificando si requiere lote…',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
+                          )
+                        else if (_requiereLote) ...[
+                          _buildLoteSection(),
+                          SizedBox(height: compact ? 12 : 16),
+                        ],
+                        if (!_modoMixto)
+                          PriceCurrencyConverterWidget(
+                            invoiceCurrency: widget.invoiceCurrency,
+                            priceController: _precioUnitarioController,
+                            onPriceConverted: (convertedPrice, currency) {
+                              print(
+                                '💱 Precio convertido a USD: $convertedPrice',
+                              );
+                              setState(() {
+                                _finalPriceInUSD = convertedPrice;
+                                _finalCurrency = currency;
+                              });
+                            },
                           ),
-                        ),
+                        SizedBox(height: compact ? 14 : 20),
+                        _buildAdvancedOptions(compact: compact),
                       ],
                     ),
                   ),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: Icon(Icons.close, color: AppColors.textSecondary),
-                  ),
-                ],
-              ),
-            ),
-
-            // Content
-            Expanded(
-              child: Form(
-                key: _formKey,
-                child: SingleChildScrollView(
-                  padding: EdgeInsets.all(24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Product Information
-                      _buildProductInfo(),
-                      if (!_cargandoCadenaMixta &&
-                          !_modoMixto &&
-                          int.tryParse(widget.product.id) != null)
-                        PresentacionEquivalenciaBanner(
-                          productId: int.parse(widget.product.id),
-                          productPresentaciones: widget.product.presentaciones,
-                          unidadMedida: widget.product.um,
-                        ),
-                      SizedBox(height: 24),
-
-                      // Input Data
-                      _buildInputSection(),
-                      SizedBox(height: 16),
-
-                      // El convertidor de moneda solo aplica al modo simple: en
-                      // el mixto hay N precios y la conversion la hace _aUSD con
-                      // el selector propio del bloque mixto.
-                      if (!_modoMixto)
-                        PriceCurrencyConverterWidget(
-                          invoiceCurrency: widget.invoiceCurrency,
-                          priceController: _precioUnitarioController,
-                          onPriceConverted: (convertedPrice, currency) {
-                            print(
-                              '💱 Precio convertido a USD: $convertedPrice',
-                            );
-                            setState(() {
-                              _finalPriceInUSD = convertedPrice;
-                              _finalCurrency = currency; // Siempre 'USD'
-                            });
-                          },
-                        ),
-                      SizedBox(height: 24),
-
-                      // Advanced options
-                      _buildAdvancedOptions(),
-                    ],
-                  ),
                 ),
               ),
-            ),
-
-            // Actions
-            Container(
-              padding: EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border(
-                  top: BorderSide(color: AppColors.border, width: 1),
+              Container(
+                padding: EdgeInsets.fromLTRB(hPad, 10, hPad, hPad),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border(
+                    top: BorderSide(color: AppColors.border, width: 1),
+                  ),
                 ),
+                child: narrow
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          ElevatedButton(
+                            onPressed: _submitForm,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            child: const Text(
+                              'Agregar',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: Text(
+                              'Cancelar',
+                              style: TextStyle(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    : Row(
+                        children: [
+                          Expanded(
+                            child: TextButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              child: Text(
+                                'Cancelar',
+                                style: TextStyle(
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 2,
+                            child: ElevatedButton(
+                              onPressed: _submitForm,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primary,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              child: const Text(
+                                'Agregar',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: Text(
-                      'Cancelar',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: 16),
-                  ElevatedButton(
-                    onPressed: _submitForm,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 32,
-                        vertical: 16,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: Text(
-                      'Agregar',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildProductInfo() {
+  Widget _buildProductInfo({bool compact = false}) {
+    final iconSize = compact ? 40.0 : 60.0;
     return Container(
-      padding: EdgeInsets.all(16),
+      padding: EdgeInsets.all(compact ? 10 : 16),
       decoration: BoxDecoration(
         color: AppColors.surface.withOpacity(0.3),
         borderRadius: BorderRadius.circular(8),
@@ -679,15 +829,19 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
       child: Row(
         children: [
           Container(
-            width: 60,
-            height: 60,
+            width: iconSize,
+            height: iconSize,
             decoration: BoxDecoration(
               color: AppColors.primary.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(Icons.inventory_2, color: AppColors.primary, size: 30),
+            child: Icon(
+              Icons.inventory_2,
+              color: AppColors.primary,
+              size: compact ? 22 : 30,
+            ),
           ),
-          SizedBox(width: 16),
+          SizedBox(width: compact ? 10 : 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -695,18 +849,22 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
                 Text(
                   widget.product.name,
                   style: TextStyle(
-                    fontSize: 16,
+                    fontSize: compact ? 14 : 16,
                     fontWeight: FontWeight.bold,
                     color: AppColors.textPrimary,
                   ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 if (widget.product.sku.isNotEmpty)
                   Text(
                     'SKU: ${widget.product.sku}',
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: compact ? 12 : 14,
                       color: AppColors.textSecondary,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
               ],
             ),
@@ -769,24 +927,33 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
   /// El modo simple se conserva porque para entrar 10 cajas y nada mas, el mixto
   /// es un formulario mas grande sin beneficio. Cambiar de modo descarta lo
   /// escrito en el otro, asi que se avisa.
-  Widget _buildSelectorModo() {
+  Widget _buildSelectorModo({bool compact = false}) {
     return SizedBox(
       width: double.infinity,
       child: SegmentedButton<bool>(
-        segments: const [
+        segments: [
           ButtonSegment<bool>(
             value: false,
-            icon: Icon(Icons.looks_one, size: 17),
-            label: Text('Una presentación'),
+            icon: const Icon(Icons.looks_one, size: 17),
+            label: Text(compact ? 'Una' : 'Una presentación'),
           ),
           ButtonSegment<bool>(
             value: true,
-            icon: Icon(Icons.view_list, size: 17),
-            label: Text('Varias presentaciones'),
+            icon: const Icon(Icons.view_list, size: 17),
+            label: Text(compact ? 'Varias' : 'Varias presentaciones'),
           ),
         ],
         selected: {_modoMixto},
         showSelectedIcon: false,
+        style: compact
+            ? ButtonStyle(
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                textStyle: WidgetStateProperty.all(
+                  const TextStyle(fontSize: 12),
+                ),
+              )
+            : null,
         onSelectionChanged: (seleccion) {
           setState(() {
             _modoMixto = seleccion.first;
@@ -804,7 +971,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
   /// El modo simple usa PriceCurrencyConverterWidget, que maneja UN precio. Con
   /// N precios ese widget no sirve, asi que la eleccion de moneda se hace una
   /// vez para todas las filas y la conversion la hace _aUSD.
-  Widget _buildSelectorMonedaMixta() {
+  Widget _buildSelectorMonedaMixta({bool compact = false}) {
     final sinTasa =
         _monedaEntradaMixta == 'CUP' &&
         (_usdToCupRate == null || _usdToCupRate! <= 0);
@@ -812,35 +979,31 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             const Text(
               'Precios en:',
               style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
             ),
-            const SizedBox(width: 8),
             ...['USD', 'CUP'].map(
-              (m) => Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: ChoiceChip(
-                  label: Text(m, style: const TextStyle(fontSize: 12)),
-                  selected: _monedaEntradaMixta == m,
-                  onSelected: (_) => setState(() => _monedaEntradaMixta = m),
-                ),
+              (m) => ChoiceChip(
+                label: Text(m, style: const TextStyle(fontSize: 12)),
+                selected: _monedaEntradaMixta == m,
+                visualDensity: compact ? VisualDensity.compact : null,
+                onSelected: (_) => setState(() => _monedaEntradaMixta = m),
               ),
             ),
             if (_monedaEntradaMixta == 'CUP' &&
                 _usdToCupRate != null &&
                 _usdToCupRate! > 0)
-              Expanded(
-                child: Text(
-                  '1 USD = ${_usdToCupRate!.toStringAsFixed(2)} CUP',
-                  textAlign: TextAlign.right,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textSecondary,
-                  ),
+              Text(
+                '1 USD = ${_usdToCupRate!.toStringAsFixed(2)} CUP',
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
                 ),
               ),
           ],
@@ -858,7 +1021,86 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
     );
   }
 
-  Widget _buildInputSection() {
+  Widget _buildLoteSection() {
+    final fecha = _fechaVencimiento;
+    final fechaLabel = fecha == null
+        ? 'Seleccionar fecha'
+        : '${fecha.day.toString().padLeft(2, '0')}/'
+            '${fecha.month.toString().padLeft(2, '0')}/'
+            '${fecha.year}';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.primary.withOpacity(0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Lote y vencimiento',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Obligatorio: este producto está marcado como “por lotes”.',
+            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _codigoLoteController,
+            decoration: const InputDecoration(
+              labelText: 'Código de lote',
+              hintText: 'Ej. Lote proveedor / interno',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 12),
+          InkWell(
+            onTap: () async {
+              final picked = await showDatePicker(
+                context: context,
+                initialDate:
+                    _fechaVencimiento ??
+                    DateTime.now().add(const Duration(days: 30)),
+                firstDate: DateTime(2020),
+                lastDate: DateTime(2100),
+                helpText: 'Fecha de vencimiento',
+              );
+              if (picked != null && mounted) {
+                setState(() => _fechaVencimiento = picked);
+              }
+            },
+            child: InputDecorator(
+              decoration: const InputDecoration(
+                labelText: 'Fecha de vencimiento',
+                border: OutlineInputBorder(),
+                isDense: true,
+                suffixIcon: Icon(Icons.calendar_today, size: 18),
+              ),
+              child: Text(
+                fechaLabel,
+                style: TextStyle(
+                  color: fecha == null
+                      ? AppColors.textSecondary
+                      : AppColors.textPrimary,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInputSection({bool compact = false}) {
     if (_cargandoCadenaMixta) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 32),
@@ -885,7 +1127,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildSelectorModo(),
+          _buildSelectorModo(compact: compact),
           const SizedBox(height: 12),
 
           // Variante primero: cambia el saldo que se muestra por presentacion.
@@ -894,7 +1136,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
             const SizedBox(height: 16),
           ],
 
-          _buildSelectorMonedaMixta(),
+          _buildSelectorMonedaMixta(compact: compact),
           const SizedBox(height: 12),
 
           CantidadMixtaInput(
@@ -916,7 +1158,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (_cadena.length > 1) ...[
-          _buildSelectorModo(),
+          _buildSelectorModo(compact: compact),
           const SizedBox(height: 12),
         ],
 
@@ -1011,9 +1253,12 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
             TextFormField(
               controller: _precioUnitarioController,
               decoration: InputDecoration(
-                labelText: 'Precio de Compra (por presentación seleccionada)',
-                hintText:
-                    'Se convertirá automáticamente a ${widget.invoiceCurrency}',
+                labelText: compact
+                    ? 'Precio de compra'
+                    : 'Precio de Compra (por presentación seleccionada)',
+                hintText: compact
+                    ? 'A ${widget.invoiceCurrency}'
+                    : 'Se convertirá automáticamente a ${widget.invoiceCurrency}',
                 border: OutlineInputBorder(
                   borderSide: BorderSide(color: AppColors.border),
                 ),
@@ -1051,12 +1296,15 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
                   children: [
                     Icon(Icons.history, size: 16, color: AppColors.success),
                     SizedBox(width: 4),
-                    Text(
-                      'Último precio: ${_formatDate(_lastPurchaseDate!)}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.success,
-                        fontWeight: FontWeight.w500,
+                    Flexible(
+                      child: Text(
+                        'Último precio: ${_formatDate(_lastPurchaseDate!)}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.success,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
@@ -1076,12 +1324,15 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
                       ),
                     ),
                     SizedBox(width: 4),
-                    Text(
-                      'Cargando precio promedio...',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w500,
+                    Flexible(
+                      child: Text(
+                        'Cargando precio promedio...',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
@@ -1094,12 +1345,15 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
                   children: [
                     Icon(Icons.trending_down, size: 16, color: Colors.orange),
                     SizedBox(width: 4),
-                    Text(
-                      'Precio promedio: \$${_averagePrice!.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.orange,
-                        fontWeight: FontWeight.w500,
+                    Flexible(
+                      child: Text(
+                        'Precio promedio: \$${_averagePrice!.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.orange,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
@@ -1111,23 +1365,70 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
     );
   }
 
-  Widget _buildAdvancedOptions() {
+  Widget _buildAdvancedOptions({bool compact = false}) {
+    final discounts = [
+      TextFormField(
+        controller: _descuentoPorcentajeController,
+        decoration: InputDecoration(
+          labelText: 'Descuento %',
+          border: OutlineInputBorder(
+            borderSide: BorderSide(color: AppColors.warning),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: AppColors.warning),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: AppColors.warning, width: 2),
+          ),
+          prefixIcon: Icon(Icons.percent, color: AppColors.warning),
+          isDense: compact,
+        ),
+        keyboardType: TextInputType.numberWithOptions(decimal: true),
+      ),
+      TextFormField(
+        controller: _descuentoMontoController,
+        decoration: InputDecoration(
+          labelText: 'Descuento \$',
+          prefixText: '\$ ',
+          border: OutlineInputBorder(
+            borderSide: BorderSide(color: AppColors.warning),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: AppColors.warning),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: AppColors.warning, width: 2),
+          ),
+          prefixIcon: Icon(Icons.money_off, color: AppColors.warning),
+          isDense: compact,
+        ),
+        keyboardType: TextInputType.numberWithOptions(decimal: true),
+      ),
+    ];
+
     return ExpansionTile(
       title: Text(
-        'Datos Avanzados de Recepción',
+        compact ? 'Datos avanzados' : 'Datos Avanzados de Recepción',
         style: TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w600,
           color: AppColors.textSecondary,
         ),
       ),
+      childrenPadding: EdgeInsets.fromLTRB(
+        compact ? 8 : 16,
+        0,
+        compact ? 8 : 16,
+        12,
+      ),
       children: [
         SizedBox(height: 12),
-        // Reference Price
         TextFormField(
           controller: _precioReferenciaController,
           decoration: InputDecoration(
-            labelText: 'Precio de Referencia (Opcional)',
+            labelText: compact
+                ? 'Precio referencia (opc.)'
+                : 'Precio de Referencia (Opcional)',
             prefixText: '\$ ',
             border: OutlineInputBorder(
               borderSide: BorderSide(color: AppColors.border),
@@ -1139,63 +1440,34 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
               borderSide: BorderSide(color: AppColors.primary, width: 2),
             ),
             prefixIcon: Icon(Icons.price_check, color: AppColors.textSecondary),
+            isDense: compact,
           ),
           keyboardType: TextInputType.numberWithOptions(decimal: true),
         ),
         SizedBox(height: 16),
-
-        // Discounts Row
-        Row(
-          children: [
-            Expanded(
-              child: TextFormField(
-                controller: _descuentoPorcentajeController,
-                decoration: InputDecoration(
-                  labelText: 'Descuento %',
-                  border: OutlineInputBorder(
-                    borderSide: BorderSide(color: AppColors.warning),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: AppColors.warning),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: AppColors.warning, width: 2),
-                  ),
-                  prefixIcon: Icon(Icons.percent, color: AppColors.warning),
-                ),
-                keyboardType: TextInputType.numberWithOptions(decimal: true),
-              ),
-            ),
-            SizedBox(width: 12),
-            Expanded(
-              child: TextFormField(
-                controller: _descuentoMontoController,
-                decoration: InputDecoration(
-                  labelText: 'Descuento \$',
-                  prefixText: '\$ ',
-                  border: OutlineInputBorder(
-                    borderSide: BorderSide(color: AppColors.warning),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: AppColors.warning),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: AppColors.warning, width: 2),
-                  ),
-                  prefixIcon: Icon(Icons.money_off, color: AppColors.warning),
-                ),
-                keyboardType: TextInputType.numberWithOptions(decimal: true),
-              ),
-            ),
-          ],
-        ),
+        if (compact)
+          Column(
+            children: [
+              discounts[0],
+              const SizedBox(height: 12),
+              discounts[1],
+            ],
+          )
+        else
+          Row(
+            children: [
+              Expanded(child: discounts[0]),
+              SizedBox(width: 12),
+              Expanded(child: discounts[1]),
+            ],
+          ),
         SizedBox(height: 16),
-
-        // Bonification
         TextFormField(
           controller: _bonificacionCantidadController,
           decoration: InputDecoration(
-            labelText: 'Bonificación (Cantidad Extra)',
+            labelText: compact
+                ? 'Bonificación (extra)'
+                : 'Bonificación (Cantidad Extra)',
             border: OutlineInputBorder(
               borderSide: BorderSide(color: AppColors.success),
             ),
@@ -1209,6 +1481,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
               Icons.add_circle_outline,
               color: AppColors.success,
             ),
+            isDense: compact,
           ),
           keyboardType: TextInputType.numberWithOptions(decimal: true),
         ),

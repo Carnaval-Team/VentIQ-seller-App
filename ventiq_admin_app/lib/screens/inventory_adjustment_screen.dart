@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_colors.dart';
 import '../models/inventory.dart';
 import '../widgets/admin_drawer.dart';
@@ -36,6 +37,9 @@ class _AdjustRow {
   final int idUbicacion;
   final double stockActual;
   final TextEditingController cantidadController;
+  final String? codigoLote;
+  final DateTime? fechaVencimiento;
+  final bool esPorLotes;
 
   _AdjustRow({
     required this.idProducto,
@@ -45,9 +49,13 @@ class _AdjustRow {
     required this.idUbicacion,
     required this.stockActual,
     required this.cantidadController,
+    this.codigoLote,
+    this.fechaVencimiento,
+    this.esPorLotes = false,
   });
 
-  String get rowKey => '${idProducto}_${idPresentacion ?? 'null'}_$idUbicacion';
+  String get rowKey =>
+      '${idProducto}_${idPresentacion ?? 'null'}_${idUbicacion}_${codigoLote ?? ''}';
   double? get nuevaCantidad => double.tryParse(cantidadController.text.trim());
   double get cantidadResultante => nuevaCantidad ?? stockActual;
   void dispose() => cantidadController.dispose();
@@ -166,8 +174,12 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
       }
 
       final candidates = response.products.where((inv) {
-        final key = '${productId}_${inv.idPresentacion ?? 'null'}_$zoneId';
-        return !_rows.any((row) => row.rowKey == key);
+        return !_rows.any(
+          (row) =>
+              row.idProducto == productId &&
+              row.idPresentacion == inv.idPresentacion &&
+              row.idUbicacion == zoneId,
+        );
       }).toList();
 
       if (candidates.isEmpty) {
@@ -210,6 +222,29 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
       );
       if (!mounted || results == null) return;
 
+      bool esPorLotes = false;
+      try {
+        final row = await Supabase.instance.client
+            .from('app_dat_producto')
+            .select('es_por_lotes')
+            .eq('id', productId)
+            .maybeSingle();
+        esPorLotes = row != null && row['es_por_lotes'] == true;
+      } catch (e) {
+        print('⚠️ No se pudo leer es_por_lotes: $e');
+      }
+
+      String? codigoLote;
+      DateTime? fechaVencimiento;
+      // Ajuste positivo (shortage = sumar stock): exigir lote si es por lotes.
+      // Exceso (restar): dejar null — el servidor aplica FEFO.
+      if (esPorLotes && widget.adjustmentType == 'shortage') {
+        final loteInfo = await _showLoteDialog(productName: productName);
+        if (!mounted || loteInfo == null) return;
+        codigoLote = loteInfo.$1;
+        fechaVencimiento = loteInfo.$2;
+      }
+
       setState(() {
         for (final result in results) {
           final item = result.item;
@@ -224,6 +259,9 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
               cantidadController: TextEditingController(
                 text: result.cantidad.toString(),
               ),
+              codigoLote: codigoLote,
+              fechaVencimiento: fechaVencimiento,
+              esPorLotes: esPorLotes,
             ),
           );
         }
@@ -283,6 +321,122 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
         presentations: items,
       ),
     );
+  }
+
+  /// Diálogo simple: código de lote + fecha de vencimiento (obligatorios).
+  Future<(String, DateTime)?> _showLoteDialog({
+    required String productName,
+  }) async {
+    final codigoController = TextEditingController();
+    DateTime? fechaVencimiento;
+    String? errorText;
+
+    final result = await showDialog<(String, DateTime)>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: const Text('Lote y vencimiento'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    productName,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: codigoController,
+                    decoration: const InputDecoration(
+                      labelText: 'Código de lote *',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  InkWell(
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: ctx,
+                        initialDate:
+                            fechaVencimiento ??
+                            DateTime.now().add(const Duration(days: 30)),
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime(2100),
+                        helpText: 'Fecha de vencimiento',
+                      );
+                      if (picked != null) {
+                        setDialogState(() => fechaVencimiento = picked);
+                      }
+                    },
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Fecha de vencimiento *',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                        suffixIcon: Icon(Icons.calendar_today, size: 18),
+                      ),
+                      child: Text(
+                        fechaVencimiento == null
+                            ? 'Seleccionar fecha'
+                            : '${fechaVencimiento!.day.toString().padLeft(2, '0')}/'
+                                '${fechaVencimiento!.month.toString().padLeft(2, '0')}/'
+                                '${fechaVencimiento!.year}',
+                        style: TextStyle(
+                          color: fechaVencimiento == null
+                              ? Colors.grey
+                              : Colors.black87,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (errorText != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      errorText!,
+                      style: const TextStyle(color: Colors.red, fontSize: 12),
+                    ),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    final codigo = codigoController.text.trim();
+                    if (codigo.isEmpty) {
+                      setDialogState(
+                        () => errorText = 'Indique el código de lote',
+                      );
+                      return;
+                    }
+                    if (fechaVencimiento == null) {
+                      setDialogState(
+                        () => errorText = 'Indique la fecha de vencimiento',
+                      );
+                      return;
+                    }
+                    Navigator.of(ctx).pop((codigo, fechaVencimiento!));
+                  },
+                  child: const Text('Confirmar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    codigoController.dispose();
+    return result;
   }
 
   void _removeRow(_AdjustRow row) {
@@ -372,6 +526,8 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
           observaciones: observaciones,
           uuid: userUuid,
           idTipoOperacion: widget.operationType,
+          codigoLote: row.codigoLote,
+          fechaVencimiento: row.fechaVencimiento,
         );
         if (result['status'] == 'success') {
           successCount++;
@@ -848,6 +1004,25 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                             ),
+                                            if (row.codigoLote != null ||
+                                                row.fechaVencimiento != null)
+                                              Text(
+                                                [
+                                                  if (row.codigoLote != null)
+                                                    'Lote: ${row.codigoLote}',
+                                                  if (row.fechaVencimiento !=
+                                                      null)
+                                                    'Vence: ${row.fechaVencimiento!.day.toString().padLeft(2, '0')}/'
+                                                        '${row.fechaVencimiento!.month.toString().padLeft(2, '0')}/'
+                                                        '${row.fechaVencimiento!.year}',
+                                                ].join(' · '),
+                                                style: TextStyle(
+                                                  fontSize: 16,
+                                                  color: Colors.blueGrey.shade600,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
                                           ],
                                         ),
                                       ),

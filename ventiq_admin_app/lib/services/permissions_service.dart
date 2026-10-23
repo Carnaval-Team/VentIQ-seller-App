@@ -696,6 +696,8 @@ class PermissionsService {
     ],
     'inventory.create_adjustment': [UserRole.gerente],
     'inventory.approve_adjustment': [UserRole.gerente, UserRole.supervisor],
+    /// Etiquetar stock sin lote (código + fecha) en productos es_por_lotes.
+    'inventory.assign_lote': [UserRole.gerente, UserRole.supervisor],
     'inventory.view': [
       UserRole.gerente,
       UserRole.supervisor,

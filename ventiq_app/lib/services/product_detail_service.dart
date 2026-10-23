@@ -308,7 +308,7 @@ class ProductDetailService {
       esVendible: true, // Default value
       esComprable: true, // Default value
       esInventariable: true, // Default value
-      esPorLotes: false, // Default value
+      esPorLotes: productData['es_por_lotes'] as bool? ?? false,
       esElaborado: productData['es_elaborado'] as bool? ?? false,
       esServicio: productData['es_servicio'] as bool? ?? false,
       esPaquete: productData['es_paquete'] as bool? ?? false,

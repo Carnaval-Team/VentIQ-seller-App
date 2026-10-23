@@ -444,6 +444,12 @@ class AnalyticsService {
                 'created_at':
                     alertData['createdAt'] ?? DateTime.now().toIso8601String(),
                 'is_active': true,
+                'id_lote': alertData['idLote'] ?? alertData['id_lote'],
+                'codigo_lote':
+                    alertData['codigoLote'] ?? alertData['codigo_lote'],
+                'fecha_vencimiento':
+                    alertData['fechaVencimiento'] ??
+                    alertData['fecha_vencimiento'],
               };
 
               return StockAlert.fromJson(alertJson);

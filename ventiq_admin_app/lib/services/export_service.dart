@@ -1069,6 +1069,9 @@ class ExportService {
           currentRow += 1;
 
           // Encabezados de la tabla
+          final includeLote = productos.any(
+            (p) => p['lote'] != null || p['fecha_vencimiento'] != null,
+          );
           final headers = [
             'Nombre',
             'Cantidad Final',
@@ -1076,6 +1079,8 @@ class ExportService {
             'Vendido',
             'Precio Venta',
             'Costo Promedio',
+            if (includeLote) 'Lote',
+            if (includeLote) 'Fecha Vencimiento',
           ];
 
           for (int i = 0; i < headers.length; i++) {
@@ -1102,6 +1107,9 @@ class ExportService {
                   .toString(),
               '\$${(producto['precio_venta'] ?? 0).toStringAsFixed(2)}',
               '\$${(producto['costo_promedio'] ?? 0).toStringAsFixed(2)}',
+              if (includeLote) producto['lote']?.toString() ?? '',
+              if (includeLote)
+                  producto['fecha_vencimiento']?.toString() ?? '',
             ];
 
             for (int i = 0; i < rowData.length; i++) {

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_colors.dart';
+import '../services/inventory_service.dart';
 
 class TransferProductQuantityDialog extends StatefulWidget {
   final Map<String, dynamic> product;
@@ -64,30 +64,23 @@ class _TransferProductQuantityDialogState
         return;
       }
 
-      // Consultar el último registro de inventario para este producto/presentación/ubicación
-      final responses = await Supabase.instance.client
-          .from('app_dat_inventario_productos')
-          .select('cantidad_final')
-          .eq('id_producto', productId)
-          .eq('id_presentacion', presentationId)
-          .eq('id_ubicacion', widget.sourceLayoutId)
-          .order('created_at', ascending: false)
-          .limit(1);
-
-      if (responses.isNotEmpty) {
-        final cantidad = responses[0]['cantidad_final'] as num?;
-        setState(() {
-          _stockDisponible = cantidad?.toDouble() ?? 0;
-          _isLoadingStock = false;
-        });
-        print('✅ Stock cargado: $_stockDisponible');
-      } else {
-        setState(() {
-          _stockDisponible = 0;
-          _isLoadingStock = false;
-        });
-        print('⚠️ No hay stock en esta ubicación');
-      }
+      // Suma de saldos por lote (no el último snapshot).
+      final idProd = productId is int
+          ? productId
+          : int.tryParse(productId.toString()) ?? 0;
+      final idPres = presentationId is int
+          ? presentationId
+          : int.tryParse(presentationId?.toString() ?? '') ?? 0;
+      final cantidad = await InventoryService.getStockRealByLocationPresentation(
+        idProducto: idProd,
+        idUbicacion: widget.sourceLayoutId,
+        idPresentacion: idPres,
+      );
+      setState(() {
+        _stockDisponible = cantidad;
+        _isLoadingStock = false;
+      });
+      print('✅ Stock cargado (agregado lotes): $_stockDisponible');
     } catch (e) {
       print('❌ Error cargando stock: $e');
       setState(() {

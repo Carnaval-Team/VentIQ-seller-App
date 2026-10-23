@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/inventory.dart';
+import '../models/lote_stock.dart';
 import '../models/warehouse.dart';
 import '../models/transfer_order.dart';
 import 'user_preferences_service.dart';
@@ -177,6 +178,22 @@ class InventoryService {
     }
   }
 
+  /// True si algún producto del listado tiene `es_por_lotes`.
+  static Future<bool> anyProductRequiresLotes(List<int> productIds) async {
+    if (productIds.isEmpty) return false;
+    try {
+      final rows = await _supabase
+          .from('app_dat_producto')
+          .select('id, es_por_lotes')
+          .inFilter('id', productIds);
+      if (rows is! List) return false;
+      return rows.any((r) => r is Map && r['es_por_lotes'] == true);
+    } catch (e) {
+      print('⚠️ anyProductRequiresLotes: $e');
+      return false;
+    }
+  }
+
   /// Insert complete extraction using fn_insertar_extraccion_completa RPC
   static Future<Map<String, dynamic>> insertCompleteExtraction({
     required String autorizadoPor,
@@ -245,6 +262,7 @@ class InventoryService {
   }
 
   /// Registra y contabiliza una extracción física v2 en una sola transacción.
+  /// No usar con productos `es_por_lotes` (contaminan el ledger sin id_lote).
   static Future<Map<String, dynamic>> insertCompleteExtractionV2({
     required String autorizadoPor,
     required int idMotivoOperacion,
@@ -254,6 +272,20 @@ class InventoryService {
     required String clientRequestUuid,
   }) async {
     try {
+      final ids = productos
+          .map((p) => int.tryParse('${p['id_producto']}') ?? 0)
+          .where((id) => id > 0)
+          .toSet()
+          .toList();
+      if (await anyProductRequiresLotes(ids)) {
+        return {
+          'status': 'error',
+          'message':
+              'Hay productos por lotes: la extracción v2 no aplica. '
+              'Se debe usar la ruta FEFO (v1).',
+        };
+      }
+
       final response = await _supabase.rpc(
         'fn_crear_extraccion_con_movimiento_v2',
         params: {
@@ -824,8 +856,11 @@ class InventoryService {
         '📄 Pagination: Página ${pagination?.paginaActual}/${pagination?.totalPaginas}, Siguiente: ${pagination?.tieneSiguiente}',
       );
 
+      // paged2 aún puede devolver solo el último snapshot; sumar lotes.
+      final withLotes = await enrichProductsWithLoteSums(products);
+
       return InventoryResponse(
-        products: products,
+        products: withLotes,
         summary: summary,
         pagination: pagination,
       );
@@ -1669,7 +1704,10 @@ class InventoryService {
         );
       }
 
-      return uniqueRows.values.toList(growable: false);
+      return enrichMapsWithLoteSums(
+        uniqueRows.values.toList(growable: false),
+        idUbicacionFallback: idLayout,
+      );
     } catch (e) {
       print('❌ Error obteniendo variantes del producto: $e');
       return [];
@@ -1721,7 +1759,10 @@ class InventoryService {
       }
 
       print('📊 Presentaciones encontradas: ${uniqueRows.length}');
-      return uniqueRows.values.toList(growable: false);
+      return enrichMapsWithLoteSums(
+        uniqueRows.values.toList(growable: false),
+        idUbicacionFallback: idLayout,
+      );
     } catch (e) {
       print('❌ Error obteniendo presentaciones del producto: $e');
       if (throwOnError) rethrow;
@@ -2110,6 +2151,9 @@ class InventoryService {
     required String observaciones,
     required String uuid,
     required int idTipoOperacion,
+    String? codigoLote,
+    DateTime? fechaVencimiento,
+    DateTime? fechaFabricacion,
   }) async {
     try {
       /*print('🔍 Insertando ajuste de inventario...');
@@ -2124,19 +2168,40 @@ class InventoryService {
       print('   - UUID Usuario: $uuid');
       print('   - ID Tipo Operación: $idTipoOperacion');*/
 
+      String? formatDate(DateTime? d) {
+        if (d == null) return null;
+        final y = d.year.toString().padLeft(4, '0');
+        final m = d.month.toString().padLeft(2, '0');
+        final day = d.day.toString().padLeft(2, '0');
+        return '$y-$m-$day';
+      }
+
+      final params = <String, dynamic>{
+        'p_id_producto': idProducto,
+        'p_id_ubicacion': idUbicacion,
+        'p_id_presentacion': idPresentacion,
+        'p_cantidad_anterior': cantidadAnterior,
+        'p_cantidad_nueva': cantidadNueva,
+        'p_motivo': motivo,
+        'p_observaciones': observaciones,
+        'p_uuid_usuario': uuid,
+        'p_id_tipo_operacion': idTipoOperacion,
+      };
+      if (codigoLote != null) {
+        params['p_codigo_lote'] = codigoLote;
+      }
+      final fechaVencStr = formatDate(fechaVencimiento);
+      if (fechaVencStr != null) {
+        params['p_fecha_vencimiento'] = fechaVencStr;
+      }
+      final fechaFabStr = formatDate(fechaFabricacion);
+      if (fechaFabStr != null) {
+        params['p_fecha_fabricacion'] = fechaFabStr;
+      }
+
       final response = await _supabase.rpc(
         'fn_insertar_ajuste_inventario2',
-        params: {
-          'p_id_producto': idProducto,
-          'p_id_ubicacion': idUbicacion,
-          'p_id_presentacion': idPresentacion,
-          'p_cantidad_anterior': cantidadAnterior,
-          'p_cantidad_nueva': cantidadNueva,
-          'p_motivo': motivo,
-          'p_observaciones': observaciones,
-          'p_uuid_usuario': uuid,
-          'p_id_tipo_operacion': idTipoOperacion,
-        },
+        params: params,
       );
 
       print('📦 Respuesta RPC: $response');
@@ -2163,6 +2228,258 @@ class InventoryService {
         'message': 'Error al insertar ajuste de inventario: $e',
       };
     }
+  }
+
+  /// Reclasifica stock `id_lote` NULL → lote (código + fecha).
+  /// Solo gerente/supervisor; RPC `fn_asignar_lote_a_stock_sin_lote`.
+  static Future<Map<String, dynamic>> asignarLoteAStockSinLote({
+    required int idProducto,
+    required int idUbicacion,
+    required int idPresentacion,
+    required String codigoLote,
+    required DateTime fechaVencimiento,
+    int? idVariante,
+    int? idOpcionVariante,
+    double? cantidad,
+    DateTime? fechaFabricacion,
+    String? observaciones,
+  }) async {
+    try {
+      String formatDate(DateTime d) {
+        final y = d.year.toString().padLeft(4, '0');
+        final m = d.month.toString().padLeft(2, '0');
+        final day = d.day.toString().padLeft(2, '0');
+        return '$y-$m-$day';
+      }
+
+      final params = <String, dynamic>{
+        'p_id_producto': idProducto,
+        'p_id_ubicacion': idUbicacion,
+        'p_id_presentacion': idPresentacion,
+        'p_codigo_lote': codigoLote.trim(),
+        'p_fecha_vencimiento': formatDate(fechaVencimiento),
+        'p_id_variante': idVariante,
+        'p_id_opcion_variante': idOpcionVariante,
+      };
+      if (cantidad != null) params['p_cantidad'] = cantidad;
+      if (fechaFabricacion != null) {
+        params['p_fecha_fabricacion'] = formatDate(fechaFabricacion);
+      }
+      if (observaciones != null && observaciones.trim().isNotEmpty) {
+        params['p_observaciones'] = observaciones.trim();
+      }
+
+      final response = await _supabase.rpc(
+        'fn_asignar_lote_a_stock_sin_lote',
+        params: params,
+      );
+
+      if (response == null) {
+        return {
+          'status': 'error',
+          'message': 'Respuesta nula al asignar lote',
+        };
+      }
+
+      return Map<String, dynamic>.from(response as Map);
+    } catch (e) {
+      print('❌ asignarLoteAStockSinLote: $e');
+      return {
+        'status': 'error',
+        'message': 'Error al asignar lote: $e',
+      };
+    }
+  }
+
+  /// Lotes con saldo > 0 en una ubicación (`fn_stock_lotes_en_ubicacion`).
+  static Future<List<LoteStockInfo>> getLotesEnUbicacion(
+    int idUbicacion, {
+    int? idProducto,
+    String? ubicacionLabel,
+  }) async {
+    try {
+      final response = await _supabase.rpc(
+        'fn_stock_lotes_en_ubicacion',
+        params: {'p_id_ubicacion': idUbicacion},
+      );
+      if (response is! List) return [];
+      final list = response
+          .whereType<Map>()
+          .map(
+            (row) => LoteStockInfo.fromJson(
+              Map<String, dynamic>.from(row),
+              idUbicacion: idUbicacion,
+              ubicacionLabel: ubicacionLabel,
+            ),
+          )
+          .where((l) => idProducto == null || l.idProducto == idProducto)
+          .toList();
+      return LoteStockInfo.ordenadosFefo(list);
+    } catch (e) {
+      print('⚠️ getLotesEnUbicacion($idUbicacion): $e');
+      return [];
+    }
+  }
+
+  /// Lotes de un producto en una o varias ubicaciones (orden FEFO).
+  static Future<List<LoteStockInfo>> getLotesProducto(
+    int idProducto, {
+    List<int>? ubicacionIds,
+    Map<int, String>? ubicacionLabels,
+  }) async {
+    final ids = ubicacionIds?.where((id) => id > 0).toSet().toList() ?? [];
+    if (ids.isEmpty) return [];
+
+    final results = await Future.wait(
+      ids.map(
+        (id) => getLotesEnUbicacion(
+          id,
+          idProducto: idProducto,
+          ubicacionLabel: ubicacionLabels?[id],
+        ),
+      ),
+    );
+    return LoteStockInfo.ordenadosFefo(results.expand((e) => e));
+  }
+
+  /// Clave de saldo: producto|variante|opción|presentación|ubicación.
+  static String saldoClave({
+    required int idProducto,
+    int? idVariante,
+    int? idOpcionVariante,
+    int? idPresentacion,
+    required int idUbicacion,
+  }) {
+    return '$idProducto|${idVariante ?? 'null'}|${idOpcionVariante ?? 'null'}|${idPresentacion ?? 'null'}|$idUbicacion';
+  }
+
+  /// Último saldo por lote, sumado (RPC `fn_inventario_saldo_por_clave`).
+  /// Corrige listados que aún hacen DISTINCT ON sin `id_lote`.
+  static Future<Map<String, double>> getSaldosAgregadosPorClave({
+    int? idUbicacion,
+    int? idProducto,
+  }) async {
+    try {
+      final response = await _supabase.rpc(
+        'fn_inventario_saldo_por_clave',
+        params: {
+          'p_id_ubicacion': idUbicacion,
+          'p_id_producto': idProducto,
+        },
+      );
+      if (response is! List) return {};
+      final map = <String, double>{};
+      for (final row in response.whereType<Map>()) {
+        final m = Map<String, dynamic>.from(row);
+        final idProd = _asInt(m['id_producto']) ?? 0;
+        final idUbi = _asInt(m['id_ubicacion']) ?? 0;
+        if (idProd <= 0 || idUbi <= 0) continue;
+        final key = saldoClave(
+          idProducto: idProd,
+          idVariante: _asInt(m['id_variante']),
+          idOpcionVariante: _asInt(m['id_opcion_variante']),
+          idPresentacion: _asInt(m['id_presentacion']),
+          idUbicacion: idUbi,
+        );
+        map[key] = _asDouble(m['cantidad_final']);
+      }
+      return map;
+    } catch (e) {
+      print('⚠️ getSaldosAgregadosPorClave: $e');
+      return {};
+    }
+  }
+
+  /// Sustituye cantidad_final / stock_* en maps de inventario con saldos sumados.
+  static Future<List<Map<String, dynamic>>> enrichMapsWithLoteSums(
+    List<Map<String, dynamic>> rows, {
+    int? idUbicacionFallback,
+  }) async {
+    if (rows.isEmpty) return rows;
+
+    final ubicaciones = <int>{};
+    final productos = <int>{};
+    for (final row in rows) {
+      final idUbi = _asInt(row['id_ubicacion']) ??
+          _asInt(row['id_layout']) ??
+          idUbicacionFallback;
+      final idProd = _asInt(row['id_producto']) ?? _asInt(row['id']);
+      if (idUbi != null && idUbi > 0) ubicaciones.add(idUbi);
+      if (idProd != null && idProd > 0) productos.add(idProd);
+    }
+    if (ubicaciones.isEmpty || productos.isEmpty) return rows;
+
+    // Una llamada por ubicación (el RPC filtra producto opcionalmente;
+    // si hay muchos productos pedimos toda la ubicación).
+    final saldos = <String, double>{};
+    await Future.wait(
+      ubicaciones.map((idUbi) async {
+        final oneProduct = productos.length == 1 ? productos.first : null;
+        final part = await getSaldosAgregadosPorClave(
+          idUbicacion: idUbi,
+          idProducto: oneProduct,
+        );
+        saldos.addAll(part);
+      }),
+    );
+    if (saldos.isEmpty) return rows;
+
+    return rows.map((row) {
+      final idUbi = _asInt(row['id_ubicacion']) ??
+          _asInt(row['id_layout']) ??
+          idUbicacionFallback;
+      final idProd = _asInt(row['id_producto']) ?? _asInt(row['id']);
+      if (idUbi == null || idProd == null) return row;
+      final key = saldoClave(
+        idProducto: idProd,
+        idVariante: _asInt(row['id_variante']),
+        idOpcionVariante: _asInt(row['id_opcion_variante']),
+        idPresentacion: _asInt(row['id_presentacion']),
+        idUbicacion: idUbi,
+      );
+      final sum = saldos[key];
+      if (sum == null) return row;
+      final copy = Map<String, dynamic>.from(row);
+      copy['cantidad_final'] = sum;
+      copy['stock_disponible'] = sum;
+      if (copy.containsKey('stock_disponible_ajustado')) {
+        copy['stock_disponible_ajustado'] = sum;
+      }
+      if (copy.containsKey('stock_actual')) {
+        copy['stock_actual'] = sum;
+      }
+      return copy;
+    }).toList();
+  }
+
+  static Future<List<InventoryProduct>> enrichProductsWithLoteSums(
+    List<InventoryProduct> products,
+  ) async {
+    if (products.isEmpty) return products;
+    final maps = products
+        .map(
+          (p) => {
+            'id_producto': p.idProducto,
+            'id_variante': p.idVariante,
+            'id_opcion_variante': p.idOpcionVariante,
+            'id_presentacion': p.idPresentacion,
+            'id_ubicacion': p.idUbicacion,
+            'cantidad_final': p.cantidadFinal,
+            'stock_disponible': p.stockDisponible,
+            'stock_disponible_ajustado': p.stockDisponibleAjustado,
+          },
+        )
+        .toList();
+    final enriched = await enrichMapsWithLoteSums(maps);
+    return [
+      for (var i = 0; i < products.length; i++)
+        products[i].copyWithSums(
+          cantidadFinal: _asDouble(enriched[i]['cantidad_final']),
+          stockDisponible: _asDouble(enriched[i]['stock_disponible']),
+          stockDisponibleAjustado:
+              _asDouble(enriched[i]['stock_disponible_ajustado']),
+        ),
+    ];
   }
 
   /// Obtiene inventario simple para exportación (usa el RPC unificado).
@@ -3883,8 +4200,8 @@ class InventoryService {
   }
 
   /// Obtiene la cantidad real disponible de un producto en una ubicación específica
-  /// Filtra por id_producto, id_ubicacion e id_presentacion
-  /// Retorna la cantidad_final del último registro en app_dat_inventario_productos
+  /// Filtra por id_producto, id_ubicacion e id_presentacion.
+  /// Suma saldos de todos los lotes (no el último snapshot).
   static Future<double> getStockRealByLocationPresentation({
     required int idProducto,
     required int idUbicacion,
@@ -3895,6 +4212,34 @@ class InventoryService {
         '🔍 Obteniendo stock real del producto $idProducto en ubicación $idUbicacion, presentación $idPresentacion...',
       );
 
+      final saldos = await getSaldosAgregadosPorClave(
+        idUbicacion: idUbicacion,
+        idProducto: idProducto,
+      );
+      final keyExact = saldoClave(
+        idProducto: idProducto,
+        idPresentacion: idPresentacion,
+        idUbicacion: idUbicacion,
+      );
+      if (saldos.containsKey(keyExact)) {
+        final sum = saldos[keyExact]!;
+        print('✅ Stock agregado (lotes): $sum');
+        return sum;
+      }
+      // Misma presentación puede venir con variante null en distintas claves.
+      double? matchSum;
+      for (final entry in saldos.entries) {
+        if (entry.key.startsWith('$idProducto|') &&
+            entry.key.endsWith('|$idPresentacion|$idUbicacion')) {
+          matchSum = (matchSum ?? 0) + entry.value;
+        }
+      }
+      if (matchSum != null) {
+        print('✅ Stock agregado (match presentación): $matchSum');
+        return matchSum;
+      }
+
+      // Fallback legacy RPC (último snapshot) si no hay helper de lotes.
       final response = await _supabase.rpc(
         'get_stock_real_by_location_presentation',
         params: {
@@ -3909,16 +4254,11 @@ class InventoryService {
         return 0.0;
       }
 
-      // Handle response as list or single object
       final data = response is List ? response.first : response;
       final cantidadDisponible =
           (data['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
 
-      print('✅ Stock real obtenido: $cantidadDisponible unidades');
-      print(
-        '📊 ID Inventario: ${data['id_inventario']}, Fecha: ${data['created_at']}',
-      );
-
+      print('⚠️ Stock legacy (sin suma lotes): $cantidadDisponible');
       return cantidadDisponible;
     } catch (e) {
       print('❌ Error obteniendo stock real: $e');
@@ -3954,11 +4294,16 @@ class InventoryService {
   ) async {
     if (items.isEmpty) return {};
 
+    // Sumar presentaciones en la misma ubicación (antes "ganaba" la última fila).
+    final baseByKey = <String, double>{};
+    for (final item in items) {
+      final key = _locationKey(item.idProducto, item.idUbicacion);
+      baseByKey[key] = (baseByKey[key] ?? 0) + item.cantidadFinal;
+    }
+
     final result = <String, StockBreakdown>{
-      for (final item in items)
-        _locationKey(item.idProducto, item.idUbicacion): StockBreakdown.empty(
-          item.cantidadFinal,
-        ),
+      for (final e in baseByKey.entries)
+        e.key: StockBreakdown.empty(e.value),
     };
 
     final productIds = items.map((i) => i.idProducto).toSet().toList();
@@ -3972,11 +4317,6 @@ class InventoryService {
       );
 
       if (response is! List) return result;
-
-      final baseByKey = <String, double>{
-        for (final item in items)
-          _locationKey(item.idProducto, item.idUbicacion): item.cantidadFinal,
-      };
 
       for (final raw in response) {
         final row = Map<String, dynamic>.from(raw as Map);

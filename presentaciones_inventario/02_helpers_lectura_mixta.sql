@@ -187,12 +187,14 @@ RETURNS TABLE (
 LANGUAGE sql
 STABLE
 AS $$
-    WITH vigente AS (
+    -- Vigente = último snapshot POR LOTE, luego SUM (evita mezclar cadenas).
+    WITH vigente_lote AS (
         SELECT DISTINCT ON (
                    ip.id_ubicacion,
                    COALESCE(ip.id_variante, 0),
                    COALESCE(ip.id_opcion_variante, 0),
-                   ip.id_presentacion
+                   ip.id_presentacion,
+                   COALESCE(ip.id_lote, 0)
                )
                ip.id_ubicacion,
                la.id_almacen,
@@ -213,7 +215,26 @@ AS $$
                COALESCE(ip.id_variante, 0),
                COALESCE(ip.id_opcion_variante, 0),
                ip.id_presentacion,
+               COALESCE(ip.id_lote, 0),
                ip.id DESC
+    ),
+    vigente AS (
+        SELECT
+               v.id_ubicacion,
+               v.id_almacen,
+               v.id_variante,
+               v.id_opcion_variante,
+               v.id_presentacion,
+               SUM(v.saldo) AS saldo,
+               MIN(v.sku_producto) AS sku_producto,
+               MIN(v.sku_ubicacion) AS sku_ubicacion
+          FROM vigente_lote v
+         GROUP BY
+               v.id_ubicacion,
+               v.id_almacen,
+               v.id_variante,
+               v.id_opcion_variante,
+               v.id_presentacion
     )
     SELECT
         v.id_ubicacion,

@@ -145,7 +145,7 @@ class ProductMovementMetric {
 class StockAlert {
   final int productId;
   final String productName;
-  final String alertType; // 'out_of_stock', 'low_stock', 'overstock', 'expiring'
+  final String alertType; // 'out_of_stock', 'low_stock', 'overstock', 'expiring', 'expired'
   final String severity; // 'critical', 'warning', 'info'
   final double currentStock;
   final double? minStock;
@@ -153,6 +153,9 @@ class StockAlert {
   final String message;
   final DateTime createdAt;
   final bool isActive;
+  final int? idLote;
+  final String? codigoLote;
+  final DateTime? fechaVencimiento;
 
   StockAlert({
     required this.productId,
@@ -165,9 +168,18 @@ class StockAlert {
     required this.message,
     required this.createdAt,
     this.isActive = true,
+    this.idLote,
+    this.codigoLote,
+    this.fechaVencimiento,
   });
 
   factory StockAlert.fromJson(Map<String, dynamic> json) {
+    DateTime? parseDate(dynamic v) {
+      if (v == null) return null;
+      if (v is DateTime) return v;
+      return DateTime.tryParse(v.toString());
+    }
+
     return StockAlert(
       productId: json['product_id'] ?? 0,
       productName: json['product_name'] ?? '',
@@ -181,6 +193,11 @@ class StockAlert {
         json['created_at'] ?? DateTime.now().toIso8601String(),
       ),
       isActive: json['is_active'] ?? true,
+      idLote: json['id_lote'] is num
+          ? (json['id_lote'] as num).toInt()
+          : int.tryParse('${json['id_lote'] ?? ''}'),
+      codigoLote: json['codigo_lote']?.toString(),
+      fechaVencimiento: parseDate(json['fecha_vencimiento']),
     );
   }
 
@@ -194,6 +211,8 @@ class StockAlert {
         return 'Sobrestock';
       case 'expiring':
         return 'Por Vencer';
+      case 'expired':
+        return 'Vencido';
       default:
         return 'Alerta';
     }

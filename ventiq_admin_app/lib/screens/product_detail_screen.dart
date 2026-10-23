@@ -41,8 +41,12 @@ import '../services/restaurant_service.dart';
 
 import '../services/product_image_download_service.dart';
 import '../models/stock_mixto.dart';
+import '../models/lote_stock.dart';
 import '../services/presentacion_cadena_service.dart';
+import '../services/inventory_service.dart';
 import '../utils/stock_mixto_formatter.dart';
+import '../widgets/lote_expiry_widgets.dart';
+import '../widgets/asignar_lote_dialog.dart';
 
 import 'package:flutter/foundation.dart';
 
@@ -67,6 +71,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   bool _isLoadingCharts = false;
 
   ProductStockSnapshot? _stockSnapshot;
+  Map<int, List<LoteStockInfo>> _lotesByUbicacion = {};
 
   String? _stockLocationsError;
 
@@ -312,6 +317,19 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     }
   }
 
+  Future<void> _asignarLoteSinEtiquetar(LoteStockInfo lote) async {
+    final ok = await showAsignarLoteDialog(
+      context: context,
+      loteSinLote: lote,
+      productName: _product.denominacion,
+    );
+    if (!ok || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Lote asignado correctamente')),
+    );
+    await _loadStockLocations();
+  }
+
   Future<void> _loadStockLocations() async {
     if (mounted) {
       setState(() {
@@ -324,15 +342,31 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       final snapshot = await ProductService.getProductStockSnapshot(
         _product.id,
       );
+      final productId = int.tryParse(_product.id) ?? 0;
+      final lotesMap = <int, List<LoteStockInfo>>{};
+      if (productId > 0) {
+        await Future.wait(
+          snapshot.ubicaciones.map((ubic) async {
+            final lotes = await InventoryService.getLotesEnUbicacion(
+              ubic.idUbicacion,
+              idProducto: productId,
+              ubicacionLabel: '${ubic.almacen} - ${ubic.ubicacion}',
+            );
+            lotesMap[ubic.idUbicacion] = lotes;
+          }),
+        );
+      }
       if (!mounted) return;
       setState(() {
         _stockSnapshot = snapshot;
+        _lotesByUbicacion = lotesMap;
       });
     } catch (e) {
       debugPrint('Error loading mixed stock: $e');
       if (mounted) {
         setState(() {
           _stockSnapshot = null;
+          _lotesByUbicacion = {};
           _stockLocationsError = 'No se pudo cargar el stock por ubicación.';
         });
       }
@@ -770,6 +804,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Widget _buildStockLocationCard(ProductStockLocationSnapshot location) {
+    final lotes = _lotesByUbicacion[location.idUbicacion] ?? const [];
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 12),
@@ -800,6 +835,15 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   '${location.stock.nombrePresentacionBase} base',
                   style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                 ),
+                if (lotes.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  LoteExpiryList(
+                    lotes: lotes,
+                    onAssignSinLote: _isGerente
+                        ? (lote) => _asignarLoteSinEtiquetar(lote)
+                        : null,
+                  ),
+                ],
               ],
             ),
           ),
