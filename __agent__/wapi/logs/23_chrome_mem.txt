@@ -1,0 +1,85 @@
+﻿=== chrome processes NOW ===
+ 151325  151214 302300 6.3       01:12 Sl   chrome
+ 151206    1546 219940 2.4       01:13 Ssl  chrome
+ 151285  151214 157724 0.8       01:12 Sl   chrome
+ 151297  151214 141932 1.6       01:12 Sl   chrome
+ 151238  151206 141712 0.6       01:12 Sl   chrome
+ 151237  151213 124980 0.2       01:12 Sl   chrome
+ 151337  151214 75104  0.0       01:12 Sl   chrome
+ 151214  151206 74672  0.0       01:13 S    chrome
+ 151213  151206 74620  0.0       01:13 S    chrome
+ 151245  151214 55892  0.0       01:12 Sl   chrome
+ 151208    1461  3628  0.0       01:13 Sl   chrome_crashpad
+ 151210    1461  3344  0.0       01:13 S    chrome_crashpad
+chromium procs: 12
+total RSS of chrome tree (KB): 1375848
+=== docker stats ===
+NAME                  CPU %     MEM USAGE / LIMIT    MEM %     PIDS
+openwa-api            12.24%    947.4MiB / 2GiB      46.26%    145
+openwa-docker-proxy   0.00%     31.51MiB / 3.83GiB   0.80%     3
+=== cgroup cpu.max / memory.stat (full) ===
+cpu.max: max 100000
+pids.current: 145
+anon 595288064
+file 461787136
+kernel_stack 2375680
+anon_thp 144703488
+slab_unreclaimable 4322064
+workingset_refault_anon 0
+workingset_refault_file 2682560
+pgscan 3519652
+pgsteal 3207387
+pgscan_kswapd 0
+pgscan_direct 3515428
+pgscan_khugepaged 4224
+pgsteal_kswapd 0
+pgsteal_direct 3203546
+pgsteal_khugepaged 3841
+pgfault 39510651
+pgmajfault 72509
+pgrefill 1199030
+=== load now ===
+ 18:16:23 up 2 days, 19:15,  1 user,  load average: 0.30, 0.65, 0.88
+0.30 0.65 0.88 1/323 151591
+=== send ordering in message-send.service.ts ===
+54:   * persist rather than by each sender, so the nine send paths and `reply()` record one shape: a row
+144:      // The SEND itself failed — mark FAILED + fire message:failed (a post-send persistence fault is
+145:      // handled separately by persistSentState and must NOT land here).
+153:    return this.persistSentState(message, result);
+180:    // its persisted row still drained the cold budget. Edit carries a chatId too; the edited
+189:    // engine lookup, preparation and initial persistence), so a failure hands its pacing admission back: with no
+191:    let persisted = false;
+204:      persisted = true;
+207:      release?.(persisted);
+215:   * `message:failed`; media/extended sends failed silently to plugins). The post-send persistence-fault
+216:   * path (persistSentState) deliberately does NOT route here — a message the engine already accepted
+272:   * existing {@link sendText} path so plugin hooks, persistence, and status
+310:  async sendImage(sessionId: string, dto: SendMediaMessageDto): Promise<MessageResponseDto> {
+334:      result = await engine.sendImageMessage(finalDto.chatId, media);
+338:    return this.persistSentState(message, result);
+369:    return this.persistSentState(message, result);
+374:    // persisted row all carry the same type for one outbound voice note — failSend and the saved row
+395:        // wire message and the persisted record agree. Resolved BEFORE buildMediaInput so its base64
+410:    return this.persistSentState(message, result);
+441:    return this.persistSentState(message, result);
+474:    return this.persistSentState(message, result);
+498:    return this.persistSentState(message, result);
+530:    return this.persistSentState(message, result);
+560:    return this.persistSentState(message, result);
+589:    return this.persistSentState(message, result);
+629:    return this.persistSentState(message, result);
+648:    // persistSentState preserves the empty-id rule: a forward whose engine couldn't recover the sent
+650:    return this.persistSentState(message, result);
+699:   * successful send (status SENT) so batch messages are persisted like single sends.
+702:   * UNIQUE(sessionId, waMessageId) — only the bulk path does today, since every single send persists
+704:   * failing, mirroring `persistSentState`: the echo carries only what the engine reported (for a
+718:      // location, contact, poll, quoted text) used to persist an id with an empty body and the
+792:  // Emitted for EVERY persisted state of an outbound row — the initial PENDING write AND each later
+797:  // Outbound archiving rides the same chokepoint rather than a call at each of the four persist
+806:      .execute('message:persisted', { sessionId, message: { ...message } }, { sessionId, source: 'MessageService' })
+820:   * (often multi-MB) is never displayed or retried, so keeping it only bloats the messages table; the
+847:  private async persistSentState(message: Message, result: MessageResult): Promise<MessageResponseDto> {
+871:    } catch (persistError) {
+872:      if (result.id && isUniqueViolation(persistError)) {
+873:        // The engine's own-send echo (onMessageCreate) won the race and already persisted a row with
+[exit=0]

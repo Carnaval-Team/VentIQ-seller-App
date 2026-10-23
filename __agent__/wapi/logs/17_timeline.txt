@@ -1,0 +1,85 @@
+﻿python : <stdin>:19: DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated and scheduled for removal 
+in a future version. Use timezone-aware objects to represent datetimes in UTC: 
+datetime.datetime.fromtimestamp(timestamp, datetime.UTC).
+En línea: 30 Carácter: 1
++ python __agent__/wapi/ssh_run.py "echo $b64 | base64 -d | timeout 100 ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (<stdin>:19: Dep... datetime.UTC).:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+=== outgoing messages by type/direction over last 6h ===
+   ('text', 'outgoing', 'read', 88, '2026-10-23 12:11:32', '2026-10-23 14:34:41')
+   ('text', 'incoming', 'sent', 56, '2026-10-23 12:11:42', '2026-10-23 14:12:43')
+   ('image', 'incoming', 'sent', 22, '2026-10-23 12:14:56', '2026-10-23 13:54:56')
+   ('image', 'outgoing', 'delivered', 21, '2026-10-23 14:44:24', '2026-10-23 14:47:56')
+   ('image', 'outgoing', 'sent', 20, '2026-10-23 14:34:08', '2026-10-23 14:55:53')
+   ('voice', 'incoming', 'read', 12, '2026-10-23 12:44:30', '2026-10-23 14:34:22')
+   ('image', 'outgoing', 'failed', 10, '2026-10-23 14:52:38', '2026-10-23 14:57:02')
+   ('image', 'outgoing', 'read', 10, '2026-10-23 12:11:13', '2026-10-23 13:50:06')
+   ('text', 'outgoing', 'delivered', 6, '2026-10-23 12:40:13', '2026-10-23 12:55:21')
+   ('voice', 'outgoing', 'read', 5, '2026-10-23 13:53:01', '2026-10-23 14:25:16')
+   ('unknown', 'incoming', 'sent', 4, '2026-10-23 12:30:27', '2026-10-23 13:32:55')
+   ('contact', 'incoming', 'sent', 1, '2026-10-23 14:02:02', '2026-10-23 14:02:02')
+   ('document', 'outgoing', 'sent', 1, '2026-10-23 12:10:27', '2026-10-23 12:10:27')
+   ('poll', 'outgoing', 'sent', 1, '2026-10-23 12:32:39', '2026-10-23 12:32:39')
+   ('revoked', 'outgoing', 'delivered', 1, '2026-10-23 14:07:53', '2026-10-23 14:07:53')
+   ('sticker', 'incoming', 'sent', 1, '2026-10-23 13:27:31', '2026-10-23 13:27:31')
+   ('unknown', 'outgoing', 'read', 1, '2026-10-23 12:16:15', '2026-10-23 12:16:15')
+
+=== ALL outgoing IMAGE messages 13:30-15:30 (createdAt, ts, status, chat, delta) ===
+  2026-10-23 13:32:35 gap= wa=13:32:35 status=read      len=114   mime=None chat=40910066823408@lid
+  2026-10-23 13:50:05 gap=1050.0s wa=13:50:05 status=read      len=99    mime=None chat=61890545889455@lid
+  2026-10-23 13:50:06 gap=   1.0s wa=13:50:05 status=read      len=99    mime=None chat=61890545889455@lid
+  2026-10-23 14:34:08 gap=2642.0s wa=14:34:07 status=sent      len=652   mime=None chat=120363266453891641@g.us
+  2026-10-23 14:34:24 gap=  16.0s wa=14:34:23 status=sent      len=652   mime=None chat=120363406746096914@g.us
+  2026-10-23 14:34:26 gap=   2.0s wa=14:34:25 status=sent      len=652   mime=None chat=120363409451879219@g.us
+  2026-10-23 14:34:27 gap=   1.0s wa=14:34:26 status=sent      len=652   mime=None chat=120363195152592934@g.us
+  2026-10-23 14:34:28 gap=   1.0s wa=14:34:27 status=sent      len=652   mime=None chat=120363172271515786@g.us
+  2026-10-23 14:44:24 gap= 596.0s wa=14:44:24 status=delivered len=86    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:44:33 gap=   9.0s wa=14:44:33 status=delivered len=88    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:44:44 gap=  11.0s wa=14:44:44 status=delivered len=92    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:44:51 gap=   7.0s wa=14:44:51 status=delivered len=92    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:45:04 gap=  13.0s wa=14:45:04 status=delivered len=92    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:45:19 gap=  15.0s wa=14:45:19 status=delivered len=100   mime=None chat=120363423044527374@g.us
+  2026-10-23 14:45:30 gap=  11.0s wa=14:45:30 status=delivered len=84    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:45:42 gap=  12.0s wa=14:45:42 status=delivered len=75    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:45:52 gap=  10.0s wa=14:45:52 status=delivered len=85    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:46:04 gap=  12.0s wa=14:46:04 status=delivered len=95    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:46:16 gap=  12.0s wa=14:46:16 status=delivered len=97    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:46:25 gap=   9.0s wa=14:46:25 status=delivered len=96    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:46:33 gap=   8.0s wa=14:46:33 status=delivered len=88    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:46:42 gap=   9.0s wa=14:46:42 status=delivered len=81    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:46:55 gap=  13.0s wa=14:46:55 status=delivered len=97    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:47:06 gap=  11.0s wa=14:47:06 status=delivered len=84    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:47:18 gap=  12.0s wa=14:47:18 status=delivered len=76    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:47:27 gap=   9.0s wa=14:47:27 status=delivered len=75    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:47:37 gap=  10.0s wa=14:47:37 status=delivered len=86    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:47:48 gap=  11.0s wa=14:47:48 status=delivered len=89    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:47:56 gap=   8.0s wa=14:48:14 status=delivered len=101   mime=None chat=120363423044527374@g.us
+  2026-10-23 14:48:29 gap=  33.0s wa=14:48:29 status=sent      len=85    mime=None chat=120363172271515786@g.us
+  2026-10-23 14:48:58 gap=  29.0s wa=14:48:55 status=sent      len=85    mime=None chat=120363195152592934@g.us
+  2026-10-23 14:49:25 gap=  27.0s wa=14:49:18 status=sent      len=97    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:49:30 gap=   5.0s wa=14:49:30 status=sent      len=85    mime=None chat=120363409451879219@g.us
+  2026-10-23 14:49:58 gap=  28.0s wa=14:49:56 status=sent      len=100   mime=None chat=120363423044527374@g.us
+  2026-10-23 14:49:59 gap=   1.0s wa=14:49:56 status=sent      len=85    mime=None chat=120363406746096914@g.us
+  2026-10-23 14:50:57 gap=  58.0s wa=14:50:56 status=sent      len=88    mime=None chat=120363172271515786@g.us
+  2026-10-23 14:51:08 gap=  11.0s wa=14:51:00 status=sent      len=90    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:52:06 gap=  58.0s wa=14:52:00 status=sent      len=88    mime=None chat=120363195152592934@g.us
+  2026-10-23 14:52:09 gap=   3.0s wa=14:52:07 status=sent      len=91    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:52:38 gap=  29.0s wa=- status=failed    len=93    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:53:06 gap=  28.0s wa=14:53:04 status=sent      len=88    mime=None chat=120363409451879219@g.us
+  2026-10-23 14:53:07 gap=   1.0s wa=14:53:06 status=sent      len=93    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:53:33 gap=  26.0s wa=- status=failed    len=92    mime=None chat=120363172271515786@g.us
+  2026-10-23 14:53:47 gap=  14.0s wa=- status=failed    len=90    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:53:53 gap=   6.0s wa=14:53:52 status=sent      len=92    mime=None chat=120363172271515786@g.us
+  2026-10-23 14:53:57 gap=   4.0s wa=14:53:54 status=sent      len=90    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:54:29 gap=  32.0s wa=- status=failed    len=92    mime=None chat=120363195152592934@g.us
+  2026-10-23 14:54:54 gap=  25.0s wa=- status=failed    len=87    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:55:18 gap=  24.0s wa=- status=failed    len=92    mime=None chat=120363409451879219@g.us
+  2026-10-23 14:55:53 gap=  35.0s wa=14:55:20 status=sent      len=92    mime=None chat=120363195152592934@g.us
+  2026-10-23 14:56:05 gap=  12.0s wa=- status=failed    len=95    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:56:14 gap=   9.0s wa=- status=failed    len=92    mime=None chat=120363172271515786@g.us
+  2026-10-23 14:56:57 gap=  43.0s wa=- status=failed    len=99    mime=None chat=120363423044527374@g.us
+  2026-10-23 14:57:02 gap=   5.0s wa=- status=failed    len=92    mime=None chat=120363195152592934@g.us
+total: 54
+[exit=0]

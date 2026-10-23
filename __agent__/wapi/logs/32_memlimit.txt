@@ -1,0 +1,47 @@
+﻿=== mem_limit / resources in compose for api ===
+73:    # HOME=/tmp + tmpfs absorb stray writes). no-new-privileges blocks setuid escalation.
+86:    tmpfs:
+99:    mem_limit: ${OPENWA_MEM_LIMIT:-2g} # tune up for many concurrent sessions
+111:      # Writable HOME on tmpfs so Chromium's HOME-relative writes don't hit the read_only rootfs
+115:      # to the tmpfs; the entrypoint pre-creates these owned by openwa. (#254)
+480:    # maxmemory is reached, silently dropping queued jobs.
+481:    command: redis-server --appendonly yes --maxmemory-policy noeviction
+=== the env lines that pin ENGINE_TYPE / protocol timeout in compose ===
+      # Engine. Forwarded empty by default so the dashboard (Infrastructure > Engine) selects the
+      # active engine via data/.env.generated (defaults to whatsapp-web.js); main.ts treats a blank
+      # ENGINE_TYPE as unset, so .env.generated wins. Set ENGINE_TYPE in your .env/host to pin an
+      # engine (e.g. baileys) — a real value flows through here and keeps top precedence.
+      - ENGINE_TYPE=${ENGINE_TYPE:-}
+      # Engine launch options (session data path, headless, browser args). Forwarded EMPTY by default
+      # so the dashboard (Infrastructure > Engine) selections saved to data/.env.generated apply — like
+      # ENGINE_TYPE above. main.ts treats a blank value as unset (.env.generated wins), and the app
+      # layer (configuration.ts) supplies the sane container default (headless, ./data/sessions, the
+      # sandbox + no-dev-shm flag set) when nothing is set anywhere. Set one on the host/.env to pin it.
+      - SESSION_DATA_PATH=${SESSION_DATA_PATH:-}
+      - PUPPETEER_HEADLESS=${PUPPETEER_HEADLESS:-}
+      - PUPPETEER_ARGS=${PUPPETEER_ARGS:-}
+      - PUPPETEER_PROTOCOL_TIMEOUT_MS=${PUPPETEER_PROTOCOL_TIMEOUT_MS:-}
+      # Optional WhatsApp Web version override. DEFAULT (empty, "latest", or "auto"): OpenWA auto-resolves a
+      # settled build from the third-party wppconnect-team/wa-version registry and pins its remote HTML
+      # (fetched into the web.whatsapp.com origin without an integrity check). Set "off" to disable pinning
+      # and use the first-party build served by WhatsApp, or an exact version to pin a specific build.
+      - WWEBJS_WEB_VERSION=${WWEBJS_WEB_VERSION:-}
+      - WWEBJS_WEB_VERSION_REMOTE_PATH=${WWEBJS_WEB_VERSION_REMOTE_PATH:-}
+      # Raise whatsapp-web.js's first-boot init wait (default 30000ms) on slow boots — e.g. WSL2 or
+      # low-resource hosts where the QR can time out before WA Web loads. Empty = default; see
+      # docs/12-troubleshooting-faq.md. (Without this line the var in .env never reaches the container.)
+      - WWEBJS_AUTH_TIMEOUT_MS=${WWEBJS_AUTH_TIMEOUT_MS:-}
+      # Re-start previously authenticated sessions at boot. Opt-in: the app reads the exact string
+      # "true", so a blank forward (nothing set) keeps the default off. Without this line the value in
+      # .env never reaches the container and the flag silently does nothing.
+      - AUTO_START_SESSIONS=${AUTO_START_SESSIONS:-}
+=== is baileys a built-in engine in 0.25.0? ===
+8:import { BaileysPlugin } from './builtin/baileys';
+10:import { BaileysMessageStoreService } from './adapters/baileys-message-store.service';
+12:import { ChatStateStoreService } from './adapters/baileys-chat-state-store.service';
+15:import { baileysAuthDir, readAuthDirEntries, wwjsAuthDir } from './auth-dir-paths';
+25:  /** Session UUID (Session.id) — the DB-row key for FK-bound stores (e.g. baileys_stored_messages). */
+39:    private readonly baileysMessageStore: BaileysMessageStoreService,
+73:    // reads only its own namespace (baileys.authDir) from context.config.
+74:    const baileysManifest: PluginManifest = {
+[exit=0]

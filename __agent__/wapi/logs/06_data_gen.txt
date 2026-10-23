@@ -1,0 +1,10 @@
+﻿dashboard
+data
+dist
+node_modules
+package-lock.json
+package.json
+scripts
+===GEN===
+NO_GEN_IN_DATA
+[exit=0]

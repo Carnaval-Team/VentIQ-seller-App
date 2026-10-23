@@ -1,0 +1,8 @@
+﻿   24.3 KB span 230ms image/jpeg product_1768186016743_product_5277_1768186016
+   31.3 KB span 995ms image/jpeg product_1769115753981_product_5508_1769115753
+   16.7 KB span 827ms image/jpeg product_1772740880377_product_8689_1772740880
+ 4607.6 KB span 1139ms image/jpeg product_1772484195942_product_6887_1772484195
+  143.5 KB span 1006ms image/jpeg product_1771618574764_product_1948_1771618574
+   37.5 KB span 1030ms image/jpeg 1745537519873178.jpg
+median KB: 37.5 max KB: 4607.6
+[exit=0]

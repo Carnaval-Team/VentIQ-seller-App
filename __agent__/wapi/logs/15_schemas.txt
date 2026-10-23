@@ -1,0 +1,12 @@
+﻿======================================================================
+SCHEMA: send_idempotency_keys
+CREATE TABLE "send_idempotency_keys" ("id" varchar PRIMARY KEY NOT NULL, "sessionId" varchar NOT NULL, "idempotencyKey" varchar NOT NULL, "route" varchar NOT NULL, "requestHash" varchar NOT NULL, "state" varchar NOT NULL, "responseBody" text, "expiresAt" text NOT NULL, "createdAt" datetime NOT NULL DEFAULT (datetime('now')))
+======================================================================
+SCHEMA: messages
+CREATE TABLE "messages" ("id" varchar PRIMARY KEY NOT NULL, "sessionId" varchar NOT NULL, "waMessageId" varchar, "chatId" varchar NOT NULL, "from" varchar NOT NULL, "to" varchar NOT NULL, "body" text, "type" varchar NOT NULL DEFAULT ('text'), "direction" varchar NOT NULL DEFAULT ('outgoing'), "timestamp" bigint, "metadata" text, "status" varchar NOT NULL DEFAULT ('sent'), "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "chatName" varchar NULL, "author" varchar NULL, "mediaPath" varchar NULL, "mediaMimetype" varchar NULL)
+======================================================================
+send_idempotency_keys columns:
+['id', 'sessionId', 'idempotencyKey', 'route', 'requestHash', 'state', 'responseBody', 'expiresAt', 'createdAt']
+--- distinct states ---
+{'id': 'aea4d9e6-593a-4081-9296-010db86d13da', 'sessionId': '3f394210-aa7e-4279-a330-b5639d3024e7', 'idempotencyKey': 'wa-log-24460', 'route': 'sendImage', 'requestHash': 'f3d8848cad4d5571be857fadd8f53072eab1263da0e376927a39be1778692f82', 'state': 'completed', 'responseBody': '{"messageId":"true_120363423044527374@g.us_3EB01687346D7325C96EBE_92217846792434@lid","timestamp":1792766664}', 'expiresAt': '2026-10-24T14:44:20.955Z', 'createdAt': '2026-10-23 14:44:20'}
+[exit=0]

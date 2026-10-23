@@ -52,8 +52,23 @@ export interface WapiResult<T> {
  * envío": no fallaba, se quedaba esperando.
  */
 const TIMEOUT_DEFAULT_MS = 20_000;
-/** Los envíos con media son más lentos: WAPI descarga la imagen y la sube. */
-const TIMEOUT_MEDIA_MS = 45_000;
+/**
+ * Los envíos con media son más lentos: WAPI descarga la imagen y la sube.
+ *
+ * El valor anterior (45s) estaba JUSTO encima de la latencia real medida en
+ * producción (27-45s por imagen en la sesión de la tienda 177). Resultado: el
+ * cliente abortaba mientras el servidor seguía enviando, y el reintento con la
+ * misma `Idempotency-Key` se encontraba la petición original todavía en vuelo
+ * → tormenta de `IDEMPOTENCY_KEY_IN_PROGRESS` y filas marcadas `fallido` que
+ * en realidad SÍ habían llegado al grupo. Con 90s el aborto deja de ser la
+ * norma; si el servidor se atasca de verdad, el guarda-raíl por mensaje de
+ * `wapi-send-products` (MENSAJE_MAX_MS) corta por presupuesto.
+ *
+ * Ajustable sin redesplegar la función: `WAPI_TIMEOUT_MEDIA_MS`.
+ */
+const TIMEOUT_MEDIA_MS = Number(
+  Deno.env.get("WAPI_TIMEOUT_MEDIA_MS") ?? 90_000,
+);
 /** El health debe contestar rápido o el watchdog se queda colgado. */
 const TIMEOUT_HEALTH_MS = 8_000;
 
