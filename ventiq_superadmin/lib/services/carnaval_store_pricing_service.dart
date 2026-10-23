@@ -137,8 +137,17 @@ class CarnavalStorePricingService {
     }
   }
 
-  /// Actualiza o inserta la configuración de recargos de una tienda.
-  static Future<bool> updateStorePricing({
+  /// Actualiza o inserta la configuración de recargos de una tienda
+  /// y recalcula los precios publicados en carnavalapp.
+  ///
+  /// El upsert solo guardaba los %; los `price` / `precio_descuento` de
+  /// Carnaval quedaban viejos hasta el próximo cambio de precio de venta.
+  /// Ahora se llama a `rpc_recalc_carnaval_prices_for_store` (también la
+  /// dispara el trigger `trg_recalc_carnaval_on_store_pricing` si está
+  /// aplicado — el RPC explícito cubre ambos casos).
+  ///
+  /// Devuelve el número de productos carnaval actualizados, o `null` si falla.
+  static Future<int?> updateStorePricing({
     required int storeId,
     required double precioRegular,
     required double precioVentaCarnaval,
@@ -156,10 +165,20 @@ class CarnavalStorePricingService {
         },
         onConflict: 'id_tienda',
       );
-      return true;
+
+      // Si el trigger ya recalculó, este RPC es idempotente (misma fórmula).
+      final updated = await _supabase.rpc(
+        'rpc_recalc_carnaval_prices_for_store',
+        params: {'p_store_id': storeId},
+      );
+      final count = (updated is num) ? updated.toInt() : 0;
+      debugPrint(
+        '✅ Tienda $storeId: % guardados, $count productos carnaval recalculados',
+      );
+      return count;
     } catch (e) {
       debugPrint('❌ Error actualizando precios de tienda $storeId: $e');
-      return false;
+      return null;
     }
   }
 }

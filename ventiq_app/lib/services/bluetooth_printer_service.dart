@@ -15,6 +15,7 @@ import '../services/servicentro_service.dart';
 import '../services/store_config_service.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/price_utils.dart';
+import '../utils/receipt_options.dart';
 
 class _StorePrintInfo {
   final String name;
@@ -666,6 +667,21 @@ class BluetoothPrinterService {
         return false;
       }
 
+      final receiptOptions = ReceiptOptions(
+        order,
+        restaurantMode: StoreConfigService.modoRestauranteSync,
+      );
+      if (!receiptOptions.includeWarehouseSlip) {
+        await Future.delayed(const Duration(seconds: 3));
+        return _printCustomerReceipt(
+          generator,
+          order,
+          storeInfo,
+          title: 'RECIBO CAJA',
+          settleAfter: true,
+        );
+      }
+
       // Wait between prints to avoid buffer issues
       debugPrint('⏳ Waiting 3 seconds before warehouse slip...');
       await Future.delayed(const Duration(seconds: 3));
@@ -1076,6 +1092,10 @@ class BluetoothPrinterService {
     bool showPaymentMethod = true,
     String? vendorName,
   }) {
+    final receiptOptions = ReceiptOptions(
+      order,
+      restaurantMode: StoreConfigService.modoRestauranteSync,
+    );
     List<int> bytes = [];
 
     // Header compacto
@@ -1096,6 +1116,13 @@ class BluetoothPrinterService {
       'ORD: ${order.id.length > 20 ? order.id.substring(0, 20) : order.id}',
       styles: PosStyles(align: PosAlign.left, bold: true),
     );
+
+    if (receiptOptions.mesaLabel != null) {
+      bytes += generator.text(
+        'MESA: ${receiptOptions.mesaLabel}',
+        styles: const PosStyles(align: PosAlign.left, bold: true),
+      );
+    }
 
     final displayVendor = (vendorName != null && vendorName.isNotEmpty)
         ? vendorName
@@ -1227,7 +1254,9 @@ class BluetoothPrinterService {
     );
 
     // Forma de pago (según config global de tienda)
-    bytes += _addPaymentMethodSummary(generator, order);
+    if (showPaymentMethod && receiptOptions.showPaymentMethod) {
+      bytes += _addPaymentMethodSummary(generator, order);
+    }
 
     // Footer: solo en la factura del cliente.
     // `row()` (forma de pago) deja un área de impresión estrecha y el
@@ -1237,7 +1266,7 @@ class BluetoothPrinterService {
       // Centrado + texto + LF, sin ESC $ (posición absoluta). Ese comando
       // hereda el área estrecha de `row()` y parte "Gracias por su compra".
       bytes += const <int>[0x1B, 0x61, 0x01];
-      bytes += <int>[...'Gracias por su compra'.codeUnits, 0x0A];
+      bytes += <int>[...receiptOptions.thanksMessage.codeUnits, 0x0A];
       bytes += <int>[...'Con la tecnologia de'.codeUnits, 0x0A];
       bytes += <int>[...'Inventtia S.R.L.'.codeUnits, 0x0A];
     }

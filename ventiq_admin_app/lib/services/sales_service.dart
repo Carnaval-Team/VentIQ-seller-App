@@ -158,7 +158,7 @@ class ProductSalesReport {
       nombreProveedor: json['nombre_proveedor'] ?? 'Sin Proveedor',
       precioVentaCup: (json['precio_venta_cup'] ?? 0).toDouble(),
       precioCosto: (json['precio_costo'] ?? 0).toDouble(),
-      valorUsd: (json['valor_usd'] ?? 1).toDouble(),
+      valorUsd: (json['valor_usd'] ?? 0).toDouble(),
       precioCostoCup: (json['precio_costo_cup'] ?? 0).toDouble(),
       totalVendido: totalVendido,
       ingresosTotales: (json['ingresos_totales'] ?? 0).toDouble(),
@@ -376,6 +376,37 @@ class SupplierProductOrderDetail {
 
 class SalesService {
   static final SupabaseClient _supabase = Supabase.instance.client;
+
+  static Future<bool> hasUsdToCupRate({required DateTime fechaHasta}) async {
+    final idTienda = await UserPreferencesService().getIdTienda();
+    if (idTienda == null) return false;
+
+    final nextDay = DateTime(
+      fechaHasta.year,
+      fechaHasta.month,
+      fechaHasta.day + 1,
+    ).toIso8601String().split('T')[0];
+    final storeRates = await _supabase
+        .from('tasa_cambio_extraoficial')
+        .select('id')
+        .eq('id_tienda', idTienda)
+        .eq('id_moneda_origen', 2)
+        .eq('id_moneda_destino', 1)
+        .eq('activo', true)
+        .gt('valor_cambio', 0)
+        .lt('created_at', nextDay)
+        .limit(1);
+    if (storeRates.isNotEmpty) return true;
+
+    final globalRates = await _supabase
+        .from('tasas_conversion')
+        .select('tasa')
+        .eq('moneda_origen', 'USD')
+        .eq('moneda_destino', 'CUP')
+        .gt('tasa', 0)
+        .limit(1);
+    return globalRates.isNotEmpty;
+  }
 
   static Future<List<ProductSalesReport>> getProductSalesReport({
     DateTime? fechaDesde,

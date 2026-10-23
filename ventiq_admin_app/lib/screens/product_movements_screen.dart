@@ -65,6 +65,8 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
   /// ledger escribe en `id_presentacion` — no el id del nomenclador.
   /// `null` = todas.
   int? _selectedPresentacionId;
+  int? _selectedLotId;
+  List<Map<String, dynamic>> _lots = [];
   final UserPreferencesService _userPreferencesService = UserPreferencesService();
   final SupabaseClient _supabase = Supabase.instance.client;
 
@@ -149,6 +151,10 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
     try {
       // Cargar tipos de operación
       final types = await ProductMovementsService.getOperationTypes();
+      final lots = _product.esPorLotes
+          ? await ProductMovementsService.getProductLots(int.parse(_product.id))
+          : <Map<String, dynamic>>[];
+      if (!mounted) return;
 
       // Traer TODOS los movimientos del filtro y ordenar por fecha ASC.
       // El RPC en servidor aún puede ordenar DESC/id_op: con paginado
@@ -156,13 +162,16 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       final allMovements =
           await ProductMovementsService.getAllProductMovements(
         productId: int.parse(_product.id),
+        includeLotInfo: _product.esPorLotes,
         dateFrom: _dateFrom,
         dateTo: _dateTo,
         operationTypeId: _selectedOperationTypeId,
         warehouseId: _selectedWarehouseId,
       );
 
+      if (!mounted) return;
       setState(() {
+        _lots = lots;
         _operationTypes = types;
         _movements = allMovements;
         _totalCount = allMovements.length;
@@ -178,7 +187,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
         );
       }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -198,7 +207,10 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
   void _applyFilters() {
     // Red de seguridad en cliente: el RPC ya filtra, pero normalizamos IDs
     // (bigint/json) y almacén para evitar filas inconsistentes en la UI.
-    _filteredMovements = _movements.where((movement) {
+    _filteredMovements = ProductMovementsService.filterMovementsByLot(
+      _movements,
+      _selectedLotId,
+    ).where((movement) {
       if (_selectedOperationTypeId != null &&
           _asInt(movement['tipo_operacion_id']) != _selectedOperationTypeId) {
         return false;
@@ -343,6 +355,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       _selectedWarehouse = 'Todos';
       _selectedTipoMovimiento = null;
       _selectedPresentacionId = null;
+      _selectedLotId = null;
     });
     _loadData();
   }
@@ -528,6 +541,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
               children: [
                 // Panel de filtros colapsable
                 _buildCollapsibleFilters(),
+                if (_product.esPorLotes) _buildLotSelector(),
 
                 // Resumen clicable
                 Padding(
@@ -706,8 +720,69 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
         _selectedWarehouseId != null ||
         _selectedTipoMovimiento != null ||
         _selectedPresentacionId != null ||
+        _selectedLotId != null ||
         !isDefaultDateFrom ||
         !isDefaultDateTo;
+  }
+
+  String get _selectedLotLabel {
+    if (_selectedLotId == null) return 'Todos los lotes';
+    if (_selectedLotId == 0) return 'Sin lote';
+    for (final lot in _lots) {
+      if (_asInt(lot['id']) == _selectedLotId) {
+        return '${lot['codigo']}';
+      }
+    }
+    return 'Lote $_selectedLotId';
+  }
+
+  Widget _buildLotSelector() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      child: InputDecorator(
+        decoration: const InputDecoration(
+          labelText: 'Lote',
+          border: OutlineInputBorder(),
+          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        ),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<int>(
+            value: _selectedLotId,
+            isExpanded: true,
+            hint: const Text('Todos los lotes'),
+            items: [
+              const DropdownMenuItem<int>(
+                value: null,
+                child: Text('Todos los lotes'),
+              ),
+              const DropdownMenuItem<int>(
+                value: 0,
+                child: Text('Sin lote'),
+              ),
+              ..._lots.map((lot) {
+                final expiry = DateTime.tryParse(
+                  '${lot['fecha_vencimiento'] ?? ''}',
+                );
+                final label = expiry == null
+                    ? '${lot['codigo']}'
+                    : '${lot['codigo']} · vence ${DateFormat('dd/MM/yyyy').format(expiry)}';
+                return DropdownMenuItem<int>(
+                  value: _asInt(lot['id']),
+                  child: Text(label, overflow: TextOverflow.ellipsis),
+                );
+              }),
+            ],
+            onChanged: (value) {
+              setState(() {
+                _selectedLotId = value;
+                _selectedPresentacionId = null;
+              });
+              _applyFilters();
+            },
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildCollapsibleFilters() {
@@ -726,7 +801,10 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
   List<Map<String, dynamic>> _prepareMovementsForExport(
     List<Map<String, dynamic>> source,
   ) {
-    var list = List<Map<String, dynamic>>.from(source);
+    var list = ProductMovementsService.filterMovementsByLot(
+      source,
+      _selectedLotId,
+    );
     // FASE 3: el export tiene que respetar el filtro de presentación, o el
     // Excel no coincide con lo que el usuario está viendo en pantalla.
     if (_selectedPresentacionId != null) {
@@ -851,6 +929,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       // cada transferencia aunque el filtro UI sea un almacén concreto.
       final allRaw = await ProductMovementsService.getAllProductMovements(
         productId: int.parse(_product.id),
+        includeLotInfo: _product.esPorLotes,
         dateFrom: _dateFrom,
         dateTo: _dateTo,
         operationTypeId: _selectedOperationTypeId,
@@ -921,7 +1000,8 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
             : ubiConPres;
 
         final claveUbi = ubiId != null ? 'id:$ubiId' : 'name:$ubiNombre';
-        final key = '$claveUbi|pres:${presId ?? 0}|$label';
+        final lotId = _asInt(m['id_lote']) ?? 0;
+        final key = '$claveUbi|pres:${presId ?? 0}|lote:$lotId|$label';
         byUbicacion.putIfAbsent(key, () => []).add(m);
       }
 
@@ -1943,6 +2023,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
     if (_selectedOperationTypeId != null) {
       final raw = await ProductMovementsService.getAllProductMovements(
         productId: productId,
+        includeLotInfo: _product.esPorLotes,
         dateFrom: _dateFrom,
         dateTo: _dateTo,
         operationTypeId: null,
@@ -2745,6 +2826,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
   Future<List<Map<String, dynamic>>?> _loadMovementsForExport() async {
     final allMovements = await ProductMovementsService.getAllProductMovements(
       productId: int.parse(_product.id),
+      includeLotInfo: _product.esPorLotes,
       dateFrom: _dateFrom,
       dateTo: _dateTo,
       operationTypeId: _selectedOperationTypeId,
@@ -2796,7 +2878,9 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
         : 'Todos';
 
     return (
-      periodo: periodoStr,
+      periodo: _product.esPorLotes
+          ? '$periodoStr · Lote: $_selectedLotLabel'
+          : periodoStr,
       almacen: almacenStr,
       tipoMov: tipoMovStr,
       tipoOp: tipoOpStr,
