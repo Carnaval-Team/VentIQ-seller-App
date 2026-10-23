@@ -355,7 +355,7 @@ class ProductService {
       esVendible: data['es_vendible'] as bool? ?? true,
       esComprable: true, // Default value
       esInventariable: true, // Default value
-      esPorLotes: false, // Default value
+      esPorLotes: data['es_por_lotes'] as bool? ?? false,
       esElaborado:
           (metadata != null && metadata['es_elaborado'] != null)
               ? metadata['es_elaborado'] as bool

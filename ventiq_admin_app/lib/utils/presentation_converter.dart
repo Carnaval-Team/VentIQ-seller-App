@@ -26,6 +26,12 @@ import '../services/product_service.dart';
 /// inventory_reception_screen.dart. `conversion_applied` ahora es siempre false,
 /// asi que el aviso naranja de "Conversiones Aplicadas" simplemente no aparece.
 class PresentationConverter {
+  static double? _asDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString());
+  }
+
   /// Normaliza la denominacion de una presentacion venida de cualquier pantalla.
   ///
   /// Las distintas UI mandan el nombre en `denominacion`, `presentacion`,
@@ -106,6 +112,21 @@ class PresentationConverter {
         '${normalizedPresentation?['denominacion'] ?? 'presentación base'} '
         '(id_presentacion: ${idPresentacion ?? 'null → base'}) — sin conversión');
 
+    final nombrePresentacion =
+        (normalizedPresentation?['denominacion'] ??
+                normalizedPresentation?['presentacion'] ??
+                normalizedPresentation?['presentacion_nombre'] ??
+                '')
+            .toString();
+
+    final factorRel = _asDouble(
+      normalizedPresentation?['factor_rel'] ??
+          normalizedPresentation?['presentacion_factor_rel'],
+    );
+    final precioBase = _asDouble(baseProductData['precio_unitario']);
+    final equivBase =
+        factorRel != null && factorRel > 0 ? cantidad * factorRel : cantidad;
+
     final processedData = Map<String, dynamic>.from(baseProductData);
     processedData.addAll({
       'cantidad': cantidad,
@@ -115,6 +136,17 @@ class PresentationConverter {
       'conversion_applied': false,
       'presentacion_original_info': normalizedPresentation,
       'presentation_info': normalizedPresentation,
+      // Para totales: precio_unitario sigue siendo el de la unidad base;
+      // el listado multiplica por equivalente_base / factor_rel.
+      if (factorRel != null) 'presentacion_factor_rel': factorRel,
+      'equivalente_base': equivBase,
+      if (precioBase != null && precioBase > 0)
+        'importe': precioBase * equivBase,
+      // Alias de UI: listas/diálogos leen `presentacion` / `presentacion_nombre`.
+      if (nombrePresentacion.isNotEmpty) ...{
+        'presentacion': nombrePresentacion,
+        'presentacion_nombre': nombrePresentacion,
+      },
     });
 
     return processedData;

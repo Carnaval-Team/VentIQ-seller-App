@@ -6,6 +6,7 @@ import '../widgets/analytics/metric_card.dart';
 import 'analytics/stock_health_detail_screen.dart';
 import 'analytics/rotation_detail_screen.dart';
 import 'analytics/stock_alerts_detail_screen.dart';
+import 'caducidades_screen.dart';
 import '../utils/number_formatter.dart';
 
 class InventoryDashboard extends StatefulWidget {
@@ -412,6 +413,51 @@ class _InventoryDashboardState extends State<InventoryDashboard> {
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 12),
+        Builder(
+          builder: (context) {
+            final expiring = alerts
+                .where((a) => a.alertType == 'expiring')
+                .length;
+            final expired =
+                alerts.where((a) => a.alertType == 'expired').length;
+            return Row(
+              children: [
+                Expanded(
+                  child: MetricCard(
+                    title: 'Por vencer',
+                    value: expiring.toString(),
+                    icon: Icons.schedule,
+                    color: Colors.amber.shade800,
+                    subtitle: 'lotes próximos',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            const CaducidadesScreen(initialTab: 'expiring'),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: MetricCard(
+                    title: 'Vencidos',
+                    value: expired.toString(),
+                    icon: Icons.event_busy,
+                    color: Colors.red.shade700,
+                    subtitle: 'con stock',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            const CaducidadesScreen(initialTab: 'expired'),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
         ),
 
         if (alerts.isNotEmpty) ...[

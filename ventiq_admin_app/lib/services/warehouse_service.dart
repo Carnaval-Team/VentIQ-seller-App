@@ -1098,8 +1098,8 @@ class WarehouseService {
       }
 
       // Transformar la respuesta del RPC al formato esperado por la UI
-      final rawProducts =
-          (response as List).map((item) {
+      var rawProducts =
+          (response as List).map<Map<String, dynamic>>((item) {
             return {
               'id': item['id_producto'],
               'id_producto': item['id_producto'],
@@ -1132,14 +1132,113 @@ class WarehouseService {
               'es_vendible': item['es_vendible'] ?? true,
               'es_inventariable': item['es_inventariable'] ?? true,
               'fecha_ultima_actualizacion': item['fecha_ultima_actualizacion'],
-              'lote': null, // No disponible en esta función
-              'fecha_vencimiento': null, // No disponible en esta función
+              'lote': null,
+              'fecha_vencimiento': null,
+              'estado_caducidad': null,
               'created_at': item['fecha_ultima_actualizacion'],
               // Clave única para agrupación por producto
               'product_key':
-                  '${item['id']}_${item['id_variante'] ?? 'null'}_${item['id_opcion_variante'] ?? 'null'}_${item['id_presentacion'] ?? 'null'}',
+                  '${item['id_producto']}_${item['id_variante'] ?? 'null'}_${item['id_opcion_variante'] ?? 'null'}_${item['id_presentacion'] ?? 'null'}',
             };
           }).toList();
+
+      // Enriquecer con stock por lote (Fase 2)
+      try {
+        final lotesResponse = await _supabase.rpc(
+          'fn_stock_lotes_en_ubicacion',
+          params: {'p_id_ubicacion': int.parse(layoutId)},
+        );
+        if (lotesResponse is List && lotesResponse.isNotEmpty) {
+          String loteKey(dynamic idProducto, dynamic idVariante,
+              dynamic idOpcion, dynamic idPresentacion) {
+            return '${idProducto}_${idVariante ?? 'null'}_${idOpcion ?? 'null'}_${idPresentacion ?? 'null'}';
+          }
+
+          final Map<String, List<Map<String, dynamic>>> lotesByProduct = {};
+          for (final lote in lotesResponse) {
+            if (lote is! Map) continue;
+            final map = Map<String, dynamic>.from(lote);
+            final key = loteKey(
+              map['id_producto'],
+              map['id_variante'],
+              map['id_opcion_variante'],
+              map['id_presentacion'],
+            );
+            lotesByProduct.putIfAbsent(key, () => []).add(map);
+          }
+
+          // Una fila por producto: sumar stock de lotes y mostrar
+          // la caducidad FEFO (fecha de vencimiento más próxima).
+          DateTime? parseFecha(dynamic v) {
+            if (v == null) return null;
+            if (v is DateTime) return v;
+            return DateTime.tryParse(v.toString());
+          }
+
+          int rankEstado(String? e) {
+            switch (e) {
+              case 'expired':
+                return 0;
+              case 'expiring':
+                return 1;
+              case 'ok':
+                return 2;
+              default:
+                return 3;
+            }
+          }
+
+          for (final product in rawProducts) {
+            final key = loteKey(
+              product['id_producto'] ?? product['id'],
+              product['id_variante'],
+              product['id_opcion_variante'],
+              product['id_presentacion'],
+            );
+            final lotes = lotesByProduct[key];
+            if (lotes == null || lotes.isEmpty) continue;
+
+            lotes.sort((a, b) {
+              final fa = parseFecha(a['fecha_vencimiento']);
+              final fb = parseFecha(b['fecha_vencimiento']);
+              if (fa == null && fb == null) {
+                return ((a['id_lote'] as num?)?.toInt() ?? 0)
+                    .compareTo((b['id_lote'] as num?)?.toInt() ?? 0);
+              }
+              if (fa == null) return 1;
+              if (fb == null) return -1;
+              final byDate = fa.compareTo(fb);
+              if (byDate != 0) return byDate;
+              return ((a['id_lote'] as num?)?.toInt() ?? 0)
+                  .compareTo((b['id_lote'] as num?)?.toInt() ?? 0);
+            });
+
+            final sum = lotes.fold<int>(
+              0,
+              (s, l) => s + ((l['cantidad_final'] as num?)?.toInt() ?? 0),
+            );
+            final proximo = lotes.first;
+            product['stock_actual'] = sum;
+            product['stock_disponible'] = sum;
+            product['lotes_count'] = lotes.length;
+            product['id_lote'] = proximo['id_lote'];
+            product['lote'] = lotes.length == 1
+                ? proximo['codigo_lote']
+                : '${lotes.length} lotes';
+            product['fecha_vencimiento'] =
+                proximo['fecha_vencimiento']?.toString();
+            // Estado visual: el peor entre lotes, pero la fecha es FEFO.
+            var peor = proximo['estado_caducidad']?.toString() ?? 'ok';
+            for (final l in lotes) {
+              final e = l['estado_caducidad']?.toString() ?? 'ok';
+              if (rankEstado(e) < rankEstado(peor)) peor = e;
+            }
+            product['estado_caducidad'] = peor;
+          }
+        }
+      } catch (e) {
+        print('⚠️ No se pudo enriquecer stock por lote: $e');
+      }
 
       print('📦 Productos sin agrupar: ${rawProducts.length}');
 

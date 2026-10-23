@@ -1014,18 +1014,48 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
           if (product['lote'] != null ||
               product['fecha_vencimiento'] != null) ...[
             const SizedBox(height: 4),
-            Row(
-              children: [
-                if (product['lote'] != null) ...[
-                  _productInfoChip(Icons.qr_code, 'Lote: ${product['lote']}'),
-                  const SizedBox(width: 8),
-                ],
-                if (product['fecha_vencimiento'] != null)
-                  _productInfoChip(
-                    Icons.schedule,
-                    'Vence: ${product['fecha_vencimiento']}',
-                  ),
-              ],
+            Builder(
+              builder: (_) {
+                final estado =
+                    product['estado_caducidad']?.toString() ?? 'ok';
+                final Color chipColor;
+                switch (estado) {
+                  case 'expired':
+                    chipColor = Colors.red;
+                    break;
+                  case 'expiring':
+                    chipColor = Colors.amber.shade700;
+                    break;
+                  case 'ok':
+                    chipColor = Colors.green;
+                    break;
+                  default:
+                    chipColor = Colors.grey.shade600;
+                }
+                final lotesCount = product['lotes_count'];
+                final fechaLabel = product['fecha_vencimiento']?.toString();
+                final vencTxt = (lotesCount is num && lotesCount > 1)
+                    ? 'Próximo: $fechaLabel'
+                    : 'Vence: $fechaLabel';
+                return Row(
+                  children: [
+                    if (product['lote'] != null) ...[
+                      _productInfoChip(
+                        Icons.qr_code,
+                        'Lote: ${product['lote']}',
+                        color: chipColor,
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    if (fechaLabel != null)
+                      _productInfoChip(
+                        Icons.schedule,
+                        vencTxt,
+                        color: chipColor,
+                      ),
+                  ],
+                );
+              },
             ),
           ],
         ],
@@ -1033,21 +1063,25 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
     );
   }
 
-  Widget _productInfoChip(IconData icon, String text) {
+  Widget _productInfoChip(IconData icon, String text, {Color? color}) {
+    final fg = color ?? Colors.grey.shade600;
+    final bg = color != null
+        ? color.withOpacity(0.12)
+        : Colors.grey.shade100;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: Colors.grey.shade100,
+        color: bg,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 10, color: Colors.grey.shade600),
+          Icon(icon, size: 10, color: fg),
           const SizedBox(width: 4),
           Text(
             text,
-            style: TextStyle(fontSize: 9, color: Colors.grey.shade600),
+            style: TextStyle(fontSize: 9, color: fg),
           ),
         ],
       ),

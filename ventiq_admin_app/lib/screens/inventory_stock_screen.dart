@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../models/inventory.dart';
+import '../models/lote_stock.dart';
 import '../services/inventory_service.dart';
 import '../utils/stock_mixto_formatter.dart';
 import '../services/user_preferences_service.dart';
 import '../widgets/inventory_summary_card.dart';
 import '../widgets/inventory_export_dialog.dart';
+import '../widgets/lote_expiry_widgets.dart';
+import '../widgets/asignar_lote_dialog.dart';
+import '../services/permissions_service.dart';
+import 'caducidades_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class InventoryStockScreen extends StatefulWidget {
@@ -32,6 +37,10 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
   bool _isLoadingBreakdowns = false;
   Map<String, StockBreakdown> _breakdownsByLocation = {};
   Map<int, StockBreakdown> _breakdownsByProduct = {};
+  /// Clave: `${idProducto}_${idUbicacion}` → lotes con saldo
+  Map<String, List<LoteStockInfo>> _lotesByLocation = {};
+  /// Clave: idProducto → lotes en todas las ubicaciones cargadas
+  Map<int, List<LoteStockInfo>> _lotesByProduct = {};
   String _selectedWarehouse = 'Todos';
   int? _selectedWarehouseId;
   String _stockFilter = 'Todos';
@@ -39,6 +48,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
   bool _isDetailedView = false; // Toggle between summary and detailed view
   bool _showDescriptionInSelectors =
       false; // Configuration for showing product descriptions
+  bool _canAssignLote = false;
 
   // Pagination and summary data
   int _currentPage = 1;
@@ -59,6 +69,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     super.initState();
     _scrollController.addListener(_scrollListener);
     _loadShowDescriptionConfig();
+    _loadCanAssignLote();
     _loadWarehouses();
 
     // Si es almacenero, establecer filtro por defecto
@@ -67,6 +78,14 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     }
 
     _loadInventoryData();
+  }
+
+  Future<void> _loadCanAssignLote() async {
+    final can = await PermissionsService().canPerformAction(
+      'inventory.assign_lote',
+    );
+    if (!mounted) return;
+    setState(() => _canAssignLote = can);
   }
 
   void _scrollListener() {
@@ -101,14 +120,23 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     super.dispose();
   }
 
-  void _loadInventoryData({bool reset = true}) async {
+  Future<void> _refreshInventoryData() async {
+    await _loadInventoryData(reset: true, showFullScreenLoading: false);
+  }
+
+  Future<void> _loadInventoryData({
+    bool reset = true,
+    bool showFullScreenLoading = true,
+  }) async {
     if (reset) {
       setState(() {
-        _isLoading = true;
+        if (showFullScreenLoading) {
+          _isLoading = true;
+          _inventoryProducts = <InventoryProduct>[];
+          _inventorySummaries = <InventorySummaryByUser>[];
+        }
         _errorMessage = '';
         _currentPage = 1;
-        _inventoryProducts = <InventoryProduct>[];
-        _inventorySummaries = <InventorySummaryByUser>[];
       });
     }
 
@@ -145,7 +173,10 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
           _isLoadingMore = false;
         });
 
-        _loadBreakdowns();
+        await Future.wait([
+          _loadBreakdowns(),
+          _loadLotesForDetailedProducts(),
+        ]);
 
         print(
           '✅ Loaded ${response.products.length} raw products, grouped to ${groupedProducts.length} unique products (page $_currentPage)',
@@ -173,7 +204,10 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
           _isLoadingMore = false;
         });
 
-        _loadSummaryBreakdowns();
+        await Future.wait([
+          _loadSummaryBreakdowns(),
+          _loadLotesForSummaries(),
+        ]);
 
         print('✅ Loaded ${summaries.length} inventory summaries');
         print(
@@ -238,58 +272,35 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
   }
 
   List<InventoryProduct> _groupProducts2(List<InventoryProduct> products) {
-    print('🔄 Grouping ${products.length} products to eliminate duplicates...');
-
-    Map<String, InventoryProduct> groupedMap = {};
+    // Agrupa por producto+ubicación+variante+presentación (no por id de snapshot).
+    // Con varios lotes el ledger tiene varias filas: hay que SUMAR cantidades.
+    final Map<String, InventoryProduct> groupedMap = {};
 
     for (final product in products) {
-      // Crear clave única que incluya TODOS los campos relevantes para evitar agrupamiento incorrecto
       final uniqueKey =
-          '${product.id}_${product.idUbicacion}_${product.idVariante ?? 'null'}_${product.idOpcionVariante ?? 'null'}_${product.idPresentacion ?? 'null'}';
+          '${product.idProducto}_${product.idUbicacion}_${product.idVariante ?? 'null'}_${product.idOpcionVariante ?? 'null'}_${product.idPresentacion ?? 'null'}';
 
-      print('🔍 Processing product: ${product.nombreProducto}');
-      print('   - ID: ${product.id}');
-      print('   - Ubicación: ${product.idUbicacion} (${product.ubicacion})');
-      print('   - Variante: ${product.idVariante} (${product.variante})');
-      print(
-        '   - Opción Variante: ${product.idOpcionVariante} (${product.opcionVariante})',
-      );
-      print(
-        '   - Presentación: ${product.idPresentacion} (${product.presentacion})',
-      );
-      print('   - Unique Key: $uniqueKey');
-      print('   - Stock Disponible: ${product.stockDisponible}');
-
-      if (groupedMap.containsKey(uniqueKey)) {
-        print(
-          '   ⚠️  DUPLICADO ENCONTRADO - Conservando el primero y descartando este',
-        );
-        print(
-          '      - Stock del primero: ${groupedMap[uniqueKey]!.stockDisponible}',
-        );
-        print('      - Stock del duplicado: ${product.stockDisponible}');
-        // No hacemos nada, conservamos el primer producto que ya está en el mapa
-      } else {
-        print('   ✅ Producto único - Agregando al mapa');
+      final existing = groupedMap[uniqueKey];
+      if (existing == null) {
         groupedMap[uniqueKey] = product;
+        continue;
       }
-    }
 
-    final result = groupedMap.values.toList();
-    print(
-      '✅ Grouped ${products.length} products into ${result.length} unique items',
-    );
-
-    // Log final de productos agrupados
-    print('📋 Productos finales después del agrupamiento:');
-    for (int i = 0; i < result.length && i < 5; i++) {
-      final item = result[i];
-      print(
-        '   ${i + 1}. ${item.nombreProducto} - ${item.variante} ${item.opcionVariante} - Stock: ${item.stockDisponible}',
+      groupedMap[uniqueKey] = existing.copyWithSums(
+        cantidadInicial: existing.cantidadInicial + product.cantidadInicial,
+        cantidadFinal: existing.cantidadFinal + product.cantidadFinal,
+        stockDisponible: existing.stockDisponible + product.stockDisponible,
+        stockReservado: existing.stockReservado + product.stockReservado,
+        stockDisponibleAjustado:
+            existing.stockDisponibleAjustado + product.stockDisponibleAjustado,
+        fechaUltimaActualizacion:
+            product.fechaUltimaActualizacion.isAfter(existing.fechaUltimaActualizacion)
+                ? product.fechaUltimaActualizacion
+                : existing.fechaUltimaActualizacion,
       );
     }
 
-    return result;
+    return groupedMap.values.toList();
   }
 
   Future<void> _loadNextPage() async {
@@ -336,6 +347,132 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
       if (mounted) {
         setState(() => _isLoadingBreakdowns = false);
       }
+    }
+  }
+
+  Future<void> _loadLotesForDetailedProducts() async {
+    if (_inventoryProducts.isEmpty) return;
+    try {
+      final ubicaciones = _inventoryProducts
+          .map((p) => p.idUbicacion)
+          .where((id) => id > 0)
+          .toSet()
+          .toList();
+      final byUbicacion = <int, List<LoteStockInfo>>{};
+      await Future.wait(
+        ubicaciones.map((id) async {
+          byUbicacion[id] = await InventoryService.getLotesEnUbicacion(id);
+        }),
+      );
+
+      final byLoc = <String, List<LoteStockInfo>>{};
+      final byProd = <int, List<LoteStockInfo>>{};
+      String loteIdentity(LoteStockInfo l) =>
+          '${l.idProducto}|${l.idUbicacion}|${l.idVariante}|${l.idOpcionVariante}|${l.idPresentacion}|${l.idLote}';
+
+      for (final p in _inventoryProducts) {
+        final lotes = (byUbicacion[p.idUbicacion] ?? [])
+            .where((l) => l.idProducto == p.idProducto)
+            .toList();
+        final key = '${p.idProducto}_${p.idUbicacion}';
+        // Una sola lista por producto+ubicación (no addAll por cada presentación).
+        byLoc.putIfAbsent(key, () => lotes);
+      }
+      for (final lotes in byLoc.values) {
+        for (final l in lotes) {
+          final list = byProd.putIfAbsent(l.idProducto, () => []);
+          if (list.any((x) => loteIdentity(x) == loteIdentity(l))) continue;
+          list.add(l);
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _lotesByLocation = byLoc;
+          _lotesByProduct = byProd;
+        });
+      }
+    } catch (e) {
+      print('⚠️ Error cargando lotes stock: $e');
+    }
+  }
+
+  Future<void> _loadLotesForSummaries() async {
+    if (_inventorySummaries.isEmpty) return;
+    try {
+      // En vista resumen no hay id_ubicacion por fila; usamos ubicaciones
+      // del inventario detallado filtrado por almacén si hace falta.
+      final products = await InventoryService.getInventoryProducts(
+        idAlmacen: _selectedWarehouseId,
+        pagina: 1,
+        limite: 200,
+      );
+      final ubicaciones = products.products
+          .map((p) => p.idUbicacion)
+          .where((id) => id > 0)
+          .toSet()
+          .toList();
+      final byUbicacion = <int, List<LoteStockInfo>>{};
+      await Future.wait(
+        ubicaciones.map((id) async {
+          byUbicacion[id] = await InventoryService.getLotesEnUbicacion(id);
+        }),
+      );
+
+      final productIds = _inventorySummaries.map((s) => s.idProducto).toSet();
+      final byProd = <int, List<LoteStockInfo>>{};
+      String loteIdentity(LoteStockInfo l) =>
+          '${l.idProducto}|${l.idUbicacion}|${l.idVariante}|${l.idOpcionVariante}|${l.idPresentacion}|${l.idLote}';
+      for (final entry in byUbicacion.entries) {
+        for (final lote in entry.value) {
+          if (!productIds.contains(lote.idProducto)) continue;
+          final list = byProd.putIfAbsent(lote.idProducto, () => []);
+          if (list.any((x) => loteIdentity(x) == loteIdentity(lote))) {
+            continue;
+          }
+          list.add(lote);
+        }
+      }
+      if (mounted) {
+        // Total = suma de todos los saldos (con y sin lote), no solo lotes etiquetados.
+        final saldosByProduct = <int, double>{};
+        for (final idUbi in ubicaciones) {
+          final saldos = await InventoryService.getSaldosAgregadosPorClave(
+            idUbicacion: idUbi,
+          );
+          for (final entry in saldos.entries) {
+            final idProd = int.tryParse(entry.key.split('|').first) ?? 0;
+            if (idProd <= 0 || !productIds.contains(idProd)) continue;
+            saldosByProduct[idProd] =
+                (saldosByProduct[idProd] ?? 0) + entry.value;
+          }
+        }
+        setState(() {
+          _lotesByProduct = byProd;
+          if (saldosByProduct.isNotEmpty) {
+            _inventorySummaries = _inventorySummaries.map((s) {
+              final sum = saldosByProduct[s.idProducto];
+              if (sum == null || sum <= 0) return s;
+              if ((sum - s.cantidadTotalEnAlmacen).abs() < 0.0001) return s;
+              return InventorySummaryByUser(
+                idProducto: s.idProducto,
+                productoNombre: s.productoNombre,
+                productoSku: s.productoSku,
+                productoDescripcion: s.productoDescripcion,
+                idVariante: s.idVariante,
+                varianteValor: s.varianteValor,
+                idOpcionVariante: s.idOpcionVariante,
+                opcionVarianteValor: s.opcionVarianteValor,
+                cantidadTotalEnUnidadesBase: sum,
+                cantidadTotalEnAlmacen: sum,
+                zonasDiferentes: s.zonasDiferentes,
+                presentacionesDiferentes: s.presentacionesDiferentes,
+              );
+            }).toList();
+          }
+        });
+      }
+    } catch (e) {
+      print('⚠️ Error cargando lotes resumen: $e');
     }
   }
 
@@ -437,7 +574,15 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children:
-              ['Todos', 'Con stock', 'Sin Stock', 'Stock Bajo', 'Stock OK'].map(
+              [
+                'Todos',
+                'Con stock',
+                'Sin Stock',
+                'Stock Bajo',
+                'Stock OK',
+                'Por vencer',
+                'Vencidos',
+              ].map(
                 (value) {
                   final isSelected = _stockFilter == value;
                   return RadioListTile<String>(
@@ -526,25 +671,43 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
       isLoading: _isLoading,
       errorMessage: _errorMessage.isNotEmpty ? _errorMessage : null,
       onRetry: () => _loadInventoryData(),
+      onRefresh: _refreshInventoryData,
       onItemTap: (summary) => _showInventorySummaryDetails(summary),
       breakdowns: _breakdownsByProduct,
+      lotesByProduct: _lotesByProduct,
     );
   }
 
   Widget _buildDetailedInventoryList() {
-    final filteredItems = _getFilteredInventoryItems();
+    final groups = _getFilteredStockGroups();
 
-    return ListView.builder(
-      controller: _scrollController,
-      padding: const EdgeInsets.all(16),
-      itemCount: filteredItems.length + (_isLoadingMore ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index == filteredItems.length) {
-          return _buildLoadingMoreIndicator();
-        }
-        return _buildInventoryCard(filteredItems[index]);
-      },
+    return RefreshIndicator(
+      onRefresh: _refreshInventoryData,
+      color: AppColors.primary,
+      child: ListView.builder(
+        controller: _scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        itemCount: groups.length + (_isLoadingMore ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (index == groups.length) {
+            return _buildLoadingMoreIndicator();
+          }
+          return _buildInventoryGroupCard(groups[index]);
+        },
+      ),
     );
+  }
+
+  /// Una card por producto+ubicación+variante (todas las presentaciones juntas).
+  List<_StockCardGroup> _groupRowsForDisplay(List<InventoryProduct> rows) {
+    final map = <String, List<InventoryProduct>>{};
+    for (final p in rows) {
+      final key =
+          '${p.idProducto}_${p.idUbicacion}_${p.idVariante ?? 'null'}_${p.idOpcionVariante ?? 'null'}';
+      map.putIfAbsent(key, () => []).add(p);
+    }
+    return map.values.map(_StockCardGroup.new).toList();
   }
 
   List<InventorySummaryByUser> _getFilteredInventorySummaries() {
@@ -579,6 +742,18 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
       case 'Stock OK':
         filtered = filtered.where((s) {
           return s.stock.equivalenteBase > 10;
+        }).toList();
+        break;
+      case 'Por vencer':
+        filtered = filtered.where((s) {
+          final lotes = _lotesByProduct[s.idProducto] ?? const <LoteStockInfo>[];
+          return lotes.any((l) => l.estadoCaducidad == 'expiring');
+        }).toList();
+        break;
+      case 'Vencidos':
+        filtered = filtered.where((s) {
+          final lotes = _lotesByProduct[s.idProducto] ?? const <LoteStockInfo>[];
+          return lotes.any((l) => l.estadoCaducidad == 'expired');
         }).toList();
         break;
       case 'Todos':
@@ -801,11 +976,29 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     );
   }
 
-  Widget _buildInventoryCard(InventoryProduct item) {
+  Widget _buildInventoryGroupCard(_StockCardGroup group) {
+    final item = group.primary;
     final key = '${item.idProducto}_${item.idUbicacion}';
     final breakdown = _breakdownsByLocation[key];
-    final realStock = breakdown?.enAlmacen ?? item.cantidadFinal;
-    final stockStatus = _getStockStatus(realStock.toInt());
+    // No sumar unidades de distintas presentaciones; el mixto es la verdad.
+    final hasStock = group.rows.any((r) => r.cantidadFinal > 0) ||
+        (breakdown?.enAlmacen ?? 0) > 0;
+    final stockStatus = hasStock
+        ? _getStockStatus(
+            breakdown?.enAlmacen.toInt() ??
+                group.rows
+                    .map((r) => r.cantidadFinal)
+                    .fold<double>(0, (a, b) => a > b ? a : b)
+                    .toInt(),
+          )
+        : _getStockStatus(0);
+    final lotes = (_lotesByLocation[key] ?? const <LoteStockInfo>[])
+        .where(
+          (l) =>
+              l.idVariante == item.idVariante &&
+              l.idOpcionVariante == item.idOpcionVariante,
+        )
+        .toList();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -826,7 +1019,6 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Mostrar descripción si está habilitado y existe
             if (_showDescriptionInSelectors)
               if (item.descripcion != null && item.descripcion!.isNotEmpty)
                 Text(
@@ -862,34 +1054,49 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                   fontWeight: FontWeight.w500,
                 ),
               ),
+            LoteExpirySubtitle(lotes: lotes),
           ],
         ),
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text('${realStock.toStringAsFixed(0)}'),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: stockStatus.color,
-                borderRadius: BorderRadius.circular(12),
+        isThreeLine: true,
+        trailing: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 120),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                group.stockMixtoTexto,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                ),
+                textAlign: TextAlign.end,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
-              child: Text(
-                stockStatus.label,
-                style: const TextStyle(color: Colors.white, fontSize: 10),
+              const SizedBox(height: 2),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: stockStatus.color,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  stockStatus.label,
+                  style: const TextStyle(color: Colors.white, fontSize: 10),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-        onTap: () => _showInventoryProductDetails(item),
+        onTap: () => _showInventoryGroupDetails(group),
       ),
     );
   }
 
-  List<InventoryProduct> _getFilteredInventoryItems() {
+  List<_StockCardGroup> _getFilteredStockGroups() {
     List<InventoryProduct> filtered = List.from(_inventoryProducts);
 
-    // Apply search filter
     if (_searchQuery.isNotEmpty) {
       filtered = filtered.where((item) {
         return item.nombreProducto.toLowerCase().contains(
@@ -899,47 +1106,50 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
       }).toList();
     }
 
-    // Apply warehouse filter
     if (_selectedWarehouse != 'Todos' && _selectedWarehouseId != null) {
       filtered = filtered
           .where((item) => item.idAlmacen == _selectedWarehouseId)
           .toList();
-      print('🔍 Filtering by warehouse ID: $_selectedWarehouseId');
-      print('📋 Filtered to ${filtered.length} items for selected warehouse');
     }
 
-    // Apply stock filter based on real stock (enAlmacen)
+    var groups = _groupRowsForDisplay(filtered);
+
+    bool groupHasStock(_StockCardGroup g) =>
+        g.rows.any((r) => r.cantidadFinal > 0);
+
+    /// Mayor cantidad en una sola presentación (no sumar UOMs distintas).
+    double groupMaxQty(_StockCardGroup g) => g.rows
+        .map((r) => r.cantidadFinal)
+        .fold<double>(0, (a, b) => a > b ? a : b);
+
     switch (_stockFilter) {
       case 'Con stock':
-        filtered = filtered.where((item) {
-          final key = '${item.idProducto}_${item.idUbicacion}';
-          final realStock =
-              _breakdownsByLocation[key]?.enAlmacen ?? item.cantidadFinal;
-          return realStock > 0;
-        }).toList();
+        groups = groups.where(groupHasStock).toList();
         break;
       case 'Sin Stock':
-        filtered = filtered.where((item) {
-          final key = '${item.idProducto}_${item.idUbicacion}';
-          final realStock =
-              _breakdownsByLocation[key]?.enAlmacen ?? item.cantidadFinal;
-          return realStock <= 0;
-        }).toList();
+        groups = groups.where((g) => !groupHasStock(g)).toList();
         break;
       case 'Stock Bajo':
-        filtered = filtered.where((item) {
-          final key = '${item.idProducto}_${item.idUbicacion}';
-          final realStock =
-              _breakdownsByLocation[key]?.enAlmacen ?? item.cantidadFinal;
-          return realStock > 0 && realStock <= 10;
+        groups = groups.where((g) {
+          final maxQ = groupMaxQty(g);
+          return maxQ > 0 && maxQ <= 10;
         }).toList();
         break;
       case 'Stock OK':
-        filtered = filtered.where((item) {
-          final key = '${item.idProducto}_${item.idUbicacion}';
-          final realStock =
-              _breakdownsByLocation[key]?.enAlmacen ?? item.cantidadFinal;
-          return realStock > 10;
+        groups = groups.where((g) => groupMaxQty(g) > 10).toList();
+        break;
+      case 'Por vencer':
+        groups = groups.where((g) {
+          final key = '${g.primary.idProducto}_${g.primary.idUbicacion}';
+          final lotes = _lotesByLocation[key] ?? const <LoteStockInfo>[];
+          return lotes.any((l) => l.estadoCaducidad == 'expiring');
+        }).toList();
+        break;
+      case 'Vencidos':
+        groups = groups.where((g) {
+          final key = '${g.primary.idProducto}_${g.primary.idUbicacion}';
+          final lotes = _lotesByLocation[key] ?? const <LoteStockInfo>[];
+          return lotes.any((l) => l.estadoCaducidad == 'expired');
         }).toList();
         break;
       case 'Todos':
@@ -947,7 +1157,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
         break;
     }
 
-    return filtered;
+    return groups;
   }
 
   ({Color color, String label}) _getStockStatus(int stock) {
@@ -960,13 +1170,19 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     }
   }
 
-  Widget _buildStockBreakdownSection(InventoryProduct item) {
+  Widget _buildStockBreakdownSection(
+    InventoryProduct item, {
+    String? enAlmacenLabel,
+  }) {
     final key = '${item.idProducto}_${item.idUbicacion}';
     final breakdown = _breakdownsByLocation[key];
 
     if (breakdown == null) {
       return _buildDetailSection('Stock Real', Icons.inventory_2_outlined, [
-        _buildDetailRow('En almacén', item.cantidadConPresentacion),
+        _buildDetailRow(
+          'En almacén',
+          enAlmacenLabel ?? item.cantidadConPresentacion,
+        ),
         const SizedBox(height: 8),
         Center(
           child: Text(
@@ -978,12 +1194,15 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     }
 
     return _buildDetailSection('Stock Real', Icons.inventory_2_outlined, [
-      _buildBreakdownRow(
-        'En almacén',
-        breakdown.enAlmacen,
-        AppColors.success,
-        Icons.warehouse_outlined,
-      ),
+      if (enAlmacenLabel != null)
+        _buildDetailRow('En almacén (mixto)', enAlmacenLabel)
+      else
+        _buildBreakdownRow(
+          'En almacén',
+          breakdown.enAlmacen,
+          AppColors.success,
+          Icons.warehouse_outlined,
+        ),
       _buildBreakdownRow(
         'En pedidos',
         breakdown.enPedidos,
@@ -1114,313 +1333,405 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
   Widget _buildDetailRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 14,
-                color: AppColors.textSecondary,
-                fontWeight: FontWeight.w500,
-              ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final narrow = constraints.maxWidth < 280;
+          final labelWidget = Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13,
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w500,
             ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontSize: 14,
-                color: AppColors.textPrimary,
-              ),
+          );
+          final valueWidget = Text(
+            value,
+            style: const TextStyle(
+              fontSize: 13,
+              color: AppColors.textPrimary,
             ),
-          ),
-        ],
+            softWrap: true,
+          );
+          if (narrow) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                labelWidget,
+                const SizedBox(height: 2),
+                valueWidget,
+              ],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(width: 100, child: labelWidget),
+              const SizedBox(width: 8),
+              Expanded(child: valueWidget),
+            ],
+          );
+        },
       ),
     );
   }
 
-  void _showInventoryProductDetails(InventoryProduct item) {
+  void _showInventoryGroupDetails(_StockCardGroup group) {
+    final item = group.primary;
+    final allLotes =
+        _lotesByLocation['${item.idProducto}_${item.idUbicacion}'] ??
+            const <LoteStockInfo>[];
+    final lotes = allLotes
+        .where(
+          (l) =>
+              l.idVariante == item.idVariante &&
+              l.idOpcionVariante == item.idOpcionVariante,
+        )
+        .toList();
+    final presentacionLabels = <int, String>{
+      for (final r in group.rows)
+        if (r.idPresentacion != null) r.idPresentacion!: r.presentacion,
+    };
+    final screenW = MediaQuery.of(context).size.width;
+    final screenH = MediaQuery.of(context).size.height;
+    final narrow = screenW < 420;
+    final pad = narrow ? 12.0 : 20.0;
+
     showDialog(
       context: context,
       builder: (context) => Dialog(
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: narrow ? 12 : 24,
+          vertical: 24,
+        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Container(
-          width: MediaQuery.of(context).size.width * 0.9,
+        child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.8,
+            maxWidth: 520,
+            maxHeight: screenH * 0.85,
+            minWidth: 0,
           ),
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: EdgeInsets.all(pad),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.inventory_2,
+                        color: AppColors.primary,
+                        size: 22,
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.inventory_2,
-                      color: AppColors.primary,
-                      size: 24,
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.nombreProducto,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if (_showDescriptionInSelectors &&
+                              ((item.descripcion?.isNotEmpty ?? false) ||
+                                  (item.descripcionCorta?.isNotEmpty ??
+                                      false)))
+                            Text(
+                              (item.descripcion?.isNotEmpty ?? false)
+                                  ? item.descripcion!
+                                  : item.descripcionCorta!,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                                fontStyle: FontStyle.italic,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          Text(
+                            '${item.variante} ${item.opcionVariante}',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: AppColors.textSecondary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(
+                        Icons.close,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: SingleChildScrollView(
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Text(
-                          item.nombreProducto,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        // Mostrar descripción si está habilitado y existe
-                        if (_showDescriptionInSelectors)
-                          if (item.descripcion != null &&
-                              item.descripcion!.isNotEmpty)
-                            Text(
-                              item.descripcion!,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textSecondary,
-                                fontStyle: FontStyle.italic,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            )
-                          else if (item.descripcionCorta != null &&
-                              item.descripcionCorta!.isNotEmpty)
-                            Text(
-                              item.descripcionCorta!,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textSecondary,
-                                fontStyle: FontStyle.italic,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: item.stockLevelColor.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: item.stockLevelColor.withOpacity(0.3),
                             ),
-                        Text(
-                          '${item.variante} ${item.opcionVariante}',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: AppColors.textSecondary,
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(
-                      Icons.close,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-
-              // Content
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Stock Status Card
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: item.stockLevelColor.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: item.stockLevelColor.withOpacity(0.3),
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.inventory,
-                                  color: item.stockLevelColor,
-                                  size: 20,
-                                ),
-                                const SizedBox(width: 8),
-                                const Text(
-                                  'Estado de Stock',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Stock Actual',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: AppColors.textSecondary,
-                                      ),
-                                    ),
-                                    Text(
-                                      item.cantidadConPresentacion,
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                        color: item.stockLevelColor,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.inventory,
                                     color: item.stockLevelColor,
-                                    borderRadius: BorderRadius.circular(20),
+                                    size: 18,
                                   ),
-                                  child: Text(
-                                    item.stockLevel,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
+                                  const SizedBox(width: 6),
+                                  const Flexible(
+                                    child: Text(
+                                      'Estado de Stock',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                      maxWidth: 220,
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'Stock Actual (mixto)',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: AppColors.textSecondary,
+                                          ),
+                                        ),
+                                        Text(
+                                          group.stockMixtoTexto,
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                            color: item.stockLevelColor,
+                                          ),
+                                          softWrap: true,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: _getStockStatus(
+                                        group.cantidadTotal.toInt(),
+                                      ).color,
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    child: Text(
+                                      _getStockStatus(
+                                        group.cantidadTotal.toInt(),
+                                      ).label,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildDetailSection(
+                          'Por presentación',
+                          Icons.layers_outlined,
+                          [
+                            for (final r in group.rows)
+                              _buildDetailRow(
+                                r.presentacion,
+                                r.cantidadConPresentacion,
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        _buildStockBreakdownSection(
+                          item,
+                          enAlmacenLabel: group.stockMixtoTexto,
+                        ),
+                        const SizedBox(height: 12),
+                        if (lotes.isNotEmpty) ...[
+                          LoteExpirySection(
+                            title: 'Stock por lote y presentación',
+                            lotes: lotes,
+                            showPresentacion: true,
+                            presentacionLabels: presentacionLabels,
+                            onAssignSinLote: _canAssignLote
+                                ? (lote) async {
+                                    Navigator.of(context).pop();
+                                    final ok = await showAsignarLoteDialog(
+                                      context: context,
+                                      loteSinLote: lote,
+                                      productName: item.nombreProducto,
+                                      presentacionLabel:
+                                          presentacionLabels[
+                                              lote.idPresentacion],
+                                    );
+                                    if (!ok || !mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Lote asignado correctamente',
+                                        ),
+                                      ),
+                                    );
+                                    await _loadLotesForDetailedProducts();
+                                  }
+                                : null,
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        _buildDetailSection(
+                          'Información del Producto',
+                          Icons.info_outline,
+                          [
+                            _buildDetailRow('Categoría', item.categoria),
+                            _buildDetailRow('Subcategoría', item.subcategoria),
+                            _buildDetailRow('Variante', item.variante),
+                            _buildDetailRow(
+                              'Opción Variante',
+                              item.opcionVariante,
+                            ),
+                            _buildDetailRow(
+                              'Vendible',
+                              item.esVendible ? 'Sí' : 'No',
+                            ),
+                            _buildDetailRow(
+                              'Inventariable',
+                              item.esInventariable ? 'Sí' : 'No',
                             ),
                           ],
                         ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Product Information
-                      _buildDetailSection(
-                        'Información del Producto',
-                        Icons.info_outline,
-                        [
-                          _buildDetailRow('Categoría', item.categoria),
-                          _buildDetailRow('Subcategoría', item.subcategoria),
-                          _buildDetailRow('Variante', item.variante),
-                          _buildDetailRow(
-                            'Opción Variante',
-                            item.opcionVariante,
-                          ),
-                          _buildDetailRow('Presentación', item.presentacion),
-                          _buildDetailRow(
-                            'Vendible',
-                            item.esVendible ? 'Sí' : 'No',
-                          ),
-                          _buildDetailRow(
-                            'Inventariable',
-                            item.esInventariable ? 'Sí' : 'No',
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Location Information
-                      _buildDetailSection(
-                        'Ubicación',
-                        Icons.location_on_outlined,
-                        [
-                          _buildDetailRow('Tienda', item.tienda),
-                          _buildDetailRow('Almacén', item.almacen),
-                          _buildDetailRow('Ubicación', item.ubicacion),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Real stock breakdown
-                      _buildStockBreakdownSection(item),
-
-                      // Stock Details
-                      _buildDetailSection(
-                        'Detalles de Stock',
-                        Icons.inventory_2_outlined,
-                        [
-                          _buildDetailRow(
-                            'Cantidad Inicial',
-                            item.cantidadEnPresentacion(item.cantidadInicial),
-                          ),
-                          _buildDetailRow(
-                            'Stock Disponible',
-                            item.cantidadEnPresentacion(item.stockDisponible),
-                          ),
-                          _buildDetailRow(
-                            'Stock Reservado',
-                            item.cantidadEnPresentacion(item.stockReservado),
-                          ),
-                          _buildDetailRow(
-                            'Stock Ajustado',
-                            item.cantidadEnPresentacion(
-                              item.stockDisponibleAjustado,
-                            ),
+                        const SizedBox(height: 12),
+                        _buildDetailSection(
+                          'Ubicación',
+                          Icons.location_on_outlined,
+                          [
+                            _buildDetailRow('Tienda', item.tienda),
+                            _buildDetailRow('Almacén', item.almacen),
+                            _buildDetailRow('Ubicación', item.ubicacion),
+                          ],
+                        ),
+                        if (item.stockReservado > 0) ...[
+                          const SizedBox(height: 12),
+                          _buildDetailSection(
+                            'Reservado / ajustado',
+                            Icons.lock_outline,
+                            [
+                              _buildDetailRow(
+                                'Stock Reservado',
+                                item.cantidadEnPresentacion(
+                                  item.stockReservado,
+                                ),
+                              ),
+                              _buildDetailRow(
+                                'Stock Ajustado',
+                                item.cantidadEnPresentacion(
+                                  item.stockDisponibleAjustado,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (narrow)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Transferir'),
+                      ),
+                      const SizedBox(height: 8),
+                      ElevatedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('Cerrar'),
+                      ),
+                    ],
+                  )
+                else
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('Transferir'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('Cerrar'),
+                        ),
                       ),
                     ],
                   ),
-                ),
-              ),
-
-              // Actions
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.swap_horiz, size: 18),
-                      label: const Text('Transferir'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.primary,
-                        side: const BorderSide(color: AppColors.primary),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close, size: 18),
-                      label: const Text('Cerrar'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1428,19 +1739,25 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
   }
 
   void _showInventorySummaryDetails(InventorySummaryByUser summary) {
+    final lotes = _lotesByProduct[summary.idProducto] ?? const <LoteStockInfo>[];
+    final narrow = MediaQuery.of(context).size.width < 420;
     showDialog(
       context: context,
       builder: (context) => Dialog(
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: narrow ? 12 : 24,
+          vertical: 24,
+        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Container(
-          width: MediaQuery.of(context).size.width * 0.9,
+        child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.8,
+            maxWidth: 520,
+            maxHeight: MediaQuery.of(context).size.height * 0.85,
           ),
-          padding: const EdgeInsets.all(24),
+          child: Padding(
+          padding: EdgeInsets.all(narrow ? 12 : 20),
           child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // Header
               Row(
@@ -1531,51 +1848,52 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                               ],
                             ),
                             const SizedBox(height: 12),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Builder(
-                                  builder: (context) {
-                                    final stockStatus = _getStockStatus(
-                                      summary.stock.equivalenteBase.toInt(),
-                                    );
-                                    return Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Existencia física',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: AppColors.textSecondary,
+                            Builder(
+                              builder: (context) {
+                                final stockStatus = _getStockStatus(
+                                  summary.stock.equivalenteBase.toInt(),
+                                );
+                                return Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    ConstrainedBox(
+                                      constraints: const BoxConstraints(
+                                        maxWidth: 240,
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          const Text(
+                                            'Existencia física',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: AppColors.textSecondary,
+                                            ),
                                           ),
-                                        ),
-                                        Text(
-                                          summary.stock.texto,
-                                          style: TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.bold,
-                                            color: stockStatus.color,
+                                          Text(
+                                            summary.stock.texto,
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                              color: stockStatus.color,
+                                            ),
+                                            softWrap: true,
                                           ),
-                                        ),
-                                        Text(
-                                          'Equivalente: ${StockMixtoFormatter.cantidad(summary.stock.equivalenteBase)} '
-                                          '${StockMixtoFormatter.plural(summary.stock.nombrePresentacionBase, summary.stock.equivalenteBase)} base',
-                                          style: const TextStyle(
-                                            fontSize: 12,
-                                            color: AppColors.textSecondary,
+                                          Text(
+                                            'Equivalente: ${StockMixtoFormatter.cantidad(summary.stock.equivalenteBase)} '
+                                            '${StockMixtoFormatter.plural(summary.stock.nombrePresentacionBase, summary.stock.equivalenteBase)} base',
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: AppColors.textSecondary,
+                                            ),
                                           ),
-                                        ),
-                                      ],
-                                    );
-                                  },
-                                ),
-                                Builder(
-                                  builder: (context) {
-                                    final stockStatus = _getStockStatus(
-                                      summary.stock.equivalenteBase.toInt(),
-                                    );
-                                    return Container(
+                                        ],
+                                      ),
+                                    ),
+                                    Container(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 12,
                                         vertical: 4,
@@ -1592,22 +1910,46 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                                           fontWeight: FontWeight.w600,
                                         ),
                                       ),
-                                    );
-                                  },
-                                ),
-                              ],
+                                    ),
+                                  ],
+                                );
+                              },
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 16),
-
-                      // Real stock breakdown
+                      const SizedBox(height: 12),
                       _buildSummaryStockBreakdownSection(summary),
-
-                      const SizedBox(height: 16),
-
-                      // Distribution Information
+                      const SizedBox(height: 12),
+                      if (lotes.isNotEmpty) ...[
+                        LoteExpirySection(
+                          title: 'Stock por lote y presentación',
+                          lotes: lotes,
+                          showUbicacion: true,
+                          showPresentacion: true,
+                          onAssignSinLote: _canAssignLote
+                              ? (lote) async {
+                                  Navigator.of(context).pop();
+                                  final ok = await showAsignarLoteDialog(
+                                    context: context,
+                                    loteSinLote: lote,
+                                    productName: summary.productoNombre,
+                                  );
+                                  if (!ok || !mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Lote asignado correctamente',
+                                      ),
+                                    ),
+                                  );
+                                  await _loadLotesForSummaries();
+                                  await _loadLotesForDetailedProducts();
+                                }
+                              : null,
+                        ),
+                        const SizedBox(height: 12),
+                      ],
                       _buildDetailSection(
                         'Distribución',
                         Icons.location_on_outlined,
@@ -1632,13 +1974,12 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                   ),
                 ),
               ),
-
-              // Actions
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
+              const SizedBox(height: 12),
+              if (narrow)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    OutlinedButton(
                       onPressed: () {
                         Navigator.of(context).pop();
                         setState(() {
@@ -1648,30 +1989,51 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                         });
                         _loadInventoryData();
                       },
-                      icon: const Icon(Icons.visibility, size: 18),
-                      label: const Text('Ver Detalles'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.primary,
-                        side: const BorderSide(color: AppColors.primary),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
+                      child: const Text('Ver Detalles'),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton.icon(
+                    const SizedBox(height: 8),
+                    ElevatedButton(
                       onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close, size: 18),
-                      label: const Text('Cerrar'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
                         foregroundColor: Colors.white,
                       ),
+                      child: const Text('Cerrar'),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                )
+              else
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          setState(() {
+                            _isDetailedView = true;
+                            _searchQuery = summary.productoNombre;
+                            _searchController.text = summary.productoNombre;
+                          });
+                          _loadInventoryData();
+                        },
+                        child: const Text('Ver Detalles'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('Cerrar'),
+                      ),
+                    ),
+                  ],
+                ),
             ],
+          ),
           ),
         ),
       ),
@@ -1717,6 +2079,19 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                 onTap: () {
                   Navigator.pop(context);
                   _showWarehousePickerForStockList();
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.event_busy, color: Colors.amber.shade800),
+                title: const Text('Caducidades'),
+                subtitle: const Text('Por vencer y vencidos'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const CaducidadesScreen(),
+                    ),
+                  );
                 },
               ),
             ],
@@ -1914,5 +2289,39 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text('Error cargando listado: $e')));
     }
+  }
+}
+
+/// Filas de inventario de un mismo producto/ubicación/variante
+/// (una por presentación) para mostrar una sola card.
+class _StockCardGroup {
+  final List<InventoryProduct> rows;
+
+  _StockCardGroup(List<InventoryProduct> rows)
+      : rows = List<InventoryProduct>.unmodifiable(
+          (List<InventoryProduct>.from(rows)
+            ..sort((a, b) => b.cantidadFinal.compareTo(a.cantidadFinal))),
+        );
+
+  InventoryProduct get primary => rows.first;
+
+  double get cantidadTotal =>
+      rows.fold<double>(0, (s, r) => s + r.cantidadFinal);
+
+  /// Incluye presentaciones en 0 cuando hay varias (p. ej. "0 Cajas + 5.750 Blísteres").
+  String get stockMixtoTexto {
+    if (rows.length <= 1) {
+      return StockMixtoFormatter.mixto([
+        for (final r in rows)
+          {'nombre': r.presentacion, 'cantidad': r.cantidadFinal},
+      ]);
+    }
+    return rows
+        .map(
+          (r) =>
+              '${StockMixtoFormatter.cantidad(r.cantidadFinal)} '
+              '${StockMixtoFormatter.plural(r.presentacion, r.cantidadFinal)}',
+        )
+        .join(' + ');
   }
 }

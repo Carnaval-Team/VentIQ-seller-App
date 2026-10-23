@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../services/inventory_service.dart';
 import '../services/user_preferences_service.dart';
 
 
@@ -194,29 +195,26 @@ class ProductSearchService {
 
     final filteredProducts = _filterByProductType(products, searchType);
 
-    
+    // Los listados RPC aún pueden devolver solo el último snapshot por lote;
+    // sustituir cantidades por la suma real de saldos.
+    final withLoteSums = await InventoryService.enrichMapsWithLoteSums(
+      filteredProducts,
+      idUbicacionFallback: locationId,
+    );
 
-    // Agrupar productos duplicados por ID
-
-    // final uniqueProducts = _groupDuplicateProducts(filteredProducts);
-
-    
-
-    print('✅ Productos2 encontrados: ${filteredProducts.length} (${filteredProducts.length} registros originales)');
-
-    
+    print('✅ Productos2 encontrados: ${withLoteSums.length} (${filteredProducts.length} registros originales)');
 
     return ProductSearchResult(
 
-      products: filteredProducts,
+      products: withLoteSums,
 
-      totalCount: filteredProducts.length, // Aproximado, la función no retorna count total
+      totalCount: withLoteSums.length, // Aproximado, la función no retorna count total
 
       currentPage: page,
 
       pageSize: pageSize,
 
-      hasNextPage: filteredProducts.length == pageSize,
+      hasNextPage: withLoteSums.length == pageSize,
 
       hasPreviousPage: page > 1,
 

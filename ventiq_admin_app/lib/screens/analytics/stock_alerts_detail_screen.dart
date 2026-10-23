@@ -630,6 +630,8 @@ class _StockAlertsDetailScreenState extends State<StockAlertsDetailScreen>
         return Icons.add_circle;
       case 'expiring':
         return Icons.schedule;
+      case 'expired':
+        return Icons.event_busy;
       default:
         return Icons.info;
     }

@@ -20,13 +20,16 @@ BEGIN
     -- Mantiene la función STABLE (sin CREATE TEMP TABLE).
     -- ============================================================
     RETURN QUERY
-    WITH inv_last AS (
+    -- inv_last: último saldo POR LOTE, luego SUM entre lotes (FEFO no aplica
+    -- aquí; solo agrega cantidad disponible para listados/operaciones).
+    WITH inv_last_lote AS (
         SELECT DISTINCT ON (
             ih.id_producto,
             COALESCE(ih.id_variante, 0),
             COALESCE(ih.id_opcion_variante, 0),
             COALESCE(ih.id_presentacion, 0),
-            COALESCE(ih.id_ubicacion, 0)
+            COALESCE(ih.id_ubicacion, 0),
+            COALESCE(ih.id_lote, 0)
         )
             ih.*
         FROM public.app_dat_inventario_productos ih
@@ -43,7 +46,32 @@ BEGIN
             COALESCE(ih.id_opcion_variante, 0),
             COALESCE(ih.id_presentacion, 0),
             COALESCE(ih.id_ubicacion, 0),
+            COALESCE(ih.id_lote, 0),
             ih.id DESC
+    ),
+    inv_last AS (
+        SELECT
+            (ARRAY_AGG(i.id ORDER BY i.id DESC))[1] AS id,
+            i.id_producto,
+            (ARRAY_AGG(i.id_variante ORDER BY i.id DESC))[1] AS id_variante,
+            (ARRAY_AGG(i.id_opcion_variante ORDER BY i.id DESC))[1] AS id_opcion_variante,
+            (ARRAY_AGG(i.id_ubicacion ORDER BY i.id DESC))[1] AS id_ubicacion,
+            (ARRAY_AGG(i.id_presentacion ORDER BY i.id DESC))[1] AS id_presentacion,
+            SUM(i.cantidad_inicial) AS cantidad_inicial,
+            SUM(i.cantidad_final) AS cantidad_final,
+            MAX(i.created_at) AS created_at,
+            (ARRAY_AGG(i.origen_cambio ORDER BY i.id DESC))[1] AS origen_cambio,
+            (ARRAY_AGG(i.id_recepcion ORDER BY i.id DESC))[1] AS id_recepcion,
+            (ARRAY_AGG(i.id_extraccion ORDER BY i.id DESC))[1] AS id_extraccion,
+            (ARRAY_AGG(i.id_control ORDER BY i.id DESC))[1] AS id_control,
+            (ARRAY_AGG(i.id_proveedor ORDER BY i.id DESC))[1] AS id_proveedor
+        FROM inv_last_lote i
+        GROUP BY
+            i.id_producto,
+            COALESCE(i.id_variante, 0),
+            COALESCE(i.id_opcion_variante, 0),
+            COALESCE(i.id_presentacion, 0),
+            COALESCE(i.id_ubicacion, 0)
     ),
     inv_filtrado AS (
         SELECT

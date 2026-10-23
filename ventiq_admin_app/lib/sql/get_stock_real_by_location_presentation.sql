@@ -17,17 +17,25 @@ RETURNS TABLE (
     created_at TIMESTAMP WITH TIME ZONE
 ) AS $$
 BEGIN
+    -- Suma el último saldo de cada lote (incluye id_lote NULL).
     RETURN QUERY
-    SELECT 
-        COALESCE(ip.cantidad_final, 0)::NUMERIC as cantidad_disponible,
+    WITH latest_lote AS (
+      SELECT DISTINCT ON (COALESCE(ip.id_lote, 0))
         ip.id,
+        ip.cantidad_final,
         ip.created_at
-    FROM app_dat_inventario_productos ip
-    WHERE ip.id_producto = p_id_producto
-      AND ip.id_ubicacion = p_id_ubicacion
-      AND ip.id_presentacion = p_id_presentacion
-    ORDER BY ip.created_at DESC, ip.id DESC
-    LIMIT 1;
+      FROM app_dat_inventario_productos ip
+      WHERE ip.id_producto = p_id_producto
+        AND ip.id_ubicacion = p_id_ubicacion
+        AND COALESCE(ip.id_presentacion, 0) = COALESCE(p_id_presentacion, 0)
+        AND ip.cantidad_final IS NOT NULL
+      ORDER BY COALESCE(ip.id_lote, 0), ip.id DESC
+    )
+    SELECT
+      COALESCE(SUM(l.cantidad_final), 0)::NUMERIC,
+      (ARRAY_AGG(l.id ORDER BY l.created_at DESC NULLS LAST, l.id DESC))[1]::BIGINT,
+      MAX(l.created_at)
+    FROM latest_lote l;
 END;
 $$ LANGUAGE plpgsql STABLE;
 
