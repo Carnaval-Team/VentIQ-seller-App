@@ -320,9 +320,17 @@ BEGIN
       SELECT aj2.id, aj2.id_operacion, aj2.id_ubicacion
       FROM app_dat_ajuste_inventario aj2
       WHERE aj2.id_producto  = b.id_producto
-        AND aj2.id_ubicacion = b.inv_id_ubicacion
+        AND aj2.id_ubicacion IS NOT DISTINCT FROM b.inv_id_ubicacion
         -- mismo segundo de creación (misma transacción SQL)
         AND date_trunc('second', aj2.created_at) = date_trunc('second', b.inv_created_at)
+        AND (
+              aj2.diferencia IS NOT DISTINCT FROM
+                  (b.cantidad_final - b.cantidad_inicial)
+           OR (
+                  aj2.cantidad_anterior IS NOT DISTINCT FROM b.cantidad_inicial
+              AND aj2.cantidad_nueva IS NOT DISTINCT FROM b.cantidad_final
+              )
+        )
       ORDER BY aj2.id DESC
       LIMIT 1
     ) aj ON TRUE
