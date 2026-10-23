@@ -1,0 +1,27 @@
+# Configuración mínima del proyecto Supabase de las Edge Functions WAPI.
+#
+# No hay stack local aquí: este archivo existe para dos cosas concretas.
+#
+#  1. Que `supabase functions deploy wapi-send-products` (y cualquier otro
+#     deploy del CLI) sepa qué proyecto es cuando se le pasa `--project-ref`.
+#  2. FIJAR EL `verify_jwt` DE CADA FUNCIÓN. Sin esto, un deploy sin nombre
+#     (`supabase functions deploy`) aplicaría el default `true` a TODAS y
+#     rompería las dos que hoy están desplegadas con `false`:
+#
+#       · wapi-send-products → lo invoca `wapi-cron-dispatch` en segundo plano
+#         con service_role y no lleva JWT de usuario.
+#       · wapi-webhook       → lo llama OpenWA (servidor externo) y viaja con
+#         firma HMAC propia (WAPI_WEBHOOK_SECRET), no con JWT de Supabase.
+#
+# El resto de funciones WAPI van con `verify_jwt = true`, que es el default y
+# por eso no aparecen aquí (`wapi-session-create`, `wapi-session-status`,
+# `wapi-session-action`, `wapi-list-sessions`, `wapi-list-groups`,
+# `wapi-cron-dispatch`, `wapi-session-health`).
+
+project_id = "vsieeihstajlrdvpuooh"
+
+[functions.wapi-send-products]
+verify_jwt = false
+
+[functions.wapi-webhook]
+verify_jwt = false

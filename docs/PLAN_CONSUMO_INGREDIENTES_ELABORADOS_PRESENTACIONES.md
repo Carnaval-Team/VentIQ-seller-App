@@ -1,6 +1,6 @@
 # Plan: consumo de ingredientes de elaborados y venta con presentaciones (kg ↔ gramos)
 
-**Fecha:** 2026-10-21 · **Owner:** lead · **Estado:** plan listo para ejecutar (nada implementado todavía)
+**Fecha:** 2026-10-21 · **Owner:** lead · **Estado (actualizado 2026-10-23):** SQL **aplicado en debug** (Fases 0.5, 1, 2, 3 y 4) con el caso real probado; SQL **pendiente en producción** (7/18 objetos y el `30` aplicado es una revisión anterior) y C9 sigue vivo allí. Dart: P0(a)/(b) y el cableado `_v3`/`_v4`/`_v2` hechos; **P0(c), P1 y P2 pendientes**. Ver `docs/_analisis/AUDITORIA_FINAL_PLAN_INGREDIENTES.md`.
 **Revisiones:** verificación adversarial en `docs/_analisis/VERIFICACION_PLAN.md` (76 afirmaciones, 10 corregidas) **+ medición directa del proyecto debug del 2026-10-21** (§2-bis) **+ decisión del usuario: Fase 1 = cadena `_v2`/`_v3` sin tocar funciones vivas (1B)**.
 
 **Proyectos Supabase afectados (los dos):**
@@ -65,6 +65,29 @@ La simulación exacta (CTE recursivo que replica el `FOR` del helper, solo lectu
 
 ---
 
+## 0-bis · Estado de implementación (2026-10-23)
+
+Auditoría completa del 2026-10-23 (`docs/_analisis/AUDITORIA_FINAL_PLAN_INGREDIENTES.md` con la evidencia en
+`AUDITORIA_DB_DEBUG_INGREDIENTES.md`, `AUDITORIA_DART_INGREDIENTES.md` y `AUDITORIA_VERIFICACIONES_INGREDIENTES.md`).
+
+| Fase | Debug `qhprswhhfasrikhawjoz` | Producción `vsieeihstajlrdvpuooh` |
+|---|---|---|
+| 0.5 (C9) | ✅ resuelta: guard `_safe` (`45`) **y** patch en sitio (`46`) aplicado de facto (md5 `f55ff162…`); el 42P01 ya no se reproduce | ❌ C9 **vivo**: guard `438dbaec…` sin `search_path` ⇒ P0 de offline sin resolver |
+| 1 (`30`/`31`) | ✅ 18/18 en total; caso 0 **PASA** (6000/5000 base exactos, `Kilogramo` no queda en cero, 0 negativos, insuficiencia atómica ledger 70→70) | ⚠️ 7 objetos: falta `fn_ingrediente_base_alcanzable` (el `30` es anterior) |
+| 2 (`33`) | ✅ aplicada; **prueba «1 Caja» sin ejecutar** | ❌ falta |
+| 3 (`34`) | ✅ aplicada; `_v3`/`_mesa_v3` llaman 1× a `_v2` de enrutada y 1× a `entrega_v3`, 0× a las vivas | ❌ falta |
+| 4 (`35`) | ✅ aplicada; **prueba de devolución sin ejecutar** | ❌ falta |
+| 5 (`36`) | ❌ el archivo **no existe**; `p_alcance` (DEFAULT `'almacen'`) vive en `30` y no se usa con `'tienda'` | — |
+| 7 Dart | P0(a) ~90 % (suma equivalente base, **sin** la RPC nueva), P0(b) ~90 % online, P0(c) **no**, P0(d) ~70 %, P1 y P2 **no**; Fase 3/4 Dart (RPC `_v3`/`_v4`/`_v2` con fallback) **sí**; `analyze` sin errores nuevos | el mismo repo |
+| 8 | migraciones: 58, `max=20260924`, 0 desde octubre ⇒ se aplicó por el SQL Editor, no como migración | — |
+
+> **Nota de divergencia:** en debug `fn_descontar_venta_enrutada` es `81319b55…` (8301 chars, rama FEFO/lotes)
+> mientras producción y el repo tienen `d56b117f…` (6401). Debug tiene una familia FEFO/lotes (3 funciones
+> `%fefo%`, 6 `%lote%`) que **no** está en el repo ni en producción. No la introdujo este plan, pero las copias
+> `_v2`/`_v3` se derivaron de la versión **sin** FEFO: hay que decidirlo antes de promover.
+
+---
+
 ## 1 · El emisor del cartel (confirmado)
 
 | Texto visto por el usuario | Emisor | ¿Bloquea? |
@@ -85,12 +108,17 @@ Otros emisores que existen pero **no** son este caso (se corrigen igual en el pl
 - [ ] **D1/D2 completos en producción** (marcadores) como referencia.
 - [ ] Confirmar en debug el estado de `check_user_has_access_to_tienda` (§3.1 C9) y su impacto.
 - [ ] Pegar en este documento el anexo del resto de productos elaborados de la tienda 4.
+- [x] **(2026-10-23) Auditoría de cierre**: estado real de las 6 fases SQL, del Dart y de los dos documentos de verificación en `docs/_analisis/AUDITORIA_FINAL_PLAN_INGREDIENTES.md` (y sus tres anexos).
 
 **Criterio de aceptación:** el anexo §2-bis está cerrado y cada decisión de las Fases 1–5 tiene su número real.
 
 ---
 
 ## 2-bis · Anexo · Medición real del caso (proyecto debug, 2026-10-21, solo lectura)
+
+> **Nota de vigencia (2026-10-23):** los saldos de esta medición son **históricos**. Hoy en debug el ledger
+> tiene Arroz: 1988 kg + 800 u (**1 988 800** base) y Frijoles: 2989 kg + 2000 u (**2 991 000** base); el
+> «empate 2000/2000 y 2500/2500» ya no existe, pero **el defecto (C2) y las conclusiones se mantienen**.
 
 **Productos y presentaciones** (`app_dat_producto` + `app_dat_producto_presentacion` + `app_nom_presentacion`):
 
@@ -229,12 +257,12 @@ Misma firma y contrato en las tres; arreglaría también los builds instalados; 
 
 **Archivo:** `presentaciones_inventario/45_guard_search_path.sql`.
 
-- [ ] Decidir y aplicar **una** de las dos:
+- [x] **(debug, 2026-10-23)** Decidir y aplicar **una** de las dos (en debug se aplicó **(a)**, mediante `presentaciones_inventario/46`; **en producción sigue pendiente**):
   - **(a) endurecer el guard** `check_user_has_access_to_tienda` en sitio: calificar las tablas (`public.app_dat_vendedor`, …) y añadirle `SET search_path = public, pg_catalog`. Misma firma, mismo `void`; **desbloquea de golpe** los cuatro llamadores con `search_path=''` y no cambia nada para los que ya funcionan. Es un bug puro (42P01), no un contrato.
   - **(b) no tocarlo** y crear `fn_check_user_has_access_to_tienda_safe` (calificado) usada sólo por los objetos nuevos.
 - [ ] Inventario exacto a revisar (los dos proyectos): **31 funciones con `search_path` vacío**; **8 llaman al guard**; **rompen 4**: `fn_ejecutar_entrega_fisica_v2`, `fn_preview_entrega_fisica_v2`, `fn_registrar_venta_offline_v2` y `fn_registrar_venta_offline_v3`. Las de «cumplimiento» (`fn_aplicar_cumplimiento_v2`, `fn_crear_extraccion_con_movimiento_v2`, `fn_preview_cumplimiento_v2`) tienen `search_path` vacío pero no llaman al guard y no fallan; otras 4 se auto-corrigen con `set_config`. Guard afectado: `check_user_has_access_to_tienda` (config `null`, tablas sin calificar).
-- [ ] **Prioridad alta — camino offline vivo**: `auto_sync_service.dart:4015` llama `fn_registrar_venta_offline_v3` (con fallbacks que **no** reconocen un 42P01, porque `_isRpcUnavailable` sólo busca `pgrst202`/`could not find the function`). Verificar si la sincronización offline de ventas falla hoy en producción y, en su caso, tratarlo como P0 independiente de este plan.
-- [ ] Prueba: `select public.fn_preview_entrega_fisica_v2(3, 3, 4, 1, null, null)` desde un usuario autenticado de la tienda 4 → hoy `42P01`; después, `success`.
+- [x] **(verificado 2026-10-23)** **Prioridad alta — camino offline vivo**: `auto_sync_service.dart:4015` llama `fn_registrar_venta_offline_v3` (con fallbacks que **no** reconocen un 42P01, porque `_isRpcUnavailable` sólo busca `pgrst202`/`could not find the function`). **En producción el guard sigue sin `search_path` (`438dbaec…`) ⇒ C9 sigue vivo y es P0 de offline**; en debug lo tapa el patch `46`. La app **sí** ha migrado a `fn_registrar_venta_offline_v4` (con fallback a `_v3` y a la viva), pero con `45` aplicada en producción esa vía funcionaría.
+- [x] **(debug)** Prueba: `select public.fn_preview_entrega_fisica_v2(3, 3, 4, 1, null, null)` → **ya no da `42P01`** (devuelve `P0001` «Acceso denegado», que es el guard resolviendo las tablas desde una sesión MCP sin usuario de tienda). **Producción pendiente.**
 
 **Criterio:** ninguna función del stack falla con `42P01 relation "app_dat_*" does not exist`.
 
@@ -273,19 +301,21 @@ Misma firma y contrato en las tres; arreglaría también los builds instalados; 
 
 `funcionalidad_cocina/33_ordenes_cocina_cantidad_en_base.sql`: `fn_pedir_item_cuenta_v2`, `fn_agregar_producto_orden_pendiente_v2`, `fn_actualizar_cantidad_producto_orden_v2` con `fn_cantidad_en_base(p_id_presentacion, p_cantidad)` en la entrada y devoluciones simétricas. Dart: `mesa_cuenta_service.pedirItem` (`:282-303`), `order_service` (`:2827-2959`).
 **Prueba:** 1 Caja (×24) de un elaborado baja la harina 24 × la receta (hoy 1 ×).
+*(Estado 2026-10-23: `33` aplicada en debug — las 3 funciones existen — pero la prueba **no se ha ejecutado**.)*
 
 ### Fase 3 · Venta `_v3` — **obligatoria** con 1B
 
 `funcionalidad_cocina/34_venta_v3_presentaciones.sql`:
 
-- [ ] `fn_registrar_venta_v3` / `fn_registrar_venta_mesa_v3`: base de las `_v2` vivas (22+24) **+ el 25** (abrir/armar empaques del SKU) **+ `fn_descontar_venta_enrutada_v2`**.
-- [ ] `fn_registrar_venta_offline_v4` para la cola offline.
-- [ ] Dart: `order_service._registerSaleInSupabase` (`:1442-1461`) y la cadena de `auto_sync_service` (`:4010-4072`) apuntan a las nuevas. **Sin este paso, la Fase 7 queda sin efecto o es peligrosa** (C10).
+- [x] **(debug)** `fn_registrar_venta_v3` / `fn_registrar_venta_mesa_v3`: base de las `_v2` vivas (22+24) **+ el 25** (abrir/armar empaques del SKU) **+ `fn_descontar_venta_enrutada_v2`**. Verificado: llaman 1× a `_v2` y 1× a `entrega_v3`, 0× a las vivas.
+- [x] **(debug)** `fn_registrar_venta_offline_v4` para la cola offline.
+- [x] **(debug/repo)** Dart: `order_service._registerSaleInSupabase` (`:1447-1450`) y la cadena de `auto_sync_service` (`:4016-4051`) apuntan a las nuevas **con fallback** a las vivas. **Sin este paso, la Fase 7 queda sin efecto o es peligrosa** (C10).
 
 ### Fase 4 · Devoluciones y cancelaciones (C7)
 
 `funcionalidad_cocina/35_devoluciones_presentacion.sql`: `fn_devolver_ingredientes_elaborado_v2` (devuelve a la presentación base, equivalente exacto, traza) + `fn_cancelar_item_pedido_v2`, `fn_eliminar_producto_orden_v2`. Dart: `mesa_cuenta_service.cancelarItemPedido` (`:357-376`), `order_service` (`:2827-2959`).
 **Prueba:** cancelar 1 Caja devuelve lo consumido (no 500 en una fila `Kilogramo`); neto 0.
+*(Estado 2026-10-23: `35` aplicada en debug — las 3 funciones existen — pero la prueba **no se ha ejecutado**.)*
 
 ### Fase 5 · Alcance y coherencia (C4)
 
@@ -301,27 +331,27 @@ Misma firma y contrato en las tres; arreglaría también los builds instalados; 
 
 **P0 — el cartel (bloqueante hoy; es el caso del usuario):**
 
-- [ ] **`getProductIngredients`** (`product_detail_service.dart:506-593`): **preferido**, dejar de calcular el disponible en el cliente y pedirlo al servidor: llamar `fn_ingredientes_elaborado_base` (o `fn_validar_ingredientes_elaborado_v2`) con el almacén resuelto del TPV y exponer `disponible_base` + desglose por presentación. **Fallback** si la RPC no está: traer **todas** las filas del ingrediente con su `id_presentacion` y sumar `cantidad_final × factor_rel` con `PresentacionCadenaLocal` (`presentacion_cadena_local.dart:111-196`).
-- [ ] **`preorder_screen._checkInventoryAvailability`** (`:1271-1576`) y `_checkIngredientsAvailability` (`:2643-2718`): comparar en **unidades base**; si la RPC nueva responde, usarla como fuente única.
-- [ ] **No aplicar el desarme de presentaciones a elaborados/servicios** en la ficha (`product_details_screen.dart:3680-3736`).
-- [ ] **Unidad/presentación** en los carteles (`preorder_screen.dart:2824-2828`) y equivalente base en gris (regla de UI de `PLAN_PRESENTACIONES_INVENTARIO.md:845-847`). Ojo: la receta de este caso tiene `unidad_medida = null`; la unidad debe salir de la **presentación**, no de ese campo.
+- [x] **(hecho por el camino de FALLBACK, ~90 %)** **`getProductIngredients`** (`product_detail_service.dart:583-844`): ya **no** calcula el disponible con una sola fila; suma `cantidad_final × factor_rel` vía `fn_stock_producto_almacen_detalle` y expone `cantidad_disponible`, `cantidad_disponible_fisica`, `presentacion_base` y `desglose_presentaciones`. **No** usa la vía preferida (`fn_ingredientes_elaborado_base` / `fn_validar_ingredientes_elaborado_v2`, que ya existen en debug); el fallback de 1 fila queda solo sin cadena/fallo de RPC.
+- [x] **(online, ~90 %)** **`preorder_screen._checkInventoryAvailability`** (`:1391-1420`) y `_checkIngredientsAvailability` (`:2831-2854`): comparan en **unidades base** con el almacén de venta de `fn_resolver_origen_venta`. Offline sigue inerte.
+- [ ] **No aplicar el desarme de presentaciones a elaborados/servicios** en la ficha (`product_details_screen.dart:3680-3736`): **NO IMPLEMENTADO** (no hay guarda `!esElaborado/!esServicio`; `_buildInventoryData` no filtra).
+- [x] **PARCIAL (~70 %)** **Unidad/presentación** en los carteles (`preorder_screen.dart:1826-1831`, `:3008-3012`) y equivalente base en gris (regla de UI de `PLAN_PRESENTACIONES_INVENTARIO.md:845-847`): se pinta unidad base y alcance, pero `desglose_presentaciones` **nunca** se pinta. Ojo: la receta de este caso tiene `unidad_medida = null`; la unidad debe salir de la **presentación**, no de ese campo.
 
 **P1:**
 
-- [ ] Rama `on PedidoException` en `_addToCart` (`product_details_screen.dart:3912-3925`) usando `titulo`/`esFaltaDeStock` y `forzarSinStock`.
-- [ ] `_getStockFromCache` (`preorder_screen.dart:1060-1144`): priorizar la suma (el respaldo ya existe en `:1132`).
-- [ ] Venta por acuerdo: excluir elaborados del delta local (`admin_inventory_service.dart:1229-1238`).
-- [ ] Offline: decidir si se cachea la receta (hoy la rama de ingredientes es inerte).
+- [ ] **NO IMPLEMENTADO** Rama `on PedidoException` en `_addToCart` (`product_details_screen.dart:3912-3925`) usando `titulo`/`esFaltaDeStock` y `forzarSinStock`.
+- [x] **PARCIAL (~50 %)** `_getStockFromCache` (`preorder_screen.dart:1060-1144`): la suma existe, pero sigue como respaldo (`:1131-1132`), no como fuente prioritaria.
+- [ ] **NO IMPLEMENTADO** Venta por acuerdo: excluir elaborados del delta local (`admin_inventory_service.dart:1229-1238`, `:1367-1379`).
+- [ ] **NO IMPLEMENTADO** Offline: decidir si se cachea la receta (hoy la rama de ingredientes es inerte: el detalle cacheado no trae `ingredientes`).
 
-**P2 (fuera del caso):** modo fluido (`fluid_mode_screen.dart:66-106`), `cocina_offline_queue.dart`, conteo mixto en apertura (`apertura_screen.dart:781-799`).
+**P2 (fuera del caso):** modo fluido (`fluid_mode_screen.dart:66-106`), `cocina_offline_queue.dart`, conteo mixto en apertura (`apertura_screen.dart:781-799`). *(Estado 2026-10-23: los tres siguen **NO IMPLEMENTADOS**.)*
 
 **Gate de release:** no publicar el APK con el P0 si la Fase 1 + Fase 3 no están aplicadas en **ambos** proyectos.
 
 ### Fase 8 · Pruebas, despliegue y documentación
 
-- [ ] Suite transaccional de las Fases 1–4 en **debug** y con `ROLLBACK` en producción.
-- [ ] Aplicar **debug → probar con el usuario → producción**; Fase 0.5 en los dos.
-- [ ] Verificar por md5 que las funciones vivas **no** cambiaron (salvo, si se elige 0.5(a), el guard).
+- [x] **(debug, parcial)** Suite transaccional de las Fases 1–4 en **debug** y con `ROLLBACK` en producción. Hecho en debug para Fase 1 (caso 0 + insuficiencia atómica); **Fases 2 y 4 sin probar**; en producción, nada.
+- [ ] Aplicar **debug → probar con el usuario → producción**; Fase 0.5 en los dos. *(Debug hecho salvo Fase 2/4; producción pendiente.)*
+- [x] **(debug)** Verificar por md5 que las funciones vivas **no** cambiaron (salvo, si se elige 0.5(a), el guard). Medido: `fn_registrar_venta` `371402e5…`, `_mesa` `74b4751f…`, `_v2` `253d9d16…`, `_mesa_v2` `6d34466b…`, `fn_descontar_ingredientes_elaborado` `47be3a93…`, `fn_validar_ingredientes_elaborado` `c23f85d2…` **idénticos a producción**; el guard cambió **por el patch `46`** (esperado); **`fn_descontar_venta_enrutada` diverge** (debug `81319b55…` vs producción `d56b117f…`) por la rama FEFO/lotes que debug tiene y el repo/producción no.
 - [ ] `advisors` de seguridad/rendimiento tras aplicar.
 - [ ] Actualizar `presentaciones_inventario/README.md`, `funcionalidad_cocina/README.md`, el §«pendiente conocido» del tutorial (`:1254-1273`, ya desfasado) y este documento con el anexo final.
 

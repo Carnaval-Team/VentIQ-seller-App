@@ -1,0 +1,21 @@
+﻿# OpenWA Configuration
+# Generated automatically on first run
+# Edit via Dashboard > Infrastructure or modify this file directly.
+# Note: values in process env or project .env take precedence over this file.
+
+# Database (SQLite - no external service required)
+DATABASE_TYPE=sqlite
+POSTGRES_BUILTIN=false
+
+# Redis & Queue (disabled by default)
+REDIS_ENABLED=false
+REDIS_BUILTIN=false
+QUEUE_ENABLED=false
+
+# Storage (Local filesystem)
+STORAGE_TYPE=local
+MINIO_BUILTIN=false
+STORAGE_LOCAL_PATH=./data/media
+
+# Docker Profiles: none (minimal setup)
+[exit=0]

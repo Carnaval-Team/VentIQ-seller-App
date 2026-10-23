@@ -1,0 +1,49 @@
+﻿=== idem keys by state ===
+  completed      sendImage    32
+  failed         sendImage    10
+=== STUCK (state<>completed) ===
+   ('wa-log-24495', 'sendImage', 'failed', '2026-10-23 14:52:38', '2026-10-24T14:52:37.944Z')
+   ('wa-log-24496', 'sendImage', 'failed', '2026-10-23 14:53:32', '2026-10-24T14:53:32.888Z')
+   ('wa-log-24501', 'sendImage', 'failed', '2026-10-23 14:53:47', '2026-10-24T14:53:47.032Z')
+   ('wa-log-24497', 'sendImage', 'failed', '2026-10-23 14:54:29', '2026-10-24T14:54:29.105Z')
+   ('wa-log-24502', 'sendImage', 'failed', '2026-10-23 14:54:53', '2026-10-24T14:54:53.856Z')
+   ('wa-log-24498', 'sendImage', 'failed', '2026-10-23 14:55:18', '2026-10-24T14:55:18.064Z')
+   ('wa-log-24503', 'sendImage', 'failed', '2026-10-23 14:56:03', '2026-10-24T14:56:03.062Z')
+   ('wa-log-24504', 'sendImage', 'failed', '2026-10-23 14:56:14', '2026-10-24T14:56:14.083Z')
+   ('wa-log-24509', 'sendImage', 'failed', '2026-10-23 14:56:57', '2026-10-24T14:56:57.903Z')
+   ('wa-log-24505', 'sendImage', 'failed', '2026-10-23 14:57:02', '2026-10-24T14:57:02.913Z')
+=== claim->persist latency ===
+     0.00s  claim=2026-10-23 14:47:56 done=2026-10-23 14:47:56 type=image  status=delivered key=wa-log-24480
+     1.00s  claim=2026-10-23 14:44:50 done=2026-10-23 14:44:51 type=image  status=delivered key=wa-log-24463
+     1.00s  claim=2026-10-23 14:45:41 done=2026-10-23 14:45:42 type=image  status=delivered key=wa-log-24467
+     1.00s  claim=2026-10-23 14:46:41 done=2026-10-23 14:46:42 type=image  status=delivered key=wa-log-24473
+     1.00s  claim=2026-10-23 14:47:47 done=2026-10-23 14:47:48 type=image  status=delivered key=wa-log-24479
+     2.00s  claim=2026-10-23 14:44:31 done=2026-10-23 14:44:33 type=image  status=delivered key=wa-log-24461
+     2.00s  claim=2026-10-23 14:44:42 done=2026-10-23 14:44:44 type=image  status=delivered key=wa-log-24462
+     2.00s  claim=2026-10-23 14:45:02 done=2026-10-23 14:45:04 type=image  status=delivered key=wa-log-24464
+     2.00s  claim=2026-10-23 14:45:17 done=2026-10-23 14:45:19 type=image  status=delivered key=wa-log-24465
+     2.00s  claim=2026-10-23 14:45:50 done=2026-10-23 14:45:52 type=image  status=delivered key=wa-log-24468
+     2.00s  claim=2026-10-23 14:46:02 done=2026-10-23 14:46:04 type=image  status=delivered key=wa-log-24469
+     2.00s  claim=2026-10-23 14:46:14 done=2026-10-23 14:46:16 type=image  status=delivered key=wa-log-24470
+     2.00s  claim=2026-10-23 14:46:23 done=2026-10-23 14:46:25 type=image  status=delivered key=wa-log-24471
+     2.00s  claim=2026-10-23 14:46:31 done=2026-10-23 14:46:33 type=image  status=delivered key=wa-log-24472
+     2.00s  claim=2026-10-23 14:46:53 done=2026-10-23 14:46:55 type=image  status=delivered key=wa-log-24474
+     2.00s  claim=2026-10-23 14:47:04 done=2026-10-23 14:47:06 type=image  status=delivered key=wa-log-24475
+     2.00s  claim=2026-10-23 14:47:25 done=2026-10-23 14:47:27 type=image  status=delivered key=wa-log-24477
+     2.00s  claim=2026-10-23 14:47:35 done=2026-10-23 14:47:37 type=image  status=delivered key=wa-log-24478
+     3.00s  claim=2026-10-23 14:45:27 done=2026-10-23 14:45:30 type=image  status=delivered key=wa-log-24466
+     4.00s  claim=2026-10-23 14:44:20 done=2026-10-23 14:44:24 type=image  status=delivered key=wa-log-24460
+     4.00s  claim=2026-10-23 14:47:14 done=2026-10-23 14:47:18 type=image  status=delivered key=wa-log-24476
+     8.00s  claim=2026-10-23 14:49:22 done=2026-10-23 14:49:30 type=image  status=sent      key=wa-log-24483
+    11.00s  claim=2026-10-23 14:49:48 done=2026-10-23 14:49:59 type=image  status=sent      key=wa-log-24484
+    13.00s  claim=2026-10-23 14:50:44 done=2026-10-23 14:50:57 type=image  status=sent      key=wa-log-24489
+    16.00s  claim=2026-10-23 14:48:13 done=2026-10-23 14:48:29 type=image  status=sent      key=wa-log-24481
+    18.00s  claim=2026-10-23 14:48:40 done=2026-10-23 14:48:58 type=image  status=sent      key=wa-log-24482
+    26.00s  claim=2026-10-23 14:49:32 done=2026-10-23 14:49:58 type=image  status=sent      key=wa-log-24487
+    26.00s  claim=2026-10-23 14:51:40 done=2026-10-23 14:52:06 type=image  status=sent      key=wa-log-24490
+    28.00s  claim=2026-10-23 14:50:40 done=2026-10-23 14:51:08 type=image  status=sent      key=wa-log-24488
+    30.00s  claim=2026-10-23 14:51:39 done=2026-10-23 14:52:09 type=image  status=sent      key=wa-log-24494
+    36.00s  claim=2026-10-23 14:52:30 done=2026-10-23 14:53:06 type=image  status=sent      key=wa-log-24491
+    50.00s  claim=2026-10-23 14:48:35 done=2026-10-23 14:49:25 type=image  status=sent      key=wa-log-24486
+  n=32 min=0.0 p50=2.0 max=50.0 mean=9.5
+[exit=0]

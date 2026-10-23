@@ -1,0 +1,25 @@
+﻿3:  "version": "0.25.0",
+===GIT===
+java-sdk-v0.6.0-51-ga3fc0ae4
+===ENGINE-DEFAULT===
+src/engine/engine.factory.spec.ts:206:    describe.each(['whatsapp-web.js', 'baileys'])('ENGINE_TYPE=%s', engineType => {
+src/engine/engine.factory.ts:141:    // Both built-ins are registered with an instance in onModuleInit and ENGINE_TYPE is whitelisted at
+src/engine/engine.factory.ts:154:   * BOTH engine shapes are purged, not just the active engine's: ENGINE_TYPE is a deploy-level
+src/config/configuration.ts:222:    type: process.env.ENGINE_TYPE || 'whatsapp-web.js',
+src/config/configuration.ts:253:    // Baileys engine (used when ENGINE_TYPE=baileys). Multi-file auth state base dir; each session
+src/config/load-env.spec.ts:52:    process.env.ENGINE_TYPE = '';
+src/config/load-env.spec.ts:53:    makeTempCwd({ 'data/.env.generated': 'ENGINE_TYPE=baileys\n' });
+src/config/load-env.spec.ts:57:    expect(process.env.ENGINE_TYPE).toBe('baileys');
+src/config/load-env.spec.ts:60:    expect((require('./env-precedence') as typeof import('./env-precedence')).isEnvPinned('ENGINE_TYPE')).toBe(false);
+src/config/env.validation.ts:92:  // Whitelist the registered engine/storage ids so a typo fails fast at boot: an unknown ENGINE_TYPE
+src/config/env.validation.ts:101:  checkEnum('ENGINE_TYPE', ['whatsapp-web.js', 'baileys']);
+src/config/env-precedence.spec.ts:29:    const env: NodeJS.ProcessEnv = { ENGINE_TYPE: 'whatsapp-web.js' };
+src/config/env-precedence.spec.ts:33:    expect(isEnvPinned('ENGINE_TYPE')).toBe(true);
+src/config/env-precedence.spec.ts:37:  // The load-bearing case: the bundled compose forwards `- ENGINE_TYPE=${ENGINE_TYPE:-}`, which renders
+src/config/env-precedence.spec.ts:41:    const env: NodeJS.ProcessEnv = { ENGINE_TYPE: '', REDIS_ENABLED: '   ' };
+src/config/env-precedence.spec.ts:45:    expect(isEnvPinned('ENGINE_TYPE')).toBe(false);
+src/config/env-precedence.spec.ts:50:    const env: NodeJS.ProcessEnv = { ENGINE_TYPE: 'whatsapp-web.js' };
+src/config/env-precedence.spec.ts:54:    expect(isEnvPinned('ENGINE_TYPE')).toBe(true);
+src/config/env-precedence.spec.ts:58:describe('engine-selection env precedence (ENGINE_TYPE)', () => {
+src/config/env-precedence.spec.ts:59:  // Mirrors main.ts: process.env > .env > data/.env.generated. A compose `- ENGINE_TYPE=${ENGINE_TYPE:-}`
+[exit=0]

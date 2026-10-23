@@ -1,0 +1,61 @@
+﻿=== sendPacing config defaults ===
+154-    host: process.env.REDIS_HOST || 'localhost',
+155-    port: parseInt(process.env.REDIS_PORT || '6379', 10),
+156-    username: process.env.REDIS_USERNAME,
+157-    password: process.env.REDIS_PASSWORD,
+158-    connectTimeoutMs: parseInt(process.env.REDIS_CONNECT_TIMEOUT_MS || '5000', 10),
+163-    enabled: process.env.QUEUE_ENABLED === 'true',
+168-    enabled: process.env.CACHE_ENABLED === 'true',
+176-    database: process.env.MAIN_DATABASE_NAME || './data/main.sqlite',
+182-    synchronize: process.env.MAIN_DATABASE_SYNCHRONIZE === 'true',
+183-    logging: process.env.DATABASE_LOGGING === 'true',
+188-    type: process.env.DATABASE_TYPE || 'sqlite',
+190-    database: process.env.DATABASE_NAME || './data/openwa.sqlite',
+194-    name: process.env.DATABASE_NAME || 'openwa',
+200-    schema: process.env.POSTGRES_SCHEMA || 'public',
+202-    host: process.env.DATABASE_HOST || 'localhost',
+203-    port: parseInt(process.env.DATABASE_PORT || '5432', 10),
+204-    username: process.env.DATABASE_USERNAME,
+205-    password: process.env.DATABASE_PASSWORD,
+206-    synchronize: process.env.DATABASE_SYNCHRONIZE === 'true',
+207-    logging: process.env.DATABASE_LOGGING === 'true',
+209-    poolSize: parseInt(process.env.DATABASE_POOL_SIZE || '10', 10),
+
+=== pacing service files ===
+src/modules/message/send-pacing-hold-model.spec.ts
+src/modules/message/send-pacing.service.ts
+src/modules/message/send-pacing-cold-query.spec.ts
+src/modules/message/message-send-pacing.spec.ts
+src/modules/message/send-pacing.config.ts
+src/modules/message/send-pacing.service.spec.ts
+src/common/metrics/send-pacing-metrics.ts
+
+=== audit_logs: recent 25 ===
+CREATE TABLE "audit_logs" ("id" varchar PRIMARY KEY NOT NULL, "action" varchar(50) NOT NULL, "severity" varchar(10) NOT NULL DEFAULT ('info'), "apiKeyId" varchar(36), "apiKeyName" varchar(100), "sessionId" varchar(36), "sessionName" varchar(100), "ipAddress" varchar(45), "userAgent" varchar(500), "method" varchar(10), "path" varchar(500), "statusCode" integer, "metadata" text, "errorMessage" text,
+['id', 'action', 'severity', 'apiKeyId', 'apiKeyName', 'sessionId', 'sessionName', 'ipAddress', 'userAgent', 'method', 'path', 'statusCode', 'metadata', 'errorMessage', 'createdAt']
+id=9f9138ec-2eb3-43e4-89df-2d296c2de856 | action=session_started | severity=info | apiKeyId=df2bbb87-d9be-4d60-8cc8-dfde37e903ec | apiKeyName=Default Admin Key | sessionId=3f394210-aa7e-4279-a330-b5639d3024e7 | sessionName=t177-tienda-carnaval-surl-mtofj7n6 | ipAddress=44.193.205.18 | userAgent=None | method=None | path=None | statusCode=None | errorMessage=None | createdAt=2026-10-23 15:15:11
+id=acea23de-0e68-4d70-afe8-6002961f7012 | action=session_stopped | severity=info | apiKeyId=df2bbb87-d9be-4d60-8cc8-dfde37e903ec | apiKeyName=Default Admin Key | sessionId=3f394210-aa7e-4279-a330-b5639d3024e7 | sessionName=t177-tienda-carnaval-surl-mtofj7n6 | ipAddress=44.193.205.18 | userAgent=None | method=None | path=None | statusCode=None | errorMessage=None | createdAt=2026-10-23 15:15:01
+id=8c007421-0cbe-448f-8796-54f5f0ca87bb | action=session_stopped | severity=info | apiKeyId=df2bbb87-d9be-4d60-8cc8-dfde37e903ec | apiKeyName=Default Admin Key | sessionId=3f394210-aa7e-4279-a330-b5639d3024e7 | sessionName=t177-tienda-carnaval-surl-mtofj7n6 | ipAddress=100.31.198.212 | userAgent=None | method=None | path=None | statusCode=None | errorMessage=None | createdAt=2026-10-23 15:00:02
+id=9ac397b7-4b91-4791-be77-0c4d36e8dd05 | action=session_started | severity=info | apiKeyId=df2bbb87-d9be-4d60-8cc8-dfde37e903ec | apiKeyName=Default Admin Key | sessionId=3f394210-aa7e-4279-a330-b5639d3024e7 | sessionName=t177-tienda-carnaval-surl-mtofj7n6 | ipAddress=127.0.0.1 | userAgent=None | method=None | path=None | statusCode=None | errorMessage=None | createdAt=2026-10-20 16:44:47
+id=b6daf6ab-01c8-4562-af27-be4863858c5c | action=session_started | severity=info | apiKeyId=df2bbb87-d9be-4d60-8cc8-dfde37e903ec | apiKeyName=Default Admin Key | sessionId=3f394210-aa7e-4279-a330-b5639d3024e7 | sessionName=t177-tienda-carnaval-surl-mtofj7n6 | ipAddress=127.0.0.1 | userAgent=None | method=None | path=None | statusCode=None | errorMessage=None | createdAt=2026-10-20 16:34:28
+id=9adafafb-9430-4c39-9270-6ad687f070e5 | action=api_key_auth_failed | severity=warn | apiKeyId=None | apiKeyName=None | sessionId=None | sessionName=None | ipAddress=127.0.0.1 | userAgent=None | method=GET | path=/api/sessions | statusCode=None | errorMessage=API key is required | createdAt=2026-10-20 16:27:10
+id=aa62bac0-e3cc-45dd-a017-c2ede2707203 | action=session_qr_generated | severity=info | apiKeyId=df2bbb87-d9be-4d60-8cc8-dfde37e903ec | apiKeyName=Default Admin Key | sessionId=3f394210-aa7e-4279-a330-b5639d3024e7 | sessionName=None | ipAddress=18.223.126.135 | userAgent=None | method=None | path=None | statusCode=None | errorMessage=None | createdAt=2026-10-17 16:13:39
+id=f2573a22-c02c-4a89-894a-cd2ab824b5b9 | action=session_qr_generated | severity=info | apiKeyId=df2bbb87-d9be-4d60-8cc8-dfde37e903ec | apiKeyName=Default Admin Key | sessionId=3f394210-aa7e-4279-a330-b5639d3024e7 | sessionName=None | ipAddress=18.219.94.56 | userAgent=None | method=None | path=None | statusCode=None | errorMessage=None | createdAt=2026-10-17 16:13:36
+id=028b66f0-e747-4dd0-8951-e711ce036b0f | action=session_qr_generated | severity=info | apiKeyId=df2bbb87-d9be-4d60-8cc8-dfde37e903ec | apiKeyName=Default Admin Key | sessionId=3f394210-aa7e-4279-a330-b5639d3024e7 | sessionName=None | ipAddress=18.222.145.61 | userAgent=None | method=None | path=None | statusCode=None | errorMessage=None | createdAt=2026-10-17 16:13:33
+id=bb1e3eaa-d134-45ee-8f8a-bd665a851205 | action=session_qr_generated | severity=info | apiKeyId=df2bbb87-d9be-4d60-8cc8-dfde37e903ec | apiKeyName=Default Admin Key | sessionId=3f394210-aa7e-4279-a330-b5639d3024e7 | sessionName=None | ipAddress=3.137.141.55 | userAgent=None | method=None | path=None | statusCode=None | errorMessage=None | createdAt=2026-10-17 16:13:29
+id=627e7c64-90d5-4f14-abc3-5c9f0d874d10 | action=session_qr_generated | severity=info | apiKeyId=df2bbb87-d9be-4d60-8cc8-dfde37e903ec | apiKeyName=Default Admin Key | sessionId=3f394210-aa7e-4279-a330-b5639d3024e7 | sessionName=None | ipAddress=3.149.253.50 | userAgent=None | method=None | path=None | statusCode=None | errorMessage=None | createdAt=2026-10-17 16:13:26
+id=49d7bf58-98f2-4c49-a35c-a662279968e4 | action=session_qr_generated | severity=info | apiKeyId=df2bbb87-d9be-4d60-8cc8-dfde37e903ec | apiKeyName=Default Admin Key | sessionId=3f394210-aa7e-4279-a330-b5639d3024e7 | sessionName=None | ipAddress=77.113.229.194 | userAgent=None | method=None | path=None | statusCode=None | errorMessage=None | createdAt=2026-10-17 16:13:23
+id=368473dc-565b-40ca-ad49-13f6957b18a4 | action=session_qr_generated | severity=info | apiKeyId=df2bbb87-d9be-4d60-8cc8-dfde37e903ec | apiKeyName=Default Admin Key | sessionId=3f394210-aa7e-4279-a330-b5639d3024e7 | sessionName=None | ipAddress=3.15.201.122 | userAgent=None | method=None | path=None | statusCode=None | errorMessage=None | createdAt=2026-10-17 16:13:22
+id=9dcded6b-5ca7-423e-90a1-33d1efae3719 | action=session_qr_generated | severity=info | apiKeyId=df2bbb87-d9be-4d60-8cc8-dfde37e903ec | apiKeyName=Default Admin Key | sessionId=3f394210-aa7e-4279-a330-b5639d3024e7 | sessionName=None | ipAddress=3.15.198.247 | userAgent=None | method=None | path=None | statusCode=None | errorMessage=None | createdAt=2026-10-17 16:13:17
+id=335ab44d-b944-47e6-b164-beb559eb10b6 | action=session_qr_generated | severity=info | apiKeyId=df2bbb87-d9be-4d60-8cc8-dfde37e903ec | apiKeyName=Default Admin Key | sessionId=3f394210-aa7e-4279-a330-b5639d3024e7 | sessionName=None | ipAddress=18.216.207.228 | userAgent=None | method=None | path=None | statusCode=None | errorMessage=None | createdAt=2026-10-17 16:13:15
+id=85663686-fe68-49c1-9b5d-a7d435bf975c | action=session_qr_generated | severity=info | apiKeyId=df2bbb87-d9be-4d60-8cc8-dfde37e903ec | apiKeyName=Default Admin Key | sessionId=3f394210-aa7e-4279-a330-b5639d3024e7 | sessionName=None | ipAddress=18.188.255.243 | userAgent=None | method=None | path=None | statusCode=None | errorMessage=None | createdAt=2026-10-17 16:13:13
+id=8929bc62-123c-4444-8d8d-31e4ba08bbbc | action=session_disconnected | severity=warn | apiKeyId=None | apiKeyName=None | sessionId=3f394210-aa7e-4279-a330-b5639d3024e7 | sessionName=None | ipAddress=None | userAgent=None | method=None | path=None | statusCode=None | errorMessage=WhatsApp unlinked this device (LOGOUT); the session must be  | createdAt=2026-10-15 10:57:46
+id=63186f26-6dfd-4e21-9d1d-221d0687113e | action=session_qr_generated | severity=info | apiKeyId=df2bbb87-d9be-4d60-8cc8-dfde37e903ec | apiKeyName=Default Admin Key | sessionId=3f394210-aa7e-4279-a330-b5639d3024e7 | sessionName=None | ipAddress=100.54.7.50 | userAgent=None | method=None | path=None | statusCode=None | errorMessage=None | createdAt=2026-10-14 18:24:25
+id=a4c94645-611b-4647-a056-732988560937 | action=session_qr_generated | severity=info | apiKeyId=df2bbb87-d9be-4d60-8cc8-dfde37e903ec | apiKeyName=Default Admin Key | sessionId=3f394210-aa7e-4279-a330-b5639d3024e7 | sessionName=None | ipAddress=44.204.170.198 | userAgent=None | method=None | path=None | statusCode=None | errorMessage=None | createdAt=2026-10-14 18:24:22
+id=daa4fc82-e4e8-48cd-9511-7480829634bd | action=session_qr_generated | severity=info | apiKeyId=df2bbb87-d9be-4d60-8cc8-dfde37e903ec | apiKeyName=Default Admin Key | sessionId=3f394210-aa7e-4279-a330-b5639d3024e7 | sessionName=None | ipAddress=44.195.41.6 | userAgent=None | method=None | path=None | statusCode=None | errorMessage=None | createdAt=2026-10-14 18:24:19
+id=e01ce700-6cc7-4d94-98f9-a3084123ccb3 | action=session_qr_generated | severity=info | apiKeyId=df2bbb87-d9be-4d60-8cc8-dfde37e903ec | apiKeyName=Default Admin Key | sessionId=3f394210-aa7e-4279-a330-b5639d3024e7 | sessionName=None | ipAddress=98.84.160.26 | userAgent=None | method=None | path=None | statusCode=None | errorMessage=None | createdAt=2026-10-14 18:24:16
+id=d615f5e2-1af1-4f3a-90eb-9280d34338f7 | action=session_qr_generated | severity=info | apiKeyId=df2bbb87-d9be-4d60-8cc8-dfde37e903ec | apiKeyName=Default Admin Key | sessionId=3f394210-aa7e-4279-a330-b5639d3024e7 | sessionName=None | ipAddress=44.198.52.250 | userAgent=None | method=None | path=None | statusCode=None | errorMessage=None | createdAt=2026-10-14 18:24:13
+id=98fefa1d-0947-4ed8-b818-717223d79730 | action=session_qr_generated | severity=info | apiKeyId=df2bbb87-d9be-4d60-8cc8-dfde37e903ec | apiKeyName=Default Admin Key | sessionId=3f394210-aa7e-4279-a330-b5639d3024e7 | sessionName=None | ipAddress=184.195.173.193 | userAgent=None | method=None | path=None | statusCode=None | errorMessage=None | createdAt=2026-10-14 18:24:09
+id=6e379194-efb1-4f79-ae5e-8ca21e03f559 | action=session_qr_generated | severity=info | apiKeyId=df2bbb87-d9be-4d60-8cc8-dfde37e903ec | apiKeyName=Default Admin Key | sessionId=3f394210-aa7e-4279-a330-b5639d3024e7 | sessionName=None | ipAddress=98.89.46.114 | userAgent=None | method=None | path=None | statusCode=None | errorMessage=None | createdAt=2026-10-14 18:24:07
+id=cd1c6497-5788-423f-89be-9e65e78c02c2 | action=session_qr_generated | severity=info | apiKeyId=df2bbb87-d9be-4d60-8cc8-dfde37e903ec | apiKeyName=Default Admin Key | sessionId=3f394210-aa7e-4279-a330-b5639d3024e7 | sessionName=None | ipAddress=98.93.63.162 | userAgent=None | method=None | path=None | statusCode=None | errorMessage=None | createdAt=2026-10-14 18:24:03
+[exit=0]

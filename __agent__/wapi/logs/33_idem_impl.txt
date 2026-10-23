@@ -1,0 +1,25 @@
+﻿=== idempotency implementation ===
+src/configure-app.ts
+src/database/migrations/1787200000000-DeduplicateTerminalWebhookFailures.ts
+src/database/migrations/1786200000000-AddWebhookOutboxEvents.ts
+src/database/migrations/1781700000000-AddWebhookDeliveryFailures.ts
+src/database/migrations/1786300000000-AddWebhookDeliveryFailureLookupIndex.ts
+src/database/migrations/__tests__/1786300000000-AddWebhookDeliveryFailureLookupIndex.spec.ts
+src/database/migrations/__tests__/1786200000000-AddWebhookOutboxEvents.spec.ts
+src/database/migrations/__tests__/1787100000000-AddSendIdempotencyKeys.spec.ts
+src/database/migrations/__tests__/1787200000000-DeduplicateTerminalWebhookFailures.spec.ts
+src/database/migrations/1787100000000-AddSendIdempotencyKeys.ts
+src/database/sqlite-boot-failures.spec.ts
+src/database/postgres-utc.pg.spec.ts
+--- send_idempotency_keys entity / states ---
+src/database/migrations/__tests__/1787100000000-AddSendIdempotencyKeys.spec.ts
+src/database/migrations/1787100000000-AddSendIdempotencyKeys.ts
+src/modules/webhook/utils/idempotency.util.ts
+src/modules/webhook/utils/idempotency.util.spec.ts
+src/modules/message/entities/send-idempotency-key.entity.ts
+src/modules/message/idempotency
+src/modules/message/idempotency/idempotent-send.decorator.ts
+src/modules/message/idempotency/send-idempotency.service.ts
+src/modules/message/idempotency/send-idempotency.service.spec.ts
+src/modules/message/idempotency/send-idempotency.interceptor.ts
+[exit=0]

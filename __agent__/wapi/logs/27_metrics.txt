@@ -1,0 +1,44 @@
+﻿=== media conversion + inbound media defaults ===
+521:  mediaConversion: {
+522-    // Off by default: it spawns an external process per request, so an operator opts in knowingly.
+523-    // Even when true the endpoints stay unavailable unless the binary is actually present, so
+524-    // enabling it on a host without ffmpeg degrades to a clear 503 rather than a spawn error.
+525:    enabled: process.env.MEDIA_CONVERSION_ENABLED === 'true',
+526-    // Absolute path to the binary, for hosts that keep it outside PATH. Resolved via PATH by default.
+527:    ffmpegPath: process.env.FFMPEG_PATH || 'ffmpeg',
+528-    // Wall-clock ceiling for one conversion (default 60s). A codec can spin on malformed input, and
+529-    // this process is spawned on a request path, so the timeout kills it rather than tying up a slot.
+530-    timeoutMs: (() => {
+531:      const n = parseInt(process.env.MEDIA_CONVERSION_TIMEOUT_MS ?? '', 10);
+532-      return Number.isFinite(n) && n > 0 ? n : 60_000;
+533-    })(),
+534-    // Cap on the CONVERTED bytes (default 50 MiB, matching the inbound media cap). Transcoding can
+--
+537:      const n = parseInt(process.env.MEDIA_CONVERSION_MAX_OUTPUT_BYTES ?? '', 10);
+538-      return Number.isFinite(n) && n > 0 ? n : 50 * 1024 * 1024;
+539-    })(),
+540-    // At most this many ffmpeg processes at once (default 2). Each conversion spawns an external
+--
+545:      const n = parseInt(process.env.MEDIA_CONVERSION_CONCURRENCY ?? '', 10);
+546-      return Number.isFinite(n) && n > 0 ? n : 2;
+547-    })(),
+548-  },
+
+=== ffmpeg present? ===
+/usr/bin/ffmpeg
+total 121928
+drwxr-xr-x 1 root root      4096 Oct 20 16:18 .
+drwxr-xr-x 1 root root      4096 Oct  6 01:45 ..
+lrwxrwxrwx 1 root root        45 Sep 23 07:56 corepack -> ../lib/node_modules/corepack/dist/corepack.js
+-rwxr-xr-x 1 root root      3964 Oct 20 16:10 docker-entrypoint.sh
+-rwxr-xr-x 1 root root 124827920 Sep 23 07:56 node
+lrwxrwxrwx 1 root root        19 Oct  6 01:45 nodejs -> /usr/local/bin/node
+lrwxrwxrwx 1 root root        38 Oct 20 16:17 npm -> ../lib/node_modules/npm/bin/npm-cli.js
+lrwxrwxrwx 1 root root        38 Oct 20 16:17 npx -> ../lib/node_modules/npm/bin/npx-cli.js
+lrwxrwxrwx 1 root root        63 Oct 20 16:18 puppeteer-chrome -> /opt/puppeteer/chrome/linux-153.0.8010.36/chrome-linux64/chrome
+
+=== /api/metrics (event loop, memory, send duration) ===
+--- ["X-API-Key"] HTTP 404 len 109
+--- ["X-Metrics-Token"] HTTP 404 len 109
+--- ["Authorization"] HTTP 404 len 109
+[exit=0]

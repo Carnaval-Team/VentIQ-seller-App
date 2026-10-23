@@ -1,0 +1,12 @@
+﻿total 633696
+drwxr-xr-x 6 openwa openwa      4096 Oct 23 15:05 .
+drwxr-xr-x 1 root   root        4096 Oct 20 16:18 ..
+-rw------- 1 openwa openwa        71 Jul 30 16:39 .api-key
+-rw------- 1 openwa openwa       545 Jul 30 16:39 .env.generated
+drwx------ 3 openwa openwa      4096 Oct 20 16:26 baileys
+-rw------- 1 openwa openwa    516096 Oct 23 15:05 main.sqlite
+drwxr-xr-x 3 openwa openwa      4096 Oct 20 15:59 media
+-rw------- 1 openwa openwa 648343552 Oct 23 15:01 openwa.sqlite
+drwxr-xr-x 3 openwa openwa      4096 Oct 20 20:01 plugins
+drwxr-xr-x 4 openwa openwa      4096 Oct 20 16:34 sessions
+[exit=0]

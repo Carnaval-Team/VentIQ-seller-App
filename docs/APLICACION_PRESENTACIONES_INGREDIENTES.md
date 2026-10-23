@@ -7,13 +7,19 @@
 
 ---
 
-## Estado de implementación (2026-10-22)
+## Estado de implementación (actualizado 2026-10-23)
 
-**Todo está escrito y verificado por lectura; NADA aplicado en ningún proyecto** (`to_regprocedure` de los 18 objetos nuevos = NULL en producción).
+> **Aviso de vigencia:** esta sección se actualizó tras la auditoría del 2026-10-23
+> (`docs/_analisis/AUDITORIA_FINAL_PLAN_INGREDIENTES.md`, `docs/_analisis/AUDITORIA_DB_DEBUG_INGREDIENTES.md`).
+> El texto anterior decía «NADA aplicado en ningún proyecto», y eso **ya no es cierto**.
+
+**Resumen:** **debug** tiene las Fases 0.5, 1, 2, 3 y 4 aplicadas y el caso real de §4 probado con
+resultado correcto; **producción** tiene solo 7 de los 18 objetos (parte de `30`/`31`, y el `30` aplicado
+es una revisión anterior) y **C9 sigue vivo** allí.
 
 | Fase | Entregable | Estado |
 |---|---|---|
-| 0.5 | `presentaciones_inventario/45` (guard `_safe`), `46` (patch opcional, **no aplicado**), `47` (tests) | listo |
+| 0.5 | `presentaciones_inventario/45` (guard `_safe`), `46` (patch del guard vivo: **aplicado en debug**, pendiente en producción), `47` (tests) | listo |
 | 1 | `funcionalidad_cocina/30` (ejecutor `_v3`, `fn_ingredientes_elaborado_base`, `fn_ingrediente_base_alcanzable`, `fn_consumir_ingrediente_base_v2`), `31` (rutas BOM `_v2`), `32` (tests) | listo |
 | 2 | `funcionalidad_cocina/33` (cocina `_v2` con `fn_cantidad_en_base`) | listo |
 | 3 | `funcionalidad_cocina/34` (venta `_v3`/`_mesa_v3`/offline `_v4`) | listo |
@@ -22,23 +28,33 @@
 | 7 P1 | Dart: alcance al almacén del TPV con etiqueta `alcanceAlmacenTpv`/`alcanceTodosLosAlmacenes` | listo |
 | 7 / 2-4 | Dart: `order_service.dart`, `auto_sync_service.dart`, `mesa_cuenta_service.dart` a las RPC `_v2`/`_v3`/`_v4` **con fallback** a las vivas | listo |
 
-### Estado realmente aplicado por proyecto (medido 2026-10-22)
+### Estado realmente aplicado por proyecto (re-medido 2026-10-23, solo lectura)
 
 | Archivo / objetos | Debug `qhprswhhfasrikhawjoz` | Producción `vsieeihstajlrdvpuooh` |
 |---|---|---|
 | `45` guard `_safe` | ✅ aplicado | ❌ falta |
-| `46` patch opcional del guard | (decisión pendiente) | (decisión pendiente) |
-| `30` (`fn_ejecutar_entrega_fisica_v3`, `fn_preview_entrega_fisica_v3`, `fn_ingrediente_base_alcanzable`, `fn_ingredientes_elaborado_base`, `fn_consumir_ingrediente_base_v2`) | ✅ aplicado (con la comilla corregida) | ✅ aplicado |
-| `31` (`fn_validar_ingredientes_elaborado_v2`, `fn_descontar_ingredientes_elaborado_v2`, `fn_descontar_venta_enrutada_v2`) | ✅ aplicado | ✅ aplicado |
-| `35` (`fn_devolver_ingredientes_elaborado_v2`, `fn_cancelar_item_pedido_v2`, `fn_eliminar_producto_orden_v2`) | ❌ falta | ❌ falta |
-| `33` (`fn_pedir_item_cuenta_v2`, `fn_agregar_producto_orden_pendiente_v2`, `fn_actualizar_cantidad_producto_orden_v2`) | ❌ falta | ❌ falta |
-| `34` (`fn_registrar_venta_v3`, `_mesa_v3`, `offline_v4`) | ✅ aplicado | ❌ falta |
+| `46` patch del guard **vivo** | ⚠️ **aplicado de facto** (md5 `f55ff162…`, `search_path=public, pg_catalog`, tablas calificadas) pese a que el archivo se declara «opcional / no aplicado por defecto» | ❌ no aplicado (md5 `438dbaec…`, `proconfig` null) |
+| `30` (`fn_ejecutar_entrega_fisica_v3`, `fn_preview_entrega_fisica_v3`, `fn_ingrediente_base_alcanzable`, `fn_ingredientes_elaborado_base`, `fn_consumir_ingrediente_base_v2`) | ✅ aplicado (5/5, con la comilla corregida) | ⚠️ 4/5: **falta `fn_ingrediente_base_alcanzable`** ⇒ el `30` de producción es una revisión anterior |
+| `31` (`fn_validar_ingredientes_elaborado_v2`, `fn_descontar_ingredientes_elaborado_v2`, `fn_descontar_venta_enrutada_v2`) | ✅ aplicado (3/3) | ✅ aplicado (3/3) |
+| `35` (`fn_devolver_ingredientes_elaborado_v2`, `fn_cancelar_item_pedido_v2`, `fn_eliminar_producto_orden_v2`) | ✅ aplicado (3/3) | ❌ falta |
+| `33` (`fn_pedir_item_cuenta_v2`, `fn_agregar_producto_orden_pendiente_v2`, `fn_actualizar_cantidad_producto_orden_v2`) | ✅ aplicado (3/3) | ❌ falta |
+| `34` (`fn_registrar_venta_v3`, `_mesa_v3`, `offline_v4`) | ✅ aplicado (3/3) | ❌ falta |
 
-**No-regresión verificada en producción:** los md5 de las funciones vivas siguen intactos (`fn_registrar_venta` `371402e5…`, `_mesa` `74b4751f…`, `_v2` `253d9d16…`, `_mesa_v2` `6d34466b…`, `fn_descontar_ingredientes_elaborado` `47be3a93…`, `fn_descontar_venta_enrutada` `d56b117f…`, `fn_validar_ingredientes_elaborado` `c23f85d2…`, `check_user_has_access_to_tienda` `438dbaec…`, `fn_stock_producto_almacen` `ecad724f…`, `_detalle` `0c452407…`). Los 8 objetos aplicados en producción son **aditivos**.
+**Total:** debug **18/18** objetos nuevos existen con la firma declarada; producción **7/18**.
+Fase 5 no tiene archivo propio (`funcionalidad_cocina/36_alcance_ingredientes.sql` **no existe**): `p_alcance`
+(DEFAULT `'almacen'`) vive en `30` y nadie lo usa todavía con `'tienda'`.
 
-**Falta para cerrar:**
-- Debug: `35` → `33` (33 exige `_safe`, ya está) y después correr `37_tests_caso_real_debug.sql` (§ prueba real).
-- Producción: `45` → (`46`, decisión) → `35` → `33` → `34`; después `32_tests_ingredientes_v2.sql` (fixtures de producción) y el caso real del §4.
+**No-regresión verificada en producción (re-confirmada 2026-10-23, solo SELECT):** los md5 de las funciones vivas siguen intactos (`fn_registrar_venta` `371402e5…`, `_mesa` `74b4751f…`, `_v2` `253d9d16…`, `_mesa_v2` `6d34466b…`, `fn_descontar_ingredientes_elaborado` `47be3a93…`, `fn_descontar_venta_enrutada` `d56b117f…`, `fn_validar_ingredientes_elaborado` `c23f85d2…`, `check_user_has_access_to_tienda` `438dbaec…`, `fn_stock_producto_almacen` `ecad724f…`, `_detalle` `0c452407…`). Los **7 de los 18 objetos nuevos** que hay en producción son **aditivos**. **Matiz en debug:** el guard cambió por el patch `46` (esperado) y `fn_descontar_venta_enrutada` es `81319b55...` por la rama FEFO/lotes (no está en el repo ni en producción).
+
+**Falta para cerrar (2026-10-23):**
+- Debug: quedan **sin prueba funcional** la Fase 2 («1 Caja de elaborado → receta ×factor») y la Fase 4
+  (cancelar 1 Caja → neto 0); y hay que **registrar la decisión sobre `46`**, que está aplicado sin constar
+  (rompe la no-regresión por md5 del guard).
+- Producción: `45` → (`46`, decisión) → **reaplicar `30`** (versión actual: falta `fn_ingrediente_base_alcanzable`)
+  → reaplicar `31` → `35` → `33` → `34`; después `32`/`47` (fixtures de producción) y el caso real del §4.
+- Antes de promover: resolver la **divergencia de `fn_descontar_venta_enrutada`** (debug `81319b55…`, con rama
+  FEFO/lotes que producción y el repo no tienen, vs producción/repo `d56b117f…`): las copias `_v2`/`_v3` se
+  hicieron de la versión **sin** FEFO.
 
 **Cuarta observación (2026-10-22) · el Editor revierte el DDL si un test aborta:** el SQL Editor ejecuta el script completo en **una sola transacción**, así que un `RAISE EXCEPTION` en los tests **deshace también el DDL del mismo archivo**. Medido: el primer intento de `35` abortó en S-B por el fixture de producción y, como consecuencia, **sus tres `_v2` no quedaron creadas** (en debug sólo existían las vivas `fn_devolver_ingredientes_elaborado`, `fn_cancelar_item_pedido`, `fn_eliminar_producto_orden`). Con `30`, `31`, `34` y `45` no pasó porque su script termina sin abortar.
 
@@ -64,9 +80,12 @@ SELECT p.proname, pg_get_function_identity_arguments(p.oid) AS args
 - Dart: **0 errores** en los 5 archivos (`dart analyze`). Se corrigió un `error` real que dejó una caída de conexión: `auto_sync_service.dart:4011` (un `try` anidado sin `catch`). Queda un `warning` de `usedAtomicPagos` sin usar que **ya existía en git HEAD** (no es regresión).
 - Única corrección aplicada: el orden de aplicación (§2) invierte 33 y 35.
 
-**Pendiente (bloqueante, requiere al usuario):**
-1. Aplicar los archivos en el SQL Editor de **debug** siguiendo el §2, ejecutar `47` y `32`, y hacer la prueba del caso real del §4.
-2. Sólo después, aplicar en producción y publicar el APK (gate del §5).
+**Pendiente (bloqueante, requiere al usuario) — actualizado 2026-10-23:**
+1. ~~Aplicar los archivos en el SQL Editor de **debug**~~ **hecho** (Fases 0.5, 1, 2, 3 y 4; el caso real del §4
+   pasa con el ledger sin daños). Queda probar Fase 2 y Fase 4 y formalizar la decisión sobre `46`.
+2. Sólo después, aplicar en producción (empezando por **reaplicar `30`**) y publicar el APK (gate del §5).
+3. El **P0 de Dart sí está migrado** a `_v3`/`_v4`/`_v2` en el repo (con fallback a las vivas), pero el resto
+   del plan Dart (P0(c) y todo P1/P2) **sigue pendiente**: ver `docs/_analisis/AUDITORIA_DART_INGREDIENTES.md`.
 
 **Corrección post-verificación (2026-10-22):** al aplicar el archivo 30, Postgres abortó con `42601 unterminated quoted string` apuntando a `'fuente','fn_ingrediente_base_alcanzable');`. La causa real estaba **antes**: en `30_...sql:648` faltaba la comilla de cierre del operador (`v_kernel->>'motivo,` en vez de `v_kernel->>'motivo',`), y la cadena abierta se "tragaba" el resto del cuerpo hasta EOF, por eso el error se reportaba cientos de líneas después. Corregido en línea (los números de línea del archivo no cambian).
 - Lección de método: una comprobación de **paridad global** de comillas da OK aunque haya una comilla descolocada (el desbalance se compensa más adelante). Ahora se validan los 9 archivos con (a) paridad por línea, (b) simulación del lexer en modo SQL plano (estado final `en_string=False`) y (c) balance de paréntesis. Los tres pasan en los 9 archivos.

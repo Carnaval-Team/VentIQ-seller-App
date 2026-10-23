@@ -1,0 +1,50 @@
+﻿=== configuration.ts 55-70 and 240-262 ===
+}
+
+/**
+ * Largest delay Node's timers accept. Above this a `setTimeout` overflows its 32-bit signed field,
+ * warns `TimeoutOverflowWarning`, and fires after 1 ms instead — so an operator reaching for an
+ * "effectively unlimited" budget by typing a row of nines gets the shortest possible one. Puppeteer
+ * arms `protocolTimeout` with a plain `setTimeout` (`common/CallbackRegistry.js`), so the ceiling
+ * applies to it directly and the browser never finishes launching.
+ */
+export { MAX_TIMER_MS };
+
+/**
+ * The UI locale Chromium is pinned to. Without a pin the browser's language is whatever the launched
+ * binary defaults to, which differs between the amd64 (Chrome for Testing) and arm64 (Debian chromium)
+ * images and between host installs. The pin settles the browser's locale only: WhatsApp Web can still
+ * render its chrome, including the new-account onboarding modal the whatsapp-web.js adapter dismisses
+      // How long one CDP command may take. An account with thousands of chats can push a single
+      // chat-list read past Puppeteer's own budget; raising this is the escape hatch. Left
+      // UNDEFINED rather than defaulted to Puppeteer's number, so an unset or out-of-range value
+      // means "whatever puppeteer-core's `timeout ?? 180_000` says" instead of pinning today's
+      // figure here and silently outliving it. Out of range is not clamped either: see
+      // wwebjs-lifecycle.ts for why a falsy value is not "no limit", and MAX_TIMER_MS above for
+      // why a huge one is not either.
+      protocolTimeoutMs: (() => {
+        const n = parseInt(process.env.PUPPETEER_PROTOCOL_TIMEOUT_MS || '', 10);
+        return Number.isFinite(n) && n > 0 && n <= MAX_TIMER_MS ? n : undefined;
+      })(),
+    },
+    sessionDataPath: process.env.SESSION_DATA_PATH || './data/sessions',
+    // Baileys engine (used when ENGINE_TYPE=baileys). Multi-file auth state base dir; each session
+    // gets its own subdirectory. Read by the Baileys plugin from the opaque engine config blob.
+    baileys: {
+      authDir: process.env.BAILEYS_AUTH_DIR || './data/baileys',
+    },
+  },
+
+  sessions: {
+    // 0 = unlimited/backwards-compatible. Set to a positive integer to cap concurrently running or
+    // initializing WhatsApp engines, which protects memory/Chromium-constrained deployments.
+
+=== IMAGE DOWNLOAD TEST (inside openwa-api container, same path as sendMediaMessage) ===
+try1 HTTP 200 bytes 24859 MB 0.02 secs 0.41 ctype image/jpeg
+try2 HTTP 200 bytes 24859 MB 0.02 secs 0.07 ctype image/jpeg
+try3 HTTP 200 bytes 24859 MB 0.02 secs 0.07 ctype image/jpeg
+
+=== SESSION STATUS via API ===
+/api/sessions HTTP 200
+[{"id":"3f394210-aa7e-4279-a330-b5639d3024e7","name":"t177-tienda-carnaval-surl-mtofj7n6","status":"qr_ready","phone":"5363464544","pushName":"Carnaval","connectedAt":"2026-10-20T20:02:40.044Z","lastActive":"2026-10-23T14:55:53.192Z","createdAt":"2026-09-05T13:39:37.000Z","updatedAt":"2026-10-23T15:15:16.000Z","lastError":null,"restriction":null,"engineLoaded":true}]
+[exit=0]

@@ -1,0 +1,45 @@
+﻿LINES=40  BYTES=23420
+=== level histogram ===
+     12 "level":"error"
+      6 "level":"info"
+     22 "level":"warn"
+=== key counters ===
+protocolTimeout                            6
+Runtime.callFunctionOn timed out           6
+Target closed                              16
+Execution context was destroyed            4
+OUTCOME_UNKNOWN                            0
+IDEMPOTENCY                                0
+idempotency                                0
+IN_PROGRESS                                0
+MEDIA_DOWNLOAD_TIMEOUT                     1
+media download                             2
+page reload                                0
+Reload                                     0
+out of memory                              0
+OOM                                        0
+reconnect                                  2
+engine_init_timeout                        1
+Send failed in the engine                  8
+terminated                                 0
+=== TOP message templates ===
+      8 Send failed in the engine (image)
+      5 Protocol error (Runtime.callFunctionOn): Target closed
+      5 Page transport error during sendMessage — treating the session as dead
+      3 Runtime.callFunctionOn timed out. Increase the 'protocolTimeout' setti
+      2 Pinning WhatsApp Web version 2.3000.1051404344-alpha
+      2 Liveness probe failed; will treat the session as dead after repeated f
+      2 Initializing engine for session: t177-tienda-carnaval-surl-mtofj7n6
+      2 \
+      1 Session stopped: t177-tienda-carnaval-surl-mtofj7n6
+      1 Session engine failed: Execution context was destroyed, most likely be
+      1 Session disconnected: liveness probe failed (watchdog)
+      1 Scheduling reconnect attempt 1/∞ in 5s
+      1 Reconnect attempt 1 failed
+      1 Liveness probe failed repeatedly; handling the session as disconnected
+      1 Inbound media download timed out (MEDIA_DOWNLOAD_TIMEOUT_MS); emitting
+      1 Inbound media download failed; emitting the omitted marker
+      1 Graceful destroy failed for session 3f394210-aa7e-4279-a330-b5639d3024
+      1 Failed to destroy engine for session 3f394210-aa7e-4279-a330-b5639d302
+      1 Engine initialization timed out for session t177-tienda-carnaval-surl-
+[exit=0]

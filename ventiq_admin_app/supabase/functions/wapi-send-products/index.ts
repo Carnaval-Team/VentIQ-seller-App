@@ -17,15 +17,28 @@
 // tanda se manda además un mensaje de texto con el listado resumido de
 // productos (ver buildSummaryMessages).
 //
-// Estrategia anti-ban actual:
-//   1. Por producto: la misma imagen se manda a los destinatarios EN SERIE,
-//      con una pausa corta entre uno y otro. Antes iban en paralelo (cap 5) y
-//      eso saturaba la sesión de WAPI —que es UNA sola instancia de
-//      Puppeteer— devolviendo NETWORK_ERROR: con 1 grupo iba fino y con 4 se
-//      caía a la mitad.
-//   2. Entre productos: delay aleatorio en [delay_min, delay_max].
-//   3. Defaults 5–10s: enviando en serie el ritmo real queda holgadamente por
-//      debajo del techo recomendado de 20 msgs/min/sesión.
+// Estrategia de envío actual (ORDEN POR DESTINO):
+//   1. Los destinatarios se atienden UNO DETRÁS DE OTRO: primero se manda a un
+//      grupo TODOS los productos de la tanda, en el mismo orden, y sólo cuando
+//      ese grupo está completo se pasa al siguiente. Antes el bucle era por
+//      producto (todos los grupos veían el producto k, luego el k+1): con un
+//      grupo lento, el guarda-raíl por producto abandonaba a los demás a
+//      medias, así que unos grupos recibían el catálogo y otros no. Eso era el
+//      "caos entre grupos".
+//   2. Dentro de un destino: delay aleatorio en [delay_min, delay_max] entre
+//      mensaje y mensaje. Entre destinos: una pausa fija más larga.
+//   3. Todo EN SERIE: la sesión de WAPI es UNA sola instancia de Puppeteer;
+//      dos envíos simultáneos se pisan y devuelven NETWORK_ERROR.
+//   4. Defaults 5–10s: el ritmo real queda holgadamente por debajo del techo
+//      recomendado de 20 msgs/min/sesión.
+//
+// IDEMPOTENCIA (OpenWA 0.25.0+): cada mensaje viaja con `Idempotency-Key`
+// derivada de su fila de log (`wa-log-<id>`), estable entre reintentos y entre
+// reanudaciones. Eso hace que reintentar NUNCA duplique el mensaje, y permite
+// tratar `IDEMPOTENCY_KEY_IN_PROGRESS` / `IDEMPOTENCY_OUTCOME_UNKNOWN` como
+// "todavía no sé el resultado" (se espera y se reintenta con la MISMA clave;
+// OpenWA devuelve la respuesta guardada) en vez de marcarlos `fallido` cuando
+// el mensaje probablemente SÍ salió.
 //
 // El envío se reparte en chunks encadenados: cada invocación despacha los
 // productos que le caben en su presupuesto de wall-clock (los workers de Edge
@@ -50,6 +63,17 @@ interface Destino {
   tipo: "numero" | "grupo";
   chat_id: string;
   etiqueta?: string;
+}
+
+/** Un mensaje concreto del plan: un producto para un destino. */
+interface Par {
+  idProducto: number;
+  chatId: string;
+}
+
+/** Clave de `Par` para los mapas en memoria (`producto|chat`). */
+function clavePar(p: Par): string {
+  return `${p.idProducto}|${p.chatId}`;
 }
 
 interface SendBody {
@@ -94,6 +118,38 @@ interface SendBody {
 // ───────────────────────────────────────────────────────────────────────
 const RETRY_MAX_ATTEMPTS = 3;
 const RETRY_BASE_MS = 4_000;
+
+/**
+ * Esperas extra cuando OpenWA responde "la petición con esta clave sigue en
+ * vuelo" (`IDEMPOTENCY_KEY_IN_PROGRESS`). NO es un fallo: el mensaje puede
+ * estar saliendo en este momento. Hay que darle tiempo a terminar y volver a
+ * preguntar con la MISMA clave — cuando acabe, OpenWA reproduce la respuesta
+ * guardada y nos da el `messageId` real. Marcarlo `fallido` (lo que se hacía
+ * antes al 2º intento) producía falsos negativos: el mensaje llegaba al grupo
+ * y en el historial aparecía como fallido.
+ */
+const IDEM_MAX_ESPERAS = 4;
+const IDEM_ESPERA_BASE_MS = 12_000;
+const IDEM_ESPERA_MAX_MS = 45_000;
+
+/**
+ * Techo de reloj para UN mensaje contando todos sus reintentos y esperas. Si
+ * un destino se atasca (Puppeteer colgado) no se abandona el envío entero: se
+ * deja ESE mensaje en `pendiente` —reanudable, y sin riesgo de duplicado
+ * gracias a la clave de idempotencia— y se sigue con el resto del grupo.
+ */
+const MENSAJE_MAX_MS = 150_000;
+
+/**
+ * Fallos consecutivos contra un mismo destino antes de saltárselo. Un grupo
+ * caído (o que ya no existe) no puede consumir el presupuesto de los demás.
+ * Sus mensajes quedan `pendiente` con el motivo, para reanudar cuando se
+ * arregle.
+ */
+const DESTINO_FALLOS_MAX = 3;
+
+/** Pausa al cambiar de grupo: no se encadenan grupos uno tras otro en seco. */
+const ENTRE_DESTINOS_MS = 20_000;
 
 /**
  * ¿El error merece reintento? Los 4xx de validación no (fallarían igual).
@@ -142,6 +198,41 @@ function esErrorDeSesion(code: string | undefined, message: string | undefined):
   if (code === "HTTP_400" || code === "HTTP_409" || code === "HTTP_404") return true;
   // Algunas builds envuelven el 409 en un 500.
   return code === "HTTP_500";
+}
+
+/**
+ * ¿El error dice "tu clave de idempotencia sigue en vuelo"?
+ *
+ * OpenWA responde `409 IDEMPOTENCY_KEY_IN_PROGRESS` cuando llega una petición
+ * con una clave cuya primera petición todavía se está ejecutando. Suele pasar
+ * porque NUESTRO cliente abortó por timeout mientras el servidor seguía
+ * trabajando: el reintento inmediato con la misma clave choca con la original.
+ *
+ * Correcto: esperar y reintentar con la MISMA clave. La primera petición acaba
+ * guardando su resultado y la siguiente reproducción de la clave devuelve el
+ * `messageId` real (o el error real), sin mandar el mensaje dos veces.
+ */
+function esIdemEnProgreso(code: string | undefined, message: string | undefined): boolean {
+  if (code === "IDEMPOTENCY_KEY_IN_PROGRESS") return true;
+  const m = (message ?? "").toLowerCase();
+  return m.includes("is still running") ||
+    (m.includes("idempotency-key") && m.includes("retry after"));
+}
+
+/**
+ * ¿El error dice "una petición anterior con esta clave falló y el mensaje
+ * PUEDE haberse enviado"? (`IDEMPOTENCY_OUTCOME_UNKNOWN`.)
+ *
+ * Tampoco es un `fallido` honesto: no sabemos si salió. Reintentar con la
+ * misma clave es la única forma de averiguarlo sin arriesgar un duplicado.
+ */
+function esIdemResultadoDesconocido(
+  code: string | undefined,
+  message: string | undefined,
+): boolean {
+  if (code === "IDEMPOTENCY_OUTCOME_UNKNOWN") return true;
+  const m = (message ?? "").toLowerCase();
+  return m.includes("may have been sent");
 }
 
 /** Hash estable (FNV-1a) para construir claves de idempotencia. */
@@ -725,6 +816,20 @@ export async function dispatchProducts(args: {
   delayMax: number;
   tipoEnvio: "manual" | "programado";
   idProgramacion?: number;
+  /**
+   * Fila de `app_wapi_sesion`. La necesita la rama de recuperación de
+   * `dispatchOne` (`last_recovery_at`, `recovery_attempts`, `id`).
+   *
+   * Antes NO se pasaba y esa rama lanzaba `ReferenceError: ses is not defined`,
+   * matando el worker justo cuando la sesión se caía: los mensajes que quedaban
+   * en la tanda nunca se despachaban ni se registraban (se veía como tanda
+   * "interrumpida" sin motivo).
+   */
+  ses: {
+    id: number;
+    last_recovery_at?: string | null;
+    recovery_attempts?: number | null;
+  };
   /** Ver `SendBody.resume_log_ids`. Cuando viene, se reusan esas filas de log. */
   resumeLogIds?: number[];
   /**
@@ -742,7 +847,7 @@ export async function dispatchProducts(args: {
   const {
     admin, idSesion, idTienda, wapiSessionId, productIds,
     destinations, template, delayMin, delayMax, tipoEnvio, idProgramacion,
-    resumeLogIds,
+    resumeLogIds, ses,
   } = args;
   const enviarResumen = args.enviarResumen ?? true;
   const summaryOnly = args.summaryOnly === true;
@@ -753,6 +858,13 @@ export async function dispatchProducts(args: {
   // reutilizar esas filas en vez de insertar duplicados.
   const esReanudacion = Array.isArray(resumeLogIds) && resumeLogIds.length > 0;
   const logIdPorPar = new Map<string, number>();
+  /**
+   * `producto|chat` → id de su fila en `app_wapi_envio_log`, para TODO par que
+   * ya tenga fila (reanudada o creada por `prepararProducto`). Evita insertar
+   * duplicados cuando hay que registrar como pendientes los mensajes que un
+   * corte dejó fuera.
+   */
+  const logIdDePar = new Map<string, number>();
   let effProductIds = productIds;
   let effDestinations = destinations;
 
@@ -780,7 +892,10 @@ export async function dispatchProducts(args: {
       if (!Number.isFinite(idProd) || !chatId) continue;
       const key = `${idProd}|${chatId}`;
       // Si el mismo par apareciera dos veces nos quedamos con el primer log.
-      if (!logIdPorPar.has(key)) logIdPorPar.set(key, Number((row as any).id));
+      if (!logIdPorPar.has(key)) {
+        logIdPorPar.set(key, Number((row as any).id));
+        logIdDePar.set(key, Number((row as any).id));
+      }
       if (!vistosProd.has(idProd)) {
         vistosProd.add(idProd);
         ordenProd.push(idProd);
@@ -796,8 +911,54 @@ export async function dispatchProducts(args: {
       }
     }
 
-    effProductIds = ordenProd;
-    effDestinations = Array.from(chats.values());
+    // ── ORDEN CANÓNICO AL REANUDAR ──────────────────────────────────────
+    // El orden de los pares se reconstruye desde los logs, pero el `id` de las
+    // filas NO refleja el orden destino-mayor: durante el envío las filas se
+    // insertan por producto. Sin corregirlo, el grupo que se estaba sirviendo
+    // cuando se cortó el chunk pasaba al FINAL de la cadena, y el "un grupo
+    // detrás de otro" se degradaba en cada corte.
+    //
+    // La petición sí trae el orden bueno:
+    //   · `destinations` — la continuación hereda `effDestinations` del worker
+    //     anterior (la reanudación manual desde la app manda `[]`).
+    //   · `summary_product_ids` — la cadena lo hereda COMPLETO desde el primer
+    //     chunk, así que sirve de orden canónico de productos.
+    // Si no llegan (reanudación manual sin ellos) se cae al orden de los logs,
+    // que es el comportamiento anterior.
+    const ordenDestinos = destinations
+      .map((d) => String(d.chat_id ?? "").trim())
+      .filter((c) => c.length > 0);
+    if (ordenDestinos.length > 0) {
+      const posDestino = new Map<string, number>();
+      ordenDestinos.forEach((c, i) => {
+        if (!posDestino.has(c)) posDestino.set(c, i);
+      });
+      const ultimo = Number.MAX_SAFE_INTEGER;
+      effDestinations = Array.from(chats.values()).sort(
+        (a, b) =>
+          (posDestino.get(a.chat_id) ?? ultimo) -
+          (posDestino.get(b.chat_id) ?? ultimo),
+      );
+    } else {
+      effDestinations = Array.from(chats.values());
+    }
+
+    const ordenProductos = (args.summaryProductIds ?? [])
+      .map((n) => Number(n))
+      .filter((n) => Number.isFinite(n));
+    if (ordenProductos.length > 0) {
+      const posProducto = new Map<number, number>();
+      ordenProductos.forEach((id, i) => {
+        if (!posProducto.has(id)) posProducto.set(id, i);
+      });
+      const ultimo = Number.MAX_SAFE_INTEGER;
+      effProductIds = [...ordenProd].sort(
+        (a, b) =>
+          (posProducto.get(a) ?? ultimo) - (posProducto.get(b) ?? ultimo),
+      );
+    } else {
+      effProductIds = ordenProd;
+    }
     console.log(
       `[wapi-send-products] REANUDAR: ${logIdPorPar.size} mensaje(s) ` +
         `sin enviar → ${effProductIds.length} producto(s), ` +
@@ -848,12 +1009,14 @@ export async function dispatchProducts(args: {
   /** Presupuesto de este worker. El techo real ronda los 400s; cortamos en
    *  270s para que quepan el último envío en curso y el encolado. */
   const WORKER_BUDGET_MS = 270_000;
-  /** Pausa entre destinos del MISMO producto (fan-out en serie). */
+  /** Pausa entre mensajes del MISMO destino. El grueso del ritmo anti-ban lo
+   *  pone el delay aleatorio [delay_min, delay_max]; esta pausa es el suelo
+   *  mínimo para que la sesión de Puppeteer libere el envío anterior. */
   const FANOUT_PAUSE_MS = 1_500;
-  /** Techo por producto: si su fan-out se eterniza (WAPI lento, reintentos),
-   *  se abandonan los destinos que falten de ESE producto en vez de
-   *  arrastrar el chunk entero al matadero. */
-  const PRODUCT_MAX_MS = 120_000;
+  /** Techo por MENSAJE (ya no por producto): si un destino se atasca, se deja
+   *  ESE mensaje en `pendiente` —reanudable y sin riesgo de duplicado— y se
+   *  sigue con el resto del grupo. Antes se abandonaban a mitad los demás
+   *  destinos del producto y quedaban `fallido` SIN haberse intentado. */
   /** Espera máxima que aceptamos cuando WAPI pide frenar. Más que esto no
    *  cabe en un worker: se corta el chunk y queda reanudable. */
   const PACING_WAIT_MAX_MS = 60_000;
@@ -884,52 +1047,72 @@ export async function dispatchProducts(args: {
     );
   }
   const nDestinos = Math.max(1, chatsValidos.length);
-  /** Estimación inicial del fan-out de un producto, sin el delay anti-ban:
-   *  ~5s de envío + la pausa, por destino. Se corrige con lo medido. */
-  const envioEstimadoMs = nDestinos * (5_000 + FANOUT_PAUSE_MS);
+  /** Estimación inicial del coste de UN mensaje, sin el delay anti-ban: ~5s de
+   *  envío. Con la latencia real observada (hasta 40s por imagen) se queda
+   *  corta, pero se corrige en cuanto se mide el primer envío (`peorEnvioMs`),
+   *  y la decisión de cortar se toma con el reloj, no con esta estimación. */
+  const envioEstimadoMs = 5_000;
   let peorEnvioMs = 0;
-  /** Hueco que debe quedar libre para arrancar otro producto: lo peor visto
+  /** Hueco que debe quedar libre para arrancar otro MENSAJE: lo peor visto
    *  (+20%) más el delay anti-ban. Se topa a medio presupuesto para que un
-   *  único producto lentísimo no reduzca los chunks a un producto cada uno. */
-  const reservaProductoMs = () =>
+   *  único mensaje lentísimo no reduzca los chunks a un mensaje cada uno. */
+  const reservaMensajeMs = () =>
     Math.min(
       WORKER_BUDGET_MS / 2,
       Math.max(envioEstimadoMs, peorEnvioMs * 1.2) + avgDelayMs,
     );
 
-  /** Productos que este worker no alcanzará. Se rellena cuando el reloj
-   *  manda; `reinvokeRemaining` lo lee en el momento de encolar. */
-  let remainingIds: number[] = [];
+  // ── PLAN DE ENVÍO: ORDEN POR DESTINO ────────────────────────────────
+  //
+  // `plan` es la lista ORDENADA de mensajes a despachar: primero TODOS los
+  // productos del primer destino, después todos los del segundo, y así. Cada
+  // grupo recibe su catálogo completo y en el mismo orden; un grupo lento ya
+  // no deja a los demás a medias. Ese era el "caos entre grupos": el bucle
+  // anterior era por producto, y el guarda-raíl por producto abandonaba a
+  // mitad los destinos que faltaban.
+  //
+  // Al reanudar sólo entran los pares que quedaron sin enviar, así que el plan
+  // es siempre exactamente "lo que falta".
+  const plan: Par[] = [];
+  for (const chatId of chatsValidos) {
+    for (const idProd of effProductIds) {
+      const par: Par = { idProducto: idProd, chatId };
+      if (esReanudacion && !logIdPorPar.has(clavePar(par))) continue;
+      plan.push(par);
+    }
+  }
+
+  /** Mensajes que este worker no alcanzará (corte por presupuesto). Los lee
+   *  `reinvokeRemaining` justo antes de encolar la continuación. */
+  let remainingPares: Par[] = [];
+  /** Mensajes de un destino que se saltó por fallos consecutivos: quedan
+   *  `pendiente` para reanudar a mano, pero NO se encadenan — volverían a
+   *  fallar y sólo gastarían workers. */
+  let saltadosPares: Par[] = [];
   /** Si WAPI pidió frenar, aquí queda la espera que exigió. */
   let pacingAbort: { retryAfterSeconds: number } | null = null;
 
-  // Re-invoca wapi-send-products con los productos que NO caben en este chunk.
+  // Re-invoca wapi-send-products con los mensajes que NO caben en este chunk.
   // Fire-and-forget: el endpoint responde de inmediato (queued) y procesa el
   // siguiente chunk en su propio background task con 400s frescos.
+  //
+  // Se encola por `resume_log_ids` (no por `product_ids`): así la continuación
+  // retoma EXACTAMENTE donde se cortó, conservando el orden por destino, en vez
+  // de reconstruir el trozo desde la lista de productos.
   //
   // IMPORTANTE: idempotencia. `reinvokeRemaining` sólo debe encolar UNA vez por
   // worker; si se llama dos veces (p.ej. en el early-fire y otra vez al final
   // por una ruta de error), duplicaría el chunk restante. Un flag lo evita.
   let reinvoked = false;
-  const reinvokeRemaining = async (): Promise<boolean> => {
-    if (remainingIds.length === 0 || reinvoked) return false;
+  const reinvokeRemaining = async (logIds: number[]): Promise<boolean> => {
+    if (logIds.length === 0 || reinvoked) return false;
     reinvoked = true;
-
-    // En modo reanudar, la continuación también debe reanudar: si mandara
-    // sólo product_ids insertaría filas de log nuevas y duplicaría la tanda.
-    // Filtramos los logIds que corresponden a los productos que faltan.
-    const remainingSet = new Set(remainingIds);
-    const remainingLogIds = esReanudacion
-      ? Array.from(logIdPorPar.entries())
-          .filter(([k]) => remainingSet.has(Number(k.split("|")[0])))
-          .map(([, v]) => v)
-      : [];
 
     const payload = {
       id_sesion: idSesion,
-      product_ids: remainingIds,
+      product_ids: Array.from(new Set(remainingPares.map((p) => p.idProducto))),
       destinations: effDestinations,
-      ...(esReanudacion ? { resume_log_ids: remainingLogIds } : {}),
+      resume_log_ids: logIds,
       ...(template ? { message_template: template } : {}),
       delay_min_seconds: delayMin,
       delay_max_seconds: delayMax,
@@ -950,54 +1133,113 @@ export async function dispatchProducts(args: {
     if (res.ok) {
       console.log(
         `[wapi-send-products] continuación encolada (${res.via}): ` +
-          `${remainingIds.length} producto(s) restantes`,
+          `${logIds.length} mensaje(s) restantes`,
       );
     } else {
       console.error(
-        `[wapi-send-products] CADENA ROTA: ${remainingIds.length} producto(s) ` +
+        `[wapi-send-products] CADENA ROTA: ${logIds.length} mensaje(s) ` +
           `quedan sin despachar (${res.error ?? "motivo desconocido"})`,
       );
     }
     return res.ok;
   };
 
-  // Cuando la cadena se rompe (no se pudo encolar la continuación) o WAPI pide
-  // una pausa que no cabe en este worker, los productos que quedan fuera no
-  // tienen fila de log: se insertan producto a producto justo antes de
-  // despacharlos. Sin fila, la UI no sabe que existen y no ofrece reanudar.
-  // Las creamos en `pendiente` para que la tanda quede recuperable con un clic.
-  const registrarPendientes = async (ids: number[]): Promise<void> => {
-    // Al reanudar las filas ya existen y siguen en `pendiente`: nada que hacer.
-    if (ids.length === 0 || esReanudacion || chatsValidos.length === 0) return;
-    const filas: Array<Record<string, unknown>> = [];
-    for (const idProd of ids) {
-      for (const chatId of chatsValidos) {
-        filas.push({
-          id_tienda: idTienda,
-          id_sesion: idSesion,
-          id_programacion: idProgramacion ?? null,
-          id_producto: idProd,
-          chat_id: chatId,
-          tipo_envio: tipoEnvio,
-          estado: "pendiente",
-        });
+  /**
+   * Asegura que cada mensaje del plan tenga su fila en `app_wapi_envio_log`.
+   * Dos usos:
+   *
+   *   · corte por presupuesto → hay que registrar los mensajes que ni siquiera
+   *     se prepararon, porque la continuación se guía por logIds.
+   *   · destino saltado o mensaje atascado → la fila queda `pendiente` con el
+   *     motivo, lista para el botón "reanudar" de la app.
+   *
+   * Es idempotente: reutiliza las filas ya existentes (de una reanudación o de
+   * `prepararProducto`) y sólo inserta las que falten, así que nunca duplica la
+   * tanda. Devuelve los ids de las filas implicadas.
+   */
+  const registrarPendientesPares = async (
+    pares: Par[],
+    motivo?: { code: string; message: string },
+  ): Promise<{ ids: number[]; ok: boolean }> => {
+    if (pares.length === 0 || chatsValidos.length === 0) {
+      return { ids: [], ok: true };
+    }
+
+    const implicados = new Set<number>();
+    // Deduplicado por par: si la petición repitiera un producto, sin esto se
+    // insertarían DOS filas del mismo (producto, chat) y la segunda quedaría
+    // `pendiente` para siempre — la reanudación conserva el primer log y la
+    // tanda se vería "interrumpida" sin poder avanzar nunca.
+    const faltantes = new Map<string, Par>();
+    for (const par of pares) {
+      const clave = clavePar(par);
+      const id = logIdDePar.get(clave);
+      if (id != null) implicados.add(id);
+      else faltantes.set(clave, par);
+    }
+
+    let ok = true;
+    if (faltantes.size > 0) {
+      const filas = Array.from(faltantes.values()).map((p) => ({
+        id_tienda: idTienda,
+        id_sesion: idSesion,
+        id_programacion: idProgramacion ?? null,
+        id_producto: p.idProducto,
+        chat_id: p.chatId,
+        tipo_envio: tipoEnvio,
+        estado: "pendiente",
+      }));
+      try {
+        for (const lote of chunkArray(filas, 500)) {
+          const { data, error } = await admin
+            .from("app_wapi_envio_log")
+            .insert(lote)
+            .select("id, id_producto, chat_id");
+          if (error) throw new Error(error.message);
+          for (const row of data ?? []) {
+            const par: Par = {
+              idProducto: Number((row as any).id_producto),
+              chatId: String((row as any).chat_id),
+            };
+            const id = Number((row as any).id);
+            logIdDePar.set(clavePar(par), id);
+            implicados.add(id);
+          }
+        }
+      } catch (e) {
+        // CRÍTICO: si el insert falla, estos mensajes se despacharán SIN fila
+        // de log y SIN `Idempotency-Key` (`logId` null) → invisibles en el
+        // historial y no reanudables. Además la continuación, que se guía por
+        // logIds, se quedaría sin ellos. Hay que decirlo ALTO.
+        ok = false;
+        console.error(
+          `[wapi-send-products] FALLO al registrar ${faltantes.size} ` +
+            `mensaje(s) pendientes: ${(e as Error).message ?? e}. Se ` +
+            `despacharían SIN fila ni clave de idempotencia.`,
+        );
+      }
+      // Si algún par se ha quedado sin fila, la operación no está completa.
+      for (const clave of faltantes.keys()) {
+        if (!logIdDePar.has(clave)) {
+          ok = false;
+          break;
+        }
       }
     }
-    try {
-      for (const lote of chunkArray(filas, 500)) {
-        const { error } = await admin.from("app_wapi_envio_log").insert(lote);
-        if (error) throw new Error(error.message);
+
+    const ids = Array.from(implicados);
+    if (motivo && ids.length > 0) {
+      for (const lote of chunkArray(ids, 500)) {
+        await admin.from("app_wapi_envio_log")
+          .update({
+            estado: "pendiente",
+            error_code: motivo.code,
+            error_message: motivo.message,
+          })
+          .in("id", lote);
       }
-      console.warn(
-        `[wapi-send-products] ${ids.length} producto(s) registrados como ` +
-          `pendiente (${filas.length} fila(s)) para poder reanudar`,
-      );
-    } catch (e) {
-      console.error(
-        `[wapi-send-products] no se pudieron registrar los pendientes: ` +
-          `${(e as Error).message ?? e}`,
-      );
     }
+    return { ids, ok };
   };
 
   // ── Datos de producto, con caché ────────────────────────────────────
@@ -1146,11 +1388,23 @@ export async function dispatchProducts(args: {
     logId: number | null;
   };
 
+  /** Producto validado y listo, con sus destinos y sus filas de log. */
+  type ProductoListo = {
+    idProducto: number;
+    url: string;
+    caption: string;
+    mimetype: string;
+    /** Destinos a los que hay que mandarlo (al reanudar, sólo los que faltan). */
+    chats: string[];
+    /** chat_id → id de su fila en `app_wapi_envio_log`. */
+    logIdPorChat: Map<string, number>;
+  };
+
   const skipped: Array<{ id_producto: number; reason: string }> = [];
-  let seedCounter = Math.floor(Math.random() * 1000); // rotación de iconos
   let enviados = 0;
   let fallidos = 0;
-  let productosDespachados = 0;
+  /** Mensajes en `pendiente` que NO son fallos: hay que reanudarlos. */
+  let pendientesDeTrabajo = 0;
   let mensajesIntentados = 0;
   /** Mensajes que quedaron `pendiente` por caída de sesión (NO son fallos:
    *  son trabajo por hacer en cuanto la sesión vuelva). */
@@ -1158,27 +1412,53 @@ export async function dispatchProducts(args: {
   // batchId para correlación interna (no se envía al WAPI).
   const batchId = `b_${idTienda}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
 
+  /** Posición del producto en la tanda: fija el icono del caption. Así el
+   *  MISMO producto sale con el MISMO texto en todos los grupos (antes el
+   *  contador rotaba en cada destino y cada grupo veía un icono distinto). */
+  const posDeProducto = new Map<number, number>();
+  effProductIds.forEach((id, i) => {
+    if (!posDeProducto.has(id)) posDeProducto.set(id, i);
+  });
+
   // Descarta un producto (sin imagen, imagen no pública…). Al reanudar hay
   // que marcar sus filas como fallido: si quedaran en `pendiente` la tanda se
   // vería "interrumpida" para siempre y el botón de reanudar reaparecería sin
   // poder avanzar nunca.
+  const descartados = new Set<number>();
+
   const descartar = async (idProd: number, razon: string): Promise<void> => {
+    if (descartados.has(idProd)) return;
+    descartados.add(idProd);
     skipped.push({ id_producto: idProd, reason: razon });
-    if (!esReanudacion) return;
-    const logs = chatsValidos
-      .map((c) => logIdPorPar.get(`${idProd}|${c}`))
-      .filter((v): v is number => v != null);
-    if (logs.length === 0) return;
-    await admin.from("app_wapi_envio_log").update({
-      estado: "fallido",
-      error_code: "SKIPPED",
-      error_message: `No se puede enviar: ${razon}`,
-    }).in("id", logs);
+    // Al reanudar sólo existen filas para los pares que quedaron sin enviar.
+    const chatsObjetivo = esReanudacion
+      ? chatsValidos.filter((c) => logIdPorPar.has(`${idProd}|${c}`))
+      : chatsValidos;
+    const { ids, ok } = await registrarPendientesPares(
+      chatsObjetivo.map((c) => ({ idProducto: idProd, chatId: c })),
+    );
+    if (!ok) {
+      console.error(
+        `[wapi-send-products] el producto ${idProd} se descarta (${razon}) ` +
+          `pero no se pudieron registrar sus filas: no quedará constancia ` +
+          `en el historial`,
+      );
+    }
+    if (ids.length === 0) return;
+    for (const lote of chunkArray(ids, 500)) {
+      await admin.from("app_wapi_envio_log").update({
+        estado: "fallido",
+        error_code: "SKIPPED",
+        error_message: `No se puede enviar: ${razon}`,
+      }).in("id", lote);
+    }
   };
-  // Valida un producto, compone el caption y registra sus filas de log.
-  // Devuelve los envíos a ejecutar, o `null` si el producto no se puede
-  // mandar (ya quedó anotado en `skipped`).
-  const prepararProducto = async (idProd: number): Promise<Envio[] | null> => {
+  // Valida un producto, compone el caption y asegura sus filas de log.
+  // Devuelve el producto listo con sus destinos, o `null` si no se puede
+  // mandar (ya quedó anotado en `skipped` y sus filas marcadas `fallido`).
+  const prepararProducto = async (
+    idProd: number,
+  ): Promise<ProductoListo | null> => {
     const p = infoCache.get(idProd);
     if (!p) {
       await descartar(idProd, "producto no encontrado");
@@ -1197,7 +1477,7 @@ export async function dispatchProducts(args: {
       );
       return null;
     }
-    const caption = buildCaption(template, p, seedCounter++);
+    const caption = buildCaption(template, p, posDeProducto.get(idProd) ?? 0);
     // Inferir mimetype desde la extensión (algunas builds de WAPI lo exigen).
     const ext = imageUrl.split("?")[0].split(".").pop()?.toLowerCase() ?? "";
     const mimetype = ext === "png"
@@ -1214,17 +1494,25 @@ export async function dispatchProducts(args: {
       ? chatsValidos.filter((c) => logIdPorPar.has(`${idProd}|${c}`))
       : chatsValidos;
     if (chats.length === 0) return null;
-    // Filas de log. Al reanudar se reutilizan las existentes (así la tanda
-    // original se completa en vez de duplicarse) y se devuelven a
-    // `pendiente` para que la UI muestre el progreso vivo.
-    let logIds: Array<number | null>;
+
+    const logIdPorChat = new Map<string, number>();
+
     if (esReanudacion) {
-      logIds = chats.map((c) => logIdPorPar.get(`${idProd}|${c}`) ?? null);
-      const aReiniciar = logIds.filter((v): v is number => v != null);
-      if (aReiniciar.length > 0) {
+      // Se reutilizan las filas existentes: la tanda original se completa en
+      // vez de duplicarse. Vuelven a `pendiente` para que la UI muestre el
+      // progreso vivo mientras se re-despachan.
+      const aReiniciar: number[] = [];
+      for (const c of chats) {
+        const id = logIdPorPar.get(`${idProd}|${c}`);
+        if (id == null) continue;
+        logIdPorChat.set(c, id);
+        logIdDePar.set(`${idProd}|${c}`, id);
+        aReiniciar.push(id);
+      }
+      for (const lote of chunkArray(aReiniciar, 500)) {
         await admin.from("app_wapi_envio_log")
           .update({ estado: "pendiente", error_code: null, error_message: null })
-          .in("id", aReiniciar);
+          .in("id", lote);
       }
     } else {
       const filas = chats.map((c) => ({
@@ -1239,7 +1527,7 @@ export async function dispatchProducts(args: {
       const { data: insertados, error: logErr } = await admin
         .from("app_wapi_envio_log")
         .insert(filas)
-        .select("id");
+        .select("id, chat_id");
       if (logErr) {
         // Sin log el envío seguiría funcionando, pero la UI no vería nada:
         // preferimos avisar y continuar sin logId antes que abortar el chunk.
@@ -1248,17 +1536,40 @@ export async function dispatchProducts(args: {
             `${idProd}: ${logErr.message}`,
         );
       }
-      logIds = chats.map((_, i) => (insertados ?? [])[i]?.id ?? null);
+      // Se mapea por `chat_id`, nunca por posición: si el insert devolviera las
+      // filas en otro orden, emparejar por índice daría logIds cruzados.
+      for (const row of insertados ?? []) {
+        const c = String((row as any).chat_id);
+        const id = Number((row as any).id);
+        logIdPorChat.set(c, id);
+        logIdDePar.set(`${idProd}|${c}`, id);
+      }
     }
 
-    return chats.map((c, i) => ({
+    return {
       idProducto: idProd,
-      chatId: c,
       url: imageUrl,
       caption,
       mimetype,
-      logId: logIds[i] ?? null,
-    }));
+      chats,
+      logIdPorChat,
+    };
+  };
+
+  /**
+   * Caché de preparación. El plan recorre cada producto una vez POR DESTINO,
+   * así que sin caché se recalcularía el caption y se reinsertarían filas N
+   * veces. `null` también se cachea: un producto descartado no debe volver a
+   * intentarse (ni volver a insertar sus filas) en cada destino.
+   */
+  const cacheProductos = new Map<number, ProductoListo | null>();
+  const obtenerProductoListo = async (
+    idProd: number,
+  ): Promise<ProductoListo | null> => {
+    if (cacheProductos.has(idProd)) return cacheProductos.get(idProd) ?? null;
+    const listo = await prepararProducto(idProd);
+    cacheProductos.set(idProd, listo);
+    return listo;
   };
 
   console.log(
@@ -1277,6 +1588,12 @@ export async function dispatchProducts(args: {
     ok: boolean;
     pacing?: { retryAfterSeconds: number };
     sessionDown?: { rawStatus: string | null; recuperada: boolean; action: string };
+    /** El mensaje NO se envió pero NO es un fallo: quedó `pendiente` y hay que
+     *  reanudarlo. Se usa cuando el resultado es indeterminado (la clave de
+     *  idempotencia seguía en vuelo, o "puede que se haya enviado") o cuando el
+     *  mensaje agotó su ventana. Marcarlo `fallido` daría falsos negativos: el
+     *  mensaje puede haber llegado y el `fallido` es irreversible. */
+    pendiente?: boolean;
   };
 
   /** La escalera de recuperación se intenta UNA vez por worker: si la sesión
@@ -1299,6 +1616,37 @@ export async function dispatchProducts(args: {
     let ultimoCode = "SEND_ERROR";
     let ultimoMsg = "Error desconocido";
     let intentosHechos = 0;
+    /** Cuántas veces hemos esperado porque la clave de idempotencia seguía en
+     *  vuelo. Estas esperas NO consumen el presupuesto de reintentos: no son
+     *  fallos, son "todavía no sé el resultado". */
+    let esperasIdem = 0;
+    /** Cuándo empezó ESTE mensaje: alimenta el guarda-raíl MENSAJE_MAX_MS. */
+    const inicioMensaje = Date.now();
+
+    /**
+     * Deja la fila en `pendiente` (trabajo por hacer, NO fallo) y sale.
+     *
+     * Se usa cuando el resultado es indeterminado. `fallido` sería mentira y
+     * además es irreversible: el webhook empareja por `mensaje_id`, y estas
+     * filas lo tienen `NULL`, así que ningún ack podría corregirlas después.
+     */
+    const dejarPendiente = async (
+      code: string,
+      message: string,
+    ): Promise<EnvioResultado> => {
+      if (e.logId) {
+        await admin.from("app_wapi_envio_log").update({
+          estado: "pendiente",
+          error_code: code,
+          error_message: message,
+        }).eq("id", e.logId);
+      }
+      console.warn(
+        `[wapi-send-products] prod=${e.idProducto} chat=${e.chatId} ` +
+          `queda PENDIENTE (${code}): ${message}`,
+      );
+      return { ok: false, pendiente: true };
+    };
 
     for (let intento = 1; intento <= RETRY_MAX_ATTEMPTS; intento++) {
       intentosHechos = intento;
@@ -1341,6 +1689,62 @@ export async function dispatchProducts(args: {
 
       ultimoCode = single.error?.code ?? "SEND_ERROR";
       ultimoMsg = single.error?.message ?? "Error desconocido";
+
+      // ── Clave de idempotencia EN VUELO ─────────────────────────────────
+      // NO es un fallo. Casi siempre significa que nuestro cliente abortó por
+      // timeout mientras OpenWA seguía enviando: la petición original sigue
+      // viva. Se espera y se vuelve a preguntar con la MISMA clave; cuando la
+      // original acabe, OpenWA reproduce su respuesta guardada y sabremos si
+      // el mensaje salió (y con qué messageId) sin arriesgar un duplicado.
+      //
+      // Antes esto se marcaba `fallido` al 2º intento: 15 de los 21 `fallido`
+      // de una sola tanda real eran mensajes que SÍ habían llegado.
+      if (esIdemEnProgreso(ultimoCode, ultimoMsg)) {
+        const sinMargen = esperasIdem >= IDEM_MAX_ESPERAS ||
+          Date.now() - inicioMensaje > MENSAJE_MAX_MS ||
+          elapsed() + IDEM_ESPERA_MAX_MS + 20_000 >= WORKER_BUDGET_MS;
+        if (sinMargen) {
+          return await dejarPendiente(
+            "IDEMPOTENCY_KEY_IN_PROGRESS",
+            `${ultimoMsg} — se deja pendiente para reanudar con la misma ` +
+              `clave (el mensaje puede haberse enviado)`,
+          );
+        }
+        esperasIdem++;
+        const esperaMs = Math.min(
+          IDEM_ESPERA_MAX_MS,
+          IDEM_ESPERA_BASE_MS * esperasIdem,
+        );
+        console.warn(
+          `[wapi-send-products] prod=${e.idProducto} chat=${e.chatId} ` +
+            `IDEMPOTENCY_KEY_IN_PROGRESS: la petición original sigue en vuelo ` +
+            `— esperando ${Math.round(esperaMs / 1000)}s y reintentando la ` +
+            `misma clave (espera ${esperasIdem}/${IDEM_MAX_ESPERAS})`,
+        );
+        await new Promise((res) => setTimeout(res, esperaMs));
+        intento--; // la espera no consume presupuesto de reintentos
+        continue;
+      }
+
+      // ── Resultado indeterminado: "puede que se haya enviado" ───────────
+      // Tampoco es un `fallido` honesto. Reintentar con la misma clave es la
+      // única forma de averiguarlo sin arriesgar un duplicado.
+      if (esIdemResultadoDesconocido(ultimoCode, ultimoMsg)) {
+        const sinMargen = esperasIdem >= IDEM_MAX_ESPERAS ||
+          Date.now() - inicioMensaje > MENSAJE_MAX_MS ||
+          elapsed() + IDEM_ESPERA_BASE_MS + 20_000 >= WORKER_BUDGET_MS;
+        if (sinMargen) {
+          return await dejarPendiente(
+            "IDEMPOTENCY_OUTCOME_UNKNOWN",
+            `${ultimoMsg} — resultado indeterminado: se deja pendiente para ` +
+              `reanudar con la misma clave`,
+          );
+        }
+        esperasIdem++;
+        await new Promise((res) => setTimeout(res, IDEM_ESPERA_BASE_MS));
+        intento--; // la espera no consume presupuesto de reintentos
+        continue;
+      }
 
       // ── Sesión caída: recuperar y reintentar ───────────────────────────
       // 4,995 de las filas `fallido` en producción son HTTP_409 "Session is
@@ -1441,8 +1845,11 @@ export async function dispatchProducts(args: {
       // ── Backoff normal ────────────────────────────────────────────────
       const backoffMs = RETRY_BASE_MS * Math.pow(2, intento - 1);
       // No arrancar una espera que nos va a dejar sin worker: más vale
-      // marcar el fallo ya y dejar que el resto del chunk siga.
-      const sinTiempo = elapsed() + backoffMs + 15_000 >= WORKER_BUDGET_MS;
+      // marcar el fallo ya y dejar que el resto del chunk siga. Se aplica el
+      // mismo criterio al techo POR MENSAJE: un destino atascado no puede
+      // consumir el presupuesto de los demás mensajes del grupo.
+      const sinTiempo = elapsed() + backoffMs + 15_000 >= WORKER_BUDGET_MS ||
+        Date.now() - inicioMensaje + backoffMs > MENSAJE_MAX_MS;
       const puedeReintentar = intento < RETRY_MAX_ATTEMPTS &&
         esReintentable(ultimoCode) && !sinTiempo;
       console.error(
@@ -1463,127 +1870,179 @@ export async function dispatchProducts(args: {
       );
     }
 
+    // El mensaje no llegó a `enviado`. ¿Es un fallo o trabajo por hacer?
+    //
+    //   · TIMEOUT / NETWORK_ERROR / SEND_ERROR / idempotencia indeterminada:
+    //     se agotaron los reintentos y NO sabemos si salió. Como todas las
+    //     tentativas viajan con la MISMA `Idempotency-Key`, reanudar es seguro
+    //     y no duplica nada → `pendiente`. Marcarlo `fallido` era el falso
+    //     negativo: 15 de 21 filas de una tanda real eran mensajes entregados.
+    //   · 4xx de validación (imagen rechazada, chat inexistente...): reintentar
+    //     daría lo mismo → `fallido`, para no prometer una reanudación inútil.
+    const indeterminado = !ultimoCode ||
+      ultimoCode === "TIMEOUT" ||
+      ultimoCode === "NETWORK_ERROR" ||
+      ultimoCode === "SEND_ERROR" ||
+      esIdemEnProgreso(ultimoCode, ultimoMsg) ||
+      esIdemResultadoDesconocido(ultimoCode, ultimoMsg);
+
     if (e.logId) {
       await admin.from("app_wapi_envio_log")
-        .update({
-          estado: "fallido",
-          error_code: ultimoCode,
-          // El conteo es el REAL, no RETRY_MAX_ATTEMPTS: cuando el bucle sale
-          // antes por falta de presupuesto o por error no reintentable, decir
-          // "tras 3 intentos" era simplemente falso (y entorpecía el
-          // diagnóstico: las 1,599 filas HTTP_500 lo decían todas).
-          error_message: `${ultimoMsg} (tras ${intentosHechos} intento(s))`,
-        })
+        .update(
+          indeterminado
+            ? {
+              estado: "pendiente",
+              error_code: ultimoCode,
+              error_message:
+                `${ultimoMsg} (tras ${intentosHechos} intento(s)) — ` +
+                `reanudable sin duplicar (misma clave)`,
+            }
+            : {
+              estado: "fallido",
+              error_code: ultimoCode,
+              // El conteo es el REAL, no RETRY_MAX_ATTEMPTS: cuando el bucle sale
+              // antes por falta de presupuesto o por error no reintentable, decir
+              // "tras 3 intentos" era simplemente falso (y entorpecía el
+              // diagnóstico: las 1,599 filas HTTP_500 lo decían todas).
+              error_message: `${ultimoMsg} (tras ${intentosHechos} intento(s))`,
+            },
+        )
         .eq("id", e.logId);
     }
-    return { ok: false };
+    return indeterminado ? { ok: false, pendiente: true } : { ok: false };
   };
 
-  // ── BUCLE PRINCIPAL ──────────────────────────────────────────────────
-  // Un producto a la vez y, dentro de cada producto, un destino a la vez.
-  // Antes de cada producto se comprueba si CABE en lo que queda de worker;
-  // si no cabe, el resto se corta y se encola en un worker nuevo.
+  // ── BUCLE PRINCIPAL: UN DESTINO DETRÁS DE OTRO ───────────────────────
+  // `plan` ya viene ordenado destino-mayor: primero TODOS los productos del
+  // primer grupo, luego todos los del segundo. Aquí sólo se recorre con un
+  // cursor y, antes de cada mensaje, se comprueba si CABE en lo que queda de
+  // worker; si no cabe, el resto se encola en un worker nuevo por
+  // `resume_log_ids`. Si un destino falla varias veces seguidas se SALTA (sus
+  // mensajes quedan `pendiente`) para que no se coma el presupuesto de los
+  // demás grupos.
   let ventanaFin = 0;
-  for (let i = 0; i < effProductIds.length; i++) {
-    const sinPresupuesto = productosDespachados > 0
-      ? elapsed() + reservaProductoMs() > WORKER_BUDGET_MS
+  let destinoActual: string | null = plan.length > 0 ? plan[0].chatId : null;
+  let fallosDelDestino = 0;
+  /** Destinos ya marcados como problemáticos. Sirve para que un grupo caído no
+   *  vuelva a encolarse cuando el corte por presupuesto parte el plan. */
+  const destinosSaltados = new Set<string>();
+
+  for (let cursor = 0; cursor < plan.length; cursor++) {
+    const par = plan[cursor];
+
+    // Cambio de grupo: pausa larga y contador de fallos a cero.
+    if (par.chatId !== destinoActual) {
+      destinoActual = par.chatId;
+      fallosDelDestino = 0;
+      const pausa = ENTRE_DESTINOS_MS +
+        Math.floor(Math.random() * Math.min(minMs, 10_000));
+      console.log(
+        `[wapi-send-products] siguiente destino a los ` +
+          `${Math.round(elapsed() / 1000)}s (pausa ${Math.round(pausa / 1000)}s)`,
+      );
+      if (elapsed() + pausa + reservaMensajeMs() < WORKER_BUDGET_MS) {
+        await new Promise((res) => setTimeout(res, pausa));
+      }
+    }
+
+    const sinPresupuesto = mensajesIntentados > 0
+      ? elapsed() + reservaMensajeMs() > WORKER_BUDGET_MS
       : elapsed() > WORKER_BUDGET_MS; // el primero siempre se intenta
     if (sinPresupuesto) {
-      remainingIds = effProductIds.slice(i);
+      remainingPares = plan.slice(cursor);
       console.log(
         `[wapi-send-products] corte por presupuesto a los ` +
-          `${Math.round(elapsed() / 1000)}s: ${productosDespachados} ok, ` +
-          `${remainingIds.length} para el worker siguiente`,
+          `${Math.round(elapsed() / 1000)}s: ${mensajesIntentados} mensaje(s) ` +
+          `despachados, ${remainingPares.length} para el worker siguiente`,
       );
       break;
     }
+
+    // Destino problemático: no se insiste contra él. Sus mensajes quedan
+    // `pendiente` (reanudables a mano) y se pasa al grupo siguiente.
+    if (fallosDelDestino >= DESTINO_FALLOS_MAX) {
+      destinosSaltados.add(par.chatId);
+      saltadosPares.push(par);
+      continue;
+    }
+    // Producto descartado: ni se prepara ni cuenta como trabajo pendiente.
+    if (descartados.has(par.idProducto)) continue;
+
     // Precarga por ventanas: una consulta cada WINDOW_SIZE productos, en vez
     // de una por producto (lento) o una sola gigante (se trunca).
-    if (i >= ventanaFin) {
-      const fin = Math.min(effProductIds.length, i + WINDOW_SIZE);
-      await ensureInfo(effProductIds.slice(i, fin));
+    const posProd = posDeProducto.get(par.idProducto) ?? 0;
+    if (posProd >= ventanaFin) {
+      const fin = Math.min(effProductIds.length, posProd + WINDOW_SIZE);
+      await ensureInfo(effProductIds.slice(posProd, fin));
       ventanaFin = fin;
     }
-    const idProd = effProductIds[i];
-    const envios = await prepararProducto(idProd);
-    if (!envios || envios.length === 0) continue;
 
-    const inicioProducto = Date.now();
-    let corteDeProducto = false;
-    // EN SERIE: la sesión WAPI es UNA instancia de Puppeteer. Dos envíos
-    // simultáneos se pisan y devuelven NETWORK_ERROR — por eso a un solo
-    // grupo iba perfecto y a cuatro se caía la mitad.
-    for (let k = 0; k < envios.length; k++) {
-      const r = await dispatchOne(envios[k]);
-      mensajesIntentados++;
-      if (r.ok) enviados++;
-      else if (r.sessionDown) pendientesPorSesion++;
-      else if (!r.pacing) fallidos++;
-      if (r.pacing) {
-        // WAPI pide una pausa larga: cortar aquí y reanudar más tarde.
-        pacingAbort = r.pacing;
-        remainingIds = effProductIds.slice(i + 1);
-        corteDeProducto = true;
-        break;
-      }
-      if (r.sessionDown) {
-        // La sesión de OpenWA se cayó y no se pudo recuperar. Este mensaje no
-        // se marca `fallido` a propósito: queda `pendiente` (trabajo por
-        // hacer, no un fallo) para que "reanudar" lo recoja cuando la sesión
-        // vuelva. Los destinos sin intentar del producto actual quedan
-        // igualmente en `pendiente`.
-        sessionAbort = r.sessionDown;
-        remainingIds = effProductIds.slice(i + 1);
-        corteDeProducto = true;
-        break;
-      }
-      // Guarda-raíl por producto: si UN producto se está comiendo el worker
-      // (imagen enorme, sesión pesada), se abandonan sus destinos restantes
-      // en vez de arrastrar toda la cadena. Quedan como `fallido`, así que
-      // el botón "reanudar" de la app los recoge.
-      const excedido = Date.now() - inicioProducto > PRODUCT_MAX_MS ||
-        elapsed() > WORKER_BUDGET_MS;
-      if (excedido && k < envios.length - 1) {
-        const restantes = envios.slice(k + 1);
-        const logs = restantes
-          .map((x) => x.logId)
-          .filter((v): v is number => v != null);
-        if (logs.length > 0) {
-          await admin.from("app_wapi_envio_log")
-            .update({
-              estado: "fallido",
-              error_code: "PRODUCT_TIMEOUT",
-              error_message:
-                `Producto abandonado tras ${Math.round((Date.now() - inicioProducto) / 1000)}s`,
-            })
-            .in("id", logs);
-        }
-        fallidos += restantes.length;
-        console.warn(
-          `[wapi-send-products] prod=${idProd} agotó su ventana: ` +
-            `${restantes.length} destino(s) sin enviar`,
-        );
-        corteDeProducto = true;
-        break;
-      }
-      // Pausa corta entre destinos del mismo producto: da margen a que la
-      // sesión libere el envío anterior y evita ráfagas contra el limiter.
-      if (k < envios.length - 1) {
-        await new Promise((res) => setTimeout(res, FANOUT_PAUSE_MS));
-      }
+    const listo = await obtenerProductoListo(par.idProducto);
+    if (!listo) {
+      // Producto descartado: `descartar` ya marcó sus filas como `fallido`
+      // (SKIPPED) y dejó constancia en `skipped`. Por eso NO va a ningún cubo
+      // de pendientes: no hay nada que reanudar.
+      continue;
+    }
+    if (!listo.chats.includes(par.chatId)) {
+      // No debería ocurrir nunca: el `plan` y `prepararProducto` usan el mismo
+      // filtro (`logIdPorPar`). Si pasara, el par quedaría fuera de todos los
+      // cubos, así que se avisa en vez de perderlo en silencio.
+      console.error(
+        `[wapi-send-products] par sin destino preparado: ` +
+          `prod=${par.idProducto} chat=${par.chatId} — se omite`,
+      );
+      continue;
     }
 
-    // Coste real del producto: alimenta `reservaProductoMs()` para que la
+    const inicioMensaje = Date.now();
+    const r = await dispatchOne({
+      idProducto: par.idProducto,
+      chatId: par.chatId,
+      url: listo.url,
+      caption: listo.caption,
+      mimetype: listo.mimetype,
+      logId: listo.logIdPorChat.get(par.chatId) ?? null,
+    });
+    mensajesIntentados++;
+    // Coste real del mensaje: alimenta `reservaMensajeMs()` para que la
     // decisión de cortar use medidas de ESTE envío, no una estimación fija.
-    peorEnvioMs = Math.max(peorEnvioMs, Date.now() - inicioProducto);
-    productosDespachados++;
-    if (pacingAbort || sessionAbort) break;
+    peorEnvioMs = Math.max(peorEnvioMs, Date.now() - inicioMensaje);
 
-    // Delay aleatorio entre productos (anti-ban). No tras el último, ni si
-    // no cabe: mejor guardar el tiempo para encolar la continuación.
-    if (i < effProductIds.length - 1 && !corteDeProducto) {
-      const jitter = minMs + Math.floor(Math.random() * (maxMs - minMs));
-      if (elapsed() + jitter < WORKER_BUDGET_MS) {
+    if (r.ok) {
+      enviados++;
+      fallosDelDestino = 0;
+    } else if (r.sessionDown) {
+      // La sesión de OpenWA se cayó y la escalera no la levantó: se corta el
+      // chunk. Todo lo que queda queda `pendiente` (no `fallido`): es trabajo
+      // por hacer cuando la sesión vuelva.
+      pendientesPorSesion++;
+      sessionAbort = r.sessionDown;
+      remainingPares = plan.slice(cursor + 1);
+      break;
+    } else if (r.pacing) {
+      // WAPI pide una pausa que no cabe en este worker: se corta y se reanuda.
+      pacingAbort = r.pacing;
+      remainingPares = plan.slice(cursor + 1);
+      break;
+    } else if (r.pendiente) {
+      // Resultado indeterminado. La fila ya quedó `pendiente` y es reanudable
+      // sin duplicar (misma clave). Cuenta como fallo del destino para poder
+      // saltárselo si se atasca, pero NO se marca como fallo de la tanda.
+      pendientesDeTrabajo++;
+      fallosDelDestino++;
+    } else {
+      fallidos++;
+      fallosDelDestino++;
+    }
+
+    // Delay anti-ban entre mensajes DEL MISMO destino. Mantiene el mismo ritmo
+    // efectivo por sesión que el fan-out anterior (donde el hueco lo ponían
+    // los otros destinos) pero concentrado en el grupo que se está sirviendo.
+    if (cursor < plan.length - 1 && plan[cursor + 1].chatId === par.chatId) {
+      const jitter = minMs +
+        Math.floor(Math.random() * Math.max(1, maxMs - minMs));
+      if (elapsed() + jitter + 20_000 < WORKER_BUDGET_MS) {
         await new Promise((res) => setTimeout(res, jitter));
       }
     }
@@ -1592,17 +2051,53 @@ export async function dispatchProducts(args: {
   // ── CIERRE ───────────────────────────────────────────────────────────
   // ORDEN CRÍTICO: primero la continuación, después el resumen. Al revés,
   // si el resumen se come lo que queda de worker la cadena muere y los
-  // productos restantes no se envían nunca (era el bug de los 4 grupos).
+  // mensajes restantes no se envían nunca (era el bug de los 4 grupos).
   let continuacionOk = false;
+
+  // Si el corte por presupuesto dejó dentro del `remaining` mensajes de un
+  // destino que YA se marcó como caído, no se encolan: volverían a fallar en el
+  // worker siguiente y gastarían su presupuesto. Pasan a `saltadosPares`.
+  const deDestinoSaltado = remainingPares.filter((p) =>
+    destinosSaltados.has(p.chatId)
+  );
+  if (deDestinoSaltado.length > 0) {
+    saltadosPares.push(...deDestinoSaltado);
+    remainingPares = remainingPares.filter((p) =>
+      !destinosSaltados.has(p.chatId)
+    );
+  }
+
+  // Los mensajes de un destino saltado NO se encadenan: volverían a fallar y
+  // sólo gastarían workers. Quedan `pendiente` con el motivo para que el botón
+  // "reanudar" de la app los recoja cuando el grupo se arregle.
+  const saltadosRegistrables = saltadosPares
+    .filter((p) => !descartados.has(p.idProducto));
+  if (saltadosRegistrables.length > 0) {
+    const { ids, ok } = await registrarPendientesPares(saltadosRegistrables, {
+      code: "DESTINO_CAIDO",
+      message:
+        `El destino acumuló ${DESTINO_FALLOS_MAX} fallos seguidos; sus ` +
+        `mensajes quedan pendientes de reanudar`,
+    });
+    console.warn(
+      `[wapi-send-products] ${saltadosRegistrables.length} mensaje(s) de ` +
+        `destino(s) saltado(s) quedan pendientes (${ids.length} fila(s)` +
+        `${ok ? "" : ", REGISTRO INCOMPLETO"})`,
+    );
+  }
+
+  const remainingRegistrables = remainingPares
+    .filter((p) => !descartados.has(p.idProducto));
+
   if (pacingAbort) {
     // WAPI está en cooldown: encadenar sería chocar con el mismo 429 desde
     // un worker nuevo. Se registran los pendientes para reanudar después.
     console.warn(
       `[wapi-send-products] cortado por pacing ` +
-        `(${pacingAbort.retryAfterSeconds}s): ${remainingIds.length} ` +
-        `producto(s) quedan pendientes de reanudar`,
+        `(${pacingAbort.retryAfterSeconds}s): ${remainingRegistrables.length} ` +
+        `mensaje(s) quedan pendientes de reanudar`,
     );
-    await registrarPendientes(remainingIds);
+    await registrarPendientesPares(remainingRegistrables);
   } else if (sessionAbort) {
     // La sesión se cayó y la escalera de recuperación falló. Encadenar un
     // worker nuevo sería inútil (haría lo mismo contra una sesión muerta) y
@@ -1610,39 +2105,58 @@ export async function dispatchProducts(args: {
     console.error(
       `[wapi-send-products] cortado por SESIÓN CAÍDA ` +
         `(acción=${sessionAbort.action}, estado final=${sessionAbort.rawStatus ?? "?"}): ` +
-        `${remainingIds.length} producto(s) quedan pendientes de reanudar. ` +
+        `${remainingRegistrables.length} mensaje(s) quedan pendientes de reanudar. ` +
         `El watchdog (wapi-session-health) y el cron revisan la sesión.`,
     );
-    await registrarPendientes(remainingIds);
-  } else if (remainingIds.length > 0) {
-    continuacionOk = await reinvokeRemaining();
-    if (!continuacionOk) await registrarPendientes(remainingIds);
+    await registrarPendientesPares(remainingRegistrables);
+  } else if (remainingRegistrables.length > 0) {
+    // Primero se aseguran las filas (la continuación se guía por logIds) y
+    // después se encola. Al revés, la continuación iría sin ids.
+    const { ids, ok } = await registrarPendientesPares(remainingRegistrables);
+    if (!ok || ids.length === 0) {
+      // Sin filas no hay continuación posible: hay que gritarlo, porque si no
+      // la tanda se queda "a medias" sin ninguna señal (era el fallo silencioso
+      // que rompía la cadena de chunks).
+      console.error(
+        `[wapi-send-products] CADENA ROTA: no se pudieron registrar ` +
+          `${remainingRegistrables.length} mensaje(s) que faltaban ` +
+          `(ids=${ids.length}, ok=${ok}). Esos mensajes NO se despacharán ` +
+          `hasta que se reanude la tanda a mano.`,
+      );
+      continuacionOk = false;
+    } else {
+      continuacionOk = await reinvokeRemaining(ids);
+    }
   }
 
   // El resumen sólo lo manda el ÚLTIMO chunk de la cadena. `cerrarConResumen`
   // decide por sí mismo si le cabe aquí o lo delega a un worker nuevo.
-  const esUltimoChunk = remainingIds.length === 0 && !pacingAbort && !sessionAbort;
+  const esUltimoChunk = remainingPares.length === 0 && !pacingAbort &&
+    !sessionAbort;
   const resumenEntregas = esUltimoChunk ? await cerrarConResumen() : 0;
 
   console.log(
     `[wapi-send-products] chunk cerrado en ${Math.round(elapsed() / 1000)}s: ` +
-      `${productosDespachados} producto(s), ${mensajesIntentados} mensaje(s) ` +
-      `(${enviados} ok / ${fallidos} fallidos / ${pendientesPorSesion} pendientes ` +
-      `por sesión caída), ${skipped.length} descartado(s), ` +
-      `restan ${remainingIds.length}`,
+      `${mensajesIntentados} mensaje(s) (${enviados} ok / ${fallidos} fallidos / ` +
+      `${pendientesDeTrabajo} pendientes / ${pendientesPorSesion} por sesión ` +
+      `caída), ${skipped.length} descartado(s), ` +
+      `${remainingPares.length} para el worker siguiente, ` +
+      `${saltadosPares.length} de destino saltado`,
   );
 
   return {
     enviados,
     fallidos,
+    pendientes: pendientesDeTrabajo,
     pendientes_por_sesion: pendientesPorSesion,
     batch_id: batchId,
-    mode: "serie-por-producto",
+    mode: "serie-por-destino",
     destinos: chatsValidos.length,
-    chunk_size: productosDespachados,
+    chunk_size: mensajesIntentados,
     mensajes: mensajesIntentados,
     skipped,
-    remaining: remainingIds.length,
+    remaining: remainingPares.length,
+    saltados: saltadosPares.length,
     continuacion_encolada: continuacionOk,
     ...(pacingAbort
       ? { pacing_retry_after_seconds: pacingAbort.retryAfterSeconds }
@@ -1684,7 +2198,9 @@ export async function handleSendProducts(req: Request): Promise<Response> {
 
   const idSesion = Number(body.id_sesion);
   const productIds = Array.isArray(body.product_ids)
-    ? body.product_ids.map(Number).filter((n) => Number.isFinite(n))
+    ? Array.from(
+      new Set(body.product_ids.map(Number).filter((n) => Number.isFinite(n))),
+    )
     : [];
   const destinations = Array.isArray(body.destinations) ? body.destinations : [];
   const resumeLogIds = Array.isArray(body.resume_log_ids)
@@ -1695,7 +2211,11 @@ export async function handleSendProducts(req: Request): Promise<Response> {
   // cuando no le queda worker para el texto). Ver `SendBody.summary_only`.
   const soloResumen = body.summary_only === true;
   const summaryProductIds = Array.isArray(body.summary_product_ids)
-    ? body.summary_product_ids.map(Number).filter((n) => Number.isFinite(n))
+    ? Array.from(
+      new Set(
+        body.summary_product_ids.map(Number).filter((n) => Number.isFinite(n)),
+      ),
+    )
     : [];
 
   // Al reanudar, product_ids/destinations se derivan de los propios logs, así
@@ -1820,14 +2340,17 @@ export async function handleSendProducts(req: Request): Promise<Response> {
     : esReanudacion
     ? resumeLogIds.length
     : productIds.length * destinations.length;
-  // El envío es EN SERIE por destino, con un delay aleatorio entre productos.
-  // Estimado ≈ (nº productos - 1) × delay medio + el tiempo de los envíos.
-  const productosEstimados = esReanudacion
-    ? Math.max(1, Math.ceil(resumeLogIds.length / Math.max(1, destinations.length)))
-    : productIds.length;
+  // Mensajes que va a despachar el plan/chunk. El envío es EN SERIE y el
+  // Orden POR DESTINO y en serie: cada mensaje cuesta su envío + el delay anti-ban.
+  const mensajesDelPlan = esReanudacion
+    ? resumeLogIds.length
+    : productIds.length * Math.max(1, destinations.length);
+  /** Estimación: cada mensaje cuesta su envío (≈8s de base, pero se han medido
+   *  16-50s por imagen cuando OpenWA está justo de memoria) más el delay
+   *  anti-ban. Es un suelo optimista para que el usuario sepa que puede seguir
+   *  usando la app, no una promesa. */
   const estimadoSeg = soloResumen ? 30 : Math.round(
-    Math.max(0, productosEstimados - 1) * ((delayMin + delayMax) / 2) +
-      productosEstimados * Math.max(1, destinations.length) * 7,
+    mensajesDelPlan * (8 + (delayMin + delayMax) / 2),
   );
 
   const job = dispatchProducts({
@@ -1835,6 +2358,14 @@ export async function handleSendProducts(req: Request): Promise<Response> {
     idSesion: ses.id,
     idTienda: ses.id_tienda,
     wapiSessionId: ses.wapi_session_id,
+    // La rama de recuperación de `dispatchOne` necesita la fila de sesión
+    // (`last_recovery_at`, `recovery_attempts`, `id`). Sin esto lanzaba
+    // `ReferenceError: ses is not defined` justo cuando la sesión se caía.
+    ses: {
+      id: ses.id,
+      last_recovery_at: (ses.last_recovery_at as string | null) ?? null,
+      recovery_attempts: Number(ses.recovery_attempts ?? 0),
+    },
     productIds,
     destinations,
     template: body.message_template,
