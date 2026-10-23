@@ -12,380 +12,548 @@
     </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="color-scheme" content="light dark">
+    <meta name="color-scheme" content="light">
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F7FAFB">
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0C1A2A">
-    <title>Carnaval App — Descarga la app y empieza a disfrutar</title>
-    <meta name="description" content="Descarga Carnaval App: compras, comida y delivery desde tu celular. Activa tu invitación con un solo toque desde Google Play o App Store.">
+    <title>Invitación a Carnaval App — descarga la app y activa tu código</title>
+    <meta name="description" content="Te invitaron a Carnaval App: compras, comida y delivery desde tu celular. Tu código de invitación se copia solo; descarga la app en Google Play o App Store y se activa al abrirla.">
     <meta name="robots" content="noindex, nofollow">
-    <meta name="theme-color" content="#FF8A17">
     <link rel="icon" type="image/png" href="assets/images/carnaval-logo.png">
     <link rel="apple-touch-icon" href="assets/images/carnaval-logo.png">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Fonts: Geist + Geist Mono (Vercel CDN), Inter como fallback. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/style.css">
+
     <style>
+        /* ============================================================
+           Carnaval App · invitación
+           Sistema de diseño: navy + cyan del landing (premium-v3),
+           con el rojo Carnaval como acento de marca.
+           ============================================================ */
         :root {
             color-scheme: light;
-            --c-orange: #FF8A17;
-            --c-orange-dark: #E5730A;
-            --c-orange-soft: #FFF1E1;
-            --c-ink: #1A1A1A;
-            --c-ink-soft: #5A5A5A;
-            --c-bg: #FFF8F1;
-            --c-white: #FFFFFF;
+
+            /* Navy + cyan (landing) */
+            --navy-950: #0C1A2A;
+            --navy-900: #0F2438;
+            --navy-800: #163353;
+            --navy-700: #1E4A6E;
+            --blue-500: #2A5F8A;
+            --steel-400: #5B849E;
+            --cyan-400: #5EB8D1;
+            --cyan-500: #3A9BB8;
+            --cyan-050: #EAF6FA;
+
+            /* Superficies + tinta */
+            --paper: #F7FAFB;
+            --surface: #FFFFFF;
+            --surface-2: #F4F7F9;
+            --ink: #102033;
+            --ink-soft: #3D5366;
+            --border: rgba(16, 32, 51, 0.08);
+            --border-strong: rgba(16, 32, 51, 0.14);
+
+            /* Identidad Carnaval */
+            --red: #E11D2A;
+            --red-dark: #B5121E;
+            --red-soft: #FDECEE;
+
+            /* Etiqueta oscura sobre el CTA cyan (contraste 5.84:1 – 8.24:1) */
+            --dark-ink: #08131F;
+
+            /* Radios del landing */
+            --r-xs: 6px;
+            --r-sm: 10px;
+            --r-md: 14px;
+            --r-lg: 20px;
+            --r-xl: 28px;
+            --r-pill: 999px;
+
+            /* Sombras tintadas en navy */
+            --sh-xs: 0 1px 2px rgba(16, 32, 51, 0.04);
+            --sh-sm: 0 2px 8px rgba(16, 32, 51, 0.06);
+            --sh-md: 0 14px 40px -12px rgba(16, 32, 51, 0.18), 0 4px 12px rgba(16, 32, 51, 0.06);
+            --sh-lg: 0 32px 64px -20px rgba(16, 32, 51, 0.22), 0 8px 20px rgba(16, 32, 51, 0.08);
+            --sh-cta: 0 22px 44px -16px rgba(58, 155, 184, 0.55), 0 6px 16px rgba(15, 36, 56, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+            --sh-red: 0 10px 24px -8px rgba(225, 29, 42, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+
+            /* Tipografía del landing */
+            --font-display: 'Geist', 'Inter', system-ui, -apple-system, sans-serif;
+            --font-body: 'Geist', 'Inter', system-ui, -apple-system, sans-serif;
+            --font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+
+            --hero-grad:
+                radial-gradient(900px 420px at 88% 6%, rgba(58, 155, 184, 0.30), transparent 60%),
+                radial-gradient(680px 420px at 8% 100%, rgba(22, 51, 83, 0.70), transparent 58%),
+                linear-gradient(180deg, #0C1A2A 0%, #0F2438 52%, #163353 100%);
+            --cta-grad: linear-gradient(135deg, #5EB8D1 0%, #4FB1CD 52%, #3A9BB8 100%);
+
+            --dur-fast: 140ms;
+            --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
         }
+
         * { box-sizing: border-box; }
+        [hidden] { display: none !important; }
+
         html, body { margin: 0; padding: 0; }
+
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--c-bg);
-            color: var(--c-ink);
+            font-family: var(--font-body);
+            background: var(--paper);
+            color: var(--ink);
             -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
             -webkit-text-size-adjust: 100%;
             min-height: 100vh;
             overflow-x: hidden;
         }
 
-        /* Decorative gradient blobs */
-        .bg-decor {
-            position: fixed;
-            inset: 0;
-            z-index: 0;
-            pointer-events: none;
-            overflow: hidden;
-        }
-        .bg-decor::before,
-        .bg-decor::after {
-            content: '';
-            position: absolute;
-            border-radius: 50%;
-            filter: blur(80px);
-            opacity: 0.55;
-        }
-        .bg-decor::before {
-            width: 360px; height: 360px;
-            background: radial-gradient(circle, #FFB36A 0%, transparent 70%);
-            top: -120px; right: -120px;
-        }
-        .bg-decor::after {
-            width: 420px; height: 420px;
-            background: radial-gradient(circle, #FFD8B0 0%, transparent 70%);
-            bottom: -160px; left: -140px;
+        /* Foco accesible y consistente */
+        :focus-visible {
+            outline: 2px solid var(--cyan-400);
+            outline-offset: 3px;
+            border-radius: var(--r-sm);
         }
 
-        .wrap {
-            position: relative;
-            z-index: 1;
-            max-width: 480px;
-            margin: 0 auto;
-            padding: 28px 20px 40px;
-        }
-
-        /* Top bar */
-        .topbar {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 24px;
-        }
-        .topbar img {
-            width: 38px; height: 38px;
-            border-radius: 10px;
-            background: #E11D2A;
-            padding: 4px;
-            box-shadow: 0 6px 18px rgba(225,29,42,0.35);
-            object-fit: contain;
-        }
-        .topbar .brand {
-            font-weight: 800;
-            font-size: 18px;
-            letter-spacing: -0.2px;
-        }
-        .topbar .brand span { color: var(--c-orange); }
-
-        /* Hero card */
-        .hero {
-            background: var(--c-white);
-            border-radius: 24px;
-            padding: 28px 22px 24px;
-            box-shadow: 0 20px 50px rgba(255,138,23,0.18), 0 4px 14px rgba(0,0,0,0.04);
-            text-align: center;
+        /* ============================================================
+           Banda hero (navy del landing, full-bleed)
+           ============================================================ */
+        .hero-band {
             position: relative;
             overflow: hidden;
+            background: var(--hero-grad);
+            color: #fff;
+            padding: calc(16px + env(safe-area-inset-top)) 20px 34px;
+            border-bottom-left-radius: var(--r-xl);
+            border-bottom-right-radius: var(--r-xl);
+            box-shadow: 0 30px 70px -30px rgba(15, 36, 56, 0.55);
         }
-        .hero::before {
+        /* Barra superior: identidad Carnaval (rojo) hacia el cyan del landing */
+        .hero-band::before {
             content: '';
             position: absolute;
             top: 0; left: 0; right: 0;
-            height: 6px;
-            background: linear-gradient(90deg, #FF8A17 0%, #FFB36A 50%, #FF8A17 100%);
+            height: 5px;
+            background: linear-gradient(90deg, #E11D2A 0%, #E11D2A 38%, #5EB8D1 100%);
+        }
+        /* Halo decorativo */
+        .hero-band::after {
+            content: '';
+            position: absolute;
+            width: 420px; height: 420px;
+            top: -190px; right: -160px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(94, 184, 209, 0.22) 0%, transparent 68%);
+            pointer-events: none;
         }
 
+        .hero-inner {
+            position: relative;
+            z-index: 1;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        /* Topbar */
+        .topbar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin: 6px 0 26px;
+        }
+        .logo-chip {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 44px;
+            height: 44px;
+            border-radius: var(--r-md);
+            background: linear-gradient(135deg, #E11D2A 0%, #FF4B57 100%);
+            box-shadow: var(--sh-red);
+            flex-shrink: 0;
+        }
+        .logo-chip img {
+            width: 30px;
+            height: 30px;
+            object-fit: contain;
+            display: block;
+        }
+        .brand {
+            font-family: var(--font-display);
+            font-weight: 600;
+            font-size: 18px;
+            letter-spacing: -0.02em;
+            color: #fff;
+        }
+        .brand span { color: var(--cyan-400); }
+
+        /* Badge */
         .badge {
             display: inline-flex;
             align-items: center;
-            gap: 6px;
-            background: var(--c-orange-soft);
-            color: var(--c-orange-dark);
-            font-size: 12px;
-            font-weight: 700;
-            padding: 6px 12px;
-            border-radius: 100px;
-            margin-bottom: 14px;
-            letter-spacing: 0.2px;
+            gap: 8px;
+            background: rgba(94, 184, 209, 0.16);
+            border: 1px solid rgba(94, 184, 209, 0.35);
+            color: #B8E3F0;
+            font-family: var(--font-display);
+            font-size: 11.5px;
+            font-weight: 600;
+            padding: 7px 14px;
+            border-radius: var(--r-pill);
+            letter-spacing: 0.08em;
             text-transform: uppercase;
+            margin-bottom: 18px;
         }
         .badge::before {
-            content: '🎁';
-            font-size: 13px;
-        }
-
-        .hero h1 {
-            margin: 0 0 10px;
-            font-size: 26px;
-            line-height: 1.2;
-            font-weight: 800;
-            letter-spacing: -0.5px;
-        }
-        .hero h1 span { color: var(--c-orange); }
-
-        .hero p.lead {
-            margin: 0 0 18px;
-            font-size: 15px;
-            line-height: 1.55;
-            color: var(--c-ink-soft);
-        }
-
-        .hero-card {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 100%;
-            max-width: 320px;
-            margin: 4px auto 18px;
-            border-radius: 20px;
-            aspect-ratio: 16 / 9;
-            background: radial-gradient(circle at 30% 20%, #FF3340 0%, #E11D2A 55%, #B5121E 100%);
-            box-shadow: 0 14px 32px rgba(225,29,42,0.40), inset 0 0 0 1px rgba(255,255,255,0.08);
-            position: relative;
-            overflow: hidden;
-        }
-        .hero-card::before,
-        .hero-card::after {
             content: '';
-            position: absolute;
+            width: 7px; height: 7px;
             border-radius: 50%;
-            filter: blur(2px);
-            opacity: 0.18;
-            background: #fff;
-        }
-        .hero-card::before {
-            width: 90px; height: 90px;
-            top: -22px; right: -18px;
-        }
-        .hero-card::after {
-            width: 60px; height: 60px;
-            bottom: -14px; left: -10px;
-        }
-        .hero-card img {
-            position: relative;
-            z-index: 1;
-            width: 58%;
-            max-width: 170px;
-            height: auto;
-            filter: drop-shadow(0 10px 20px rgba(0,0,0,0.25));
+            background: var(--cyan-400);
+            box-shadow: 0 0 0 4px rgba(94, 184, 209, 0.18);
         }
 
-        /* CTA */
+        .hero-band h1 {
+            margin: 0 0 14px;
+            font-family: var(--font-display);
+            font-size: clamp(30px, 8.4vw, 38px);
+            line-height: 1.14;
+            font-weight: 600;
+            letter-spacing: -0.035em;
+            color: #fff;
+        }
+        .hero-band h1 em {
+            font-style: normal;
+            background: linear-gradient(135deg, #5EB8D1 0%, #B8E3F0 55%, #FFFFFF 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            color: transparent;
+        }
+
+        .lead {
+            margin: 0 0 22px;
+            font-size: 15.5px;
+            line-height: 1.6;
+            color: #C3D4DF;   /* 8.46:1 – 12.2:1 sobre el navy de la banda */
+            max-width: 46ch;
+        }
+        .lead b { color: #fff; font-weight: 600; }
+
+        /* ============================================================
+           CTA
+           ============================================================ */
         .cta {
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 10px;
             width: 100%;
-            background: linear-gradient(135deg, #FF8A17 0%, #FF6B00 100%);
-            color: #fff;
+            min-height: 52px;
+            padding: 15px 24px;
             border: 0;
-            padding: 16px 22px;
-            border-radius: 14px;
-            font-size: 16px;
-            font-weight: 700;
+            border-radius: var(--r-pill);
+            font-family: var(--font-display);
+            font-size: 16.5px;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+            line-height: 1.15;
+            color: var(--dark-ink);         /* ≥ 5.84:1 sobre todo el gradiente */
+            background: var(--cta-grad);
+            box-shadow: var(--sh-cta);
             cursor: pointer;
-            font-family: inherit;
             text-decoration: none;
-            box-shadow: 0 12px 26px rgba(255,107,0,0.38);
-            transition: transform 0.08s ease, box-shadow 0.2s ease, background 0.2s ease;
             -webkit-tap-highlight-color: transparent;
+            transition: transform var(--dur-fast) var(--ease-out),
+                        box-shadow var(--dur-fast) var(--ease-out),
+                        filter var(--dur-fast) var(--ease-out);
         }
-        .cta:hover { box-shadow: 0 14px 30px rgba(255,107,0,0.45); }
-        .cta:active { transform: scale(0.98); }
-        .cta svg { width: 22px; height: 22px; flex-shrink: 0; }
-        .cta.loading { pointer-events: none; opacity: 0.85; }
+        @media (hover: hover) and (pointer: fine) {
+            .cta:hover { transform: translateY(-2px); filter: saturate(1.05); }
+        }
+        .cta:active { transform: translateY(0) scale(0.985); }
+        .cta svg { width: 21px; height: 21px; flex-shrink: 0; }
+        .cta.loading { pointer-events: none; opacity: 0.9; }
 
         .cta-hint {
-            margin-top: 10px;
-            font-size: 12px;
-            color: var(--c-ink-soft);
-            line-height: 1.45;
+            margin: 10px 0 0;
+            font-size: 12.5px;
+            line-height: 1.5;
+            color: #B9CBD9;   /* 9.48:1 sobre el navy de la banda */
+            text-align: center;
         }
 
-        /* Referral chip */
+        /* ============================================================
+           Código de invitación (chip) + copia manual
+           ============================================================ */
+        .ref-chip-wrap { text-align: center; }
+
         .ref-chip {
-            margin-top: 20px;
             display: inline-flex;
             flex-direction: column;
             align-items: center;
-            background: var(--c-orange-soft);
-            border-radius: 14px;
-            padding: 12px 18px;
-            border: 1px dashed rgba(255,138,23,0.45);
+            gap: 3px;
+            min-height: 44px;
+            margin: 22px auto 0;
+            padding: 10px 20px;
+            border-radius: var(--r-md);
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(94, 184, 209, 0.38);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+            cursor: pointer;
+            font-family: inherit;
+            -webkit-tap-highlight-color: transparent;
+            transition: border-color var(--dur-fast) var(--ease-out),
+                        background var(--dur-fast) var(--ease-out);
+        }
+        @media (hover: hover) and (pointer: fine) {
+            .ref-chip:hover { background: rgba(255, 255, 255, 0.1); }
         }
         .ref-chip .label {
+            font-family: var(--font-display);
+            font-size: 10.5px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: #B8E3F0;
+        }
+        .ref-chip .code {
+            font-family: var(--font-mono);
+            font-size: 19px;
+            font-weight: 600;
+            letter-spacing: 0.16em;
+            color: #EAF4F8;   /* 9.64:1 sobre el navy de la banda */
+            -webkit-user-select: text;
+            user-select: text;
+        }
+        .ref-chip .code::selection { background: var(--cyan-400); color: var(--dark-ink); }
+        .ref-chip .chip-state {
+            font-family: var(--font-display);
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            color: #8FE3B0;
+        }
+        .ref-chip.is-copied { border-color: rgba(143, 227, 176, 0.65); }
+
+        .manual {
+            margin: 20px auto 0;
+            padding: 16px;
+            border-radius: var(--r-lg);
+            background: rgba(255, 255, 255, 0.055);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            text-align: left;
+        }
+        .manual-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+        .manual-label {
+            font-family: var(--font-display);
             font-size: 11px;
             font-weight: 600;
             text-transform: uppercase;
-            letter-spacing: 0.6px;
-            color: var(--c-orange-dark);
-            margin-bottom: 2px;
+            letter-spacing: 0.12em;
+            color: #B8E3F0;
         }
-        .ref-chip .code {
-            font-family: 'SF Mono', Consolas, 'Roboto Mono', monospace;
-            font-size: 18px;
-            font-weight: 700;
-            color: var(--c-ink);
-            letter-spacing: 2px;
+        .copy-btn {
+            min-height: 44px;
+            padding: 11px 18px;
+            border-radius: var(--r-pill);
+            border: 1px solid rgba(94, 184, 209, 0.5);
+            background: rgba(94, 184, 209, 0.16);
+            color: #EAF4F8;
+            font-family: var(--font-display);
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: -0.005em;
+            cursor: pointer;
+            flex-shrink: 0;
+            -webkit-tap-highlight-color: transparent;
+            transition: background var(--dur-fast) var(--ease-out),
+                        border-color var(--dur-fast) var(--ease-out);
+        }
+        @media (hover: hover) and (pointer: fine) {
+            .copy-btn:hover { background: rgba(94, 184, 209, 0.28); }
+        }
+        .copy-btn.is-copied {
+            background: rgba(143, 227, 176, 0.2);
+            border-color: rgba(143, 227, 176, 0.6);
+            color: #C8F5DA;
+        }
+        .manual-field {
+            width: 100%;
+            min-height: 46px;
+            padding: 12px 14px;
+            border-radius: var(--r-md);
+            border: 1px dashed rgba(94, 184, 209, 0.45);
+            background: rgba(12, 26, 42, 0.55);
+            color: #EAF4F8;
+            font-family: var(--font-mono);
+            font-size: 15px;
+            font-weight: 500;
+            letter-spacing: 0.04em;
+            text-align: center;
+            -webkit-appearance: none;
+            appearance: none;
+            -webkit-user-select: all;
+            user-select: all;
+        }
+        .manual-field::selection { background: var(--cyan-400); color: var(--dark-ink); }
+        .manual-hint {
+            margin: 9px 0 0;
+            font-size: 12px;
+            line-height: 1.5;
+            color: #B9CBD9;
         }
 
-        /* Benefits */
+        /* ============================================================
+           Cuerpo claro (paper del landing)
+           ============================================================ */
+        .content {
+            max-width: 500px;
+            margin: 0 auto;
+            padding: 26px 20px calc(40px + env(safe-area-inset-bottom));
+        }
+
         .benefits {
-            margin-top: 26px;
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 12px;
         }
         .benefit {
-            background: var(--c-white);
-            border-radius: 14px;
-            padding: 14px 12px;
-            text-align: left;
-            box-shadow: 0 6px 18px rgba(0,0,0,0.05);
             display: flex;
-            gap: 10px;
+            gap: 11px;
             align-items: flex-start;
+            padding: 15px 14px;
+            border-radius: var(--r-lg);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            box-shadow: var(--sh-md);
         }
         .benefit .ic {
-            width: 36px; height: 36px;
-            border-radius: 10px;
-            background: var(--c-orange-soft);
             display: flex;
             align-items: center;
             justify-content: center;
+            width: 38px;
+            height: 38px;
+            border-radius: var(--r-sm);
+            background: var(--cyan-050);
+            border: 1px solid rgba(94, 184, 209, 0.30);
             font-size: 18px;
             flex-shrink: 0;
         }
         .benefit .t {
-            font-size: 13px;
-            font-weight: 700;
+            font-family: var(--font-display);
+            font-size: 13.5px;
+            font-weight: 600;
+            letter-spacing: -0.01em;
             line-height: 1.25;
-            margin-bottom: 2px;
+            margin-bottom: 3px;
+            color: var(--ink);
         }
         .benefit .d {
-            font-size: 11.5px;
-            color: var(--c-ink-soft);
-            line-height: 1.35;
+            font-size: 12px;
+            color: var(--ink-soft);   /* 7.99:1 sobre blanco */
+            line-height: 1.45;
         }
 
-        /* Status (toast) */
+        .foot {
+            margin-top: 28px;
+            text-align: center;
+            font-size: 12.5px;
+            color: var(--ink-soft);   /* 7.62:1 sobre paper */
+            line-height: 1.6;
+        }
+        .foot b { color: var(--ink); font-weight: 600; }
+        .foot a {
+            display: inline-block;
+            min-height: 44px;
+            padding: 13px 6px;
+            color: var(--blue-500);   /* 6.45:1 sobre paper */
+            font-weight: 600;
+            text-decoration: none;
+            border-radius: var(--r-sm);
+        }
+        @media (hover: hover) and (pointer: fine) {
+            .foot a:hover { text-decoration: underline; }
+        }
+
+        /* ============================================================
+           Toast (aria-live)
+           ============================================================ */
         .toast {
             position: fixed;
             left: 50%;
-            bottom: 22px;
-            transform: translateX(-50%) translateY(120%);
-            background: #1a1a1a;
-            color: #fff;
-            padding: 12px 18px;
-            border-radius: 100px;
-            font-size: 13px;
-            font-weight: 600;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.25);
-            transition: transform 0.35s cubic-bezier(.2,.9,.3,1.2);
-            z-index: 10;
-            max-width: 90%;
-            text-align: center;
+            bottom: calc(22px + env(safe-area-inset-bottom));
+            transform: translateX(-50%) translateY(140%);
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            max-width: min(90vw, 460px);
+            padding: 13px 20px;
+            border-radius: var(--r-pill);
+            background: var(--ink);
+            border: 1px solid rgba(94, 184, 209, 0.30);
+            box-shadow: var(--sh-lg);
+            color: #fff;                  /* 16.45:1 sobre #102033 */
+            font-family: var(--font-display);
+            font-size: 13.5px;
+            font-weight: 500;
+            letter-spacing: -0.005em;
+            text-align: left;
+            z-index: 50;
+            transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.15);
+            pointer-events: none;
         }
         .toast.show { transform: translateX(-50%) translateY(0); }
         .toast .dot {
-            display: inline-block;
-            width: 8px; height: 8px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
-            background: #4ade80;
-            margin-right: 8px;
-            vertical-align: middle;
+            background: #4ADE80;
+            flex-shrink: 0;
         }
 
-        /* Manual copy fallback (hidden by default) */
-        .manual-copy {
-            display: none;
-            margin-top: 14px;
-        }
-        .manual-copy textarea {
-            width: 100%;
-            font-family: 'SF Mono', Consolas, 'Roboto Mono', monospace;
-            font-size: 16px;
-            font-weight: 700;
-            text-align: center;
-            padding: 12px;
-            border: 1px dashed var(--c-orange);
-            border-radius: 12px;
-            background: var(--c-orange-soft);
-            color: var(--c-orange-dark);
-            resize: none;
-            -webkit-appearance: none;
-            appearance: none;
-        }
-        .manual-copy .hint {
-            font-size: 11px;
-            color: var(--c-ink-soft);
-            margin-top: 6px;
-            text-align: center;
-        }
-
-        /* Footer */
-        .foot {
-            margin-top: 26px;
-            text-align: center;
-            font-size: 11.5px;
-            color: var(--c-ink-soft);
-            line-height: 1.5;
-        }
-        .foot a { color: var(--c-orange-dark); text-decoration: none; font-weight: 600; }
-
-        @media (max-width: 360px) {
-            .hero h1 { font-size: 22px; }
+        /* ============================================================
+           Responsive / motion
+           ============================================================ */
+        @media (max-width: 359px) {
             .benefits { grid-template-columns: 1fr; }
+            .manual-head { flex-direction: column; align-items: stretch; }
+            .copy-btn { width: 100%; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            * { transition: none !important; animation: none !important; }
+            .toast { transform: translateX(-50%); }
         }
     </style>
 </head>
 <body>
-    <div class="bg-decor"></div>
+    <header class="hero-band">
+        <div class="hero-inner">
+            <div class="topbar">
+                <span class="logo-chip">
+                    <img src="assets/images/carnaval-logo.png" alt="Carnaval App">
+                </span>
+                <div class="brand">Carnaval<span>·</span>App</div>
+            </div>
 
-    <div class="wrap">
-        <div class="topbar">
-            <img src="assets/images/carnaval-logo.png" alt="Carnaval App">
-            <div class="brand">Carnaval<span>·</span>App</div>
-        </div>
+            <span class="badge">Invitación especial</span>
 
-        <main class="hero">
-            <div class="badge">Invitación especial</div>
-            <h1>Tu compra <span>premiada</span> empieza aquí.</h1>
+            <h1>Tu compra <em>premiada</em> empieza aquí.</h1>
             <p class="lead">
                 Compras, comida y delivery directo a tu puerta. Descarga
                 <b>Carnaval App</b> y aprovecha los beneficios de tu invitación —
-                se activa sola al abrir la app.
+                se activa sola al abrir la app con tu código.
             </p>
-
-            <!-- <div class="hero-card">
-                <img src="assets/images/carnaval-logo.png" alt="Carnaval App">
-            </div> -->
 
             <button id="ctaBtn" class="cta" type="button">
                 <svg id="ctaIcon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -395,238 +563,668 @@
             </button>
             <div id="ctaHint" class="cta-hint">Te llevamos a la tienda oficial. Tu invitación se aplica al abrir la app.</div>
 
-            <div id="refChip" class="ref-chip" style="display:none">
-                <div class="label">Invitación de</div>
-                <div class="code" id="refCode">--------</div>
+            <div class="ref-chip-wrap">
+                <button id="refChip" class="ref-chip" type="button" hidden
+                        aria-label="Copiar código de invitación">
+                    <span class="label">Código de invitación</span>
+                    <span class="code" id="refCode">--------</span>
+                    <span class="chip-state" id="chipState" hidden>Copiado ✓</span>
+                </button>
             </div>
 
-            <div id="manualCopy" class="manual-copy">
-                <textarea id="manualCopyText" rows="2" readonly autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
-                <div class="hint">Mantén pulsado el texto y elige "Copiar" si no se copió solo.</div>
+            <!-- Copia manual: SIEMPRE visible cuando hay código, no solo si falla. -->
+            <div id="manualCopy" class="manual" hidden>
+                <div class="manual-head">
+                    <span class="manual-label">Copia manual</span>
+                    <button id="copyBtn" class="copy-btn" type="button">Copiar código</button>
+                </div>
+                <input id="manualCopyText" class="manual-field" type="text" readonly
+                       autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                       aria-label="Código de invitación completo para copiar">
+                <p class="manual-hint" id="manualHint">Si no se copió solo, usa el botón o mantén pulsado el código.</p>
             </div>
-        </main>
+        </div>
+    </header>
 
-        <div class="benefits">
+    <main class="content">
+        <section class="benefits" aria-label="Beneficios">
             <div class="benefit">
-                <div class="ic">🛍️</div>
+                <div class="ic" aria-hidden="true">🛍️</div>
                 <div>
                     <div class="t">Compras en línea</div>
                     <div class="d">Compara precios entre tiendas y pide desde casa.</div>
                 </div>
             </div>
             <div class="benefit">
-                <div class="ic">🍔</div>
+                <div class="ic" aria-hidden="true">🍔</div>
                 <div>
                     <div class="t">Carnaval Food</div>
                     <div class="d">Comida de restaurantes afiliados a tu puerta.</div>
                 </div>
             </div>
             <div class="benefit">
-                <div class="ic">📦</div>
+                <div class="ic" aria-hidden="true">📦</div>
                 <div>
                     <div class="t">Envío de paquetes</div>
                     <div class="d">Envía a otras provincias con precio automático.</div>
                 </div>
             </div>
             <div class="benefit">
-                <div class="ic">💳</div>
+                <div class="ic" aria-hidden="true">💳</div>
                 <div>
                     <div class="t">Pagos seguros</div>
-                    <div class="d">Pago en Linea, Stripe o Tropipay.</div>
+                    <div class="d">Pago en Línea, Stripe o Tropipay.</div>
                 </div>
             </div>
-        </div>
+        </section>
 
-        <div class="foot">
+        <p class="foot">
             Disponible en <b>Google Play</b> y <b>App Store</b>.<br>
             ¿Necesitas ayuda? <a href="contact.html">Contáctanos</a>
-        </div>
-    </div>
+        </p>
+    </main>
 
-    <div id="toast" class="toast"><span class="dot"></span><span id="toastText">Invitación lista</span></div>
+    <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true">
+        <span class="dot" aria-hidden="true"></span><span id="toastText"></span>
+    </div>
 
     <script src="assets/js/supabase.min.js"></script>
     <script src="assets/js/tracking.js"></script>
     <script>
         (function () {
+            "use strict";
+
+            /* ============================================================
+               0. Configuración
+               ============================================================ */
             var PLAY_URL = "https://play.google.com/store/apps/details?id=com.carnaval24&hl=es_419";
             var APPSTORE_URL = "https://apps.apple.com/es/app/carnaval-tienda/id6742862060";
             // TEMPORAL: cuenta de Google Play inactiva. En Android se descarga
             // el APK directo. Para reactivar Google Play, poner APK_URL = null.
             var APK_URL = "https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/carnaval.apk";
+
+            // CONTRATO con Carnaval App: el portapapeles lleva EXACTAMENTE
+            // "CARNAVAL-REF:" + código. No cambiar el prefijo ni añadir variantes.
             var CLIPBOARD_PREFIX = "CARNAVAL-REF:";
 
-            // Detección iOS / Android (iPadOS 13+ reporta MacIntel + touch).
-            var ua = navigator.userAgent || "";
+            var CODE_PARAM_ALIASES = ["code", "ref", "referral", "codigo", "c",
+                                      "invite", "invitacion", "invitado"];
+            var CODE_STORE_KEY = "carnaval_ref_code";
+            var CLIPBOARD_TIMEOUT_MS = 500;   // presupuesto máximo del paso 1
+            var COPY_RESET_MS = 2000;         // vuelta a "Copiar código"
+            var GESTURE_REARM_MS = 1200;      // re-armado de gestos
+            var STORE_NAV_DELAY_MS = 350;     // deja ver el toast antes de salir
+
+            /* ============================================================
+               1. Tracking blindado.
+               Si tracking.js / supabase.min.js no cargan (offline, adblock),
+               window.VentiqTracking no existe. Sin este envoltorio, el
+               ReferenceError mataba TODO el script y nunca se copiaba nada.
+               ============================================================ */
+            function track(name, data) {
+                try {
+                    var vt = window.VentiqTracking;
+                    if (vt && typeof vt.track === "function") { vt.track(name, data); }
+                } catch (_) { /* el tracking jamás debe romper la copia */ }
+            }
+
+            /* ============================================================
+               2. Detección de plataforma (iPadOS 13+ = MacIntel + touch)
+               ============================================================ */
+            var nav = (typeof navigator !== "undefined" && navigator) ? navigator : {};
+            var ua = nav.userAgent || "";
             var isIOS = /iPad|iPhone|iPod/.test(ua) ||
-                (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+                (nav.platform === "MacIntel" && nav.maxTouchPoints > 1);
             var isAndroid = /Android/i.test(ua);
             // APK_URL tiene prioridad en Android mientras la cuenta de Play esté inactiva.
             var STORE_URL = isIOS ? APPSTORE_URL : (APK_URL || PLAY_URL);
             var STORE_LABEL = isIOS ? "App Store" : (APK_URL ? "descarga directa" : "Google Play");
 
-            var params = new URLSearchParams(window.location.search);
-            var raw = (params.get("code") || "").trim().toUpperCase();
-            var code = raw.replace(/[^A-Z0-9]/g, "").slice(0, 16);
-            var payload = CLIPBOARD_PREFIX + code;
+            /* ============================================================
+               3. Nodos del DOM
+               ============================================================ */
+            function byId(id) {
+                try { return document.getElementById(id); } catch (_) { return null; }
+            }
+            var ctaBtn = byId("ctaBtn");
+            var ctaText = byId("ctaText");
+            var ctaHint = byId("ctaHint");
+            var refChip = byId("refChip");
+            var refCodeEl = byId("refCode");
+            var chipState = byId("chipState");
+            var toast = byId("toast");
+            var toastText = byId("toastText");
+            var manualBox = byId("manualCopy");
+            var manualText = byId("manualCopyText");
+            var manualHint = byId("manualHint");
+            var copyBtn = byId("copyBtn");
 
-            var ctaBtn = document.getElementById("ctaBtn");
-            var ctaText = document.getElementById("ctaText");
-            var ctaHint = document.getElementById("ctaHint");
-            var refChip = document.getElementById("refChip");
-            var refCodeEl = document.getElementById("refCode");
-            var toast = document.getElementById("toast");
-            var toastText = document.getElementById("toastText");
-            var manualBox = document.getElementById("manualCopy");
-            var manualText = document.getElementById("manualCopyText");
-
-            // Etiqueta del CTA según plataforma
-            ctaText.textContent = isIOS
-                ? "Descargar en App Store"
-                : (isAndroid ? (APK_URL ? "Descargar la app (APK)" : "Descargar en Google Play") : "Descargar la app");
-
-            // Si trae código, lo mostramos como detalle (no como centro de la página).
-            if (code) {
-                refChip.style.display = "inline-flex";
-                refCodeEl.textContent = code;
-                manualText.value = payload;
-                VentiqTracking.track('referral_visit', { code: code });
-            } else {
-                ctaHint.textContent = (!isIOS && APK_URL)
-                    ? "Se descargará el archivo directo de la app (APK)."
-                    : "Te llevamos a la tienda oficial.";
+            /* ============================================================
+               4. Resolución y normalización del código
+               ============================================================ */
+            function stripPrefix(value) {
+                var s = String(value == null ? "" : value);
+                var up = s.toUpperCase();
+                var i = up.indexOf(CLIPBOARD_PREFIX);
+                if (i >= 0) { s = s.slice(i + CLIPBOARD_PREFIX.length); }
+                return s;
             }
 
-            // ---------- Estrategias de copia (silenciosas) ----------
-            function copyViaClipboardApi() {
-                if (!navigator.clipboard || !navigator.clipboard.writeText) {
-                    return Promise.reject(new Error("no-clipboard-api"));
+            function normalizeCode(value) {
+                return stripPrefix(value)
+                    .toUpperCase()
+                    .replace(/[^A-Z0-9]/g, "")
+                    .slice(0, 16);
+            }
+
+            function paramsFrom(str) {
+                try { return new URLSearchParams(str || ""); } catch (_) { return null; }
+            }
+
+            function firstParam(params) {
+                if (!params) { return ""; }
+                for (var i = 0; i < CODE_PARAM_ALIASES.length; i++) {
+                    try {
+                        var v = params.get(CODE_PARAM_ALIASES[i]);
+                        if (v) { return v; }
+                    } catch (_) { /* alias no legible */ }
                 }
-                return navigator.clipboard.writeText(payload);
+                return "";
             }
 
-            function copyViaExecCommand() {
+            function decodeSafe(v) {
+                try { return decodeURIComponent(v); } catch (_) { return v; }
+            }
+
+            function readCodeFromLocation() {
+                var loc = (typeof window !== "undefined" && window.location) ? window.location : {};
+                var found = "";
+                try { found = firstParam(paramsFrom(loc.search || "")); } catch (_) { }
+                if (found) { return found; }
+                // Hash: "#code=ABC", "#?ref=ABC", "#/x?codigo=ABC" o "#ABC"
+                var hash = String(loc.hash || "").replace(/^#/, "");
+                if (!hash) { return ""; }
+                try {
+                    found = firstParam(paramsFrom(hash));
+                    if (found) { return found; }
+                } catch (_) { }
+                try {
+                    var m = hash.match(/(?:^|[?&#])(?:code|ref|referral|codigo|c)=([^&]+)/i);
+                    if (m && m[1]) { return decodeSafe(m[1]); }
+                } catch (_) { }
+                try {
+                    if (/^[A-Za-z0-9:_-]+$/.test(hash)) { return decodeSafe(hash); }
+                } catch (_) { }
+                return "";
+            }
+
+            /* Storage tolerante (Safari privado lanza al acceder). */
+            function getStore(kind) {
+                try {
+                    var s = kind === "session" ? window.sessionStorage : window.localStorage;
+                    return s || null;
+                } catch (_) { return null; }
+            }
+            function readStoredCode() {
+                var kinds = ["local", "session"];
+                for (var i = 0; i < kinds.length; i++) {
+                    var s = getStore(kinds[i]);
+                    if (!s) { continue; }
+                    try {
+                        var v = s.getItem(CODE_STORE_KEY);
+                        if (v) { return v; }
+                    } catch (_) { }
+                }
+                return "";
+            }
+            function persistCode(value) {
+                if (!value) { return; }
+                var kinds = ["local", "session"];
+                for (var i = 0; i < kinds.length; i++) {
+                    var s = getStore(kinds[i]);
+                    if (!s) { continue; }
+                    try { s.setItem(CODE_STORE_KEY, value); } catch (_) { }
+                }
+            }
+
+            var fromUrl = readCodeFromLocation();
+            var code = normalizeCode(fromUrl) || normalizeCode(readStoredCode());
+            // Una visita de regreso (sin código en la URL) también copia.
+            if (code) { persistCode(code); }
+            var payload = code ? (CLIPBOARD_PREFIX + code) : "";
+
+            /* ============================================================
+               5. UI base
+               ============================================================ */
+            if (ctaText) {
+                ctaText.textContent = isIOS
+                    ? "Descargar en App Store"
+                    : (isAndroid ? (APK_URL ? "Descargar la app (APK)" : "Descargar en Google Play") : "Descargar la app");
+            }
+
+            if (!code) {
+                if (ctaHint) {
+                    ctaHint.textContent = (!isIOS && APK_URL)
+                        ? "Se descargará el archivo directo de la app (APK)."
+                        : "Te llevamos a la tienda oficial.";
+                }
+            } else {
+                if (refChip) { refChip.hidden = false; }
+                if (refCodeEl) { refCodeEl.textContent = code; }
+                if (manualText) { manualText.value = payload; }
+                if (manualBox) { manualBox.hidden = false; }
+                track("referral_visit", { code: code });
+            }
+
+            /* ============================================================
+               6. Toast (aria-live)
+               ============================================================ */
+            var toastTimer = null;
+            function showToast(text) {
+                try {
+                    if (!toast || !toastText) { return; }
+                    toastText.textContent = text;
+                    toast.classList.add("show");
+                    clearTimeout(toastTimer);
+                    toastTimer = setTimeout(function () {
+                        try { toast.classList.remove("show"); } catch (_) { }
+                    }, 2600);
+                } catch (_) { }
+            }
+
+            /* ============================================================
+               7. Estado visual de copiado
+               ============================================================ */
+            var resetTimer = null;
+
+            function markCopied() {
+                try {
+                    if (chipState) { chipState.hidden = false; }
+                    if (refChip) { refChip.classList.add("is-copied"); }
+                    if (copyBtn) {
+                        copyBtn.classList.add("is-copied");
+                        copyBtn.textContent = "Copiado ✓";
+                    }
+                    clearTimeout(resetTimer);
+                    resetTimer = setTimeout(function () {
+                        try {
+                            if (chipState) { chipState.hidden = true; }
+                            if (refChip) { refChip.classList.remove("is-copied"); }
+                            if (copyBtn) {
+                                copyBtn.classList.remove("is-copied");
+                                copyBtn.textContent = "Copiar código";
+                            }
+                        } catch (_) { }
+                    }, COPY_RESET_MS);
+                } catch (_) { }
+            }
+
+            function emphasiseManual() {
+                try {
+                    if (manualBox) { manualBox.hidden = false; }
+                    // Nunca dejar una etiqueta de éxito pegada tras un fallo.
+                    if (copyBtn && !copyBtn.classList.contains("is-copied")) {
+                        copyBtn.textContent = "Copiar código";
+                    }
+                    if (manualHint) {
+                        manualHint.textContent = "Pulsa «Copiar código» o mantén pulsado el código y elige «Copiar».";
+                    }
+                } catch (_) { }
+            }
+
+            /* ============================================================
+               8. Escalera de copia (parada en el primer éxito, ~700 ms)
+               ============================================================ */
+            function withTimeout(promise, ms) {
+                return new Promise(function (resolve, reject) {
+                    var settled = false;
+                    var timer = setTimeout(function () {
+                        if (!settled) { settled = true; reject(new Error("timeout")); }
+                    }, ms);
+                    promise.then(function (v) {
+                        if (!settled) { settled = true; clearTimeout(timer); resolve(v); }
+                    }, function (e) {
+                        if (!settled) { settled = true; clearTimeout(timer); reject(e); }
+                    });
+                });
+            }
+
+            // Paso 1 · Clipboard API asíncrona (solo en contexto seguro),
+            // con carrera contra 500 ms para que una promesa colgada no bloquee.
+            function attemptClipboardApi() {
                 return new Promise(function (resolve, reject) {
                     try {
-                        var ta = document.createElement("textarea");
+                        if (!window.isSecureContext) { throw new Error("not-secure-context"); }
+                        var cb = nav.clipboard;
+                        if (!cb || typeof cb.writeText !== "function") { throw new Error("no-clipboard-api"); }
+                        var p = cb.writeText(payload);
+                        if (!p || typeof p.then !== "function") { resolve(true); return; }
+                        withTimeout(p, CLIPBOARD_TIMEOUT_MS).then(function () { resolve(true); }, reject);
+                    } catch (e) { reject(e); }
+                });
+            }
+
+            // Paso 2 y 3 · execCommand sobre un textarea real, enfocado y
+            // seleccionado. La variante iOS añade contentEditable + Range y un
+            // contenedor que sigue participando en el layout (opacity ~0).
+            function attemptExecCommand(iosVariant) {
+                return new Promise(function (resolve, reject) {
+                    var host = null, ta = null, selection = null, ok = false;
+                    try {
+                        if (typeof document.execCommand !== "function") { throw new Error("no-execCommand"); }
+                        if (!document.body) { throw new Error("no-body"); }
+
+                        host = document.createElement("div");
+                        host.setAttribute("aria-hidden", "true");
+                        host.style.position = "fixed";
+                        host.style.top = "0";
+                        host.style.left = "0";
+                        host.style.width = "1px";
+                        host.style.height = "1px";
+                        host.style.overflow = "hidden";
+                        host.style.opacity = iosVariant ? "0.01" : "0";
+                        host.style.pointerEvents = "none";
+                        host.style.zIndex = "-1";
+
+                        ta = document.createElement("textarea");
                         ta.value = payload;
-                        ta.contentEditable = "true";
-                        ta.readOnly = false;
+                        ta.setAttribute("readonly", "");
+                        ta.readOnly = false;                  // iOS necesita escritura
+                        ta.contentEditable = "true";          // iOS + Safari
                         ta.style.position = "fixed";
                         ta.style.top = "0";
                         ta.style.left = "0";
                         ta.style.width = "1px";
                         ta.style.height = "1px";
+                        ta.style.margin = "0";
                         ta.style.padding = "0";
                         ta.style.border = "0";
-                        ta.style.opacity = "0";
-                        ta.style.pointerEvents = "none";
+                        ta.style.outline = "none";
+                        ta.style.boxShadow = "none";
+                        ta.style.background = "transparent";
+                        ta.style.color = "transparent";
+                        ta.style.opacity = "1";
+                        ta.style.zIndex = "-1";
+                        ta.style.resize = "none";
+                        ta.style.overflow = "hidden";
+                        // 16px evita el zoom-on-focus de iOS que deselecciona el texto.
                         ta.style.fontSize = "16px";
-                        document.body.appendChild(ta);
+                        ta.style.lineHeight = "1";
 
-                        var range = document.createRange();
-                        range.selectNodeContents(ta);
-                        var sel = window.getSelection();
-                        sel.removeAllRanges();
-                        sel.addRange(range);
-                        ta.setSelectionRange(0, payload.length);
+                        host.appendChild(ta);
+                        document.body.appendChild(host);
 
-                        var ok = document.execCommand("copy");
-                        sel.removeAllRanges();
-                        document.body.removeChild(ta);
-                        ok ? resolve() : reject(new Error("execCommand-false"));
+                        // 1) foco real dentro del gesto
+                        try { ta.focus({ preventScroll: true }); }
+                        catch (_) { try { ta.focus(); } catch (_2) { } }
+
+                        // 2) selección por input (camino clásico)
+                        try { ta.select(); } catch (_) { }
+                        try { ta.setSelectionRange(0, payload.length); } catch (_) { }
+
+                        // 3) selección por Range (iOS Safari)
+                        try {
+                            selection = window.getSelection();
+                            var range = document.createRange();
+                            range.selectNodeContents(ta);
+                            selection.removeAllRanges();
+                            selection.addRange(range);
+                            try { ta.setSelectionRange(0, payload.length); } catch (_) { }
+                        } catch (_) { }
+
+                        // 4) gesto sintético para que iOS lo considere interacción
+                        try {
+                            if (typeof Event === "function") { ta.dispatchEvent(new Event("click")); }
+                        } catch (_) { }
+
+                        // Solo hay éxito si el navegador confirma que copió.
+                        ok = document.execCommand("copy") === true;
+                        if (selection) { try { selection.removeAllRanges(); } catch (_) { } }
+                        if (ok) { resolve(true); } else { reject(new Error("execCommand-false")); }
                     } catch (e) {
                         reject(e);
+                    } finally {
+                        try { if (ta && ta.parentNode) { ta.parentNode.removeChild(ta); } } catch (_) { }
+                        try { if (host && host.parentNode) { host.parentNode.removeChild(host); } } catch (_) { }
                     }
                 });
             }
 
-            function tryCopy() {
-                return copyViaClipboardApi().catch(function () {
-                    return copyViaExecCommand();
+            // Paso 4 · último recurso: dejar seleccionado el código visible para
+            // que el long-press -> "Copiar" funcione en un toque. NO copia nada
+            // y por tanto NUNCA se reporta como éxito.
+            function selectVisibleCode() {
+                var selected = false;
+                try {
+                    var sel = window.getSelection ? window.getSelection() : null;
+                    if (sel && refCodeEl && typeof sel.selectAllChildren === "function") {
+                        sel.selectAllChildren(refCodeEl);
+                        selected = true;
+                    }
+                } catch (_) { }
+                try {
+                    if (manualText && typeof manualText.setSelectionRange === "function") {
+                        manualText.setSelectionRange(0, String(manualText.value || "").length);
+                    }
+                } catch (_) { }
+                return selected || !!(manualText || refCodeEl);
+            }
+
+            function runLadder() {
+                return attemptClipboardApi().then(function () {
+                    return { ok: true, via: "clipboard-api" };
+                }, function () {
+                    // Paso 2
+                    return attemptExecCommand(false).then(function () {
+                        return { ok: true, via: "execCommand" };
+                    }, function () {
+                        // Paso 3 (variante iOS)
+                        return attemptExecCommand(true).then(function () {
+                            return { ok: true, via: "execCommand-ios" };
+                        }, function () {
+                            // Paso 4
+                            var selected = selectVisibleCode();
+                            return { ok: false, via: selected ? "visible-selection" : "none" };
+                        });
+                    });
                 });
             }
 
-            // Toast helper
-            var toastTimer = null;
-            function showToast(text) {
-                toastText.textContent = text;
-                toast.classList.add("show");
-                clearTimeout(toastTimer);
-                toastTimer = setTimeout(function () {
-                    toast.classList.remove("show");
-                }, 2200);
+            /* Copia idempotente: una sola escalera en vuelo a la vez, y
+               siempre resuelve (jamás rechaza hacia el llamador). */
+            var inFlight = null;
+
+            function runCopy() {
+                if (!code || !payload) {
+                    return Promise.resolve({ ok: false, via: "no-code" });
+                }
+                if (inFlight) { return inFlight; }
+                inFlight = runLadder().then(function (res) {
+                    inFlight = null;
+                    return res;
+                }, function (err) {
+                    inFlight = null;
+                    return { ok: false, via: "error", error: String((err && err.message) || err) };
+                });
+                return inFlight;
             }
 
+            var lastCopyOk = false;
+
+            function silentCopy() {
+                try {
+                    if (!code) { return; }
+                    runCopy().then(function (res) {
+                        lastCopyOk = !!(res && res.ok);
+                        if (lastCopyOk) { markCopied(); } else { emphasiseManual(); }
+                    }, function () { emphasiseManual(); });
+                } catch (_) { /* nunca romper la página */ }
+            }
+
+            function userCopy(okMessage) {
+                try {
+                    if (!code) { return; }
+                    runCopy().then(function (res) {
+                        if (res && res.ok) {
+                            markCopied();
+                            showToast(okMessage || "Invitación copiada al portapapeles");
+                            track("referral_copy_ok", { code: code, via: res.via });
+                        } else {
+                            emphasiseManual();
+                            showToast("Mantén pulsado el código y elige «Copiar»");
+                            track("referral_copy_fail", { code: code, via: res.via });
+                        }
+                    }, function () {
+                        emphasiseManual();
+                        showToast("Mantén pulsado el código y elige «Copiar»");
+                    });
+                } catch (_) { }
+            }
+
+            /* ============================================================
+               9. Navegación (la tienda NUNCA espera al portapapeles)
+               ============================================================ */
             function openStore() {
-                // Pequeña pausa para que el toast sea visible antes de salir.
-                setTimeout(function () {
-                    window.location.href = STORE_URL;
-                }, 350);
+                function go() {
+                    try { window.location.href = STORE_URL; }
+                    catch (_) {
+                        try { window.location.assign(STORE_URL); } catch (_2) { }
+                    }
+                }
+                try { setTimeout(go, STORE_NAV_DELAY_MS); } catch (_) { go(); }
             }
 
-            function handleCta() {
-                ctaBtn.classList.add("loading");
-                VentiqTracking.track('play_store_click', { code: code || null });
+            var ctaBusy = false;
 
-                // Si no hay código, vamos directo a la tienda.
+            function handleCta(ev) {
+                try { if (ev && typeof ev.preventDefault === "function") { ev.preventDefault(); } } catch (_) { }
+                if (ctaBusy) { return; }
+                ctaBusy = true;
+                try { if (ctaBtn) { ctaBtn.classList.add("loading"); } } catch (_) { }
+                track("play_store_click", { code: code || null });
+
+                // Sin código: nada que copiar, vamos directo a la tienda.
                 if (!code) {
-                    showToast("Abriendo " + STORE_LABEL + "…");
+                    showToast("Abriendo " + STORE_LABEL + "...");
                     openStore();
                     return;
                 }
 
-                // Hay código: intentamos copiar y luego abrir la tienda.
-                tryCopy().then(function () {
-                    showToast("Invitación copiada · abriendo " + STORE_LABEL);
+                // Con código: copiamos ANTES de navegar (presupuesto acotado)
+                // y salimos igual si la copia falla.
+                runCopy().then(function (res) {
+                    if (res && res.ok) {
+                        markCopied();
+                        showToast("Invitación copiada · abriendo " + STORE_LABEL);
+                        track("referral_copy_ok", { code: code, via: res.via });
+                    } else {
+                        emphasiseManual();
+                        showToast("Abriendo " + STORE_LABEL + " · copia tu código al volver");
+                        track("referral_copy_fail", { code: code, via: res && res.via });
+                    }
+                    ctaBusy = false;
+                    try { if (ctaBtn) { ctaBtn.classList.remove("loading"); } } catch (_) { }
                     openStore();
-                }).catch(function () {
-                    // Si la copia automática falla, mostramos el fallback manual
-                    // pero NO bloqueamos la apertura de la tienda: se ofrece la
-                    // tienda al toque siguiente.
-                    ctaBtn.classList.remove("loading");
-                    manualBox.style.display = "block";
-                    showToast("Copia tu código y toca de nuevo para abrir " + STORE_LABEL);
-                    ctaText.textContent = "Abrir " + STORE_LABEL;
-                    // En el próximo click, ir directo a la tienda.
-                    ctaBtn.removeEventListener("click", handleCta);
-                    ctaBtn.addEventListener("click", function () {
-                        VentiqTracking.track('play_store_click', { code: code || null });
-                        // Intento final silencioso por si el usuario ya seleccionó.
-                        tryCopy().catch(function () {});
-                        openStore();
-                    }, { once: true });
-                    try {
-                        manualText.focus({ preventScroll: true });
-                        manualText.setSelectionRange(0, manualText.value.length);
-                    } catch (_) {}
                 });
             }
 
-            ctaBtn.addEventListener("click", handleCta);
-
-            // En Android/desktop, intento silencioso de pre-copia al cargar
-            // (mejora UX si el botón del usuario toca demasiado rápido). En iOS
-            // se omite porque Safari rechaza writeText sin gesto.
-            if (!isIOS && code) {
-                tryCopy().catch(function () { /* no-op */ });
+            if (ctaBtn) {
+                try { ctaBtn.addEventListener("click", handleCta); } catch (_) { }
             }
 
-            // Si el usuario vuelve desde la tienda (back), refrescamos el portapapeles
-            // por si el navegador lo limpió.
-            window.addEventListener("pageshow", function (ev) {
-                if (ev.persisted && code) {
-                    tryCopy().catch(function () { /* no-op */ });
-                }
-            });
+            /* ============================================================
+               10. Puntos de disparo de la copia (idempotentes, nunca lanzan)
+               ============================================================ */
 
-            // Selección automática del textarea de fallback (long-press en iOS).
-            manualText.addEventListener("focus", function () {
-                try { manualText.setSelectionRange(0, manualText.value.length); } catch (_) {}
-            });
-            manualText.addEventListener("click", function () {
-                try { manualText.setSelectionRange(0, manualText.value.length); } catch (_) {}
-            });
+            // (1) Al ejecutar el script (cubre desktop y Android Chrome).
+            // (2) En DOMContentLoaded, por si el script corriera antes de tiempo.
+            if (code) {
+                silentCopy();
+                if (typeof document.addEventListener === "function") {
+                    var onDomReady = function () { if (!lastCopyOk) { silentCopy(); } };
+                    try {
+                        document.addEventListener("DOMContentLoaded", onDomReady, { once: true });
+                    } catch (_) {
+                        try { document.addEventListener("DOMContentLoaded", onDomReady); } catch (_2) { }
+                    }
+                }
+            }
+
+            // (3) Primer gesto de cualquier tipo (único camino fiable en iOS
+            //     Safari). once:true por gesto y re-armado a los 1200 ms.
+            var rearmTimer = null;
+            var GESTURE_EVENTS = ["pointerdown", "touchstart", "touchend", "click", "keydown"];
+
+            function onGesture() {
+                silentCopy();
+                scheduleGestureRearm();
+            }
+
+            function scheduleGestureRearm() {
+                try {
+                    clearTimeout(rearmTimer);
+                    rearmTimer = setTimeout(armGestures, GESTURE_REARM_MS);
+                } catch (_) { }
+            }
+
+            function armGestures() {
+                if (!code || typeof window.addEventListener !== "function") { return; }
+                for (var i = 0; i < GESTURE_EVENTS.length; i++) {
+                    try {
+                        window.addEventListener(GESTURE_EVENTS[i], onGesture, { capture: true, once: true });
+                    } catch (_) {
+                        try { window.addEventListener(GESTURE_EVENTS[i], onGesture, true); } catch (_2) { }
+                    }
+                }
+            }
+
+            if (code) { armGestures(); }
+
+            // (4) Al volver a ser visible la página.
+            try {
+                if (typeof document.addEventListener === "function") {
+                    document.addEventListener("visibilitychange", function () {
+                        try { if (!document.hidden) { silentCopy(); } } catch (_) { }
+                    });
+                }
+            } catch (_) { }
+
+            // (5) pageshow, incluido ev.persisted (vuelta desde la tienda).
+            try {
+                if (typeof window.addEventListener === "function") {
+                    window.addEventListener("pageshow", function () { silentCopy(); });
+                }
+            } catch (_) { }
+
+            // (6) foco de la ventana.
+            try {
+                if (typeof window.addEventListener === "function") {
+                    window.addEventListener("focus", function () { silentCopy(); });
+                }
+            } catch (_) { }
+
+            // (7) Tap sobre el chip del código (gesto perfecto para reintentar).
+            if (refChip) {
+                try {
+                    refChip.addEventListener("click", function () {
+                        userCopy("Código copiado ✓");
+                    });
+                } catch (_) { }
+            }
+
+            // (8) Botón manual "Copiar código" (siempre disponible).
+            if (copyBtn) {
+                try { copyBtn.addEventListener("click", function () { userCopy(); }); } catch (_) { }
+            }
+
+            // Re-selección del código visible al enfocar/tocar el campo manual.
+            if (manualText) {
+                var reselect = function () {
+                    try { manualText.setSelectionRange(0, String(manualText.value || "").length); } catch (_) { }
+                };
+                try { manualText.addEventListener("focus", reselect); } catch (_) { }
+                try { manualText.addEventListener("click", reselect); } catch (_) { }
+            }
         })();
     </script>
 </body>

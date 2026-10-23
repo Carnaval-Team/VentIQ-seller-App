@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><base href="file:///C:/Users/cesar/Documents/VentIQ-seller-App/ventiq_landing/"><style>html,body{margin:0;padding:0}iframe{width:375px;height:812px;border:0;display:block}</style></head><body><iframe id="f" src="r.html?code=ABC123"></iframe><script>function R(el){var r=el.getBoundingClientRect();return {t:Math.round(r.top),l:Math.round(r.left),w:Math.round(r.width),h:Math.round(r.height),b:Math.round(r.bottom)};}
+function PUB(obj){var pre=document.getElementById('__probe');if(!pre){pre=document.createElement('pre');pre.id='__probe';
+  pre.style.cssText='position:fixed;left:-99999px;top:0;width:1px;height:1px;overflow:hidden;margin:0;padding:0;border:0;';
+  document.body.appendChild(pre);}pre.textContent=JSON.stringify(obj);}
+function RUN(fn){setTimeout(function(){try{PUB(fn());}catch(e){PUB({error:String(e)});}},700);setTimeout(function(){try{PUB(fn());}catch(e){PUB({error:String(e)});}},2600);}
+function ENV(){return {dark:window.matchMedia('(prefers-color-scheme: dark)').matches,w:innerWidth,h:innerHeight,docH:document.documentElement.scrollHeight,bodyBg:getComputedStyle(document.body).backgroundColor,text:getComputedStyle(document.body).color};}
+function SETY(y){try{if(window.__v2Lenis&&window.__v2Lenis.scrollTo)window.__v2Lenis.scrollTo(y,{immediate:true,force:true});}catch(e){}window.scrollTo(0,y);}
+var CARDS=[].slice.call(document.querySelectorAll('.v2-stack-card'));
+function DESCRIBE(label){return {label:label,scrollY:Math.round(window.scrollY),cards:CARDS.map(function(c,i){var s=getComputedStyle(c);
+  return {i:i,pos:s.position,top:s.top,op:(+s.opacity).toFixed(2),mb:s.marginBottom,xf:s.transform.slice(0,48),prog:s.getPropertyValue('--stack-progress').trim(),rect:R(c)};})};}
+function measure(){
+  var f=document.getElementById('f'), d=null;
+  try{ d=f.contentDocument; }catch(e){ return {error:'cross-origin '+e}; }
+  if(!d||!d.documentElement) return {error:'no contentDocument', readyState:(f.contentWindow||{}).document?(f.contentWindow.document.readyState):'?'};
+  var w=f.contentWindow, de=d.documentElement;
+  var clickables=[].slice.call(d.querySelectorAll('a,button')).map(function(e){var r=e.getBoundingClientRect();
+    return {tag:e.tagName,txt:(e.textContent||'').replace(/\s+/g,' ').trim().slice(0,22),w:Math.round(r.width),h:Math.round(r.height),small:(r.height<44||r.width<44)};});
+  var texts=[]; ['h1','p.lead','.benefit .d','.foot','.cta','#refCode','#copyBtn'].forEach(function(sel){
+    var e=d.querySelector(sel); if(!e)return; var cs=w.getComputedStyle(e); var r=e.getBoundingClientRect();
+    texts.push({sel:sel,color:cs.color,fs:cs.fontSize,w:Math.round(r.width),h:Math.round(r.height)});});
+  var over=[].slice.call(d.querySelectorAll('*')).filter(function(e){var r=e.getBoundingClientRect();
+    return r.width>0 && r.height>0 && (r.right > w.innerWidth+2 || r.left < -2);}).slice(0,6).map(function(e){
+    return e.tagName+'.'+String(e.className||'').slice(0,18)+' right='+Math.round(e.getBoundingClientRect().right);});
+  return {iframeCss:f.clientWidth+'x'+f.clientHeight, innerViewport:w.innerWidth+'x'+w.innerHeight,
+    docScrollW:de.scrollWidth, hOverflow:de.scrollWidth>w.innerWidth+1, docH:de.scrollHeight,
+    overflowingElements:over, clickables:clickables, texts:texts};
+}
+function tryPub(tag){ try{ var r=measure(); r.at=tag; PUB(r); }catch(e){ PUB({at:tag,scenarioError:String(e)}); } }
+tryPub('sync');
+(function(){ var f=document.getElementById('f'); if(f){ f.addEventListener('load',function(){tryPub('iframe-load');}); } })();
+setTimeout(function(){tryPub('400ms');},400);
+setTimeout(function(){tryPub('1600ms');},1600);
+setTimeout(function(){tryPub('3800ms');},3800);</script><pre id="__probe" style="position: fixed; left: -99999px; top: 0px; width: 1px; height: 1px; overflow: hidden; margin: 0px; padding: 0px; border: 0px;">{"iframeCss":"375x812","innerViewport":"375x812","docScrollW":375,"hOverflow":false,"docH":1223,"overflowingElements":[],"clickables":[{"tag":"BUTTON","txt":"Descargar la app","w":335,"h":52,"small":false},{"tag":"BUTTON","txt":"Código de invitación A","w":190,"h":60,"small":false},{"tag":"BUTTON","txt":"Copiar código","w":132,"h":44,"small":false},{"tag":"A","txt":"Contáctanos","w":89,"h":46,"small":false}],"texts":[{"sel":"h1","color":"rgb(255, 255, 255)","fs":"31.5px","w":335,"h":72},{"sel":"p.lead","color":"rgb(195, 212, 223)","fs":"15.5px","w":335,"h":99},{"sel":".benefit .d","color":"rgb(61, 83, 102)","fs":"12px","w":83,"h":70},{"sel":".foot","color":"rgb(61, 83, 102)","fs":"12.5px","w":335,"h":66},{"sel":".cta","color":"rgb(8, 19, 31)","fs":"16.5px","w":335,"h":52},{"sel":"#refCode","color":"rgb(234, 244, 248)","fs":"19px","w":81,"h":22},{"sel":"#copyBtn","color":"rgb(234, 244, 248)","fs":"14px","w":132,"h":44}],"at":"3800ms"}</pre></body></html>

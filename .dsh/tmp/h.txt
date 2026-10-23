@@ -1,0 +1,20 @@
+HTTP/1.1 200 OK
+Date: Thu, 22 Oct 2026 14:45:07 GMT
+Content-Type: application/json
+Content-Length: 1510
+Connection: keep-alive
+x-powered-by: Express
+vary: Origin
+access-control-allow-credentials: true
+access-control-expose-headers: x-connection-encrypted,x-forwarded-for,user-agent,CF-Connecting-IP,Retry-After,X-RateLimit-Limit,X-RateLimit-Remaining,X-RateLimit-Reset
+x-gotrue-id: 33e62f45-ca5e-43a4-9b06-2604cfb66cc6
+x-ratelimit-limit: 120
+x-ratelimit-remaining: 113
+x-ratelimit-reset: 54
+mcp-session-id: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImVlMjNjNzg5LTY4NTUtNGNkZC04MDdkLWYwM2Q0OWQzZWI4MiIsImNsaWVudEluZm8iOnsibmFtZSI6ImRzaCIsInZlcnNpb24iOiIxLjAifSwiY2xpZW50Q2FwYWJpbGl0aWVzIjp7fSwiaWF0IjoxNzkyNjgwMzA3fQ.odTIi2ldhQMlJyFfawpKKkKou8WFl6asT8MVRJRaEDc
+cf-cache-status: DYNAMIC
+set-cookie: __cf_bm=NrvtAgPCOwC0JClL0Gchc60j.h4OX1YIKCLMpPngoxM-1792680306.888443-1.0.1.1-EYOUnPDvhj1k1l4iW4HyGeiMfFst75uNQ_XtqhDq2QnRcrniTEr_NbWRKWxcfG2zkd0TOsNQMfA9luQGy2TLIi8Oa.HArxTCNAoBc7Bw0DFen_4hicofPTRl.Lb9BANB; HttpOnly; SameSite=None; Secure; Path=/; Domain=supabase.com; Expires=Thu, 22 Oct 2026 15:15:07 GMT
+Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+Server: cloudflare
+CF-RAY: a4e948ae0882c2f4-IAH
+
