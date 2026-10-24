@@ -7,16 +7,20 @@ import '../screens/admin/local_servicio_admin_screen.dart';
 import '../screens/admin/locales_servicios_screen.dart';
 import '../screens/admin/reservas_screen.dart';
 import '../services/catalogo_service.dart';
+import '../services/exploracion_service.dart';
+import '../utils/exploracion_navegacion.dart';
 import 'tutorial_destino.dart';
 
 /// Traduce el destino de un paso del tutorial en navegación real.
 ///
-/// Lo usan los dos sitios que lanzan el recorrido del admin (el shell, para el
-/// primer uso, y la pantalla de «Gestión», para repetirlo): así «Siguiente»
-/// lleva al usuario a la pantalla del paso en vez de dejarlo esperando.
+/// Lo usan los tres sitios que lanzan un recorrido: el shell para el primer uso
+/// del cliente y del admin, la pantalla de «Gestión» para repetir el del admin, y
+/// el perfil para repetir el del cliente. Así «Siguiente» lleva al usuario a la
+/// pantalla del paso en vez de dejarlo esperando.
 ///
-/// Los destinos del cliente (Home, catálogo y detalle de un servicio) los
-/// resuelve el shell, porque son sus pestañas.
+/// Los destinos que son **pestañas** del shell (Home, catálogo y detalle de un
+/// servicio) los resuelve el propio shell, porque son suyas; los que son
+/// **pantallas apiladas** se resuelven aquí.
 class TutorialNavegacion {
   TutorialNavegacion._();
 
@@ -31,6 +35,59 @@ class TutorialNavegacion {
     );
   }
 
+  /// Abre la pantalla de «Exploración rápida» donde vive el paso del cliente.
+  ///
+  /// Usa `ExploracionNavegacion`, exactamente las mismas rutas que abren las
+  /// tarjetas del Home: si el tutorial abriera por su cuenta otra pantalla, el
+  /// paso resaltaría algo que el usuario no puede alcanzar tocando la tarjeta.
+  ///
+  /// Es «best effort»: si la lectura falla (o falta la migración 57), no navega y
+  /// el paso se queda esperando con su burbuja, que es la degradación prevista
+  /// —el usuario siempre puede pulsar «Siguiente» o «Saltar»—.
+  static Future<void> irACliente(
+    BuildContext context,
+    TutorialDestino destino,
+  ) async {
+    // Se capta el navegador antes de cualquier espera: tras un `await` el
+    // `context` puede haberse desmontado.
+    volverAlShell(context);
+    if (!context.mounted) return;
+
+    switch (destino) {
+      case TutorialDestino.listaCategorias:
+        await ExploracionNavegacion.abrirCategorias(context);
+      case TutorialDestino.listaEstablecimientos:
+        await ExploracionNavegacion.abrirEstablecimientos(context);
+      case TutorialDestino.fichaEstablecimiento:
+        // El paso vive en la ficha de un establecimiento concreto: se abre la del
+        // primero que tenga servicios publicados.
+        try {
+          final establecimientos = await ExploracionService.establecimientos();
+          if (establecimientos.isEmpty || !context.mounted) return;
+          await ExploracionNavegacion.abrirFicha(
+            context,
+            establecimiento: establecimientos.first,
+          );
+        } catch (_) {
+          // Sin datos no hay ficha que abrir: el paso espera.
+        }
+      case TutorialDestino.topServicios:
+        await ExploracionNavegacion.abrirTopServicios(context);
+      case TutorialDestino.home ||
+          TutorialDestino.catalogo ||
+          TutorialDestino.servicio ||
+          TutorialDestino.gestion ||
+          TutorialDestino.locales ||
+          TutorialDestino.localDetalle ||
+          TutorialDestino.servicioLocal ||
+          TutorialDestino.servicios ||
+          TutorialDestino.serviciosFormulario ||
+          TutorialDestino.reservas ||
+          TutorialDestino.categorias:
+        return;
+    }
+  }
+
   /// Abre la pantalla del módulo donde vive el paso.
   ///
   /// [entidad] es la entidad seleccionada: sin ella no hay módulos que abrir.
@@ -39,10 +96,15 @@ class TutorialNavegacion {
     Entidad? entidad,
     TutorialDestino destino,
   ) async {
-    // Los destinos del cliente no se tocan desde aquí.
+    // Los destinos del cliente no se tocan desde aquí (los resuelve
+    // `irACliente` y el shell).
     if (destino == TutorialDestino.home ||
         destino == TutorialDestino.catalogo ||
-        destino == TutorialDestino.servicio) {
+        destino == TutorialDestino.servicio ||
+        destino == TutorialDestino.listaCategorias ||
+        destino == TutorialDestino.listaEstablecimientos ||
+        destino == TutorialDestino.fichaEstablecimiento ||
+        destino == TutorialDestino.topServicios) {
       return;
     }
 
@@ -71,7 +133,11 @@ class TutorialNavegacion {
       TutorialDestino.home ||
       TutorialDestino.catalogo ||
       TutorialDestino.servicio ||
-      TutorialDestino.gestion =>
+      TutorialDestino.gestion ||
+      TutorialDestino.listaCategorias ||
+      TutorialDestino.listaEstablecimientos ||
+      TutorialDestino.fichaEstablecimiento ||
+      TutorialDestino.topServicios =>
         null,
     };
     if (pantalla == null) return;

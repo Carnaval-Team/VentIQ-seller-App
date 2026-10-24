@@ -22,8 +22,10 @@ import '../../services/agenda_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/catalogo_service.dart';
 import '../../utils/precio_reserva.dart';
+import '../../utils/reactivar_reserva.dart';
 import '../../utils/reserva_listado.dart';
 import '../../utils/telefono_contacto.dart';
+import '../../widgets/dialogo_reactivar_reserva.dart';
 import '../../widgets/totales_datos_adicionales.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -66,25 +68,12 @@ class _VendedorScreenState extends State<VendedorScreen> {
         _fecha.day == now.day;
   }
 
-  /// Solo las reservas activas (Reservado) se pueden confirmar como consumidas.
-  /// Las canceladas no se pueden completar.
-  bool _puedeCompletar(ReservaListItem item) {
-    if (item.esCompletada || item.esCancelada) return false;
-    return item.esActiva;
-  }
+  /// ¿Se puede confirmar el consumo? La regla vive en `utils/reactivar_reserva`
+  /// (una sola copia para admin y vendedor, que es donde se había desviado).
+  bool _puedeCompletar(ReservaListItem item) => puedeCompletarReserva(item);
 
-  /// Se puede descancelar (reactivar a Reservado) si está cancelada y su fecha
-  /// es de hoy o futura (no tiene sentido reactivar una reserva ya vencida).
-  bool _puedeDescancelar(ReservaListItem item) {
-    if (!item.esCancelada) return false;
-    final now = DateTime.now();
-    final hoy = DateTime(now.year, now.month, now.day);
-    return item.agendas.any((r) {
-      final f = r.fechaHoraReserva;
-      final diaReserva = DateTime(f.year, f.month, f.day);
-      return !diaReserva.isBefore(hoy);
-    });
-  }
+  /// ¿Se puede reactivar eligiendo estado? Ver [puedeReactivarReserva].
+  bool _puedeDescancelar(ReservaListItem item) => puedeReactivarReserva(item);
 
   @override
   void initState() {
@@ -198,38 +187,17 @@ class _VendedorScreenState extends State<VendedorScreen> {
     }
   }
 
+  /// Reactiva una reserva cancelada eligiendo el estado destino.
+  ///
+  /// Antes solo pedía confirmación y mandaba siempre Reservado (1), que el
+  /// servidor rechazaba con «Estado destino no permitido (use Cancelado o
+  /// Completado)». Ahora el diálogo ofrece las opciones que el servidor sí
+  /// acepta para esa fecha —pendiente si es de hoy o futura, completada si es de
+  /// hoy o anterior— y explica la que no se puede.
   Future<void> _descancelarReserva(ReservaListItem item) async {
-    final reserva = item.principal;
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Reactivar reserva'),
-        content: Text(
-          '¿Reactivar la reserva de '
-          '${reserva.cliente?.nombreCompleto ?? 'este cliente'}?'
-          '${item.esIdaVueltaMismoDia ? '\n\nSe reactivarán ambos tramos (ida y vuelta).' : ''}'
-          '\n\nVolverá a estado Reservado y ocupará capacidad de nuevo.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('No'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: AppTheme.primary),
-            child: const Text('Sí, reactivar'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true || !mounted) return;
-    await _cambiarEstadoItems(
-      item,
-      1,
-      'Reserva reactivada y cliente notificado',
-    );
+    final destino = await mostrarDialogoReactivarReserva(context, item: item);
+    if (destino == null || !mounted) return;
+    await _cambiarEstadoItems(item, destino.idEstado, destino.mensajeOk);
   }
 
   Future<void> _completarReserva(ReservaListItem item) async {
@@ -292,9 +260,9 @@ class _VendedorScreenState extends State<VendedorScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'Error: ${e.toString().replaceFirst('Exception: ', '')}',
-            ),
+            // [58] Traduce los mensajes del servidor (incluido «falta la
+            // migración» cuando el destino es reactivar a pendiente).
+            content: Text('Error: ${mensajeErrorCambioEstado(e)}'),
             backgroundColor: AppTheme.error,
           ),
         );

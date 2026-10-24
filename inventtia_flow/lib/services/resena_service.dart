@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Una reseña de servicio: fila de `flow.resena`.
@@ -163,6 +164,81 @@ class ResenasDeServicio {
   }
 }
 
+/// Una reserva completada a la que todavía le falta su reseña.
+///
+/// Es lo que necesita el cartel que pide la opinión al cliente: de qué servicio
+/// fue, dónde, cuándo, y con qué id de reserva publicarla (`publicar_resena` se
+/// ancla en `id_agenda`, no en el servicio).
+///
+/// Sale de `flow.cliente_resenas_pendientes()` (migración 59).
+class ResenaPendiente {
+  const ResenaPendiente({
+    required this.idAgenda,
+    required this.idLocalServicio,
+    required this.servicioNombre,
+    required this.localNombre,
+    this.servicioFoto,
+    this.categoria,
+    this.atendido,
+  });
+
+  final int idAgenda;
+  final int idLocalServicio;
+  final String servicioNombre;
+  final String localNombre;
+
+  /// Foto del servicio. `null` = el cartel pinta su respaldo degradado.
+  final String? servicioFoto;
+
+  /// Categoría o subcategoría del servicio, si el nomenclador la tiene.
+  final String? categoria;
+
+  /// Cuándo se atendió (`fecha_hora_atencion`, o la de la reserva si no hay).
+  final DateTime? atendido;
+
+  /// `"hoy"`, `"ayer"` o `"el 20/10/2026"`.
+  ///
+  /// [ahora] es inyectable para poder probar los tres casos sin depender del
+  /// reloj.
+  String etiquetaFecha({DateTime? ahora}) {
+    final fecha = atendido;
+    if (fecha == null) return '';
+    final hoy = _dia(ahora ?? DateTime.now());
+    final dia = _dia(fecha);
+    final diferencia = dia.difference(hoy).inDays;
+    if (diferencia == 0) return 'hoy';
+    if (diferencia == -1) return 'ayer';
+    if (diferencia > 0) return 'el ${_fechaCorta(fecha)}';
+    if (diferencia >= -6) {
+      return 'hace ${-diferencia} días';
+    }
+    return 'el ${_fechaCorta(fecha)}';
+  }
+
+  factory ResenaPendiente.fromJson(Map<String, dynamic> json) => ResenaPendiente(
+    idAgenda: (json['id_agenda'] as num).toInt(),
+    idLocalServicio: (json['id_local_servicio'] as num).toInt(),
+    servicioNombre:
+        (json['servicio'] as String?)?.trim().isNotEmpty == true
+        ? (json['servicio'] as String).trim()
+        : 'el servicio',
+    localNombre: (json['local'] as String?)?.trim() ?? '',
+    servicioFoto: (json['servicio_foto'] as String?)?.trim(),
+    categoria: (json['categoria'] as String?)?.trim(),
+    atendido: json['atendido'] != null
+        ? DateTime.tryParse(json['atendido'] as String)
+        : null,
+  );
+
+  static DateTime _dia(DateTime f) => DateTime(f.year, f.month, f.day);
+
+  static String _fechaCorta(DateTime f) {
+    final dia = f.day.toString().padLeft(2, '0');
+    final mes = f.month.toString().padLeft(2, '0');
+    return '$dia/$mes/${f.year}';
+  }
+}
+
 /// Reseñas contra `flow.resena` y sus RPC.
 class ResenaService {
   static final SupabaseClient _supabase = Supabase.instance.client;
@@ -219,6 +295,31 @@ class ResenaService {
           promedio: (fila['promedio'] as num).toDouble(),
         ),
     };
+  }
+
+  /// Reservas completadas a las que les falta la reseña, la más reciente
+  /// primero.
+  ///
+  /// Devuelve `[]` (sin lanzar) si la migración **59** todavía no está aplicada:
+  /// el cliente no debe ver un error por no poder pedir una opinión.
+  static Future<List<ResenaPendiente>> pendientes({int limite = 3}) async {
+    try {
+      final res = await _supabase
+          .schema(_schema)
+          .rpc('cliente_resenas_pendientes', params: {'p_limite': limite});
+      if (res is! Map) return const [];
+      final json = Map<String, dynamic>.from(res);
+      if (json['ok'] != true) return const [];
+      final lista = json['data'];
+      if (lista is! List) return const [];
+      return lista
+          .whereType<Map>()
+          .map((e) => ResenaPendiente.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    } catch (e) {
+      debugPrint('[flow] ResenaService.pendientes ERROR: $e');
+      return const [];
+    }
   }
 
   /// Publica (o actualiza) la reseña de una reserva completada propia.

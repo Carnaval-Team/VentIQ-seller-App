@@ -38,4 +38,21 @@ enum TutorialDestino {
 
   /// Módulo de categorías.
   categorias,
+
+  // ── Destinos del CLIENTE que no son pestañas del shell ──────────────────
+  // Los resuelve `TutorialNavegacion.irACliente`, que empuja las pantallas de
+  // «Exploración rápida» con `ExploracionNavegacion` (la misma fuente que usan
+  // las tarjetas del Home).
+
+  /// Listado de categorías con contadores.
+  listaCategorias,
+
+  /// Listado de establecimientos.
+  listaEstablecimientos,
+
+  /// Ficha de un establecimiento (la misma vista del espacio patrocinado).
+  fichaEstablecimiento,
+
+  /// Top 10 de servicios de la semana.
+  topServicios,
 }

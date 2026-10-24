@@ -22,21 +22,78 @@ class TutorialFlujos {
   static const String flujoAdmin = 'admin';
 
   // ── Cliente: crear una reserva o anotarse en la lista ──────────────────
+  //
+  // v2: el Home cambió. Ahora abre con «Exploración rápida» (cuatro atajos) en
+  // vez del riel de categorías, y detrás hay tres pantallas nuevas. El recorrido
+  // enseña ese acceso rápido y las tres, y solo después lleva al cliente a
+  // reservar. Ver `TutorialService.version` (sube a `v2` para que el recorrido
+  // nuevo se muestre una vez a quien ya tenía el viejo marcado).
 
   static List<TutorialPaso> pasosCliente() => const <TutorialPaso>[
         TutorialPaso(
           id: 'home_buscar',
           titulo: 'Encuentra tu servicio',
-          mensaje: 'Escribe aquí el servicio o el local que buscas, o toca '
-              '«Ver todo» para abrir el catálogo completo.',
+          mensaje: 'Escribe aquí el servicio o el local que buscas. Justo debajo '
+              'tienes los atajos para explorar todo el catálogo.',
+          destino: TutorialDestino.home,
+        ),
+        TutorialPaso(
+          id: 'home_exploracion',
+          titulo: 'Exploración rápida',
+          mensaje: 'Cuatro atajos: «Categorías» (todos los rubros), «Servicios» '
+              '(el catálogo completo), «Establecimientos» (todos los locales) y '
+              '«Más populares» (el top 10 de la semana).',
           destino: TutorialDestino.home,
         ),
         TutorialPaso(
           id: 'home_ver_todo',
           titulo: 'Explora el catálogo',
-          mensaje: 'Aquí están todos los servicios disponibles con su precio y '
-              'su provincia.',
+          mensaje: '«Ver catálogo» abre la lista completa de servicios con su '
+              'precio, su local y su provincia.',
           destino: TutorialDestino.home,
+        ),
+        TutorialPaso(
+          id: 'home_card_categorias',
+          titulo: 'Empieza por un rubro',
+          mensaje: 'La tarjeta «Categorías» te enseña todos los rubros y cuántos '
+              'establecimientos tiene cada uno.',
+          destino: TutorialDestino.home,
+        ),
+        TutorialPaso(
+          id: 'categorias_lista',
+          titulo: 'Categorías y subcategorías',
+          mensaje: 'Toca «Ver los N establecimientos» para ver ese rubro, o la '
+              'flecha del final para desplegar sus subcategorías y afinar la '
+              'búsqueda.',
+          destino: TutorialDestino.listaCategorias,
+        ),
+        TutorialPaso(
+          id: 'establecimientos_lista',
+          titulo: 'Establecimientos',
+          mensaje: 'Cada tarjeta enseña la foto del local, su valoración y '
+              'cuántos servicios ofrece. Puedes ordenarlos y filtrar por '
+              'provincia, valoración o «abierto ahora».',
+          destino: TutorialDestino.listaEstablecimientos,
+        ),
+        TutorialPaso(
+          id: 'ficha_local_servicios',
+          titulo: 'La ficha del local',
+          mensaje: 'Al tocar un establecimiento ves su ficha completa —foto, '
+              'horario, contacto— con TODOS sus servicios, igual que en el '
+              'espacio patrocinado. Desde ahí reservas el que quieras.',
+          // Opcional: sin establecimientos publicados no hay ficha que abrir.
+          opcional: true,
+          destino: TutorialDestino.fichaEstablecimiento,
+        ),
+        TutorialPaso(
+          id: 'top_servicios',
+          titulo: 'El top 10 de la semana',
+          mensaje: 'Los servicios con más lugares reservados esta semana, para '
+              'saber qué está funcionando ahora mismo.',
+          // Opcional: sin reservas esta semana el ranking está vacío y no hay
+          // lista que resaltar.
+          opcional: true,
+          destino: TutorialDestino.topServicios,
         ),
         TutorialPaso(
           id: 'catalogo_tarjeta',

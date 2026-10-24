@@ -37,7 +37,7 @@ top 10) + actualizar el tutorial del cliente.
 |---|------|----------|
 | D1 | Dónde vive la rejilla | Reemplaza al sliver de categorías del Home (`home_client_screen.dart:755`). El riel de categorías y la fila de subcategorías **se retiran del Home**: su función se muda a `CategoriasScreen`. No se dejan dos formas de filtrar por categoría. |
 | D2 | Estado de categoría en el Home | El Home deja de tener `_category`/`_subcategoria`: el feed del Home se filtra por búsqueda, provincia, filtros del sheet y «mejor valorados». La categoría pasa a ser parámetro **de la pantalla nueva** (`cliente_home_feed(p_id_categoria/p_id_subcategoria)` sigue filtrando en servidor, igual que hoy). Se simplifica `_aplicarCategorias` (ya no hay que recargar si la categoría activa desapareció: no hay categoría activa). |
-| D3 | Conteos de categorías y establecimientos | Se calculan **en Dart** desde una lectura sin filtros de `flow.cliente_home_feed()`, con funciones puras y testables. Ventajas: **0 SQL nuevo**, y el número coincide **exactamente** con lo que el cliente puede reservar (el feed solo devuelve lo visible por `flow._ls_disponible`, y hoy `has_more` es `false`: trae el catálogo entero). Los 13 servicios y 11 locales reales se agregan sin coste. La agrupación por local **no se escribe de cero**: se extiende `agruparPorEstablecimiento()` / `GrupoEstablecimiento` (`lib/utils/coleccion_servicios.dart:23-72`), que ya agrupa por local y calcula `total` de servicios y `ubicacion`, añadiéndole rating ponderado, precio desde y horario. Umbral documentado para pasar a servidor: >300 ítems o cuando el feed empiece a paginar de verdad. Plan B con SQL en el §5. |
+| D3 | Conteos de categorías y establecimientos | **En servidor** (D18), con la migración **57**: `cliente_categorias_resumen()` y `cliente_locales_publicos(...)`. Los conteos respetan la misma regla de visibilidad que el feed (`flow._ls_disponible(ls.id)`) y la exclusión de `flow.entidad_categoria_oculta`, así que el número coincide **exactamente** con lo que el cliente puede reservar. La agregación del rating por local se hace en SQL (`sum(puntuacion)/count`), que es exacto — no la media de medias que haría falta en cliente. `precio_desde` **no** se calcula en SQL: la RPC devuelve el `config_precio` de cada servicio y Dart aplica `precioBaseDe()` (`lib/utils/precio_reserva.dart`), para no tener dos implementaciones de la regla de precio. |
 | D4 | Top 10 | `flow.cliente_ranking_semanal(p_limite)` ya existe y solo hay que pedirlo con `limite: 10` (`HomeCatalogService.fetchRankingSemanal({limite = 5})`, `home_catalog_service.dart:396`). Devuelve los mismos ítems que el feed + `lugares_semana`, así que **no hay nada que adaptar** en el modelo. |
 | D5 | Ficha del establecimiento | `EspacioPatrocinadoScreen` se parte: el cuerpo (1002 líneas) se muda a `FichaLocalScreen({required FichaLocal ficha, CampanaPatrocinada? campana})` y `EspacioPatrocinadoScreen` queda como envoltorio `const EspacioPatrocinadoScreen({required campana})`, de modo que `home_client_screen._abrirCampana` (`:1355`) **no cambia**. Sin campaña, la ficha se pinta con etiqueta «ESTABLECIMIENTO» y degradado de marca, sin el bloque «DESTACADO DEL MOMENTO». |
 | D6 | Sección «Establecimientos» del Home | Su tarjeta abre ahora la **ficha** (la misma vista del espacio patrocinado), y su «Ver todos» —hoy muerto, cae al toast «Desliza…» (`:1508`)— abre `EstablecimientosScreen`. Se retira el callback `onVerEstablecimiento` y `HomeShell._abrirCatalogoDeEstablecimiento` (`home_shell.dart:463`), que existían solo para saltar al catálogo filtrado. |
@@ -48,16 +48,16 @@ top 10) + actualizar el tutorial del cliente.
 | D11 | Interruptores | No se añade bandera a `HomeFeatures` para la rejilla: las 4 tarjetas están respaldadas por datos reales, y apagarla dejaría el Home sin acceso a categorías. Sí se documenta en `home_features.dart` que `distancia == false` condiciona la etiqueta «Cerca de ti» (ver D13). |
 | D12 | Persistencia del tutorial | `TutorialService.version` sube de `v1` a `v2` (`tutorial_service.dart:19`). Consecuencia deliberada: el tutorial **se vuelve a mostrar una vez** a todos los usuarios (es lo que hace que vean la UI nueva). No se toca Supabase. |
 
-### 1.2 ⚠️ Decisiones que conviene que confirmes (traigo recomendación)
+### 1.2 Decisiones confirmadas por el usuario (23-10-2026)
 
-| # | Pregunta | Recomendación | Alternativa |
-|---|----------|---------------|-------------|
-| D13 | La tarjeta 3 de la referencia dice «Cerca de ti», pero **no hay distancias**: `app_dat_locales.coordenadas` está vacío y `HomeFeatures.distancia == false`. Pintarlo sería el tipo de dato inventado que este proyecto viene eliminando. | Etiqueta dinámica: «Cerca de ti» solo si `HomeFeatures.distancia`; hoy → **«Todos los locales»**. | Dejar «Cerca de ti» fijo (inventa una promesa que la app no cumple). |
-| D14 | La tarjeta 4 dice «Tendencias hoy», pero `cliente_ranking_semanal` agrega **la semana en curso** (`date_trunc('week', now())`). | **«Tendencias de la semana»** en la tarjeta y en la pantalla. | Migración 57 que añada `p_dias` para una ventana diaria real (SQL en §5.3). |
-| D15 | Qué hace el toque en una fila de categoría padre. | **Despliega las subcategorías en línea** (con contadores) y deja un CTA «Ver los N establecimientos» en la propia fila; tocar una **subcategoría** abre establecimientos filtrados por ella. Cumple las dos cosas que pediste sin ambigüedad y sin salir de la pantalla para explorar. | Fila → navega directo al listado filtrado por la categoría (más rápido, pero pierde el despliegue). |
-| D16 | Longitud del tutorial: el guion propuesto pasa de 7 a **13 pasos**. | Mantener los 13 (el overlay ya cambia solo a barra de progreso a partir de 8, `tutorial_overlay.dart:536-557`). | Recortar el bloque de descubrimiento a 3 pasos (rejilla + categorías + establecimientos) → 11. |
-| D17 | La pantalla «Más populares». | **Top 10 por reservas de la semana** (dato real y ya disponible). | Dos pestañas: «Más reservados» + «Mejor valorados» (`fetchFeed(topRated: true)`, ya soportado). F6b opcional. |
-| D18 | Alcance de esta entrega. | **Plan ahora, implementación después** (no toco `lib/` todavía). | Empezar ya por F1+F2 (helpers y rejilla), que no dependen de nada más. |
+| # | Pregunta | **Resuelto** |
+|---|----------|--------------|
+| D13 | Etiqueta de la tarjeta «Establecimientos» | **«Todos los locales»** (no «Cerca de ti»: no hay distancias). Se pasa a «Cerca de ti` solo si algún día `HomeFeatures.distancia`. |
+| D14 | Etiqueta de la tarjeta «Más populares» | **«Tendencias de la semana»** (el ranking es semanal). |
+| D15 | Interacción en categorías (revisada en el 5.º bloque) | **Dos acciones separadas, tampoco a la vez**: tocar la **tarjeta** abre la **carpeta** del rubro (sus subcategorías, con animación tipo carpeta de Android) y el pie «Ver todos» NAVEGA al listado de establecimientos filtrado por ese rubro. Tocar una subcategoría lleva al listado filtrado por ella. La presentación es un **panel lateral** (`RutaLateral`) con rejilla de tarjetas de dos en dos, iguales que las del acceso rápido. |
+| D16 | Longitud del tutorial | **13 pasos**, y el guion explica el **acceso rápido** («Exploración rápida»: los 4 atajos) además de las pantallas nuevas. |
+| D17 | Datos de «Más populares» | Top 10 por reservas de la semana (`cliente_ranking_semanal(p_limite := 10)`). |
+| D18 | Origen de los conteos | **RPC nueva desde ya** (migración **57**): `cliente_categorias_resumen()` y `cliente_locales_publicos(...)`. Se retira de este plan el cálculo en cliente como camino principal; el §5.1 pasa a ser obligatorio, no plan B. |
 
 ---
 
@@ -186,16 +186,39 @@ ExploracionRapidaGrid({
   son 6 raíces + 30 subcategorías). La referencia enseña «12 ACTIVAS» porque es un mock:
   no se copia el número, se copia el diseño.
 
-### 3.2 `CategoriasScreen`
+### 3.2 `CategoriasScreen` (rediseñada en el 5.º bloque: panel lateral con carpetas)
 
-`lib/screens/categorias_screen.dart`. Cabecera con el estilo del catálogo (degradado de
-marca, esquinas inferiores redondeadas) y un resumen honesto: «N categorías · M
-establecimientos · K servicios» (los que el cliente puede reservar). Lista de filas:
+`lib/screens/categorias_screen.dart`. Ya **no** es una pantalla de filas: es un **panel
+lateral** que entra desde la izquierda (`RutaLateral`: 260 ms, no opaca, 88 % del ancho con
+tope 372 px) con velo detrás que cierra al tocarlo, X en la cabecera y el gesto de atrás.
+Sigue siendo una **ruta** (no un `Scaffold.drawer`) porque el botón atrás, el
+`popUntil` del tutorial y el cambio de pestaña de la barra inferior dependen del
+`Navigator`.
 
-- `_TarjetaCategoria`: icono (`iconoCategoria`), nombre, «M establecimientos · K
-  servicios», chevron que rota; debajo, si se despliega, las subcategorías con su propio
-  contador y una fila «Todas las de {categoría}» → listado filtrado por la categoría.
-- CTA «Ver los M establecimientos» en la fila (D15).
+- Cabecera con degradado de marca, «Categorías», «Todos los rubros» y la pastilla de
+  totales globales («6 categorías · 8 establecimientos · 11 servicios»), que no se pinta si
+  no hay nada que contar. Ancla `categorias_lista` aquí (montada en todos los estados).
+- Rejilla de **dos en dos** con las MISMAS tarjetas del acceso rápido
+  (`TarjetaExploracion`): chip `3 LOCALES` / `1 LOCAL` / `SIN LOCALES`, nombre del rubro,
+  `N servicios` y pie «Ver todos» (`accionEtiqueta` + `onAccion`; apagado y sin toque si el
+  rubro está vacío, para que todas midan igual). Los cuatro degradados de «Exploración
+  rápida» en ciclo: misma familia visual.
+- **Dos acciones separadas**: tocar la tarjeta abre la carpeta; «Ver todos» navega al
+  listado filtrado por el rubro. Una fila «Otras» (servicios sin categoría) cierra la
+  rejilla cuando la RPC reporta `otros_*`.
+- **Carpetas**: al tocar, la tarjeta hace un «boom» (escala 0.86→1 con `easeOutBack`,
+  240 ms) durante 190 ms y después entra la vista del rubro con `AnimatedSwitcher`
+  (fade + escala 0.90→1, 300 ms); las subcategorías aparecen en **cascada** (`Interval` +
+  `easeOutBack` por índice). Dentro: cabecera «Subcategorías de X», banner grande del rubro
+  (mismo degradado, contadores y «Ver todos los establecimientos») y la rejilla de
+  subcategorías → listado filtrado por (rubro, subcategoría). Un rubro sin hijas lo dice.
+- Con `MediaQuery.disableAnimations` (accesibilidad) no se anima: la carpeta se abre en el
+  mismo frame.
+- Estados: carga, error real, migración 57 pendiente y vacío («El catálogo todavía no tiene
+  categorías publicadas»), todos dentro del panel.
+- Sin barra inferior propia: es un cajón que flota sobre la pantalla anterior, así que la
+  barra del shell se ve detrás atenuada por el velo. Un cajón con su propia barra de
+  pestañas serían dos navegaciones a la vez.
 - Estados: carga, error (con Reintentar) y vacío («El catálogo todavía no tiene
   categorías publicadas»).
 - Anclas: `categorias_lista` sobre el **encabezado** (siempre montado; nunca sobre la
@@ -422,50 +445,48 @@ solo a las 3 vistas nuevas, se puede saltar, y no vuelve a aparecer tras complet
 
 ---
 
-## 5. SQL
+## 5. SQL — migración **57** (pendiente de aplicar por el usuario)
 
-### 5.1 Lo que hay que aplicar para esta iteración: **nada**
-Las 3 vistas se alimentan de RPC vivas (`cliente_home_feed`, `cliente_ranking_semanal`,
-`cliente_obtener_servicios`), verificadas hoy contra `vsieeihstajlrdvpuooh`. No hay
-migración nueva y por tanto no hay nada pendiente de aplicar a mano.
+### 5.1 Qué hay que aplicar
+`docs/flow_schema/migraciones/57_categorias_y_locales_cliente.sql` (nuevo). Crea dos
+funciones y **no** toca ninguna tabla:
 
-### 5.2 Plan B (solo si el catálogo crece) — migración 57
-Siguiente número libre: **57** (hay hasta la 56). Sustituiría la agregación en Dart por
-agregación en servidor, con **los mismos números**:
+| Función | Firma | Devuelve |
+|---------|-------|----------|
+| `flow.cliente_categorias_resumen` | `()` | `{categorias:[{id,codigo,nombre,servicios,establecimientos,subcategorias:[{…,servicios,establecimientos}]}], total_servicios, total_establecimientos, otros_servicios, otros_establecimientos}` |
+| `flow.cliente_locales_publicos` | `(p_id_categoria int, p_id_subcategoria int, p_provincia text)`, los tres con `default null` | array de locales con `foto`, `horario_atencion`, `horario_detalle`, `coordenadas`, `entidad{…}`, `total_servicios`, `tiene_reserva_directa`, `precios[]` (`config_precio` crudo), `total_resenas` y `rating` (promedio **real** por local, `null` sin reseñas) |
 
-```sql
--- 57_categorias_y_locales_resumen.sql  (NO necesaria hoy: ver D3)
-create or replace function flow.cliente_categorias_resumen()
-returns jsonb language sql stable security invoker set search_path = flow, public
-as $fn$
-  -- raíz + subcategorías con: total_servicios, total_locales (distinct),
-  -- respetando flow._ls_disponible(ls.id) y las categorías ocultas por entidad.
-  ...
-$fn$;
+Las dos son `language sql`, `stable`, `security invoker`, con `search_path = flow, public`,
+`revoke` de `public`/`anon` y `grant` a `authenticated, service_role` — igual que
+`cliente_home_feed`. Llevan `notify pgrst, 'reload schema'` al final: sin eso la app
+recibiría `PGRST202` durante un rato después de aplicarla.
 
-create or replace function flow.cliente_locales_publicos(
-  p_id_categoria integer default null,
-  p_id_subcategoria integer default null,
-  p_provincia text default null
-)
-returns jsonb language sql stable security invoker set search_path = flow, public
-as $fn$
-  -- por local: nombre, descripcion, direccion, provincia, pais, foto, horario,
-  -- entidad, total_servicios, total_resenas, rating_promedio (ponderado),
-  -- precio_desde + moneda. Misma regla de visibilidad que el feed.
-  ...
-$fn$;
-```
+Decisiones dentro del SQL:
+- **Misma regla de visibilidad que el feed**: `flow._ls_disponible(ls.id)` (local, servicio,
+  par y entidad al día) y exclusión de `flow.entidad_categoria_oculta` (hoja **y** padre).
+  Así el contador de una categoría coincide con lo que se ve al entrar.
+- **Categoría incluye subcategorías** (`s.id_tipo_actividad = p_id_categoria OR ta.id_padre
+  = p_id_categoria`), y la subcategoría manda si llegan las dos.
+- **El precio no se calcula en SQL**: la RPC devuelve el `config_precio` de cada servicio y
+  Dart aplica `precioBaseDe` (`lib/utils/precio_reserva.dart`). Repetir la regla en SQL
+  sería una tercera implementación de lo mismo.
+- **El rating sí se agrega en SQL** (`sum(puntuacion)/count` por local): es el dato exacto,
+  no la media de medias que habría que hacer en cliente.
 
-`cliente_obtener_locales` **no sirve** como base: no filtra por `_ls_disponible`, no trae
-contadores ni rating y devuelve locales sin servicios publicados.
+### 5.2 Verificación hecha antes de escribir la función
+Agregación validada con SQL de solo lectura contra `vsieeihstajlrdvpuooh` (sustituyendo
+`_ls_disponible` por las columnas `activo`, porque el rol del MCP no puede ejecutar
+`flow.entidad_activa`): **6 raíces** (Alojamiento 2/2, Gastronomía 0/0, Belleza 5/3,
+Transporte 4/4, Recreación 0/0, Jurídicos 0/0) y **8 locales** con algo visible, de los
+cuales solo «Salon 2 Cejas» tiene valoración (2.5 con 2 reseñas). El fichero lleva esas
+mismas consultas en su bloque `VERIFICACION`.
 
-### 5.3 Plan B del top 10 diario (si se elige la alternativa de D14)
-```sql
--- Añadir ventana configurable al ranking: p_dias integer default 7
--- where a.created_at >= now() - make_interval(days => greatest(p_dias, 1))
--- y conservar p_limite. Firma nueva = una sola (drop de la vieja) por el motivo de la 48.
-```
+### 5.3 Cómo aplicarla
+A mano en el SQL Editor del proyecto **release** (D9 del plan anterior), y también en el de
+debug si se quiere probar con `flutter run` (a ese le faltan las 40–56, así que el feed ni
+se pinta). Mientras no esté aplicada, las tres pantallas nuevas muestran un aviso honesto
+—«Esta vista necesita la migración 57 (categorías y establecimientos con contadores)»— con
+botón de reintentar, en vez de un error de red genérico.
 
 ---
 
@@ -498,15 +519,13 @@ Se conservan los **46 ficheros de test existentes** (47 `.dart` en `test/` menos
    filtraba por categoría desde el Home ahora entra por la tarjeta «Categorías» (o por
    los filtros del sheet). Mitigación: el tutorial v2 abre esa ruta en los pasos 4-5 y el
    sheet de filtros sigue teniendo subcategorías.
-2. **Conteos en cliente.** Correctos hoy (13 servicios, 11 locales) y **idénticos a lo
-   reservable**; dejan de serlo si el feed empieza a paginar o el catálogo pasa de unos
-   cientos de ítems → §5.2. Queda documentado en el código, junto a la condición.
-3. **Rating del establecimiento: es una media de medias.** El servidor entrega el
-   promedio **por servicio** ya redondeado a 1 decimal (`resenas_por_servicio()`), así que
-   la ponderación `Σ(rating·reseñas)/Σ(reseñas)` es una aproximación (hoy hay 2 reseñas en
-   toda la base). No es un dato inventado —se muestra junto a `(N reseñas)` y desaparece
-   sin reseñas—, pero conviene no presentarlo como una nota oficial del local. Si quieres
-   el dato exacto, el §5.2 lo calcula en SQL agregando `flow.resena` por local.
+2. **La migración 57 hay que aplicarla a mano.** Es el único paso que no controla el
+   código: hasta que esté en Supabase, las dos pantallas nuevas avisan de que falta y el
+   top 10 (que depende de la 36) sigue funcionando. Se degrada con mensaje, no con un error
+   técnico.
+3. **El rating por local viene del SQL** (`sum(puntuacion)/count` sobre `flow.resena`), así
+   que es exacto, pero hoy hay **2 reseñas en toda la base**: los locales sin ninguna se
+   pintan sin estrellas y van al final en «Mejor valorados». No se les supone una nota.
 4. **Badge «N ACTIVAS» sin nomenclador.** Si la migración 47 no está aplicada,
    `metadata.categorias` llega vacío: el chip dirá «TODAS» y la pantalla de categorías
    mostrará su estado vacío, en vez de «0 ACTIVAS» o de inventar rubros.
@@ -573,5 +592,15 @@ porque sus anclas viven en las pantallas nuevas.
 | Fecha | Fase | Resultado |
 |-------|------|-----------|
 | 23-10-2026 | Plan | Auditoría del código real + verificación de RPC contra release. Referencia visual copiada a `docs/exploracion_rapida/`. **Sin cambios en `lib/`.** |
+| 23-10-2026 | F1 | Modelos (`categoria_con_conteo`, `establecimiento_resumen`, `ficha_local`), helpers puros (`exploracion_resumen`, `categoria_icono`) y `ExploracionService`, con stubs de las 4 pantallas para que el proyecto compilara durante el reparto. **20/20 tests** de `exploracion_resumen_test.dart` en verde. Migración **57** escrita y su agregación validada antes con SQL de solo lectura contra release (6 raíces, 8 locales, Salon 2 Cejas 2.5 con 2 reseñas). |
+| 23-10-2026 | F2 + F7 | `ExploracionRapidaGrid` (2×2, `mainAxisExtent` escalado con el texto para no desbordar a 320 pt ni al 130 %): 6/6 tests. Integración en el Home: fuera el riel de categorías, la fila de subcategorías y el estado `_category`/`_subcategoria`; `_aplicarCategorias` ya solo guarda el nomenclador; `_buildNoResults` sin las ramas de categoría. Las 4 tarjetas, el «Ver todos» de establecimientos y el «Ranking» navegan por `ExploracionNavegacion`. La sección de establecimientos del Home abre la **ficha**; se retiraron `onVerEstablecimiento` (Home y shell) y el ya huérfano `CatalogoScreenState.filtrarPorLocal`. |
+| 23-10-2026 | F3–F6 (compañeros) | `CategoriasScreen` (CTA «Ver los N establecimientos» + chevron que despliega subcategorías, separados como pidió el usuario), `EstablecimientosScreen` (foto, valoración solo con reseñas, nº de servicios, orden y filtros), `FichaLocalScreen` compartida + envoltorio `EspacioPatrocinadoScreen` con la misma firma, y `TopServiciosScreen` (podio + 4-10, «Tendencias de la semana»). Cada uno con su test; analyze sin errores en sus ficheros. |
+| 23-10-2026 | F8 | Tutorial del cliente **v2 de 13 pasos**: rejilla, «Ver catálogo», tarjeta Categorías, las tres pantallas nuevas y el top 10, con los 4 destinos nuevos (`listaCategorias`, `listaEstablecimientos`, `fichaEstablecimiento`, `topServicios`) resueltos por `TutorialNavegacion.irACliente` con las mismas rutas que las tarjetas. `TutorialService.version = 'v2'` para republicarlo una vez. Anclas nuevas sobre elementos siempre montados. |
+| 23-10-2026 | F10 (3.er bloque) | **Barra inferior en las vistas nuevas.** `BarraNavegacionCliente` (widget compartido, extraído del shell junto con `IconoReservaConBadge`) + `ShellNavegacion` (puente estático que registra el shell: cierra lo apilado y cambia de pestaña). Las 4 pantallas la pintan con `BarraNavegacionCliente.dePantalla()` —`null` fuera del shell, así que los tests que las montan solas no cambian— y `HomeShell` usa la misma barra para el cliente puro. Además, «Ver el catálogo» del estado vacío del top 10 ahora cambia a la pestaña Servicios en vez de solo volver atrás. **8 tests nuevos** (`barra_navegacion_cliente_test.dart`); analyze sin errores y suite **600/600**. |
+| 23-10-2026 | F11 (4.º bloque) | **Ajustes de la tarjeta del listado de establecimientos** (reportados al probar en la app): (1) el precio salía «picado» —«Desde 2500 CUP» en una línea dentro de una columna de 92 px se recortaba con puntos suspensivos—; ahora va en dos líneas («Desde» pequeño + importe) y el importe se reduce con `FittedBox` si hace falta, en vez de recortarse. Además el «desde» se calcula **en una sola moneda** (la del local, la de la mayoría de sus servicios) para no comparar importes de monedas distintas. (2) los chips pasan de `Wrap` (varias filas → tarjetas de alturas distintas) a **una fila con scroll horizontal**, y la tarjeta tiene alto fijo escalado con el texto del sistema, así que todas miden igual. **6 tests nuevos** (`establecimientos_tarjeta_test.dart`) y 2 en `exploracion_resumen_test.dart`; uno de ellos encontró el recorte real (92 px pintados vs 99.5 necesarios) antes de arreglarlo. Suite **608/608**. |
+| 23-10-2026 | F12 (5.º bloque) | **La vista de categorías pasa a panel lateral con carpetas animadas.** `RutaLateral` (entra desde la izquierda, no opaca, 88 % con tope 372, velo que cierra) pero sigue siendo ruta: el `popUntil` del tutorial y la barra inferior no cambian. Dentro: rejilla de rubros **de dos en dos** con las mismas tarjetas del acceso rápido (`TarjetaExploracion` + `accionEtiqueta`/`onAccion`), chip `N LOCALES`, «Ver todos» por rubro, y al tocar la tarjeta se abre la **carpeta** del rubro: «boom» de la tarjeta (240 ms) → `AnimatedSwitcher` (fade + escala) → subcategorías en **cascada** (`Interval` + `easeOutBack`), con banner del rubro y «Ver todos los establecimientos». Con `disableAnimations` se abre sin animar. Tests reescritos (`categorias_screen_test.dart`, 9) y analyze limpio; suite **610/610**. Verificación independiente en `task-6`. |
+| 23-10-2026 | F13 (5.º bloque) | **Verificación independiente** del panel (task-6, `panel-verifier`): `test/categorias_panel_extra_test.dart` con **20 tests** (ancho 343/372 medido, velo y X, ancla visible en carga/vacío/datos/error, las dos acciones separadas, `disableAnimations` abre en el mismo frame, doble toque rápido, rubros sin locales/sin hijas/nombres largos, 320 pt al 130 % y al 200 %, y `popUntil` con ruta NO opaca). 20/20 en verde. **Hallazgos corregidos**: (R1) `vacia` usaba «sin locales Y sin servicios» mientras el chip usa «sin locales» → ahora `establecimientos <= 0`; (R2) la carpeta abierta no se reconciliaba si el host cambiaba el resumen → `didUpdateWidget` la cierra y el índice del banner se guarda al abrir (sin `indexOf`); (R3) `RutaLateral` ignoraba `disableAnimations` → sin movimiento con el flag. Queda documentado (R4): el pie apagado de un rubro vacío deja pasar el toque a la tarjeta y abre la carpeta, que es preferible a una zona muerta. |
+| 23-10-2026 | F9 | `mcp__dart__analyze_files` de todo el proyecto: **0 errores** (solo los avisos preexistentes de `print`, `withOpacity`, deprecaciones e imports muertos de HEAD; ninguno en los ficheros nuevos). **SQL no aplicado** (lo aplica el usuario, §5.3). |
 
-Pendiente de anotar aquí: baseline de `analyze`/suite (F0) y el resultado de cada fase.
+Pendiente **fuera del código**: aplicar la migración **57** en release (y en debug si se
+quiere probar con `flutter run`, que además necesita la cola 40–56).
