@@ -234,7 +234,7 @@ class _CarnavalStorePricingScreenState
         return;
       }
 
-      final ok = await CarnavalStorePricingService.updateStorePricing(
+      final updatedCount = await CarnavalStorePricingService.updateStorePricing(
         storeId: store['id'] as int,
         precioRegular: regular,
         precioVentaCarnaval: cash,
@@ -242,10 +242,14 @@ class _CarnavalStorePricingScreenState
       );
 
       if (!mounted) return;
-      if (ok) {
+      if (updatedCount != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Configuración guardada'),
+          SnackBar(
+            content: Text(
+              updatedCount > 0
+                  ? 'Configuración guardada. $updatedCount productos actualizados en Carnaval.'
+                  : 'Configuración guardada. No había productos publicados en Carnaval para recalcular.',
+            ),
             backgroundColor: AppColors.success,
           ),
         );
@@ -253,7 +257,10 @@ class _CarnavalStorePricingScreenState
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Error guardando la configuración'),
+            content: Text(
+              'Error guardando o recalculando precios en Carnaval. '
+              '¿Está aplicada la RPC rpc_recalc_carnaval_prices_for_store?',
+            ),
             backgroundColor: AppColors.error,
           ),
         );

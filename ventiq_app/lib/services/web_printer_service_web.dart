@@ -12,6 +12,7 @@ import '../services/servicentro_service.dart';
 import '../services/store_config_service.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/price_utils.dart';
+import '../utils/receipt_options.dart';
 
 class _StorePrintInfo {
   final String name;
@@ -294,6 +295,12 @@ class WebPrinterServiceImpl {
         return false;
       }
 
+      final receiptOptions = ReceiptOptions(
+        order,
+        restaurantMode: StoreConfigService.modoRestauranteSync,
+      );
+      if (!receiptOptions.includeWarehouseSlip) return true;
+
       // Esperar entre impresiones para evitar problemas
       print('⏳ Esperando 2 segundos antes de la guía de almacén...');
       await Future.delayed(const Duration(seconds: 2));
@@ -420,7 +427,12 @@ class WebPrinterServiceImpl {
     }
   }
 
-  String _paymentSummaryHtml(Order order) {
+  String _paymentSummaryHtml(Order order, {bool showPaymentMethod = true}) {
+    final receiptOptions = ReceiptOptions(
+      order,
+      restaurantMode: StoreConfigService.modoRestauranteSync,
+    );
+    if (!showPaymentMethod || !receiptOptions.showPaymentMethod) return '';
     final payments = PriceUtils.normalizePayments(order.pagos);
     if (payments.isNotEmpty) {
       return payments.map((payment) {
@@ -449,7 +461,17 @@ class WebPrinterServiceImpl {
   }) async {
     final storeInfo = await _getStorePrintInfo();
     final usdRate = await _getUsdRateForPrint();
-    final paymentSummaryHtml = _paymentSummaryHtml(order);
+    final receiptOptions = ReceiptOptions(
+      order,
+      restaurantMode: StoreConfigService.modoRestauranteSync,
+    );
+    final paymentSummaryHtml = _paymentSummaryHtml(
+      order,
+      showPaymentMethod: await _shouldShowPaymentMethodOnTicket(),
+    );
+    final mesaHtml = receiptOptions.mesaLabel == null
+        ? ''
+        : '<div class="info-line">MESA: ${htmlEscape.convert(receiptOptions.mesaLabel!)}</div>';
     final storeName = storeInfo.name;
     final headerLogoHtml =
         storeInfo.logoDataUrl != null
@@ -528,7 +550,7 @@ class WebPrinterServiceImpl {
         isFactura
             ? '''
     <div class="footer">
-        <div>Gracias por su compra</div>
+        <div>${receiptOptions.thanksMessage}</div>
         <div>$storeName</div>
     </div>
 '''
@@ -683,6 +705,7 @@ class WebPrinterServiceImpl {
 
     <div class="info-section">
         <div class="info-line">ORDEN: ${order.id}</div>
+        $mesaHtml
         $vendorHtml
         ${order.tpvName != null && order.tpvName!.isNotEmpty ? '<div class="info-line">TPV: ${order.tpvName}</div>' : ''}
         ${order.buyerName != null && order.buyerName!.isNotEmpty ? '<div class="info-line">CLIENTE: ${order.buyerName}</div>' : ''}
@@ -735,6 +758,7 @@ class WebPrinterServiceImpl {
     final storeInfo = await _getStorePrintInfo();
     final usdRate = await _getUsdRateForPrint();
     final loggedInUserName = await _getLoggedInUserName();
+    final showPaymentMethod = await _shouldShowPaymentMethodOnTicket();
     final storeName = storeInfo.name;
     final headerLogoHtml =
         storeInfo.logoDataUrl != null
@@ -749,7 +773,17 @@ class WebPrinterServiceImpl {
 
     final ticketsHtml = orders
         .map((order) {
-          final paymentSummaryHtml = _paymentSummaryHtml(order);
+          final receiptOptions = ReceiptOptions(
+            order,
+            restaurantMode: StoreConfigService.modoRestauranteSync,
+          );
+          final paymentSummaryHtml = _paymentSummaryHtml(
+            order,
+            showPaymentMethod: showPaymentMethod,
+          );
+          final mesaHtml = receiptOptions.mesaLabel == null
+              ? ''
+              : '<div class="info-line">MESA: ${htmlEscape.convert(receiptOptions.mesaLabel!)}</div>';
           final servicentroTicket = ServicentroService.modoServicentroSync &&
               order.items.length == 1;
           final productRows = order.items
@@ -803,6 +837,7 @@ class WebPrinterServiceImpl {
 
       <div class="info-section">
         <div class="info-line">ORDEN: ${order.id}</div>
+        $mesaHtml
         $vendorHtml
         ${order.tpvName != null && order.tpvName!.isNotEmpty ? '<div class="info-line">TPV: ${order.tpvName}</div>' : ''}
         ${order.buyerName != null && order.buyerName!.isNotEmpty ? '<div class="info-line">CLIENTE: ${order.buyerName}</div>' : ''}
@@ -823,7 +858,7 @@ class WebPrinterServiceImpl {
       </div>
 
       <div class="footer">
-        <div>Gracias por su compra</div>
+        <div>${receiptOptions.thanksMessage}</div>
         <div>$storeName</div>
       </div>
 

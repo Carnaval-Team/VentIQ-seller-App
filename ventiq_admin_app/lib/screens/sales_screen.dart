@@ -12,6 +12,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import 'package:excel/excel.dart' as excel;
+import 'settings_screen.dart';
 import '../config/app_colors.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
@@ -62,6 +63,7 @@ class _SalesScreenState extends State<SalesScreen>
   /// 'turnos_abiertos' = mismo criterio que tab TPVs (turnos abiertos en rango)
   String _productDateFilterMode = 'turnos_abiertos';
   bool _useCurrentProductPrices = false;
+  bool _missingExchangeRate = false;
   bool _filtersExpanded = false;
   double _totalSales = 0.0;
   int _totalProductsSold = 0;
@@ -176,6 +178,23 @@ class _SalesScreenState extends State<SalesScreen>
 
   String _normalizeProductName(String name) {
     return name.trim().toLowerCase();
+  }
+
+  /// Costo unitario en CUP para un renglón del reporte de productos.
+  ///
+  /// Preferimos `precioCostoCup`. Si viene 0 pero hay costo USD (p. ej. receta
+  /// de elaborado) y tasa (`valorUsd`), convertimos. Si tampoco hay tasa,
+  /// devolvemos 0: la UI debe mostrar "sin tasa", no fingir costo cero.
+  double _resolveReportCostCup(ProductSalesReport report) {
+    if (report.precioCostoCup > 0) return report.precioCostoCup;
+    if (report.precioCosto > 0 && report.valorUsd > 0) {
+      return report.precioCosto * report.valorUsd;
+    }
+    return 0;
+  }
+
+  bool _reportHasUsdCostWithoutCupRate(ProductSalesReport report) {
+    return _resolveReportCostCup(report) <= 0 && report.precioCosto > 0;
   }
 
   String _getAddonName(Map<String, dynamic> ad, String parentName) {
@@ -1919,7 +1938,14 @@ class _SalesScreenState extends State<SalesScreen>
         useCurrentPrices: _useCurrentProductPrices,
       );
 
+      final hasRate = await SalesService.hasUsdToCupRate(
+        fechaHasta: dateRange['end']!,
+      );
+      if (!mounted) return;
+
       setState(() {
+        _missingExchangeRate =
+            !hasRate || productSales.any((report) => report.valorUsd <= 0);
         _productSalesReports = productSales;
         // Calculate total sales from product sales reports
         _totalSales = productSales.fold<double>(
@@ -2048,9 +2074,14 @@ class _SalesScreenState extends State<SalesScreen>
         final ingresos =
             (report.precioVentaCup.round() * report.equivUnidadesBase)
                 .roundToDouble();
-        final costo = (report.precioCostoCup.round() * report.equivUnidadesBase)
+        final unitCostCup = _resolveReportCostCup(report);
+        final costo = (unitCostCup.round() * report.equivUnidadesBase)
             .roundToDouble();
-        final ganancia = ingresos - costo;
+        // Sin tasa no inventamos ganancia: el costo USD de elaborados existe
+        // pero no se puede pasar a CUP.
+        final ganancia = unitCostCup > 0 || report.precioCosto <= 0
+            ? ingresos - costo
+            : 0.0;
         final cantidad = report.equivUnidadesBase;
 
         final idProv = report.idProveedor;
@@ -2206,6 +2237,54 @@ class _SalesScreenState extends State<SalesScreen>
     );
   }
 
+  Widget _buildMissingExchangeRateWarning() {
+    return Card(
+      color: Colors.amber.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.warning_amber_rounded, color: Colors.orange),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Falta la tasa de cambio USD → CUP',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'No se detectó una tasa válida para todo el período consultado. '
+              'Los costos y las ganancias pueden estar incompletos. '
+              'Configura la tasa extraoficial y revisa su fecha de vigencia.',
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) =>
+                        const SettingsScreen(openPersonalRates: true),
+                  ),
+                );
+                if (!mounted) return;
+                _loadProductSalesData();
+              },
+              icon: const Icon(Icons.currency_exchange),
+              label: const Text('Configurar tasa extraoficial'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildRealTimeTab() {
     final todaySales = _sales
         .where((sale) => sale.saleDate.day == DateTime.now().day)
@@ -2219,6 +2298,10 @@ class _SalesScreenState extends State<SalesScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildPeriodSelector(showDateBasisFilter: true),
+          if (_missingExchangeRate) ...[
+            const SizedBox(height: 12),
+            _buildMissingExchangeRateWarning(),
+          ],
           const SizedBox(height: 16),
           _buildRealTimeMetrics(_totalSales, _totalProductsSold),
           const SizedBox(height: 20),
@@ -5403,7 +5486,9 @@ class _SalesScreenState extends State<SalesScreen>
                       ))
                       .map((report) {
                         final precioVentaInt = report.precioVentaCup.round();
-                        final costoUnitarioCup = report.precioCostoCup.round();
+                        final costoUnitarioCup = _resolveReportCostCup(report);
+                        final sinTasa =
+                            _reportHasUsdCostWithoutCupRate(report);
                         // FASE 3 presentaciones: el dinero se calcula con el
                         // equivalente en unidades base, no con la suma de
                         // cantidades fisicas.
@@ -5411,7 +5496,9 @@ class _SalesScreenState extends State<SalesScreen>
                             precioVentaInt * report.equivUnidadesBase;
                         final totalCostoCup =
                             costoUnitarioCup * report.equivUnidadesBase;
-                        final ganancias = ingresosCup - totalCostoCup;
+                        final ganancias = sinTasa
+                            ? 0.0
+                            : ingresosCup - totalCostoCup;
 
                         return DataRow(
                           onSelectChanged: (_) =>
@@ -5480,29 +5567,55 @@ class _SalesScreenState extends State<SalesScreen>
                               ),
                             ),
                             DataCell(
-                              Text(
-                                '\$${costoUnitarioCup.toStringAsFixed(0)}',
-                                style: const TextStyle(
-                                  color: AppColors.warning,
-                                ),
-                              ),
+                              sinTasa
+                                  ? Tooltip(
+                                      message:
+                                          'Costo receta/USD \$${report.precioCosto.toStringAsFixed(4)} — falta tasa USD→CUP',
+                                      child: Text(
+                                        'sin tasa',
+                                        style: TextStyle(
+                                          color: Colors.orange.shade800,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    )
+                                  : Text(
+                                      '\$${costoUnitarioCup.round().toStringAsFixed(0)}',
+                                      style: const TextStyle(
+                                        color: AppColors.warning,
+                                      ),
+                                    ),
+                            ),
+                            DataCell(
+                              sinTasa
+                                  ? Text(
+                                      'USD ${report.precioCosto.toStringAsFixed(2)}',
+                                      style: TextStyle(
+                                        color: Colors.orange.shade800,
+                                        fontWeight: FontWeight.w500,
+                                        fontSize: 12,
+                                      ),
+                                    )
+                                  : Text(
+                                      '\$${totalCostoCup.toStringAsFixed(2)}',
+                                      style: const TextStyle(
+                                        color: AppColors.warning,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
                             ),
                             DataCell(
                               Text(
-                                '\$${totalCostoCup.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  color: AppColors.warning,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                            DataCell(
-                              Text(
-                                '\$${ganancias.toStringAsFixed(2)}',
+                                sinTasa
+                                    ? '—'
+                                    : '\$${ganancias.toStringAsFixed(2)}',
                                 style: TextStyle(
-                                  color: ganancias >= 0
-                                      ? AppColors.success
-                                      : AppColors.error,
+                                  color: sinTasa
+                                      ? Colors.grey
+                                      : (ganancias >= 0
+                                            ? AppColors.success
+                                            : AppColors.error),
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),

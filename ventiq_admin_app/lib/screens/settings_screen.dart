@@ -96,7 +96,9 @@ void _showDownloadAppDialog(BuildContext context) {
 }
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  final bool openPersonalRates;
+
+  const SettingsScreen({super.key, this.openPersonalRates = false});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -155,7 +157,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       _tabController = TabController(
         length: tabCount,
         vsync: this,
-        initialIndex: 0,
+        initialIndex: widget.openPersonalRates && !isSupervisor ? 6 : 0,
       );
       _tabsReady = true;
     });

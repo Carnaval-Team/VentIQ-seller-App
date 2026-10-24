@@ -310,11 +310,13 @@ class _PersonalRatesTabViewState extends State<PersonalRatesTabView> {
             children: [
               const Icon(Icons.currency_exchange, color: Colors.blue),
               const SizedBox(width: 8),
-              const Text(
-                'Tasas personalizadas hacia CUP',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              const Expanded(
+                child: Text(
+                  'Tasas personalizadas hacia CUP',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
               ),
-              const Spacer(),
+              const SizedBox(width: 8),
               if (widget.canEdit)
                 ElevatedButton.icon(
                   onPressed: canAddMore ? () => _showRateDialog() : null,

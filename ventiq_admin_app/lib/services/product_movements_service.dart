@@ -80,6 +80,7 @@ class ProductMovementsService {
     DateTime? dateTo,
     int? operationTypeId,
     int? warehouseId,
+    bool includeLotInfo = false,
     int offset = 0,
     int limit = 20,
   }) async {
@@ -111,6 +112,43 @@ class ProductMovementsService {
       );
 
       final rawMovements = List<Map<String, dynamic>>.from(response ?? []);
+      for (final table in includeLotInfo
+          ? ['app_dat_inventario_productos', 'app_dat_extraccion_productos']
+          : <String>[]) {
+        final inventory = table == 'app_dat_inventario_productos';
+        final rows = rawMovements.where((m) {
+          final caja = m['tipo_movimiento'] == 'Control' &&
+              m['cantidad_inicial'] == null &&
+              [16, 17].contains((m['tipo_operacion_id'] as num?)?.toInt());
+          if (caja) {
+            m['id_lote'] = null;
+            return false;
+          }
+          return (m['cantidad_final'] != null) == inventory;
+        }).toList();
+        final ids = rows.map((m) => m['id']).whereType<num>()
+            .map((id) => id.toInt()).toSet().toList();
+        final loteById = <int, int?>{};
+        for (var start = 0; start < ids.length; start += 200) {
+          final batch = ids.skip(start).take(200).toList();
+          final details = await _supabase
+              .from(table)
+              .select('id, id_lote')
+              .eq('id_producto', productId)
+              .inFilter('id', batch);
+          for (final detail in details) {
+            loteById[(detail['id'] as num).toInt()] =
+                (detail['id_lote'] as num?)?.toInt();
+          }
+        }
+        for (final row in rows) {
+          final id = (row['id'] as num?)?.toInt();
+          if (id == null || !loteById.containsKey(id)) {
+            throw StateError('No se pudo identificar el lote del movimiento');
+          }
+          row['id_lote'] = loteById[id];
+        }
+      }
       final totalCount = rawMovements.isNotEmpty
           ? (rawMovements[0]['total_count'] as int?) ?? 0
           : 0;
@@ -162,6 +200,7 @@ class ProductMovementsService {
     DateTime? dateTo,
     int? operationTypeId,
     int? warehouseId,
+    bool includeLotInfo = false,
     int pageSize = 500,
   }) async {
     final all = <Map<String, dynamic>>[];
@@ -175,6 +214,7 @@ class ProductMovementsService {
         dateTo: dateTo,
         operationTypeId: operationTypeId,
         warehouseId: warehouseId,
+        includeLotInfo: includeLotInfo,
         offset: offset,
         limit: pageSize,
       );
@@ -194,6 +234,33 @@ class ProductMovementsService {
       '(total_count=$totalCount, orden=fecha ASC)',
     );
     return sorted;
+  }
+
+  static Future<List<Map<String, dynamic>>> getProductLots(int productId) async {
+    final lots = <Map<String, dynamic>>[];
+    const pageSize = 500;
+    while (true) {
+      final page = await _supabase
+          .from('app_dat_lote')
+          .select('id, codigo, fecha_vencimiento')
+          .eq('id_producto', productId)
+          .order('id')
+          .range(lots.length, lots.length + pageSize - 1);
+      lots.addAll(List<Map<String, dynamic>>.from(page));
+      if (page.length < pageSize) return lots;
+    }
+  }
+
+  static List<Map<String, dynamic>> filterMovementsByLot(
+    List<Map<String, dynamic>> movements,
+    int? lotId,
+  ) {
+    if (lotId == null) return List<Map<String, dynamic>>.from(movements);
+    return movements.where((movement) {
+      final rawId = movement['id_lote'];
+      final id = rawId is num ? rawId.toInt() : int.tryParse('$rawId');
+      return (id ?? 0) == lotId;
+    }).toList();
   }
 
   /// Obtiene todos los tipos de operacion disponibles

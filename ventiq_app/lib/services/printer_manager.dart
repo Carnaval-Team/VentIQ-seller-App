@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/store_config_service.dart';
+import '../services/connectivity_service.dart';
+import '../services/user_preferences_service.dart';
 import '../models/order.dart';
 import '../utils/platform_utils.dart';
 import '../services/bluetooth_printer_service.dart';
@@ -193,13 +197,68 @@ class PrinterManager {
     }
   }
 
+  Future<Order> _resolveOrderMesa(Order order) async {
+    if ((order.mesaNumero?.trim().isNotEmpty ?? false) ||
+        !ConnectivityService().isConnected ||
+        (!StoreConfigService.modoRestauranteSync && order.idMesa == null)) {
+      return order;
+    }
+    try {
+      final storeId = await UserPreferencesService().getIdTienda();
+      if (storeId == null) return order;
+      final client = Supabase.instance.client;
+      var mesaId = order.idMesa;
+      if (mesaId == null && order.operationId != null) {
+        final cuenta = await client
+            .from('app_dat_mesa_cuenta_abierta')
+            .select('id_mesa')
+            .eq('id_tienda', storeId)
+            .eq('id_operacion_venta', order.operationId!)
+            .order('id', ascending: false)
+            .limit(1)
+            .maybeSingle();
+        mesaId = (cuenta?['id_mesa'] as num?)?.toInt();
+        if (mesaId == null) {
+          final venta = await client
+              .from('app_dat_operacion_venta')
+              .select('id_mesa')
+              .eq('id_operacion', order.operationId!)
+              .maybeSingle();
+          mesaId = (venta?['id_mesa'] as num?)?.toInt();
+        }
+      }
+      if (mesaId == null) return order;
+      final mesa = await client
+          .from('app_dat_mesas')
+          .select('numero')
+          .eq('id', mesaId)
+          .eq('id_tienda', storeId)
+          .maybeSingle();
+      return order.copyWith(
+        idMesa: mesaId,
+        mesaNumero: mesa?['numero']?.toString(),
+      );
+    } catch (e) {
+      debugPrint('No se pudo recuperar la mesa para el ticket: $e');
+      return order;
+    }
+  }
+
   /// Imprime la factura usando el método apropiado para la plataforma
   Future<PrintResult> printInvoice(BuildContext context, Order order) async {
     try {
+      final printableOrder = await _resolveOrderMesa(order);
+      if (!context.mounted) {
+        return PrintResult(
+          success: false,
+          message: 'La pantalla de impresión ya no está disponible',
+          platform: PlatformUtils.isWeb ? 'Web' : 'Mobile',
+        );
+      }
       if (PlatformUtils.isWeb) {
-        return await _printInvoiceWeb(context, order);
+        return await _printInvoiceWeb(context, printableOrder);
       } else {
-        return await _printInvoiceMobile(context, order);
+        return await _printInvoiceMobile(context, printableOrder);
       }
     } catch (e) {
       return PrintResult(
@@ -236,10 +295,21 @@ class PrinterManager {
     }
 
     try {
+      final printableOrders = <Order>[];
+      for (final order in orders) {
+        printableOrders.add(await _resolveOrderMesa(order));
+      }
+      if (!context.mounted) {
+        return PrintResult(
+          success: false,
+          message: 'La pantalla de impresión ya no está disponible',
+          platform: PlatformUtils.isWeb ? 'Web' : 'Mobile',
+        );
+      }
       if (PlatformUtils.isWeb) {
-        return await _printCustomerReceiptsWeb(context, orders);
+        return await _printCustomerReceiptsWeb(context, printableOrders);
       } else {
-        return await _printCustomerReceiptsMobile(context, orders);
+        return await _printCustomerReceiptsMobile(context, printableOrders);
       }
     } catch (e) {
       return PrintResult(
