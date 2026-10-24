@@ -1691,11 +1691,11 @@ class _CierreScreenState extends State<CierreScreen> {
                       // Ventas y productos
                       _buildInfoRow(
                         'Monto inicial:',
-                        '\$${_montoInicialCaja.toStringAsFixed(2)}',
+                        '\$${_montoInicialCaja.toMoneyString(2)}',
                       ),
                       _buildInfoRow(
                         'Ventas totales:',
-                        '\$${_ventasTotales.toStringAsFixed(2)}',
+                        '\$${_ventasTotales.toMoneyString(2)}',
                       ),
                       _buildInfoRow(
                         'Productos vendidos:',
@@ -1703,7 +1703,7 @@ class _CierreScreenState extends State<CierreScreen> {
                       ),
                       _buildInfoRow(
                         'Ticket promedio:',
-                        '\$${_ticketPromedio.toStringAsFixed(2)}',
+                        '\$${_ticketPromedio.toMoneyString(2)}',
                       ),
                       _buildInfoRow(
                         'Operaciones totales:',
@@ -1730,24 +1730,24 @@ class _CierreScreenState extends State<CierreScreen> {
                       const SizedBox(height: 8),
                       _buildInfoRow(
                         'Total efectivo CUP:',
-                        '\$${_totalEfectivo.toStringAsFixed(2)} (${_porcentajeEfectivo.toStringAsFixed(1)}%)',
+                        '\$${_totalEfectivo.toMoneyString(2)} (${_porcentajeEfectivo.toStringAsFixed(1)}%)',
                       ),
                       if (_totalEfectivoUsd > 0.005)
                         _buildInfoRow(
                           'Total efectivo USD:',
-                          '\$${_totalEfectivoUsd.toStringAsFixed(2)} USD',
+                          '\$${_totalEfectivoUsd.toMoneyString(2)} USD',
                         ),
                       _buildInfoRow(
                         'Transferencias/Otros:',
-                        '\$${_totalTransferencias.toStringAsFixed(2)} (${_porcentajeOtros.toStringAsFixed(1)}%)',
+                        '\$${_totalTransferencias.toMoneyString(2)} (${_porcentajeOtros.toStringAsFixed(1)}%)',
                       ),
                       _buildInfoRow(
                         'Efectivo esperado CUP:',
-                        '\$${montoEsperado.toStringAsFixed(2)}',
+                        '\$${montoEsperado.toMoneyString(2)}',
                       ),
                       _buildInfoRow(
                         'Efectivo esperado USD:',
-                        '\$${_efectivoUsdEsperado.toStringAsFixed(2)} USD',
+                        '\$${_efectivoUsdEsperado.toMoneyString(2)} USD',
                       ),
 
                       // Show expenses breakdown if there are any
@@ -1766,17 +1766,17 @@ class _CierreScreenState extends State<CierreScreen> {
                         const SizedBox(height: 4),
                         _buildInfoRow(
                           'Egresos en efectivo:',
-                          '-\$${_egresosEfectivo.toStringAsFixed(2)}',
+                          '-\$${_egresosEfectivo.toMoneyString(2)}',
                           isNegative: true,
                         ),
                         _buildInfoRow(
                           'Egresos digitales:',
-                          '-\$${_egresosTransferencias.toStringAsFixed(2)}',
+                          '-\$${_egresosTransferencias.toMoneyString(2)}',
                           isNegative: true,
                         ),
                         _buildInfoRow(
                           'Total egresos:',
-                          '-\$${_totalEgresos.toStringAsFixed(2)}',
+                          '-\$${_totalEgresos.toMoneyString(2)}',
                           isNegative: true,
                         ),
                         const SizedBox(height: 8),
@@ -1905,7 +1905,7 @@ class _CierreScreenState extends State<CierreScreen> {
                             ),
                           ),
                           Text(
-                            '\$${_totalEgresos.toStringAsFixed(2)}',
+                            '\$${_totalEgresos.toMoneyString(2)}',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
@@ -1982,7 +1982,7 @@ class _CierreScreenState extends State<CierreScreen> {
                       decoration: InputDecoration(
                         labelText: 'Efectivo real CUP',
                         helperText:
-                            'Debe haber: \$${montoEsperado.toStringAsFixed(2)} CUP',
+                            'Debe haber: \$${montoEsperado.toMoneyString(2)} CUP',
                         prefixIcon: const Icon(Icons.attach_money),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
@@ -2020,7 +2020,7 @@ class _CierreScreenState extends State<CierreScreen> {
                       decoration: InputDecoration(
                         labelText: 'Efectivo real USD',
                         helperText:
-                            'Debe haber: \$${_efectivoUsdEsperado.toStringAsFixed(2)} USD',
+                            'Debe haber: \$${_efectivoUsdEsperado.toMoneyString(2)} USD',
                         prefixIcon: const Icon(Icons.attach_money),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
@@ -2329,7 +2329,7 @@ class _CierreScreenState extends State<CierreScreen> {
             ),
           ),
           Text(
-            '${isPositive ? '+' : ''}\$${diferencia.toStringAsFixed(2)}',
+            '${isPositive ? '+' : ''}\$${diferencia.toMoneyString(2)}',
             style: TextStyle(
               fontWeight: FontWeight.bold,
               color: isPositive ? Colors.green[700] : Colors.red[700],
@@ -2365,7 +2365,7 @@ class _CierreScreenState extends State<CierreScreen> {
             ),
           ),
           Text(
-            '${isPositive ? '+' : ''}\$${diferencia.toStringAsFixed(2)} USD',
+            '${isPositive ? '+' : ''}\$${diferencia.toMoneyString(2)} USD',
             style: TextStyle(
               fontWeight: FontWeight.bold,
               color: isPositive ? Colors.green[700] : Colors.red[700],
@@ -2395,7 +2395,7 @@ class _CierreScreenState extends State<CierreScreen> {
             ),
           ),
           Text(
-            '\$${order.total.toStringAsFixed(2)}',
+            '\$${order.total.toMoneyString(2)}',
             style: const TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
@@ -3079,12 +3079,12 @@ class _CierreScreenState extends State<CierreScreen> {
     final parts = <String>[];
     if (diferencia.abs() > 0.01) {
       parts.add(
-        'CUP: \$${diferencia.toStringAsFixed(2)}',
+        'CUP: \$${diferencia.toMoneyString(2)}',
       );
     }
     if (diferenciaUsd.abs() > 0.01) {
       parts.add(
-        'USD: \$${diferenciaUsd.toStringAsFixed(2)}',
+        'USD: \$${diferenciaUsd.toMoneyString(2)}',
       );
     }
     final result = await showDialog<bool>(
@@ -3137,10 +3137,10 @@ class _CierreScreenState extends State<CierreScreen> {
                   'El cierre de caja ha sido registrado exitosamente.',
                 ),
                 const SizedBox(height: 12),
-                Text('Monto final: \$${montoFinal.toStringAsFixed(2)}'),
-                Text('Ventas del día: \$${_ventasTotales.toStringAsFixed(2)}'),
+                Text('Monto final: \$${montoFinal.toMoneyString(2)}'),
+                Text('Ventas del día: \$${_ventasTotales.toMoneyString(2)}'),
                 if (diferencia.abs() > 0.01)
-                  Text('Diferencia: \$${diferencia.toStringAsFixed(2)}'),
+                  Text('Diferencia: \$${diferencia.toMoneyString(2)}'),
                 Text('Órdenes pendientes: ${_ordenesPendientes.length}'),
                 if (_trabajadoresCerrados > 0)
                   Text('Trabajadores cerrados: $_trabajadoresCerrados'),
@@ -3485,12 +3485,12 @@ class _CierreScreenState extends State<CierreScreen> {
                     children: [
                       _buildDialogInfoRow(
                         'Monto Final:',
-                        '\$${montoFinal.toStringAsFixed(2)}',
+                        '\$${montoFinal.toMoneyString(2)}',
                       ),
                       if (diferencia.abs() > 0.01)
                         _buildDialogInfoRow(
                           'Diferencia:',
-                          '${diferencia >= 0 ? '+' : ''}\$${diferencia.toStringAsFixed(2)}',
+                          '${diferencia >= 0 ? '+' : ''}\$${diferencia.toMoneyString(2)}',
                           isHighlight: true,
                           color: diferencia >= 0 ? Colors.green : Colors.red,
                         ),

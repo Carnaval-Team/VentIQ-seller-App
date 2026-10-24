@@ -333,6 +333,7 @@ class InventoryService {
     List<int>? estados,
     int? medioPagoId,
     bool? contabilizada,
+    double? montoExacto,
     int? limite,
     int? pagina,
   }) async {
@@ -376,6 +377,7 @@ class InventoryService {
           'p_pagina': pagina,
           'p_id_medio_pago': medioPagoId,
           'p_contabilizada': contabilizada,
+          'p_monto_exacto': montoExacto,
         },
       );
 
@@ -2275,19 +2277,13 @@ class InventoryService {
       );
 
       if (response == null) {
-        return {
-          'status': 'error',
-          'message': 'Respuesta nula al asignar lote',
-        };
+        return {'status': 'error', 'message': 'Respuesta nula al asignar lote'};
       }
 
       return Map<String, dynamic>.from(response as Map);
     } catch (e) {
       print('❌ asignarLoteAStockSinLote: $e');
-      return {
-        'status': 'error',
-        'message': 'Error al asignar lote: $e',
-      };
+      return {'status': 'error', 'message': 'Error al asignar lote: $e'};
     }
   }
 
@@ -2313,6 +2309,10 @@ class InventoryService {
             ),
           )
           .where((l) => idProducto == null || l.idProducto == idProducto)
+          // Productos no gestionados por lotes solo pueden tener la fila
+          // sintética "Sin lote": no aporta información y no debe mostrarse.
+          // En productos por lotes esa fila sí se conserva (asignación de lote).
+          .where((l) => l.idLote > 0 || l.esPorLotes)
           .toList();
       return LoteStockInfo.ordenadosFefo(list);
     } catch (e) {
@@ -2362,10 +2362,7 @@ class InventoryService {
     try {
       final response = await _supabase.rpc(
         'fn_inventario_saldo_por_clave',
-        params: {
-          'p_id_ubicacion': idUbicacion,
-          'p_id_producto': idProducto,
-        },
+        params: {'p_id_ubicacion': idUbicacion, 'p_id_producto': idProducto},
       );
       if (response is! List) return {};
       final map = <String, double>{};
@@ -2400,7 +2397,8 @@ class InventoryService {
     final ubicaciones = <int>{};
     final productos = <int>{};
     for (final row in rows) {
-      final idUbi = _asInt(row['id_ubicacion']) ??
+      final idUbi =
+          _asInt(row['id_ubicacion']) ??
           _asInt(row['id_layout']) ??
           idUbicacionFallback;
       final idProd = _asInt(row['id_producto']) ?? _asInt(row['id']);
@@ -2425,7 +2423,8 @@ class InventoryService {
     if (saldos.isEmpty) return rows;
 
     return rows.map((row) {
-      final idUbi = _asInt(row['id_ubicacion']) ??
+      final idUbi =
+          _asInt(row['id_ubicacion']) ??
           _asInt(row['id_layout']) ??
           idUbicacionFallback;
       final idProd = _asInt(row['id_producto']) ?? _asInt(row['id']);
@@ -2476,8 +2475,9 @@ class InventoryService {
         products[i].copyWithSums(
           cantidadFinal: _asDouble(enriched[i]['cantidad_final']),
           stockDisponible: _asDouble(enriched[i]['stock_disponible']),
-          stockDisponibleAjustado:
-              _asDouble(enriched[i]['stock_disponible_ajustado']),
+          stockDisponibleAjustado: _asDouble(
+            enriched[i]['stock_disponible_ajustado'],
+          ),
         ),
     ];
   }
@@ -2491,9 +2491,7 @@ class InventoryService {
     bool includeZero = false,
   }) async {
     try {
-      print(
-        '🔍 Calling obtener_reporte_inventario_export with params:',
-      );
+      print('🔍 Calling obtener_reporte_inventario_export with params:');
       print('  - idAlmacen: $idAlmacen');
       print('  - idTienda: $idTienda');
       print('  - fechaDesde: ${fechaDesde?.toIso8601String().split('T')[0]}');
@@ -4302,8 +4300,7 @@ class InventoryService {
     }
 
     final result = <String, StockBreakdown>{
-      for (final e in baseByKey.entries)
-        e.key: StockBreakdown.empty(e.value),
+      for (final e in baseByKey.entries) e.key: StockBreakdown.empty(e.value),
     };
 
     final productIds = items.map((i) => i.idProducto).toSet().toList();

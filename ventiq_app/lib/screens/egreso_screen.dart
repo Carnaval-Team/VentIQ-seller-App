@@ -8,6 +8,7 @@ import '../services/server_time_service.dart';
 import '../services/connectivity_service.dart';
 import '../models/payment_method.dart';
 import '../utils/uuid_generator.dart';
+import '../utils/price_utils.dart';
 
 class EgresoScreen extends StatefulWidget {
   const EgresoScreen({Key? key}) : super(key: key);
@@ -841,7 +842,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
                 const SizedBox(height: 12),
                 Text('ID Egreso: ${result['egreso_id']}'),
                 Text(
-                  'Monto: \$${result['monto']?.toStringAsFixed(2) ?? _montoController.text}',
+                  'Monto: \$${result['monto'] is num ? PriceUtils.formatAmount(result['monto'] as num) : _montoController.text}',
                 ),
                 Text('Motivo: ${_motivoController.text}'),
                 Text('Autoriza: ${_nombreAutorizaController.text}'),
@@ -991,7 +992,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
                     children: [
                       _buildDialogInfoRow(
                         'Monto:',
-                        '\$${monto.toStringAsFixed(2)}',
+                        '\$${PriceUtils.formatAmount(monto)}',
                       ),
                       _buildDialogInfoRow('Motivo:', _motivoController.text),
                       _buildDialogInfoRow(

@@ -18,24 +18,14 @@ class InventoryOperationsScreen extends StatefulWidget {
 
   @override
   State<InventoryOperationsScreen> createState() =>
-      _InventoryOperationsScreenState();
+      InventoryOperationsScreenState();
 }
 
-class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
+class InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   final _searchController = TextEditingController();
   final _montoController = TextEditingController();
 
   List<Map<String, dynamic>> _operations = [];
-
-  /// Operaciones filtradas por monto si el usuario introdujo un valor.
-  List<Map<String, dynamic>> get _operacionesFiltradas {
-    if (_montoFiltro == null) return _operations;
-    final target = (_montoFiltro! * 100).round();
-    return _operations.where((op) {
-      final total = _calculateTotalPrice(op);
-      return (total * 100).round() == target;
-    }).toList();
-  }
 
   bool _isLoading = true;
   String _searchQuery = '';
@@ -47,7 +37,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   bool _isLoadingTipos = false;
   List<Map<String, dynamic>> _estadosOperacion = [];
   int? _estadoOperacionId;
-  bool _filtersExpanded = true;
+
+  /// En pantallas angostas, los filtros secundarios están colapsados por
+  /// defecto y se despliegan con el botón de filtros.
+  bool _filtersVisible = false;
 
   // Pagination
   int _currentPage = 1;
@@ -138,10 +131,11 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   }
 
   void _onMontoChanged() {
-    final text = _montoController.text.trim();
-    setState(() {
-      _montoFiltro = text.isEmpty ? null : double.tryParse(text);
-    });
+    // Acepta coma decimal además del punto.
+    final text = _montoController.text.trim().replaceAll(',', '.');
+    _montoFiltro = text.isEmpty ? null : double.tryParse(text);
+    // El monto filtra en el servidor (p_monto_exacto): recargar con debounce.
+    _debounceSearch();
   }
 
   void _onScroll() {
@@ -188,6 +182,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         fechaDesde: _fechaDesde,
         fechaHasta: _fechaHasta,
         tipoOperacionId: _tipoOperacionId,
+        montoExacto: _montoFiltro,
         estados: _estadoOperacionId == null ? null : [_estadoOperacionId!],
         limite: _itemsPerPage,
         pagina: _currentPage,
@@ -276,6 +271,11 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     print('  • Total operaciones después de cargar: ${_operations.length}');
     print('  • ¿Aún hay más páginas?: $_hasNextPage');
   }
+
+  /// Recarga pública para que el contenedor (InventoryScreen) refresque el
+  /// listado al regresar de una pantalla que crea operaciones (recepción,
+  /// extracción, transferencia...).
+  Future<void> reload() => _refreshOperations();
 
   /// Método para el pull-to-refresh
   Future<void> _refreshOperations() async {
@@ -624,21 +624,12 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       // Asegurar que el rango inicial no supere lastDate (hoy),
       // por ejemplo cuando "Este mes" abarca días futuros.
       final initialStart = _fechaDesde != null
-          ? DateTime(
-              _fechaDesde!.year,
-              _fechaDesde!.month,
-              _fechaDesde!.day,
-            )
+          ? DateTime(_fechaDesde!.year, _fechaDesde!.month, _fechaDesde!.day)
           : today;
       final initialEndRaw = _fechaHasta != null
-          ? DateTime(
-              _fechaHasta!.year,
-              _fechaHasta!.month,
-              _fechaHasta!.day,
-            )
+          ? DateTime(_fechaHasta!.year, _fechaHasta!.month, _fechaHasta!.day)
           : today;
-      final initialEnd =
-          initialEndRaw.isAfter(today) ? today : initialEndRaw;
+      final initialEnd = initialEndRaw.isAfter(today) ? today : initialEndRaw;
       final initialRange = DateTimeRange(
         start: initialStart.isAfter(initialEnd) ? initialEnd : initialStart,
         end: initialEnd,
@@ -715,10 +706,13 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
   void _clearAllFilters() {
     setState(() {
+      _searchQuery = '';
       _setCurrentMonthRange();
+      _estadoOperacionId = null;
       _tipoOperacionId = null;
       _montoFiltro = null;
     });
+    _searchController.clear();
     _montoController.clear();
     _currentPage = 1;
     _loadOperations();
@@ -731,9 +725,9 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       setState(() => _estadosOperacion = estados);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al cargar estados: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error al cargar estados: $e')));
     }
   }
 
@@ -923,56 +917,21 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Column(
-        children: [
-          _buildStatusFilter(),
-          _buildFilters(),
-          _buildOperationsList(),
-        ],
-      ),
+      body: Column(children: [_buildFiltersSection(), _buildOperationsList()]),
     );
   }
 
-  Widget _buildStatusFilter() {
-    return Material(
-      color: Colors.white,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-        child: DropdownButtonFormField<int?>(
-          value: _estadoOperacionId,
-          decoration: const InputDecoration(
-            labelText: 'Estado',
-            prefixIcon: Icon(Icons.info_outline),
-            border: OutlineInputBorder(),
-          ),
-          items: [
-            const DropdownMenuItem<int?>(
-              value: null,
-              child: Text('Todos los estados'),
-            ),
-            ..._estadosOperacion.map(
-              (estado) => DropdownMenuItem<int?>(
-                value: (estado['id'] as num).toInt(),
-                child: Text(estado['denominacion'].toString()),
-              ),
-            ),
-          ],
-          onChanged: (value) {
-            setState(() => _estadoOperacionId = value);
-            _currentPage = 1;
-            _loadOperations();
-          },
-        ),
-      ),
-    );
-  }
+  /// Filtros secundarios activos (estado, tipo, monto). Las fechas tienen
+  /// siempre un valor por defecto, así que no cuentan como "activas".
+  int get _activeSecondaryFilters =>
+      (_estadoOperacionId != null ? 1 : 0) +
+      (_tipoOperacionId != null ? 1 : 0) +
+      (_montoFiltro != null ? 1 : 0);
 
-  Widget _buildFilters() {
-    final hasFilters =
-        _fechaDesde != null ||
-        _fechaHasta != null ||
-        _tipoOperacionId != null ||
-        _montoFiltro != null;
+  Widget _buildFiltersSection() {
+    final hasFilters = _searchQuery.isNotEmpty || _activeSecondaryFilters > 0;
+    final isNarrow = MediaQuery.of(context).size.width < 640;
+    final showSecondary = !isNarrow || _filtersVisible;
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -985,50 +944,134 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
           ),
         ],
       ),
-      child: ExpansionTile(
-        initiallyExpanded: _filtersExpanded,
-        onExpansionChanged: (value) => _filtersExpanded = value,
-        leading: Icon(
-          Icons.filter_alt_outlined,
-          color: hasFilters ? const Color(0xFF4A90E2) : Colors.grey[600],
-        ),
-        title: Text(hasFilters ? 'Filtros activos' : 'Filtros'),
-        subtitle: !_filtersExpanded && hasFilters
-            ? const Text('Toca para revisar o limpiar los filtros')
-            : null,
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Column(
           children: [
-            if (hasFilters)
-              IconButton(
-                onPressed: _clearAllFilters,
-                icon: const Icon(Icons.clear, color: Colors.red),
-                tooltip: 'Limpiar todos los filtros',
-              ),
-            Icon(_filtersExpanded ? Icons.expand_less : Icons.expand_more),
-          ],
-        ),
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Wrap(
-              spacing: 12,
-              runSpacing: 12,
+            // Filtro principal: búsqueda libre por id y campos de texto.
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SizedBox(
-                  width: 300,
+                Expanded(
                   child: TextField(
                     controller: _searchController,
                     decoration: const InputDecoration(
-                      labelText: 'Buscar operaciones',
+                      labelText: 'Buscar operación',
+                      helperText:
+                          'Por ID, tipo de operación, tienda, cliente u observaciones',
                       prefixIcon: Icon(Icons.search),
                       border: OutlineInputBorder(),
+                      isDense: true,
                     ),
                   ),
                 ),
-                SizedBox(
-                  width: 150,
-                  child: TextField(
+                const SizedBox(width: 8),
+                // En pantallas angostas, el resto de filtros se despliega
+                // desde este botón para no robar espacio al listado.
+                Stack(
+                  children: [
+                    IconButton(
+                      onPressed: () =>
+                          setState(() => _filtersVisible = !_filtersVisible),
+                      icon: Icon(
+                        _filtersVisible
+                            ? Icons.filter_alt
+                            : Icons.filter_alt_outlined,
+                        color: _activeSecondaryFilters > 0
+                            ? const Color(0xFF4A90E2)
+                            : Colors.grey[600],
+                      ),
+                      tooltip: _filtersVisible
+                          ? 'Ocultar filtros'
+                          : 'Mostrar filtros',
+                    ),
+                    if (_activeSecondaryFilters > 0)
+                      Positioned(
+                        right: 6,
+                        top: 6,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF4A90E2),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Text(
+                            '$_activeSecondaryFilters',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+            if (showSecondary) const SizedBox(height: 12),
+            // Filtros secundarios por orden de uso: estado, fechas, tipo y
+            // monto exacto. En pantallas angostas se apilan a ancho completo
+            // y solo se muestran al desplegar el botón de filtros.
+            if (showSecondary)
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final isNarrow = constraints.maxWidth < 640;
+                  final itemWidth = isNarrow
+                      ? constraints.maxWidth
+                      : (constraints.maxWidth - 12) / 2;
+                  Widget sized(Widget child, {double? width}) =>
+                      SizedBox(width: width ?? itemWidth, child: child);
+
+                  final estado = DropdownButtonFormField<int?>(
+                    value: _estadoOperacionId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Estado',
+                      prefixIcon: Icon(Icons.info_outline),
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    items: [
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text('Todos los estados'),
+                      ),
+                      ..._estadosOperacion.map(
+                        (estado) => DropdownMenuItem<int?>(
+                          value: (estado['id'] as num).toInt(),
+                          child: Text(
+                            estado['denominacion'].toString(),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      setState(() => _estadoOperacionId = value);
+                      _currentPage = 1;
+                      _loadOperations();
+                    },
+                  );
+                  final fechas = OutlinedButton.icon(
+                    onPressed: _showDateRangeDialog,
+                    icon: const Icon(Icons.date_range),
+                    label: Text(
+                      _fechaDesde != null && _fechaHasta != null
+                          ? '${_formatDate(_fechaDesde!)} - ${_formatDate(_fechaHasta!)}'
+                          : 'Fechas',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  );
+                  final tipo = OutlinedButton.icon(
+                    onPressed: _showOperationTypeDialog,
+                    icon: const Icon(Icons.category_outlined),
+                    label: Text(
+                      _tipoOperacionNombreSeleccionado ?? 'Tipo de operación',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  );
+                  final monto = TextField(
                     controller: _montoController,
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
@@ -1037,29 +1080,38 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                       labelText: 'Monto exacto',
                       prefixIcon: Icon(Icons.attach_money),
                       border: OutlineInputBorder(),
+                      isDense: true,
                     ),
-                  ),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _showDateRangeDialog,
-                  icon: const Icon(Icons.date_range),
-                  label: Text(
-                    _fechaDesde != null && _fechaHasta != null
-                        ? '${_formatDate(_fechaDesde!)} - ${_formatDate(_fechaHasta!)}'
-                        : 'Fechas',
-                  ),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _showOperationTypeDialog,
-                  icon: const Icon(Icons.category_outlined),
-                  label: Text(
-                    _tipoOperacionNombreSeleccionado ?? 'Tipo de operación',
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+                  );
+                  final limpiar = hasFilters
+                      ? TextButton.icon(
+                          onPressed: _clearAllFilters,
+                          icon: const Icon(Icons.clear, size: 18),
+                          label: const Text('Limpiar'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.red,
+                          ),
+                        )
+                      : null;
+
+                  final children = <Widget>[
+                    sized(estado, width: isNarrow ? null : 220),
+                    sized(fechas, width: isNarrow ? null : 230),
+                    sized(tipo, width: isNarrow ? null : 230),
+                    sized(monto, width: isNarrow ? null : 170),
+                    if (limpiar != null) limpiar,
+                  ];
+
+                  return Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: children,
+                  );
+                },
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -1074,7 +1126,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         strokeWidth: 2.5,
         child: _isLoading
             ? const Center(child: CircularProgressIndicator())
-            : _operacionesFiltradas.isEmpty
+            : _operations.isEmpty
             ? ListView(
                 // Necesario para que el RefreshIndicator funcione con contenido vacío
                 physics: const AlwaysScrollableScrollPhysics(),
@@ -1109,7 +1161,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   /// Construye el contenido de la lista de operaciones
   /// Usa infinite scroll en ambas plataformas (móvil y web)
   Widget _buildOperationsListContent() {
-    final operations = _operacionesFiltradas;
+    final operations = _operations;
     return ListView.builder(
       controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
@@ -2416,7 +2468,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       final v = item[key]?.toString().trim();
       if (v != null && v.isNotEmpty) return v;
     }
-    final info = item['presentacion_original_info'] ?? item['presentation_info'];
+    final info =
+        item['presentacion_original_info'] ?? item['presentation_info'];
     if (info is Map) {
       for (final key in const ['denominacion', 'presentacion', 'nombre']) {
         final v = info[key]?.toString().trim();
@@ -3057,10 +3110,12 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   /// En venta el TPV ya guarda `precio_base × factor`; en recepción el precio
   /// es el de la presentación recibida. Ahí no se vuelve a escalar.
   bool _linePrecioEsUnidadBase(Map<String, dynamic> operation) {
-    final tipo =
-        (operation['tipo_operacion_nombre'] ?? '').toString().toLowerCase();
-    final accion =
-        (operation['tipo_operacion_accion'] ?? '').toString().toLowerCase();
+    final tipo = (operation['tipo_operacion_nombre'] ?? '')
+        .toString()
+        .toLowerCase();
+    final accion = (operation['tipo_operacion_accion'] ?? '')
+        .toString()
+        .toLowerCase();
     if (tipo.contains('venta')) return false;
     if (tipo.contains('recepcion') || tipo.contains('recepción')) return false;
     if (accion == 'entrada') return false;
@@ -3075,7 +3130,9 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     Map<String, dynamic> item, {
     bool precioEsUnidadBase = false,
   }) {
-    final precio = _asItemNum(item['precio_unitario'] ?? item['costo_unitario']);
+    final precio = _asItemNum(
+      item['precio_unitario'] ?? item['costo_unitario'],
+    );
     if (!precioEsUnidadBase || precio <= 0) return precio;
     final factor = _asItemNum(item['presentacion_factor_rel']);
     if (factor > 0) return precio * factor;
@@ -3086,7 +3143,9 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     Map<String, dynamic> item, {
     bool precioEsUnidadBase = false,
   }) {
-    final precio = _asItemNum(item['precio_unitario'] ?? item['costo_unitario']);
+    final precio = _asItemNum(
+      item['precio_unitario'] ?? item['costo_unitario'],
+    );
     final cant = _asItemNum(item['cantidad'] ?? item['cantidad_fisica']);
     final equiv = _asItemNum(item['equivalente_base']);
     final factor = _asItemNum(item['presentacion_factor_rel']);

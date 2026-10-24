@@ -223,7 +223,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
   /// Siempre muestra CUP y USD en el resumen (aunque alguno sea 0).
   String _formatCupUsdAmount(double cup, double usd) {
-    return '\$${cup.toStringAsFixed(0)} CUP\n\$${usd.toStringAsFixed(2)} USD';
+    return '\$${cup.toMoneyString(0)} CUP\n\$${usd.toMoneyString(2)} USD';
   }
 
   Future<void> _initializeData() async {
@@ -383,15 +383,15 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           print('Órdenes completadas: ${ordenesVendidas.length}');
           print('Productos vendidos: ${productosVendidos.length}');
           print(
-            'Efectivo CUP: \$${_totalEfectivo.toStringAsFixed(2)} | '
-            'USD: \$${_totalEfectivoUsd.toStringAsFixed(2)}',
+            'Efectivo CUP: \$${_totalEfectivo.toMoneyString(2)} | '
+            'USD: \$${_totalEfectivoUsd.toMoneyString(2)}',
           );
           print(
-            'Transferencia CUP: \$${_totalTransferencia.toStringAsFixed(2)} | '
-            'USD: \$${_totalTransferenciaUsd.toStringAsFixed(2)}',
+            'Transferencia CUP: \$${_totalTransferencia.toMoneyString(2)} | '
+            'USD: \$${_totalTransferenciaUsd.toMoneyString(2)}',
           );
           print(
-            'Efectivo Real CUP: \$${_totalEfectivoReal.toStringAsFixed(2)}',
+            'Efectivo Real CUP: \$${_totalEfectivoReal.toMoneyString(2)}',
           );
         }
       }
@@ -700,8 +700,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                                           ),
                                           Text(
                                             e.key.contains('(USD)')
-                                                ? '\$${e.value.toStringAsFixed(2)} USD'
-                                                : '\$${e.value.toStringAsFixed(0)} CUP',
+                                                ? '\$${e.value.toMoneyString(2)} USD'
+                                                : '\$${e.value.toMoneyString(0)} CUP',
                                             style: const TextStyle(
                                               fontSize: 12,
                                               fontWeight: FontWeight.w600,
@@ -1116,7 +1116,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                   ),
                 ),
                 Text(
-                  '\$${_totalVentas.toStringAsFixed(0)}',
+                  '\$${_totalVentas.toMoneyString(0)}',
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -1179,7 +1179,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           // Total
           Expanded(
             child: Text(
-              '\$${order.total.toStringAsFixed(0)}',
+              '\$${order.total.toMoneyString(0)}',
               style: const TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
@@ -1527,12 +1527,12 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                     ),
                   ),
                   Text(
-                    '\$${item.precioUnitario.toStringAsFixed(2)} c/u',
+                    '\$${item.precioUnitario.toMoneyString(2)} c/u',
                     style: TextStyle(fontSize: 10, color: Colors.orange[600]),
                   ),
                 ] else ...[
                   Text(
-                    '\$${item.precioUnitario.toStringAsFixed(0)} c/u',
+                    '\$${item.precioUnitario.toMoneyString(0)} c/u',
                     style: TextStyle(fontSize: 10, color: Colors.grey[600]),
                   ),
                 ],
@@ -1595,7 +1595,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           // Total (ahora incluye ingredientes)
           Expanded(
             child: Text(
-              '\$${subtotal.toStringAsFixed(esIngrediente ? 2 : 0)}',
+              '\$${subtotal.toMoneyString(esIngrediente ? 2 : 0)}',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
@@ -1951,11 +1951,11 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         styles: PosStyles(align: PosAlign.left),
       );
       bytes += generator.text(
-        'Total Ventas CUP: \$${_totalVentasCup.toStringAsFixed(0)}',
+        'Total Ventas CUP: \$${_totalVentasCup.toMoneyString(0, ' ')}',
         styles: PosStyles(align: PosAlign.left),
       );
       bytes += generator.text(
-        'Total Ventas USD: \$${_totalVentasUsd.toStringAsFixed(2)}',
+        'Total Ventas USD: \$${_totalVentasUsd.toMoneyString(2, ' ')}',
         styles: PosStyles(align: PosAlign.left),
       );
       final mediosPago =
@@ -1965,32 +1965,32 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       for (final medio in mediosPago) {
         final suffix = medio.key.contains('(USD)') ? ' USD' : ' CUP';
         bytes += generator.text(
-          '${medio.key}: \$${medio.value.toStringAsFixed(medio.key.contains('(USD)') ? 2 : 0)}$suffix',
+          '${medio.key}: \$${medio.value.toMoneyString(medio.key.contains('(USD)') ? 2 : 0, ' ')}$suffix',
           styles: PosStyles(align: PosAlign.left),
         );
       }
       bytes += generator.text(
-        'Egresado CUP: \$${(_egresosEfectivo + _egresosTransferencias).toStringAsFixed(0)}',
+        'Egresado CUP: \$${(_egresosEfectivo + _egresosTransferencias).toMoneyString(0, ' ')}',
         styles: PosStyles(align: PosAlign.left),
       );
       bytes += generator.text(
-        'Egresado USD: \$${(_egresosEfectivoUsd + _egresosTransferenciasUsd).toStringAsFixed(2)}',
+        'Egresado USD: \$${(_egresosEfectivoUsd + _egresosTransferenciasUsd).toMoneyString(2, ' ')}',
         styles: PosStyles(align: PosAlign.left),
       );
       bytes += generator.text(
-        'Efectivo Real CUP: \$${(_totalEfectivo - _egresosEfectivo).toStringAsFixed(0)}',
+        'Efectivo Real CUP: \$${(_totalEfectivo - _egresosEfectivo).toMoneyString(0, ' ')}',
         styles: PosStyles(align: PosAlign.left),
       );
       bytes += generator.text(
-        'Efectivo Real USD: \$${(_totalEfectivoUsd - _egresosEfectivoUsd).toStringAsFixed(2)}',
+        'Efectivo Real USD: \$${(_totalEfectivoUsd - _egresosEfectivoUsd).toMoneyString(2, ' ')}',
         styles: PosStyles(align: PosAlign.left),
       );
       bytes += generator.text(
-        'Transferencia CUP: \$${_totalTransferencia.toStringAsFixed(0)}',
+        'Transferencia CUP: \$${_totalTransferencia.toMoneyString(0, ' ')}',
         styles: PosStyles(align: PosAlign.left),
       );
       bytes += generator.text(
-        'Transferencia USD: \$${_totalTransferenciaUsd.toStringAsFixed(2)}',
+        'Transferencia USD: \$${_totalTransferenciaUsd.toMoneyString(2, ' ')}',
         styles: PosStyles(align: PosAlign.left),
       );
       bytes += generator.emptyLines(1);
@@ -2036,7 +2036,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       // Footer
       bytes += generator.emptyLines(1);
       bytes += generator.text(
-        'TOTAL GENERAL: \$${_totalVentas.toStringAsFixed(0)}',
+        'TOTAL GENERAL: \$${_totalVentas.toMoneyString(0, ' ')}',
         styles: PosStyles(
           align: PosAlign.center,
           bold: true,

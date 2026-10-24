@@ -154,6 +154,37 @@ class MesasResumen {
         ordenesPendientesTotal: 0,
       );
 
+  factory MesasResumen.fromMesas(Iterable<Mesa> mesas) {
+    var total = 0;
+    var ocupadas = 0;
+    var pendientes = 0;
+    Mesa? top;
+    for (final mesa in mesas) {
+      if (!mesa.activa) continue;
+      total++;
+      pendientes += mesa.ordenesAbiertas;
+      if (mesa.ocupada) {
+        ocupadas++;
+        if (top == null || mesa.ordenesAbiertas > top.ordenesAbiertas) {
+          top = mesa;
+        }
+      }
+    }
+    return MesasResumen(
+      total: total,
+      ocupadas: ocupadas,
+      libres: total - ocupadas,
+      ordenesPendientesTotal: pendientes,
+      mesaTopComensales: top == null
+          ? null
+          : MesaTopComensales(
+              id: top.id,
+              numero: top.numero,
+              comensales: top.ordenesAbiertas,
+            ),
+    );
+  }
+
   factory MesasResumen.fromJson(Map<String, dynamic> json) {
     int _toInt(dynamic v) {
       if (v == null) return 0;

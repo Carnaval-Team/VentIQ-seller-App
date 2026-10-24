@@ -10,6 +10,7 @@ import '../services/servicentro_service.dart';
 import '../services/store_config_service.dart';
 import '../services/turno_service.dart';
 import '../services/user_preferences_service.dart';
+import '../utils/price_utils.dart';
 import 'checkout_screen.dart';
 import 'payment_method_picker_screen.dart';
 
@@ -376,7 +377,7 @@ class _ServicentroCantidadScreenState extends State<ServicentroCantidadScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '\$${_precio.toStringAsFixed(2)} / $_um'
+                          '\$${_precio.toMoneyString(2)} / $_um'
                           ' · Stock: ${_fuel.stockDisponible == _fuel.stockDisponible.roundToDouble() ? _fuel.stockDisponible.toInt() : _fuel.stockDisponible.toStringAsFixed(2)} $_um',
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,

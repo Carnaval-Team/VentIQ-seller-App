@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/tanda.dart';
+import '../utils/price_utils.dart';
 
 /// Widgets de la pantalla de produccion por tandas.
 ///
@@ -276,12 +277,12 @@ class TandaCard extends StatelessWidget {
                       color: Colors.red.shade600),
                 if (tanda.costoPorPorcion != null)
                   _dato('Costo/porcion',
-                      tanda.costoPorPorcion!.toStringAsFixed(2)),
+                      tanda.costoPorPorcion!.toMoneyString(2)),
                 // Costo real por porcion servida: incluye la merma. Es el numero
                 // que dice si el tamano del lote fue el adecuado.
                 if (tanda.cerrada && tanda.costoPorServida != null)
                   _dato('Costo real',
-                      tanda.costoPorServida!.toStringAsFixed(2),
+                      tanda.costoPorServida!.toMoneyString(2),
                       color: Colors.deepOrange.shade700),
               ],
             ),

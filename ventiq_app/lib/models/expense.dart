@@ -1,3 +1,5 @@
+import '../utils/price_utils.dart';
+
 class Expense {
   final int idEgreso;
   final double montoEntrega;
@@ -87,6 +89,6 @@ class Expense {
   }
 
   String get formattedAmount {
-    return '\$${montoEntrega.toStringAsFixed(2)}';
+    return '\$${montoEntrega.toMoneyString(2)}';
   }
 }

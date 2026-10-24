@@ -1,3 +1,5 @@
+import '../utils/price_utils.dart';
+
 class SubscriptionPlan {
   final int id;
   final String denominacion;
@@ -58,7 +60,7 @@ class SubscriptionPlan {
   bool get isPremium => id == 2;
   bool get isEnterprise => id == 3;
 
-  String get precioFormateado => '\$${precioMensual.toStringAsFixed(2)}';
+  String get precioFormateado => '\$${precioMensual.toMoneyString(2)}';
 
   List<String> get funcionesLista {
     if (funcionesHabilitadas == null) return [];

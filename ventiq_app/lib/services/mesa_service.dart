@@ -34,10 +34,16 @@ class MesaService {
 
   /// Lista todas las mesas (activas y, opcionalmente, también inactivas)
   /// con sus contadores de órdenes.
-  Future<List<Mesa>> listMesasWithStats({bool incluirInactivas = false}) async {
+  Future<List<Mesa>> listMesasWithStats({
+    bool incluirInactivas = false,
+    bool throwOnError = false,
+  }) async {
     try {
       final idTienda = await _getIdTienda();
-      if (idTienda == null) return <Mesa>[];
+      if (idTienda == null) {
+        if (throwOnError) throw StateError('Tienda no disponible');
+        return <Mesa>[];
+      }
 
       final response = await _supabase.rpc(
         'fn_listar_mesas_con_stats',
@@ -46,6 +52,9 @@ class MesaService {
 
       if (response is! List) {
         print('⚠️ fn_listar_mesas_con_stats devolvió tipo inesperado: ${response.runtimeType}');
+        if (throwOnError) {
+          throw const FormatException('Respuesta de mesas inválida');
+        }
         return <Mesa>[];
       }
 
@@ -60,6 +69,7 @@ class MesaService {
     } catch (e, st) {
       print('❌ Error listando mesas: $e');
       print(st);
+      if (throwOnError) rethrow;
       return <Mesa>[];
     }
   }
@@ -158,6 +168,26 @@ class MesaService {
       throw Exception(data?['message'] ?? 'Error eliminando mesa');
     }
     return data['mode'] == 'hard_delete';
+  }
+
+  static bool isPendingOrder(Order order) =>
+      order.status == OrderStatus.enviada ||
+      order.status == OrderStatus.procesando ||
+      order.status == OrderStatus.borrador ||
+      order.status == OrderStatus.pendienteDeSincronizacion;
+
+  static Order? mostRecentPendingOrder(
+    Iterable<Order> orders, {
+    required int idMesa,
+  }) {
+    Order? pending;
+    for (final order in orders) {
+      if (order.idMesa != idMesa || !isPendingOrder(order)) continue;
+      if (pending == null || order.fechaCreacion.isAfter(pending.fechaCreacion)) {
+        pending = order;
+      }
+    }
+    return pending;
   }
 
   /// Lista las órdenes asociadas a una mesa.

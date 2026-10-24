@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/order.dart';
+import '../utils/price_utils.dart';
 
 enum PaymentFilter { all, cash, digital, transfer }
 
@@ -55,14 +56,14 @@ class FilteredOrdersScreen extends StatelessWidget {
                     ),
                     _buildStatCard(
                       'Monto Total',
-                      '\$${totalAmount.toStringAsFixed(0)}',
+                      '\$${totalAmount.toMoneyString(0)}',
                       Icons.attach_money,
                       Colors.white,
                     ),
                     _buildStatCard(
                       'Promedio',
                       filteredOrders.isNotEmpty
-                          ? '\$${(totalAmount / filteredOrders.length).toStringAsFixed(0)}'
+                          ? '\$${(totalAmount / filteredOrders.length).toMoneyString(0)}'
                           : '\$0',
                       Icons.trending_up,
                       Colors.white,
@@ -249,7 +250,7 @@ class FilteredOrdersScreen extends StatelessWidget {
                       ),
                     ),
                     child: Text(
-                      '\$${order.total.toStringAsFixed(0)}',
+                      '\$${order.total.toMoneyString(0)}',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         color: Colors.green[600]!,
@@ -353,7 +354,7 @@ class FilteredOrdersScreen extends StatelessWidget {
             Icon(icon, size: 14, color: color),
             const SizedBox(width: 4),
             Text(
-              '${payment['medio_pago']} \$${payment['monto'].toStringAsFixed(0)}',
+              '${payment['medio_pago']} \$${PriceUtils.formatAmount(payment['monto'], decimals: 0)}',
               style: TextStyle(
                 fontSize: 12,
                 color: color,
@@ -467,7 +468,7 @@ class FilteredOrdersScreen extends StatelessWidget {
                         _buildDetailSection(
                           'Total',
                           Icons.attach_money,
-                          '\$${order.total.toStringAsFixed(0)}',
+                          '\$${order.total.toMoneyString(0)}',
                         ),
                         const SizedBox(height: 16),
 
@@ -558,7 +559,7 @@ class FilteredOrdersScreen extends StatelessWidget {
                                     ),
                                   ),
                                   Text(
-                                    '\$${(payment['total'] ?? 0.0).toStringAsFixed(0)}',
+                                    '\$${PriceUtils.formatAmount(payment['total'] ?? 0.0, decimals: 0)}',
                                     style: TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.bold,

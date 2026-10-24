@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/product.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/app_snackbar.dart';
+import '../utils/price_utils.dart';
 
 class ProductSearchWidget extends StatefulWidget {
   final Function(Product) onProductSelected;
@@ -513,7 +514,7 @@ class _ProductSearchWidgetState extends State<ProductSearchWidget> {
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
-                            '\$${product.precio.toStringAsFixed(2)}',
+                            '\$${product.precio.toMoneyString(2)}',
                             style: const TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.bold,

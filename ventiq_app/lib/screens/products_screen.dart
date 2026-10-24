@@ -8,6 +8,7 @@ import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/currency_service.dart';
 import '../utils/promotion_rules.dart';
+import '../utils/price_utils.dart';
 import '../utils/navigation_helper.dart';
 import 'product_details_screen.dart';
 import 'barcode_scanner_screen.dart';
@@ -1233,7 +1234,7 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                           // Precio de venta (tachado si es mayor que oferta)
                           Flexible(
                             child: Text(
-                              '\$${precioVenta.toStringAsFixed(2)}',
+                              '\$${precioVenta.toMoneyString(2)}',
                               style: TextStyle(
                                 fontSize: precioVenta > precioOferta ? 12 : 14,
                                 color:
@@ -1257,7 +1258,7 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                           // Precio de oferta (destacado si es menor que venta)
                           Flexible(
                             child: Text(
-                              '\$${precioOferta.toStringAsFixed(2)}',
+                              '\$${precioOferta.toMoneyString(2)}',
                               style: TextStyle(
                                 fontSize: precioOferta < precioVenta ? 14 : 12,
                                 fontWeight:
@@ -1281,7 +1282,7 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                           // Precio normal sin promoción
                           Flexible(
                             child: Text(
-                              '\$${widget.product.precio.toStringAsFixed(2)}',
+                              '\$${widget.product.precio.toMoneyString(2)}',
                               style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
@@ -1657,7 +1658,7 @@ class _ProductCardState extends State<_ProductCard>
                               ],
                               const SizedBox(width: 12),
                               Text(
-                                '\$${widget.product.precio.toStringAsFixed(2)}',
+                                '\$${widget.product.precio.toMoneyString(2)}',
                                 style: TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,

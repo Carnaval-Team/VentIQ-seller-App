@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/user_preferences_service.dart';
 import '../services/turno_service.dart';
 import '../models/expense.dart';
+import '../utils/price_utils.dart';
 
 class SalesMonitorFAB extends StatefulWidget {
   const SalesMonitorFAB({Key? key}) : super(key: key);
@@ -448,7 +449,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
               Expanded(
                 child: _buildMetricCard(
                   'Total',
-                  '\$${(_currentSales!['ventas_totales'] ?? 0.0).toStringAsFixed(2)}',
+                  '\$${PriceUtils.formatAmount(_currentSales!['ventas_totales'] ?? 0.0)}',
                   Icons.attach_money,
                   const Color(0xFF4A90E2),
                 ),
@@ -480,7 +481,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
                   children: [
                     const Text('Efectivo:', style: TextStyle(fontSize: 13)),
                     Text(
-                      '\$${((_currentSales!['efectivo_real'] ?? 0.0) - _egresosEfectivo).toStringAsFixed(2)}',
+                      '\$${PriceUtils.formatAmount((_currentSales!['efectivo_real'] ?? 0.0) - _egresosEfectivo)}',
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
@@ -498,7 +499,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
                       style: TextStyle(fontSize: 13),
                     ),
                     Text(
-                      '\$${((_currentSales!['ventas_totales'] ?? 0.0) - (_currentSales!['efectivo_real'] ?? 0.0) + _egresosEfectivo).toStringAsFixed(2)}',
+                      '\$${PriceUtils.formatAmount((_currentSales!['ventas_totales'] ?? 0.0) - (_currentSales!['efectivo_real'] ?? 0.0) + _egresosEfectivo)}',
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w500,

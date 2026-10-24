@@ -22,8 +22,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
   // State variables
   bool _isLoading = false;
   bool _isExporting = false;
-  String? _selectedExportMethod = 'pdf'; // PDF seleccionado por defecto
-  String _selectedReportType = 'ventas'; // 'ventas' | 'movimientos' | 'con_movimientos'
+  String? _exportingFormat; // 'pdf' | 'excel' mientras exporta
   int? _selectedWarehouseId;
   String _selectedWarehouseName = 'Todos';
   DateTime? _selectedDate;
@@ -37,15 +36,13 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
   bool _includeMarca = false;
   bool _includeDescripcionCorta = false;
   bool _includeDescripcion = false;
-  
-  bool _includePrecios = false;
 
-  // Valor del inventario a costo
-  bool _includeValorInventarioCosto = false;
+  bool _includePrecios = false;
 
   // Opciones de filtrado
   bool _includeZeroStock = false; // Incluir productos con stock cero
-  bool _soloCompletadasEnPeriodo = false; // Solo ops completadas en el período
+  bool _soloConMovimientos =
+      false; // Solo productos que se movieron en el período
 
   @override
   void initState() {
@@ -73,82 +70,29 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
     }
   }
 
-  Future<void> _selectDate() async {
-    final DateTime? picked = await showDatePicker(
+  Future<void> _selectDateRange() async {
+    final now = DateTime.now();
+    final DateTimeRange? picked = await showDateRangePicker(
       context: context,
-      initialDate: _selectedDate ?? DateTime.now(),
+      initialDateRange: _selectedDate != null && _selectedDateTo != null
+          ? DateTimeRange(start: _selectedDate!, end: _selectedDateTo!)
+          : null,
       firstDate: DateTime(2020),
-      lastDate: DateTime.now(),
+      lastDate: now,
     );
 
-    if (picked != null && picked != _selectedDate) {
+    if (picked != null) {
       setState(() {
-        _selectedDate = picked;
+        _selectedDate = picked.start;
+        _selectedDateTo = picked.end;
       });
     }
   }
 
-  Widget _buildSelectionCards({required List<Widget> children}) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final narrow = constraints.maxWidth < 360;
-        if (narrow) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: children
-                .expand(
-                  (card) => [
-                    SizedBox(width: double.infinity, child: card),
-                    const SizedBox(height: 12),
-                  ],
-                )
-                .take(children.length * 2 - 1)
-                .toList(),
-          );
-        }
-        return Row(
-          children: children
-              .expand(
-                (card) => [
-                  Expanded(child: card),
-                  const SizedBox(width: 12),
-                ],
-              )
-              .take(children.length * 2 - 1)
-              .toList(),
-        );
-      },
-    );
-  }
-
-  Future<void> _selectDateTo() async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDateTo ?? DateTime.now(),
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now(),
-    );
-
-    if (picked != null && picked != _selectedDateTo) {
-      setState(() {
-        _selectedDateTo = picked;
-      });
-    }
-  }
-
-  Future<void> _exportInventory() async {
-    if (_selectedExportMethod == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Por favor selecciona un método de exportación'),
-          backgroundColor: AppColors.error,
-        ),
-      );
-      return;
-    }
-
+  Future<void> _exportInventory(String format) async {
     setState(() {
       _isExporting = true;
+      _exportingFormat = format;
     });
 
     try {
@@ -158,53 +102,33 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
         throw Exception('No se encontró el ID de tienda del usuario');
       }
 
-      // Obtener datos del inventario según el tipo de reporte seleccionado
-      final List<Map<String, dynamic>> inventoryData;
-      if (_selectedReportType == 'movimientos' ||
-          _selectedReportType == 'con_movimientos') {
-        final movimientosData = await InventoryService.getInventarioMovimientos(
-          idAlmacen: _selectedWarehouseId,
-          idTienda: storeId,
-          fechaDesde: _selectedDate,
-          fechaHasta: _selectedDateTo,
-          includeZero: _includeZeroStock,
-          soloCompletadasEnPeriodo: _soloCompletadasEnPeriodo,
-        );
-        if (_selectedReportType == 'con_movimientos') {
-          inventoryData = movimientosData.where((row) {
-            final extracciones =
-                (row['extracciones_periodo'] as num?)?.toDouble() ?? 0;
-            final ventas =
-                (row['ventas_periodo'] as num?)?.toDouble() ?? 0;
-            final pendientes =
-                (row['cantidad_reservada'] as num?)?.toDouble() ?? 0;
-            return extracciones > 0 || ventas > 0 || pendientes > 0;
-          }).toList();
-        } else {
-          inventoryData = movimientosData;
-        }
-      } else {
-        inventoryData = await InventoryService.getInventarioSimple(
-          idAlmacen: _selectedWarehouseId,
-          idTienda: storeId,
-          fechaDesde: _selectedDate,
-          fechaHasta: _selectedDateTo,
-          includeZero: _includeZeroStock,
-        );
+      // Siempre el reporte por movimientos (datos reales del período).
+      var inventoryData = await InventoryService.getInventarioMovimientos(
+        idAlmacen: _selectedWarehouseId,
+        idTienda: storeId,
+        fechaDesde: _selectedDate,
+        fechaHasta: _selectedDateTo,
+        includeZero: _includeZeroStock,
+      );
+      if (_soloConMovimientos) {
+        inventoryData = inventoryData.where((row) {
+          final extracciones =
+              (row['extracciones_periodo'] as num?)?.toDouble() ?? 0;
+          final ventas = (row['ventas_periodo'] as num?)?.toDouble() ?? 0;
+          final pendientes =
+              (row['cantidad_reservada'] as num?)?.toDouble() ?? 0;
+          return extracciones > 0 || ventas > 0 || pendientes > 0;
+        }).toList();
       }
 
       if (inventoryData.isEmpty) {
         throw Exception('No se encontraron datos de inventario para exportar');
       }
 
-      // Si se pidió valor a costo o precios completos, enriquecer filas
+      // Si se pidieron precios completos, enriquecer filas
       List<Map<String, dynamic>> enrichedData = inventoryData;
-      if (_includePrecios || _includeValorInventarioCosto) {
+      if (_includePrecios) {
         enrichedData = await _enrichWithPrices(inventoryData, storeId);
-        if (_includeValorInventarioCosto) {
-          enrichedData = _addInventoryCostTotals(enrichedData);
-          enrichedData = _filterZeroFinalQuantity(enrichedData);
-        }
       }
 
       if (enrichedData.isEmpty) {
@@ -220,7 +144,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
         warehouseName: _selectedWarehouseName,
         filterDateFrom: _selectedDate,
         filterDateTo: _selectedDateTo,
-        format: _selectedExportMethod == 'excel' ? 'excel' : 'pdf',
+        format: format,
         includeSku: _includeSku,
         includeNombreCorto: _includeNombreCorto,
         includeMarca: _includeMarca,
@@ -229,7 +153,6 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
         includePrecios: _includePrecios,
         includeReservado: true,
         includePresentacion: true,
-        includeValorInventarioCosto: _includeValorInventarioCosto,
       );
 
       // Cerrar el diálogo después de la exportación exitosa
@@ -249,6 +172,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
       if (mounted) {
         setState(() {
           _isExporting = false;
+          _exportingFormat = null;
         });
       }
     }
@@ -342,8 +266,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
       final precioVentaUsd = tasa > 0 ? precioVentaCup / tasa : 0.0;
       final gananciaCup = precioVentaCup - costoCup;
       final gananciaUsd = tasa > 0 ? gananciaCup / tasa : 0.0;
-      final gananciaPorc =
-          costoCup > 0 ? (gananciaCup / costoCup) * 100 : 0.0;
+      final gananciaPorc = costoCup > 0 ? (gananciaCup / costoCup) * 100 : 0.0;
 
       return {
         ...row,
@@ -358,50 +281,10 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
     }).toList();
   }
 
-  /// Calcula valor total a precio costo (costo × cantidad final) por fila.
-  List<Map<String, dynamic>> _addInventoryCostTotals(
-    List<Map<String, dynamic>> rows,
-  ) {
-    return rows.map((row) {
-      final costoUsd =
-          (row['precio_costo_usd'] as num?)?.toDouble() ??
-          (double.tryParse(row['precio_costo_usd']?.toString() ?? '') ?? 0);
-      final costoCup =
-          (row['precio_costo_cup'] as num?)?.toDouble() ??
-          (double.tryParse(row['precio_costo_cup']?.toString() ?? '') ?? 0);
-      final cantidadFinal =
-          (row['cantidad_final'] as num?)?.toDouble() ??
-          (double.tryParse(row['cantidad_final']?.toString() ?? '') ??
-              double.tryParse(row['stock_disponible']?.toString() ?? '') ??
-              0);
-      return {
-        ...row,
-        'valor_total_costo_usd': costoUsd * cantidadFinal,
-        'valor_total_costo_cup': costoCup * cantidadFinal,
-      };
-    }).toList();
-  }
-
-  double _cantidadFinalFromRow(Map<String, dynamic> row) {
-    return (row['cantidad_final'] as num?)?.toDouble() ??
-        double.tryParse(row['cantidad_final']?.toString() ?? '') ??
-        double.tryParse(row['stock_disponible']?.toString() ?? '') ??
-        0;
-  }
-
-  /// Excluye productos sin stock del reporte de valor a costo.
-  List<Map<String, dynamic>> _filterZeroFinalQuantity(
-    List<Map<String, dynamic>> rows,
-  ) {
-    return rows.where((row) => _cantidadFinalFromRow(row) > 0).toList();
-  }
-
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
         width: MediaQuery.of(context).size.width * 0.9,
         constraints: BoxConstraints(
@@ -440,10 +323,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                 ),
                 IconButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(
-                    Icons.close,
-                    color: AppColors.textSecondary,
-                  ),
+                  icon: const Icon(Icons.close, color: AppColors.textSecondary),
                 ),
               ],
             ),
@@ -456,100 +336,6 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Tipo de reporte
-                    const Text(
-                      'Tipo de Reporte',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    _buildSelectionCards(
-                      children: [
-                        _ExportMethodCard(
-                          icon: Icons.point_of_sale,
-                          label: 'Por ventas',
-                          description: 'Stock y ventas del período',
-                          color: Colors.blue,
-                          isSelected: _selectedReportType == 'ventas',
-                          onTap: () {
-                            setState(() {
-                              _selectedReportType = 'ventas';
-                            });
-                          },
-                        ),
-                        _ExportMethodCard(
-                          icon: Icons.swap_horiz,
-                          label: 'Por movimientos',
-                          description: 'Entradas, salidas y pendientes',
-                          color: Colors.deepPurple,
-                          isSelected: _selectedReportType == 'movimientos',
-                          onTap: () {
-                            setState(() {
-                              _selectedReportType = 'movimientos';
-                            });
-                          },
-                        ),
-                        _ExportMethodCard(
-                          icon: Icons.trending_up,
-                          label: 'Con movimientos',
-                          description: 'Solo productos con extracciones, ventas o pendientes',
-                          color: Colors.orange,
-                          isSelected: _selectedReportType == 'con_movimientos',
-                          onTap: () {
-                            setState(() {
-                              _selectedReportType = 'con_movimientos';
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    // Método de exportación
-                    const Text(
-                      'Método de Exportación',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    _buildSelectionCards(
-                      children: [
-                        _ExportMethodCard(
-                          icon: Icons.picture_as_pdf,
-                          label: 'PDF',
-                          description: 'Doc. portable',
-                          color: Colors.red,
-                          isSelected: _selectedExportMethod == 'pdf',
-                          onTap: () {
-                            setState(() {
-                              _selectedExportMethod = 'pdf';
-                            });
-                          },
-                        ),
-                        _ExportMethodCard(
-                          icon: Icons.table_chart,
-                          label: 'Excel',
-                          description: 'Hoja de cálculo',
-                          color: Colors.green,
-                          isSelected: _selectedExportMethod == 'excel',
-                          onTap: () {
-                            setState(() {
-                              _selectedExportMethod = 'excel';
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 24),
-
                     // Selección de almacén
                     const Text(
                       'Almacén',
@@ -635,17 +421,19 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                             _selectedWarehouseName = value == null
                                 ? 'Todos los almacenes'
                                 : _warehouses
-                                    .firstWhere((w) => int.parse(w.id) == value)
-                                    .name;
+                                      .firstWhere(
+                                        (w) => int.parse(w.id) == value,
+                                      )
+                                      .name;
                           });
                         },
                       ),
 
                     const SizedBox(height: 24),
 
-                    // Filtro de fecha
+                    // Período: un solo selector de rango (desde–hasta)
                     const Text(
-                      'Filtro de Fecha (Opcional)',
+                      'Período (Opcional)',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -654,27 +442,29 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                     ),
                     const SizedBox(height: 12),
                     InkWell(
-                      onTap: _selectDate,
+                      onTap: _selectDateRange,
                       borderRadius: BorderRadius.circular(8),
                       child: Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey.withOpacity(0.5)),
+                          border: Border.all(
+                            color: Colors.grey.withOpacity(0.5),
+                          ),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Row(
                           children: [
                             const Icon(
-                              Icons.calendar_today,
+                              Icons.date_range,
                               color: AppColors.primary,
                               size: 20,
                             ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(
-                                _selectedDate != null
-                                    ? 'Desde: ${_selectedDate!.day}/${_selectedDate!.month}/${_selectedDate!.year}'
-                                    : 'Seleccionar fecha desde',
+                                _selectedDate != null && _selectedDateTo != null
+                                    ? '${_selectedDate!.day}/${_selectedDate!.month}/${_selectedDate!.year} – ${_selectedDateTo!.day}/${_selectedDateTo!.month}/${_selectedDateTo!.year}'
+                                    : 'Seleccionar período',
                                 style: TextStyle(
                                   fontSize: 14,
                                   color: _selectedDate != null
@@ -683,65 +473,12 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                                 ),
                               ),
                             ),
-                            if (_selectedDate != null)
+                            if (_selectedDate != null ||
+                                _selectedDateTo != null)
                               IconButton(
                                 onPressed: () {
                                   setState(() {
                                     _selectedDate = null;
-                                  });
-                                },
-                                icon: const Icon(
-                                  Icons.clear,
-                                  color: AppColors.textSecondary,
-                                  size: 20,
-                                ),
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(
-                                  minWidth: 24,
-                                  minHeight: 24,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    InkWell(
-                      onTap: _selectDateTo,
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey.withOpacity(0.5)),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.calendar_today,
-                              color: AppColors.primary,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                _selectedDateTo != null
-                                    ? 'Hasta: ${_selectedDateTo!.day}/${_selectedDateTo!.month}/${_selectedDateTo!.year}'
-                                    : 'Seleccionar fecha hasta',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: _selectedDateTo != null
-                                      ? AppColors.textPrimary
-                                      : AppColors.textSecondary,
-                                ),
-                              ),
-                            ),
-                            if (_selectedDateTo != null)
-                              IconButton(
-                                onPressed: () {
-                                  setState(() {
                                     _selectedDateTo = null;
                                   });
                                 },
@@ -925,33 +662,8 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                             activeColor: AppColors.primary,
                             contentPadding: EdgeInsets.zero,
                           ),
-                          CheckboxListTile(
-                            title: const Text(
-                              'Incluir valor del inventario a costo',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            subtitle: const Text(
-                              'Precio costo USD/CUP y valor total (costo × cantidad final) USD/CUP',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                            value: _includeValorInventarioCosto,
-                            onChanged: (value) {
-                              setState(() {
-                                _includeValorInventarioCosto = value ?? false;
-                              });
-                            },
-                            activeColor: AppColors.primary,
-                            contentPadding: EdgeInsets.zero,
-                          ),
-
                           const Divider(height: 24),
-                          
+
                           // Sección de filtros
                           const Text(
                             'Opciones de Filtrado',
@@ -962,7 +674,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                             ),
                           ),
                           const SizedBox(height: 8),
-                          
+
                           CheckboxListTile(
                             title: const Text(
                               'Incluir productos con stock cero',
@@ -988,34 +700,31 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                             contentPadding: EdgeInsets.zero,
                           ),
 
-                          if (_selectedReportType == 'movimientos' ||
-                              _selectedReportType == 'con_movimientos') ...[
-                            const SizedBox(height: 8),
-                            CheckboxListTile(
-                              title: const Text(
-                                'Solo operaciones completadas en el período',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                ),
+                          const SizedBox(height: 8),
+                          CheckboxListTile(
+                            title: const Text(
+                              'Solo productos con movimientos',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
                               ),
-                              subtitle: const Text(
-                                'Contar solo movimientos de operaciones que alcanzaron estado completada dentro del rango de fechas',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                              value: _soloCompletadasEnPeriodo,
-                              onChanged: (value) {
-                                setState(() {
-                                  _soloCompletadasEnPeriodo = value ?? false;
-                                });
-                              },
-                              activeColor: AppColors.primary,
-                              contentPadding: EdgeInsets.zero,
                             ),
-                          ],
+                            subtitle: const Text(
+                              'Excluir productos que no tuvieron extracciones, ventas ni pendientes en el período',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            value: _soloConMovimientos,
+                            onChanged: (value) {
+                              setState(() {
+                                _soloConMovimientos = value ?? false;
+                              });
+                            },
+                            activeColor: AppColors.primary,
+                            contentPadding: EdgeInsets.zero,
+                          ),
                         ],
                       ),
                     ),
@@ -1059,131 +768,91 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
 
             const SizedBox(height: 24),
 
-            // Botones de acción
-            Row(
+            // Botones de acción: cada formato exporta directo
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              alignment: WrapAlignment.end,
               children: [
-                Expanded(
-                  child: TextButton(
-                    onPressed: _isExporting ? null : () => Navigator.of(context).pop(),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                TextButton(
+                  onPressed: _isExporting
+                      ? null
+                      : () => Navigator.of(context).pop(),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 12,
+                      horizontal: 16,
                     ),
-                    child: const Text(
-                      'Cancelar',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: AppColors.textSecondary,
-                      ),
+                  ),
+                  child: const Text(
+                    'Cancelar',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: AppColors.textSecondary,
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: _isExporting ? null : _exportInventory,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: _isExporting
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                            ),
-                          )
-                        : const Text(
-                            'Exportar',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
+                ElevatedButton.icon(
+                  onPressed: _isExporting
+                      ? null
+                      : () => _exportInventory('pdf'),
+                  icon: const Icon(Icons.picture_as_pdf, size: 20),
+                  label: _exportingFormat == 'pdf'
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
                             ),
                           ),
+                        )
+                      : const Text('Exportar PDF'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 12,
+                      horizontal: 16,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+                ElevatedButton.icon(
+                  onPressed: _isExporting
+                      ? null
+                      : () => _exportInventory('excel'),
+                  icon: const Icon(Icons.table_chart, size: 20),
+                  label: _exportingFormat == 'excel'
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                          ),
+                        )
+                      : const Text('Exportar Excel'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 12,
+                      horizontal: 16,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 ),
               ],
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ExportMethodCard extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String description;
-  final Color color;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _ExportMethodCard({
-    required this.icon,
-    required this.label,
-    required this.description,
-    required this.color,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: isSelected ? color : color.withOpacity(0.3),
-              width: isSelected ? 2 : 1,
-            ),
-            borderRadius: BorderRadius.circular(12),
-            color: isSelected ? color.withOpacity(0.1) : color.withOpacity(0.05),
-          ),
-          child: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  icon,
-                  size: 24,
-                  color: color,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: color,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                description,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: color.withOpacity(0.8),
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
         ),
       ),
     );

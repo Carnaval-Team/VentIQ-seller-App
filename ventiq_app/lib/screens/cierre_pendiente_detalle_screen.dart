@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/offline_database_service.dart';
 import '../services/user_preferences_service.dart';
+import '../utils/price_utils.dart';
 
 /// Detalle de un cierre de turno guardado localmente (pendiente de sync).
 ///
@@ -159,7 +160,7 @@ class _CierrePendienteDetalleScreenState
 
   String _money(dynamic value) {
     final n = (value is num) ? value.toDouble() : double.tryParse('$value') ?? 0;
-    return '\$${n.toStringAsFixed(2)}';
+    return '\$${n.toMoneyString(2)}';
   }
 
   String _qty(dynamic value) {

@@ -35,6 +35,7 @@ import '../widgets/notification_widget.dart';
 import '../widgets/sync_status_chip.dart';
 import '../widgets/bill_count_dialog.dart';
 import '../widgets/transfer_sms_confirmation_banner.dart';
+import '../widgets/order_product_summary.dart';
 import '../models/product.dart';
 import '../services/category_service.dart';
 import '../services/product_service.dart';
@@ -336,7 +337,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Total actual: \$${baseTotal.toStringAsFixed(2)}',
+                          'Total actual: \$${baseTotal.toMoneyString(2)}',
                           style: TextStyle(
                             fontSize: 14,
                             color: Colors.grey[700],
@@ -495,7 +496,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                     ),
                                   ),
                                   Text(
-                                    '-\$${discountAmount.toStringAsFixed(2)}',
+                                    '-\$${discountAmount.toMoneyString(2)}',
                                     style: const TextStyle(
                                       color: Color(0xFFEF4444),
                                       fontWeight: FontWeight.w700,
@@ -517,7 +518,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                     ),
                                   ),
                                   Text(
-                                    '\$${finalTotal.toStringAsFixed(2)}',
+                                    '\$${finalTotal.toMoneyString(2)}',
                                     style: const TextStyle(
                                       color: Color(0xFF10B981),
                                       fontWeight: FontWeight.w800,
@@ -544,7 +545,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           Text(
                             percentInvalid
                                 ? 'El porcentaje debe ser mayor que 0 y menor o igual a 100.'
-                                : 'El monto debe ser mayor que 0 y no superar \$${baseTotal.toStringAsFixed(2)}.',
+                                : 'El monto debe ser mayor que 0 y no superar \$${baseTotal.toMoneyString(2)}.',
                             style: const TextStyle(
                               color: Colors.red,
                               fontWeight: FontWeight.w600,
@@ -601,7 +602,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                             ).showSnackBar(
                                               SnackBar(
                                                 content: Text(
-                                                  'Descuento aplicado. Total ahora: \$${(result['precioFinal'] as double).toStringAsFixed(2)}',
+                                                  'Descuento aplicado. Total ahora: \$${(result['precioFinal'] as double).toMoneyString(2)}',
                                                 ),
                                                 backgroundColor: const Color(
                                                   0xFF10B981,
@@ -1339,9 +1340,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   final secondaryLabel =
                       cardCurrency == 'USD' ? 'Equivalente CUP' : 'USD';
                   final secondaryTotal = cardCurrency == 'USD'
-                      ? '${displayTotal.toStringAsFixed(2)} CUP'
+                      ? '${displayTotal.toMoneyString(2)} CUP'
                       : cardRate > 0
-                          ? '${(displayTotal / cardRate).toStringAsFixed(2)} USD'
+                          ? '${(displayTotal / cardRate).toMoneyString(2)} USD'
                           : 'N/D';
 
                   return Column(
@@ -1725,8 +1726,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                 // Cuando detailCurrency=='USD' el total ya se mostró
                                 // dividido por tasa, así que el equivalente CUP es displayTotal tal cual.
                                 detailCurrency == 'USD'
-                                    ? '${displayTotal.toStringAsFixed(2)} CUP'
-                                    : '${(displayTotal / detailUsdRate).toStringAsFixed(2)} USD',
+                                    ? '${displayTotal.toMoneyString(2)} CUP'
+                                    : '${(displayTotal / detailUsdRate).toMoneyString(2)} USD',
                                 valueStyle: TextStyle(
                                   fontSize: 13,
                                   color: Colors.grey[500],
@@ -1794,7 +1795,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                       if (montoPendiente > 0)
                                         _buildDetailRowNew(
                                           'Monto pendiente',
-                                          '\$${montoPendiente.toStringAsFixed(2)}',
+                                          '\$${montoPendiente.toMoneyString(2)}',
                                           valueStyle: TextStyle(
                                             fontSize: 14,
                                             fontWeight: FontWeight.bold,
@@ -2038,7 +2039,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           return _buildDetailSection(
                             title: 'Productos (${visibleItems.length})',
                             icon: Icons.shopping_bag_outlined,
-                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                            outlined: false,
+                            padding: EdgeInsets.zero,
                             child: Column(
                               children:
                                   visibleItems
@@ -2047,7 +2049,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                           margin: const EdgeInsets.only(
                                             bottom: 8,
                                           ),
-                                          padding: const EdgeInsets.all(14),
+                                          padding: const EdgeInsets.all(12),
                                           decoration: BoxDecoration(
                                             color: Colors.white,
                                             borderRadius: BorderRadius.circular(
@@ -2070,141 +2072,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                             crossAxisAlignment:
                                                 CrossAxisAlignment.start,
                                             children: [
-                                              Row(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Expanded(
-                                                    child: Column(
-                                                      crossAxisAlignment:
-                                                          CrossAxisAlignment
-                                                              .start,
-                                                      children: [
-                                                        Text(
-                                                          item.nombre,
-                                                          style:
-                                                              const TextStyle(
-                                                                fontSize: 15,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .w600,
-                                                                color: Color(
-                                                                  0xFF1F2937,
-                                                                ),
-                                                              ),
-                                                        ),
-                                                        if ((_isShowSkuEnabled ||
-                                                                _userPreferencesService
-                                                                    .isShowSkuEnabledSync) &&
-                                                            item.producto.sku !=
-                                                                null &&
-                                                            item
-                                                                .producto
-                                                                .sku!
-                                                                .isNotEmpty) ...[
-                                                          const SizedBox(
-                                                            height: 2,
-                                                          ),
-                                                          Text(
-                                                            'SKU: ${item.producto.sku}',
-                                                            style:
-                                                                const TextStyle(
-                                                                  fontSize: 11,
-                                                                  color: Color(
-                                                                    0xFF4A90E2,
-                                                                  ),
-                                                                  fontWeight:
-                                                                      FontWeight
-                                                                          .w500,
-                                                                ),
-                                                          ),
-                                                        ],
-                                                        if ((_isShowSkuEnabled ||
-                                                                _userPreferencesService
-                                                                    .isShowSkuEnabledSync) &&
-                                                            item
-                                                                    .producto
-                                                                    .descripcion !=
-                                                                null &&
-                                                            item
-                                                                .producto
-                                                                .descripcion!
-                                                                .isNotEmpty) ...[
-                                                          const SizedBox(
-                                                            height: 2,
-                                                          ),
-                                                          Text(
-                                                            item
-                                                                .producto
-                                                                .descripcion!,
-                                                            maxLines: 2,
-                                                            overflow:
-                                                                TextOverflow
-                                                                    .ellipsis,
-                                                            style: TextStyle(
-                                                              fontSize: 12,
-                                                              color:
-                                                                  Colors
-                                                                      .grey[500],
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ],
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 8),
-                                                  Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment.end,
-                                                    children: [
-                                                      Text(
-                                                        formatDetailAmount(
-                                                          item.subtotal,
-                                                        ),
-                                                        style: const TextStyle(
-                                                          fontSize: 16,
-                                                          fontWeight:
-                                                              FontWeight.bold,
-                                                          color: Color(
-                                                            0xFF4A90E2,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                      if (detailUsdRate > 0)
-                                                        Text(
-                                                          detailCurrency == 'USD'
-                                                              ? '${item.subtotal.toStringAsFixed(2)} CUP'
-                                                              : '${(item.subtotal / detailUsdRate).toStringAsFixed(2)} USD',
-                                                          style: TextStyle(
-                                                            fontSize: 11,
-                                                            color:
-                                                                Colors
-                                                                    .grey[400],
-                                                          ),
-                                                        ),
-                                                    ],
-                                                  ),
-                                                ],
-                                              ),
-                                              const SizedBox(height: 6),
-                                              Row(
-                                                children: [
-                                                  Icon(
-                                                    Icons.inventory_2_outlined,
-                                                    size: 13,
-                                                    color: Colors.grey[500],
-                                                  ),
-                                                  const SizedBox(width: 4),
-                                                  Expanded(
-                                                    child: Text(
-                                                      '${PriceUtils.formatQuantity(item.cantidad)} unid. · ${formatDetailAmount(item.precioUnitario)} c/u${detailUsdRate > 0 ? detailCurrency == 'USD' ? ' (${item.precioUnitario.toStringAsFixed(2)} CUP c/u)' : ' (${(item.precioUnitario / detailUsdRate).toStringAsFixed(2)} USD c/u)' : ''} · ${item.ubicacionAlmacen}',
-                                                      style: TextStyle(
-                                                        fontSize: 13,
-                                                        color: Colors.grey[600],
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
+                                              OrderProductSummary(
+                                                item: item,
+                                                formatAmount: formatDetailAmount,
+                                                currency: detailCurrency,
+                                                usdRate: detailUsdRate,
+                                                showSku: _isShowSkuEnabled ||
+                                                    _userPreferencesService.isShowSkuEnabledSync,
                                               ),
                                               // Ingredientes
                                               if (item.ingredientes != null &&
@@ -2410,7 +2284,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                                           ),
                                                         ),
                                                       Text(
-                                                        '\$${p.precio.toStringAsFixed(2)} c/u',
+                                                        '\$${p.precio.toMoneyString(2)} c/u',
                                                         style: TextStyle(
                                                           fontSize: 11,
                                                           color:
@@ -2757,20 +2631,23 @@ class _OrdersScreenState extends State<OrdersScreen> {
     required IconData icon,
     required Widget child,
     EdgeInsetsGeometry padding = const EdgeInsets.all(16),
+    bool outlined = true,
   }) {
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[200]!),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      decoration: outlined
+          ? BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey[200]!),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            )
+          : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2791,7 +2668,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
               ],
             ),
           ),
-          const Divider(height: 1, thickness: 1),
+          if (outlined) const Divider(height: 1, thickness: 1),
           Padding(padding: padding, child: child),
         ],
       ),
@@ -3792,18 +3669,18 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final primaryTotal = primaryCurrency == 'USD'
         ? usdPaid
         : totalPaidCup;
-    final primaryTotalLabel = '${primaryTotal.toStringAsFixed(2)} $primaryCurrency';
+    final primaryTotalLabel = '${primaryTotal.toMoneyString(2)} $primaryCurrency';
     final secondaryLabel = primaryCurrency == 'USD'
         ? 'Equivalente CUP'
         : usdPaid > 0
             ? 'Pagado en USD'
             : 'Equivalente USD';
     final secondaryTotal = primaryCurrency == 'USD'
-        ? '${totalPaidCup.toStringAsFixed(2)} CUP'
+        ? '${totalPaidCup.toMoneyString(2)} CUP'
         : usdPaid > 0
-            ? '${usdPaid.toStringAsFixed(2)} USD'
+            ? '${usdPaid.toMoneyString(2)} USD'
             : effectiveRate > 0
-                ? '${(totalPaidCup / effectiveRate).toStringAsFixed(2)} USD'
+                ? '${(totalPaidCup / effectiveRate).toMoneyString(2)} USD'
                 : 'N/D';
 
     return Column(
@@ -3877,7 +3754,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                             _resolvePaymentAmount(payment)) ...[
                       const SizedBox(height: 2),
                       Text(
-                        'Antes: \$${_resolveOriginalPaymentAmount(payment)!.toStringAsFixed(2)}',
+                        'Antes: \$${_resolveOriginalPaymentAmount(payment)!.toMoneyString(2)}',
                         style: const TextStyle(
                           fontSize: 12,
                           color: Colors.grey,
@@ -4334,7 +4211,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                                 ),
                                                 const SizedBox(height: 4),
                                                 Text(
-                                                  'Disponible: \$${paymentAmount.toStringAsFixed(2)}',
+                                                  'Disponible: \$${paymentAmount.toMoneyString(2)}',
                                                   style: TextStyle(
                                                     fontSize: 12,
                                                     color: Colors.grey[600],
@@ -4507,7 +4384,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                     helperText:
                                         selectedSource == null
                                             ? 'Selecciona un origen primero'
-                                            : 'Máximo disponible: \$${sourceAmount.toStringAsFixed(2)}',
+                                            : 'Máximo disponible: \$${sourceAmount.toMoneyString(2)}',
                                     border: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(12),
                                     ),
@@ -4531,7 +4408,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                         children: [
                                           const Text('Monto a transferir'),
                                           Text(
-                                            '\$${amountToMove.toStringAsFixed(2)}',
+                                            '\$${amountToMove.toMoneyString(2)}',
                                             style: const TextStyle(
                                               fontWeight: FontWeight.w600,
                                               color: Color(0xFF2563EB),
@@ -5014,7 +4891,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final String label =
         isPercent
             ? 'Descuento ${valor.toStringAsFixed(0)}%'
-            : 'Descuento fijo \$${valor.toStringAsFixed(2)}';
+            : 'Descuento fijo \$${valor.toMoneyString(2)}';
 
     return {
       'hasDiscount': true,
@@ -5489,10 +5366,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                             PriceUtils.formatQuantity(item.cantidad),
                           ),
                           _pdfBodyCell(
-                            '\$${item.displayPrice.toStringAsFixed(2)}',
+                            '\$${item.displayPrice.toMoneyString(2)}',
                           ),
                           _pdfBodyCell(
-                            '\$${item.subtotal.toStringAsFixed(2)}',
+                            '\$${item.subtotal.toMoneyString(2)}',
                             isBold: true,
                           ),
                         ],
@@ -5576,7 +5453,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       children: [
                         _pdfSummaryLabel('Total sin descuento'),
                         _pdfSummaryValue(
-                          '\$${originalTotal.toStringAsFixed(2)}',
+                          '\$${originalTotal.toMoneyString(2)}',
                         ),
                       ],
                     ),
@@ -5591,7 +5468,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                 : 'Descuento aplicado',
                           ),
                           _pdfSummaryValue(
-                            '- \$${saved.toStringAsFixed(2)}',
+                            '- \$${saved.toMoneyString(2)}',
                             color: PdfColor.fromHex('#DC2626'),
                           ),
                         ],
@@ -5611,7 +5488,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           isBold: true,
                         ),
                         _pdfSummaryValue(
-                          '\$${finalTotal.toStringAsFixed(2)}',
+                          '\$${finalTotal.toMoneyString(2)}',
                           fontSize: 14,
                           isBold: true,
                           color: PdfColor.fromHex('#0F172A'),
@@ -5657,7 +5534,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     return pw.Container(
       padding: const pw.EdgeInsets.symmetric(vertical: 4),
       child: pw.Text(
-        text,
+        text.replaceAll('\u202F', ' '),
         style: pw.TextStyle(
           fontSize: isIngredient ? 9 : 10,
           fontWeight:
@@ -5681,7 +5558,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     bool isBold = false,
   }) {
     return pw.Text(
-      text,
+      text.replaceAll('\u202F', ' '),
       style: pw.TextStyle(
         fontSize: fontSize,
         fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
@@ -5747,7 +5624,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     PdfColor color = PdfColors.black,
   }) {
     return pw.Text(
-      text,
+      text.replaceAll('\u202F', ' '),
       style: pw.TextStyle(
         fontSize: fontSize,
         fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
@@ -7339,7 +7216,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               Text(
-                                'Total: \$${_total.toStringAsFixed(2)}',
+                                'Total: \$${_total.toMoneyString(2)}',
                                 style: TextStyle(
                                   fontSize: 13,
                                   color: Colors.grey[600],
@@ -7649,7 +7526,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                   style: TextStyle(fontSize: 12, color: Colors.grey[500]),
                 ),
               Text(
-                '\$${o.total.toStringAsFixed(2)} · ${o.items.length} producto${o.items.length == 1 ? '' : 's'}',
+                '\$${o.total.toMoneyString(2)} · ${o.items.length} producto${o.items.length == 1 ? '' : 's'}',
                 style: TextStyle(fontSize: 12, color: Colors.grey[600]),
               ),
             ],
@@ -7858,12 +7735,12 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                       style: TextStyle(fontSize: 11, color: Colors.grey[500]),
                     ),
                   Text(
-                    '\$${item.precioUnitario.toStringAsFixed(2)} c/u · Total: \$${item.subtotal.toStringAsFixed(2)}',
+                    '\$${item.precioUnitario.toMoneyString(2)} c/u · Total: \$${item.subtotal.toMoneyString(2)}',
                     style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                   ),
                   if (widget.usdRate > 0)
                     Text(
-                      'USD ${(item.subtotal / widget.usdRate).toStringAsFixed(2)} · ${(item.precioUnitario / widget.usdRate).toStringAsFixed(2)} c/u',
+                      'USD ${(item.subtotal / widget.usdRate).toMoneyString(2)} · ${(item.precioUnitario / widget.usdRate).toMoneyString(2)} c/u',
                       style: TextStyle(fontSize: 11, color: Colors.grey[400]),
                     ),
                 ],
@@ -8128,7 +8005,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
               Row(
                 children: [
                   Text(
-                    '\$${p.precio.toStringAsFixed(2)}',
+                    '\$${p.precio.toMoneyString(2)}',
                     style: const TextStyle(
                       color: Color(0xFF0EA5E9),
                       fontWeight: FontWeight.w600,
@@ -8272,7 +8149,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                             ),
                           ),
                         Text(
-                          '\$${p.precio.toStringAsFixed(2)}',
+                          '\$${p.precio.toMoneyString(2)}',
                           style: const TextStyle(
                             color: Color(0xFF0EA5E9),
                             fontWeight: FontWeight.w600,
@@ -8341,7 +8218,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
           Row(
             children: [
               Text(
-                '\$${product.precio.toStringAsFixed(2)}',
+                '\$${product.precio.toMoneyString(2)}',
                 style: const TextStyle(
                   fontSize: 16,
                   color: Color(0xFF0EA5E9),
@@ -8351,7 +8228,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
               if (widget.usdRate > 0) ...[
                 const SizedBox(width: 8),
                 Text(
-                  '/ USD ${(product.precio / widget.usdRate).toStringAsFixed(2)}',
+                  '/ USD ${(product.precio / widget.usdRate).toMoneyString(2)}',
                   style: TextStyle(fontSize: 13, color: Colors.grey[400]),
                 ),
               ],
@@ -8442,7 +8319,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'Stock: ${stock.toStringAsFixed(stock % 1 == 0 ? 0 : 1)}  ·  \$${precio.toStringAsFixed(2)}',
+                              'Stock: ${stock.toStringAsFixed(stock % 1 == 0 ? 0 : 1)}  ·  \$${precio.toMoneyString(2)}',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.grey[600],
@@ -8558,7 +8435,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                           Row(
                             children: [
                               Text(
-                                '${PriceUtils.formatQuantity(_addQuantity)} × \$${precioFinal.toStringAsFixed(2)}',
+                                '${PriceUtils.formatQuantity(_addQuantity)} × \$${precioFinal.toMoneyString(2)}',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w500,
                                 ),
@@ -8566,7 +8443,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                               if (hasDiscount) ...[
                                 const SizedBox(width: 6),
                                 Text(
-                                  '\$${precioBase.toStringAsFixed(2)}',
+                                  '\$${precioBase.toMoneyString(2)}',
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.grey[500],
@@ -8578,7 +8455,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                           ),
                           // Total
                           Text(
-                            '\$${(_addQuantity * precioFinal).toStringAsFixed(2)}',
+                            '\$${(_addQuantity * precioFinal).toMoneyString(2)}',
                             style: TextStyle(
                               fontWeight: FontWeight.w700,
                               color:

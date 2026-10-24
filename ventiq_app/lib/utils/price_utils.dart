@@ -1,5 +1,18 @@
 /// Utility functions for price formatting and calculations
 class PriceUtils {
+  static String formatAmount(
+    num amount, {
+    int decimals = 2,
+    String separator = '\u202F',
+  }) {
+    final parts = amount.toStringAsFixed(decimals).split('.');
+    final integer = parts.first.replaceAllMapped(
+      RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+      (match) => '${match[1]}$separator',
+    );
+    return parts.length == 1 ? integer : '$integer.${parts.last}';
+  }
+
   /// Rounds a discount price to the nearest integer and formats it with .00
   /// This ensures all discount prices are displayed as whole numbers with .00
   static double roundDiscountPrice(double discountPrice) {
@@ -9,7 +22,7 @@ class PriceUtils {
   /// Formats a discount price as a string with .00 decimals
   static String formatDiscountPrice(double discountPrice) {
     final roundedPrice = roundDiscountPrice(discountPrice);
-    return roundedPrice.toStringAsFixed(2);
+    return formatAmount(roundedPrice);
   }
 
   /// Calculates and rounds discount price based on original price and discount parameters
@@ -174,7 +187,7 @@ class PriceUtils {
       .fold(0, (total, payment) => total + paymentAmount(payment));
 
   static String formatPaymentAmount(Map<String, dynamic> payment) =>
-      '${paymentAmount(payment).toStringAsFixed(2)} ${paymentCurrency(payment)}';
+      '${formatAmount(paymentAmount(payment))} ${paymentCurrency(payment)}';
 
   static String paymentDisplayCurrency(List<Map<String, dynamic>> payments) {
     if (payments.isEmpty) return 'CUP';
@@ -204,12 +217,12 @@ class PriceUtils {
     if (paymentDisplayCurrency(payments) == 'USD') {
       final rate = paymentUsdRate(payments, fallbackRate: fallbackRate);
       if (rate != null && rate > 0) {
-        return '${(cupAmount / rate).toStringAsFixed(2)} USD';
+        return '${formatAmount(cupAmount / rate)} USD';
       }
       // Orden USD sin tasa usable: no mentir con etiqueta CUP.
-      return '${cupAmount.toStringAsFixed(2)} USD';
+      return '${formatAmount(cupAmount)} USD';
     }
-    return '${cupAmount.toStringAsFixed(2)} CUP';
+    return '${formatAmount(cupAmount)} CUP';
   }
 
   /// Convierte un monto CUP a la moneda de visualización del ticket.
@@ -236,8 +249,8 @@ class PriceUtils {
       payments,
       fallbackRate: fallbackRate,
     );
-    if (isUsd) return '${amount.toStringAsFixed(2)} USD';
-    return '\$${amount.toStringAsFixed(cupDecimals)} CUP';
+    if (isUsd) return '${formatAmount(amount, separator: ' ')} USD';
+    return '\$${formatAmount(amount, decimals: cupDecimals, separator: ' ')} CUP';
   }
 
   /// Normaliza mapas de pago de listar_ordenes / get_sale_payments2 / checkout.
@@ -325,4 +338,9 @@ class PriceUtils {
         .replaceAll(RegExp(r'0+$'), '')
         .replaceAll(RegExp(r'\.$'), '');
   }
+}
+
+extension MonetaryAmountFormat on num {
+  String toMoneyString([int decimals = 2, String separator = '\u202F']) =>
+      PriceUtils.formatAmount(this, decimals: decimals, separator: separator);
 }

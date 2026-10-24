@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../services/admin_inventory_service.dart';
+import '../../utils/price_utils.dart';
 
 /// Precios diferenciados por TPV (offline-first).
 class AdminTpvPricesScreen extends StatefulWidget {
@@ -387,7 +388,7 @@ class _AdminTpvPricesScreenState extends State<AdminTpvPricesScreen> {
                               ].join(' · '),
                             ),
                             trailing: Text(
-                              '\$${((p['precio_venta_cup'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}',
+                              '\$${((p['precio_venta_cup'] as num?)?.toDouble() ?? 0).toMoneyString(2)}',
                               style: const TextStyle(
                                 fontWeight: FontWeight.w700,
                                 fontSize: 16,

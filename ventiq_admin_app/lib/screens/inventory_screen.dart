@@ -38,6 +38,11 @@ class _InventoryScreenState extends State<InventoryScreen>
   bool _isAlmacenero = false;
   int? _assignedWarehouseId;
 
+  /// Clave del tab «Movimientos» para recargarlo al volver de una pantalla
+  /// que crea operaciones (recepción, extracción, transferencia, ajuste...).
+  final GlobalKey<InventoryOperationsScreenState> _operationsKey =
+      GlobalKey<InventoryOperationsScreenState>();
+
   @override
   void initState() {
     super.initState();
@@ -51,7 +56,7 @@ class _InventoryScreenState extends State<InventoryScreen>
   Future<void> _checkUserRole() async {
     final role = await _permissionsService.getUserRole();
     final isAlmacenero = role == UserRole.almacenero;
-    
+
     if (isAlmacenero) {
       final warehouseId = await _permissionsService.getAssignedWarehouse();
       if (mounted) {
@@ -119,228 +124,238 @@ class _InventoryScreenState extends State<InventoryScreen>
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder:
-          (context) => Container(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.8,
-            ),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(20),
-                topRight: Radius.circular(20),
+      builder: (context) => Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.8,
+        ),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(20),
+            topRight: Radius.circular(20),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle bar
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(top: 12, bottom: 20),
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Handle bar
-                Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(top: 12, bottom: 20),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2),
-                  ),
+
+            // Title
+            const Padding(
+              padding: EdgeInsets.only(bottom: 20),
+              child: Text(
+                'Opciones de Inventario',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
                 ),
-
-                // Title
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 20),
-                  child: Text(
-                    'Opciones de Inventario',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                  ),
-                ),
-
-                // Scrollable menu options
-                Flexible(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      children: [
-                        if (_canCreateReception)
-                          _buildMenuOption(
-                            icon: Icons.input,
-                            title: 'Recepción de Productos',
-                            subtitle: 'Registrar entrada de mercancía',
-                            color: const Color(0xFF10B981),
-                            onTap: () {
-                              Navigator.pop(context);
-                              _navigateToReception();
-                            },
-                          ),
-
-                        if (_canCreateTransfer)
-                          _buildMenuOption(
-                            icon: Icons.swap_horiz,
-                            title: 'Transferencia entre Almacenes',
-                            subtitle: 'Mover productos entre ubicaciones',
-                            color: const Color(0xFF4A90E2),
-                            onTap: () {
-                              Navigator.pop(context);
-                              _navigateToTransfer();
-                            },
-                          ),
-
-                        if (_canCreateAdjustment)
-                          _buildMenuOption(
-                            icon: Icons.trending_up,
-                            title: 'Ajuste por Exceso',
-                            subtitle: 'Reducir inventario por sobrante',
-                            color: const Color(0xFFFF6B35),
-                            onTap: () {
-                              Navigator.pop(context);
-                              _navigateToExcessAdjustment();
-                            },
-                          ),
-
-                        if (_canCreateAdjustment)
-                          _buildMenuOption(
-                            icon: Icons.trending_down,
-                            title: 'Ajuste por Faltante',
-                            subtitle: 'Aumentar inventario por faltante',
-                            color: const Color(0xFFFF8C42),
-                            onTap: () {
-                              Navigator.pop(context);
-                              _navigateToShortageAdjustment();
-                            },
-                          ),
-
-                        if (_canCreateExtraction)
-                          _buildMenuOption(
-                            icon: Icons.output,
-                            title: 'Extracción de Productos',
-                            subtitle: 'Registrar salida de mercancía',
-                            color: const Color(0xFFEF4444),
-                            onTap: () {
-                              Navigator.pop(context);
-                              _navigateToExtraction();
-                            },
-                          ),
-
-                        if (_canCreateExtraction)
-                          _buildMenuOption(
-                            icon: Icons.output,
-                            title: 'Extracción de Productos Elaborados',
-                            subtitle:
-                                'Registrar salida de productos elaborados',
-                            color: const Color(0xFFEF4444),
-                            onTap: () {
-                              Navigator.pop(context);
-                              _navigateToElaboratedProductsExtraction();
-                            },
-                          ),
-
-                        if (_canCreateExtraction)
-                          _buildMenuOption(
-                            icon: Icons.point_of_sale,
-                            title: 'Venta por Acuerdo',
-                            subtitle:
-                                'Registrar venta directa con precio personalizado',
-                            color: const Color(0xFF10B981),
-                            onTap: () {
-                              Navigator.pop(context);
-                              _navigateToSaleByAgreement();
-                            },
-                          ),
-
-                        if (_canCreateTransfer)
-                          _buildMenuOption(
-                            icon: Icons.handshake,
-                            title: 'Asignar Productos en Consignación',
-                            subtitle:
-                                'Enviar productos a otra tienda en consignación',
-                            color: const Color(0xFF9333EA),
-                            onTap: () {
-                              Navigator.pop(context);
-                              _navigateToConsignacion();
-                            },
-                          ),
-
-                        _buildMenuOption(
-                          icon: Icons.assessment,
-                          title: 'Consultar IPV',
-                          subtitle: 'Ver reporte de inventario, precios y ventas',
-                          color: const Color(0xFF06B6D4),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _navigateToIPVReport();
-                          },
-                        ),
-
-                        _buildMenuOption(
-                          icon: Icons.filter_list,
-                          title: 'Filtro de Búsqueda',
-                          subtitle: 'Filtrar y buscar productos',
-                          color: const Color(0xFF8B5CF6),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _showSearchFilter();
-                          },
-                        ),
-
-                        const SizedBox(height: 20),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
+
+            // Scrollable menu options
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    if (_canCreateReception)
+                      _buildMenuOption(
+                        icon: Icons.input,
+                        title: 'Recepción de Productos',
+                        subtitle: 'Registrar entrada de mercancía',
+                        color: const Color(0xFF10B981),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _navigateToReception();
+                        },
+                      ),
+
+                    if (_canCreateTransfer)
+                      _buildMenuOption(
+                        icon: Icons.swap_horiz,
+                        title: 'Transferencia entre Almacenes',
+                        subtitle: 'Mover productos entre ubicaciones',
+                        color: const Color(0xFF4A90E2),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _navigateToTransfer();
+                        },
+                      ),
+
+                    if (_canCreateAdjustment)
+                      _buildMenuOption(
+                        icon: Icons.trending_up,
+                        title: 'Ajuste por Exceso',
+                        subtitle: 'Reducir inventario por sobrante',
+                        color: const Color(0xFFFF6B35),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _navigateToExcessAdjustment();
+                        },
+                      ),
+
+                    if (_canCreateAdjustment)
+                      _buildMenuOption(
+                        icon: Icons.trending_down,
+                        title: 'Ajuste por Faltante',
+                        subtitle: 'Aumentar inventario por faltante',
+                        color: const Color(0xFFFF8C42),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _navigateToShortageAdjustment();
+                        },
+                      ),
+
+                    if (_canCreateExtraction)
+                      _buildMenuOption(
+                        icon: Icons.output,
+                        title: 'Extracción de Productos',
+                        subtitle: 'Registrar salida de mercancía',
+                        color: const Color(0xFFEF4444),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _navigateToExtraction();
+                        },
+                      ),
+
+                    if (_canCreateExtraction)
+                      _buildMenuOption(
+                        icon: Icons.output,
+                        title: 'Extracción de Productos Elaborados',
+                        subtitle: 'Registrar salida de productos elaborados',
+                        color: const Color(0xFFEF4444),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _navigateToElaboratedProductsExtraction();
+                        },
+                      ),
+
+                    if (_canCreateExtraction)
+                      _buildMenuOption(
+                        icon: Icons.point_of_sale,
+                        title: 'Venta por Acuerdo',
+                        subtitle:
+                            'Registrar venta directa con precio personalizado',
+                        color: const Color(0xFF10B981),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _navigateToSaleByAgreement();
+                        },
+                      ),
+
+                    if (_canCreateTransfer)
+                      _buildMenuOption(
+                        icon: Icons.handshake,
+                        title: 'Asignar Productos en Consignación',
+                        subtitle:
+                            'Enviar productos a otra tienda en consignación',
+                        color: const Color(0xFF9333EA),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _navigateToConsignacion();
+                        },
+                      ),
+
+                    _buildMenuOption(
+                      icon: Icons.assessment,
+                      title: 'Consultar IPV',
+                      subtitle: 'Ver reporte de inventario, precios y ventas',
+                      color: const Color(0xFF06B6D4),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _navigateToIPVReport();
+                      },
+                    ),
+
+                    _buildMenuOption(
+                      icon: Icons.filter_list,
+                      title: 'Filtro de Búsqueda',
+                      subtitle: 'Filtrar y buscar productos',
+                      color: const Color(0xFF8B5CF6),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showSearchFilter();
+                      },
+                    ),
+
+                    const SizedBox(height: 20),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
-  void _navigateToReception() {
-    Navigator.push(
+  Future<void> _navigateToReception() async {
+    await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const InventoryReceptionScreen()),
     );
+    _reloadOperationsTab();
   }
 
-  void _navigateToTransfer() {
-    Navigator.push(
+  /// Recarga el tab «Movimientos» al regresar de una pantalla que puede
+  /// haber creado una operación. Es barato si nada cambió.
+  void _reloadOperationsTab() {
+    _operationsKey.currentState?.reload();
+  }
+
+  Future<void> _navigateToTransfer() async {
+    await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const InventoryTransferScreen()),
     );
+    _reloadOperationsTab();
   }
 
-  void _navigateToExtraction() {
-    Navigator.push(
+  Future<void> _navigateToExtraction() async {
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => const InventoryExtractionScreen(),
       ),
     );
+    _reloadOperationsTab();
   }
 
-  void _navigateToElaboratedProductsExtraction() {
-    Navigator.push(
+  Future<void> _navigateToElaboratedProductsExtraction() async {
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => const ElaboratedProductsExtractionScreen(),
       ),
     );
+    _reloadOperationsTab();
   }
 
-  void _navigateToSaleByAgreement() {
-    Navigator.push(
+  Future<void> _navigateToSaleByAgreement() async {
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => const InventoryExtractionBySaleScreen(),
       ),
     );
+    _reloadOperationsTab();
   }
 
-  void _navigateToConsignacion() {
-    Navigator.push(
+  Future<void> _navigateToConsignacion() async {
+    await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const ConsignacionScreen()),
     );
+    _reloadOperationsTab();
   }
 
   void _navigateToIPVReport() {
@@ -350,48 +365,47 @@ class _InventoryScreenState extends State<InventoryScreen>
     );
   }
 
-  void _navigateToExcessAdjustment() {
-    Navigator.push(
+  Future<void> _navigateToExcessAdjustment() async {
+    await Navigator.push(
       context,
       MaterialPageRoute(
-        builder:
-            (context) => const InventoryAdjustmentScreen(
-              operationType: 4, // Tipo de operación para exceso (restar)
-              adjustmentType: 'excess',
-            ),
+        builder: (context) => const InventoryAdjustmentScreen(
+          operationType: 4, // Tipo de operación para exceso (restar)
+          adjustmentType: 'excess',
+        ),
       ),
     );
+    _reloadOperationsTab();
   }
 
-  void _navigateToShortageAdjustment() {
-    Navigator.push(
+  Future<void> _navigateToShortageAdjustment() async {
+    await Navigator.push(
       context,
       MaterialPageRoute(
-        builder:
-            (context) => const InventoryAdjustmentScreen(
-              operationType: 3, // Tipo de operación para faltante (sumar)
-              adjustmentType: 'shortage',
-            ),
+        builder: (context) => const InventoryAdjustmentScreen(
+          operationType: 3, // Tipo de operación para faltante (sumar)
+          adjustmentType: 'shortage',
+        ),
       ),
     );
+    _reloadOperationsTab();
   }
 
   void _showSearchFilter() {
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Filtro de Búsqueda'),
-            content: const Text(
-              'La funcionalidad de filtro avanzado estará disponible próximamente.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Entendido'),
-              ),
-            ],
+      builder: (context) => AlertDialog(
+        title: const Text('Filtro de Búsqueda'),
+        content: const Text(
+          'La funcionalidad de filtro avanzado estará disponible próximamente.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Entendido'),
           ),
+        ],
+      ),
     );
   }
 
@@ -442,15 +456,17 @@ class _InventoryScreenState extends State<InventoryScreen>
 
   @override
   Widget build(BuildContext context) {
+    final isNarrow = MediaQuery.of(context).size.width < 480;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text(
+        toolbarHeight: isNarrow ? 48 : null,
+        title: Text(
           'Control de Inventario',
           style: TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.w600,
-            fontSize: 20,
+            fontSize: isNarrow ? 17 : 20,
           ),
         ),
         centerTitle: true,
@@ -461,12 +477,11 @@ class _InventoryScreenState extends State<InventoryScreen>
           // Notification widget
           const NotificationWidget(),
           Builder(
-            builder:
-                (context) => IconButton(
-                  icon: const Icon(Icons.menu, color: Colors.white),
-                  onPressed: () => Scaffold.of(context).openEndDrawer(),
-                  tooltip: 'Menú',
-                ),
+            builder: (context) => IconButton(
+              icon: const Icon(Icons.menu, color: Colors.white),
+              onPressed: () => Scaffold.of(context).openEndDrawer(),
+              tooltip: 'Menú',
+            ),
           ),
         ],
         bottom: TabBar(
@@ -474,55 +489,73 @@ class _InventoryScreenState extends State<InventoryScreen>
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white70,
           indicatorColor: Colors.white,
-          tabs: const [
-            Tab(text: 'Dashboard', icon: Icon(Icons.dashboard, size: 18)),
-            Tab(text: 'Stock', icon: Icon(Icons.inventory_2, size: 18)),
-            Tab(text: 'Movimientos', icon: Icon(Icons.swap_horiz, size: 18)),
-            Tab(text: 'Almacenes', icon: Icon(Icons.warehouse, size: 18)),
+          // En pantallas pequeñas, iconos y texto más compactos para dejar
+          // más espacio al listado.
+          labelStyle: TextStyle(fontSize: isNarrow ? 11 : 14),
+          tabs: [
+            Tab(
+              text: 'Dashboard',
+              icon: Icon(Icons.dashboard, size: isNarrow ? 16 : 18),
+              iconMargin: EdgeInsets.only(bottom: isNarrow ? 2 : 4),
+            ),
+            Tab(
+              text: 'Stock',
+              icon: Icon(Icons.inventory_2, size: isNarrow ? 16 : 18),
+              iconMargin: EdgeInsets.only(bottom: isNarrow ? 2 : 4),
+            ),
+            Tab(
+              text: 'Movimientos',
+              icon: Icon(Icons.swap_horiz, size: isNarrow ? 16 : 18),
+              iconMargin: EdgeInsets.only(bottom: isNarrow ? 2 : 4),
+            ),
+            Tab(
+              text: 'Almacenes',
+              icon: Icon(Icons.warehouse, size: isNarrow ? 16 : 18),
+              iconMargin: EdgeInsets.only(bottom: isNarrow ? 2 : 4),
+            ),
           ],
         ),
       ),
-      body:
-          _isLoading
-              ? const Center(
-                child: CircularProgressIndicator(color: AppColors.primary),
-              )
-              : _errorMessage.isNotEmpty
-              ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.error_outline, size: 64, color: AppColors.error),
-                    const SizedBox(height: 16),
-                    Text(
-                      _errorMessage,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: AppColors.textSecondary),
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: _loadInitialData,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text('Reintentar'),
-                    ),
-                  ],
-                ),
-              )
-              : TabBarView(
-                controller: _tabController,
+      body: _isLoading
+          ? const Center(
+              child: CircularProgressIndicator(color: AppColors.primary),
+            )
+          : _errorMessage.isNotEmpty
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const InventoryDashboard(),
-                  InventoryStockScreen(
-                    isAlmacenero: _isAlmacenero,
-                    assignedWarehouseId: _assignedWarehouseId,
+                  Icon(Icons.error_outline, size: 64, color: AppColors.error),
+                  const SizedBox(height: 16),
+                  Text(
+                    _errorMessage,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: AppColors.textSecondary),
                   ),
-                  const InventoryOperationsScreen(),
-                  const InventoryWarehouseScreen(),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: _loadInitialData,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('Reintentar'),
+                  ),
                 ],
               ),
+            )
+          : TabBarView(
+              controller: _tabController,
+              children: [
+                const InventoryDashboard(),
+                InventoryStockScreen(
+                  isAlmacenero: _isAlmacenero,
+                  assignedWarehouseId: _assignedWarehouseId,
+                ),
+                InventoryOperationsScreen(key: _operationsKey),
+                const InventoryWarehouseScreen(),
+              ],
+            ),
       floatingActionButton: _buildFloatingActionButton(),
       endDrawer: const AdminDrawer(),
       bottomNavigationBar: AdminBottomNavigation(

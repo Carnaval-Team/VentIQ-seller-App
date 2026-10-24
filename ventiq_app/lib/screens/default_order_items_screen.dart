@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../models/product.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
+import '../utils/price_utils.dart';
 
 /// Modelo local para un item por defecto configurado por el vendedor.
 class DefaultOrderItem {
@@ -478,7 +479,7 @@ class _DefaultOrderItemsScreenState extends State<DefaultOrderItemsScreen> {
                   Text('SKU: ${p.sku}',
                       style: const TextStyle(
                           fontSize: 11, color: Color(0xFF4A90E2))),
-                Text('\$${p.precio.toStringAsFixed(2)}',
+                Text('\$${p.precio.toMoneyString(2)}',
                     style: const TextStyle(
                         fontSize: 12, color: Color(0xFF0EA5E9))),
               ],
@@ -576,7 +577,7 @@ class _DefaultOrderItemsScreenState extends State<DefaultOrderItemsScreen> {
                         fontSize: 11, color: Color(0xFF4A90E2)),
                   ),
                 Text(
-                  '\$${item.product.precio.toStringAsFixed(2)} c/u',
+                  '\$${item.product.precio.toMoneyString(2)} c/u',
                   style:
                       TextStyle(fontSize: 12, color: Colors.grey[600]),
                 ),

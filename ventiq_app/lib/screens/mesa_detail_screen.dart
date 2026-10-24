@@ -36,6 +36,7 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
   bool _loading = true;
   bool _busy = false;
   bool _showHistoricas = false;
+  bool _didHandleInitialOrder = false;
 
   @override
   void initState() {
@@ -44,6 +45,7 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
   }
 
   Future<void> _loadAll() async {
+    if (!mounted) return;
     setState(() => _loading = true);
     try {
       // Cargamos lista de mesas con stats y filtramos la nuestra; así reutilizamos
@@ -73,17 +75,26 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
         _cuentasAbiertas = cuentas;
         _loading = false;
       });
+      if (!_didHandleInitialOrder && mesa != null) {
+        _didHandleInitialOrder = true;
+        final pending = MesaService.mostRecentPendingOrder(
+          ordenes,
+          idMesa: widget.idMesa,
+        );
+        if (pending != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? true)) return;
+            _abrirDetalleOrden(pending);
+          });
+        }
+      }
     } catch (e) {
       print('❌ Error cargando detalle de mesa: $e');
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  bool _esActiva(Order o) =>
-      o.status == OrderStatus.enviada ||
-      o.status == OrderStatus.procesando ||
-      o.status == OrderStatus.borrador ||
-      o.status == OrderStatus.pendienteDeSincronizacion;
+  bool _esActiva(Order o) => MesaService.isPendingOrder(o);
 
   List<Order> get _activas => _ordenes.where(_esActiva).toList();
   List<Order> get _historicas => _ordenes.where((o) => !_esActiva(o)).toList();

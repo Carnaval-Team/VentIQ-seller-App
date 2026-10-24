@@ -37,8 +37,10 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
   bool _isLoadingBreakdowns = false;
   Map<String, StockBreakdown> _breakdownsByLocation = {};
   Map<int, StockBreakdown> _breakdownsByProduct = {};
+
   /// Clave: `${idProducto}_${idUbicacion}` → lotes con saldo
   Map<String, List<LoteStockInfo>> _lotesByLocation = {};
+
   /// Clave: idProducto → lotes en todas las ubicaciones cargadas
   Map<int, List<LoteStockInfo>> _lotesByProduct = {};
   String _selectedWarehouse = 'Todos';
@@ -173,10 +175,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
           _isLoadingMore = false;
         });
 
-        await Future.wait([
-          _loadBreakdowns(),
-          _loadLotesForDetailedProducts(),
-        ]);
+        await Future.wait([_loadBreakdowns(), _loadLotesForDetailedProducts()]);
 
         print(
           '✅ Loaded ${response.products.length} raw products, grouped to ${groupedProducts.length} unique products (page $_currentPage)',
@@ -204,10 +203,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
           _isLoadingMore = false;
         });
 
-        await Future.wait([
-          _loadSummaryBreakdowns(),
-          _loadLotesForSummaries(),
-        ]);
+        await Future.wait([_loadSummaryBreakdowns(), _loadLotesForSummaries()]);
 
         print('✅ Loaded ${summaries.length} inventory summaries');
         print(
@@ -294,9 +290,11 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
         stockDisponibleAjustado:
             existing.stockDisponibleAjustado + product.stockDisponibleAjustado,
         fechaUltimaActualizacion:
-            product.fechaUltimaActualizacion.isAfter(existing.fechaUltimaActualizacion)
-                ? product.fechaUltimaActualizacion
-                : existing.fechaUltimaActualizacion,
+            product.fechaUltimaActualizacion.isAfter(
+              existing.fechaUltimaActualizacion,
+            )
+            ? product.fechaUltimaActualizacion
+            : existing.fechaUltimaActualizacion,
       );
     }
 
@@ -582,29 +580,27 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                 'Stock OK',
                 'Por vencer',
                 'Vencidos',
-              ].map(
-                (value) {
-                  final isSelected = _stockFilter == value;
-                  return RadioListTile<String>(
-                    value: value,
-                    groupValue: _stockFilter,
-                    onChanged: (value) {
-                      setState(() => _stockFilter = value!);
-                      Navigator.of(context).pop();
-                      _loadInventoryData();
-                    },
-                    title: Text(
-                      value,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: isSelected
-                            ? FontWeight.bold
-                            : FontWeight.normal,
-                      ),
+              ].map((value) {
+                final isSelected = _stockFilter == value;
+                return RadioListTile<String>(
+                  value: value,
+                  groupValue: _stockFilter,
+                  onChanged: (value) {
+                    setState(() => _stockFilter = value!);
+                    Navigator.of(context).pop();
+                    _loadInventoryData();
+                  },
+                  title: Text(
+                    value,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: isSelected
+                          ? FontWeight.bold
+                          : FontWeight.normal,
                     ),
-                  );
-                },
-              ).toList(),
+                  ),
+                );
+              }).toList(),
         ),
         actions: [
           TextButton(
@@ -746,13 +742,15 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
         break;
       case 'Por vencer':
         filtered = filtered.where((s) {
-          final lotes = _lotesByProduct[s.idProducto] ?? const <LoteStockInfo>[];
+          final lotes =
+              _lotesByProduct[s.idProducto] ?? const <LoteStockInfo>[];
           return lotes.any((l) => l.estadoCaducidad == 'expiring');
         }).toList();
         break;
       case 'Vencidos':
         filtered = filtered.where((s) {
-          final lotes = _lotesByProduct[s.idProducto] ?? const <LoteStockInfo>[];
+          final lotes =
+              _lotesByProduct[s.idProducto] ?? const <LoteStockInfo>[];
           return lotes.any((l) => l.estadoCaducidad == 'expired');
         }).toList();
         break;
@@ -981,7 +979,8 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     final key = '${item.idProducto}_${item.idUbicacion}';
     final breakdown = _breakdownsByLocation[key];
     // No sumar unidades de distintas presentaciones; el mixto es la verdad.
-    final hasStock = group.rows.any((r) => r.cantidadFinal > 0) ||
+    final hasStock =
+        group.rows.any((r) => r.cantidadFinal > 0) ||
         (breakdown?.enAlmacen ?? 0) > 0;
     final stockStatus = hasStock
         ? _getStockStatus(
@@ -1007,89 +1006,111 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border, width: 1),
       ),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: stockStatus.color.withOpacity(0.1),
-          child: Icon(Icons.inventory_2, color: stockStatus.color),
-        ),
-        title: Text(
-          item.nombreProducto,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (_showDescriptionInSelectors)
-              if (item.descripcion != null && item.descripcion!.isNotEmpty)
-                Text(
-                  item.descripcion!,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: AppColors.textSecondary,
-                    fontStyle: FontStyle.italic,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                )
-              else if (item.descripcionCorta != null &&
-                  item.descripcionCorta!.isNotEmpty)
-                Text(
-                  item.descripcionCorta!,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: AppColors.textSecondary,
-                    fontStyle: FontStyle.italic,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-            Text('${item.variante} ${item.opcionVariante}'),
-            Text('Almacén: ${item.almacen}'),
-            if (item.ubicacion.isNotEmpty)
-              Text(
-                'Zona: ${item.ubicacion}',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppColors.primary.withOpacity(0.7),
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            LoteExpirySubtitle(lotes: lotes),
-          ],
-        ),
-        isThreeLine: true,
-        trailing: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 120),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.end,
+      // Row + InkWell en lugar de ListTile: el tile limita la altura del
+      // trailing y desborda cuando el texto de stock ocupa dos líneas.
+      child: InkWell(
+        onTap: () => _showInventoryGroupDetails(group),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                group.stockMixtoTexto,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12,
-                ),
-                textAlign: TextAlign.end,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+              CircleAvatar(
+                backgroundColor: stockStatus.color.withOpacity(0.1),
+                child: Icon(Icons.inventory_2, color: stockStatus.color),
               ),
-              const SizedBox(height: 2),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: stockStatus.color,
-                  borderRadius: BorderRadius.circular(12),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.nombreProducto,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    if (_showDescriptionInSelectors)
+                      if (item.descripcion != null &&
+                          item.descripcion!.isNotEmpty)
+                        Text(
+                          item.descripcion!,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: AppColors.textSecondary,
+                            fontStyle: FontStyle.italic,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        )
+                      else if (item.descripcionCorta != null &&
+                          item.descripcionCorta!.isNotEmpty)
+                        Text(
+                          item.descripcionCorta!,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: AppColors.textSecondary,
+                            fontStyle: FontStyle.italic,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    Text('${item.variante} ${item.opcionVariante}'),
+                    Text('Almacén: ${item.almacen}'),
+                    if (item.ubicacion.isNotEmpty)
+                      Text(
+                        'Zona: ${item.ubicacion}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.primary.withOpacity(0.7),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    LoteExpirySubtitle(lotes: lotes),
+                  ],
                 ),
-                child: Text(
-                  stockStatus.label,
-                  style: const TextStyle(color: Colors.white, fontSize: 10),
+              ),
+              const SizedBox(width: 8),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 120),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      group.stockMixtoTexto,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                      textAlign: TextAlign.end,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: stockStatus.color,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        stockStatus.label,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
         ),
-        onTap: () => _showInventoryGroupDetails(group),
       ),
     );
   }
@@ -1346,20 +1367,13 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
           );
           final valueWidget = Text(
             value,
-            style: const TextStyle(
-              fontSize: 13,
-              color: AppColors.textPrimary,
-            ),
+            style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
             softWrap: true,
           );
           if (narrow) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                labelWidget,
-                const SizedBox(height: 2),
-                valueWidget,
-              ],
+              children: [labelWidget, const SizedBox(height: 2), valueWidget],
             );
           }
           return Row(
@@ -1379,7 +1393,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     final item = group.primary;
     final allLotes =
         _lotesByLocation['${item.idProducto}_${item.idUbicacion}'] ??
-            const <LoteStockInfo>[];
+        const <LoteStockInfo>[];
     final lotes = allLotes
         .where(
           (l) =>
@@ -1447,8 +1461,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                           ),
                           if (_showDescriptionInSelectors &&
                               ((item.descripcion?.isNotEmpty ?? false) ||
-                                  (item.descripcionCorta?.isNotEmpty ??
-                                      false)))
+                                  (item.descripcionCorta?.isNotEmpty ?? false)))
                             Text(
                               (item.descripcion?.isNotEmpty ?? false)
                                   ? item.descripcion!
@@ -1615,8 +1628,8 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                                       loteSinLote: lote,
                                       productName: item.nombreProducto,
                                       presentacionLabel:
-                                          presentacionLabels[
-                                              lote.idPresentacion],
+                                          presentacionLabels[lote
+                                              .idPresentacion],
                                     );
                                     if (!ok || !mounted) return;
                                     ScaffoldMessenger.of(context).showSnackBar(
@@ -1739,7 +1752,8 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
   }
 
   void _showInventorySummaryDetails(InventorySummaryByUser summary) {
-    final lotes = _lotesByProduct[summary.idProducto] ?? const <LoteStockInfo>[];
+    final lotes =
+        _lotesByProduct[summary.idProducto] ?? const <LoteStockInfo>[];
     final narrow = MediaQuery.of(context).size.width < 420;
     showDialog(
       context: context,
@@ -1755,258 +1769,234 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
             maxHeight: MediaQuery.of(context).size.height * 0.85,
           ),
           child: Padding(
-          padding: EdgeInsets.all(narrow ? 12 : 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Header
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
+            padding: EdgeInsets.all(narrow ? 12 : 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Header
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.inventory_2,
+                        color: AppColors.primary,
+                        size: 24,
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.inventory_2,
-                      color: AppColors.primary,
-                      size: 24,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            summary.productoNombre,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          if (summary.variantDisplay.isNotEmpty)
+                            Text(
+                              summary.variantDisplay,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(
+                        Icons.close,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+
+                // Content
+                Expanded(
+                  child: SingleChildScrollView(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          summary.productoNombre,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        if (summary.variantDisplay.isNotEmpty)
-                          Text(
-                            summary.variantDisplay,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              color: AppColors.textSecondary,
+                        // Stock Status Card
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: summary.stockLevelColor.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: summary.stockLevelColor.withOpacity(0.3),
                             ),
                           ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(
-                      Icons.close,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-
-              // Content
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Stock Status Card
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: summary.stockLevelColor.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: summary.stockLevelColor.withOpacity(0.3),
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.inventory,
-                                  color: summary.stockLevelColor,
-                                  size: 20,
-                                ),
-                                const SizedBox(width: 8),
-                                const Text(
-                                  'Resumen de Stock',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.textPrimary,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.inventory,
+                                    color: summary.stockLevelColor,
+                                    size: 20,
                                   ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            Builder(
-                              builder: (context) {
-                                final stockStatus = _getStockStatus(
-                                  summary.stock.equivalenteBase.toInt(),
-                                );
-                                return Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  crossAxisAlignment: WrapCrossAlignment.center,
-                                  children: [
-                                    ConstrainedBox(
-                                      constraints: const BoxConstraints(
-                                        maxWidth: 240,
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          const Text(
-                                            'Existencia física',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: AppColors.textSecondary,
-                                            ),
-                                          ),
-                                          Text(
-                                            summary.stock.texto,
-                                            style: TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.bold,
-                                              color: stockStatus.color,
-                                            ),
-                                            softWrap: true,
-                                          ),
-                                          Text(
-                                            'Equivalente: ${StockMixtoFormatter.cantidad(summary.stock.equivalenteBase)} '
-                                            '${StockMixtoFormatter.plural(summary.stock.nombrePresentacionBase, summary.stock.equivalenteBase)} base',
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                              color: AppColors.textSecondary,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                                  const SizedBox(width: 8),
+                                  const Text(
+                                    'Resumen de Stock',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.textPrimary,
                                     ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: stockStatus.color,
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      child: Text(
-                                        stockStatus.label,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Builder(
+                                builder: (context) {
+                                  final stockStatus = _getStockStatus(
+                                    summary.stock.equivalenteBase.toInt(),
+                                  );
+                                  return Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    children: [
+                                      ConstrainedBox(
+                                        constraints: const BoxConstraints(
+                                          maxWidth: 240,
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'Existencia física',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: AppColors.textSecondary,
+                                              ),
+                                            ),
+                                            Text(
+                                              summary.stock.texto,
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                                color: stockStatus.color,
+                                              ),
+                                              softWrap: true,
+                                            ),
+                                            Text(
+                                              'Equivalente: ${StockMixtoFormatter.cantidad(summary.stock.equivalenteBase)} '
+                                              '${StockMixtoFormatter.plural(summary.stock.nombrePresentacionBase, summary.stock.equivalenteBase)} base',
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                color: AppColors.textSecondary,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                    ),
-                                  ],
-                                );
-                              },
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: stockStatus.color,
+                                          borderRadius: BorderRadius.circular(
+                                            20,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          stockStatus.label,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildSummaryStockBreakdownSection(summary),
+                        const SizedBox(height: 12),
+                        if (lotes.isNotEmpty) ...[
+                          LoteExpirySection(
+                            title: 'Stock por lote y presentación',
+                            lotes: lotes,
+                            showUbicacion: true,
+                            showPresentacion: true,
+                            onAssignSinLote: _canAssignLote
+                                ? (lote) async {
+                                    Navigator.of(context).pop();
+                                    final ok = await showAsignarLoteDialog(
+                                      context: context,
+                                      loteSinLote: lote,
+                                      productName: summary.productoNombre,
+                                    );
+                                    if (!ok || !mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Lote asignado correctamente',
+                                        ),
+                                      ),
+                                    );
+                                    await _loadLotesForSummaries();
+                                    await _loadLotesForDetailedProducts();
+                                  }
+                                : null,
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        _buildDetailSection(
+                          'Distribución',
+                          Icons.location_on_outlined,
+                          [
+                            _buildDetailRow(
+                              'Zonas diferentes',
+                              '${summary.zonasDiferentes}',
+                            ),
+                            _buildDetailRow(
+                              'Presentaciones diferentes',
+                              '${summary.presentacionesDiferentes}',
+                            ),
+                            _buildDetailRow(
+                              'Equivalente base',
+                              StockMixtoFormatter.cantidad(
+                                summary.stock.equivalenteBase,
+                              ),
                             ),
                           ],
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      _buildSummaryStockBreakdownSection(summary),
-                      const SizedBox(height: 12),
-                      if (lotes.isNotEmpty) ...[
-                        LoteExpirySection(
-                          title: 'Stock por lote y presentación',
-                          lotes: lotes,
-                          showUbicacion: true,
-                          showPresentacion: true,
-                          onAssignSinLote: _canAssignLote
-                              ? (lote) async {
-                                  Navigator.of(context).pop();
-                                  final ok = await showAsignarLoteDialog(
-                                    context: context,
-                                    loteSinLote: lote,
-                                    productName: summary.productoNombre,
-                                  );
-                                  if (!ok || !mounted) return;
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        'Lote asignado correctamente',
-                                      ),
-                                    ),
-                                  );
-                                  await _loadLotesForSummaries();
-                                  await _loadLotesForDetailedProducts();
-                                }
-                              : null,
-                        ),
-                        const SizedBox(height: 12),
                       ],
-                      _buildDetailSection(
-                        'Distribución',
-                        Icons.location_on_outlined,
-                        [
-                          _buildDetailRow(
-                            'Zonas diferentes',
-                            '${summary.zonasDiferentes}',
-                          ),
-                          _buildDetailRow(
-                            'Presentaciones diferentes',
-                            '${summary.presentacionesDiferentes}',
-                          ),
-                          _buildDetailRow(
-                            'Equivalente base',
-                            StockMixtoFormatter.cantidad(
-                              summary.stock.equivalenteBase,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              if (narrow)
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    OutlinedButton(
-                      onPressed: () {
-                        Navigator.of(context).pop();
-                        setState(() {
-                          _isDetailedView = true;
-                          _searchQuery = summary.productoNombre;
-                          _searchController.text = summary.productoNombre;
-                        });
-                        _loadInventoryData();
-                      },
-                      child: const Text('Ver Detalles'),
-                    ),
-                    const SizedBox(height: 8),
-                    ElevatedButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text('Cerrar'),
-                    ),
-                  ],
-                )
-              else
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
+                const SizedBox(height: 12),
+                if (narrow)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      OutlinedButton(
                         onPressed: () {
                           Navigator.of(context).pop();
                           setState(() {
@@ -2018,10 +2008,8 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                         },
                         child: const Text('Ver Detalles'),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: ElevatedButton(
+                      const SizedBox(height: 8),
+                      ElevatedButton(
                         onPressed: () => Navigator.of(context).pop(),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primary,
@@ -2029,11 +2017,40 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                         ),
                         child: const Text('Cerrar'),
                       ),
-                    ),
-                  ],
-                ),
-            ],
-          ),
+                    ],
+                  )
+                else
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                            setState(() {
+                              _isDetailedView = true;
+                              _searchQuery = summary.productoNombre;
+                              _searchController.text = summary.productoNombre;
+                            });
+                            _loadInventoryData();
+                          },
+                          child: const Text('Ver Detalles'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('Cerrar'),
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -2298,10 +2315,10 @@ class _StockCardGroup {
   final List<InventoryProduct> rows;
 
   _StockCardGroup(List<InventoryProduct> rows)
-      : rows = List<InventoryProduct>.unmodifiable(
-          (List<InventoryProduct>.from(rows)
-            ..sort((a, b) => b.cantidadFinal.compareTo(a.cantidadFinal))),
-        );
+    : rows = List<InventoryProduct>.unmodifiable(
+        (List<InventoryProduct>.from(rows)
+          ..sort((a, b) => b.cantidadFinal.compareTo(a.cantidadFinal))),
+      );
 
   InventoryProduct get primary => rows.first;
 

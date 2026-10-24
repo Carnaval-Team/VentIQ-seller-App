@@ -14,6 +14,7 @@ import '../services/promotion_service.dart';
 import '../services/turno_service.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/promotion_rules.dart';
+import '../utils/price_utils.dart';
 
 /// Pantalla dedicada a productos marcados como "paquete".
 /// Muestra detalle del producto, precio con promociones (producto y global),
@@ -1336,7 +1337,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     final label =
         isPercent
             ? '$prefix${valor.toStringAsFixed(0)}%'
-            : '$prefix\$${valor.toStringAsFixed(2)}';
+            : '$prefix\$${valor.toMoneyString(2)}';
 
     return Container(
       padding: const EdgeInsets.all(10),
@@ -1386,7 +1387,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   String _toUsd(double cup) {
     if (_usdRate <= 0) return '';
     final usd = cup / _usdRate;
-    return 'USD \$${usd.toStringAsFixed(2)}';
+    return 'USD \$${usd.toMoneyString(2)}';
   }
 
   double _usdValue(double cup) {
@@ -1438,7 +1439,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        '\$${effectiveUsd.toStringAsFixed(2)}',
+                        '\$${effectiveUsd.toMoneyString(2)}',
                         style: TextStyle(
                           fontSize: 32,
                           fontWeight: FontWeight.bold,
@@ -1450,7 +1451,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                       Padding(
                         padding: const EdgeInsets.only(bottom: 4),
                         child: Text(
-                          '\$${baseUsd.toStringAsFixed(2)}',
+                          '\$${baseUsd.toMoneyString(2)}',
                           style: const TextStyle(
                             fontSize: 14,
                             color: Colors.grey,
@@ -1465,7 +1466,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        '\$${effectiveUsd.toStringAsFixed(2)}',
+                        '\$${effectiveUsd.toMoneyString(2)}',
                         style: TextStyle(
                           fontSize: 32,
                           fontWeight: FontWeight.bold,
@@ -1477,7 +1478,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                       Padding(
                         padding: const EdgeInsets.only(bottom: 4),
                         child: Text(
-                          'base \$${baseUsd.toStringAsFixed(2)}',
+                          'base \$${baseUsd.toMoneyString(2)}',
                           style: const TextStyle(
                             fontSize: 12,
                             color: Colors.grey,
@@ -1488,7 +1489,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                   )
                 else
                   Text(
-                    '\$${effectiveUsd.toStringAsFixed(2)}',
+                    '\$${effectiveUsd.toMoneyString(2)}',
                     style: TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
@@ -1640,14 +1641,14 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
               ),
               Text(
                 _usdRate > 0
-                    ? '${_formatQty(_quantity)} × \$${unitUsd.toStringAsFixed(2)}'
+                    ? '${_formatQty(_quantity)} × \$${unitUsd.toMoneyString(2)}'
                     : 'Cargando tasa...',
                 style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
               ),
             ],
           ),
           Text(
-            _usdRate > 0 ? '\$${totalUsd.toStringAsFixed(2)}' : '--',
+            _usdRate > 0 ? '\$${totalUsd.toMoneyString(2)}' : '--',
             style: TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.bold,
@@ -1790,7 +1791,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           _kv(
             'Precio unit. (USD)',
             _usdRate > 0
-                ? '\$${_usdValue(_effectiveUnitPrice).toStringAsFixed(2)}'
+                ? '\$${_usdValue(_effectiveUnitPrice).toMoneyString(2)}'
                 : '--',
           ),
           const Divider(height: 20),
@@ -1856,7 +1857,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
               ),
               Text(
                 _usdRate > 0
-                    ? '\$${_usdValue(_total).toStringAsFixed(2)}'
+                    ? '\$${_usdValue(_total).toMoneyString(2)}'
                     : '--',
                 style: TextStyle(
                   fontSize: 22,
@@ -1939,7 +1940,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                 ),
                 Text(
                   _usdRate > 0
-                      ? '${_formatQty(_quantity)} × USD \$${_usdValue(_effectiveUnitPrice).toStringAsFixed(2)}'
+                      ? '${_formatQty(_quantity)} × USD \$${_usdValue(_effectiveUnitPrice).toMoneyString(2)}'
                       : '${_formatQty(_quantity)} libras',
                   style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
                 ),
@@ -1962,7 +1963,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           ),
           Text(
             _usdRate > 0
-                ? 'USD \$${_usdValue(_total).toStringAsFixed(2)}'
+                ? 'USD \$${_usdValue(_total).toMoneyString(2)}'
                 : '--',
             style: TextStyle(
               fontWeight: FontWeight.bold,
@@ -2566,7 +2567,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                   Text('Producto: ${product.denominacion}'),
                   Text('Cantidad: ${_formatQty(_quantity)} lb'),
                   Text(
-                    'Total: ${_usdRate > 0 ? 'USD \$${_usdValue(_total).toStringAsFixed(2)}' : '\$${_total.toStringAsFixed(2)}'}',
+                    'Total: ${_usdRate > 0 ? 'USD \$${_usdValue(_total).toMoneyString(2)}' : '\$${_total.toMoneyString(2)}'}',
                   ),
                   Text('Método pago: ${_metodoPago ?? '-'}'),
                   const Divider(),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/user_preferences_service.dart';
+import '../utils/price_utils.dart';
 
 /// Diálogo para contar billetes de CUP y USD y calcular el monto total en CUP
 /// usando el tipo de cambio de la tienda. Devuelve el total en CUP al cerrar.
@@ -223,7 +224,7 @@ class _CashCountDialogState extends State<CashCountDialog> {
                 border: Border.all(color: Colors.amber[200]!),
               ),
               child: Text(
-                'Tasa de cambio: 1 USD = ${_cambioCupUsd.toStringAsFixed(2)} CUP',
+                'Tasa de cambio: 1 USD = ${_cambioCupUsd.toMoneyString(2)} CUP',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
@@ -279,7 +280,7 @@ class _CashCountDialogState extends State<CashCountDialog> {
                         SizedBox(
                           width: 90,
                           child: Text(
-                            '\$${value.toStringAsFixed(value % 1 == 0 ? 0 : 2)}',
+                            '\$${value.toMoneyString(value % 1 == 0 ? 0 : 2)}',
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
@@ -347,7 +348,7 @@ class _CashCountDialogState extends State<CashCountDialog> {
                   style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
                 ),
                 Text(
-                  '\$${_totalCup.toStringAsFixed(2)}',
+                  '\$${_totalCup.toMoneyString(2)}',
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
@@ -364,7 +365,7 @@ class _CashCountDialogState extends State<CashCountDialog> {
                   style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
                 ),
                 Text(
-                  '\$${_totalUsdCup.toStringAsFixed(2)}',
+                  '\$${_totalUsdCup.toMoneyString(2)}',
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
@@ -390,7 +391,7 @@ class _CashCountDialogState extends State<CashCountDialog> {
                     ),
                   ),
                   Text(
-                    '\$${totalCounted.toStringAsFixed(2)}',
+                    '\$${totalCounted.toMoneyString(2)}',
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,

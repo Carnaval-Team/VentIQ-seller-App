@@ -416,7 +416,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
                 ),
               ),
               Text(
-                '\$${prices['precio_venta']!.toStringAsFixed(2)}',
+                '\$${prices['precio_venta']!.toMoneyString(2)}',
                 style: TextStyle(
                   fontSize: isRecargo ? 16 : 14,
                   color: isRecargo ? Colors.purple : Colors.grey[600],
@@ -460,7 +460,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
           borderRadius: BorderRadius.circular(4),
         ),
         child: Text(
-          '\$${originalPrice.toStringAsFixed(2)}',
+          '\$${originalPrice.toMoneyString(2)}',
           style: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
@@ -499,7 +499,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
       );
     } else {
       return Text(
-        '\$${originalPrice.toStringAsFixed(2)}',
+        '\$${originalPrice.toMoneyString(2)}',
         style: const TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w600,
@@ -1136,7 +1136,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
                           style: const TextStyle(fontWeight: FontWeight.w500),
                         ),
                         Text(
-                          'Total: \$${item.subtotal.toStringAsFixed(2)}',
+                          'Total: \$${item.subtotal.toMoneyString(2)}',
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             color: Colors.green,
@@ -1158,7 +1158,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 Text(
-                  '\$${orderItems.fold(0.0, (sum, item) => sum + item.subtotal).toStringAsFixed(2)}',
+                  '\$${orderItems.fold(0.0, (sum, item) => sum + item.subtotal).toMoneyString(2)}',
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,

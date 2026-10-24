@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/mesa.dart';
+import '../services/mesa_cuenta_service.dart';
 import '../services/mesa_service.dart';
+import '../services/order_service.dart';
 import '../services/sales_mode_service.dart';
 import '../services/store_config_service.dart';
 import '../utils/navigation_helper.dart';
@@ -24,11 +26,16 @@ class MesasScreen extends StatefulWidget {
 
 class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
   final MesaService _mesaService = MesaService();
+  final MesaCuentaService _cuentaService = MesaCuentaService();
+  final OrderService _orderService = OrderService();
   final TextEditingController _searchController = TextEditingController();
 
   List<Mesa> _mesas = [];
-  MesasResumen _resumen = MesasResumen.empty();
+  MesasResumen get _resumen => MesasResumen.fromMesas(_mesas);
   bool _loading = true;
+  bool _hasLoaded = false;
+  String? _loadError;
+  int _loadRequestId = 0;
   String? _zonaFiltro;
   String _busqueda = '';
   Timer? _pollingTimer;
@@ -61,34 +68,46 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _loadAll();
+      _startPolling();
+    } else {
+      _pollingTimer?.cancel();
     }
   }
 
   void _startPolling() {
     _pollingTimer?.cancel();
     _pollingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted) _loadAll(silent: true);
+      if (mounted && (ModalRoute.of(context)?.isCurrent ?? true)) {
+        _loadAll(silent: true);
+      }
     });
   }
 
   Future<void> _loadAll({bool silent = false}) async {
+    if (!mounted) return;
+    final requestId = ++_loadRequestId;
     if (!silent) {
       setState(() => _loading = true);
     }
     try {
-      final results = await Future.wait([
-        _mesaService.listMesasWithStats(),
-        _mesaService.getResumenMesas(),
-      ]);
-      if (!mounted) return;
+      final mesas = await _mesaService.listMesasWithStats(throwOnError: true);
+      if (!mounted || requestId != _loadRequestId) return;
       setState(() {
-        _mesas = results[0] as List<Mesa>;
-        _resumen = results[1] as MesasResumen;
+        _mesas = mesas;
+        _hasLoaded = true;
+        _loadError = null;
         _loading = false;
       });
     } catch (e) {
       print('❌ Error cargando mesas: $e');
-      if (mounted) setState(() => _loading = false);
+      if (!mounted || requestId != _loadRequestId) return;
+      setState(() {
+        _loading = false;
+        _loadError =
+            _hasLoaded
+                ? 'No se pudo actualizar. Se muestran los últimos datos recibidos.'
+                : 'No se pudieron cargar las mesas. Intenta actualizar.';
+      });
     }
   }
 
@@ -284,7 +303,37 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
     );
   }
 
-  void _openMesaDetail(Mesa mesa) {
+  Future<void> _openMesaDetail(Mesa mesa) async {
+    // Si la mesa tiene una única cuenta abierta, ir directo a su detalle
+    // en vez de pasar por la pantalla intermedia de la mesa. Con varias
+    // cuentas abiertas se muestra MesaDetailScreen para elegir cuál atender.
+    if (mesa.ocupada) {
+      try {
+        final cuentas = await _cuentaService.listarCuentasMesa(mesa.id);
+        if (!mounted) return;
+        if (cuentas.length == 1) {
+          final cuenta = cuentas.first;
+          _orderService.setActiveMesa(idMesa: mesa.id, numero: mesa.numero);
+          _cuentaService.setActive(
+            idCuenta: cuenta.id,
+            idMesa: mesa.id,
+            mesaNumero: mesa.numero,
+            mesaZona: mesa.zona,
+          );
+          await Navigator.pushNamed(
+            context,
+            '/cuenta-mesa',
+            arguments: cuenta.id,
+          );
+          if (mounted) _loadAll(silent: true);
+          return;
+        }
+      } catch (e) {
+        // Sin conexión o error de RPC: caer a la vista de mesa de siempre.
+        print('⚠️ No se pudieron listar cuentas de la mesa ${mesa.id}: $e');
+      }
+    }
+    if (!mounted) return;
     Navigator.pushNamed(
       context,
       '/mesa-detail',
@@ -335,11 +384,44 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
             SliverToBoxAdapter(child: _buildHeader()),
+            if (_loadError != null)
+              SliverToBoxAdapter(
+                child: Container(
+                  margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.warning_amber_rounded,
+                        color: Colors.orange,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(_loadError!)),
+                      TextButton(
+                        onPressed: () => _loadAll(),
+                        child: const Text('Actualizar'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             SliverToBoxAdapter(child: _buildFilters()),
             if (_loading)
               const SliverFillRemaining(
                 hasScrollBody: false,
                 child: Center(child: CircularProgressIndicator()),
+              )
+            else if (!_hasLoaded && _loadError != null)
+              const SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(child: Text('Datos no disponibles')),
               )
             else if (_mesasFiltradas.isEmpty)
               SliverFillRemaining(
@@ -396,13 +478,19 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
       case 1:
         // Mismo criterio que el resto de pantallas: en flujo de mesa el
         // carrito es la cuenta abierta, no la preorden local.
-        NavigationHelper.goCarrito(context);
+        NavigationHelper.goCarrito(context).then((_) => _loadAll(silent: true));
         break;
       case 2:
-        Navigator.pushNamed(context, '/orders');
+        Navigator.pushNamed(
+          context,
+          '/orders',
+        ).then((_) => _loadAll(silent: true));
         break;
       case 3:
-        Navigator.pushNamed(context, '/settings');
+        Navigator.pushNamed(
+          context,
+          '/settings',
+        ).then((_) => _loadAll(silent: true));
         break;
     }
   }
@@ -410,7 +498,8 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
   // ----- subwidgets -----
 
   Widget _buildHeader() {
-    final top = _resumen.mesaTopComensales;
+    final resumen = _resumen;
+    final top = resumen.mesaTopComensales;
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -430,14 +519,14 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
                 _buildMetricChip(
                   icon: Icons.table_bar,
                   label: 'Total',
-                  value: '${_resumen.total}',
+                  value: _hasLoaded ? '${resumen.total}' : '—',
                   color: Colors.white,
                 ),
                 const SizedBox(width: 8),
                 _buildMetricChip(
                   icon: Icons.event_seat,
                   label: 'Ocupadas',
-                  value: '${_resumen.ocupadas}',
+                  value: _hasLoaded ? '${resumen.ocupadas}' : '—',
                   color: Colors.orange.shade100,
                   valueColor: Colors.orange.shade900,
                 ),
@@ -445,7 +534,7 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
                 _buildMetricChip(
                   icon: Icons.check_circle_outline,
                   label: 'Libres',
-                  value: '${_resumen.libres}',
+                  value: _hasLoaded ? '${resumen.libres}' : '—',
                   color: Colors.green.shade100,
                   valueColor: Colors.green.shade900,
                 ),
@@ -453,7 +542,7 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
                 _buildMetricChip(
                   icon: Icons.receipt_long,
                   label: 'Pendientes',
-                  value: '${_resumen.ordenesPendientesTotal}',
+                  value: _hasLoaded ? '${resumen.ordenesPendientesTotal}' : '—',
                   color: Colors.blue.shade100,
                   valueColor: Colors.blue.shade900,
                 ),
@@ -615,8 +704,8 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
   ///    como "ribbon" para identificación periférica rápida.
   Widget _buildMesaCard(Mesa mesa) {
     // Paleta por estado
-    final Color accent;        // color principal del estado
-    final Color bgSoft;        // fondo suave para el body
+    final Color accent; // color principal del estado
+    final Color bgSoft; // fondo suave para el body
     final String estadoLabel;
     final IconData estadoIcon;
 
@@ -672,7 +761,10 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
             children: [
               // Banner superior con estado
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 color: accent,
                 child: Row(
                   children: [
@@ -715,7 +807,10 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
               Expanded(
                 child: Container(
                   color: bgSoft,
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 6,
+                  ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -764,8 +859,11 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.people_alt_outlined,
-                        size: 12, color: Colors.grey[600]),
+                    Icon(
+                      Icons.people_alt_outlined,
+                      size: 12,
+                      color: Colors.grey[600],
+                    ),
                     const SizedBox(width: 3),
                     Text(
                       '${mesa.capacidad}',
@@ -777,15 +875,15 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
                     ),
                     const Spacer(),
                     if (mesa.ordenesCompletadasHistoricas > 0) ...[
-                      Icon(Icons.receipt_long,
-                          size: 11, color: Colors.grey[500]),
+                      Icon(
+                        Icons.receipt_long,
+                        size: 11,
+                        color: Colors.grey[500],
+                      ),
                       const SizedBox(width: 2),
                       Text(
                         '${mesa.ordenesCompletadasHistoricas}',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.grey[600],
-                        ),
+                        style: TextStyle(fontSize: 10, color: Colors.grey[600]),
                       ),
                     ],
                   ],

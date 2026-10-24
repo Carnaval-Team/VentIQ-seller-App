@@ -406,12 +406,12 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Precio actual: \$${currentPrice.toStringAsFixed(2)}',
+                    'Precio actual: \$${currentPrice.toMoneyString(2)}',
                     style: TextStyle(color: Colors.grey[700]),
                   ),
                   if (hasCustom && originalPrice != currentPrice)
                     Text(
-                      'Precio original: \$${originalPrice.toStringAsFixed(2)}',
+                      'Precio original: \$${originalPrice.toMoneyString(2)}',
                       style: TextStyle(
                         color: Colors.grey[500],
                         fontSize: 12,
@@ -481,7 +481,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                         const SizedBox(height: 6),
                         Text(
                           previewPriceClamped != null
-                              ? '\$${previewPriceClamped.toStringAsFixed(2)}'
+                              ? '\$${previewPriceClamped.toMoneyString(2)}'
                               : 'Ingresa un valor para previsualizar',
                           style: TextStyle(
                             fontSize: 16,
@@ -495,8 +495,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                         if (previewDelta != null)
                           Text(
                             previewDelta >= 0
-                                ? '+\$${previewDelta.toStringAsFixed(2)}'
-                                : '-\$${previewDelta.abs().toStringAsFixed(2)}',
+                                ? '+\$${previewDelta.toMoneyString(2)}'
+                                : '-\$${previewDelta.abs().toMoneyString(2)}',
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
@@ -1336,7 +1336,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
               ),
             ),
             Text(
-              '\$${prices['precio_venta']!.toStringAsFixed(2)}',
+              '\$${prices['precio_venta']!.toMoneyString(2)}',
               style: TextStyle(
                 fontSize: isRecargo ? 16 : 14,
                 color: isRecargo ? widget.categoryColor : Colors.grey[600],
@@ -1374,7 +1374,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     } else {
       priceContent.add(
         Text(
-          '\$${basePrice.toStringAsFixed(2)}',
+          '\$${basePrice.toMoneyString(2)}',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w600,
@@ -1389,7 +1389,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       priceContent.add(const SizedBox(height: 4));
       priceContent.add(
         Text(
-          'Original: \$${originalBasePrice.toStringAsFixed(2)}',
+          'Original: \$${originalBasePrice.toMoneyString(2)}',
           style: TextStyle(
             fontSize: 11,
             color: Colors.grey[600],
@@ -1450,7 +1450,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       );
     } else {
       priceWidget = Text(
-        '\$${basePrice.toStringAsFixed(2)}',
+        '\$${basePrice.toMoneyString(2)}',
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w600,
@@ -1507,7 +1507,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     }
 
     debugPrint(
-      '💰 Total price calculado con presentaciones: \$${total.toStringAsFixed(2)}',
+      '💰 Total price calculado con presentaciones: \$${total.toMoneyString(2)}',
     );
     return total;
   }
@@ -1995,7 +1995,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                         ),
                       ),
                       Text(
-                        '\$${totalPrice.toStringAsFixed(2)}',
+                        '\$${totalPrice.toMoneyString(2)}',
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
@@ -2404,7 +2404,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                     quantity,
                     currentProduct,
                     variant, // FASE 4: factor POR VARIANTE
-                  ).toStringAsFixed(2)}',
+                  ).toMoneyString(2)}',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
@@ -2439,8 +2439,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                     children: [
                       Text(
                         isRecargo
-                            ? 'Venta: \$${prices['precio_venta']!.toStringAsFixed(2)}'
-                            : 'Base: \$${price.toStringAsFixed(2)}',
+                            ? 'Venta: \$${prices['precio_venta']!.toMoneyString(2)}'
+                            : 'Base: \$${price.toMoneyString(2)}',
                         style: TextStyle(
                           fontSize: 11,
                           color: Colors.grey[600],
@@ -2462,7 +2462,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                     ],
                   )
                   : Text(
-                    'Precio: \$${price.toStringAsFixed(2)}',
+                    'Precio: \$${price.toMoneyString(2)}',
                     style: TextStyle(
                       fontSize: 13,
                       color: locationColor,
@@ -2476,7 +2476,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
             Row(
               children: [
                 Text(
-                  'Original: \$${originalPriceValue!.toStringAsFixed(2)}',
+                  'Original: \$${originalPriceValue!.toMoneyString(2)}',
                   style: TextStyle(
                     fontSize: 11,
                     color: Colors.grey[600],
@@ -2946,11 +2946,11 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
 
     debugPrint('💰 Cálculo precio para producto ${product.id}'
         '${variant != null ? ' (variante ${variant.id})' : ''}:');
-    debugPrint('   - Precio base: \$${basePrice.toStringAsFixed(2)}');
+    debugPrint('   - Precio base: \$${basePrice.toMoneyString(2)}');
     debugPrint('   - Factor conversión: ${conversionFactor}');
-    debugPrint('   - Precio unitario: \$${unitPrice.toStringAsFixed(2)}');
+    debugPrint('   - Precio unitario: \$${unitPrice.toMoneyString(2)}');
     debugPrint('   - Cantidad: $quantity');
-    debugPrint('   - Precio total: \$${totalPrice.toStringAsFixed(2)}');
+    debugPrint('   - Precio total: \$${totalPrice.toMoneyString(2)}');
 
     return totalPrice;
   }

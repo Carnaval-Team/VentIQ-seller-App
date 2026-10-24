@@ -12,6 +12,7 @@ import '../services/payment_method_service.dart';
 import '../services/turno_service.dart';
 import '../services/currency_service.dart';
 import '../utils/uuid_generator.dart';
+import '../utils/price_utils.dart';
 import '../services/settings_integration_service.dart';
 import '../services/auto_sync_service.dart';
 import '../services/store_config_service.dart';
@@ -2116,7 +2117,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             ),
           if (efectivoInicial != null)
             Text(
-              'Efectivo inicial: \$${efectivoInicial.toStringAsFixed(2)}',
+              'Efectivo inicial: \$${efectivoInicial.toMoneyString(2)}',
               style: TextStyle(fontSize: 12, color: Colors.grey[600]),
             ),
           if (usuario != null && usuario.isNotEmpty)
@@ -3884,7 +3885,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                         style: const TextStyle(fontWeight: FontWeight.w500),
                       ),
                       Text(
-                        'Efectivo inicial: \$${efectivoInicial.toStringAsFixed(2)}',
+                        'Efectivo inicial: \$${efectivoInicial.toMoneyString(2)}',
                       ),
                       Text('Cierre: $fechaCierre'),
                       const SizedBox(height: 12),
@@ -3893,25 +3894,25 @@ class _SettingsScreenState extends State<SettingsScreen>
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                       Text(
-                        'Total ventas: \$${totalVentas.toStringAsFixed(2)} CUP'
-                        '${totalVentasUsd != null ? ' (≈ \$${totalVentasUsd.toStringAsFixed(2)} USD)' : ''}',
+                        'Total ventas: \$${totalVentas.toMoneyString(2)} CUP'
+                        '${totalVentasUsd != null ? ' (≈ \$${totalVentasUsd.toMoneyString(2)} USD)' : ''}',
                       ),
                       Text('Productos vendidos: $productosVendidos'),
                       Text('Operaciones: $operacionesTotales'),
                       Text(
-                        'Ticket promedio: \$${ticketPromedio.toStringAsFixed(2)}',
+                        'Ticket promedio: \$${ticketPromedio.toMoneyString(2)}',
                       ),
                       const SizedBox(height: 8),
-                      Text('Efectivo: \$${totalEfectivo.toStringAsFixed(2)}'),
+                      Text('Efectivo: \$${totalEfectivo.toMoneyString(2)}'),
                       Text(
-                        'Transferencias: \$${totalTransferencias.toStringAsFixed(2)}',
+                        'Transferencias: \$${totalTransferencias.toMoneyString(2)}',
                       ),
                       Text(
-                        'Efectivo esperado: \$${efectivoEsperado.toStringAsFixed(2)}',
+                        'Efectivo esperado: \$${efectivoEsperado.toMoneyString(2)}',
                       ),
                       if (diferencia.abs() > 0.01)
                         Text(
-                          'Diferencia: ${diferencia >= 0 ? '+' : ''}\$${diferencia.toStringAsFixed(2)}',
+                          'Diferencia: ${diferencia >= 0 ? '+' : ''}\$${diferencia.toMoneyString(2)}',
                           style: TextStyle(
                             color:
                                 diferencia >= 0
@@ -3926,13 +3927,13 @@ class _SettingsScreenState extends State<SettingsScreen>
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                       Text(
-                        'Egresos efectivo: \$${egresosEfectivo.toStringAsFixed(2)}',
+                        'Egresos efectivo: \$${egresosEfectivo.toMoneyString(2)}',
                       ),
                       Text(
-                        'Egresos digitales: \$${egresosDigitales.toStringAsFixed(2)}',
+                        'Egresos digitales: \$${egresosDigitales.toMoneyString(2)}',
                       ),
                       Text(
-                        'Egresos totales: \$${egresosTotales.toStringAsFixed(2)}',
+                        'Egresos totales: \$${egresosTotales.toMoneyString(2)}',
                       ),
                     ],
                   ),

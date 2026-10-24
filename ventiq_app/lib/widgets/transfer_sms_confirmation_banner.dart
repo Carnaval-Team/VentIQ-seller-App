@@ -251,7 +251,7 @@ class TransferSmsConfirmationBannerState
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '✅ Pago de \$${match.monto.toStringAsFixed(2)} confirmado por SMS '
+            '✅ Pago de \$${match.monto.toMoneyString(2)} confirmado por SMS '
             '(${match.banco})',
           ),
           backgroundColor: Colors.green[700],
@@ -296,7 +296,7 @@ class TransferSmsConfirmationBannerState
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '${confirmed.banco} · \$${confirmed.monto.toStringAsFixed(2)} ${confirmed.moneda}',
+                    '${confirmed.banco} · \$${confirmed.monto.toMoneyString(2)} ${confirmed.moneda}',
                     style: TextStyle(fontSize: 13, color: Colors.grey[800]),
                   ),
                   Text(
@@ -368,7 +368,7 @@ class TransferSmsConfirmationBannerState
                 const SizedBox(height: 2),
                 Text(
                   'Buscando SMS de PAGOxMOVIL por '
-                  '\$${widget.expectedAmount.toStringAsFixed(2)}. '
+                  '\$${widget.expectedAmount.toMoneyString(2)}. '
                   'Puedes continuar sin esperar.',
                   style: TextStyle(fontSize: 12, color: Colors.grey[700]),
                 ),

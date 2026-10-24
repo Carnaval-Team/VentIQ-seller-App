@@ -9,6 +9,7 @@ import '../services/server_time_service.dart';
 import '../services/inventory_service.dart';
 import '../services/connectivity_service.dart';
 import '../utils/uuid_generator.dart';
+import '../utils/price_utils.dart';
 import '../utils/connection_error_handler.dart';
 import '../models/inventory_product.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -1667,7 +1668,7 @@ class _AperturaScreenState extends State<AperturaScreen>
                 _buildInfoRow('Vendedor:', idVendedor),
                 _buildInfoRow(
                   'Efectivo inicial:',
-                  '\$${efectivo.toStringAsFixed(2)}',
+                  '\$${efectivo.toMoneyString(2)}',
                 ),
                 _buildInfoRow(
                   'Inventario:',
@@ -2106,11 +2107,11 @@ class _AperturaScreenState extends State<AperturaScreen>
               children: [
                 _buildInfoRow(
                   'Ventas Totales:',
-                  '\$${_previousShiftSales.toStringAsFixed(2)}',
+                  '\$${_previousShiftSales.toMoneyString(2)}',
                 ),
                 _buildInfoRow(
                   'Efectivo al cierre:',
-                  '\$${_previousShiftCash.toStringAsFixed(2)}',
+                  '\$${_previousShiftCash.toMoneyString(2)}',
                 ),
                 _buildInfoRow(
                   'Productos Vendidos:',
@@ -2119,7 +2120,7 @@ class _AperturaScreenState extends State<AperturaScreen>
                 if (_previousShiftTicketAvg > 0)
                   _buildInfoRow(
                     'Ticket Promedio:',
-                    '\$${_previousShiftTicketAvg.toStringAsFixed(2)}',
+                    '\$${_previousShiftTicketAvg.toMoneyString(2)}',
                   ),
               ],
             )

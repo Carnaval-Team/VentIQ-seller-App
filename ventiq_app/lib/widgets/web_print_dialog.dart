@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/order.dart';
+import '../utils/price_utils.dart';
 
 /// Widget de diálogo específico para impresión web
 /// Muestra información sobre la impresión web y opciones disponibles
@@ -82,7 +83,7 @@ class WebPrintDialog extends StatelessWidget {
           SizedBox(height: 8),
           _buildInfoRow('Orden:', order.id),
           _buildInfoRow('Cliente:', order.buyerName ?? 'Cliente General'),
-          _buildInfoRow('Total:', '\$${order.total.toStringAsFixed(2)}'),
+          _buildInfoRow('Total:', '\$${order.total.toMoneyString(2)}'),
           _buildInfoRow('Productos:', '${order.distinctItemCount}'),
           _buildInfoRow('Estado:', order.status.displayName),
         ],

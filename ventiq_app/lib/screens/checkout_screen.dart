@@ -24,6 +24,7 @@ import '../utils/price_utils.dart';
 import '../utils/promotion_rules.dart';
 import '../utils/uuid_generator.dart';
 import '../utils/package_image_picker.dart' as web_picker;
+import '../widgets/checkout_amount_row.dart';
 import '../widgets/transfer_sms_confirmation_banner.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
@@ -200,8 +201,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               !SalesModeService.mostradorActivo;
           _solicitarImagenOperacion =
               config['solicitar_imagen_operacion'] ?? false;
-          _mostrarSelectorMoneda =
-              config['mostrar_selector_moneda'] ?? false;
+          _mostrarSelectorMoneda = config['mostrar_selector_moneda'] ?? false;
           print(
             '✅ Configuración cargada desde cache - No solicitar cliente: $_noSolicitarCliente, Modo restaurante: $_modoRestaurante',
           );
@@ -437,7 +437,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   String _formatCheckoutAmount(double cupAmount) {
     final currency = _displayTotalsInUsd ? 'USD' : 'CUP';
-    return '${_displayAmount(cupAmount).toStringAsFixed(2)} $currency';
+    return '${_displayAmount(cupAmount).toMoneyString(2)} $currency';
   }
 
   // Calculate payment breakdown from individual product payment methods
@@ -729,7 +729,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Monto pendiente: \$${monto.toStringAsFixed(2)}. No se cobra ahora; '
+                  'Monto pendiente: \$${PriceUtils.formatAmount(monto)}. No se cobra ahora; '
                   'queda como saldo a favor de la tienda contra el cliente.',
                   style: TextStyle(fontSize: 12, color: Colors.brown[800]),
                 ),
@@ -826,12 +826,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         ],
                       ),
                     ),
-                    if (methodId != null && !esPendiente && _usdRate > 0 && _mostrarSelectorMoneda) ...[
+                    if (methodId != null &&
+                        !esPendiente &&
+                        _usdRate > 0 &&
+                        _mostrarSelectorMoneda) ...[
                       _buildCurrencyToggle(methodId, currency),
                       const SizedBox(width: 8),
                     ],
                     Text(
-                      '${displayAmount.toStringAsFixed(2)} $currency',
+                      '${displayAmount.toMoneyString(2)} $currency',
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -1408,9 +1411,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             : 'Equivalente USD';
     final secondaryAmount =
         _displayTotalsInUsd
-            ? '${finalTotal.toStringAsFixed(2)} CUP'
+            ? '${finalTotal.toMoneyString(2)} CUP'
             : hasRate
-            ? '${(finalTotal / _usdRate).toStringAsFixed(2)} USD'
+            ? '${(finalTotal / _usdRate).toMoneyString(2)} USD'
             : 'N/D';
 
     return Container(
@@ -1422,82 +1425,51 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       ),
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Subtotal:', style: TextStyle(fontSize: 14)),
-              Text(
-                _formatCheckoutAmount(subtotal),
-                style: const TextStyle(fontSize: 14),
-              ),
-            ],
+          CheckoutAmountRow(
+            label: 'Subtotal:',
+            amount: _formatCheckoutAmount(subtotal),
+            labelStyle: const TextStyle(fontSize: 14),
+            amountStyle: const TextStyle(fontSize: 14),
           ),
           if (_promoDiscount > 0) ...[
             const SizedBox(height: 4),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Descuento promocional:',
-                  style: TextStyle(fontSize: 14, color: Colors.green),
-                ),
-                Text(
-                  '-${_formatCheckoutAmount(_promoDiscount)}',
-                  style: const TextStyle(fontSize: 14, color: Colors.green),
-                ),
-              ],
+            CheckoutAmountRow(
+              label: 'Descuento promocional:',
+              amount: '-${_formatCheckoutAmount(_promoDiscount)}',
+              labelStyle: const TextStyle(fontSize: 14, color: Colors.green),
+              amountStyle: const TextStyle(fontSize: 14, color: Colors.green),
             ),
           ],
           const Divider(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Total Final:',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF1F2937),
-                ),
-              ),
-              Text(
-                _formatCheckoutAmount(finalTotal),
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF4A90E2),
-                ),
-              ),
-            ],
+          CheckoutAmountRow(
+            label: 'Total Final:',
+            amount: _formatCheckoutAmount(finalTotal),
+            labelStyle: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF1F2937),
+            ),
+            amountStyle: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF4A90E2),
+            ),
           ),
           const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                secondaryLabel,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.grey[700],
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              if (_isLoadingUsdRate)
-                const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              else
-                Text(
-                  secondaryAmount,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF4A90E2),
-                  ),
-                ),
-            ],
+          CheckoutAmountRow(
+            label: secondaryLabel,
+            amount: secondaryAmount,
+            isLoading: _isLoadingUsdRate,
+            labelStyle: TextStyle(
+              fontSize: 13,
+              color: Colors.grey[700],
+              fontWeight: FontWeight.w600,
+            ),
+            amountStyle: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF4A90E2),
+            ),
           ),
         ],
       ),
@@ -1952,13 +1924,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           await _userPreferencesService.shouldStayFullyOffline() ||
           await _userPreferencesService.isOfflineModeEnabled();
 
-      if (_solicitarImagenOperacion && !isOffline && _fotoOperacionBytes == null) {
+      if (_solicitarImagenOperacion &&
+          !isOffline &&
+          _fotoOperacionBytes == null) {
         throw StateError('Debes adjuntar una foto para crear la operación');
       }
 
       // Online: subir ya. Offline: se omite la foto (no se puede gestionar).
       String? fotoOperacionUrl;
-      if (_solicitarImagenOperacion && !isOffline && _fotoOperacionBytes != null) {
+      if (_solicitarImagenOperacion &&
+          !isOffline &&
+          _fotoOperacionBytes != null) {
         fotoOperacionUrl = await _uploadOperationPhoto();
         if (fotoOperacionUrl == null) {
           throw StateError('No se pudo subir la foto de la operación');
@@ -2947,7 +2923,7 @@ class _ClientPickerSheetState extends State<_ClientPickerSheet> {
                             subtitle = 'Bloqueado para cuentas por cobrar';
                           } else if (tieneDeuda && saldo != null && saldo > 0) {
                             subtitle =
-                                'Deuda: \$${saldo.toStringAsFixed(2)}'
+                                'Deuda: \$${PriceUtils.formatAmount(saldo)}'
                                 '${telefono != null && telefono.isNotEmpty ? ' · $telefono' : ''}';
                           } else {
                             subtitle =

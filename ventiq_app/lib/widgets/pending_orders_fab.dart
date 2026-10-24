@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/auto_sync_service.dart';
 import '../services/user_preferences_service.dart';
+import '../utils/price_utils.dart';
 
 /// FAB que aparece solo cuando hay órdenes pendientes de sincronización.
 /// Muestra un badge con el conteo y, al expandirse, un panel con la lista,
@@ -257,7 +258,7 @@ class _PendingOrdersFABState extends State<PendingOrdersFAB>
 
   String _formatTotal(dynamic total) {
     if (total == null) return '0.00';
-    if (total is num) return total.toStringAsFixed(2);
+    if (total is num) return total.toMoneyString(2);
     return total.toString();
   }
 

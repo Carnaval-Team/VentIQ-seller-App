@@ -4,6 +4,7 @@ import '../../services/admin_ticket_printer_service.dart';
 import '../../services/auto_sync_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/user_preferences_service.dart';
+import '../../utils/price_utils.dart';
 
 /// Lista de turnos offline (abiertos y cerrados pendientes de sync) con su
 /// cuadre local. El gerente puede subir la cola al servidor cuando hay red.
@@ -151,7 +152,7 @@ class _AdminTurnosOfflineScreenState extends State<AdminTurnosOfflineScreen> {
 
   String _fmtMoney(dynamic v) {
     final n = (v is num) ? v.toDouble() : double.tryParse('$v') ?? 0.0;
-    return '\$${n.toStringAsFixed(2)}';
+    return '\$${n.toMoneyString(2)}';
   }
 
   dynamic _efectivoInicialOf(

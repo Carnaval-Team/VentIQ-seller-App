@@ -3,6 +3,7 @@ import '../models/expense.dart';
 import '../services/user_preferences_service.dart';
 import '../services/turno_service.dart';
 import '../utils/app_snackbar.dart';
+import '../utils/price_utils.dart';
 
 class EgresosListScreen extends StatefulWidget {
   final List<Expense> expenses;
@@ -183,17 +184,17 @@ class _EgresosListScreenState extends State<EgresosListScreen> {
                   children: [
                     _buildSimpleStat(
                       'Total',
-                      '\$${widget.totalEgresos.toStringAsFixed(0)}',
+                      '\$${widget.totalEgresos.toMoneyString(0)}',
                       Colors.red[600]!,
                     ),
                     _buildSimpleStat(
                       'Efectivo',
-                      '\$${widget.egresosEfectivo.toStringAsFixed(0)}',
+                      '\$${widget.egresosEfectivo.toMoneyString(0)}',
                       Colors.orange[600]!,
                     ),
                     _buildSimpleStat(
                       'Digital',
-                      '\$${widget.egresosTransferencias.toStringAsFixed(0)}',
+                      '\$${widget.egresosTransferencias.toMoneyString(0)}',
                       Colors.blue[600]!,
                     ),
                   ],
@@ -312,7 +313,7 @@ class _EgresosListScreenState extends State<EgresosListScreen> {
                         ),
                       ),
                       Text(
-                        '\$${expense.montoEntrega.toStringAsFixed(0)}',
+                        '\$${expense.montoEntrega.toMoneyString(0)}',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
@@ -454,7 +455,7 @@ class _EgresosListScreenState extends State<EgresosListScreen> {
                     _buildDetailRow('ID Egreso:', '${expense.idEgreso}'),
                     _buildDetailRow('Fecha:', _formatDate(expense.fechaEntrega)),
                     _buildDetailRow('Hora:', _formatTime(expense.fechaEntrega)),
-                    _buildDetailRow('Monto:', '\$${expense.montoEntrega.toStringAsFixed(2)}'),
+                    _buildDetailRow('Monto:', '\$${expense.montoEntrega.toMoneyString(2)}'),
                     _buildDetailRow('Método de pago:', expense.medioPago ?? 'N/A'),
                     _buildDetailRow(
                       'Tipo:',

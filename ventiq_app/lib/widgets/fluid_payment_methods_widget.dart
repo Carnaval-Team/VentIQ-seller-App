@@ -5,6 +5,7 @@ import '../models/payment_method.dart';
 import '../services/user_preferences_service.dart';
 import '../services/payment_method_service.dart';
 import '../utils/app_snackbar.dart';
+import '../utils/price_utils.dart';
 
 class FluidPaymentMethodsWidget extends StatefulWidget {
   final List<OrderItem> orderItems;
@@ -204,7 +205,7 @@ class _FluidPaymentMethodsWidgetState extends State<FluidPaymentMethodsWidget> {
       // Tolerancia de 1 centavo
       AppSnackBar.showPersistent(
         context,
-        message: 'Falta cubrir \$${_remainingAmount.toStringAsFixed(2)}',
+        message: 'Falta cubrir \$${_remainingAmount.toMoneyString(2)}',
         backgroundColor: Colors.orange,
       );
       return;
@@ -329,12 +330,12 @@ class _FluidPaymentMethodsWidgetState extends State<FluidPaymentMethodsWidget> {
                       ),
                     ),
                     Text(
-                      '${item.cantidad.toStringAsFixed(0)} x \$${item.precioUnitario.toStringAsFixed(2)}',
+                      '${item.cantidad.toStringAsFixed(0)} x \$${item.precioUnitario.toMoneyString(2)}',
                       style: const TextStyle(fontSize: 14),
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      '\$${item.subtotal.toStringAsFixed(2)}',
+                      '\$${item.subtotal.toMoneyString(2)}',
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         color: Colors.green,
@@ -354,7 +355,7 @@ class _FluidPaymentMethodsWidgetState extends State<FluidPaymentMethodsWidget> {
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 Text(
-                  '\$${_totalAmount.toStringAsFixed(2)}',
+                  '\$${_totalAmount.toMoneyString(2)}',
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -400,7 +401,7 @@ class _FluidPaymentMethodsWidgetState extends State<FluidPaymentMethodsWidget> {
               children: [
                 const Text('Total a pagar:'),
                 Text(
-                  '\$${_totalAmount.toStringAsFixed(2)}',
+                  '\$${_totalAmount.toMoneyString(2)}',
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ],
@@ -411,7 +412,7 @@ class _FluidPaymentMethodsWidgetState extends State<FluidPaymentMethodsWidget> {
               children: [
                 const Text('Pagado:'),
                 Text(
-                  '\$${totalPaid.toStringAsFixed(2)}',
+                  '\$${totalPaid.toMoneyString(2)}',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     color: totalPaid > 0 ? Colors.green : Colors.grey,
@@ -425,7 +426,7 @@ class _FluidPaymentMethodsWidgetState extends State<FluidPaymentMethodsWidget> {
               children: [
                 const Text('Restante:'),
                 Text(
-                  '\$${_remainingAmount.toStringAsFixed(2)}',
+                  '\$${_remainingAmount.toMoneyString(2)}',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     color: _remainingAmount > 0 ? Colors.red : Colors.green,
@@ -671,7 +672,7 @@ class _FluidPaymentMethodsWidgetState extends State<FluidPaymentMethodsWidget> {
                 if (_remainingAmount > 0)
                   ActionChip(
                     label: Text(
-                      'Pagar resto en efectivo (\$${_remainingAmount.toStringAsFixed(2)})',
+                      'Pagar resto en efectivo (\$${_remainingAmount.toMoneyString(2)})',
                     ),
                     avatar: const Icon(Icons.money, size: 18),
                     onPressed: _payRemainingWithCash,
@@ -707,7 +708,7 @@ class _FluidPaymentMethodsWidgetState extends State<FluidPaymentMethodsWidget> {
               ? 'Continuar a Datos del Cliente'
               : _selectedPaymentMethods.isEmpty
               ? 'Selecciona métodos de pago'
-              : 'Completa el pago (\$${_remainingAmount.toStringAsFixed(2)} restante)',
+              : 'Completa el pago (\$${_remainingAmount.toMoneyString(2)} restante)',
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
       ),

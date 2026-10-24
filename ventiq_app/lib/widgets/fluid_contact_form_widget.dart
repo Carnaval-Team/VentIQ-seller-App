@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/order.dart';
+import '../utils/price_utils.dart';
 
 class FluidContactFormWidget extends StatefulWidget {
   final List<OrderItem> orderItems;
@@ -167,7 +168,7 @@ class _FluidContactFormWidgetState extends State<FluidContactFormWidget> {
               return Padding(
                 padding: const EdgeInsets.only(left: 8, bottom: 2),
                 child: Text(
-                  '• ${method.denominacion}: \$${amount.toStringAsFixed(2)}',
+                  '• ${method.denominacion}: \$${PriceUtils.formatAmount(amount as num)}',
                   style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
                 ),
               );
@@ -185,7 +186,7 @@ class _FluidContactFormWidgetState extends State<FluidContactFormWidget> {
                   ),
                 ),
                 Text(
-                  '\$${totalAmount.toStringAsFixed(2)}',
+                  '\$${totalAmount.toMoneyString(2)}',
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -527,7 +528,7 @@ class _FluidContactFormWidgetState extends State<FluidContactFormWidget> {
             const Icon(Icons.shopping_cart_checkout),
             const SizedBox(width: 8),
             Text(
-              'Procesar Orden - \$${widget.orderItems.fold(0.0, (sum, item) => sum + item.subtotal).toStringAsFixed(2)}',
+              'Procesar Orden - \$${widget.orderItems.fold(0.0, (sum, item) => sum + item.subtotal).toMoneyString(2)}',
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,

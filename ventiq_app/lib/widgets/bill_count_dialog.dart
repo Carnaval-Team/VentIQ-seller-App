@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/order.dart';
 import '../services/user_preferences_service.dart';
+import '../utils/price_utils.dart';
 
 class BillCountDialog extends StatefulWidget {
   final Order order;
@@ -237,7 +238,7 @@ class _BillCountDialogState extends State<BillCountDialog> {
                             final isVisible = !tempHidden.contains(id);
                             return CheckboxListTile(
                               dense: true,
-                              title: Text('\$${value.toStringAsFixed(0)}'),
+                              title: Text('\$${value.toMoneyString(0)}'),
                               value: isVisible,
                               onChanged: (v) {
                                 setStateDialog(() {
@@ -426,7 +427,7 @@ class _BillCountDialogState extends State<BillCountDialog> {
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                'Conversión USD → CUP: 1 USD = ${_cambioCupUsd.toStringAsFixed(2)} CUP',
+                                'Conversión USD → CUP: 1 USD = ${_cambioCupUsd.toMoneyString(2)} CUP',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Colors.amber[700],
@@ -475,7 +476,7 @@ class _BillCountDialogState extends State<BillCountDialog> {
                           SizedBox(
                             width: 48,
                             child: Text(
-                              '\$${denominationValue.toStringAsFixed(0)}',
+                              '\$${denominationValue.toMoneyString(0)}',
                               style: const TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
@@ -554,7 +555,7 @@ class _BillCountDialogState extends State<BillCountDialog> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
-                                  '\$${subtotal.toStringAsFixed(2)}',
+                                  '\$${subtotal.toMoneyString(2)}',
                                   textAlign: TextAlign.right,
                                   style: const TextStyle(
                                     fontSize: 12,
@@ -563,7 +564,7 @@ class _BillCountDialogState extends State<BillCountDialog> {
                                 ),
                                 if (_selectedCurrency == 'USD' && count > 0)
                                   Text(
-                                    '(${(denominationValue * count).toStringAsFixed(2)} USD)',
+                                    '(${(denominationValue * count).toMoneyString(2)} USD)',
                                     textAlign: TextAlign.right,
                                     style: TextStyle(
                                       fontSize: 9,
@@ -635,7 +636,7 @@ class _BillCountDialogState extends State<BillCountDialog> {
                                 ),
                               ),
                               Text(
-                                '\$${_targetAmount.toStringAsFixed(2)} CUP',
+                                '\$${_targetAmount.toMoneyString(2)} CUP',
                                 style: const TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.bold,
@@ -657,7 +658,7 @@ class _BillCountDialogState extends State<BillCountDialog> {
                                   ),
                                 ),
                                 Text(
-                                  '\$${widget.order.total.toStringAsFixed(2)} CUP',
+                                  '\$${widget.order.total.toMoneyString(2)} CUP',
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.grey[600],
@@ -678,7 +679,7 @@ class _BillCountDialogState extends State<BillCountDialog> {
                                 ),
                               ),
                               Text(
-                                '\$${_totalAmount.toStringAsFixed(2)}',
+                                '\$${_totalAmount.toMoneyString(2)}',
                                 style: const TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.bold,
@@ -707,7 +708,7 @@ class _BillCountDialogState extends State<BillCountDialog> {
                                 ),
                               ),
                               Text(
-                                '\$${_remainingAmount.abs().toStringAsFixed(2)}',
+                                '\$${_remainingAmount.abs().toMoneyString(2)}',
                                 style: TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,

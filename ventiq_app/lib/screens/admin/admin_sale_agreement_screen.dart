@@ -6,6 +6,7 @@ import '../../services/admin_ticket_printer_service.dart';
 import '../../services/payment_method_service.dart';
 import '../../services/user_preferences_service.dart';
 import '../../utils/presentacion_cadena_local.dart';
+import '../../utils/price_utils.dart';
 import '../../utils/presentation_selection.dart';
 import '../../widgets/captura_mixta_presentacion.dart';
 
@@ -436,7 +437,7 @@ class _AdminSaleAgreementScreenState extends State<AdminSaleAgreementScreen> {
                       title: Text(p['denominacion']?.toString() ?? ''),
                       subtitle: Text(
                         'Stock: ${p['cantidad'] ?? 0} · '
-                        '\$${_priceOf(p).toStringAsFixed(2)}',
+                        '\$${_priceOf(p).toMoneyString(2)}',
                       ),
                       onTap: () => setState(() {
                         _selected = p;
@@ -515,8 +516,8 @@ class _AdminSaleAgreementScreenState extends State<AdminSaleAgreementScreen> {
                     // identicas aunque una sea Caja y la otra Unidad.
                     subtitle: Text(
                       '${_cantidadConPresentacion(l)} x '
-                      '\$${((l['precio_unitario'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)} '
-                      '= \$${lineTotal.toStringAsFixed(2)}',
+                      '\$${((l['precio_unitario'] as num?)?.toDouble() ?? 0).toMoneyString(2)} '
+                      '= \$${lineTotal.toMoneyString(2)}',
                     ),
                     trailing: IconButton(
                       icon: const Icon(Icons.delete_outline),
@@ -528,7 +529,7 @@ class _AdminSaleAgreementScreenState extends State<AdminSaleAgreementScreen> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: Text(
-                    'Total: \$${_total.toStringAsFixed(2)}',
+                    'Total: \$${_total.toMoneyString(2)}',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
