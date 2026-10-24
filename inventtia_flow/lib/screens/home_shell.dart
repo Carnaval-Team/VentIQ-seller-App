@@ -6,6 +6,7 @@ import '../config/app_theme.dart';
 import '../providers/auth_provider.dart';
 import '../providers/entidad_provider.dart';
 import '../providers/favoritos_provider.dart';
+import '../providers/modo_vista_provider.dart';
 import '../providers/reservas_provider.dart';
 import '../providers/suscripcion_provider.dart';
 import '../services/auth_service.dart';
@@ -14,7 +15,10 @@ import '../services/update_service.dart';
 import '../tutorial/tutorial_destino.dart';
 import '../tutorial/tutorial_flujos.dart';
 import '../tutorial/tutorial_navegacion.dart';
+import '../utils/modo_vista.dart';
+import '../utils/shell_navegacion.dart';
 import '../widgets/aviso_suscripcion.dart';
+import '../widgets/barra_navegacion_cliente.dart';
 import 'catalogo_screen.dart';
 import 'home_client_screen.dart';
 import 'mis_listas_screen.dart';
@@ -38,6 +42,10 @@ class _HomeShellState extends State<HomeShell> {
   /// El tutorial de primer uso se intenta lanzar una sola vez por sesión de
   /// shell; es el `TutorialService` el que recuerda si ya se vio (o se saltó).
   bool _tutorialRevisado = false;
+
+  /// Si el admin está viendo la app como cliente. Lo leen también las pantallas
+  /// que cambian de contenido según el rol (Perfil), por eso es un provider.
+  final ModoVistaProvider _modo = ModoVistaProvider();
 
   // GlobalKeys para poder llamar reload() en las pantallas con IndexedStack
   final GlobalKey<HomeClientScreenState> _homeKey =
@@ -73,7 +81,14 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void initState() {
     super.initState();
-    _screens = [const GestionScreen(), const PerfilScreen()];
+    _screens = [
+      // «Ver como cliente»: el admin sale de Gestión para ver la app con los
+      // ojos de un cliente y puede volver (la vuelta está en el Home y en
+      // Perfil). Los dos accesos pasan por `_verComoCliente`, que además deja la
+      // pestaña correcta.
+      GestionScreen(onVerComoCliente: _verComoCliente),
+      PerfilScreen(onVerComoCliente: _verComoCliente),
+    ];
     _screensNoAdmin = [
       HomeClientScreen(
         key: _homeKey,
@@ -81,8 +96,9 @@ class _HomeShellState extends State<HomeShell> {
         onVerCatalogo: _abrirCatalogoServicios,
         // "Publica tu negocio" lleva al perfil, a "Registrar Entidad".
         onPublicarNegocio: _abrirRegistrarEntidad,
-        // Tocar un establecimiento abre el catálogo filtrado por ese local.
-        onVerEstablecimiento: _abrirCatalogoDeEstablecimiento,
+        // Vuelta al panel de administración. La pantalla solo enseña el acceso
+        // si el usuario administra algo (un cliente puro nunca lo ve).
+        onVerAdmin: _volverAlAdmin,
       ),
       CatalogoScreen(key: _catalogoKey),
       MisListasScreen(key: _misListasKey),
@@ -91,6 +107,8 @@ class _HomeShellState extends State<HomeShell> {
         key: _perfilKey,
         // "Ver el tutorial otra vez" del perfil del cliente.
         onRepetirTutorial: _repetirTutorialCliente,
+        // Vuelta al panel desde la pestaña Perfil (la otra vía es el Home).
+        onVerAdmin: _volverAlAdmin,
       ),
     ];
     _screensVendedor = [
@@ -99,14 +117,74 @@ class _HomeShellState extends State<HomeShell> {
     ];
     _screensVendedorAdmin = [
       MisTicketsScreen(key: _misTicketsKey),
-      const GestionScreen(),
-      const PerfilScreen(),
+      GestionScreen(onVerComoCliente: _verComoCliente),
+      PerfilScreen(onVerComoCliente: _verComoCliente),
     ];
 
     // Load entities immediately to prevent UI flash
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadInitialData();
     });
+
+    // Las vistas apiladas de «Exploración rápida» pintan su propia barra: para
+    // cambiar de pestaña tienen que poder pedírselo al shell (ver
+    // `ShellNavegacion`). Se registra una sola vez por vida de este State.
+    ShellNavegacion.registrar(_irAPestanaDesdeUnaPantalla);
+  }
+
+  @override
+  void dispose() {
+    // El puente es estático: si el shell se desmonta (cierre de sesión, cambio de
+    // rol), hay que soltarlo o una ruta apilada que sobreviva intentaría cambiar
+    // de pestaña en un State muerto.
+    ShellNavegacion.limpiar();
+    _modo.dispose();
+    super.dispose();
+  }
+
+  /// Pasa a ver la app como cliente (desde «Gestión» o Perfil del admin).
+  ///
+  /// Se vuelve a la primera pestaña: las dos listas de pantallas no comparten
+  /// índices (Gestión es la 0 del admin y el Home la 0 del cliente), así que
+  /// conservar el índice dejaría al usuario en una pestaña que no pidió. Por eso
+  /// **todos** los accesos al modo cliente pasan por aquí, no por el provider
+  /// directamente: el provider no sabe nada de pestañas.
+  void _verComoCliente() {
+    if (!mounted) return;
+    if (!puedeVerComoCliente(esAdmin: context.read<EntidadProvider>().isAdmin)) {
+      return;
+    }
+    setState(() => _currentIndex = 0);
+    _modo.verComoCliente();
+  }
+
+  /// Vuelve al panel de administración.
+  void _volverAlAdmin() {
+    if (!mounted) return;
+    setState(() => _currentIndex = 0);
+    _modo.verComoAdmin();
+  }
+
+  /// Cambia de pestaña cuando lo pide una pantalla apilada.
+  ///
+  /// El rol y el modo se leen en el momento del toque, no al registrar: el mismo
+  /// shell atiende al cliente, al vendedor y al admin en modo cliente. Se
+  /// resuelve la **vista** (no el rol) porque `_onTabSelected` decide con ella
+  /// qué pestañas hay que refrescar: pasarle «es admin» dejaba al cliente puro
+  /// sin refrescos.
+  void _irAPestanaDesdeUnaPantalla(int indice) {
+    if (!mounted) return;
+    final entidad = context.read<EntidadProvider>();
+    _onTabSelected(
+      indice,
+      esVistaCliente(
+        vistaDelShell(
+          esAdmin: entidad.isAdmin,
+          esVendedor: entidad.isVendedor,
+          comoCliente: _modo.comoCliente,
+        ),
+      ),
+    );
   }
 
   Future<void> _loadInitialData() async {
@@ -192,10 +270,13 @@ class _HomeShellState extends State<HomeShell> {
   /// Navegación del tutorial: deja la pantalla lista para el paso nuevo.
   ///
   /// El cliente se mueve entre las pestañas del shell (Home y catálogo) y el
-  /// detalle del primer servicio; el admin, entre los módulos de «Gestión». Es
-  /// lo que hace que «Siguiente» no se quede esperando a que el usuario navegue
-  /// por su cuenta. Solo se llama con los destinos del rol que toca: los del
-  /// cliente son de `_screensNoAdmin`.
+  /// detalle del primer servicio; además, desde v2, el recorrido abre las
+  /// pantallas nuevas de «Exploración rápida» (categorías, establecimientos,
+  /// ficha y top 10), que son rutas apiladas y las resuelve `irACliente` con las
+  /// MISMAS rutas que usan las tarjetas del Home. El admin se mueve entre los
+  /// módulos de «Gestión». Es lo que hace que «Siguiente» no se quede esperando a
+  /// que el usuario navegue por su cuenta. Solo se llama con los destinos del rol
+  /// que toca: los del cliente son de `_screensNoAdmin`.
   Future<void> _navegarTutorial(TutorialDestino destino) async {
     if (!mounted) return;
 
@@ -212,6 +293,15 @@ class _HomeShellState extends State<HomeShell> {
         // primero del catálogo.
         await _catalogoKey.currentState?.abrirPrimerServicio();
       }
+      return;
+    }
+
+    // Pantallas nuevas del cliente (rutas apiladas sobre el shell).
+    if (destino == TutorialDestino.listaCategorias ||
+        destino == TutorialDestino.listaEstablecimientos ||
+        destino == TutorialDestino.fichaEstablecimiento ||
+        destino == TutorialDestino.topServicios) {
+      await TutorialNavegacion.irACliente(context, destino);
       return;
     }
 
@@ -456,18 +546,6 @@ class _HomeShellState extends State<HomeShell> {
     _catalogoKey.currentState?.reload();
   }
 
-  /// Abre el catálogo **filtrado por un establecimiento** desde el Home.
-  ///
-  /// Es el destino de tocar una tarjeta de "Establecimientos": se ve todo lo que
-  /// publica ese local, no el detalle del primer servicio que aparezca.
-  void _abrirCatalogoDeEstablecimiento(int idLocal, String nombreLocal) {
-    if (!mounted) return;
-    setState(() => _currentIndex = 1);
-    // El filtro se aplica después de cambiar de pestaña: así la lista ya está
-    // montada y el estado del catálogo no se pierde por el orden de los frames.
-    _catalogoKey.currentState?.filtrarPorLocal(idLocal, nombreLocal);
-  }
-
   /// Lleva al perfil y desplaza hasta la sección "Registrar Entidad".
   ///
   /// Es el destino de "Publica tu negocio": publicar se hace registrando una
@@ -483,8 +561,13 @@ class _HomeShellState extends State<HomeShell> {
     });
   }
 
-  void _onTabSelected(int i, bool isAdmin) {
-    if (!isAdmin) {
+  /// Cambia de pestaña y refresca lo que toque.
+  ///
+  /// [esVistaCliente] es «esta vista es la del cliente» (no «el usuario es
+  /// cliente»): un admin que pidió ver la app como cliente entra por aquí con
+  /// las pantallas del cliente y necesita los mismos refrescos.
+  void _onTabSelected(int i, bool esVistaCliente) {
+    if (esVistaCliente) {
       final idxListas = _idxListasNoAdmin;
       final idxTickets = _idxTicketsNoAdmin;
       if (i == 0) {
@@ -501,12 +584,25 @@ class _HomeShellState extends State<HomeShell> {
         context.read<ReservasProvider>().recargar();
       }
     }
-    // Admin users don't need to reload catalog, listas, or tickets since they don't have those screens
+    // Las pantallas del admin no tienen catálogo, listas ni reservas que
+    // refrescar: se cambia de pestaña y ya.
     setState(() => _currentIndex = i);
   }
 
   @override
   Widget build(BuildContext context) {
+    // El modo se expone a las pantallas de dentro (Perfil decide con él qué
+    // ofrece) y el shell se reconstruye al cambiar.
+    return ChangeNotifierProvider<ModoVistaProvider>.value(
+      value: _modo,
+      child: ListenableBuilder(
+        listenable: _modo,
+        builder: (context, _) => _buildShell(context),
+      ),
+    );
+  }
+
+  Widget _buildShell(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final entidadProvider = context.watch<EntidadProvider>();
     final isAdmin = entidadProvider.isAdmin;
@@ -529,16 +625,20 @@ class _HomeShellState extends State<HomeShell> {
     // Tutorial guiado de primer uso: se decide aquí, con el rol ya resuelto.
     _quizasLanzarTutorial(isAdmin: isAdmin, isVendedor: isVendedor);
 
-    final List<Widget> screens;
-    if (isAdmin && isVendedor) {
-      screens = _screensVendedorAdmin;
-    } else if (isAdmin) {
-      screens = _screens;
-    } else if (isVendedor) {
-      screens = _screensVendedor;
-    } else {
-      screens = _screensNoAdmin;
-    }
+    // Qué pantallas le tocan: cliente puro, admin, vendedor… o **admin viendo
+    // como cliente** (ver `utils/modo_vista.dart`).
+    final vista = vistaDelShell(
+      esAdmin: isAdmin,
+      esVendedor: isVendedor,
+      comoCliente: _modo.comoCliente,
+    );
+    final screens = switch (vista) {
+      VistaShell.admin => _screens,
+      VistaShell.vendedor => _screensVendedor,
+      VistaShell.vendedorAdmin => _screensVendedorAdmin,
+      VistaShell.cliente => _screensNoAdmin,
+    };
+    final enVistaCliente = esVistaCliente(vista);
 
     // Badge real: reservas en estado "Reservado" del usuario.
     final pendientes = context.select<ReservasProvider, int>(
@@ -561,121 +661,62 @@ class _HomeShellState extends State<HomeShell> {
           ),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: safeIndex,
-        onDestinationSelected: (i) => _onTabSelected(i, isAdmin),
-        backgroundColor: Colors.white,
-        indicatorColor: AppTheme.primary.withOpacity(0.12),
-        destinations: [
-          // Admin+Vendedor: Reservas primero (misma orden que _screensVendedorAdmin)
-          if (isAdmin && isVendedor)
-            const NavigationDestination(
-              icon: Icon(Icons.confirmation_number_outlined),
-              selectedIcon: Icon(
-                Icons.confirmation_number,
-                color: AppTheme.primary,
-              ),
-              label: 'Reservas',
-            ),
-          if (isAdmin)
-            const NavigationDestination(
-              icon: Icon(Icons.business_outlined),
-              selectedIcon: Icon(Icons.business, color: AppTheme.primary),
-              label: 'Admin',
-            ),
-          if (!isAdmin && !isVendedor)
-            const NavigationDestination(
-              icon: Icon(Icons.home_outlined),
-              selectedIcon: Icon(Icons.home_rounded, color: AppTheme.primary),
-              label: 'Inicio',
-            ),
-          if (!isAdmin && !isVendedor)
-            const NavigationDestination(
-              icon: Icon(Icons.grid_view_outlined),
-              selectedIcon: Icon(Icons.grid_view, color: AppTheme.primary),
-              label: 'Servicios',
-            ),
-          if (!isAdmin && !isVendedor)
-            const NavigationDestination(
-              icon: Icon(Icons.list_alt_outlined),
-              selectedIcon: Icon(Icons.list_alt, color: AppTheme.primary),
-              label: 'Mis Listas',
-            ),
-          if (!isAdmin)
-            NavigationDestination(
-              icon: _ReservationNavIcon(
-                pendientes: pendientes,
-                showBadge: !isVendedor,
-              ),
-              selectedIcon: _ReservationNavIcon(
-                pendientes: pendientes,
-                showBadge: !isVendedor,
-                selected: true,
-              ),
-              label: 'Reservas',
-            ),
-          const NavigationDestination(
-            icon: Icon(Icons.person_outlined),
-            selectedIcon: Icon(Icons.person, color: AppTheme.primary),
-            label: 'Perfil',
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ReservationNavIcon extends StatelessWidget {
-  final bool showBadge;
-  final bool selected;
-
-  /// Reservas activas del usuario. El badge solo aparece si hay alguna.
-  final int pendientes;
-
-  const _ReservationNavIcon({
-    this.showBadge = false,
-    this.selected = false,
-    this.pendientes = 0,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final mostrar = showBadge && pendientes > 0;
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Icon(
-          selected
-              ? Icons.confirmation_number
-              : Icons.confirmation_number_outlined,
-          color: selected ? AppTheme.primary : null,
-        ),
-        if (mostrar)
-          Positioned(
-            right: -8,
-            top: -7,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-              constraints: const BoxConstraints(minWidth: 16, minHeight: 15),
-              decoration: BoxDecoration(
-                color: AppTheme.error,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.white, width: 1.5),
-              ),
-              child: Center(
-                child: Text(
-                  pendientes > 99 ? '99+' : '$pendientes',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w800,
-                    height: 1.1,
+      bottomNavigationBar: enVistaCliente
+          // El cliente usa la barra compartida: la misma que pintan las vistas
+          // apiladas de «Exploración rápida» (categorías, establecimientos, ficha
+          // y top 10), para que no haya dos listas de pestañas que se separen.
+          // La usa también el admin que está viendo la app como cliente.
+          ? BarraNavegacionCliente(
+              indiceActivo: safeIndex,
+              onSeleccion: (i) => _onTabSelected(i, enVistaCliente),
+              // El número ya está calculado aquí para la barra del admin; se pasa
+              // para no repetir el `select`.
+              pendientesReservas: pendientes,
+            )
+          : NavigationBar(
+              selectedIndex: safeIndex,
+              onDestinationSelected: (i) => _onTabSelected(i, enVistaCliente),
+              backgroundColor: Colors.white,
+              indicatorColor: AppTheme.primary.withValues(alpha: 0.12),
+              destinations: [
+                // Admin+Vendedor: Reservas primero (misma orden que
+                // _screensVendedorAdmin).
+                if (isAdmin && isVendedor)
+                  const NavigationDestination(
+                    icon: Icon(Icons.confirmation_number_outlined),
+                    selectedIcon: Icon(
+                      Icons.confirmation_number,
+                      color: AppTheme.primary,
+                    ),
+                    label: 'Reservas',
                   ),
+                if (isAdmin)
+                  const NavigationDestination(
+                    icon: Icon(Icons.business_outlined),
+                    selectedIcon: Icon(Icons.business, color: AppTheme.primary),
+                    label: 'Admin',
+                  ),
+                // El vendedor (no admin) sí lleva el badge; el admin no.
+                if (!isAdmin)
+                  NavigationDestination(
+                    icon: IconoReservaConBadge(
+                      pendientes: pendientes,
+                      showBadge: !isVendedor,
+                    ),
+                    selectedIcon: IconoReservaConBadge(
+                      pendientes: pendientes,
+                      showBadge: !isVendedor,
+                      selected: true,
+                    ),
+                    label: 'Reservas',
+                  ),
+                const NavigationDestination(
+                  icon: Icon(Icons.person_outlined),
+                  selectedIcon: Icon(Icons.person, color: AppTheme.primary),
+                  label: 'Perfil',
                 ),
-              ),
+              ],
             ),
-          ),
-      ],
     );
   }
 }

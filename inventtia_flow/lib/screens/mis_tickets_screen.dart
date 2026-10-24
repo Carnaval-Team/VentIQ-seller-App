@@ -7,6 +7,7 @@ import '../models/entidad.dart';
 import '../models/servicio.dart';
 import '../providers/auth_provider.dart';
 import '../providers/entidad_provider.dart';
+import '../providers/modo_vista_provider.dart';
 import '../services/agenda_admin_service.dart';
 import '../services/agenda_service.dart';
 import '../services/auth_service.dart';
@@ -56,7 +57,21 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
   Entidad? get _entidad =>
       context.read<EntidadProvider>().entidadVendedorSeleccionada;
 
-  bool get _esVendedor => _entidad != null;
+  /// `true` cuando esta pantalla se está usando como panel de trabajo del staff.
+  ///
+  /// No es «el usuario es vendedor» sino «esta vista es la del staff»: un
+  /// admin+vendedor que pidió ver la app como cliente está en la pestaña Reservas
+  /// del cliente y aquí tiene que ver SUS reservas, no la agenda del local.
+  ///
+  /// Se lee con `listen: false` porque también se usa en `_load()`, fuera de
+  /// build; la reactividad la aporta el `watch` de `build`.
+  bool get _esVendedor {
+    final comoCliente = Provider.of<ModoVistaProvider?>(
+      context,
+      listen: false,
+    )?.comoCliente;
+    return _entidad != null && comoCliente != true;
+  }
 
   @override
   void initState() {
@@ -394,6 +409,11 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Registrar la dependencia del modo: los hijos del `IndexedStack` del shell
+    // son instancias fijas (se crean una vez), así que el repintado al cambiar de
+    // vista tiene que venir de esta dependencia y no del padre.
+    context.watch<ModoVistaProvider?>();
+
     return AbsorbPointer(
       absorbing: _isLoading,
       child: Scaffold(

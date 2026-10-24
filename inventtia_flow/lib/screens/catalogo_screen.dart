@@ -382,20 +382,12 @@ class CatalogoScreenState extends State<CatalogoScreen> {
     }
   }
 
-  /// Muestra solo los servicios de un establecimiento concreto.
-  ///
-  /// La llama `HomeShell` al tocar una tarjeta de "Establecimientos" en el Home:
-  /// en lugar de abrir el primer servicio del local, se abre esta lista ya
-  /// filtrada por él.
-  void filtrarPorLocal(int idLocal, String nombreLocal) {
-    _searchCtrl.clear();
-    setState(() {
-      _searchQuery = '';
-      // Se parte de cero para que ningún filtro previo (ni "solo favoritos")
-      // deje fuera al local que el usuario acaba de tocar.
-      _filtros = FiltrosServicios(idLocal: idLocal, nombreLocal: nombreLocal);
-    });
-  }
+  // `filtrarPorLocal(idLocal, nombreLocal)` vivía aquí: lo usaba `HomeShell`
+  // cuando tocar una tarjeta de «Establecimientos» del Home abría este catálogo
+  // filtrado por el local. Ese toque ahora abre la FICHA del establecimiento
+  // —foto, horario, contacto y todos sus servicios, la misma vista del espacio
+  // patrocinado—, así que el método se quedó sin llamadores y se retiró. El
+  // filtro por establecimiento sigue disponible en el sheet de filtros.
 
   void _clearFiltros() {
     _searchCtrl.clear();

@@ -16,7 +16,13 @@ class TutorialService {
   static const String _prefijoAdmin = 'flow_tutorial_admin';
 
   /// Versión del guion. Subirla republica el tutorial para todos.
-  static const String version = 'v1';
+  ///
+  /// v2 (23-10-2026): el Home cambió —«Exploración rápida» con cuatro atajos en
+  /// vez del riel de categorías— y se añadieron tres pantallas. Quien ya tenía la
+  /// clave `v1` marcada habría seguido viendo el recorrido viejo, que resaltaba
+  /// elementos que ya no existen, así que el cambio de versión es lo que hace que
+  /// el recorrido nuevo se muestre **una vez**.
+  static const String version = 'v2';
 
   static const String valorVisto = 'visto';
   static const String valorOmitido = 'omitido';

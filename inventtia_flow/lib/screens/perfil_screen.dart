@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/app_theme.dart';
 import '../providers/auth_provider.dart';
 import '../providers/entidad_provider.dart';
+import '../providers/modo_vista_provider.dart';
 import '../services/auth_service.dart';
 import '../widgets/notificaciones_bell.dart';
 import '../services/update_service.dart';
@@ -16,7 +17,12 @@ import 'admin/locales_servicios_screen.dart';
 import 'admin/gestion_servicios_screen.dart';
 
 class PerfilScreen extends StatefulWidget {
-  const PerfilScreen({super.key, this.onRepetirTutorial});
+  const PerfilScreen({
+    super.key,
+    this.onRepetirTutorial,
+    this.onVerAdmin,
+    this.onVerComoCliente,
+  });
 
   /// Relanza el tutorial de primer uso del cliente.
   ///
@@ -25,6 +31,18 @@ class PerfilScreen extends StatefulWidget {
   /// arrancarlo. `null` = no se ofrece la entrada (admin y vendedor tienen sus
   /// propios recorridos, con el suyo en la barra de «Gestión»).
   final VoidCallback? onRepetirTutorial;
+
+  /// Vuelve al panel de administración desde el modo cliente.
+  ///
+  /// `null` = no se ofrece (un cliente puro no tiene panel al que volver).
+  final VoidCallback? onVerAdmin;
+
+  /// Pasa al modo cliente desde el panel de administración.
+  ///
+  /// `null` = no se ofrece. Va por callback del shell (y no llamando al provider
+  /// aquí) porque al cambiar de modo hay que **dejar la pestaña correcta**, y
+  /// eso solo lo sabe el shell.
+  final VoidCallback? onVerComoCliente;
 
   @override
   State<PerfilScreen> createState() => PerfilScreenState();
@@ -119,6 +137,13 @@ class PerfilScreenState extends State<PerfilScreen> {
     final entidadProv = context.watch<EntidadProvider>();
     final perfil = auth.perfil;
     final user = auth.user;
+
+    // Modo de vista del admin. Se lee con `?` porque este perfil también se
+    // monta en listas de pantallas donde el provider podría no estar (una prueba
+    // suelta): sin él se comporta como siempre.
+    final modo = context.watch<ModoVistaProvider?>();
+    final comoCliente = modo?.comoCliente ?? false;
+    final veComoCliente = entidadProv.isAdmin && comoCliente;
 
     final inicial = perfil != null
         ? perfil.nombre[0].toUpperCase()
@@ -218,9 +243,36 @@ class PerfilScreenState extends State<PerfilScreen> {
                           ),
                           const _SoftDivider(indent: 56),
                         ],
-                        // Solo para clientes: un admin no navega el catálogo.
-                        if (!entidadProv.isAdmin &&
-                            !entidadProv.isVendedor) ...[
+                        // Vuelta al panel cuando el admin está viendo la app como
+                        // cliente: la otra vía (el chip «Admin» de la cabecera
+                        // del Home) queda lejos si está mirando esta pestaña.
+                        if (veComoCliente && widget.onVerAdmin != null) ...[
+                          _ActionTile(
+                            icon: Icons.admin_panel_settings_outlined,
+                            title: 'Volver al panel de administración',
+                            subtitle: 'Salir de la vista de cliente.',
+                            onTap: widget.onVerAdmin!,
+                          ),
+                          const _SoftDivider(indent: 56),
+                        ],
+                        // Entrada al modo cliente: la ofrece el shell (que además
+                        // deja la pestaña en Inicio) y solo cuando NO se está ya
+                        // en él.
+                        if (widget.onVerComoCliente != null && !comoCliente) ...[
+                          _ActionTile(
+                            icon: Icons.remove_red_eye_outlined,
+                            title: 'Ver la app como cliente',
+                            subtitle:
+                                'Comprueba cómo se ve el catálogo desde el otro '
+                                'lado. Puedes volver cuando quieras.',
+                            onTap: widget.onVerComoCliente!,
+                          ),
+                          const _SoftDivider(indent: 56),
+                        ],
+                        // Solo para clientes —o para el admin que está viendo la
+                        // app como cliente—: un admin no navega el catálogo.
+                        if (veComoCliente ||
+                            (!entidadProv.isAdmin && !entidadProv.isVendedor)) ...[
                           _ActionTile(
                             icon: Icons.favorite_border_rounded,
                             title: 'Favoritos',

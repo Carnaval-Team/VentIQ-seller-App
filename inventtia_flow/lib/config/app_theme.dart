@@ -23,6 +23,27 @@ class AppTheme {
   static const Color textSecondary = Color(0xFF546E7A);
   static const Color border = Color(0xFFE0E6ED);
 
+  // ── «Exploración rápida»: los cuatro atajos del Home del cliente ────────
+  // Tonos medidos sobre la referencia de diseño
+  // (`docs/exploracion_rapida/referencia_exploracion_rapida.png`). Dos de ellos
+  // YA estaban en la app escritos a mano como literales (el teal del banner de
+  // fidelidad y el azul noche del topBar del Home), así que estas constantes no
+  // inventan una paleta nueva: la fijan para que no se separen.
+  static const Color exploracionIndigo = Color(0xFF4F5C8B);
+  static const Color exploracionIndigoDark = Color(0xFF3B4A7E);
+  static const Color exploracionTeal = Color(0xFF1FA8B8);
+  static const Color exploracionTealDark = Color(0xFF1593A3);
+  static const Color exploracionNavy = Color(0xFF424A65);
+  static const Color exploracionNavyDark = Color(0xFF2C3654);
+  static const Color exploracionCoral = Color(0xFFFF4E5F);
+  static const Color exploracionCoralDark = Color(0xFFE8394C);
+
+  /// Sombra compartida de las tarjetas del Home (≈5 % de un azul-negro). Estaba
+  /// repetida inline en una docena de sitios.
+  static const List<BoxShadow> sombraTarjeta = <BoxShadow>[
+    BoxShadow(color: Color(0x0D2B3A67), blurRadius: 12, offset: Offset(0, 5)),
+  ];
+
   static ThemeData get light {
     final scheme = ColorScheme.fromSeed(
       seedColor: _seed,

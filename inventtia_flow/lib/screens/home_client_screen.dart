@@ -6,23 +6,32 @@ import 'package:provider/provider.dart';
 
 import '../config/app_theme.dart';
 import '../config/home_features.dart';
+import '../models/ficha_local.dart';
 import '../providers/auth_provider.dart';
+import '../providers/entidad_provider.dart';
 import '../providers/favoritos_provider.dart';
 import '../providers/notificacion_provider.dart';
 import '../providers/reservas_provider.dart';
+import '../services/auth_service.dart';
 import '../services/campana_service.dart';
 import '../services/coleccion_service.dart';
 import '../services/fidelidad_service.dart';
 import '../services/home_catalog_service.dart';
+import '../services/pregunta_resena_service.dart';
 import '../services/resena_service.dart';
 import '../tutorial/tutorial_anchor.dart';
+import '../tutorial/tutorial_controller.dart';
+import '../utils/categoria_icono.dart';
+import '../utils/exploracion_navegacion.dart';
 import '../utils/horario_atencion.dart';
 import '../widgets/boton_favorito.dart';
 import '../widgets/carrusel_tarjetas.dart';
+import '../widgets/exploracion_rapida_grid.dart';
 import '../widgets/filtros_servicios_sheet.dart';
 import '../widgets/home_hero_header.dart';
 import '../widgets/net_image.dart';
 import '../widgets/notificaciones_bell.dart';
+import '../widgets/pedir_resena_sheet.dart';
 import '../widgets/resenas.dart';
 import '../widgets/tarjeta_coleccion.dart';
 import '../widgets/tarjeta_resena_reciente.dart';
@@ -36,7 +45,7 @@ class HomeClientScreen extends StatefulWidget {
     super.key,
     this.onVerCatalogo,
     this.onPublicarNegocio,
-    this.onVerEstablecimiento,
+    this.onVerAdmin,
   });
 
   /// Abre la lista completa de servicios (pestaña Catálogo de `HomeShell`).
@@ -48,12 +57,12 @@ class HomeClientScreen extends StatefulWidget {
   /// Lleva al perfil, a la sección "Registrar Entidad".
   final VoidCallback? onPublicarNegocio;
 
-  /// Abre la lista de servicios **filtrada por un establecimiento**.
+  /// Vuelve al panel de administración (la vuelta del «ver como cliente»).
   ///
-  /// Tocar una tarjeta de "Establecimientos" debe enseñar todo lo que publica
-  /// ese local, no el detalle de su primer servicio. Si es `null` (la pantalla
-  /// se usa fuera del shell) se mantiene el comportamiento anterior.
-  final void Function(int idLocal, String nombreLocal)? onVerEstablecimiento;
+  /// Lo pasa el shell, y la pantalla enseña el acceso **solo si el usuario
+  /// administra algo**: así un cliente puro nunca ve un botón para ir a un panel
+  /// que no tiene.
+  final VoidCallback? onVerAdmin;
 
   @override
   State<HomeClientScreen> createState() => HomeClientScreenState();
@@ -89,12 +98,6 @@ class HomeClientScreenState extends State<HomeClientScreen>
   int _total = 0;
   int _sponsoredPage = 0;
   String _query = '';
-  HomeCatalogCategory _category = HomeCatalogCategory.todas;
-
-  /// Subcategoría elegida dentro de [_category]. `null` = todas las de esa
-  /// categoría. Se limpia al cambiar de categoría: una subcategoría de Belleza
-  /// no existe bajo Transporte.
-  HomeCatalogCategory? _subcategoria;
 
   String? _provincia;
 
@@ -136,6 +139,10 @@ class HomeClientScreenState extends State<HomeClientScreen>
   /// Mensaje del último fallo de lectura. `null` cuando el catálogo cargó.
   String? _error;
 
+  /// Si en esta montura del Home ya se intentó pedir la reseña. Evita que el
+  /// cartel vuelva a salir con cada `setState`.
+  bool _preguntaResenaRevisada = false;
+
   @override
   void initState() {
     super.initState();
@@ -152,6 +159,10 @@ class HomeClientScreenState extends State<HomeClientScreen>
     _cargarRankingSemanal();
     _cargarResenasRecientes();
     _cargarFidelidad();
+    // El cartel que pide la reseña de la última reserva completada. Va al final
+    // y sin `await`: el Home se pinta primero y el cartel aparece encima cuando
+    // llega la respuesta.
+    _quizasPedirResena();
   }
 
   @override
@@ -174,6 +185,54 @@ class HomeClientScreenState extends State<HomeClientScreen>
     await _cargarRankingSemanal();
     await _cargarResenasRecientes();
     await _cargarFidelidad();
+    // Segunda oportunidad para el cartel de la reseña: si en el arranque lo
+    // bloqueó el tutorial, al refrescar ya se puede pedir. Y `forzar` es lo que
+    // hace que una reserva completada **con la app abierta** (el admin la marca
+    // mientras el cliente navega) salga al volver al Home, sin reiniciar nada.
+    _quizasPedirResena(forzar: true);
+  }
+
+  /// Pide la reseña de la última reserva completada sin opinar.
+  ///
+  /// El cartel sale una sola vez por reserva (lo recuerda
+  /// `PreguntaResenaService`) y nunca mientras el tutorial está activo: el
+  /// tutorial se pinta POR ENCIMA del Navigator y los dos se estorbarían.
+  ///
+  /// [forzar] separa los dos modos de llamada:
+  ///   * automático (`false`, desde `initState`): se intenta una vez por montura
+  ///     del Home, para no pedir el RPC en cada `setState`;
+  ///   * explícito (`true`, desde `reload()`): el usuario refrescó o volvió a la
+  ///     pestaña, así que merece la pena volver a mirar. El coste es un RPC
+  ///     pequeño, y `PreguntaResenaService` corta en seco si ya se preguntó en
+  ///     esta sesión.
+  Future<void> _quizasPedirResena({bool forzar = false}) async {
+    if (!forzar && _preguntaResenaRevisada) return;
+    if (TutorialController.instance.activo) return;
+    _preguntaResenaRevisada = true;
+
+    final uuid = AuthService.currentUserId;
+    if (uuid == null || uuid.isEmpty) return;
+
+    final pendiente = await PreguntaResenaService.siguientePendiente();
+    if (pendiente == null || !mounted) return;
+
+    // Se marca ANTES de enseñarlo: si el usuario lo cierra, no se le vuelve a
+    // preguntar por esta reserva. Insistir con el mismo cartel es la forma más
+    // rápida de que nadie escriba una reseña.
+    await PreguntaResenaService.marcarPreguntada(pendiente.idAgenda);
+    if (!mounted) return;
+
+    final publicada = await mostrarPedirResena(
+      context,
+      pendiente: pendiente,
+      uuidUsuario: uuid,
+    );
+    if (!mounted) return;
+    if (publicada) {
+      _showToast('¡Gracias por tu reseña!');
+      // El bloque «Lo que dicen los clientes» puede incluir la suya.
+      _cargarResenasRecientes();
+    }
   }
 
   Future<void> _loadPage({bool reset = false}) async {
@@ -199,8 +258,6 @@ class HomeClientScreenState extends State<HomeClientScreen>
         // colecciones, los patrocinados y los contadores del usuario.
         feed = await HomeCatalogService.fetchFeed(
           query: _query,
-          category: _category,
-          subcategoria: _subcategoria,
           provincia: _provincia,
           topRated: _topRated,
         );
@@ -377,20 +434,27 @@ class HomeClientScreenState extends State<HomeClientScreen>
     }
   }
 
-  /// Tocar un establecimiento abre la lista de servicios **de ese local**.
+  /// Tocar un establecimiento abre su **ficha**: la misma vista del espacio
+  /// patrocinado.
   ///
-  /// Antes abría el detalle del primer servicio que hubiera devuelto el feed,
-  /// que no es lo que el cliente pidió al tocar el local.
+  /// Antes esto abría el detalle del primer servicio del feed y luego el catálogo
+  /// filtrado por local. Ninguna de las dos cosas es lo que pide quien toca un
+  /// local: quiere ver el establecimiento (foto, horario, contacto) con todo lo
+  /// que ofrece, que es exactamente lo que hace `FichaLocalScreen`.
+  ///
+  /// Sin local resoluble se conserva el comportamiento anterior como red de
+  /// seguridad (abrir el servicio que se tocó) en vez de dejar el toque muerto.
   void _abrirEstablecimiento(HomeCatalogItem item) {
     final idLocal =
         item.localServicio?.idLocal ?? item.localServicio?.local?.id;
-    final callback = widget.onVerEstablecimiento;
-    if (callback != null && idLocal != null) {
-      callback(idLocal, item.venue);
+    if (idLocal == null) {
+      _openItem(item);
       return;
     }
-    // Fuera del shell (o sin id resoluble) se conserva el comportamiento previo.
-    _openItem(item);
+    ExploracionNavegacion.abrirFicha(
+      context,
+      ficha: FichaLocal.desdeItem(item),
+    );
   }
 
   /// Deja los contadores del feed como snapshot inicial de los badges.
@@ -406,45 +470,17 @@ class HomeClientScreenState extends State<HomeClientScreen>
     context.read<ReservasProvider>().sembrarPendientes(contadores.reservas);
   }
 
-  /// Aplica el nomenclador que vino dentro del feed.
+  /// Guarda el nomenclador que vino dentro del feed.
   ///
-  /// "Todas" no se comprueba como las demás: no es una categoría real (su `id`
-  /// es `null`), así que nunca "desaparece" y no puede provocar un ciclo. Si la
-  /// categoría seleccionada sí desapareció (el superadmin la apagó), se quita el
-  /// filtro **y se relee**, porque ahora es el servidor quien filtra: la muestra
-  /// guardada correspondería a la categoría anterior.
-  ///
-  /// Lo mismo con la subcategoría: si la apagaron, o si ya no pertenece a la
-  /// categoría elegida, se limpia y se relee.
+  /// Antes esto además reconciliaba la categoría y la subcategoría activas (si
+  /// el superadmin las apagaba, se limpiaban y el feed se releía). El Home ya no
+  /// filtra por categoría —eso vive en `CategoriasScreen`, que pide al servidor
+  /// con `p_id_categoria`—, así que aquí solo queda el nomenclador: lo usan el
+  /// chip «N ACTIVAS» de la rejilla y nada más. Menos estado, y menos recargas
+  /// forzadas.
   void _aplicarCategorias(List<HomeCatalogCategory> categorias) {
     if (!mounted) return;
-    final activa = _category;
-    final subActiva = _subcategoria;
-    final desaparecio =
-        !activa.esTodas && !categorias.any((c) => c.id == activa.id);
-
-    // La subcategoría se busca dentro de la categoría seleccionada: una
-    // subcategoría de Belleza no puede quedar activa con Transporte elegido.
-    final subcategorias = activa.tieneSubcategorias
-        ? activa.subcategorias
-        : (categorias
-              .where((c) => c.id == activa.id)
-              .expand((c) => c.subcategorias)
-              .toList(growable: false));
-    final subDesaparecio =
-        subActiva != null && !subcategorias.any((s) => s.id == subActiva.id);
-
-    setState(() {
-      _categories = categorias;
-      if (desaparecio) {
-        _category = HomeCatalogCategory.todas;
-        if (_subcategoria != null) _subcategoria = null;
-      } else if (subDesaparecio) {
-        _subcategoria = null;
-      }
-    });
-
-    if (desaparecio || subDesaparecio) _loadPage(reset: true);
+    setState(() => _categories = categorias);
   }
 
   /// Ranking semanal real: lugares reservados en la semana en curso.
@@ -553,44 +589,11 @@ class HomeClientScreenState extends State<HomeClientScreen>
     });
   }
 
-  /// Filtra por categoría. Tocar la que ya está activa la quita (vuelve a
-  /// "Todas"), que es lo que el usuario espera de un chip de filtro.
-  ///
-  /// Al elegir una categoría se **limpia la subcategoría**: pertenecía a la
-  /// categoría anterior. Si la nueva tiene subcategorías, sus chips aparecen
-  /// debajo en el mismo sitio.
-  void _selectCategory(HomeCatalogCategory category) {
-    if (_category.id == category.id) {
-      if (_subcategoria != null) {
-        setState(() => _subcategoria = null);
-        _loadPage(reset: true);
-      }
-      return;
-    }
-    // La categoría puede venir del riel (sin hijos cargados) o del propio feed
-    // (con `subcategorias`). Se busca en `_categories` para quedarnos con la
-    // versión que sí trae los chips.
-    final completa = _categories.firstWhere(
-      (c) => c.id == category.id,
-      orElse: () => category,
-    );
-    setState(() {
-      _category = completa;
-      _subcategoria = null;
-    });
-    _loadPage(reset: true);
-  }
-
-  /// Filtra por subcategoría dentro de la categoría activa.
-  ///
-  /// `null` = todas las subcategorías. Es un filtro de servidor
-  /// (`p_id_subcategoria`), no de memoria: la categoría ya lo es, y tener dos
-  /// reglas distintas para lo mismo se contradice en cuanto el catálogo crezca.
-  void _selectSubcategoria(HomeCatalogCategory? subcategoria) {
-    if (_subcategoria?.id == subcategoria?.id) return;
-    setState(() => _subcategoria = subcategoria);
-    _loadPage(reset: true);
-  }
+  // El filtro por categoría y subcategoría ya no vive en el Home: los eligió
+  // `CategoriasScreen` y el servidor los aplica al listado de establecimientos
+  // (`p_id_categoria` / `p_id_subcategoria`). Tener aquí un segundo estado de
+  // categoría era justo lo que hacía que el riel y el catálogo se pudieran
+  // contradecir.
 
   void _selectProvincia(String? provincia) {
     if (_provincia == provincia) return;
@@ -737,6 +740,10 @@ class HomeClientScreenState extends State<HomeClientScreen>
     // `watch` para que los corazones se repinten al alternar un favorito.
     final favoritos = context.watch<FavoritosProvider>();
 
+    // El acceso de vuelta al panel solo tiene sentido para quien administra una
+    // entidad: un cliente puro no tiene panel al que volver.
+    final esAdmin = context.watch<EntidadProvider>().isAdmin;
+
     return Scaffold(
       backgroundColor: AppTheme.surface,
       body: RefreshIndicator(
@@ -748,11 +755,11 @@ class HomeClientScreenState extends State<HomeClientScreen>
           slivers: [
             SliverToBoxAdapter(
               child: HomeHeroHeader(
-                topBar: _buildTopBar(firstName),
+                topBar: _buildTopBar(firstName, esAdmin: esAdmin),
                 searchCard: _buildSearchHero(),
               ),
             ),
-            SliverToBoxAdapter(child: _buildCategories()),
+            SliverToBoxAdapter(child: _buildExploracionRapida()),
             // Secciones apagadas: su respaldo no existe todavía ni en la base
             // de datos ni en la administración. `lib/config/home_features.dart`
             // documenta qué falta para encender cada una.
@@ -803,7 +810,7 @@ class HomeClientScreenState extends State<HomeClientScreen>
     );
   }
 
-  Widget _buildTopBar(String firstName) {
+  Widget _buildTopBar(String firstName, {required bool esAdmin}) {
     return DecoratedBox(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -867,6 +874,14 @@ class HomeClientScreenState extends State<HomeClientScreen>
                     ),
                   ),
                   const NotificacionesBell(color: Colors.white),
+                  // Vuelta al panel: solo para quien administra una entidad (y
+                  // solo si el shell dio el callback). Es la salida del «ver como
+                  // cliente», y por eso va arriba y a la vista en todas las
+                  // secciones del Home.
+                  if (esAdmin && widget.onVerAdmin != null) ...[
+                    const SizedBox(width: 6),
+                    _BotonVolverAAdmin(onTap: widget.onVerAdmin!),
+                  ],
                   const SizedBox(width: 8),
                   _StatusAvatar(
                     initial: firstName.substring(0, 1).toUpperCase(),
@@ -1070,143 +1085,39 @@ class HomeClientScreenState extends State<HomeClientScreen>
     );
   }
 
-  Widget _buildCategories() {
-    return Padding(
-      padding: const EdgeInsets.only(top: 0, bottom: 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _sectionHeading('Categorías principales', trailing: 'Desliza →'),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 40,
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              itemCount: _categories.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (_, index) {
-                final category = _categories[index];
-                final selected = category.id == _category.id;
-                return GestureDetector(
-                  onTap: () => _selectCategory(category),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    padding: const EdgeInsets.symmetric(horizontal: 13),
-                    decoration: BoxDecoration(
-                      color: selected ? AppTheme.primary : Colors.white,
-                      borderRadius: BorderRadius.circular(22),
-                      border: Border.all(
-                        color: selected ? AppTheme.primary : AppTheme.border,
-                      ),
-                      boxShadow: selected
-                          ? const []
-                          : const [
-                              BoxShadow(
-                                color: Color(0x0D2B3A67),
-                                blurRadius: 8,
-                                offset: Offset(0, 3),
-                              ),
-                            ],
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          _iconoCategoria(category),
-                          color: selected ? AppTheme.accent : AppTheme.primary,
-                          size: 15,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          category.nombre,
-                          style: TextStyle(
-                            color: selected
-                                ? Colors.white
-                                : AppTheme.textPrimary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          // Chips de subcategorías de la categoría elegida. Aparecen debajo del
-          // riel en cuanto hay una categoría activa: tocar una filtra el feed por
-          // esa subcategoría, y "Todas" quita ese segundo filtro sin salir de la
-          // categoría.
-          _buildSubcategorias(),
-        ],
-      ),
-    );
-  }
-
-  /// Segunda fila de chips: subcategorías de la categoría activa.
+  /// «Exploración rápida»: los cuatro atajos del catálogo.
   ///
-  /// No se pinta con "Todas" ni si el nomenclador no trae subcategorías (por
-  /// ejemplo, con la migración `47_categorias_reales_subcategorias.sql` sin
-  /// aplicar): un riel vacío solo ocupa espacio.
-  Widget _buildSubcategorias() {
-    final categoria = _category;
-    if (categoria.esTodas || !categoria.tieneSubcategorias) {
-      return const SizedBox.shrink();
-    }
-    final subcategorias = categoria.subcategorias;
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(left: 16, right: 16, bottom: 6),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.account_tree_outlined,
-                  size: 13,
-                  color: AppTheme.textSecondary,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  'Subcategorías de ${categoria.nombre}',
-                  style: const TextStyle(
-                    color: AppTheme.textSecondary,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          SizedBox(
-            height: 34,
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              itemCount: subcategorias.length + 1,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (_, index) {
-                final subcategoria = index == 0
-                    ? null
-                    : subcategorias[index - 1];
-                final seleccionada = subcategoria == null
-                    ? _subcategoria == null
-                    : _subcategoria?.id == subcategoria.id;
-                return _SubcategoriaChip(
-                  nombre: subcategoria?.nombre ?? 'Todas',
-                  seleccionada: seleccionada,
-                  onTap: () => _selectSubcategoria(subcategoria),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
+  /// Sustituye al riel de «Categorías principales». Aquel riel obligaba a
+  /// deslizar para descubrir que había más rubros y no decía cuánto había dentro
+  /// de cada uno; este bloque enseña de un vistazo las cuatro puertas
+  /// (categorías con contadores, catálogo, establecimientos y los más populares)
+  /// y deja el filtro por categoría donde sí tiene sentido: en `CategoriasScreen`
+  /// y en el listado de establecimientos, que preguntan al servidor.
+  ///
+  /// Los destinos salen de `ExploracionNavegacion`, la misma fuente que usa el
+  /// tutorial para navegar solo: si cambia un destino, cambia para los dos.
+  Widget _buildExploracionRapida() {
+    return ExploracionRapidaGrid(
+      // El chip «N ACTIVAS» cuenta las raíces activas del nomenclador. Con el
+      // nomenclador sin cargar (o la migración 47 sin aplicar) queda en 0 y el
+      // widget dice «TODOS LOS RUBROS» en vez de un «0 ACTIVAS» que parece un
+      // fallo.
+      categoriasActivas: _categories.where((c) => !c.esTodas).length,
+      onCategorias: () => ExploracionNavegacion.abrirCategorias(context),
+      // «Ver catálogo ›» y la tarjeta «Servicios» hacen lo mismo: abrir la
+      // pestaña del catálogo. Fuera del shell (sin callback) se mantiene el aviso
+      // informativo de siempre en vez de un toque muerto.
+      onServicios: () {
+        final callback = widget.onVerCatalogo;
+        if (callback == null) {
+          _showToast('Desliza para ver el catálogo completo.');
+          return;
+        }
+        callback();
+      },
+      onEstablecimientos: () =>
+          ExploracionNavegacion.abrirEstablecimientos(context),
+      onMasPopulares: () => ExploracionNavegacion.abrirTopServicios(context),
     );
   }
 
@@ -1505,7 +1416,14 @@ class HomeClientScreenState extends State<HomeClientScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionHeading('Establecimientos', trailing: 'Ver todos'),
+          _sectionHeading(
+            'Establecimientos',
+            trailing: 'Ver todos',
+            // Antes este botón caía al aviso «Desliza…» porque no había listado
+            // al que ir. Ahora abre el listado de establecimientos completo.
+            onTrailingTap: () =>
+                ExploracionNavegacion.abrirEstablecimientos(context),
+          ),
           const SizedBox(height: 4),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16),
@@ -1553,7 +1471,11 @@ class HomeClientScreenState extends State<HomeClientScreen>
         children: [
           _sectionHeading(
             'Servicios populares de la semana',
-            trailing: 'Ranking',
+            trailing: 'Ver el top 10',
+            // Antes «Ranking» era un botón muerto (aviso «Desliza…»). Ahora
+            // abre el top 10 completo, que es el dato que está mirando.
+            onTrailingTap: () =>
+                ExploracionNavegacion.abrirTopServicios(context),
           ),
           const SizedBox(height: 4),
           const Padding(
@@ -1978,20 +1900,16 @@ class HomeClientScreenState extends State<HomeClientScreen>
   Widget _buildNoResults() {
     final hayError = _error != null;
 
-    // Cuando hay una categoría (o una búsqueda) activa se dice **qué** no tiene
-    // servicios: "No encontramos resultados" a secas deja al usuario pensando
-    // que la app se quedó cargando.
-    final subcategoria = _subcategoria?.nombre;
-    final categoria = _category.esTodas ? null : _category.nombre;
+    // Cuando hay filtros puestos se dice **qué** los dejó sin resultados: "No
+    // encontramos resultados" a secas deja al usuario pensando que la app se
+    // quedó cargando. El caso «sin servicios en la categoría X» ya no existe
+    // aquí: el Home no filtra por categoría (eso es `CategoriasScreen`, que tiene
+    // su propio estado vacío contextualizado).
     final conFiltros = _filtros.hayAlgo;
     final titulo = hayError
         ? 'No pudimos cargar el catálogo'
         : conFiltros
         ? 'Ningún servicio con estos filtros'
-        : subcategoria != null
-        ? 'Sin servicios en «$subcategoria»'
-        : categoria != null
-        ? 'Sin servicios en «$categoria»'
         : 'No encontramos resultados';
 
     final detalle = hayError
@@ -1999,13 +1917,7 @@ class HomeClientScreenState extends State<HomeClientScreen>
         : conFiltros
         ? 'Ninguno de los servicios publicados cumple lo que pediste. '
               'Quita algún filtro para ampliar la búsqueda.'
-        : subcategoria != null
-        ? 'Todavía no hay servicios publicados en esta subcategoría. '
-              'Prueba con otra o toca «Todas».'
-        : categoria != null
-        ? 'Todavía no hay servicios publicados en esta categoría. '
-              'Prueba con otra o quita los filtros.'
-        : 'Prueba otra categoría o cambia la búsqueda.';
+        : 'Prueba a buscar otra cosa o explora por categorías.';
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
@@ -2020,10 +1932,6 @@ class HomeClientScreenState extends State<HomeClientScreen>
                   ? Icons.cloud_off_rounded
                   : conFiltros
                   ? Icons.filter_alt_off_rounded
-                  : subcategoria != null
-                  ? Icons.account_tree_outlined
-                  : categoria != null
-                  ? Icons.category_outlined
                   : Icons.search_off_rounded,
               size: 42,
               color: AppTheme.primary.withValues(alpha: 0.55),
@@ -2056,7 +1964,6 @@ class HomeClientScreenState extends State<HomeClientScreen>
                   _searchController.clear();
                   setState(() {
                     _query = '';
-                    _category = HomeCatalogCategory.todas;
                     _provincia = null;
                     _filtros = FiltrosServicios.vacio;
                   });
@@ -2165,6 +2072,58 @@ class HomeClientScreenState extends State<HomeClientScreen>
       BoxShadow(color: Color(0x0D2B3A67), blurRadius: 12, offset: Offset(0, 5)),
     ],
   );
+}
+
+/// Acceso de vuelta al panel de administración, en la cabecera del Home.
+///
+/// Discreto pero siempre visible: quien entró a «ver como cliente» tiene que
+/// poder salir desde donde esté mirando, sin tener que adivinar que la vuelta
+/// está en Perfil.
+class _BotonVolverAAdmin extends StatelessWidget {
+  const _BotonVolverAAdmin({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Volver al panel de administración',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Icon(
+                  Icons.admin_panel_settings_outlined,
+                  size: 15,
+                  color: Colors.white,
+                ),
+                SizedBox(width: 5),
+                Text(
+                  'Admin',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _StatusAvatar extends StatelessWidget {
@@ -2840,7 +2799,7 @@ class _PopularPlaceCard extends StatelessWidget {
                       child: Row(
                         children: [
                           Icon(
-                            _iconoCategoria(item.category),
+                            iconoCategoria(item.category),
                             color: AppTheme.accent,
                             size: 13,
                           ),
@@ -3489,86 +3448,8 @@ class _SectionTitleStyle extends TextStyle {
       );
 }
 
-/// Icono para un tipo de actividad.
-///
-/// Icono del chip de categoría.
-///
-/// Cubre los dos juegos de códigos: los de la taxonomía REAL de la migración 47
-/// (`alojamiento`, `gastronomia`, `belleza`, `transporte`, `recreacion`,
-/// `juridicos`) y los que quedaron como subcategorías o como código legado
-/// (`unas`, `cejas_pestanas`, `transporte_omnibus`…). Un código nuevo creado
-/// desde el panel cae al icono genérico sin romper nada.
-IconData _iconoCategoria(HomeCatalogCategory category) =>
-    switch (category.codigo) {
-      'general' => Icons.grid_view_rounded,
-      // Taxonomía real (migración 47).
-      'alojamiento' => Icons.hotel_outlined,
-      'gastronomia' => Icons.restaurant_outlined,
-      'belleza' => Icons.auto_awesome_rounded,
-      'transporte' => Icons.directions_car_filled_outlined,
-      'recreacion' => Icons.attractions_outlined,
-      'juridicos' => Icons.gavel_rounded,
-      // Subcategorías y códigos heredados.
-      'unas' => Icons.back_hand_rounded,
-      'cejas_pestanas' => Icons.remove_red_eye_outlined,
-      'peluqueria' => Icons.content_cut_rounded,
-      'estetica_spa' => Icons.spa_outlined,
-      'salud' => Icons.medical_services_outlined,
-      'hogar' => Icons.home_repair_service_outlined,
-      'mascotas' => Icons.pets_outlined,
-      'eventos' => Icons.celebration_outlined,
-      'tecnologia' => Icons.devices_other_outlined,
-      'transporte_omnibus' => Icons.directions_bus_filled_outlined,
-      'transporte_privado' => Icons.local_taxi_outlined,
-      'talleres_gasolineras' => Icons.local_gas_station_outlined,
-      _ => Icons.category_outlined,
-    };
-
-/// Chip de subcategoría del Home.
-///
-/// Más pequeño que el chip de categoría a propósito: representa un segundo
-/// nivel, no compite visualmente con el riel principal.
-class _SubcategoriaChip extends StatelessWidget {
-  const _SubcategoriaChip({
-    required this.nombre,
-    required this.seleccionada,
-    required this.onTap,
-  });
-
-  final String nombre;
-  final bool seleccionada;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: seleccionada
-              ? AppTheme.accent.withValues(alpha: 0.16)
-              : Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: seleccionada ? AppTheme.accent : AppTheme.border,
-            width: seleccionada ? 1.4 : 1,
-          ),
-        ),
-        child: Text(
-          nombre,
-          style: TextStyle(
-            color: seleccionada ? AppTheme.primaryDark : AppTheme.textPrimary,
-            fontSize: 11.5,
-            fontWeight: seleccionada ? FontWeight.w800 : FontWeight.w600,
-          ),
-        ),
-      ),
-    );
-  }
-}
+// El mapa código→icono vive en `lib/utils/categoria_icono.dart`: lo comparten
+// la rejilla de acceso rápido, la pantalla de categorías y esta tarjeta.
 
 /// Opción del selector de provincia.
 class _OpcionUbicacion extends StatelessWidget {

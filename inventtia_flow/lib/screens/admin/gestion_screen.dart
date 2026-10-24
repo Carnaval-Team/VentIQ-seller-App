@@ -16,7 +16,14 @@ import 'locales_servicios_screen.dart';
 import 'reservas_screen.dart';
 
 class GestionScreen extends StatelessWidget {
-  const GestionScreen({super.key});
+  const GestionScreen({super.key, this.onVerComoCliente});
+
+  /// Pasa a la vista de cliente (el dueño de una entidad también es cliente y
+  /// necesita comprobar cómo se ve la app desde el otro lado).
+  ///
+  /// `null` = no se ofrece el acceso (por ejemplo, si esta pantalla se monta
+  /// fuera del shell).
+  final VoidCallback? onVerComoCliente;
 
   @override
   Widget build(BuildContext context) {
@@ -114,7 +121,13 @@ class GestionScreen extends StatelessWidget {
           const SizedBox(width: 4),
         ],
       ),
-      body: _GestionBody(entidad: seleccionada, myUuid: myUuid),
+      body: Column(
+        children: [
+          if (onVerComoCliente != null)
+            _AccesoVistaCliente(onTap: onVerComoCliente!),
+          Expanded(child: _GestionBody(entidad: seleccionada, myUuid: myUuid)),
+        ],
+      ),
     );
   }
 
@@ -144,6 +157,81 @@ class GestionScreen extends StatelessWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => _NuevaEntidadInlineSheet(ownerUuid: ownerUuid),
+    );
+  }
+}
+
+/// Acceso «Ver la app como cliente», encima del tablero del admin.
+///
+/// Va en el cuerpo y no en la AppBar a propósito: el AppBar ya lleva el selector
+/// de entidad como título más cuatro acciones repartidas a los dos lados, y un
+/// quinto icono dejaría el nombre de la entidad recortado en pantallas estrechas
+/// (ver el comentario de `leadingWidth`). Aquí se lee entero y cabe.
+class _AccesoVistaCliente extends StatelessWidget {
+  const _AccesoVistaCliente({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: AppTheme.primary.withValues(alpha: 0.18),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.remove_red_eye_outlined,
+                  size: 18,
+                  color: AppTheme.primary,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Ver la app como cliente',
+                        style: TextStyle(
+                          color: AppTheme.textPrimary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        'Comprueba cómo la ve un cliente. Puedes volver cuando '
+                        'quieras.',
+                        style: TextStyle(
+                          color: AppTheme.textSecondary.withValues(alpha: 0.95),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  size: 20,
+                  color: AppTheme.primary,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

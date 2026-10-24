@@ -61,13 +61,66 @@ void main() {
     // El formulario solo existe si el servicio tiene campos configurados: sin
     // ellos no hay nada que resaltar, así que el paso se explica pero permite
     // avanzar sin ir a buscarlo.
+    //
+    // Desde v2 también son opcionales los dos pasos que dependen de que haya
+    // datos: sin establecimientos publicados no hay ficha que abrir y sin
+    // reservas esta semana el ranking está vacío.
     final opcionales = cliente.where((p) => p.opcional).map((p) => p.id).toSet();
-    expect(opcionales, <String>{'detalle_datos'});
+    expect(opcionales, <String>{
+      'detalle_datos',
+      'ficha_local_servicios',
+      'top_servicios',
+    });
+  });
+
+  test('el recorrido del cliente es el v2, con el acceso rápido explicado', () {
+    // La lista completa se fija aquí a propósito: es la única unión entre el
+    // guion y las anclas reales, y el orden es el del recorrido.
+    expect(cliente.map((p) => p.id).toList(), <String>[
+      'home_buscar',
+      'home_exploracion',
+      'home_ver_todo',
+      'home_card_categorias',
+      'categorias_lista',
+      'establecimientos_lista',
+      'ficha_local_servicios',
+      'top_servicios',
+      'catalogo_tarjeta',
+      'detalle_acciones',
+      'detalle_calendario',
+      'detalle_datos',
+      'detalle_continuar',
+    ]);
+    expect(cliente.length, 13);
+
+    // El bloque de acceso rápido tiene que explicarse con sus propias palabras:
+    // es lo primero que ve el cliente en el Home nuevo.
+    final rejilla = cliente.firstWhere((p) => p.id == 'home_exploracion');
+    expect(rejilla.titulo, contains('Exploración rápida'));
+    expect(rejilla.mensaje, contains('Categorías'));
+    expect(rejilla.mensaje, contains('Servicios'));
+    expect(rejilla.mensaje, contains('Establecimientos'));
+    expect(rejilla.mensaje, contains('Más populares'));
   });
 
   test('los pasos que salen de la pantalla declaran su destino', () {
-    // Cliente: Home → catálogo → detalle del primer servicio.
+    // Cliente: Home → acceso rápido → catálogo → detalle del primer servicio.
     expect(_destinoDe(cliente, 'home_buscar'), TutorialDestino.home);
+    expect(_destinoDe(cliente, 'home_exploracion'), TutorialDestino.home);
+    expect(_destinoDe(cliente, 'home_card_categorias'), TutorialDestino.home);
+    expect(
+      _destinoDe(cliente, 'categorias_lista'),
+      TutorialDestino.listaCategorias,
+    );
+    expect(
+      _destinoDe(cliente, 'establecimientos_lista'),
+      TutorialDestino.listaEstablecimientos,
+    );
+    expect(
+      _destinoDe(cliente, 'ficha_local_servicios'),
+      TutorialDestino.fichaEstablecimiento,
+    );
+    expect(_destinoDe(cliente, 'top_servicios'), TutorialDestino.topServicios);
     expect(_destinoDe(cliente, 'catalogo_tarjeta'), TutorialDestino.catalogo);
     expect(_destinoDe(cliente, 'detalle_acciones'), TutorialDestino.servicio);
 
@@ -110,11 +163,17 @@ void main() {
 
     expect(delCliente, isNotEmpty);
     expect(delAdmin, isNotEmpty);
+    // Los del cliente: las pestañas del shell y, desde v2, las pantallas
+    // apiladas de «Exploración rápida».
     expect(
       delCliente.difference(<TutorialDestino>{
         TutorialDestino.home,
         TutorialDestino.catalogo,
         TutorialDestino.servicio,
+        TutorialDestino.listaCategorias,
+        TutorialDestino.listaEstablecimientos,
+        TutorialDestino.fichaEstablecimiento,
+        TutorialDestino.topServicios,
       }),
       isEmpty,
     );
@@ -123,6 +182,10 @@ void main() {
         TutorialDestino.home,
         TutorialDestino.catalogo,
         TutorialDestino.servicio,
+        TutorialDestino.listaCategorias,
+        TutorialDestino.listaEstablecimientos,
+        TutorialDestino.fichaEstablecimiento,
+        TutorialDestino.topServicios,
       }),
       isEmpty,
     );
