@@ -233,12 +233,18 @@ class OrderService {
 
     final order = getCurrentOrCreateOrder();
 
-    // Verificar si ya existe un item similar
+    // Verificar si ya existe un item similar. La presentación forma parte de
+    // la identidad de la línea: `cantidad` está EN LA PRESENTACIÓN ELEGIDA, así
+    // que sumar líneas con presentaciones distintas mezclaría unidades y al RPC
+    // llegaría una sola `id_presentacion` para todo el total.
+    final idPresNuevo = (inventoryData?['id_presentacion'] as num?)?.toInt();
     final existingItemIndex = order.items.indexWhere(
       (item) =>
           item.producto.id == producto.id &&
           ((item.variante == null && variante == null) ||
-              (item.variante?.id == variante?.id)),
+              (item.variante?.id == variante?.id)) &&
+          (item.inventoryData?['id_presentacion'] as num?)?.toInt() ==
+              idPresNuevo,
     );
 
     if (existingItemIndex != -1) {
@@ -1724,9 +1730,7 @@ class OrderService {
             );
           }
 
-          print(
-            'Respuesta registro pagos (intento $attempt): $response',
-          );
+          print('Respuesta registro pagos (intento $attempt): $response');
 
           if (response == true) {
             return {
@@ -1811,12 +1815,11 @@ class OrderService {
         final p = Map<String, dynamic>.from(raw);
         final id = (p['id_medio_pago'] as num?)?.toInt();
         if (id == null) continue;
-        final currency = (p['moneda']?.toString().toUpperCase() == 'USD')
-            ? 'USD'
-            : 'CUP';
+        final currency =
+            (p['moneda']?.toString().toUpperCase() == 'USD') ? 'USD' : 'CUP';
         final key = '$id|$currency';
-        existing[key] = (existing[key] ?? 0.0) +
-            ((p['monto'] as num?)?.toDouble() ?? 0.0);
+        existing[key] =
+            (existing[key] ?? 0.0) + ((p['monto'] as num?)?.toDouble() ?? 0.0);
       }
 
       final expected = <String, double>{};
@@ -1824,12 +1827,11 @@ class OrderService {
         final p = Map<String, dynamic>.from(raw);
         final id = (p['id_medio_pago'] as num?)?.toInt();
         if (id == null) continue;
-        final currency = (p['moneda']?.toString().toUpperCase() == 'USD')
-            ? 'USD'
-            : 'CUP';
+        final currency =
+            (p['moneda']?.toString().toUpperCase() == 'USD') ? 'USD' : 'CUP';
         final key = '$id|$currency';
-        expected[key] = (expected[key] ?? 0.0) +
-            ((p['monto'] as num?)?.toDouble() ?? 0.0);
+        expected[key] =
+            (expected[key] ?? 0.0) + ((p['monto'] as num?)?.toDouble() ?? 0.0);
       }
 
       if (existing.length != expected.length) return false;
@@ -2256,7 +2258,12 @@ class OrderService {
             final productId = item['id_producto'].toString();
             final variantId =
                 item['variante']?['id']?.toString() ?? 'no_variant';
-            final key = '${productId}_${variantId}';
+            // La presentación forma parte de la identidad de la línea: el
+            // mismo producto puede entrar en varias presentaciones y cada
+            // fila de extracción debe seguir siendo una línea distinta.
+            final presentacionId =
+                item['id_presentacion']?.toString() ?? 'no_presentacion';
+            final key = '${productId}_${variantId}_$presentacionId';
 
             if (!groupedItems.containsKey(key)) {
               // Primera vez que vemos este producto/variante
@@ -2374,7 +2381,12 @@ class OrderService {
               // solo llegan si la RPC los expone; si no, quedan null y el ítem
               // se comporta como antes de Fase 4.
               idPresentacion: (item['id_presentacion'] as num?)?.toInt(),
-              presentacionNombre: item['presentacion_nombre'] as String?,
+              // `presentacion` es la clave que emite hoy `fn_listar_ordenes`;
+              // `presentacion_nombre` la agrega el patch para uniformar con
+              // las órdenes pendientes locales.
+              presentacionNombre:
+                  (item['presentacion_nombre'] ?? item['presentacion'])
+                      as String?,
               presentacionFactor:
                   (item['presentacion_factor'] as num?)?.toDouble(),
             );

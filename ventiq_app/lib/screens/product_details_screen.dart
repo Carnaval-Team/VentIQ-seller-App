@@ -1177,7 +1177,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       final idPresVariante =
           (variant.inventoryMetadata?['id_presentacion'] as num?)?.toInt();
       if (idPresVariante != null) {
-        final pres = _productPresentations.cast<ProductPresentation?>()
+        final pres = _productPresentations
+            .cast<ProductPresentation?>()
             .firstWhere((p) => p?.id == idPresVariante, orElse: () => null);
         if (pres != null) {
           return pres.presentacion.esFraccionable;
@@ -1950,7 +1951,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                                     ),
                                     _getLocationName(currentProduct, entry.key),
                                     isVariant: true,
-                                    variant: entry.key, // FASE 4: factor POR VARIANTE
+                                    variant:
+                                        entry
+                                            .key, // FASE 4: factor POR VARIANTE
                                     originalPrice: _getOriginalBasePrice(
                                       currentProduct,
                                       entry.key,
@@ -2536,8 +2539,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                             if (variant != null &&
                                 variantQuantities[variant]! > 0) {
                               variantQuantities[variant] =
-                                  (variantQuantities[variant]! - step)
-                                      .clamp(0.0, double.infinity);
+                                  (variantQuantities[variant]! - step).clamp(
+                                    0.0,
+                                    double.infinity,
+                                  );
                             }
                           }
                         });
@@ -2571,7 +2576,11 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                     ),
                     InkWell(
                       onTap:
-                          () => _showQuantityDialog(name, quantity.toDouble(), variant),
+                          () => _showQuantityDialog(
+                            name,
+                            quantity.toDouble(),
+                            variant,
+                          ),
                       child: Container(
                         width: 50,
                         height: 36,
@@ -2674,7 +2683,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   ///   dejar el selector activo crearía dos ejes del mismo dato (presentación
   ///   global vs presentación por variante) y el usuario podría vender "1 Caja"
   ///   con el id_presentacion de la "Bolsa".
-  Widget _buildPresentationSelector(Product product, [ProductVariant? variant]) {
+  Widget _buildPresentationSelector(
+    Product product, [
+    ProductVariant? variant,
+  ]) {
     final productKey = '${product.id}';
     final selectedPresentationForProduct =
         _selectedPresentationsByProduct[productKey];
@@ -2732,20 +2744,20 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       // visualmente pertenece a este card, no la primera con cantidad del mapa.
       ProductVariant? varianteActiva = variant ?? selectedVariant;
       final cantActiva =
-          varianteActiva != null ? variantQuantities[varianteActiva] ?? 0.0 : 0.0;
+          varianteActiva != null
+              ? variantQuantities[varianteActiva] ?? 0.0
+              : 0.0;
       if (cantActiva <= 0) {
         varianteActiva = _varianteConCantidad();
       }
       if (varianteActiva != null) {
-        final idPres = (varianteActiva.inventoryMetadata?['id_presentacion']
-                as num?)
-            ?.toInt();
+        final idPres =
+            (varianteActiva.inventoryMetadata?['id_presentacion'] as num?)
+                ?.toInt();
         if (idPres != null) {
-          final presVariante =
-              _productPresentations.cast<ProductPresentation?>().firstWhere(
-            (p) => p?.id == idPres,
-            orElse: () => null,
-          );
+          final presVariante = _productPresentations
+              .cast<ProductPresentation?>()
+              .firstWhere((p) => p?.id == idPres, orElse: () => null);
           if (presVariante != null) {
             displayValue = presVariante;
             bloqueadoPorVariante = presVariante.presentacion.denominacion;
@@ -2779,48 +2791,52 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
               child: DropdownButton<ProductPresentation>(
                 value: displayValue,
                 isDense: true,
-                items: _productPresentations.map((presentation) {
-                    return DropdownMenuItem<ProductPresentation>(
-                      value: presentation,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (presentation.esBase) ...[
-                            Icon(
-                              Icons.star,
-                              size: 14,
-                              color: Colors.orange[600],
+                items:
+                    _productPresentations.map((presentation) {
+                      return DropdownMenuItem<ProductPresentation>(
+                        value: presentation,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (presentation.esBase) ...[
+                              Icon(
+                                Icons.star,
+                                size: 14,
+                                color: Colors.orange[600],
+                              ),
+                              const SizedBox(width: 4),
+                            ],
+                            Text(
+                              '${presentation.presentacion.denominacion} (${presentation.cantidad})',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight:
+                                    presentation.esBase
+                                        ? FontWeight.w600
+                                        : FontWeight.w500,
+                                color:
+                                    presentation.esBase
+                                        ? Colors.orange[700]
+                                        : Colors.grey[700],
+                              ),
                             ),
-                            const SizedBox(width: 4),
                           ],
-                          Text(
-                            '${presentation.presentacion.denominacion} (${presentation.cantidad})',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: presentation.esBase
-                                  ? FontWeight.w600
-                                  : FontWeight.w500,
-                              color: presentation.esBase
-                                  ? Colors.orange[700]
-                                  : Colors.grey[700],
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                onChanged: onChangedEnabled
-                    ? (ProductPresentation? newPresentation) {
-                        setState(() {
-                          _selectedPresentationsByProduct[productKey] =
-                              newPresentation;
-                          debugPrint(
-                            '🔄 Presentación cambiada para producto '
-                            '${product.id}: ${newPresentation?.presentacion.denominacion}',
-                          );
-                        });
-                      }
-                    : null, // BLOQUEADO: variante activa, no se cambia aquí.
+                        ),
+                      );
+                    }).toList(),
+                onChanged:
+                    onChangedEnabled
+                        ? (ProductPresentation? newPresentation) {
+                          setState(() {
+                            _selectedPresentationsByProduct[productKey] =
+                                newPresentation;
+                            debugPrint(
+                              '🔄 Presentación cambiada para producto '
+                              '${product.id}: ${newPresentation?.presentacion.denominacion}',
+                            );
+                          });
+                        }
+                        : null, // BLOQUEADO: variante activa, no se cambia aquí.
               ),
             ),
           ),
@@ -2829,13 +2845,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
           Padding(
             padding: const EdgeInsets.only(left: 8),
             child: Tooltip(
-              message: 'Presentación de la variante seleccionada. '
+              message:
+                  'Presentación de la variante seleccionada. '
                   'Cambie de variante para cambiar la presentación.',
-              child: const Icon(
-                Icons.lock,
-                size: 14,
-                color: Colors.grey,
-              ),
+              child: const Icon(Icons.lock, size: 14, color: Colors.grey),
             ),
           ),
       ],
@@ -2872,8 +2885,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   /// - Para productos con variantes: **cada variante trae su propia fila de
   ///   inventario** con su `id_presentacion`; el factor se resuelve por
   ///   variante, no compartido. Si la variante no expone presentación, cae a 1.
-  double _getPresentationConversionFactor(Product product,
-      [ProductVariant? variant]) {
+  double _getPresentationConversionFactor(
+    Product product, [
+    ProductVariant? variant,
+  ]) {
     final factor = _factorRelSeleccionado(product, variant);
     debugPrint(
       '📊 Factor de conversión para producto ${product.id}'
@@ -2907,18 +2922,21 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   /// `ProductPresentation` es precisamente esa fila (ver el comentario de
   /// `_presentacionElegidaId`).
   double? _factorRelDeCadena(Product product, int idFilaPresentacion) {
-    final crudas = _productPresentations
-        .map((p) => {
-              'id': p.id,
-              'cantidad': p.cantidad,
-              'es_base': p.esBase,
-              'presentacion': {
-                'id': p.idPresentacion,
-                'denominacion': p.presentacion.denominacion,
-                'sku_codigo': p.presentacion.skuCodigo,
+    final crudas =
+        _productPresentations
+            .map(
+              (p) => {
+                'id': p.id,
+                'cantidad': p.cantidad,
+                'es_base': p.esBase,
+                'presentacion': {
+                  'id': p.idPresentacion,
+                  'denominacion': p.presentacion.denominacion,
+                  'sku_codigo': p.presentacion.skuCodigo,
+                },
               },
-            })
-        .toList();
+            )
+            .toList();
     final cadena = PresentacionCadenaLocal.resolverDesdeCrudas(crudas);
     for (final p in cadena) {
       if (p.idPresentacion == idFilaPresentacion) return p.factorRel;
@@ -2938,14 +2956,15 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     Product product, [
     ProductVariant? variant,
   ]) {
-    final conversionFactor =
-        _getPresentationConversionFactor(product, variant);
+    final conversionFactor = _getPresentationConversionFactor(product, variant);
     final unitPrice = basePrice * conversionFactor;
     final rawTotal = unitPrice * quantity;
     final totalPrice = rawTotal;
 
-    debugPrint('💰 Cálculo precio para producto ${product.id}'
-        '${variant != null ? ' (variante ${variant.id})' : ''}:');
+    debugPrint(
+      '💰 Cálculo precio para producto ${product.id}'
+      '${variant != null ? ' (variante ${variant.id})' : ''}:',
+    );
     debugPrint('   - Precio base: \$${basePrice.toMoneyString(2)}');
     debugPrint('   - Factor conversión: ${conversionFactor}');
     debugPrint('   - Precio unitario: \$${unitPrice.toMoneyString(2)}');
@@ -2974,7 +2993,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     double total = 0.0;
     if (currentProduct.variantes.isEmpty) {
       // Producto sin variantes: factor de la presentación elegida en el selector.
-      total = selectedQuantity * _getPresentationConversionFactor(currentProduct);
+      total =
+          selectedQuantity * _getPresentationConversionFactor(currentProduct);
     } else {
       // Producto con variantes: CADA variante lleva su propia presentación
       // (fila de inventario distinta). Antes se aplicaba un solo factor del
@@ -2983,7 +3003,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       // Caja" + "Variante 2 - Blister").
       for (final entry in variantQuantities.entries) {
         final quantity = entry.value;
-        final factor = _getPresentationConversionFactor(currentProduct, entry.key);
+        final factor = _getPresentationConversionFactor(
+          currentProduct,
+          entry.key,
+        );
         total += quantity * factor;
       }
     }
@@ -3082,12 +3105,13 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     if (stocks != null && cadena.isNotEmpty) {
       final idPres = _presentacionElegidaId(currentProduct);
       if (idPres != null && newQuantity > (stocks[idPres] ?? 0)) {
-        final nombre = cadena
-            .firstWhere(
-              (p) => p.idPresentacion == idPres,
-              orElse: () => cadena.first,
-            )
-            .nombre;
+        final nombre =
+            cadena
+                .firstWhere(
+                  (p) => p.idPresentacion == idPres,
+                  orElse: () => cadena.first,
+                )
+                .nombre;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -3357,15 +3381,15 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     );
 
     // Match por `id` = fila de `app_dat_producto_presentacion` (11197, 11198...).
-        // `PresentacionCadenaLocal.idPresentacion` guarda `raw['id']`, o sea la FILA,
-        // y el ledger (`app_dat_inventario_productos.id_presentacion`) tambien usa la
-        // fila — verificado en produccion con el producto 11007. NO comparar contra
-        // `idPresentacion` (el nomenclador 1=Unidad/3=Caja): no coincide nunca.
-        for (final p in cadena) {
-          if (p.idPresentacion == elegida.id) return p.factorRel;
-        }
-        return null;
-      }
+    // `PresentacionCadenaLocal.idPresentacion` guarda `raw['id']`, o sea la FILA,
+    // y el ledger (`app_dat_inventario_productos.id_presentacion`) tambien usa la
+    // fila — verificado en produccion con el producto 11007. NO comparar contra
+    // `idPresentacion` (el nomenclador 1=Unidad/3=Caja): no coincide nunca.
+    for (final p in cadena) {
+      if (p.idPresentacion == elegida.id) return p.factorRel;
+    }
+    return null;
+  }
 
   /// Cadena de presentaciones del producto, ya ordenada y con factores.
   ///
@@ -3376,16 +3400,18 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   List<PresentacionLocal> _cadenaPresentaciones() {
     return PresentacionCadenaLocal.resolverDesdeCrudas(
       _productPresentations
-          .map((p) => {
-                'id': p.id,
-                'cantidad': p.cantidad,
-                'es_base': p.esBase,
-                'presentacion': {
-                  'id': p.idPresentacion,
-                  'denominacion': p.presentacion.denominacion,
-                  'sku_codigo': p.presentacion.skuCodigo,
-                },
-              })
+          .map(
+            (p) => {
+              'id': p.id,
+              'cantidad': p.cantidad,
+              'es_base': p.esBase,
+              'presentacion': {
+                'id': p.idPresentacion,
+                'denominacion': p.presentacion.denominacion,
+                'sku_codigo': p.presentacion.skuCodigo,
+              },
+            },
+          )
           .toList(),
     );
   }
@@ -3419,7 +3445,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     if (mixto == null || mixto.isEmpty) return null;
     for (final fila in mixto) {
       final id = (fila['id_presentacion'] as num?)?.toInt();
-      final cant = (fila['cantidad_final'] as num?)?.toDouble() ??
+      final cant =
+          (fila['cantidad_final'] as num?)?.toDouble() ??
           (fila['saldo'] as num?)?.toDouble();
       if (id != null && cant != null) {
         out[id] = (out[id] ?? 0) + cant;
@@ -3436,27 +3463,28 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   Future<void> _avisarStockInsuficienteOffline(double maximoServible) async {
     await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.inventory_2_outlined, color: Colors.red),
-            SizedBox(width: 8),
-            Expanded(child: Text('No hay suficiente')),
-          ],
-        ),
-        content: Text(
-          maximoServible > 0
-              ? 'No alcanza el stock disponible. Como máximo se pueden servir '
-                  '${FormatoPresentacion.cantidad(maximoServible)}.'
-              : 'No alcanza el stock disponible.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Entendido'),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.inventory_2_outlined, color: Colors.red),
+                SizedBox(width: 8),
+                Expanded(child: Text('No hay suficiente')),
+              ],
+            ),
+            content: Text(
+              maximoServible > 0
+                  ? 'No alcanza el stock disponible. Como máximo se pueden servir '
+                      '${FormatoPresentacion.cantidad(maximoServible)}.'
+                  : 'No alcanza el stock disponible.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Entendido'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -3465,26 +3493,27 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     if (!mounted) return false;
     return showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.unfold_more, color: Colors.orange.shade800),
-            const SizedBox(width: 8),
-            const Expanded(child: Text('¿Desarmar un bulto?')),
-          ],
-        ),
-        content: Text(plan.mensaje),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancelar'),
+      builder:
+          (ctx) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.unfold_more, color: Colors.orange.shade800),
+                const SizedBox(width: 8),
+                const Expanded(child: Text('¿Desarmar un bulto?')),
+              ],
+            ),
+            content: Text(plan.mensaje),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Desarmar'),
+              ),
+            ],
           ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Desarmar'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -3578,31 +3607,55 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       };
     }
 
+    // FASE 4 presentaciones: la presentación ELEGIDA en la UI manda sobre la
+    // del inventario.
+    //
+    // `inventoryMetadata['id_presentacion']` es la presentación de la fila de
+    // inventario que resolvió el catálogo — normalmente la base. Si el usuario
+    // eligió "Bulto" en el selector y se manda esa, el servidor registra la
+    // venta contra la presentación equivocada: cantidad en Bultos con el
+    // id_presentacion de la Bolsa.
+    //
+    // CON VARIANTE la regla se invierte: cada variante es su propia fila de
+    // inventario con su propio `id_presentacion`, y el precio ya se calculó
+    // con ese factor (`_factorRelSeleccionado`). El selector global es
+    // por-producto; si mandara aquí, todas las variantes llegarían al RPC con
+    // la misma presentación y el precio quedaría en la unidad equivocada.
+    final int? idPresFila =
+        variant != null
+            ? ((inventoryMetadata['id_presentacion'] as num?)?.toInt() ??
+                _presentacionElegidaId(product))
+            : (_presentacionElegidaId(product) ??
+                (inventoryMetadata['id_presentacion'] as num?)?.toInt());
+    final String? presNombre =
+        variant != null
+            ? (idPresFila != null
+                    ? _nombrePresentacionPedida(idPresFila)
+                    : null) ??
+                _presentacionElegidaNombre(product)
+            : _presentacionElegidaNombre(product);
+    final double? presFactor =
+        variant != null
+            ? (idPresFila != null
+                    ? _factorRelDeCadena(product, idPresFila)
+                    : null) ??
+                _presentacionElegidaFactorRel(product)
+            : _presentacionElegidaFactorRel(product);
+
     final inventoryData = {
       'id_producto': product.id,
       'id_variante': inventoryMetadata['id_variante'],
       'id_opcion_variante': inventoryMetadata['id_opcion_variante'],
       'id_ubicacion': inventoryMetadata['id_ubicacion'],
-      // FASE 4 presentaciones: la presentación ELEGIDA en la UI manda sobre la
-      // del inventario.
-      //
-      // `inventoryMetadata['id_presentacion']` es la presentación de la fila de
-      // inventario que resolvió el catálogo — normalmente la base. Si el usuario
-      // eligió "Bulto" en el selector y se manda esa, el servidor registra la
-      // venta contra la presentación equivocada: cantidad en Bultos con el
-      // id_presentacion de la Bolsa.
-      //
       // Fallback al inventario cuando el producto no tiene presentaciones
       // cargadas (offline sin caché): el servidor resuelve la base.
-      'id_presentacion':
-          _presentacionElegidaId(product) ??
-          inventoryMetadata['id_presentacion'],
+      'id_presentacion': idPresFila,
       // Nombre y factor relativo de la presentación elegida, para que
       // `OrderService` los congele en el `OrderItem`. Van por aquí porque
       // `Product` no lleva las presentaciones: la cadena vive en el estado de
       // esta pantalla (`_productPresentations`), no en el modelo.
-      'presentacion_nombre': _presentacionElegidaNombre(product),
-      'presentacion_factor_rel': _presentacionElegidaFactorRel(product),
+      'presentacion_nombre': presNombre,
+      'presentacion_factor_rel': presFactor,
       'sku_producto':
           inventoryMetadata['sku_producto'] ?? product.id.toString(),
       'sku_ubicacion': inventoryMetadata['sku_ubicacion'],
@@ -3688,8 +3741,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
         // real en el servidor (`fn_rebalancear_presentaciones`), que es la
         // autoridad. Aquí solo se avisa al vendedor y se pide confirmación.
         // ══════════════════════════════════════════════════════════════════
-        final useLocalData =
-            await _userPreferencesService.shouldUseLocalData();
+        final useLocalData = await _userPreferencesService.shouldUseLocalData();
         var seguir = true;
 
         if (useLocalData) {
@@ -3791,15 +3843,17 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
             final discountPrice = _calculateDiscountPrice(basePrice);
             final finalPrice = discountPrice ?? basePrice;
             // FASE 4: igual que la rama sin variantes — cantidad en la
-              // presentación elegida, precio × factor. Ver el comentario largo
-              // arriba. Pero aquí el factor es POR VARIANTE: cada una lleva su
-              // propia presentación (fila de inventario distinta), así que no se
-              // reusa el `conversionFactor` global del try{} encima.
-              final cantidadEnPresentacion = entry.value;
-              final factorVariante =
-                  _getPresentationConversionFactor(currentProduct, entry.key);
-              final precioPorPresentacion = finalPrice * factorVariante;
-              final precioBasePorPresentacion = basePrice * factorVariante;
+            // presentación elegida, precio × factor. Ver el comentario largo
+            // arriba. Pero aquí el factor es POR VARIANTE: cada una lleva su
+            // propia presentación (fila de inventario distinta), así que no se
+            // reusa el `conversionFactor` global del try{} encima.
+            final cantidadEnPresentacion = entry.value;
+            final factorVariante = _getPresentationConversionFactor(
+              currentProduct,
+              entry.key,
+            );
+            final precioPorPresentacion = finalPrice * factorVariante;
+            final precioBasePorPresentacion = basePrice * factorVariante;
 
             await orderService.addItemToCurrentOrder(
               producto: currentProduct,
