@@ -3,6 +3,37 @@ import 'dart:io';
 
 import 'currency_service.dart';
 
+enum FiltroStockCatalogo { todos, conStock, sinStock }
+
+enum FiltroPublicacionCatalogo { todos, publicados, noPublicados }
+
+List<Map<String, dynamic>> filtrarProductosCatalogo(
+  List<Map<String, dynamic>> productos, {
+  String busqueda = '',
+  FiltroStockCatalogo stock = FiltroStockCatalogo.todos,
+  FiltroPublicacionCatalogo publicacion = FiltroPublicacionCatalogo.todos,
+}) {
+  final query = busqueda.trim().toLowerCase();
+  return productos.where((p) {
+    final coincide =
+        (p['denominacion']?.toString() ?? '').toLowerCase().contains(query) ||
+        (p['sku']?.toString() ?? '').toLowerCase().contains(query);
+    final cantidad = num.tryParse(p['stock_disponible']?.toString() ?? '');
+    final coincideStock = switch (stock) {
+      FiltroStockCatalogo.todos => true,
+      FiltroStockCatalogo.conStock => cantidad != null && cantidad > 0,
+      FiltroStockCatalogo.sinStock => cantidad != null && cantidad <= 0,
+    };
+    final publicado = p['mostrar_en_catalogo'] == true;
+    final coincidePublicacion = switch (publicacion) {
+      FiltroPublicacionCatalogo.todos => true,
+      FiltroPublicacionCatalogo.publicados => publicado,
+      FiltroPublicacionCatalogo.noPublicados => !publicado,
+    };
+    return coincide && coincideStock && coincidePublicacion;
+  }).toList();
+}
+
 class CatalogoService {
   static final CatalogoService _instance = CatalogoService._internal();
   factory CatalogoService() => _instance;
@@ -40,7 +71,8 @@ class CatalogoService {
 
       if (response == null) return null;
 
-      final planData = response['app_suscripciones_plan'] as Map<String, dynamic>?;
+      final planData =
+          response['app_suscripciones_plan'] as Map<String, dynamic>?;
       return planData?['denominacion'] as String?;
     } catch (e) {
       print('❌ Error obteniendo tipo de plan: $e');
@@ -49,12 +81,14 @@ class CatalogoService {
   }
 
   /// Obtiene todos los productos de una tienda con validación para catálogo
-  Future<List<Map<String, dynamic>>> obtenerProductosCatalogo(int idTienda) async {
+  Future<List<Map<String, dynamic>>> obtenerProductosCatalogo(
+    int idTienda,
+  ) async {
     try {
       print('📦 Obteniendo productos para catálogo de tienda: $idTienda');
-      
+
       final response = await _supabase.rpc(
-        'get_productos_catalogo_validacion',
+        'get_productos_catalogo_stock_v2',
         params: {'p_id_tienda': idTienda},
       );
 
@@ -64,10 +98,10 @@ class CatalogoService {
       }
 
       // Convertir respuesta a lista de mapas
-      final productos = response is List 
+      final productos = response is List
           ? List<Map<String, dynamic>>.from(response)
           : [response as Map<String, dynamic>];
-      
+
       print('✅ Productos obtenidos: ${productos.length}');
       return productos;
     } catch (e) {
@@ -84,7 +118,7 @@ class CatalogoService {
   ) async {
     try {
       print('🔄 Actualizando mostrar_en_catalogo para producto: $idProducto');
-      
+
       final response = await _supabase.rpc(
         'actualizar_mostrar_en_catalogo',
         params: {
@@ -99,7 +133,7 @@ class CatalogoService {
       }
 
       final result = response.first as Map<String, dynamic>;
-      
+
       if (result['success'] == true) {
         print('✅ Producto actualizado: ${result['message']}');
       } else {
@@ -122,21 +156,20 @@ class CatalogoService {
   }) async {
     try {
       print('🏪 Actualizando mostrar_en_catalogo para tienda: $idTienda');
-      
+
       final Map<String, dynamic> updates = {
-        'mostrar_en_catalogo': mostrarEnCatalogo
+        'mostrar_en_catalogo': mostrarEnCatalogo,
       };
 
       if (layoutCatalogo != null) {
         updates['layout_catalogo'] = layoutCatalogo;
       }
-      
-      await _supabase
-          .from('app_dat_tienda')
-          .update(updates)
-          .eq('id', idTienda);
 
-      print('✅ Tienda actualizada - Catálogo ${mostrarEnCatalogo ? 'habilitado' : 'deshabilitado'}');
+      await _supabase.from('app_dat_tienda').update(updates).eq('id', idTienda);
+
+      print(
+        '✅ Tienda actualizada - Catálogo ${mostrarEnCatalogo ? 'habilitado' : 'deshabilitado'}',
+      );
       return true;
     } catch (e) {
       print('❌ Error actualizando tienda: $e');
@@ -148,7 +181,7 @@ class CatalogoService {
   Future<bool> obtenerMostrarEnCatalogoTienda(int idTienda) async {
     try {
       print('🔍 Obteniendo estado mostrar_en_catalogo de tienda: $idTienda');
-      
+
       final response = await _supabase
           .from('app_dat_tienda')
           .select('mostrar_en_catalogo')
@@ -195,10 +228,13 @@ class CatalogoService {
   }
 
   /// Actualiza la denominación de un producto
-  Future<bool> actualizarDenominacion(int idProducto, String nuevaDenominacion) async {
+  Future<bool> actualizarDenominacion(
+    int idProducto,
+    String nuevaDenominacion,
+  ) async {
     try {
       print('🔄 Actualizando denominación del producto: $idProducto');
-      
+
       await _supabase
           .from('app_dat_producto')
           .update({'denominacion': nuevaDenominacion})
@@ -228,10 +264,10 @@ class CatalogoService {
       final precioData = {
         'id_producto': idProducto,
         'precio_venta_cup': nuevoPrecio,
-        if (precioUsd != null && precioUsd > 0)
-          'precio_venta_usd': precioUsd,
-        'fecha_desde':
-            DateTime.now().toString().split(' ')[0], // Formato YYYY-MM-DD
+        if (precioUsd != null && precioUsd > 0) 'precio_venta_usd': precioUsd,
+        'fecha_desde': DateTime.now().toString().split(
+          ' ',
+        )[0], // Formato YYYY-MM-DD
       };
 
       // Insertar nuevo registro de precio con fecha_desde actual
@@ -249,23 +285,21 @@ class CatalogoService {
   Future<bool> actualizarImagen(int idProducto, File imageFile) async {
     try {
       print('📤 Subiendo imagen para producto: $idProducto');
-      
+
       // Generar nombre único para la imagen
-      final uniqueFileName = '${DateTime.now().millisecondsSinceEpoch}_producto_$idProducto.jpg';
-      
+      final uniqueFileName =
+          '${DateTime.now().millisecondsSinceEpoch}_producto_$idProducto.jpg';
+
       // Leer archivo como bytes
       final imageBytes = await imageFile.readAsBytes();
-      
+
       // Subir imagen al bucket 'images_back'
       final response = await _supabase.storage
           .from('images_back')
           .uploadBinary(
             uniqueFileName,
             imageBytes,
-            fileOptions: const FileOptions(
-              cacheControl: '3600',
-              upsert: true,
-            ),
+            fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
           );
 
       if (response.isEmpty) {
@@ -300,7 +334,7 @@ class CatalogoService {
   }) async {
     try {
       print('🔄 Actualizando producto: $idProducto');
-      
+
       // Actualizar denominación si se proporciona
       if (denominacion != null && denominacion.isNotEmpty) {
         await actualizarDenominacion(idProducto, denominacion);
