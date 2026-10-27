@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:sunmi_printer_plus/sunmi_printer_plus.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -61,11 +63,13 @@ class PrinterManager {
     if (_savedPrinterType == 'wifi') {
       return _savedWifiPrinter != null;
     }
-    return false;
+    return _savedPrinterType == 'sunmi' &&
+        !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
   }
 
   /// Nombre descriptivo de la impresora guardada (para mostrar en UI)
   String get savedPrinterDescription {
+    if (_savedPrinterType == 'sunmi') return 'Integrada SUNMI';
     if (_savedPrinterType == 'bluetooth' && _savedBluetoothDevice != null) {
       final name = _savedBluetoothDevice.name as String? ?? 'Dispositivo BT';
       return 'Bluetooth · $name';
@@ -109,7 +113,11 @@ class PrinterManager {
     try {
       final prefs = await SharedPreferences.getInstance();
       final type = prefs.getString(_kShiftPrinterType);
-      if (type == 'bluetooth') {
+      if (type == 'sunmi' &&
+          !kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+        _savedPrinterType = 'sunmi';
+        _rememberPrinterForShift = true;
+      } else if (type == 'bluetooth') {
         final mac = prefs.getString(_kShiftPrinterBtMac);
         if (mac == null || mac.isEmpty) return;
         _savedBluetoothDevice = BluetoothInfo(
@@ -440,8 +448,14 @@ class PrinterManager {
   ) async {
     try {
       await _ensureSavedPrinterLoaded();
+      if (!context.mounted) {
+        return PrintResult(success: false, message: 'La pantalla de impresión ya no está disponible', platform: 'Mobile');
+      }
       // Si ya se guardó una impresora para el turno, imprimir automáticamente
       if (hasSavedPrinter) {
+        if (_savedPrinterType == 'sunmi') {
+          return _printViaSunmi(context, orders, customerOnly: true);
+        }
         if (_savedPrinterType == 'bluetooth') {
           return await _printCustomerReceiptsViaBluetoothMobileWithDevice(
             context, orders, _savedBluetoothDevice);
@@ -462,6 +476,9 @@ class PrinterManager {
 
       _mobileprinterType = printerType;
 
+      if (printerType == 'sunmi') {
+        return _printViaSunmi(context, orders, customerOnly: true);
+      }
       if (printerType == 'bluetooth') {
         return await _printCustomerReceiptsViaBluetoothMobile(context, orders);
       } else {
@@ -803,8 +820,14 @@ class PrinterManager {
   ) async {
     try {
       await _ensureSavedPrinterLoaded();
+      if (!context.mounted) {
+        return PrintResult(success: false, message: 'La pantalla de impresión ya no está disponible', platform: 'Mobile');
+      }
       // Si ya se guardó una impresora para el turno, imprimir automáticamente
       if (hasSavedPrinter) {
+        if (_savedPrinterType == 'sunmi') {
+          return _printViaSunmi(context, [order]);
+        }
         if (_savedPrinterType == 'bluetooth') {
           return await _printViaBluetoothMobileWithDevice(
             context,
@@ -832,6 +855,9 @@ class PrinterManager {
 
       _mobileprinterType = printerType;
 
+      if (printerType == 'sunmi') {
+        return _printViaSunmi(context, [order]);
+      }
       if (printerType == 'bluetooth') {
         return await _printViaBluetoothMobile(context, order);
       } else {
@@ -850,8 +876,82 @@ class PrinterManager {
     }
   }
 
+  bool _sunmiPrinting = false;
+
+  Future<PrintResult> _printViaSunmi(
+    BuildContext context,
+    List<Order> orders, {
+    bool customerOnly = false,
+  }) async {
+    if (_sunmiPrinting) {
+      return PrintResult(success: false, message: 'Hay una impresión SUNMI en curso', platform: 'Mobile');
+    }
+    _sunmiPrinting = true;
+    var sentJobs = 0;
+    try {
+      if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+        throw StateError('La impresora integrada SUNMI requiere Android');
+      }
+      final printer = SunmiPrinterPlus();
+      if (!await printer.rebindPrinter().timeout(const Duration(seconds: 10))) {
+        throw StateError('No se encontró una impresora integrada SUNMI');
+      }
+      final status = await printer.getStatus().timeout(const Duration(seconds: 5));
+      if (status != PrinterStatus.READY.name) {
+        throw StateError('Impresora SUNMI no disponible ($status). Revisa papel, tapa y temperatura');
+      }
+      if (!context.mounted) {
+        throw StateError('La pantalla de impresión ya no está disponible');
+      }
+      if (_savedPrinterType != 'sunmi') {
+        final remember = await _showRememberPrinterDialog(context, 'sunmi', null);
+        if (remember == null) {
+          return PrintResult(success: false, message: 'Impresión cancelada por el usuario', platform: 'Mobile');
+        }
+        if (remember) {
+          _savedPrinterType = 'sunmi';
+          _rememberPrinterForShift = true;
+          await _persistSavedPrinter();
+        }
+      }
+      await _bluetoothService.printOrdersViaEscPos(
+        orders,
+        customerOnly: customerOnly,
+        send: (bytes) async {
+          sentJobs++;
+          final result = await printer.printEscPos(bytes).timeout(const Duration(seconds: 30));
+          if (result != 'ok') throw StateError('SUNMI rechazó el ticket ($result)');
+        },
+      );
+      return PrintResult(success: true, message: 'Tickets enviados a la impresora integrada SUNMI', platform: 'Mobile');
+    } catch (e) {
+      return PrintResult(
+        success: false,
+        message: 'Error en impresión SUNMI: $e',
+        platform: 'Mobile',
+        details: sentJobs > 0
+            ? 'Puede haberse impreso parte del trabajo. Revisa el papel antes de volver a imprimir.'
+            : 'No se envió ningún ticket a la impresora.',
+      );
+    } finally {
+      _sunmiPrinting = false;
+    }
+  }
+
+  Future<bool> _detectSunmiPrinter() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return false;
+    try {
+      return await SunmiPrinterPlus().rebindPrinter().timeout(
+        const Duration(seconds: 3),
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Mostrar diálogo de selección de tipo de impresora
   Future<String?> _showPrinterTypeDialog(BuildContext context) async {
+    final sunmiDetection = _detectSunmiPrinter();
     return showDialog<String>(
       context: context,
       builder:
@@ -876,6 +976,45 @@ class PrinterManager {
                   style: TextStyle(fontSize: 15, color: Colors.grey[700]),
                 ),
                 SizedBox(height: 20),
+                FutureBuilder<bool>(
+                  future: sunmiDetection,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState != ConnectionState.done) {
+                      return const Padding(
+                        padding: EdgeInsets.only(bottom: 12),
+                        child: Text('Buscando impresora integrada…'),
+                      );
+                    }
+                    if (snapshot.data != true) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pop(context, 'sunmi'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF4A90E2),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 20),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.point_of_sale, size: 36),
+                              SizedBox(height: 8),
+                              Text('Integrada SUNMI', style: TextStyle(
+                                fontSize: 15, fontWeight: FontWeight.w700,
+                              )),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
                 Row(
                   children: [
                     Expanded(
@@ -964,8 +1103,9 @@ class PrinterManager {
       return false;
     }
 
-    final description =
-        printerType == 'bluetooth'
+    final description = printerType == 'sunmi'
+        ? 'Integrada SUNMI'
+        : printerType == 'bluetooth'
             ? (deviceOrPrinter.name as String? ?? 'Bluetooth')
             : 'WiFi · ${deviceOrPrinter['ip']}:${deviceOrPrinter['port'] ?? 9100}';
 
@@ -1006,9 +1146,11 @@ class PrinterManager {
                   child: Row(
                     children: [
                       Icon(
-                        printerType == 'bluetooth'
-                            ? Icons.bluetooth
-                            : Icons.wifi,
+                        printerType == 'sunmi'
+                            ? Icons.point_of_sale
+                            : printerType == 'bluetooth'
+                                ? Icons.bluetooth
+                                : Icons.wifi,
                         size: 18,
                         color: const Color(0xFF4A90E2),
                       ),

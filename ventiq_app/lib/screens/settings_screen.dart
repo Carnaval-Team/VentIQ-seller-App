@@ -41,7 +41,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen>
     with WidgetsBindingObserver {
   static const String _downloadAppUrl =
-      'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/vendedor%20cuba.apk';
+      'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/inventtia%20caja.apk';
 
   final OrderService _orderService = OrderService();
   final UserPreferencesService _userPreferencesService =

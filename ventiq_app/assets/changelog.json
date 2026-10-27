@@ -1,8 +1,45 @@
 {
-  "current_version": "2.7.0",
-  "build": 851,
+  "current_version": "2.8.0",
+  "build": 852,
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.8.0",
+      "date": "2026-10-27",
+      "title": "Presentaciones exactas, lotes y restaurante más claro",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Cada variante vende en su presentación correcta",
+          "description": "El carrito y la orden distinguen producto + variante + presentación. Dos Bolsas y un Bulto del mismo producto ya no se fusionan en una sola línea, y cada línea envía la presentación que elegiste."
+        },
+        {
+          "type": "feature",
+          "title": "El detalle de orden muestra cada presentación por separado",
+          "description": "Si una orden tiene el mismo producto en Galón y en Litro, ahora aparecen como líneas independientes con su cantidad y precio, en vez de colapsarse en una."
+        },
+        {
+          "type": "feature",
+          "title": "Inventario por lotes y vencimiento",
+          "description": "Los productos gestionados por lote descuentan stock del lote correcto siguiendo FEFO (primero en vencer, primero en salir) y los movimientos guardan el lote exacto que se vendió."
+        },
+        {
+          "type": "improvement",
+          "title": "Restaurante: mesas y comandas más ágiles",
+          "description": "Tocar una mesa con una sola cuenta abierta la abre directo. El resumen de productos del pedido fue rediseñado: cantidad destacada, presentación, almacén, precio unitario y equivalente en USD, todo legible incluso en pantallas estrechas."
+        },
+        {
+          "type": "improvement",
+          "title": "Números más legibles en toda la app",
+          "description": "Los importes muestran separador de miles con espacio fino (30 000, 3 000 000) sin cambiar los valores que se calculan o se envían al servidor. En los tickets térmicos se usa espacio normal para que la impresora lo respete."
+        },
+        {
+          "type": "improvement",
+          "title": "Selector de moneda en el checkout",
+          "description": "Si la tienda lo activa en su configuración, puedes elegir entre CUP y USD al cobrar, con la equivalencia siempre visible."
+        }
+      ]
+    },
     {
       "version": "2.7.0",
       "date": "2026-10-14",

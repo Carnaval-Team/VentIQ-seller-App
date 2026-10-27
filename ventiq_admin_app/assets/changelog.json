@@ -1,9 +1,56 @@
 {
-  "current_version": "2.9.4",
-  "build": 293,
+  "current_version": "2.9.5",
+  "build": 294,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.9.5",
+      "date": "2026-10-27",
+      "title": "Inventario por lotes, movimientos con presentación y exportación renovada",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Inventario por lotes y vencimiento (FEFO)",
+          "description": "Las recepciones, extracciones, transferencias, ajustes y ventas ahora consumen stock por lote con prioridad de vencimiento (FEFO). Cada movimiento guarda su lote y la tarjeta de estiba permite filtrar y ver saldos por lote, incluyendo el flujo de asignar lote a stock sin etiquetar."
+        },
+        {
+          "type": "feature",
+          "title": "Movimientos con presentación, filtros renovados y monto exacto",
+          "description": "El tab Movimientos muestra la presentación de cada línea con su importe correcto, permite buscar por ID/tipo/tienda/cliente/observaciones, filtrar por estado, fechas, tipo de operación y monto exacto, y recarga solo al volver de crear una operación. En móvil el resto de filtros se pliega tras un botón con contador."
+        },
+        {
+          "type": "feature",
+          "title": "Exportación de inventario simplificada",
+          "description": "El diálogo ahora es siempre 'por movimientos' (datos reales): almacén, un solo selector de rango de fechas, columnas adicionales y filtros (stock cero, solo con movimientos), con botones directos Exportar PDF y Exportar Excel."
+        },
+        {
+          "type": "improvement",
+          "title": "Costo promedio correcto en todas las presentaciones",
+          "description": "Al recibir un producto, el costo promedio se calcula en la unidad base y se propaga por factor de conversión a todas sus presentaciones, así que ninguna queda sin costo ni con valores divergentes."
+        },
+        {
+          "type": "improvement",
+          "title": "Limpieza visual de lotes y corrección de desbordes",
+          "description": "Los productos que no se manejan por lotes ya no muestran bloques de lote vacíos, y las tarjetas de stock con cantidades mixtas (ej. '10000 Litros + 5000 Galones') crecen sin desbordar en pantallas pequeñas."
+        },
+        {
+          "type": "improvement",
+          "title": "Base de datos alineada con venta v3 y presentaciones",
+          "description": "La migración trae las funciones de venta v3 (que descuentan por presentación y lote sin duplicar movimientos), las rutas v2 de cocina y órdenes, y el detalle de órdenes que diferencia presentaciones del mismo producto."
+        },
+        {
+          "type": "fix",
+          "title": "Correcciones de integridad en movimientos de venta",
+          "description": "Se eliminó la duplicación de movimientos de inventario al registrar ventas y se corrigió el consumo FEFO para que los saldos se guarden por lote en vez de acumularse en 'Sin lote'."
+        },
+        {
+          "type": "improvement",
+          "title": "Incluye todo lo de la 2.9.4",
+          "description": "Esta versión incorpora los cambios de la 2.9.4 que no llegaron a publicarse: reporte de ventas por turnos, selector de moneda y la confirmación de transferencia por SMS más robusta."
+        }
+      ]
+    },
     {
       "version": "2.9.4",
       "date": "2026-10-17",

@@ -17,6 +17,14 @@ import '../services/user_preferences_service.dart';
 import '../utils/price_utils.dart';
 import '../utils/receipt_options.dart';
 
+class _SunmiTicketGenerator extends Generator {
+  _SunmiTicketGenerator(CapabilityProfile profile) : super(PaperSize.mm58, profile);
+
+  @override
+  List<int> setStyles(PosStyles styles, {bool isKanji = false}) =>
+      super.setStyles(styles.copyWith(bold: true), isKanji: isKanji);
+}
+
 class _StorePrintInfo {
   final String name;
   final Uint8List? logoBytes;
@@ -635,6 +643,48 @@ class BluetoothPrinterService {
     String jobName = 'Print Job',
   }) {
     return _sendToPrinterWithRetry(bytes, jobName, settleAfter: true);
+  }
+
+  Future<void> printOrdersViaEscPos(
+    List<Order> orders, {
+    required Future<void> Function(List<int>) send,
+    bool customerOnly = false,
+  }) async {
+    final profile = await CapabilityProfile.load();
+    final generator = _SunmiTicketGenerator(profile);
+    final storeInfo = await _getStorePrintInfo();
+    final usdRate = await _getUsdRateForPrint();
+    final showPaymentMethod = await _shouldShowPaymentMethodOnTicket();
+    final vendorName = await _getLoggedInUserName();
+    for (final order in orders) {
+      Future<void> receipt(String title) => send([
+        ..._escPosInit(),
+        0x1b, 0x45, 0x01,
+        ..._addCustomerReceipt(
+          generator, order, storeInfo,
+          title: title,
+          usdRate: usdRate,
+          showPaymentMethod: showPaymentMethod,
+          vendorName: vendorName,
+        ),
+        ...generator.feed(4),
+      ]);
+      await receipt('FACTURA');
+      if (customerOnly) continue;
+      final options = ReceiptOptions(
+        order,
+        restaurantMode: StoreConfigService.modoRestauranteSync,
+      );
+      if (options.includeWarehouseSlip) {
+        await send([
+          ..._escPosInit(),
+          0x1b, 0x45, 0x01,
+          ..._addWarehousePickingSlip(generator, order, storeInfo, usdRate: usdRate),
+          ...generator.feed(4),
+        ]);
+      }
+      await receipt('RECIBO CAJA');
+    }
   }
 
   /// Print invoice for an order with customer receipt and warehouse picking slip
