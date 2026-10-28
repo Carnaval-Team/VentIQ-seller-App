@@ -14,25 +14,35 @@ class TransferSmsConfirmation {
   TransferSmsConfirmation._();
 
   /// `true` si la orden tiene alguna parte pagada por transferencia.
+  ///
+  /// Prioriza `order.pagos` (fuente de verdad tras editar el desglose) y
+  /// cae a los métodos por ítem solo si aún no hay pagos persistidos.
   static bool orderHasTransferencia(Order order) {
-    if (order.items.any(
+    final pagos = PriceUtils.normalizePayments(order.pagos);
+    if (pagos.isNotEmpty) {
+      return pagos.any(paymentLooksLikeTransfer);
+    }
+    return order.items.any(
       (item) => item.paymentMethod?.esTransferencia ?? false,
-    )) {
-      return true;
-    }
-    for (final payment in PriceUtils.normalizePayments(order.pagos)) {
-      if (_paymentLooksLikeTransfer(payment)) return true;
-    }
-    return false;
+    );
   }
 
   /// Monto que debe casar el SMS: solo la parte transferencia.
   ///
   /// [fallbackTotal] suele ser el total con descuento ya aplicado.
+  /// Tras “Editar desglose de pagos” la verdad está en `pagos`, no en ítems.
   static double transferExpectedAmount(
     Order order, {
     required double fallbackTotal,
   }) {
+    var fromPagos = 0.0;
+    for (final payment in PriceUtils.normalizePayments(order.pagos)) {
+      if (paymentLooksLikeTransfer(payment)) {
+        fromPagos += (payment['monto'] as num?)?.toDouble() ?? 0.0;
+      }
+    }
+    if (fromPagos > 0) return fromPagos;
+
     var fromItems = 0.0;
     for (final item in order.items) {
       if (item.paymentMethod?.esTransferencia ?? false) {
@@ -41,18 +51,14 @@ class TransferSmsConfirmation {
     }
     if (fromItems > 0) return fromItems;
 
-    var fromPagos = 0.0;
-    for (final payment in PriceUtils.normalizePayments(order.pagos)) {
-      if (_paymentLooksLikeTransfer(payment)) {
-        fromPagos += (payment['monto'] as num?)?.toDouble() ?? 0.0;
-      }
-    }
-    if (fromPagos > 0) return fromPagos;
-
     return fallbackTotal;
   }
 
-  static bool _paymentLooksLikeTransfer(Map<String, dynamic> payment) {
+  static bool paymentLooksLikeTransfer(Map<String, dynamic> payment) {
+    final medioId = (payment['id_medio_pago'] as num?)?.toInt();
+    // Convención app: 1 = efectivo.
+    if (medioId == 1) return false;
+
     final esEfectivo =
         payment['medio_pago_es_efectivo'] == true ||
         payment['es_efectivo'] == true;
@@ -74,11 +80,26 @@ class TransferSmsConfirmation {
   }
 
   /// Órdenes aún no cerradas donde tiene sentido seguir escuchando el SMS.
+  ///
+  /// Incluye `pagoConfirmado`: al editar efectivo→transferencia hay que
+  /// volver a esperar el SMS aunque el estado ya diga confirmado.
   static bool isPendingForSmsWatch(Order order) {
     return order.status != OrderStatus.completada &&
         order.status != OrderStatus.cancelada &&
-        order.status != OrderStatus.devuelta &&
-        order.status != OrderStatus.pagoConfirmado;
+        order.status != OrderStatus.devuelta;
+  }
+
+  /// Limpia el SMS vinculado para reiniciar el revisor tras editar montos.
+  static Future<void> clearFromOperation(int operationId) async {
+    try {
+      await Supabase.instance.client
+          .from('app_dat_operacion_venta')
+          .update({'pago_sms_json': null})
+          .eq('id_operacion', operationId);
+      debugPrint('🔄 pago_sms_json limpiado en op $operationId');
+    } catch (e) {
+      debugPrint('⚠️ No se pudo limpiar pago_sms_json de op $operationId: $e');
+    }
   }
 
   static Future<BankSmsPayment?> resolvePayment(
@@ -206,10 +227,23 @@ class TransferSmsConfirmationBannerState
   @override
   void didUpdateWidget(covariant TransferSmsConfirmationBanner oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.expectedAmount != widget.expectedAmount &&
-        _confirmedPayment == null) {
-      _tryMatchPending();
+    if ((oldWidget.expectedAmount - widget.expectedAmount).abs() >
+        BankSmsService.amountTolerance) {
+      // El monto a casar cambió (edición de desglose): invalidar confirmación
+      // previa y volver a escuchar / buscar en bandeja.
+      _confirmedPayment = null;
+      _loadedExisting = true; // no recargar un SMS viejo de BD
+      widget.onConfirmedChanged?.call(null);
+      unawaited(_restartMatching());
     }
+  }
+
+  Future<void> _restartMatching() async {
+    if (!BankSmsService.isSupported) return;
+    await _bankSmsService.startListening();
+    await _bankSmsService.reconcileFromInbox();
+    await _tryMatchPending();
+    _smsSub ??= _bankSmsService.onPayment.listen((_) => _tryMatchPending());
   }
 
   @override

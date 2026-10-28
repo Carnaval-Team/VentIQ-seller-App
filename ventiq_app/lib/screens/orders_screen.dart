@@ -34,6 +34,7 @@ import '../widgets/sales_monitor_fab.dart';
 import '../widgets/notification_widget.dart';
 import '../widgets/sync_status_chip.dart';
 import '../widgets/bill_count_dialog.dart';
+import '../services/bank_sms_service.dart';
 import '../widgets/transfer_sms_confirmation_banner.dart';
 import '../widgets/order_product_summary.dart';
 import '../models/product.dart';
@@ -1563,6 +1564,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     if (!mounted) return;
     int paymentBreakdownRefreshKey = 0;
     int operationPhotoRefreshKey = 0;
+    int smsBannerRefreshKey = 0;
     Order currentOrder = order;
     Future<bool>? isCuentaPorCobrarFuture;
 
@@ -1993,12 +1995,36 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                 child: _buildPaymentBreakdown(
                                   order,
                                   refreshKey: paymentBreakdownRefreshKey,
-                                  onPaymentUpdated: () {
-                                    // Offline: recargar la orden local con
-                                    // los pagos actualizados. Online: forzar
-                                    // refetch del desglose desde servidor.
-                                    refreshOrderData();
-                                    refreshPaymentBreakdown();
+                                  onPaymentUpdated: () async {
+                                    // Traer pagos frescos (efectivo↔transfer)
+                                    // y remount del banner SMS.
+                                    var applied = false;
+                                    if (currentOrder.operationId != null) {
+                                      final payments = await _orderService
+                                          .getSalePayments(
+                                            currentOrder.operationId!,
+                                          );
+                                      if (payments.isNotEmpty) {
+                                        _orderService.applyLocalOrderPagos(
+                                          currentOrder.id,
+                                          payments,
+                                        );
+                                        setDetailState(() {
+                                          currentOrder = currentOrder.copyWith(
+                                            pagos: payments,
+                                          );
+                                        });
+                                        applied = true;
+                                      }
+                                    }
+                                    if (!applied) {
+                                      // Offline o sin opId: leer de memoria.
+                                      refreshOrderData();
+                                    }
+                                    setDetailState(() {
+                                      paymentBreakdownRefreshKey += 1;
+                                      smsBannerRefreshKey += 1;
+                                    });
                                   },
                                 ),
                               ),
@@ -2371,6 +2397,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           title: 'Transferencia',
                           icon: Icons.sms_outlined,
                           child: TransferSmsConfirmationBanner(
+                            key: ValueKey(
+                              'sms-banner-${order.operationId}-'
+                              '$smsBannerRefreshKey-'
+                              '${TransferSmsConfirmation.transferExpectedAmount(order, fallbackTotal: displayTotal).toStringAsFixed(2)}',
+                            ),
                             expectedAmount:
                                 TransferSmsConfirmation.transferExpectedAmount(
                                   order,
@@ -4524,6 +4555,37 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
                                                   if (result['success'] ==
                                                       true) {
+                                                    // Si el movimiento toca
+                                                    // transferencia, reiniciar
+                                                    // el revisor SMS (monto
+                                                    // nuevo o efectivo→transf).
+                                                    final sourceIsTransfer =
+                                                        TransferSmsConfirmation
+                                                            .paymentLooksLikeTransfer(
+                                                      selectedSource!,
+                                                    );
+                                                    final targetIsTransfer =
+                                                        selectedTarget
+                                                                ?.esTransferencia ==
+                                                            true;
+                                                    if (operationId != null &&
+                                                        (sourceIsTransfer ||
+                                                            targetIsTransfer)) {
+                                                      await TransferSmsConfirmation
+                                                          .clearFromOperation(
+                                                        operationId,
+                                                      );
+                                                      // Escuchar de nuevo
+                                                      // aunque solo quede
+                                                      // efectivo (el banner
+                                                      // se ocultará solo).
+                                                      if (targetIsTransfer ||
+                                                          sourceIsTransfer) {
+                                                        // ignore: unawaited_futures
+                                                        BankSmsService()
+                                                            .startListening();
+                                                      }
+                                                    }
                                                     Navigator.pop(context);
                                                     onUpdated?.call();
                                                     setState(() {});
