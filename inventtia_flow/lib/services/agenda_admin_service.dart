@@ -322,23 +322,52 @@ class AgendaAdminService {
   /// Marca una agenda como Completado (id 3) o Cancelado (id 2) desde el
   /// listado de reservas (admin o vendedor). La RPC valida permisos, libera
   /// capacidad al cancelar y sella la atención al completar.
+  ///
+  /// [motivo] es obligatorio **solo** al cancelar (`idEstado == 2`): la
+  /// migración 61 hace fallar `staff_marcar_estado_agenda` sin él. Se manda
+  /// únicamente cuando hay texto, para no romper el camino de completar (que
+  /// no lleva motivo) ni el de las bases aún sin la migración aplicada.
   static Future<Agenda> marcarEstadoAgenda({
     required int idAgenda,
     required int idEstado,
+    String? motivo,
   }) async {
+    final motivoLimpio = motivo?.trim();
     final res = await _supabase
         .schema(_schema)
         .rpc(
           'staff_marcar_estado_agenda',
-          params: {'p_id_agenda': idAgenda, 'p_id_estado': idEstado},
+          params: {
+            'p_id_agenda': idAgenda,
+            'p_id_estado': idEstado,
+            if (motivoLimpio != null && motivoLimpio.isNotEmpty)
+              'p_motivo': motivoLimpio,
+          },
         );
     return Agenda.fromJson(res as Map<String, dynamic>);
   }
 
-  static Future<Agenda> cancelarReserva({required int idAgenda}) async {
+  /// Cancela una reserva como admin/vendedor (RPC `staff_cancelar_reserva`).
+  ///
+  /// [motivo] es **obligatorio**: la migración 61 rechaza la cancelación sin
+  /// él («Debes indicar el motivo de la cancelacion»). La app lo pide siempre
+  /// con `dialogoMotivoCancelacion`; se deja nullable para no romper llamadas
+  /// antiguas, pero quien llame debe mandarlo.
+  static Future<Agenda> cancelarReserva({
+    required int idAgenda,
+    String? motivo,
+  }) async {
+    final motivoLimpio = motivo?.trim();
     final res = await _supabase
         .schema(_schema)
-        .rpc('staff_cancelar_reserva', params: {'p_id_agenda': idAgenda});
+        .rpc(
+          'staff_cancelar_reserva',
+          params: {
+            'p_id_agenda': idAgenda,
+            if (motivoLimpio != null && motivoLimpio.isNotEmpty)
+              'p_motivo': motivoLimpio,
+          },
+        );
     return Agenda.fromJson(res as Map<String, dynamic>);
   }
 

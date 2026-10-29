@@ -22,7 +22,12 @@ class TutorialService {
   /// clave `v1` marcada habría seguido viendo el recorrido viejo, que resaltaba
   /// elementos que ya no existen, así que el cambio de versión es lo que hace que
   /// el recorrido nuevo se muestre **una vez**.
-  static const String version = 'v2';
+  ///
+  /// v3 (27-10-2026): el pago por adelantado del cliente, los precios automáticos
+  /// y el resumen calendario añaden pasos a los dos recorridos (§7 del plan). Se
+  /// sube la versión para que ambos se republicen una vez y todo el mundo vea los
+  /// pasos nuevos, que son el único modo de descubrir esas funciones.
+  static const String version = 'v3';
 
   static const String valorVisto = 'visto';
   static const String valorOmitido = 'omitido';

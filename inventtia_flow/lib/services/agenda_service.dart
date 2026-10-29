@@ -241,13 +241,22 @@ class AgendaService {
     }
   }
 
-  static Future<Agenda> cancelarTicket(int idAgenda) async {
+  static Future<Agenda> cancelarTicket(int idAgenda, {String? motivo}) async {
     try {
       // Usamos una RPC con SECURITY DEFINER para evitar problemas de RLS
       // cuando un administrador cancela una reserva de su entidad.
+      // [61] `admin_cancelar_agenda` exige el motivo: sin él falla.
+      final motivoLimpio = motivo?.trim();
       final res = await _supabase
           .schema(_schema)
-          .rpc('admin_cancelar_agenda', params: {'p_id_agenda': idAgenda});
+          .rpc(
+            'admin_cancelar_agenda',
+            params: {
+              'p_id_agenda': idAgenda,
+              if (motivoLimpio != null && motivoLimpio.isNotEmpty)
+                'p_motivo': motivoLimpio,
+            },
+          );
       return Agenda.fromJson(res as Map<String, dynamic>);
     } catch (e) {
       throw handleSchemaPermissionError(Exception(e.toString()));
@@ -256,15 +265,25 @@ class AgendaService {
 
   /// Cancela una reserva como cliente. Si la entidad configuró horas de
   /// anticipación, valida el plazo; de lo contrario permite cancelar en cualquier momento.
+  ///
+  /// [motivo] es **opcional** para el cliente (migración 61): si viene vacío o
+  /// nulo la reserva se cancela sin motivo y la tarjeta no pinta el bloque.
   static Future<void> cancelarTicketCliente({
     required String uuidUsuario,
     required int idAgenda,
+    String? motivo,
   }) async {
+    final motivoLimpio = motivo?.trim();
     final res = await _supabase
         .schema(_schema)
         .rpc(
           'cliente_cancelar_reserva',
-          params: {'p_uuid_usuario': uuidUsuario, 'p_id_agenda': idAgenda},
+          params: {
+            'p_uuid_usuario': uuidUsuario,
+            'p_id_agenda': idAgenda,
+            if (motivoLimpio != null && motivoLimpio.isNotEmpty)
+              'p_motivo': motivoLimpio,
+          },
         );
     final json = res as Map<String, dynamic>;
     if (json['ok'] != true) {

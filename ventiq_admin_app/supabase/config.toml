@@ -13,15 +13,37 @@
 #       · wapi-webhook       → lo llama OpenWA (servidor externo) y viaja con
 #         firma HMAC propia (WAPI_WEBHOOK_SECRET), no con JWT de Supabase.
 #
-# El resto de funciones WAPI van con `verify_jwt = true`, que es el default y
-# por eso no aparecen aquí (`wapi-session-create`, `wapi-session-status`,
-# `wapi-session-action`, `wapi-list-sessions`, `wapi-list-groups`,
-# `wapi-cron-dispatch`, `wapi-session-health`).
+# El resto de funciones WAPI van con `verify_jwt = true`, que es el default.
+# Aun así se declaran EXPLÍCITAMENTE las que participan en la cadena de
+# difusión (wapi-cron-dispatch) para que un `supabase functions deploy`
+# genérico (= sin nombre, que reescribe el verify_jwt de todas) no pueda
+# cambiarlo por accidente en un sentido ni en el otro.
 
 project_id = "vsieeihstajlrdvpuooh"
 
 [functions.wapi-send-products]
 verify_jwt = false
 
+[functions.wapi-cron-dispatch]
+verify_jwt = true
+
 [functions.wapi-webhook]
 verify_jwt = false
+
+# wapi-notify-agotado — aviso a los grupos guardados cuando un producto llega
+# a stock 0 (trigger + pg_net; migración 20261028_wapi_agotado_notificaciones).
+#
+# verify_jwt = TRUE, EXPLÍCITO AUNQUE SEA EL DEFAULT, por el mismo motivo que
+# wapi-cron-dispatch: un `deploy` genérico (sin nombre) reescribe el verify_jwt
+# de TODAS las funciones, y aquí el sentido importa. Sus dos llamadores mandan
+# siempre un JWT válido del proyecto:
+#   · el trigger `trg_wapi_agotado_notificar` la invoca con `net.http_post`
+#     usando la service_role key del Vault, exactamente como
+#     `fn_wapi_dispatch_diario` hace con wapi-cron-dispatch;
+#   · el botón "avisar ahora" de la app manda el JWT del usuario.
+# NO puede ir en `false`: esta función manda WhatsApp a grupos de clientes y
+# `_shared/auth.ts:isServiceRoleCall()` acepta `role=service_role` SIN comprobar
+# la firma (asume que el gateway ya la validó). Con verify_jwt=false esa
+# suposición se rompe y un token forjado a mano pasaría el filtro.
+[functions.wapi-notify-agotado]
+verify_jwt = true

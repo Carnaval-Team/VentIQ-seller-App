@@ -427,6 +427,12 @@ class _NotificacionCard extends StatelessWidget {
       // Pagos reportados y planes acreditados de la entidad.
       case 'suscripcion':
         return 'Suscripción';
+      // Cancelación de reserva con motivo (migración 61).
+      case 'cancelacion':
+        return 'Cancelación';
+      // Circuito de pago por adelantado del servicio (migración 62).
+      case 'pago':
+        return 'Pago';
       case 'sistema':
       default:
         return 'Aviso';

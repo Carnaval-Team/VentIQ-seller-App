@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../config/app_theme.dart';
 import '../models/agenda.dart';
+import '../models/cobro.dart';
 import '../models/entidad.dart';
 import '../models/servicio.dart';
 import '../providers/auth_provider.dart';
@@ -12,11 +13,16 @@ import '../services/agenda_admin_service.dart';
 import '../services/agenda_service.dart';
 import '../services/auth_service.dart';
 import '../services/catalogo_service.dart';
+import '../services/cobro_service.dart';
+import '../utils/estado_pago.dart';
+import '../utils/motivo_cancelacion.dart';
 import '../utils/precio_reserva.dart';
 import '../utils/reserva_listado.dart';
 import '../utils/telefono_contacto.dart';
 import '../widgets/datos_adicionales_view.dart';
+import '../widgets/dialogo_motivo_cancelacion.dart';
 import '../widgets/notificaciones_bell.dart';
+import '../widgets/pago_adelantado_sheet.dart';
 
 class MisTicketsScreen extends StatefulWidget {
   const MisTicketsScreen({super.key});
@@ -115,6 +121,65 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
     };
   }
 
+  /// Abre el pago por adelantado de una reserva del cliente.
+  ///
+  /// Sirve para las tres situaciones, sin que la tarjeta tenga que saber cuál es:
+  ///  * ya hay un intento vivo (`pendiente`/`reportado`) → reabre su hoja;
+  ///  * el anterior se rechazó o caducó → crea uno nuevo;
+  ///  * no hay intento (la reserva se hizo sin pagar) → comprueba que el local
+  ///    tenga el cobro activo y lo crea.
+  ///
+  /// Los importes y las URLs SIEMPRE los calcula el servidor: aquí no se inventa
+  /// ningún precio.
+  Future<void> _pagarPorAdelantado(Agenda ticket) async {
+    try {
+      var pago = await CobroService.pagoDeReserva(ticket.id);
+      CobroInfo? info;
+
+      // Un pago verificado (o en un estado que esta versión no conoce) no se
+      // vuelve a tocar: no hay nada que ofrecer.
+      if (pago != null &&
+          !EstadoPago.enCurso(pago.estado) &&
+          !EstadoPago.sePuedePagar(pago.estado)) {
+        if (!mounted) return;
+        _toast('Este pago ya no se puede modificar.', AppTheme.success);
+        return;
+      }
+
+      // Solo hay que crear intento si no existe o si el anterior murió
+      // (rechazado / caducado).
+      if (pago == null || !EstadoPago.enCurso(pago.estado)) {
+        // Antes de crear nada: ¿este local cobra por adelantado?
+        info = await CobroService.infoLocalServicio(ticket.idLocalServicio);
+        if (!info.disponible) {
+          if (!mounted) return;
+          _toast(
+            'Este servicio no tiene activado el pago por adelantado.',
+            AppTheme.warning,
+          );
+          return;
+        }
+        pago = await CobroService.crearPago(ticket.id);
+      }
+
+      if (!mounted) return;
+      await PagoAdelantadoSheet.mostrar(context, pago: pago, info: info);
+      if (mounted) await _load();
+    } catch (e) {
+      if (!mounted) return;
+      _toast(
+        e.toString().replaceFirst('Exception: ', '').trim(),
+        AppTheme.error,
+      );
+    }
+  }
+
+  void _toast(String mensaje, Color color) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(mensaje), backgroundColor: color));
+  }
+
   Future<void> _cancelar(Agenda ticket) async {
     final uuid = AuthService.currentUserId ?? '';
     if (uuid.isEmpty) return;
@@ -140,33 +205,22 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
       return;
     }
 
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Cancelar reserva'),
-        content: const Text(
-          '¿Estás seguro de que quieres cancelar esta reserva?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('No'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Cancelar reserva'),
-          ),
-        ],
-      ),
+    // [61] El motivo es OPCIONAL para el cliente. El diálogo sustituye al
+    // «¿Estás seguro?»: es la misma confirmación, con un campo que puede
+    // quedarse vacío. Se abre antes de llamar al servicio.
+    final motivo = await dialogoMotivoCancelacion(
+      context,
+      titulo: 'Cancelar reserva',
+      detalle: '¿Estás seguro de que quieres cancelar esta reserva?',
+      obligatorio: false,
     );
-    if (confirm != true || !mounted) return;
+    if (motivo == null || !mounted) return;
 
     try {
       await AgendaService.cancelarTicketCliente(
         uuidUsuario: uuid,
         idAgenda: ticket.id,
+        motivo: motivo,
       );
       await _load();
       if (!mounted) return;
@@ -179,7 +233,11 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString()), backgroundColor: AppTheme.error),
+        SnackBar(
+          // [61] Mensajes del servidor traducidos (antes: `e.toString()`).
+          content: Text(mensajeErrorCancelacion(e)),
+          backgroundColor: AppTheme.error,
+        ),
       );
     }
   }
@@ -195,16 +253,20 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
     colorConfirmar: AppTheme.success,
   );
 
-  Future<void> _cancelarStaff(Agenda ticket) => _cambiarEstadoStaff(
-    ticket,
-    2,
-    titulo: 'Cancelar reserva',
-    mensaje:
-        '¿Cancelar esta reserva? Se liberará el turno y se notificará al cliente.',
-    confirmar: 'Cancelar reserva',
-    okMsg: 'Reserva cancelada',
-    colorConfirmar: AppTheme.error,
-  );
+  /// Cancelar como staff (vendedor): [61] el motivo es **obligatorio**.
+  ///
+  /// El diálogo del motivo hace también de confirmación («Sí, cancelar»), así
+  /// que después no se vuelve a preguntar.
+  Future<void> _cancelarStaff(Agenda ticket) async {
+    final motivo = await dialogoMotivoCancelacion(
+      context,
+      titulo: 'Cancelar reserva',
+      detalle:
+          '¿Cancelar esta reserva? Se liberará el turno y se notificará al cliente.',
+    );
+    if (motivo == null || !mounted) return;
+    await _aplicarEstadoStaff(ticket, 2, 'Reserva cancelada', motivo: motivo);
+  }
 
   Future<void> _cambiarEstadoStaff(
     Agenda ticket,
@@ -235,10 +297,22 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
       ),
     );
     if (ok != true || !mounted) return;
+    await _aplicarEstadoStaff(ticket, idEstado, okMsg);
+  }
+
+  /// Aplica el cambio de estado una vez confirmado (y, al cancelar, con el
+  /// motivo ya recogido).
+  Future<void> _aplicarEstadoStaff(
+    Agenda ticket,
+    int idEstado,
+    String okMsg, {
+    String? motivo,
+  }) async {
     try {
       await AgendaAdminService.marcarEstadoAgenda(
         idAgenda: ticket.id,
         idEstado: idEstado,
+        motivo: motivo,
       );
       await _load();
       if (!mounted) return;
@@ -248,7 +322,11 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString()), backgroundColor: AppTheme.error),
+        SnackBar(
+          // [61] Mensajes del servidor traducidos (antes: `e.toString()`).
+          content: Text(mensajeErrorCancelacion(e)),
+          backgroundColor: AppTheme.error,
+        ),
       );
     }
   }
@@ -450,6 +528,7 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
                             miUuid: context.read<AuthProvider>().user?.id ?? '',
                             onCancelar: _esVendedor ? null : _cancelar,
                             esVendedor: _esVendedor,
+                            onPagar: _esVendedor ? null : _pagarPorAdelantado,
                             onCompletarStaff: _esVendedor
                                 ? _completarStaff
                                 : null,
@@ -943,6 +1022,10 @@ class _TicketCard extends StatelessWidget {
   final ValueChanged<Agenda>? onCompletarStaff;
   final ValueChanged<Agenda>? onCancelarStaff;
 
+  /// Pago por adelantado (migración 62): abrir/gestionar el pago de esta
+  /// reserva. Null = no se ofrece (staff).
+  final ValueChanged<Agenda>? onPagar;
+
   const _TicketCard({
     required this.ticket,
     required this.miUuid,
@@ -950,6 +1033,7 @@ class _TicketCard extends StatelessWidget {
     this.esVendedor = false,
     this.onCompletarStaff,
     this.onCancelarStaff,
+    this.onPagar,
   });
 
   bool get _esCompletada =>
@@ -974,6 +1058,30 @@ class _TicketCard extends StatelessWidget {
   // Una sola fuente de verdad (estado Reservado + reserva futura + plazo de
   // anticipación de la entidad), compartida con la validación de `_cancelar`.
   bool get _puedeCancelar => puedeCancelarCliente(ticket);
+
+  /// Texto del chip de pago («Pago pendiente · 1500 CUP»), o `null` si esta
+  /// reserva no pide pago por adelantado.
+  String? get _textoPago {
+    final etiqueta = EstadoPago.etiqueta(ticket.pagoEstado);
+    if (etiqueta == null) return null;
+    final monto = ticket.pagoMonto;
+    if (monto == null || monto <= 0) return etiqueta;
+    final texto = monto == monto.roundToDouble()
+        ? monto.toStringAsFixed(0)
+        : monto.toStringAsFixed(2);
+    final moneda = ticket.pagoMoneda;
+    return moneda == null ? '$etiqueta · $texto' : '$etiqueta · $texto $moneda';
+  }
+
+  /// ¿El cliente puede hacer algo con el pago? Sí salvo que ya esté verificado
+  /// (o en un estado que esta versión no conozca).
+  bool get _puedeAccionarPago {
+    if (!_esActiva) return false;
+    final estado = ticket.pagoEstado;
+    return estado == null ||
+        EstadoPago.enCurso(estado) ||
+        EstadoPago.sePuedePagar(estado);
+  }
 
   IconData get _estadoIcon {
     switch (ticket.estado?.nombre) {
@@ -1166,6 +1274,71 @@ class _TicketCard extends StatelessWidget {
                         color: AppTheme.success,
                       ),
                     ],
+                    // [61] Motivo de la cancelación, justo bajo el chip de
+                    // estado. Las canceladas antiguas no tienen motivo: en ese
+                    // caso no se pinta el bloque.
+                    if (_esCancelada &&
+                        hayMotivoCancelacion(ticket.motivoCancelacion)) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.error.withValues(alpha: 0.07),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: AppTheme.error.withValues(alpha: 0.35),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(
+                                  Icons.event_busy,
+                                  size: 15,
+                                  color: AppTheme.error,
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    'Motivo de cancelación: '
+                                    '${textoMotivoCancelacion(ticket.motivoCancelacion)}',
+                                    style: const TextStyle(
+                                      fontSize: 12.5,
+                                      height: 1.3,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.error,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (textoCanceladoPor(ticket.canceladoPorRol)
+                                .isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Padding(
+                                padding: const EdgeInsets.only(left: 21),
+                                child: Text(
+                                  'Cancelada por: '
+                                  '${textoCanceladoPor(ticket.canceladoPorRol)}',
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppTheme.error,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
                     ...[
                       const SizedBox(height: 12),
                       _ClienteDataSection(ticket: ticket),
@@ -1231,6 +1404,68 @@ class _TicketCard extends StatelessWidget {
                         ],
                       );
                     }(),
+                    // ── Pago por adelantado (migración 62) ──────────────────────────────────
+                    // Chip con el estado del pago (lo ve también el staff: le
+                    // sirve para saber si la reserva está cobrada) y, solo para
+                    // el cliente, el botón de pagar/gestionar/reintentar.
+                    if (_textoPago != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: EstadoPago.color(
+                            ticket.pagoEstado,
+                          ).withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: EstadoPago.color(
+                              ticket.pagoEstado,
+                            ).withValues(alpha: 0.35),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              EstadoPago.icono(ticket.pagoEstado),
+                              size: 16,
+                              color: EstadoPago.color(ticket.pagoEstado),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _textoPago!,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: EstadoPago.color(ticket.pagoEstado),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    if (!esVendedor && onPagar != null && _puedeAccionarPago) ...[
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => onPagar!(ticket),
+                          icon: Icon(
+                            EstadoPago.icono(ticket.pagoEstado),
+                            size: 18,
+                          ),
+                          label: Text(EstadoPago.etiquetaBoton(ticket.pagoEstado)),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppTheme.primary,
+                            side: const BorderSide(color: AppTheme.primary),
+                          ),
+                        ),
+                      ),
+                    ],
                     if (_puedeCancelar && onCancelar != null) ...[
                       const SizedBox(height: 14),
                       SizedBox(

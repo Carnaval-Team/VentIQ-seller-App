@@ -5,6 +5,7 @@ class Notificacion {
   final int id;
   final String uuidUsuario;
   /// 'sala_espera' | 'reserva' | 'promo' | 'sistema' | 'suscripcion'
+  /// | 'cancelacion' | 'pago'
   final String tipo;
   final String titulo;
   final String mensaje;
@@ -60,7 +61,21 @@ class Notificacion {
       );
 
   // ── Helpers de presentación por tipo ──
+
+  /// ¿Es un aviso de **cancelación** de reserva? (se pinta en rojo).
+  ///
+  /// Desde la migración 61 el tipo es `'cancelacion'`. Las cancelaciones
+  /// guardadas **antes** de esa migración entraron como `'reserva'` y solo se
+  /// distinguen por el título («Reserva cancelada», «Reserva cancelada por pago
+  /// no verificado»…). La compatibilidad se resuelve aquí y no en la pantalla
+  /// para que el color y el icono no puedan desincronizarse.
+  bool get esCancelacion =>
+      tipo == 'cancelacion' ||
+      (tipo == 'reserva' &&
+          titulo.trimLeft().toLowerCase().startsWith('reserva cancelada'));
+
   IconData get icono {
+    if (esCancelacion) return Icons.event_busy;
     switch (tipo) {
       case 'sala_espera':
         return Icons.event_seat;
@@ -73,6 +88,10 @@ class Notificacion {
       // si su entidad sigue activa.
       case 'suscripcion':
         return Icons.workspace_premium;
+      // Circuito de pago por adelantado del servicio (migración 62): al admin
+      // le avisa de un pago reportado y al cliente de verificado/rechazado.
+      case 'pago':
+        return Icons.payments_outlined;
       case 'sistema':
       default:
         return Icons.notifications;
@@ -80,12 +99,21 @@ class Notificacion {
   }
 
   Color get color {
+    if (esCancelacion) return AppTheme.error;
     switch (tipo) {
       case 'sala_espera':
         return AppTheme.accent;
       case 'reserva':
         return AppTheme.success;
       case 'promo':
+        return AppTheme.warning;
+      // Antes caía en el `default` y salía en el azul de marca, el mismo que un
+      // aviso genérico: la suscripción de la entidad (pago reportado / plan
+      // acreditado) merece su propio tono. Se deja el teal de acento, que no
+      // choca con el rojo de cancelación ni con el ámbar de pago.
+      case 'suscripcion':
+        return AppTheme.accent;
+      case 'pago':
         return AppTheme.warning;
       case 'sistema':
       default:

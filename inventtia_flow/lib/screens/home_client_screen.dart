@@ -99,8 +99,6 @@ class HomeClientScreenState extends State<HomeClientScreen>
   int _sponsoredPage = 0;
   String _query = '';
 
-  String? _provincia;
-
   /// Filtros del sheet (precio, moneda, provincia, valoración, establecimiento
   /// y "abierto ahora"), aplicados en memoria sobre el catálogo ya cargado.
   FiltrosServicios _filtros = FiltrosServicios.vacio;
@@ -258,7 +256,10 @@ class HomeClientScreenState extends State<HomeClientScreen>
         // colecciones, los patrocinados y los contadores del usuario.
         feed = await HomeCatalogService.fetchFeed(
           query: _query,
-          provincia: _provincia,
+          // El selector de provincia del encabezado se ocultó a petición: el
+          // filtro por provincia sigue disponible en la hoja de filtros
+          // (`_filtros`), que se aplica en memoria. `null` = todas.
+          provincia: null,
           topRated: _topRated,
         );
         if (!mounted) return;
@@ -595,12 +596,6 @@ class HomeClientScreenState extends State<HomeClientScreen>
   // categoría era justo lo que hacía que el riel y el catálogo se pudieran
   // contradecir.
 
-  void _selectProvincia(String? provincia) {
-    if (_provincia == provincia) return;
-    setState(() => _provincia = provincia);
-    _loadPage(reset: true);
-  }
-
   /// Alterna el favorito desde el Home.
   ///
   /// El estado y el aviso los gestiona `alternarFavorito` (widgets/boton_favorito),
@@ -659,75 +654,6 @@ class HomeClientScreenState extends State<HomeClientScreen>
                 ),
         ),
       );
-  }
-
-  /// Provincias disponibles, deducidas de `flow.app_dat_locales.provincia`
-  /// de los locales que ya están en el catálogo cargado.
-  List<String> get _provinciasDisponibles {
-    final valores = <String>{};
-    for (final item in _items) {
-      final provincia = item.provincia;
-      if (provincia != null && provincia.trim().isNotEmpty) {
-        valores.add(provincia.trim());
-      }
-    }
-    final lista = valores.toList()..sort();
-    return lista;
-  }
-
-  String get _etiquetaUbicacion => _provincia ?? 'Todas las provincias';
-
-  Future<void> _showLocationPicker() async {
-    final provincias = _provinciasDisponibles;
-    if (provincias.isEmpty) {
-      _showToast('Todavía no hay locales con provincia configurada.');
-      return;
-    }
-    // `null` = sin filtro de ubicación; se usa '' porque showModalBottomSheet
-    // devuelve null también al cerrar sin elegir.
-    final seleccion = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.white,
-      showDragHandle: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Elige tu ubicación', style: _SectionTitleStyle()),
-              const SizedBox(height: 6),
-              const Text(
-                'Filtramos por la provincia que el local tiene registrada.',
-                style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
-              ),
-              const SizedBox(height: 12),
-              _OpcionUbicacion(
-                titulo: 'Todas las provincias',
-                icono: Icons.public_rounded,
-                seleccionada: _provincia == null,
-                onTap: () => Navigator.pop(sheetContext, ''),
-              ),
-              ...provincias.map(
-                (provincia) => _OpcionUbicacion(
-                  titulo: provincia,
-                  icono: Icons.location_on_outlined,
-                  seleccionada: _provincia == provincia,
-                  onTap: () => Navigator.pop(sheetContext, provincia),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (seleccion == null || !mounted) return;
-    _selectProvincia(seleccion.isEmpty ? null : seleccion);
-    _showToast('Ubicación actualizada.');
   }
 
   @override
@@ -874,62 +800,21 @@ class HomeClientScreenState extends State<HomeClientScreen>
                     ),
                   ),
                   const NotificacionesBell(color: Colors.white),
-                  // Vuelta al panel: solo para quien administra una entidad (y
-                  // solo si el shell dio el callback). Es la salida del «ver como
-                  // cliente», y por eso va arriba y a la vista en todas las
-                  // secciones del Home.
-                  if (esAdmin && widget.onVerAdmin != null) ...[
-                    const SizedBox(width: 6),
-                    _BotonVolverAAdmin(onTap: widget.onVerAdmin!),
-                  ],
                   const SizedBox(width: 8),
                   _StatusAvatar(
                     initial: firstName.substring(0, 1).toUpperCase(),
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              GestureDetector(
-                onTap: _showLocationPicker,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 9,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.18),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.location_on_outlined,
-                        size: 17,
-                        color: AppTheme.accent,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        _etiquetaUbicacion,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      const Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        size: 16,
-                        color: Colors.white70,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              // El selector de provincia ocupaba esta fila; se ocultó a
+              // petición (el filtro por provincia sigue en la hoja de filtros).
+              // En su hueco va la vuelta al panel de administración, para quien
+              // administra una entidad: es la salida del «ver como cliente» y
+              // así queda a mano en todas las pestañas del Home.
+              if (esAdmin && widget.onVerAdmin != null) ...[
+                const SizedBox(height: 14),
+                _BotonVolverAAdmin(onTap: widget.onVerAdmin!, expandido: true),
+              ],
             ],
           ),
         ),
@@ -1964,7 +1849,6 @@ class HomeClientScreenState extends State<HomeClientScreen>
                   _searchController.clear();
                   setState(() {
                     _query = '';
-                    _provincia = null;
                     _filtros = FiltrosServicios.vacio;
                   });
                   _loadPage(reset: true);
@@ -2080,43 +1964,65 @@ class HomeClientScreenState extends State<HomeClientScreen>
 /// poder salir desde donde esté mirando, sin tener que adivinar que la vuelta
 /// está en Perfil.
 class _BotonVolverAAdmin extends StatelessWidget {
-  const _BotonVolverAAdmin({required this.onTap});
+  const _BotonVolverAAdmin({required this.onTap, this.expandido = false});
 
   final VoidCallback onTap;
 
+  /// `false` = chip compacto («Admin») para la fila de iconos.
+  /// `true`  = fila de ancho completo con el texto largo; es la forma que ocupa
+  /// el hueco que dejó el selector de provincia en la cabecera.
+  final bool expandido;
+
   @override
   Widget build(BuildContext context) {
+    final radio = expandido ? 14.0 : 12.0;
     return Tooltip(
       message: 'Volver al panel de administración',
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(radio),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+            width: expandido ? double.infinity : null,
+            padding: EdgeInsets.symmetric(
+              horizontal: expandido ? 14 : 9,
+              vertical: expandido ? 10 : 6,
+            ),
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(radio),
               border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
             ),
             child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
+              mainAxisSize: expandido ? MainAxisSize.max : MainAxisSize.min,
+              children: [
                 Icon(
                   Icons.admin_panel_settings_outlined,
-                  size: 15,
+                  size: expandido ? 18 : 15,
                   color: Colors.white,
                 ),
-                SizedBox(width: 5),
-                Text(
-                  'Admin',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    expandido ? 'Volver al panel de administración' : 'Admin',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: expandido ? 12.5 : 11,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
+                if (expandido) ...[
+                  const Spacer(),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    size: 18,
+                    color: Colors.white70,
+                  ),
+                ],
               ],
             ),
           ),
@@ -3450,34 +3356,6 @@ class _SectionTitleStyle extends TextStyle {
 
 // El mapa código→icono vive en `lib/utils/categoria_icono.dart`: lo comparten
 // la rejilla de acceso rápido, la pantalla de categorías y esta tarjeta.
-
-/// Opción del selector de provincia.
-class _OpcionUbicacion extends StatelessWidget {
-  final String titulo;
-  final IconData icono;
-  final bool seleccionada;
-  final VoidCallback onTap;
-
-  const _OpcionUbicacion({
-    required this.titulo,
-    required this.icono,
-    required this.seleccionada,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(icono, color: AppTheme.primary),
-      title: Text(titulo),
-      trailing: seleccionada
-          ? const Icon(Icons.check_circle, color: AppTheme.accent)
-          : null,
-      onTap: onTap,
-    );
-  }
-}
 
 class _Sponsored {
   /// Nombre que se pinta en grande. Es el del **establecimiento** cuando la

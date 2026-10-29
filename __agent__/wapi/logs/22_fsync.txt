@@ -1,5 +1,0 @@
-﻿raw fsync 64KB x40: p50=0.00ms p90=0.00ms max=0.43ms
-disk:/tmp    commit+fts x60: p50=0.1ms p90=0.2ms max=0.4ms  total=0.01s
-mem::memory: commit+fts x60: p50=0.0ms p90=0.0ms max=0.1ms  total=0.00s
-temp files removed
-[exit=0]

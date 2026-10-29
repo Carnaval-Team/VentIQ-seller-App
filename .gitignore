@@ -122,6 +122,18 @@ ventiq_admin_app/android/app/build.gradle.kts
 *.mbtiles
 tools/web_cache_killer
 
-# DSH: telemetría del CLI de Dart redirigida dentro del workspace por el MCP
-.dsh/dart-tool/
+# DSH: estado local del agente dentro del workspace (telemetría del CLI de Dart,
+# caché de npx, temporales, capturas, SQL suelto…). NO debe subirse al repo.
+.dsh/
 dsh-plugins/
+# Salidas de agentes/verificaciones (incluyen node_modules). Locales, no del repo.
+__agent__/
+
+# Estado temporal del CLI de Supabase (regenerable con 'supabase link').
+**/supabase/.temp/
+
+# Config local de asistentes de IA (rutas y permisos de cada maquina).
+# Se versionan a proposito: .cursor/rules/ (reglas del proyecto) y .mcp.json.
+.claude/
+.devin/
+.qwen/

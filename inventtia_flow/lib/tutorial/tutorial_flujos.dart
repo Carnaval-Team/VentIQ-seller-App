@@ -28,6 +28,9 @@ class TutorialFlujos {
   // enseña ese acceso rápido y las tres, y solo después lleva al cliente a
   // reservar. Ver `TutorialService.version` (sube a `v2` para que el recorrido
   // nuevo se muestre una vez a quien ya tenía el viejo marcado).
+  //
+  // v3: se añade `detalle_pago_adelantado` en la hoja de la reserva, para los
+  // locales que cobran por adelantado. Sube a `v3` (ver `TutorialService`).
 
   static List<TutorialPaso> pasosCliente() => const <TutorialPaso>[
         TutorialPaso(
@@ -113,8 +116,9 @@ class TutorialFlujos {
           destino: TutorialDestino.servicio,
         ),
         // A partir de aquí los pasos viven en las hojas que se abren al tocar el
-        // elemento resaltado (calendario → formulario de la reserva), así que no
-        // hay destino: navega el toque del usuario y el recorrido lo sigue.
+        // elemento resaltado (calendario → formulario de la reserva → pago por
+        // adelantado), así que no hay destino: navega el toque del usuario y el
+        // recorrido lo sigue.
         TutorialPaso(
           id: 'detalle_calendario',
           titulo: 'Elige el día',
@@ -130,6 +134,16 @@ class TutorialFlujos {
           mensaje: 'Si el local pide datos extra, los rellenas aquí; también '
               'puedes reservar a nombre de otra persona. El precio se '
               'recalcula solo.',
+          opcional: true,
+        ),
+        TutorialPaso(
+          id: 'detalle_pago_adelantado',
+          titulo: 'Paga por adelantado',
+          mensaje: 'Si el local cobra por adelantado, aquí mismo puedes pagar en '
+              'el momento con Transfermóvil. El administrador verifica el pago y '
+              'te avisa cuando quede confirmado.',
+          // Opcional: solo los locales que han activado el cobro por adelantado
+          // ofrecen esta opción.
           opcional: true,
         ),
         TutorialPaso(
@@ -180,13 +194,23 @@ class TutorialFlujos {
               'puede reservar directamente.',
           destino: TutorialDestino.servicios,
         ),
-        // Los cuatro pasos siguientes viven dentro del formulario de alta: el
-        // destino lo abre para que no haya que buscarlo.
+        // Los pasos siguientes viven dentro del formulario de alta: el destino
+        // lo abre para que no haya que buscarlo.
         TutorialPaso(
           id: 'admin_precio',
           titulo: 'Precio y monedas',
           mensaje: 'Activa las monedas que aceptas, marca la moneda por defecto '
               'y escribe el precio base.',
+          destino: TutorialDestino.serviciosFormulario,
+        ),
+        TutorialPaso(
+          id: 'admin_precio_auto',
+          titulo: 'Precios automáticos',
+          mensaje: 'Escribe un precio y toca «Calcular»: el resto de monedas '
+              'sale de la tasa de cambio del día. Puedes revisarlas y '
+              'sobrescribirlas antes de guardar.',
+          // Opcional: el botón solo aparece con más de una moneda habilitada.
+          opcional: true,
           destino: TutorialDestino.serviciosFormulario,
         ),
         TutorialPaso(
@@ -258,6 +282,17 @@ class TutorialFlujos {
               'defecto y toca «Generar planes del mes»: hasta que no lo hagas, '
               'los días no están disponibles para reservar.',
           destino: TutorialDestino.servicioLocal,
+        ),
+        TutorialPaso(
+          id: 'admin_calendario',
+          titulo: 'Resumen por calendario',
+          mensaje: 'Desde el botón del calendario en la barra de Reservas ves el '
+              'resumen del rango: en modo calendario, los días con marcadores de '
+              'color; en modo lista, las reservas agrupadas por día con su hora, '
+              'cliente y pago.',
+          // Opcional: es un acceso extra dentro del módulo de reservas.
+          opcional: true,
+          destino: TutorialDestino.reservas,
         ),
         TutorialPaso(
           id: 'admin_reservas',

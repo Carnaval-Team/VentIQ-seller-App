@@ -37,6 +37,12 @@ class _WapiScheduleConfigScreenState extends State<WapiScheduleConfigScreen> {
   int _delayMax = 10;
 
   Set<int> _productIds = {};
+
+  /// Preferencia "enviar sólo productos con stock disponible". Se persiste en
+  /// `app_wapi_programacion.solo_disponibles`: el cron re-filtra con el stock
+  /// del momento del envío, no con el de ahora.
+  bool _soloDisponibles = false;
+
   List<WapiDestinatario> _destinatarios = [];
 
   bool _saving = false;
@@ -61,6 +67,7 @@ class _WapiScheduleConfigScreenState extends State<WapiScheduleConfigScreen> {
       _delayMin = widget.existente!.delayMinSeconds;
       _delayMax = widget.existente!.delayMaxSeconds;
       _productIds = widget.existente!.productIds.toSet();
+      _soloDisponibles = widget.existente!.soloDisponibles;
       // Respetamos la zona ya guardada: si el usuario la corrigió, no la
       // pisamos con la del dispositivo al reeditar.
       _tzSeleccionada = widget.existente!.timezone;
@@ -121,16 +128,22 @@ class _WapiScheduleConfigScreenState extends State<WapiScheduleConfigScreen> {
   }
 
   Future<void> _pickProducts() async {
-    final ids = await Navigator.of(context).push<List<int>>(
+    final sel = await Navigator.of(context).push<WapiProductSelection>(
       MaterialPageRoute(
         builder: (_) => WapiProductSelectorScreen(
           idTienda: widget.idTienda,
           mode: WapiProductSelectorMode.schedule,
           initialSelected: _productIds,
+          initialSoloDisponibles: _soloDisponibles,
         ),
       ),
     );
-    if (ids != null) setState(() => _productIds = ids.toSet());
+    if (sel != null) {
+      setState(() {
+        _productIds = sel.ids.toSet();
+        _soloDisponibles = sel.soloDisponibles;
+      });
+    }
   }
 
   Future<void> _pickDestinatarios() async {
@@ -180,14 +193,28 @@ class _WapiScheduleConfigScreenState extends State<WapiScheduleConfigScreen> {
         activa: _activa,
         delayMinSeconds: _delayMin,
         delayMaxSeconds: _delayMax,
+        soloDisponibles: _soloDisponibles,
         timezone: tz,
         idExistente: widget.existente?.id,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        backgroundColor: AppColors.success,
-        content: Text('Programación guardada'),
-      ));
+      // Guardamos el messenger antes del pop: si el backend aún no tiene la
+      // columna, el aviso debe sobrevivir al cierre de la pantalla y ser NO
+      // bloqueante (la programación se ha guardado igual, sin el filtro).
+      final messenger = ScaffoldMessenger.of(context);
+      final filtroNoSoportado =
+          _soloDisponibles && !_service.soloDisponiblesSoportado;
+      messenger.showSnackBar(filtroNoSoportado
+          ? const SnackBar(
+              backgroundColor: AppColors.warning,
+              duration: Duration(seconds: 7),
+              content: Text(
+                  WapiNotificationService.avisoSoloDisponiblesNoSoportado),
+            )
+          : const SnackBar(
+              backgroundColor: AppColors.success,
+              content: Text('Programación guardada'),
+            ));
       Navigator.of(context).pop();
     } catch (e) {
       _toast('Error: $e');
@@ -309,24 +336,87 @@ class _WapiScheduleConfigScreenState extends State<WapiScheduleConfigScreen> {
               ),
               _Card(
                 title: '3. Productos (${_productIds.length})',
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(
-                      child: Text(
-                        _productIds.isEmpty
-                            ? 'Sin productos seleccionados'
-                            : '${_productIds.length} producto(s) configurado(s)',
-                        style: TextStyle(
-                          color: _productIds.isEmpty
-                              ? AppColors.textLight
-                              : AppColors.textPrimary,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            _productIds.isEmpty
+                                ? 'Sin productos seleccionados'
+                                : '${_productIds.length} producto(s) configurado(s)',
+                            style: TextStyle(
+                              color: _productIds.isEmpty
+                                  ? AppColors.textLight
+                                  : AppColors.textPrimary,
+                            ),
+                          ),
                         ),
-                      ),
+                        OutlinedButton.icon(
+                          onPressed: _pickProducts,
+                          icon: const Icon(Icons.shopping_bag_outlined),
+                          label: const Text('Seleccionar'),
+                        ),
+                      ],
                     ),
-                    OutlinedButton.icon(
-                      onPressed: _pickProducts,
-                      icon: const Icon(Icons.shopping_bag_outlined),
-                      label: const Text('Seleccionar'),
+                    const Divider(height: 20),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Enviar solo productos con stock disponible',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                _soloDisponibles
+                                    ? 'Activado: si un producto se agota antes '
+                                        'del envío diario, se omite del mensaje.'
+                                    : 'Desactivado: la difusión diaria envía los '
+                                        'productos elegidos aunque alguno esté '
+                                        'agotado (aparecerán como "Sin stock").',
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              // Deja claro el alcance: este switch es del cron,
+                              // NO del botón "Enviar productos ahora", que manda
+                              // lo que el usuario marque en ese momento.
+                              const Text(
+                                'Afecta sólo a esta difusión automática. El '
+                                'envío manual inmediato manda siempre lo que '
+                                'marques en el selector.',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontStyle: FontStyle.italic,
+                                  color: AppColors.textLight,
+                                ),
+                              ),
+                              if (!_service.soloDisponiblesSoportado) ...[
+                                const SizedBox(height: 6),
+                                const _AvisoNoSoportado(),
+                              ],
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Switch(
+                          value: _soloDisponibles,
+                          activeColor: AppColors.success,
+                          onChanged: (v) =>
+                              setState(() => _soloDisponibles = v),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -542,6 +632,41 @@ class _TimezoneNotice extends StatelessWidget {
             onChanged: (v) {
               if (v != null) onCambiar(v);
             },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Aviso NO bloqueante: la base de datos todavía no tiene la columna
+/// `solo_disponibles`, así que el filtro no se puede guardar (el resto de la
+/// programación se guarda con normalidad).
+class _AvisoNoSoportado extends StatelessWidget {
+  const _AvisoNoSoportado();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.warning.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.warning.withOpacity(0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline, size: 16, color: AppColors.warning),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              WapiNotificationService.avisoSoloDisponiblesNoSoportado,
+              style: const TextStyle(
+                fontSize: 11.5,
+                color: AppColors.textPrimary,
+              ),
+            ),
           ),
         ],
       ),

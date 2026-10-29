@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../config/app_colors.dart';
+import '../models/wapi_agotado_config.dart';
 import '../models/wapi_envio_log.dart';
 import '../models/wapi_envio_tanda.dart';
 import '../models/wapi_licencia.dart';
@@ -21,6 +22,7 @@ import '../widgets/wapi_envio_tanda_card.dart';
 import '../widgets/wapi_qr_dialog.dart';
 import '../widgets/wapi_session_card.dart';
 import '../utils/wapi_errores.dart';
+import 'wapi_agotado_config_screen.dart';
 import 'wapi_product_selector_screen.dart';
 import 'wapi_schedule_config_screen.dart';
 
@@ -51,6 +53,13 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
   List<WapiEnvioTanda> _tandas = [];
   Map<String, String> _etiquetasChat = {};
   Map<int, String> _nombresProducto = {};
+
+  /// Avisos de agotado (stock 0). `_agotadoNoDisponible` = las tablas del
+  /// backend todavía no existen (migración pendiente): se muestra el aviso en
+  /// vez de romper la pantalla.
+  WapiAgotadoConfig? _agotadoConfig;
+  bool _agotadoNoDisponible = false;
+  bool _agotadoCargando = true;
 
   /// Refresco periódico mientras hay una tanda en curso, para que los
   /// contadores "enviados / faltan" avancen sin que el usuario haga pull.
@@ -217,6 +226,8 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
     });
     _sincronizarAutoRefresh();
     _autoRecuperarSiHaceFalta();
+    // Best-effort y aislado: si faltan las tablas de agotado sólo se avisa.
+    _cargarAgotado();
   }
 
   /// Si hay un bot **ya vinculado** que quedó caído, lo levantamos nosotros.
@@ -943,8 +954,10 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
       if (sesion == null) return;
     }
 
-    // 1. Selector productos
-    final productIds = await Navigator.of(context).push<List<int>>(
+    // 1. Selector productos. Devuelve ids + la preferencia "solo disponibles"
+    //    para que viaje al backend (antes se perdía al cerrar el selector).
+    if (!mounted) return;
+    final seleccion = await Navigator.of(context).push<WapiProductSelection>(
       MaterialPageRoute(
         builder: (_) => WapiProductSelectorScreen(
           idTienda: _idTienda!,
@@ -952,7 +965,8 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
         ),
       ),
     );
-    if (productIds == null || productIds.isEmpty) return;
+    if (seleccion == null || seleccion.ids.isEmpty) return;
+    final productIds = seleccion.ids;
 
     // 2. Destinatarios
     if (!mounted) return;
@@ -975,6 +989,7 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
         idSesion: sesion.id,
         productIds: productIds,
         destinations: picker.destinatarios,
+        soloDisponibles: seleccion.soloDisponibles,
       );
       if (!mounted) return;
       Navigator.of(context).pop(); // cerrar loading
@@ -988,6 +1003,9 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
       final tiempoStr = tiempoSeg is num
           ? '~${(tiempoSeg / 60).ceil()} min'
           : 'unos minutos';
+      final filtroStr = seleccion.soloDisponibles
+          ? ' Sólo productos con stock: los agotados se omiten del envío.'
+          : '';
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -997,8 +1015,10 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
             queued
                 ? '✅ $totalEstim mensaje(s) en cola. Tiempo estimado: $tiempoStr. '
                     'Puedes seguir usando la app — revisa el historial para ver el progreso.'
+                    '$filtroStr'
                 : '$totalEstim mensaje(s) encolados. '
-                    'Se enviarán con jitter aleatorio para evitar bloqueos.',
+                    'Se enviarán con jitter aleatorio para evitar bloqueos.'
+                    '$filtroStr',
           ),
         ),
       );
@@ -1009,6 +1029,235 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           backgroundColor: Colors.red, content: Text('Error: $e')));
     }
+  }
+
+  // ── Avisos de agotado ──────────────────────────────────────────────────
+
+  /// Carga el estado de los avisos de agotado APARTE del resto de datos.
+  ///
+  /// Sus tablas se crean en otra migración: si aún no están, la pantalla de
+  /// difusión debe seguir funcionando y limitarse a avisar. Por eso no entra
+  /// en el `Future.wait` de [_reloadData] (un fallo ahí tumbaría todo).
+  Future<void> _cargarAgotado() async {
+    if (_idTienda == null) return;
+    try {
+      final cfg = await _service.getAgotadoConfig(_idTienda!);
+      if (!mounted) return;
+      setState(() {
+        _agotadoConfig = cfg;
+        _agotadoNoDisponible = false;
+        _agotadoCargando = false;
+      });
+    } on WapiAgotadoNoDisponible {
+      if (!mounted) return;
+      setState(() {
+        _agotadoConfig = null;
+        _agotadoNoDisponible = true;
+        _agotadoCargando = false;
+      });
+    } catch (_) {
+      // Fallo puntual (red): no borramos lo que ya mostrábamos.
+      if (!mounted) return;
+      setState(() => _agotadoCargando = false);
+    }
+  }
+
+  Future<void> _onConfigurarAgotado() async {
+    if (!_ensureActive()) return;
+    if (_agotadoNoDisponible) {
+      _aviso(WapiAgotadoNoDisponible.mensaje, color: AppColors.warning);
+      return;
+    }
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => WapiAgotadoConfigScreen(
+        idTienda: _idTienda!,
+        sesiones: _sesiones,
+        existente: _agotadoConfig,
+      ),
+    ));
+    if (!mounted) return;
+    setState(() => _agotadoCargando = true);
+    await _cargarAgotado();
+  }
+
+  Widget _buildAgotadoCard() {
+    if (_agotadoNoDisponible) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.warning.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.warning.withOpacity(0.35)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.construction, color: AppColors.warning),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text(
+                    'Avisos de agotado no disponibles todavía: falta aplicar '
+                    'la migración.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'El envío manual y la difusión diaria siguen funcionando '
+                    'con normalidad. Cuando el backend aplique la migración, '
+                    'esta sección se activará sola.',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'Reintentar',
+              icon: const Icon(Icons.refresh, size: 20),
+              onPressed: () {
+                setState(() => _agotadoCargando = true);
+                _cargarAgotado();
+              },
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_agotadoCargando) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 18),
+        child: Center(
+          child: SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+
+    final cfg = _agotadoConfig;
+    if (cfg == null) {
+      return _EmptyCard(
+        icon: Icons.notifications_off_outlined,
+        title: 'Sin avisos de agotado',
+        subtitle: 'Avisa a tus grupos cuando un producto llegue a stock 0, '
+            'con tu propio mensaje y horario.',
+        action: ElevatedButton.icon(
+          onPressed: _onConfigurarAgotado,
+          icon: const Icon(Icons.add),
+          label: const Text('Configurar avisos'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+          ),
+        ),
+      );
+    }
+
+    final resumenDestinos = cfg.tieneDestinatarios
+        ? '${cfg.destinatarioIds.length} grupo(s)/número(s)'
+        : 'Sin destinatarios';
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: (cfg.activo ? AppColors.success : AppColors.textLight)
+                  .withOpacity(0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              cfg.activo
+                  ? Icons.notifications_active
+                  : Icons.notifications_off,
+              color: cfg.activo ? AppColors.success : AppColors.textLight,
+              size: 28,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  cfg.activo ? 'Avisos activos' : 'Avisos pausados',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14.5,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '$resumenDestinos • cooldown ${cfg.cooldownMinutos} min • '
+                  'delay ${cfg.delayMinSeconds}-${cfg.delayMaxSeconds} s',
+                  style: const TextStyle(
+                      fontSize: 12, color: AppColors.textSecondary),
+                ),
+                if (cfg.activo && !cfg.tieneDestinatarios) ...[
+                  const SizedBox(height: 4),
+                  const Text(
+                    'No saldrá ningún aviso hasta que elijas destinatarios.',
+                    style: TextStyle(fontSize: 11, color: AppColors.warning),
+                  ),
+                ],
+                const SizedBox(height: 6),
+                TextButton.icon(
+                  onPressed: _onConfigurarAgotado,
+                  icon: const Icon(Icons.edit, size: 16),
+                  label: const Text('Editar avisos'),
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(0, 30),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: cfg.activo,
+            activeColor: AppColors.success,
+            onChanged: (v) async {
+              if (!_ensureActive()) return;
+              try {
+                await _service.setAgotadoActivo(cfg.id, v);
+                if (!mounted) return;
+                setState(() => _agotadoConfig = cfg.copyWith(activo: v));
+              } on WapiAgotadoNoDisponible catch (e) {
+                if (!mounted) return;
+                setState(() => _agotadoNoDisponible = true);
+                _aviso('$e', color: AppColors.warning);
+              } catch (e) {
+                if (!mounted) return;
+                _aviso('No se pudo cambiar el estado: $e',
+                    color: AppColors.error);
+              }
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   // ── Debug del envío automático ─────────────────────────────────────────
@@ -1215,6 +1464,25 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
           _buildProgramacionCard(),
           const SizedBox(height: 22),
           _SectionHeader(
+            icon: Icons.notifications_active_outlined,
+            title: 'Avisos de agotado',
+            subtitle: 'Avisa a tus grupos cuando un producto llega a stock 0',
+            action: _agotadoNoDisponible
+                ? null
+                : IconButton(
+                    tooltip: 'Actualizar',
+                    icon: const Icon(Icons.refresh, size: 20),
+                    color: AppColors.textSecondary,
+                    onPressed: () {
+                      setState(() => _agotadoCargando = true);
+                      _cargarAgotado();
+                    },
+                  ),
+          ),
+          const SizedBox(height: 8),
+          _buildAgotadoCard(),
+          const SizedBox(height: 22),
+          _SectionHeader(
             icon: _hayEnvioActivo ? Icons.podcasts : Icons.history,
             title: _hayEnvioActivo ? 'Envío en progreso' : 'Envíos recientes',
             subtitle: _hayEnvioActivo
@@ -1400,6 +1668,28 @@ class _WapiNotificationsScreenState extends State<WapiNotificationsScreen> {
                   style: const TextStyle(
                       fontSize: 12, color: AppColors.textSecondary),
                 ),
+                if (p.soloDisponibles) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(Icons.inventory_2,
+                          size: 13, color: AppColors.success),
+                      SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          'Sólo productos con stock disponible',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.success,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 if (p.nextRunAt != null) ...[
                   const SizedBox(height: 2),
                   Text(

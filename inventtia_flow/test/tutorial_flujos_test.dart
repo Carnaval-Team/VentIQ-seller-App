@@ -50,6 +50,8 @@ void main() {
       containsAll(<String>[
         'admin_reserva_directa', // solo existe con un servicio en un local
         'admin_capacidades', // ídem
+        'admin_precio_auto', // solo con más de una moneda habilitada
+        'admin_calendario', // acceso extra del módulo de reservas
         'admin_reservas', // módulo del dashboard
         'admin_categorias', // módulo del dashboard
       ]),
@@ -65,15 +67,19 @@ void main() {
     // Desde v2 también son opcionales los dos pasos que dependen de que haya
     // datos: sin establecimientos publicados no hay ficha que abrir y sin
     // reservas esta semana el ranking está vacío.
+    //
+    // Desde v3 lo es además el pago por adelantado: solo lo ofrecen los locales
+    // que lo han activado.
     final opcionales = cliente.where((p) => p.opcional).map((p) => p.id).toSet();
     expect(opcionales, <String>{
       'detalle_datos',
+      'detalle_pago_adelantado',
       'ficha_local_servicios',
       'top_servicios',
     });
   });
 
-  test('el recorrido del cliente es el v2, con el acceso rápido explicado', () {
+  test('el recorrido del cliente es el v3, con el acceso rápido explicado', () {
     // La lista completa se fija aquí a propósito: es la única unión entre el
     // guion y las anclas reales, y el orden es el del recorrido.
     expect(cliente.map((p) => p.id).toList(), <String>[
@@ -89,9 +95,10 @@ void main() {
       'detalle_acciones',
       'detalle_calendario',
       'detalle_datos',
+      'detalle_pago_adelantado',
       'detalle_continuar',
     ]);
-    expect(cliente.length, 13);
+    expect(cliente.length, 14);
 
     // El bloque de acceso rápido tiene que explicarse con sus propias palabras:
     // es lo primero que ve el cliente en el Home nuevo.
@@ -132,6 +139,10 @@ void main() {
       TutorialDestino.serviciosFormulario,
     );
     expect(
+      _destinoDe(admin, 'admin_precio_auto'),
+      TutorialDestino.serviciosFormulario,
+    );
+    expect(
       _destinoDe(admin, 'admin_reglas_precio'),
       TutorialDestino.serviciosFormulario,
     );
@@ -147,6 +158,7 @@ void main() {
       _destinoDe(admin, 'admin_recursos_turnos'),
       TutorialDestino.servicioLocal,
     );
+    expect(_destinoDe(admin, 'admin_calendario'), TutorialDestino.reservas);
     expect(_destinoDe(admin, 'admin_reservas'), TutorialDestino.reservas);
     expect(_destinoDe(admin, 'admin_categorias'), TutorialDestino.categorias);
   });
@@ -198,6 +210,7 @@ void main() {
     for (final id in <String>[
       'detalle_calendario',
       'detalle_datos',
+      'detalle_pago_adelantado',
       'detalle_continuar',
     ]) {
       expect(_destinoDe(cliente, id), isNull, reason: '$id no debe navegar');

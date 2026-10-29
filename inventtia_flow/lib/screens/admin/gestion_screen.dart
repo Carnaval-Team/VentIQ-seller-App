@@ -13,6 +13,7 @@ import 'config_categorias_screen.dart';
 import 'entidad_detail_screen.dart';
 import 'gestion_servicios_screen.dart';
 import 'locales_servicios_screen.dart';
+import 'mi_suscripcion_screen.dart';
 import 'reservas_screen.dart';
 
 class GestionScreen extends StatelessWidget {
@@ -462,6 +463,22 @@ class _GestionBody extends StatelessWidget {
                     context,
                     MaterialPageRoute(
                       builder: (_) => EntidadDetailScreen(entidad: entidad),
+                    ),
+                  ),
+                ),
+                // Suscripción y cobros: tu plan, el cobro por adelantado de los
+                // servicios (número de proveedor + WhatsApp de verificación) y
+                // la bandeja de pagos por verificar. Todo en «Mi suscripción»,
+                // que es la pantalla que ya reúne las tres cosas.
+                _ModuloCard(
+                  icon: Icons.workspace_premium_outlined,
+                  title: 'Suscripción y cobros',
+                  subtitle: 'Tu plan y el pago por adelantado',
+                  color: const Color(0xFF00A36C),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const MiSuscripcionScreen(),
                     ),
                   ),
                 ),

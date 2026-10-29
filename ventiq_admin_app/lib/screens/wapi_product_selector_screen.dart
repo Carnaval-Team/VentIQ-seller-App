@@ -8,9 +8,27 @@ import '../services/marketplace_product_service.dart';
 
 /// Modo del selector:
 ///  - manual: el padre lo abre con push y, al "Continuar",
-///    retorna `List<int>` (ids) vía Navigator.pop.
+///    retorna un [WapiProductSelection] vía Navigator.pop.
 ///  - schedule: idéntico, pero el texto del botón cambia.
 enum WapiProductSelectorMode { manual, schedule }
+
+/// Lo que el selector devuelve al padre al confirmar.
+///
+/// Antes sólo devolvía `List<int>`, así que la decisión "sólo disponibles"
+/// (el usuario descarta los agotados) se perdía al cerrar la pantalla y
+/// nunca llegaba al backend. Ahora viaja junto a los ids.
+class WapiProductSelection {
+  final List<int> ids;
+
+  /// Si es `true`, la programación/envío debe re-filtrar en el backend y
+  /// descartar los productos que estén agotados en el momento del envío.
+  final bool soloDisponibles;
+
+  const WapiProductSelection({
+    required this.ids,
+    this.soloDisponibles = false,
+  });
+}
 
 /// Selector multi-select de productos para difundir por WhatsApp.
 ///
@@ -21,11 +39,19 @@ class WapiProductSelectorScreen extends StatefulWidget {
   final WapiProductSelectorMode mode;
   final Set<int> initialSelected;
 
+  /// Preferencia "solo disponibles" con la que abre la pantalla.
+  ///
+  /// `null` = el padre no opina (envío manual): se reusa la última decisión
+  /// guardada en caché para esta tienda/modo. Un valor explícito (editar una
+  /// programación) manda sobre la caché.
+  final bool? initialSoloDisponibles;
+
   const WapiProductSelectorScreen({
     super.key,
     required this.idTienda,
     this.mode = WapiProductSelectorMode.manual,
     this.initialSelected = const {},
+    this.initialSoloDisponibles,
   });
 
   @override
@@ -52,14 +78,21 @@ class _WapiProductSelectorScreenState extends State<WapiProductSelectorScreen> {
   /// sin stock. No altera la selección ya hecha.
   bool _hideSinStock = false;
 
+  /// Decisión del usuario: enviar sólo productos con stock. A diferencia de
+  /// [_hideSinStock] (puramente visual) esta preferencia SÍ viaja al backend,
+  /// que re-filtra con el stock del momento del envío.
+  bool _soloDisponibles = false;
+
   @override
   void initState() {
     super.initState();
     _selected.addAll(widget.initialSelected);
+    _soloDisponibles = widget.initialSoloDisponibles ?? false;
     _scrollCtrl.addListener(_onScroll);
     // Si el padre no pasó selección previa, recuperamos la última guardada
     // en cache para esta tienda/modo.
     if (widget.initialSelected.isEmpty) _restoreCachedSelection();
+    _restoreCachedSoloDisponibles();
     _reload();
   }
 
@@ -67,6 +100,23 @@ class _WapiProductSelectorScreenState extends State<WapiProductSelectorScreen> {
   /// así "enviar ahora" y los programados no se pisan entre sí.
   String get _prefsKey =>
       '${_prefsPrefix}_${widget.idTienda}_${widget.mode.name}';
+
+  /// Clave aparte para la preferencia "solo disponibles": se guarda aunque no
+  /// haya ids seleccionados.
+  String get _prefsKeySoloDisponibles => '${_prefsKey}_solo_disponibles';
+
+  Future<void> _restoreCachedSoloDisponibles() async {
+    // El padre tiene la última palabra (p. ej. la programación ya guardada).
+    if (widget.initialSoloDisponibles != null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final v = prefs.getBool(_prefsKeySoloDisponibles);
+      if (v == null || !mounted) return;
+      setState(() => _soloDisponibles = v);
+    } catch (_) {
+      // cache best-effort
+    }
+  }
 
   Future<void> _restoreCachedSelection() async {
     try {
@@ -95,6 +145,15 @@ class _WapiProductSelectorScreenState extends State<WapiProductSelectorScreen> {
           _selected.map((e) => e.toString()).toList(),
         );
       }
+    } catch (_) {
+      // ignorar
+    }
+  }
+
+  Future<void> _persistSoloDisponibles() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_prefsKeySoloDisponibles, _soloDisponibles);
     } catch (_) {
       // ignorar
     }
@@ -253,17 +312,21 @@ class _WapiProductSelectorScreenState extends State<WapiProductSelectorScreen> {
 
     void onSoloDisponibles() {
       setState(() {
-        // Marca únicamente los que tienen stock > 0 y desmarca los sin
-        // stock que estuvieran marcados (incluso si están ocultos).
-        for (final p in todos) {
-          if (_tieneStock(p)) {
-            _selected.add(p.idProducto);
-          } else {
-            _selected.remove(p.idProducto);
+        // Alterna el filtro. Al activarlo marca únicamente los que tienen
+        // stock > 0 y desmarca los sin stock (incluso si están ocultos).
+        _soloDisponibles = !_soloDisponibles;
+        if (_soloDisponibles) {
+          for (final p in todos) {
+            if (_tieneStock(p)) {
+              _selected.add(p.idProducto);
+            } else {
+              _selected.remove(p.idProducto);
+            }
           }
         }
       });
       _persistSelection();
+      _persistSoloDisponibles();
     }
 
     void onToggleTodos() {
@@ -315,6 +378,7 @@ class _WapiProductSelectorScreenState extends State<WapiProductSelectorScreen> {
                 child: Text(
                   '${filtered.length} mostrado(s) • '
                   '${disponibles.length} con stock'
+                  '${_soloDisponibles ? ' • sólo disponibles' : ''}'
                   '${_hideSinStock && sinStockCount > 0 ? ' • $sinStockCount oculto(s)' : ''}',
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -335,12 +399,25 @@ class _WapiProductSelectorScreenState extends State<WapiProductSelectorScreen> {
                 onPressed: sinStockCount == 0 ? null : onToggleHide,
               ),
               const SizedBox(width: 2),
+              // Alterna "solo disponibles". Activo = el backend re-filtrará
+              // por stock al enviar (la preferencia viaja con la selección).
               _HeaderAction(
-                icon: Icons.inventory_2_outlined,
+                icon: _soloDisponibles
+                    ? Icons.inventory_2
+                    : Icons.inventory_2_outlined,
                 label: 'Solo disponibles',
-                color: AppColors.success,
+                tooltip: _soloDisponibles
+                    ? 'Activado: los productos agotados no se enviarán. '
+                        'Toca para incluir también los agotados.'
+                    : 'Marcar y enviar sólo los productos con stock. '
+                        'Se omite en el envío todo lo que esté agotado.',
+                color: _soloDisponibles
+                    ? AppColors.success
+                    : AppColors.textSecondary,
                 iconOnly: narrow,
-                onPressed: disponibles.isEmpty ? null : onSoloDisponibles,
+                onPressed: disponibles.isEmpty && !_soloDisponibles
+                    ? null
+                    : onSoloDisponibles,
               ),
               const SizedBox(width: 2),
               _HeaderAction(
@@ -420,10 +497,11 @@ class _WapiProductSelectorScreenState extends State<WapiProductSelectorScreen> {
 
   /// Si entre los seleccionados hay productos sin stock, pedir confirmación
   /// antes de devolver la lista al padre. "Revisar" cancela y deja al usuario
-  /// en el picker para ajustar; "Continuar" envía igual (el backend filtrará
-  /// nada por stock — el caption del mensaje sí refleja la disponibilidad).
+  /// en el picker para ajustar; "Continuar" envía igual (salvo que el filtro
+  /// "solo disponibles" esté activo: entonces el backend los descarta).
   Future<void> _confirmAndPop() async {
     await _persistSelection();
+    await _persistSoloDisponibles();
     if (!mounted) return;
     final sinStock = _items
         .where((p) =>
@@ -432,7 +510,7 @@ class _WapiProductSelectorScreenState extends State<WapiProductSelectorScreen> {
         .toList();
 
     if (sinStock.isEmpty) {
-      Navigator.of(context).pop(_selected.toList());
+      Navigator.of(context).pop(_resultado());
       return;
     }
 
@@ -453,9 +531,15 @@ class _WapiProductSelectorScreenState extends State<WapiProductSelectorScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Los siguientes ${sinStock.length} producto(s) no tienen '
-                'stock disponible. Aún puedes difundirlos, pero los '
-                'destinatarios verán "Sin stock" en el mensaje.',
+                _soloDisponibles
+                    ? 'Los siguientes ${sinStock.length} producto(s) no tienen '
+                        'stock y tienes activado "Solo disponibles": se '
+                        'omitirán al enviar. La programación guardará el '
+                        'filtro, así que tampoco se enviarán si siguen '
+                        'agotados cuando toque el envío.'
+                    : 'Los siguientes ${sinStock.length} producto(s) no tienen '
+                        'stock disponible. Aún puedes difundirlos, pero los '
+                        'destinatarios verán "Sin stock" en el mensaje.',
                 style: const TextStyle(fontSize: 13),
               ),
               const SizedBox(height: 10),
@@ -501,7 +585,9 @@ class _WapiProductSelectorScreenState extends State<WapiProductSelectorScreen> {
           ),
           ElevatedButton.icon(
             icon: const Icon(Icons.arrow_forward),
-            label: const Text('Continuar igual'),
+            label: Text(
+              _soloDisponibles ? 'Continuar sin ellos' : 'Continuar igual',
+            ),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
@@ -514,15 +600,26 @@ class _WapiProductSelectorScreenState extends State<WapiProductSelectorScreen> {
 
     if (!mounted) return;
     if (action == 'continuar') {
-      Navigator.of(context).pop(_selected.toList());
+      Navigator.of(context).pop(_resultado());
     }
     // En "revisar" no hacemos nada — el usuario sigue en el picker.
   }
+
+  WapiProductSelection _resultado() => WapiProductSelection(
+        ids: _selected.toList(),
+        soloDisponibles: _soloDisponibles,
+      );
+
+  /// Seleccionados que el backend descartaría al enviar por estar agotados.
+  int get _sinStockSeleccionados => _items
+      .where((p) => _selected.contains(p.idProducto) && !_tieneStock(p))
+      .length;
 
   Widget _buildBottomBar() {
     final label = widget.mode == WapiProductSelectorMode.manual
         ? 'Continuar (${_selected.length})'
         : 'Guardar selección (${_selected.length})';
+    final omitidos = _soloDisponibles ? _sinStockSeleccionados : 0;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
@@ -542,11 +639,19 @@ class _WapiProductSelectorScreenState extends State<WapiProductSelectorScreen> {
             child: Text(
               _selected.isEmpty
                   ? 'Selecciona al menos un producto para continuar'
-                  : '${_selected.length} producto(s) listos',
+                  : omitidos > 0
+                      ? '${_selected.length} producto(s) listos • '
+                          '$omitidos sin stock se omitirán'
+                      : _soloDisponibles
+                          ? '${_selected.length} producto(s) • '
+                              'sólo con stock disponible'
+                          : '${_selected.length} producto(s) listos',
               style: TextStyle(
                 color: _selected.isEmpty
                     ? AppColors.textSecondary
-                    : AppColors.textPrimary,
+                    : omitidos > 0
+                        ? AppColors.warning
+                        : AppColors.textPrimary,
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
               ),
@@ -574,6 +679,10 @@ class _WapiProductSelectorScreenState extends State<WapiProductSelectorScreen> {
 class _HeaderAction extends StatelessWidget {
   final IconData icon;
   final String label;
+
+  /// Texto del tooltip cuando el label visible se queda corto (p. ej. el
+  /// estado del filtro "solo disponibles"). Si es `null` se usa [label].
+  final String? tooltip;
   final Color? color;
   final bool iconOnly;
   final VoidCallback? onPressed;
@@ -583,16 +692,18 @@ class _HeaderAction extends StatelessWidget {
     required this.label,
     required this.iconOnly,
     required this.onPressed,
+    this.tooltip,
     this.color,
   });
 
   @override
   Widget build(BuildContext context) {
+    final tip = tooltip ?? label;
     if (iconOnly) {
       return IconButton(
         icon: Icon(icon, size: 20),
         color: color,
-        tooltip: label,
+        tooltip: tip,
         visualDensity: VisualDensity.compact,
         constraints: const BoxConstraints(minWidth: 36, minHeight: 34),
         padding: EdgeInsets.zero,
@@ -600,7 +711,7 @@ class _HeaderAction extends StatelessWidget {
       );
     }
     return Tooltip(
-      message: label,
+      message: tip,
       child: TextButton.icon(
         icon: Icon(icon, size: 18),
         label: Text(label),

@@ -72,6 +72,30 @@ class Agenda {
   final String? idViaje;
   final String? tipoTrayecto;
 
+  /// Motivo que escribió quien canceló la reserva (migración 61).
+  ///
+  /// **Nullable** a propósito: las reservas canceladas antes de esa migración
+  /// (y las que no están canceladas) no tienen motivo y las tarjetas deben
+  /// seguir funcionando sin pintar nada.
+  final String? motivoCancelacion;
+
+  /// Rol de quien canceló: `'cliente' | 'admin' | 'staff' | 'sistema'`
+  /// (`agenda.cancelado_por_rol`). Null en reservas sin cancelar y en las
+  /// canceladas antes de la migración 61.
+  final String? canceladoPorRol;
+
+  /// Estado del **pago por adelantado** (migración 62):
+  /// `'pendiente' | 'reportado' | 'verificado' | 'rechazado' | 'expirado'`.
+  ///
+  /// Null = esta reserva no pide pago por adelantado (es lo normal: el pago es
+  /// opcional y solo aparece si el admin lo activó para la entidad).
+  final String? pagoEstado;
+
+  /// Importe que se cobra por adelantado y su moneda (`agenda.pago_monto`,
+  /// `agenda.pago_moneda`). Null si no hay pago.
+  final double? pagoMonto;
+  final String? pagoMoneda;
+
   Agenda({
     required this.id,
     this.uuidUsuario,
@@ -95,6 +119,11 @@ class Agenda {
     this.recursoNombre,
     this.idViaje,
     this.tipoTrayecto,
+    this.motivoCancelacion,
+    this.canceladoPorRol,
+    this.pagoEstado,
+    this.pagoMonto,
+    this.pagoMoneda,
   });
 
   /// True si la reserva la hizo el usuario [uuid] para un tercero (titular ≠ quien reservó).
@@ -164,6 +193,26 @@ class Agenda {
       recursoNombre: recursoNombre,
       idViaje: json['id_viaje']?.toString(),
       tipoTrayecto: json['tipo_trayecto'] as String?,
+      // [61] Los 4 listados ya devuelven estas dos columnas. Se normaliza el
+      // texto vacío a null para que las tarjetas solo pinten el motivo cuando
+      // de verdad hay algo escrito.
+      motivoCancelacion: _textoOpcional(json['motivo_cancelacion']),
+      canceladoPorRol: _textoOpcional(json['cancelado_por_rol']),
+      // [62] Pago por adelantado. Los 4 listados (migración 63) ya devuelven
+      // estas columnas; en una base sin migrar llegan ausentes y quedan null,
+      // que es exactamente «esta reserva no pide pago».
+      pagoEstado: _textoOpcional(json['pago_estado']),
+      pagoMonto: (json['pago_monto'] as num?)?.toDouble(),
+      pagoMoneda: _textoOpcional(json['pago_moneda']),
     );
   }
+}
+
+/// `String?` tolerante: acepta `null`, cadenas y cualquier valor con
+/// `toString()` (los RPC devuelven `text`, pero un `jsonb` mal tipado no debe
+/// tumbar el parseo de todo el listado). Devuelve `null` si queda vacío.
+String? _textoOpcional(dynamic valor) {
+  if (valor == null) return null;
+  final texto = valor.toString().trim();
+  return texto.isEmpty ? null : texto;
 }

@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../config/app_theme.dart';
 import '../models/campo_adicional.dart';
+import '../models/cobro.dart';
 import '../models/config_precio.dart';
 import '../models/servicio.dart';
 import '../models/sala_espera.dart';
@@ -18,6 +19,7 @@ import '../services/promocion_service.dart';
 import '../services/resena_service.dart';
 import '../services/agenda_service.dart';
 import '../services/catalogo_service.dart';
+import '../services/cobro_service.dart';
 import '../services/tipo_actividad_service.dart';
 import '../utils/esquema_pendiente.dart';
 import '../utils/horario_atencion.dart';
@@ -27,6 +29,7 @@ import '../utils/turnos_servicio.dart';
 import '../widgets/boton_favorito.dart';
 import '../widgets/datos_adicionales_form.dart';
 import '../widgets/detalle_hero_header.dart';
+import '../widgets/pago_adelantado_sheet.dart';
 import '../widgets/resenas.dart';
 import '../tutorial/tutorial_anchor.dart';
 import 'reserva_transporte_sheet.dart';
@@ -88,6 +91,13 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
   /// `27_promociones.sql` no está aplicada.
   List<Promocion> _promociones = const [];
 
+  /// Config del **pago por adelantado** del local-servicio (migración 62).
+  ///
+  /// `null` cuando la entidad no lo tiene activo, cuando la consulta falla o
+  /// cuando la migración todavía no está aplicada: en los tres casos la ficha se
+  /// pinta exactamente como antes, sin nada de cobro.
+  CobroInfo? _cobroInfo;
+
   /// Taxonomía (migración 47) para poder decir "Categoría › Subcategoría" en vez
   /// del código crudo. Si no está disponible, se pinta el nombre que trajo el
   /// servicio (o el código embellecido, como antes).
@@ -117,6 +127,21 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
     _cargarResenas();
     _cargarPromociones();
     _cargarTaxonomia();
+    _cargarCobro();
+  }
+
+  /// Consulta si el local-servicio admite **pago por adelantado**.
+  ///
+  /// Aislado del resto de la ficha: si la migración 62 no está aplicada o falla
+  /// la red, la pantalla se ve igual, solo que sin la opción de pagar.
+  Future<void> _cargarCobro() async {
+    try {
+      final info = await CobroService.infoLocalServicio(_localServicio.id);
+      if (!mounted) return;
+      setState(() => _cobroInfo = info.disponible ? info : null);
+    } catch (e) {
+      debugPrint('[flow] LocalServicioDetail._cargarCobro ERROR: $e');
+    }
   }
 
   /// Taxonomía para la fila "Tipo de actividad". Aislado: si la migración 47 no
@@ -421,6 +446,9 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
     if (uuid == null) return;
 
     if (_localServicio.esTransporteOmnibus) {
+      // Marca previa a la reserva: sirve para localizar el id recién creado si
+      // después se ofrece el pago por adelantado.
+      final desde = DateTime.now();
       final result = await showModalBottomSheet<Map<String, dynamic>>(
         context: context,
         isScrollControlled: true,
@@ -443,6 +471,7 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
             behavior: SnackBarBehavior.floating,
           ),
         );
+        if (_cobroInfo != null) await _ofrecerPagoAdelantado(desde);
       }
       return;
     }
@@ -559,6 +588,12 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
       }
     }
 
+    // Marca de tiempo previa a la creación: con ella se resuelve después el id
+    // de la reserva recién hecha (ver `_ofrecerPagoAdelantado`).
+    final desde = DateTime.now();
+    // `true` solo si la reserva se creó: es la condición para ofrecer el pago.
+    var reservada = false;
+
     try {
       await AgendaService.reservarDirecto(
         uuidUsuario: uuid,
@@ -576,6 +611,7 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
         moneda: datos.moneda,
         idTurno: idTurno,
       );
+      reservada = true;
       await _load();
       // El cupo de los turnos que enseña la pantalla cambia con la reserva que
       // se acaba de hacer.
@@ -604,6 +640,141 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
     } finally {
       if (mounted) setState(() => _isActing = false);
     }
+
+    // El pago por adelantado es opcional y va DESPUÉS de reservar: si falla
+    // cualquier paso, la reserva ya está hecha y se queda como está.
+    if (reservada && mounted && _cobroInfo != null) {
+      await _ofrecerPagoAdelantado(desde);
+    }
+  }
+
+  // ── Pago por adelantado (migración 62) ───────────────────────────────────
+
+  /// Abre la hoja de pago por adelantado de una reserva.
+  ///
+  /// [idAgenda] se pasa cuando la reserva se acaba de crear. Si no, se busca la
+  /// última del cliente para este local-servicio: es el caso de pulsar el botón
+  /// desde la ficha sin volver a reservar.
+  ///
+  /// Si `crearPago` falla (reserva no activa, ya hay un pago en curso, sin tasa
+  /// de cambio…) se muestra el error del servidor y **la reserva no se toca**:
+  /// ya está creada y este paso es opcional.
+  Future<void> _pagarPorAdelantado({int? idAgenda}) async {
+    if (_isActing) return;
+    setState(() => _isActing = true);
+    try {
+      final id =
+          idAgenda ??
+          await CobroService.ultimaReservaDe(
+            idLocalServicio: _localServicio.id,
+          );
+      if (!mounted) return;
+      if (id == null) {
+        _showToast(
+          'Primero reserva un turno. Después podrás pagarlo por adelantado.',
+        );
+        return;
+      }
+
+      final PagoReserva pago;
+      try {
+        pago = await CobroService.crearPago(id);
+      } catch (e) {
+        if (!mounted) return;
+        _showToast(_mensajeCobro(e));
+        return;
+      }
+      if (!mounted) return;
+
+      // El bloqueo es para que no se creen dos intentos a la vez desde la ficha;
+      // la hoja maneja su propio estado.
+      setState(() => _isActing = false);
+      await PagoAdelantadoSheet.mostrar(
+        context,
+        pago: pago,
+        info: _cobroInfo,
+        onActualizado: (_) => _cargarCobro(),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      _showToast(_mensajeCobro(e));
+    } finally {
+      if (mounted && _isActing) setState(() => _isActing = false);
+    }
+  }
+
+  /// Tras reservar, ofrece pagar ese turno por adelantado.
+  ///
+  /// El id de la reserva recién creada se resuelve por fecha de creación:
+  /// `AgendaService.reservarDirecto` no lo devuelve (y ese fichero pertenece a
+  /// otro frente de este mismo cambio).
+  Future<void> _ofrecerPagoAdelantado(DateTime desde) async {
+    final info = _cobroInfo;
+    if (info == null || !mounted) return;
+
+    int? id;
+    try {
+      id = await CobroService.ultimaReservaDe(
+        idLocalServicio: _localServicio.id,
+        desde: desde,
+      );
+    } catch (e) {
+      debugPrint('[flow] LocalServicioDetail._ofrecerPagoAdelantado ERROR: $e');
+      return;
+    }
+    if (id == null || !mounted) return;
+
+    final quiere = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.payments_outlined, color: AppTheme.primary),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '¿Pagar por adelantado?',
+                style: TextStyle(fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'Tu reserva está hecha. Puedes pagarla ahora con Transfermóvil y el '
+          'administrador la confirmará al verificar el pago.\n\n'
+          '${info.resumenVigencia} y reportarlo.',
+          style: const TextStyle(fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Más tarde'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            icon: const Icon(Icons.payments_outlined, size: 18),
+            label: const Text('Pagar ahora'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (quiere == true && mounted) {
+      await _pagarPorAdelantado(idAgenda: id);
+    }
+  }
+
+  /// Mensaje del servidor sin el prefijo `Exception:` que añade Dart.
+  String _mensajeCobro(Object e) {
+    final texto = e.toString().replaceFirst('Exception: ', '').trim();
+    return texto.isEmpty
+        ? 'No se pudo preparar el pago por adelantado.'
+        : texto;
   }
 
   /// Flujo previo común a reserva directa y cola: si el servicio permite
@@ -781,6 +952,7 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
                             if (enLista) _buildMiTurnoCard(),
                             if (enLista) const SizedBox(height: 14),
                             _buildPromocionesBanner(),
+                            _buildCobroBanner(),
                             _buildContadoresCard(),
                             _buildTurnosCard(),
                             const SizedBox(height: 14),
@@ -1230,6 +1402,89 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // ── Pago por adelantado (banner de la ficha) ──
+  //
+  // Vive aquí, y no en la barra de acciones, para que el cliente lea las
+  // condiciones ANTES de reservar: el pago es opcional y posterior a la reserva,
+  // pero saber que existe cambia la decisión. El ancla del tutorial
+  // (`detalle_pago_adelantado`) envuelve el botón que hace la acción.
+  Widget _buildCobroBanner() {
+    final info = _cobroInfo;
+    if (info == null) return const SizedBox.shrink();
+
+    final instrucciones = info.instrucciones;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.primary.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.primary.withValues(alpha: 0.30)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.payments_outlined, size: 19, color: AppTheme.primary),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Pago por adelantado',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            instrucciones ??
+                'Este servicio se puede pagar por adelantado con '
+                    'Transfermóvil. La reserva queda confirmada cuando el '
+                    'administrador verifica el pago.',
+            style: const TextStyle(
+              fontSize: 12.5,
+              height: 1.4,
+              color: AppTheme.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 10),
+          TutorialAnchor(
+            id: 'detalle_pago_adelantado',
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _isActing ? null : () => _pagarPorAdelantado(),
+                icon: const Icon(Icons.open_in_new, size: 18),
+                label: const Text('Pagar por adelantado'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppTheme.primary,
+                  side: const BorderSide(color: AppTheme.primary),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${info.resumenVigencia} para pagar y reportar. Si nadie verifica '
+            'el pago en ese plazo, la reserva puede cancelarse sola.',
+            style: const TextStyle(
+              fontSize: 11.5,
+              height: 1.35,
+              color: AppTheme.textSecondary,
+            ),
+          ),
+        ],
       ),
     );
   }

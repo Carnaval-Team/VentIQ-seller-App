@@ -289,6 +289,12 @@ class _ServicioDetailScreenState extends State<ServicioDetailScreen> {
           'Reserva para terceros',
           _servicio.permiteTercero ? 'Sí' : 'No',
         ),
+        // [67] El cobro por adelantado es por servicio (la cuenta que cobra es de
+        // la entidad). Se muestra aquí para no tener que abrir el formulario.
+        _buildInfoRow(
+          'Pago por adelantado',
+          _servicio.cobroAdelantado ? 'Sí' : 'No',
+        ),
         _buildInfoRow(
           'Moneda por defecto',
           MonedasApp.etiqueta(_servicio.configPrecio.monedaDefault),

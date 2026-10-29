@@ -7,8 +7,11 @@ import '../../config/app_theme.dart';
 import '../../models/suscripcion.dart';
 import '../../providers/suscripcion_provider.dart';
 import '../../services/auth_service.dart';
+import '../../services/cobro_service.dart';
 import '../../services/imagen_service.dart';
 import '../../services/suscripcion_service.dart';
+import 'cobro_config_screen.dart';
+import 'pagos_reserva_screen.dart';
 
 /// Pantalla "Mi suscripción": estado, planes, pago por Transfermóvil e historial.
 ///
@@ -48,15 +51,24 @@ class _MiSuscripcionScreenState extends State<MiSuscripcionScreen>
   /// generen dos pagos de la misma suscripción.
   bool _pagoEnCurso = false;
 
+  /// Pagos **por adelantado de reservas** esperando verificación. Se usa como
+  /// contador de la entrada a la bandeja; `0` si no se pudo cargar (migración 62
+  /// pendiente o sin permisos), en cuyo caso el acceso sigue visible sin número.
+  int _pagosPorVerificar = 0;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       // Forzado: al entrar aquí el usuario quiere el dato de ahora, no el de la
       // carga inicial del shell.
-      context.read<SuscripcionProvider>().recargar();
+      await context.read<SuscripcionProvider>().recargar();
+      if (!mounted) return;
+      // Después de recargar: así `idEntidad` ya está resuelto para el contador
+      // de pagos por verificar.
+      await _cargarPagosPorVerificar();
     });
   }
 
@@ -119,6 +131,160 @@ class _MiSuscripcionScreenState extends State<MiSuscripcionScreen>
     // Se abre directamente: el usuario ya eligió el plan, pedirle un toque extra
     // solo añade un paso donde abandonar.
     await _abrirTransfermovil();
+  }
+
+  // ── Cobro por adelantado de los servicios (migración 62) ─────────────────
+  //
+  // El pago por adelantado del SERVICIO (no de la suscripción) se configura y se
+  // gestiona desde aquí porque es donde el admin ya entra a ver qué tiene que
+  // pagar. La bandeja también se enlaza desde Reservas (lo hace el frente de
+  // cancelación); esta pantalla solo añade la entrada.
+
+  /// Cuenta los pagos de reservas esperando verificación (badge de la bandeja).
+  ///
+  /// Es solo un contador: si falla (migración 62 sin aplicar, sin permisos, sin
+  /// red) se queda en 0 y el acceso sigue estando.
+  Future<void> _cargarPagosPorVerificar() async {
+    final idEntidad = context.read<SuscripcionProvider>().idEntidad;
+    if (idEntidad == null) return;
+    try {
+      final pagos = await CobroService.listarPagos(idEntidad: idEntidad);
+      if (!mounted) return;
+      setState(() {
+        _pagosPorVerificar = pagos
+            .where(
+              (p) => p.pago.estado == 'creado' || p.pago.estado == 'reportado',
+            )
+            .length;
+      });
+    } catch (_) {
+      // Silencio deliberado: es un contador, no un dato funcional.
+    }
+  }
+
+  Future<void> _abrirConfigCobro(int idEntidad) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CobroConfigScreen(idEntidad: idEntidad),
+      ),
+    );
+    if (mounted) await _cargarPagosPorVerificar();
+  }
+
+  Future<void> _abrirBandejaPagos(int idEntidad) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PagosReservaScreen(idEntidad: idEntidad),
+      ),
+    );
+    if (mounted) await _cargarPagosPorVerificar();
+  }
+
+  /// Entrada al cobro por adelantado: configuración del admin y bandeja.
+  Widget _seccionCobro(int idEntidad) {
+    final pendientes = _pagosPorVerificar;
+    final subtituloPendientes = pendientes == 0
+        ? 'No hay pagos esperando verificación.'
+        : pendientes == 1
+        ? '1 pago espera tu verificación.'
+        : '$pendientes pagos esperan tu verificación.';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _TituloSeccion(
+          titulo: 'Cobro por adelantado de tus servicios',
+          subtitulo:
+              'Cobra la reserva antes de la cita con Transfermóvil y verifica '
+              'los pagos desde aquí.',
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: AppTheme.cardBg,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppTheme.border),
+          ),
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(
+                  Icons.point_of_sale_outlined,
+                  color: AppTheme.primary,
+                ),
+                title: const Text(
+                  'Configurar el cobro',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                subtitle: const Text(
+                  'Número de proveedor, WhatsApp de verificación, moneda y '
+                  'plazo.',
+                  style: TextStyle(fontSize: 12, height: 1.3),
+                ),
+                trailing: const Icon(
+                  Icons.chevron_right,
+                  color: AppTheme.textSecondary,
+                ),
+                onTap: () => _abrirConfigCobro(idEntidad),
+              ),
+              const Divider(height: 1, indent: 12, endIndent: 12),
+              ListTile(
+                leading: const Icon(
+                  Icons.receipt_long_outlined,
+                  color: AppTheme.primary,
+                ),
+                title: const Text(
+                  'Pagos por verificar',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                subtitle: Text(
+                  subtituloPendientes,
+                  style: const TextStyle(fontSize: 12, height: 1.3),
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (pendientes > 0)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.warning,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '$pendientes',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(width: 4),
+                    const Icon(
+                      Icons.chevron_right,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ],
+                ),
+                onTap: () => _abrirBandejaPagos(idEntidad),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   /// Lanza Transfermóvil con el deep link del intent.
@@ -560,6 +726,10 @@ class _MiSuscripcionScreenState extends State<MiSuscripcionScreen>
         ],
 
         const SizedBox(height: 22),
+        if (provider.idEntidad != null) ...[
+          _seccionCobro(provider.idEntidad!),
+          const SizedBox(height: 22),
+        ],
         const _TituloSeccion(titulo: 'Historial'),
         const SizedBox(height: 8),
         _Historial(

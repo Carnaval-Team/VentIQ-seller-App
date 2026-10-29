@@ -20,15 +20,19 @@ import '../../services/auth_service.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/recurso_service.dart';
 import '../../tutorial/tutorial_anchor.dart';
+import '../../utils/motivo_cancelacion.dart';
 import '../../utils/precio_reserva.dart';
 import '../../utils/precio_turno.dart';
 import '../../utils/reactivar_reserva.dart';
 import '../../utils/reserva_listado.dart';
 import '../../utils/telefono_contacto.dart';
 import '../../widgets/datos_adicionales_form.dart';
+import '../../widgets/dialogo_motivo_cancelacion.dart';
 import '../../widgets/dialogo_reactivar_reserva.dart';
 import '../../widgets/totales_datos_adicionales.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'pagos_reserva_screen.dart';
+import 'resumen_reservas_screen.dart';
 
 class ReservasScreen extends StatefulWidget {
   final Entidad entidad;
@@ -178,37 +182,29 @@ class _ReservasScreenState extends State<ReservasScreen> {
     final reserva = item.principal;
     final cancelaRegreso =
         reserva.tipoTrayecto == 'ida' && reserva.idViaje?.isNotEmpty == true;
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Cancelar reserva'),
-        content: Text(
-          cancelaRegreso
-              ? '¿Cancelar el viaje de ida y regreso de '
-                    '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
-                    '(se cancelan ambos tramos)?'
-              : '¿Estás seguro de cancelar la reserva de '
-                    '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
-                    'para el servicio ${reserva.localServicio?.servicio?.nombre ?? ''}?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('No'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: AppTheme.error),
-            child: const Text('Sí, cancelar'),
-          ),
-        ],
-      ),
+    // [61] Cancelar desde el panel exige motivo: la RPC lo rechaza sin él.
+    // El diálogo se abre ANTES de `_loading = true` (el spinner taparía la
+    // pantalla y el `showDialog` se quedaría esperando un resultado que ya no
+    // se ve). Devuelve `null` si se cierra sin cancelar.
+    final motivo = await dialogoMotivoCancelacion(
+      context,
+      titulo: 'Cancelar reserva',
+      detalle: cancelaRegreso
+          ? '¿Cancelar el viaje de ida y regreso de '
+                '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
+                '(se cancelan ambos tramos)?'
+          : '¿Estás seguro de cancelar la reserva de '
+                '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
+                'para el servicio ${reserva.localServicio?.servicio?.nombre ?? ''}?',
     );
 
-    if (confirm != true || !mounted) return;
+    if (motivo == null || !mounted) return;
     setState(() => _loading = true);
     try {
-      await AgendaAdminService.cancelarReserva(idAgenda: reserva.id);
+      await AgendaAdminService.cancelarReserva(
+        idAgenda: reserva.id,
+        motivo: motivo,
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -222,9 +218,9 @@ class _ReservasScreenState extends State<ReservasScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'Error: ${e.toString().replaceFirst('Exception: ', '')}',
-            ),
+            // [61] Traduce los fallos del servidor (motivo ausente, permisos,
+            // migración sin aplicar...). Antes se imprimía `e.toString()`.
+            content: Text('Error: ${mensajeErrorCancelacion(e)}'),
             backgroundColor: AppTheme.error,
           ),
         );
@@ -1103,6 +1099,30 @@ class _ReservasScreenState extends State<ReservasScreen> {
     }
   }
 
+  /// Resumen-calendario de la entidad (modo calendario y modo lista).
+  void _abrirResumenCalendario() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ResumenReservasScreen(entidad: widget.entidad),
+      ),
+    );
+  }
+
+  /// Bandeja de pagos por adelantado de la entidad.
+  void _abrirPagos() {
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(
+            builder: (_) => PagosReservaScreen(entidad: widget.entidad),
+          ),
+        )
+        // Al volver, recargar: el admin puede haber verificado o rechazado un
+        // pago y el chip de pago de las tarjetas cambia.
+        .then((_) {
+          if (mounted) _load();
+        });
+  }
+
   @override
   Widget build(BuildContext context) {
     return AbsorbPointer(
@@ -1110,12 +1130,40 @@ class _ReservasScreenState extends State<ReservasScreen> {
       child: Scaffold(
         backgroundColor: AppTheme.surface,
         appBar: AppBar(
+          // El resumen-calendario va a la IZQUIERDA, junto al botón de volver:
+          // así los iconos quedan repartidos (2 a la izquierda, 4 a la derecha)
+          // en vez de amontonarse todos en la derecha. Mismo patrón que la
+          // AppBar de Gestión, que ya usa `leadingWidth` para dos iconos.
+          leadingWidth: 104,
+          leading: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // `BackButton` ya hace `Navigator.maybePop` y se localiza solo;
+              // ocupa 48, así que con el del calendario (40 con densidad
+              // compacta) entra de sobra en los 104 de `leadingWidth`.
+              const BackButton(),
+              TutorialAnchor(
+                id: 'admin_calendario',
+                child: IconButton(
+                  icon: const Icon(Icons.calendar_month_outlined),
+                  tooltip: 'Resumen por calendario',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: _loading ? null : _abrirResumenCalendario,
+                ),
+              ),
+            ],
+          ),
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('Reservas'),
+              // La entidad puede tener un nombre largo y el hueco del título es
+              // menor con los dos iconos de la izquierda: se recorta con puntos
+              // suspensivos en vez de desbordar.
               Text(
                 widget.entidad.denominacion,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w400,
@@ -1124,18 +1172,28 @@ class _ReservasScreenState extends State<ReservasScreen> {
             ],
           ),
           actions: [
+            // Bandeja de pagos por adelantado (verificar/rechazar).
+            IconButton(
+              icon: const Icon(Icons.payments_outlined),
+              tooltip: 'Pagos por verificar',
+              visualDensity: VisualDensity.compact,
+              onPressed: _loading ? null : _abrirPagos,
+            ),
             IconButton(
               icon: const Icon(Icons.picture_as_pdf_outlined),
               tooltip: 'Exportar PDF',
+              visualDensity: VisualDensity.compact,
               onPressed: _loading ? null : _iniciarExportPdf,
             ),
             IconButton(
               icon: const Icon(Icons.table_chart_outlined),
               tooltip: 'Exportar Excel',
+              visualDensity: VisualDensity.compact,
               onPressed: _loading ? null : _iniciarExportExcel,
             ),
             IconButton(
               icon: const Icon(Icons.refresh),
+              visualDensity: VisualDensity.compact,
               onPressed: _loading ? null : _load,
             ),
           ],
@@ -1648,6 +1706,69 @@ class _ReservasScreenState extends State<ReservasScreen> {
             for (final c in cols)
               if (_valorDato(r, c.clave) != '-')
                 _infoRow(c.etiqueta, _valorDato(r, c.clave)),
+            // [61] Motivo de la cancelación. Solo las reservas canceladas
+            // DESPUÉS de la migración lo tienen; las antiguas (y las activas)
+            // no pintan nada.
+            if (esCancelada && hayMotivoCancelacion(item.motivoCancelacion)) ...[
+              const SizedBox(height: 6),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: AppTheme.error.withValues(alpha: 0.07),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: AppTheme.error.withValues(alpha: 0.35),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.event_busy,
+                          size: 14,
+                          color: AppTheme.error,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Motivo de cancelación: '
+                            '${textoMotivoCancelacion(item.motivoCancelacion)}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              height: 1.3,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.error,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (textoCanceladoPor(item.canceladoPorRol).isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 20),
+                        child: Text(
+                          'Cancelada por: '
+                          '${textoCanceladoPor(item.canceladoPorRol)}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: AppTheme.error,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 6),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,

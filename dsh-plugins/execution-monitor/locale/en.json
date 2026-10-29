@@ -1,6 +1,0 @@
-{
-  "meta": {
-    "title": "Execution Monitor",
-    "description": "A live panel with run state, step progress, tool calls, failures, tokens and charts."
-  }
-}

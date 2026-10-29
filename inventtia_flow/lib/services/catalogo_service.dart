@@ -192,6 +192,22 @@ class CatalogoService {
         .eq('id', id);
   }
 
+  /// Activa/desactiva el **pago por adelantado** de un servicio (migración 67).
+  ///
+  /// Va por PostgREST, como [setServicioActivo]: la política de UPDATE de
+  /// `app_dat_servicios` valida la pertenencia a la entidad. El interruptor
+  /// maestro sigue siendo el de la entidad (`flow.cobro_config`).
+  static Future<void> setCobroAdelantado({
+    required int id,
+    required bool activo,
+  }) async {
+    await _supabase
+        .schema(_schema)
+        .from('app_dat_servicios')
+        .update({'cobro_adelantado': activo})
+        .eq('id', id);
+  }
+
   static Future<void> deleteServicio(int id) async {
     await _supabase
         .schema(_schema)
