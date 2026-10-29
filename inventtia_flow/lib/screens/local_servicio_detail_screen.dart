@@ -57,7 +57,8 @@ class LocalServicioDetailScreen extends StatefulWidget {
       _LocalServicioDetailScreenState();
 }
 
-class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
+class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen>
+    with WidgetsBindingObserver {
   late LocalServicio _localServicio;
   bool _isLoading = true;
   bool _isActing = false;
@@ -98,6 +99,14 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
   /// pinta exactamente como antes, sin nada de cobro.
   CobroInfo? _cobroInfo;
 
+  /// Reserva activa del cliente en este servicio que aún admite pago.
+  ///
+  /// `null` = no hay nada que pagar, así que la ficha **no** ofrece el botón
+  /// «Pagar por adelantado» (antes se pintaba siempre que el servicio aceptara
+  /// cobro y, al pulsarlo, salía «Primero reserva un turno»: un callejón sin
+  /// salida). Cuando hay reserva, el botón lleva **directo** al pago.
+  ({int id, String? pagoEstado})? _reservaPagable;
+
   /// Taxonomía (migración 47) para poder decir "Categoría › Subcategoría" en vez
   /// del código crudo. Si no está disponible, se pinta el nombre que trajo el
   /// servicio (o el código embellecido, como antes).
@@ -107,7 +116,34 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
   void initState() {
     super.initState();
     _localServicio = widget.localServicio;
+    // Para revalidar el banner de cobro al volver a la app (ver
+    // `didChangeAppLifecycleState`).
+    WidgetsBinding.instance.addObserver(this);
     _init();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Revalida el **pago por adelantado** cuando la app vuelve al primer plano.
+  ///
+  /// El interruptor del cobro lo mueve el admin desde otro dispositivo y
+  /// `flow.cobro_config` todavía no está publicada en Realtime (esa parte queda
+  /// pendiente de SQL), así que no hay aviso que escuchar: la única señal de que
+  /// el banner puede haber cambiado es que el cliente recupere el foco. Se
+  /// reconsulta `cliente_cobro_info` **solo** en ese momento, nunca por `build`.
+  ///
+  /// No se usa `RouteAware`/`didPopNext` porque la app no tiene ningún
+  /// `RouteObserver` registrado en `MaterialApp.navigatorObservers` y añadirlo
+  /// toca `main.dart`, fuera del alcance de este cambio. Esta vía cubre el caso
+  /// real (el admin cambia el interruptor mientras el cliente tiene la app
+  /// abierta o en segundo plano).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _cargarCobro();
   }
 
   /// Aviso flotante corto, con el mismo formato que el resto de la pantalla.
@@ -139,9 +175,28 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
       final info = await CobroService.infoLocalServicio(_localServicio.id);
       if (!mounted) return;
       setState(() => _cobroInfo = info.disponible ? info : null);
+      // El banner solo ofrece el botón si hay una reserva que pagar; se resuelve
+      // junto al cobro para no dejar el botón en un estado viejo.
+      await _cargarReservaPagable();
     } catch (e) {
       debugPrint('[flow] LocalServicioDetail._cargarCobro ERROR: $e');
     }
+  }
+
+  /// Busca la reserva activa que el cliente todavía puede pagar en este
+  /// local-servicio (o `null` si no tiene ninguna).
+  Future<void> _cargarReservaPagable() async {
+    if (_cobroInfo == null) {
+      if (mounted && _reservaPagable != null) {
+        setState(() => _reservaPagable = null);
+      }
+      return;
+    }
+    final r = await CobroService.reservaPendienteDePago(
+      idLocalServicio: _localServicio.id,
+    );
+    if (!mounted) return;
+    setState(() => _reservaPagable = r);
   }
 
   /// Taxonomía para la fila "Tipo de actividad". Aislado: si la migración 47 no
@@ -613,6 +668,9 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
       );
       reservada = true;
       await _load();
+      // Acaba de existir una reserva que se puede pagar: el banner de la ficha
+      // ya puede ofrecer el botón (y enlazarlo a ESA reserva).
+      await _cargarReservaPagable();
       // El cupo de los turnos que enseña la pantalla cambia con la reserva que
       // se acaba de hacer.
       _checkDisponibilidad();
@@ -693,6 +751,9 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
         context,
         pago: pago,
         info: _cobroInfo,
+        // El nombre del local es lo que sitúa al cliente; el número del comercio
+        // se queda para el diálogo de datos manuales.
+        nombreComercio: _localServicio.local?.nombre,
         onActualizado: (_) => _cargarCobro(),
       );
     } catch (e) {
@@ -700,6 +761,48 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
       _showToast(_mensajeCobro(e));
     } finally {
       if (mounted && _isActing) setState(() => _isActing = false);
+    }
+  }
+
+  /// Abre **directo** el pago de la reserva que el banner ya detectó.
+  ///
+  /// Sin mensajes intermedios: si hay un intento vivo (`pendiente`/`reportado`)
+  /// se **reanuda** (el servidor rechazaría crear otro); si no, se crea uno
+  /// nuevo y se abre la hoja. Así «Pagar por adelantado» siempre lleva a pagar.
+  Future<void> _pagarReservaPendiente() async {
+    final reserva = _reservaPagable;
+    if (reserva == null || _isActing) return;
+
+    final estado = reserva.pagoEstado;
+    final tieneIntentoVivo = estado == 'pendiente' || estado == 'reportado';
+    if (!tieneIntentoVivo) {
+      await _pagarPorAdelantado(idAgenda: reserva.id);
+      await _cargarReservaPagable();
+      return;
+    }
+
+    setState(() => _isActing = true);
+    try {
+      final pago = await CobroService.pagoDeReserva(reserva.id);
+      if (!mounted) return;
+      setState(() => _isActing = false);
+      if (pago == null) {
+        // El intento caducó entre la lectura y este momento: se crea de nuevo.
+        await _pagarPorAdelantado(idAgenda: reserva.id);
+      } else {
+        await PagoAdelantadoSheet.mostrar(
+          context,
+          pago: pago,
+          info: _cobroInfo,
+          nombreComercio: _localServicio.local?.nombre,
+          onActualizado: (_) => _cargarCobro(),
+        );
+      }
+      await _cargarReservaPagable();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isActing = false);
+      _showToast(_mensajeCobro(e));
     }
   }
 
@@ -952,6 +1055,16 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
                             if (enLista) _buildMiTurnoCard(),
                             if (enLista) const SizedBox(height: 14),
                             _buildPromocionesBanner(),
+                            // La primera pieza se monta 12px sobre el hero (el
+                            // `Transform` de arriba). Una tarjeta grande queda
+                            // bien así —se lee como una sola pieza con la foto—,
+                            // pero la píldora es pequeña y flotaría medio tapada
+                            // por la imagen: cuando es la primera se le deja
+                            // aire para que caiga entera sobre el fondo liso.
+                            if (!enLista &&
+                                _promociones.isEmpty &&
+                                _cobroInfo != null)
+                              const SizedBox(height: 20),
                             _buildCobroBanner(),
                             _buildContadoresCard(),
                             _buildTurnosCard(),
@@ -1406,85 +1519,47 @@ class _LocalServicioDetailScreenState extends State<LocalServicioDetailScreen> {
     );
   }
 
-  // ── Pago por adelantado (banner de la ficha) ──
+  // ── Pago por adelantado (aviso compacto de la ficha) ──
   //
-  // Vive aquí, y no en la barra de acciones, para que el cliente lea las
-  // condiciones ANTES de reservar: el pago es opcional y posterior a la reserva,
-  // pero saber que existe cambia la decisión. El ancla del tutorial
-  // (`detalle_pago_adelantado`) envuelve el botón que hace la acción.
+  // Antes esto era un bloque grande (título + párrafo + condiciones + botón) y
+  // ocupaba media pantalla para algo que el cliente solo necesita saber de un
+  // vistazo. Ahora es una píldora de una línea:
+  //
+  //   · sin reserva  → «Acepta pago por adelantado» (informativa, no se puede
+  //     tocar: no hay nada que pagar todavía);
+  //   · con reserva  → la misma píldora es la ACCIÓN y lleva directo al pago
+  //     («Pagar por adelantado» / «Continuar el pago» si ya hay un intento).
+  //
+  // Las condiciones completas (instrucciones, plazo de vigencia) siguen en la
+  // hoja de pago, que es donde hacen falta.
   Widget _buildCobroBanner() {
-    final info = _cobroInfo;
-    if (info == null) return const SizedBox.shrink();
+    if (_cobroInfo == null) return const SizedBox.shrink();
 
-    final instrucciones = info.instrucciones;
+    final reserva = _reservaPagable;
+    // Con el pago ya reportado la píldora deja de invitar a pagar: solo sirve
+    // para consultar cómo va.
+    final etiqueta = reserva == null
+        ? null
+        : reserva.pagoEstado == 'reportado'
+        ? 'Ver estado del pago'
+        : reserva.pagoEstado == 'pendiente'
+        ? 'Continuar el pago'
+        : 'Pagar por adelantado';
+    final pildora = _PildoraPagoAdelantado(
+      accionable: reserva != null,
+      etiqueta: etiqueta,
+      onTap: _isActing ? null : _pagarReservaPendiente,
+    );
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppTheme.primary.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.primary.withValues(alpha: 0.30)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            children: [
-              Icon(Icons.payments_outlined, size: 19, color: AppTheme.primary),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Pago por adelantado',
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w800,
-                    color: AppTheme.textPrimary,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            instrucciones ??
-                'Este servicio se puede pagar por adelantado con '
-                    'Transfermóvil. La reserva queda confirmada cuando el '
-                    'administrador verifica el pago.',
-            style: const TextStyle(
-              fontSize: 12.5,
-              height: 1.4,
-              color: AppTheme.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 10),
-          TutorialAnchor(
-            id: 'detalle_pago_adelantado',
-            child: SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _isActing ? null : () => _pagarPorAdelantado(),
-                icon: const Icon(Icons.open_in_new, size: 18),
-                label: const Text('Pagar por adelantado'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppTheme.primary,
-                  side: const BorderSide(color: AppTheme.primary),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '${info.resumenVigencia} para pagar y reportar. Si nadie verifica '
-            'el pago en ese plazo, la reserva puede cancelarse sola.',
-            style: const TextStyle(
-              fontSize: 11.5,
-              height: 1.35,
-              color: AppTheme.textSecondary,
-            ),
-          ),
-        ],
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        // El ancla del tutorial solo existe cuando hay acción: el paso es
+        // opcional, así que no rompe el flujo si no hay reserva.
+        child: reserva == null
+            ? pildora
+            : TutorialAnchor(id: 'detalle_pago_adelantado', child: pildora),
       ),
     );
   }
@@ -3624,6 +3699,91 @@ class _TurnoOpcion extends StatelessWidget {
                 ],
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Pastilla compacta del «pago por adelantado» de la ficha.
+///
+/// Dos estados, una sola línea:
+///  * informativa (sin reserva): anuncia que el servicio lo acepta, con el
+///    color de marca suave y sin acción — no hay nada que pagar todavía;
+///  * accionable (con reserva): rellena en color primario, con flecha, y toca
+///    para abrir el pago directamente.
+///
+/// Sustituye al bloque de texto que había antes (título, párrafo, condiciones y
+/// botón): el detalle de instrucciones y plazos vive en la hoja de pago.
+class _PildoraPagoAdelantado extends StatelessWidget {
+  const _PildoraPagoAdelantado({
+    required this.accionable,
+    this.etiqueta,
+    this.onTap,
+  });
+
+  /// Hay una reserva que pagar: la pastilla es un botón.
+  final bool accionable;
+
+  /// Texto cuando es accionable («Pagar por adelantado», «Continuar el pago»,
+  /// «Ver estado del pago»). Sin reserva se usa el texto informativo.
+  final String? etiqueta;
+
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    const radio = Radius.circular(999);
+    final fondo = accionable
+        ? AppTheme.primary
+        : AppTheme.primary.withValues(alpha: 0.08);
+    final colorTexto = accionable ? Colors.white : AppTheme.primary;
+    final texto = accionable
+        ? (etiqueta ?? 'Pagar por adelantado')
+        : 'Acepta pago por adelantado';
+
+    return Material(
+      color: fondo,
+      borderRadius: const BorderRadius.all(radio),
+      child: InkWell(
+        onTap: accionable ? onTap : null,
+        borderRadius: const BorderRadius.all(radio),
+        child: Container(
+          padding: EdgeInsets.fromLTRB(12, 7, accionable ? 9 : 12, 7),
+          decoration: BoxDecoration(
+            borderRadius: const BorderRadius.all(radio),
+            border: accionable
+                ? null
+                : Border.all(color: AppTheme.primary.withValues(alpha: 0.25)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                accionable ? Icons.payments : Icons.verified_outlined,
+                size: 15,
+                color: colorTexto,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                texto,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: colorTexto,
+                  letterSpacing: 0.1,
+                ),
+              ),
+              if (accionable) ...[
+                const SizedBox(width: 3),
+                Icon(
+                  Icons.arrow_forward_rounded,
+                  size: 14,
+                  color: colorTexto,
+                ),
+              ],
+            ],
           ),
         ),
       ),

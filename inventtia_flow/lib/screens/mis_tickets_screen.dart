@@ -9,6 +9,7 @@ import '../models/servicio.dart';
 import '../providers/auth_provider.dart';
 import '../providers/entidad_provider.dart';
 import '../providers/modo_vista_provider.dart';
+import '../providers/reservas_provider.dart';
 import '../services/agenda_admin_service.dart';
 import '../services/agenda_service.dart';
 import '../services/auth_service.dart';
@@ -23,6 +24,31 @@ import '../widgets/datos_adicionales_view.dart';
 import '../widgets/dialogo_motivo_cancelacion.dart';
 import '../widgets/notificaciones_bell.dart';
 import '../widgets/pago_adelantado_sheet.dart';
+
+/// ¿Se le ofrece al cliente el botón de pago de esta reserva?
+///
+/// Es la regla única de la tarjeta, separada del widget para poder probarla sin
+/// montar la pantalla ni hablar con el servidor:
+///
+///  * reserva cancelada o completada → nunca;
+///  * con intento de pago (`pagoEstado != null`, incluido `rechazado`/`expirado`)
+///    → manda el estado del intento, como antes;
+///  * sin intento todavía → solo si el servidor **confirmó** que ese
+///    local-servicio cobra por adelantado. Con `cobroDisponible == null` (aún sin
+///    resolver, o la consulta falló) **no se ofrece**: antes que un botón que
+///    lleva a un error del servidor, ninguno. El reintento es del usuario: al
+///    volver a la pestaña o con pull-to-refresh se vuelve a consultar.
+bool puedeOfrecerPagoAlCliente({
+  required bool activa,
+  required String? pagoEstado,
+  required bool? cobroDisponible,
+}) {
+  if (!activa) return false;
+  if (pagoEstado != null) {
+    return EstadoPago.enCurso(pagoEstado) || EstadoPago.sePuedePagar(pagoEstado);
+  }
+  return cobroDisponible == true;
+}
 
 class MisTicketsScreen extends StatefulWidget {
   const MisTicketsScreen({super.key});
@@ -46,6 +72,38 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
   List<Local> _locales = [];
   List<LocalServicio> _localServicios = [];
   List<EstadoAgenda> _estados = [];
+
+  /// ¿Este local-servicio admite **pago por adelantado**?
+  /// (`flow.cliente_cobro_info`, migración 62).
+  ///
+  /// Lo decide el servidor —servicio **y** entidad— y aquí solo se cachea por
+  /// `id_local_servicio`: la tarjeta se repinta en cada gesto del listado y el RPC
+  /// no es gratis. Solo se resuelven los servicios de reservas **activas y sin
+  /// intento de pago**, que son las únicas que pueden llegar a ofrecer el botón.
+  ///
+  /// No estar en el mapa = todavía no se sabe (o la consulta falló): en ese caso
+  /// el botón no se pinta. Nunca se inventa un «sí», porque el servidor rechaza
+  /// el pago de un servicio que no lo tenga activado.
+  final Map<int, bool> _cobroDisponible = {};
+
+  /// Local-servicios con una consulta en vuelo: evita lanzar dos veces el mismo
+  /// RPC si la lista se recarga mientras la primera sigue en el aire.
+  final Set<int> _cobroConsultando = {};
+
+  /// `true` cuando la próxima resolución debe reconsultar aunque ya haya cache.
+  ///
+  /// Lo encienden las recargas **explícitas** (volver a la pestaña, llegar desde
+  /// un aviso, pull-to-refresh): es la forma de ver un cambio del admin sin
+  /// reabrir la app. El refresco de Realtime NO lo enciende, para no lanzar el
+  /// RPC en cada evento de `flow.agenda`.
+  bool _cobroRevalidar = false;
+
+  /// Suscripción **ya viva** de [ReservasProvider] que se reutiliza como fuente
+  /// de tiempo real (ver [_escucharTiempoReal]).
+  ReservasProvider? _reservas;
+
+  /// `true` mientras hay una recarga silenciosa (Realtime) en vuelo.
+  bool _recargaSilenciosaEnVuelo = false;
 
   final _fmt = DateFormat('dd/MM/yyyy');
   final _fmtDiaSemana = DateFormat('EEEE', 'es');
@@ -85,18 +143,70 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
     final now = DateTime.now();
     _fecha = DateTime(now.year, now.month, now.day);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _escucharTiempoReal();
       _loadLocales();
       _load();
     });
   }
 
   void reload() {
+    // Al volver a la pestaña (o llegar aquí desde un aviso de pago) se revalida
+    // también la disponibilidad del cobro: el interruptor lo mueve el admin en
+    // otro dispositivo y `flow.cobro_config` todavía no está en Realtime (es la
+    // parte que queda pendiente de SQL).
+    //
+    // Se revalida **sin borrar** el mapa: el botón sigue con el último valor
+    // conocido mientras llega la respuesta (si se vaciara, parpadearía en cada
+    // entrada a la pestaña). Si el admin lo apagó, desaparece al contestar el
+    // servidor; y el toque se vuelve a validar en el servidor de todas formas.
+    _cobroRevalidar = true;
     _loadLocales();
     _load();
   }
 
+  /// Pull-to-refresh: además de la lista, fuerza la relectura de la
+  /// disponibilidad del cobro, que es la vía del usuario para reintentar una
+  /// consulta que falló (con error de red el botón se queda oculto a propósito).
+  Future<void> _refrescar() async {
+    _cobroRevalidar = true;
+    await _load();
+  }
+
+  /// Engancha esta lista a la suscripción de Realtime que **ya** tiene
+  /// [ReservasProvider] sobre `flow.agenda` (migración 37).
+  ///
+  /// No se abre una segunda: el provider ya escucha la tabla por `uuid_usuario` y
+  /// por `reservado_por`, agrupa las ráfagas y avisa al terminar de recargar.
+  /// Aquí ese aviso solo se traduce en recargar esta lista, que es la que pinta
+  /// el chip del pago. Así, cuando el admin verifica el pago, el chip pasa de
+  /// «Pago pendiente» a «Pago verificado» sin reabrir la app.
+  void _escucharTiempoReal() {
+    if (!mounted) return;
+    final reservas = context.read<ReservasProvider>();
+    if (identical(reservas, _reservas)) return;
+    _reservas?.removeListener(_alCambiarReservas);
+    _reservas = reservas..addListener(_alCambiarReservas);
+  }
+
+  void _alCambiarReservas() {
+    if (!mounted) return;
+    // Sin sesión no hay nada que listar (el shell ya está yendo a login).
+    if (AuthService.currentUserId == null) return;
+    // Con una carga normal en marcha (entrada a la pestaña, arranque) esa misma
+    // carga ya trae los datos frescos: no se lanza otra igual.
+    if (_isLoading) return;
+    // Una recarga silenciosa a la vez: el provider puede avisar por una ráfaga
+    // de filas y no tiene sentido pisar la misma consulta.
+    if (_recargaSilenciosaEnVuelo) return;
+    _recargaSilenciosaEnVuelo = true;
+    _load(silencioso: true).whenComplete(() {
+      _recargaSilenciosaEnVuelo = false;
+    });
+  }
+
   @override
   void dispose() {
+    _reservas?.removeListener(_alCambiarReservas);
     _searchController.dispose();
     super.dispose();
   }
@@ -163,7 +273,13 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
       }
 
       if (!mounted) return;
-      await PagoAdelantadoSheet.mostrar(context, pago: pago, info: info);
+      await PagoAdelantadoSheet.mostrar(
+        context,
+        pago: pago,
+        info: info,
+        // Mismo criterio que en la ficha: se muestra el local, no el número.
+        nombreComercio: ticket.localServicio?.local?.nombre,
+      );
       if (mounted) await _load();
     } catch (e) {
       if (!mounted) return;
@@ -414,13 +530,20 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
     });
   }
 
-  Future<void> _load() async {
+  /// Recarga la lista de reservas.
+  ///
+  /// [silencioso] deja en pantalla la lista que ya había mientras llega la nueva.
+  /// Es lo que usa el refresco por Realtime: poner `_isLoading` a `true` apagaría
+  /// toda la pantalla (spinner + `AbsorbPointer`) por un cambio que el usuario no
+  /// pidió y le quitaría la posición del scroll.
+  Future<void> _load({bool silencioso = false}) async {
     if (!mounted) return;
-    setState(() => _isLoading = true);
+    final esVendedor = _esVendedor;
+    if (!silencioso) setState(() => _isLoading = true);
     try {
       final uuid = AuthService.currentUserId ?? '';
       List<Agenda> tickets;
-      if (_esVendedor) {
+      if (esVendedor) {
         final entidad = _entidad!;
         final desde = DateTime(_fecha.year, _fecha.month, _fecha.day);
         final hasta = DateTime(
@@ -455,9 +578,67 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
             : tickets;
         _isLoading = false;
       });
+      // Después de pintar: ¿alguna de estas reservas puede ofrecer pago? El
+      // staff no pinta el botón, así que no se consulta nada por él.
+      if (!esVendedor) await _resolverCobroDisponible(tickets);
     } catch (e) {
       print('[flow] MisTicketsScreen _load ERROR: $e');
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  /// Resuelve si se puede ofrecer pagar en cada local-servicio de la lista.
+  ///
+  /// Solo pregunta por los servicios de reservas activas y **sin intento de
+  /// pago**: en las demás el botón ni se plantea, así que sería una llamada de
+  /// red regalada. Los resultados se guardan en [_cobroDisponible] y se
+  /// reutilizan en las siguientes cargas; solo una recarga explícita
+  /// ([_cobroRevalidar]) vuelve a preguntar. Ese mapa es lo único que leen las
+  /// tarjetas en `build`: **ningún `build` dispara red**.
+  Future<void> _resolverCobroDisponible(Iterable<Agenda> tickets) async {
+    // La revalidación explícita se consume aquí: vuelve a preguntar por los
+    // servicios ya cacheados y conserva el último valor en pantalla mientras
+    // tanto.
+    final revalidar = _cobroRevalidar;
+    _cobroRevalidar = false;
+
+    final ids = <int>{};
+    for (final t in tickets) {
+      if (t.pagoEstado != null) continue;
+      if (t.estado?.esCancelado == true || t.idEstado == 2) continue;
+      if (t.estado?.esCompletado == true || t.idEstado == 3) continue;
+      if (!revalidar && _cobroDisponible.containsKey(t.idLocalServicio)) {
+        continue;
+      }
+      if (_cobroConsultando.contains(t.idLocalServicio)) continue;
+      ids.add(t.idLocalServicio);
+    }
+    if (ids.isEmpty) return;
+
+    _cobroConsultando.addAll(ids);
+    try {
+      final respuestas = await Future.wait(
+        ids.map((id) async {
+          try {
+            final info = await CobroService.infoLocalServicio(id);
+            return MapEntry(id, info.disponible);
+          } catch (e) {
+            // Error de red (o migración sin aplicar): se deja SIN resolver. El
+            // botón no se pinta y se reintenta en la próxima recarga o en el
+            // pull-to-refresh; guardar un `false` aquí lo ocultaría para siempre.
+            debugPrint('[flow] MisTicketsScreen cobro $id ERROR: $e');
+            return null;
+          }
+        }),
+      );
+      if (!mounted) return;
+      setState(() {
+        for (final r in respuestas) {
+          if (r != null) _cobroDisponible[r.key] = r.value;
+        }
+      });
+    } finally {
+      _cobroConsultando.removeAll(ids);
     }
   }
 
@@ -518,7 +699,7 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
                           ? _buildNoResultsState()
                           : _buildEmptyState()
                     : RefreshIndicator(
-                        onRefresh: _load,
+                        onRefresh: _refrescar,
                         color: AppTheme.primary,
                         child: ListView.builder(
                           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
@@ -529,6 +710,12 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
                             onCancelar: _esVendedor ? null : _cancelar,
                             esVendedor: _esVendedor,
                             onPagar: _esVendedor ? null : _pagarPorAdelantado,
+                            // `null` = todavía no se sabe si este local-servicio
+                            // cobra por adelantado; la tarjeta no pinta el botón.
+                            pagoDisponible: _esVendedor
+                                ? null
+                                : _cobroDisponible[_filteredTickets[i]
+                                      .idLocalServicio],
                             onCompletarStaff: _esVendedor
                                 ? _completarStaff
                                 : null,
@@ -1026,6 +1213,12 @@ class _TicketCard extends StatelessWidget {
   /// reserva. Null = no se ofrece (staff).
   final ValueChanged<Agenda>? onPagar;
 
+  /// Disponibilidad del pago resuelta por el servidor para el local-servicio de
+  /// esta reserva: `true` si lo tiene activo, `false` si no, `null` si todavía no
+  /// se sabe (o la consulta falló). Solo decide cuando la reserva aún no tiene
+  /// intento de pago; ver [puedeOfrecerPagoAlCliente].
+  final bool? pagoDisponible;
+
   const _TicketCard({
     required this.ticket,
     required this.miUuid,
@@ -1034,6 +1227,7 @@ class _TicketCard extends StatelessWidget {
     this.onCompletarStaff,
     this.onCancelarStaff,
     this.onPagar,
+    this.pagoDisponible,
   });
 
   bool get _esCompletada =>
@@ -1073,15 +1267,18 @@ class _TicketCard extends StatelessWidget {
     return moneda == null ? '$etiqueta · $texto' : '$etiqueta · $texto $moneda';
   }
 
-  /// ¿El cliente puede hacer algo con el pago? Sí salvo que ya esté verificado
-  /// (o en un estado que esta versión no conozca).
-  bool get _puedeAccionarPago {
-    if (!_esActiva) return false;
-    final estado = ticket.pagoEstado;
-    return estado == null ||
-        EstadoPago.enCurso(estado) ||
-        EstadoPago.sePuedePagar(estado);
-  }
+  /// ¿El cliente puede hacer algo con el pago?
+  ///
+  /// Delega en [puedeOfrecerPagoAlCliente]: con un intento ya creado manda su
+  /// estado (como antes); sin intento hace falta que el servidor haya confirmado
+  /// que el local-servicio cobra por adelantado. Antes bastaba `pagoEstado ==
+  /// null` para pintar el botón, así que toda reserva activa lo enseñaba aunque
+  /// la entidad tuviera el cobro apagado y al pulsarlo llegara el error.
+  bool get _puedeAccionarPago => puedeOfrecerPagoAlCliente(
+    activa: _esActiva,
+    pagoEstado: ticket.pagoEstado,
+    cobroDisponible: pagoDisponible,
+  );
 
   IconData get _estadoIcon {
     switch (ticket.estado?.nombre) {

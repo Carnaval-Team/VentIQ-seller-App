@@ -172,19 +172,31 @@ class _HomeShellState extends State<HomeShell> {
   /// resuelve la **vista** (no el rol) porque `_onTabSelected` decide con ella
   /// qué pestañas hay que refrescar: pasarle «es admin» dejaba al cliente puro
   /// sin refrescos.
+  ///
+  /// Las pantallas apiladas (los avisos de pago, por ejemplo) hablan siempre en
+  /// índices del shell del cliente, así que «Reservas» se traduce aquí: en las
+  /// vistas de staff esa pestaña es la 0 (vendedor y admin+vendedor) y el admin
+  /// puro no tiene ninguna. Sin esta traducción, el índice 3 del aviso dejaba al
+  /// vendedor en «Perfil» y al admin en «Gestión».
   void _irAPestanaDesdeUnaPantalla(int indice) {
     if (!mounted) return;
     final entidad = context.read<EntidadProvider>();
-    _onTabSelected(
-      indice,
-      esVistaCliente(
-        vistaDelShell(
-          esAdmin: entidad.isAdmin,
-          esVendedor: entidad.isVendedor,
-          comoCliente: _modo.comoCliente,
-        ),
-      ),
+    final vista = vistaDelShell(
+      esAdmin: entidad.isAdmin,
+      esVendedor: entidad.isVendedor,
+      comoCliente: _modo.comoCliente,
     );
+
+    if (indice == ShellNavegacion.reservas && !esVistaCliente(vista)) {
+      // El admin puro no tiene pestaña de reservas: se le deja donde estaba y
+      // solo se refresca la lista (puede venir de «ver como cliente»).
+      if (vista != VistaShell.admin) setState(() => _currentIndex = 0);
+      _misTicketsKey.currentState?.reload();
+      context.read<ReservasProvider>().recargar();
+      return;
+    }
+
+    _onTabSelected(indice, esVistaCliente(vista));
   }
 
   Future<void> _loadInitialData() async {

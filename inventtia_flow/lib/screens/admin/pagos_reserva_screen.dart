@@ -137,6 +137,15 @@ class _PagosReservaScreenState extends State<PagosReservaScreen> {
 
   /// Verifica el pago. Las observaciones son opcionales.
   Future<void> _verificar(PagoAdminItem item) async {
+    // [P0] Guarda de fondo, no solo de pintado: si la lista quedó vieja y la
+    // reserva se canceló entre medias, el botón habilitado no debe poder cerrar
+    // un pago de una reserva muerta.
+    final bloqueo = motivoNoVerificablePago(item);
+    if (bloqueo != null) {
+      _avisar(bloqueo, esError: true);
+      return;
+    }
+
     final observaciones = await _pedirTexto(
       titulo: 'Verificar el pago',
       descripcion:
@@ -468,6 +477,37 @@ class _PagosReservaScreenState extends State<PagosReservaScreen> {
   }
 }
 
+/// Motivo por el que **no** se puede verificar un pago, o `null` si sí se puede.
+///
+/// [P0] `flow.admin_verificar_pago_reserva` valida el estado del **pago**, pero
+/// no el de la reserva: hoy se puede verificar el pago de una reserva cancelada
+/// y dejarla «confirmada» con el turno ya liberado. Caso vivo en producción:
+/// `reserva_pago.id = 7` (`estado = 'creado'`) sobre `agenda.id = 302`
+/// (`id_estado = 2` = Cancelado). El arreglo de fondo es SQL y va en su propia
+/// migración; mientras tanto se bloquea aquí.
+///
+/// Se compara por el nombre del estado que ya devuelve `admin_listar_pagos_reserva`
+/// (`estado_reserva.nombre`, de `flow.nom_estado_agenda`: «Cancelado» o
+/// «Completado»), sin depender de ids fijos ni de tildes. Si el nombre no viniera
+/// (`null`), no se bloquea: es preferible dejar verificar que impedirlo por un
+/// dato ausente.
+///
+/// Es pública —y con test propio— porque es una regla de negocio, no pintado:
+/// `test/pago_reserva_bloqueo_test.dart` la fija con los estados reales del
+/// catálogo.
+String? motivoNoVerificablePago(PagoAdminItem item) {
+  final estado = item.estadoReserva?.trim().toLowerCase() ?? '';
+  if (estado.isEmpty) return null;
+  if (estado.startsWith('cancelad')) {
+    return 'La reserva está cancelada: no se puede verificar este pago.';
+  }
+  if (estado.startsWith('completad') || estado.startsWith('finalizad')) {
+    return 'La reserva ya está ${item.estadoReserva!.trim().toLowerCase()}: '
+        'no se puede verificar este pago.';
+  }
+  return null;
+}
+
 /// Una fila de la bandeja: cliente, reserva, importe y acciones.
 class _TarjetaPago extends StatelessWidget {
   const _TarjetaPago({
@@ -505,6 +545,10 @@ class _TarjetaPago extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pago = item.pago;
+    // [P0] La reserva pudo cancelarse o completarse con el pago aún vivo: en ese
+    // caso «Verificar» se apaga y se explica por qué, en vez de dejar que el
+    // admin confirme una reserva muerta.
+    final bloqueo = motivoNoVerificablePago(item);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -622,7 +666,9 @@ class _TarjetaPago extends StatelessWidget {
                 ),
               if (conAcciones) ...[
                 ElevatedButton.icon(
-                  onPressed: procesando ? null : onVerificar,
+                  onPressed: (procesando || bloqueo != null)
+                      ? null
+                      : onVerificar,
                   icon: const Icon(Icons.check, size: 17),
                   label: const Text('Verificar'),
                   style: ElevatedButton.styleFrom(
@@ -644,6 +690,30 @@ class _TarjetaPago extends StatelessWidget {
               ],
             ],
           ),
+
+          // Motivo visible del bloqueo: sin esto el botón apagado parecería un
+          // fallo de la pantalla.
+          if (bloqueo != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.block, size: 16, color: AppTheme.error),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    bloqueo,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      height: 1.35,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.error,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

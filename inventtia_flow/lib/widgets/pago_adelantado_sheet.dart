@@ -37,6 +37,7 @@ class PagoAdelantadoSheet extends StatefulWidget {
     required this.pago,
     this.info,
     this.onActualizado,
+    this.nombreComercio,
   });
 
   /// El intento de pago ya creado en el servidor.
@@ -51,6 +52,15 @@ class PagoAdelantadoSheet extends StatefulWidget {
   /// verificado, reintentado) para que refresque su propia tarjeta.
   final ValueChanged<PagoReserva>? onActualizado;
 
+  /// Nombre del negocio tal y como lo reconoce el cliente (el local: «Salon 2»).
+  ///
+  /// Se pinta en la tarjeta del importe **en lugar del número de comercio**: el
+  /// número es un dato de la cuenta (y ya viaja dentro del deep link de
+  /// Transfermóvil, no hay que teclearlo), mientras que el nombre es lo que
+  /// sitúa al cliente. Si la pantalla que abre la hoja no lo pasa, se usa el
+  /// título configurado en el cobro como respaldo.
+  final String? nombreComercio;
+
   /// Abre la hoja como `showModalBottomSheet`. Es la forma recomendada de usarla
   /// desde una pantalla.
   static Future<void> mostrar(
@@ -58,6 +68,7 @@ class PagoAdelantadoSheet extends StatefulWidget {
     required PagoReserva pago,
     CobroInfo? info,
     ValueChanged<PagoReserva>? onActualizado,
+    String? nombreComercio,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -70,6 +81,7 @@ class PagoAdelantadoSheet extends StatefulWidget {
         pago: pago,
         info: info,
         onActualizado: onActualizado,
+        nombreComercio: nombreComercio,
       ),
     );
   }
@@ -154,6 +166,14 @@ class _PagoAdelantadoSheetState extends State<PagoAdelantadoSheet>
     if (t != null && t.isNotEmpty) return t;
     final deConfig = widget.info?.titulo.trim();
     return (deConfig == null || deConfig.isEmpty) ? 'Reserva' : deConfig;
+  }
+
+  /// Nombre del comercio para el cliente: el local si la pantalla lo pasó y, si
+  /// no, el título que el negocio configuró para Transfermóvil.
+  String get _comercio {
+    final propio = widget.nombreComercio?.trim();
+    if (propio != null && propio.isNotEmpty) return propio;
+    return _titulo;
   }
 
   /// Se puede reportar mientras el intento esté vivo (`creado`/`reportado` y
@@ -243,11 +263,12 @@ class _PagoAdelantadoSheetState extends State<PagoAdelantadoSheet>
                 etiqueta: 'Importe',
                 valor: '${_pago.importeTransfermovil} ${_pago.moneda}',
               ),
+              _DatoCopiable(etiqueta: 'Comercio', valor: _comercio),
               _DatoCopiable(
-                etiqueta: 'Número del comercio',
+                etiqueta: 'Número para la transferencia',
                 valor: _numeroProveedor.isEmpty ? '—' : _numeroProveedor,
               ),
-              _DatoCopiable(etiqueta: 'Título', valor: _titulo),
+              _DatoCopiable(etiqueta: 'Concepto', valor: _titulo),
               if (_pago.idTransaccion != null)
                 _DatoCopiable(
                   etiqueta: 'Referencia',
@@ -302,6 +323,11 @@ class _PagoAdelantadoSheetState extends State<PagoAdelantadoSheet>
         'Pago reportado. El administrador lo verificará y te avisaremos.',
         esError: false,
       );
+      // Se CIERRA la hoja: el pago ya está reportado y aquí no queda nada más
+      // que hacer. Antes se quedaba abierta con el botón otra vez disponible y
+      // el cliente no sabía si su aviso había llegado. El SnackBar de arriba no
+      // se pierde: vive en el `ScaffoldMessenger` de la app, no en la hoja.
+      Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
       setState(() => _procesando = false);
@@ -494,10 +520,10 @@ class _PagoAdelantadoSheetState extends State<PagoAdelantadoSheet>
             ),
           ),
           const SizedBox(height: 12),
-          _DatoCopiable(
-            etiqueta: 'Número del comercio',
-            valor: _numeroProveedor.isEmpty ? '—' : _numeroProveedor,
-          ),
+          // Al cliente le sitúa más el NOMBRE del negocio que el número de la
+          // cuenta; el número sigue en el diálogo de datos manuales, que es
+          // donde hay que teclearlo si Transfermóvil no se abre.
+          _DatoCopiable(etiqueta: 'Comercio', valor: _comercio),
           if (_pago.idTransaccion != null)
             _DatoCopiable(etiqueta: 'Referencia', valor: _pago.idTransaccion!),
         ],

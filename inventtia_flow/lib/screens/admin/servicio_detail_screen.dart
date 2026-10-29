@@ -4,6 +4,7 @@ import '../../models/campo_adicional.dart';
 import '../../models/config_precio.dart';
 import '../../models/servicio.dart';
 import '../../services/catalogo_service.dart';
+import '../../services/cobro_service.dart';
 import '../../widgets/net_image.dart';
 import 'gestion_servicios_screen.dart';
 import 'local_servicio_admin_screen.dart';
@@ -29,6 +30,14 @@ class _ServicioDetailScreenState extends State<ServicioDetailScreen> {
   String? _error;
   String? _tipoActividadNombre;
 
+  /// [Q4] ¿La entidad tiene activo el interruptor maestro del cobro por
+  /// adelantado? `null` = no se pudo leer, así que no se juzga.
+  ///
+  /// El flag del servicio no basta para decir «Pago por adelantado: Sí»: desde
+  /// la migración 67 hacen falta **las dos** piezas, y sin el maestro el servicio
+  /// no se ofrece aunque esté marcado.
+  bool? _entidadCobra;
+
   /// Copia viva del servicio.
   ///
   /// Antes el build leía `widget.servicio` en todas partes, así que al guardar
@@ -42,6 +51,34 @@ class _ServicioDetailScreenState extends State<ServicioDetailScreen> {
     super.initState();
     _servicio = widget.servicio;
     _cargar();
+    _cargarCobroEntidad();
+  }
+
+  /// [Q4] Lee el interruptor maestro del cobro por adelantado de la entidad.
+  ///
+  /// Va aparte del `Future.wait` de [_cargar] a propósito: si la migración 62 no
+  /// está aplicada, no hay permisos o no hay red, esto falla y **no** puede
+  /// tumbar el detalle entero. Ante el fallo queda en `null`, que en la ficha se
+  /// lee como «no se sabe» y no afirma nada de más.
+  Future<void> _cargarCobroEntidad() async {
+    bool? cobra;
+    try {
+      final config = await CobroService.configGet(widget.idEntidad);
+      cobra = config.activo;
+    } catch (_) {
+      cobra = null;
+    }
+    if (mounted) setState(() => _entidadCobra = cobra);
+  }
+
+  /// Texto de la fila «Pago por adelantado»: el flag del servicio **y** el
+  /// maestro de la entidad, que es lo que decide si el cobro se ofrece de verdad.
+  String get _estadoCobroEtiqueta {
+    if (!_servicio.cobroAdelantado) return 'No';
+    if (_entidadCobra == null) return 'Marcado para este servicio';
+    return _entidadCobra!
+        ? 'Sí'
+        : 'Marcado, pero la entidad lo tiene desactivado';
   }
 
   Future<void> _cargar() async {
@@ -291,10 +328,11 @@ class _ServicioDetailScreenState extends State<ServicioDetailScreen> {
         ),
         // [67] El cobro por adelantado es por servicio (la cuenta que cobra es de
         // la entidad). Se muestra aquí para no tener que abrir el formulario.
-        _buildInfoRow(
-          'Pago por adelantado',
-          _servicio.cobroAdelantado ? 'Sí' : 'No',
-        ),
+        //
+        // [Q4] Pero el flag del servicio no basta: sin el interruptor maestro de
+        // la entidad el servicio no se ofrece, así que un «Sí» a secas mentía.
+        // `_estadoCobroEtiqueta` mira las dos piezas.
+        _buildInfoRow('Pago por adelantado', _estadoCobroEtiqueta),
         _buildInfoRow(
           'Moneda por defecto',
           MonedasApp.etiqueta(_servicio.configPrecio.monedaDefault),

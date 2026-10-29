@@ -51,6 +51,14 @@ class _CobroConfigScreenState extends State<CobroConfigScreen> {
   bool _cancelarSiExpira = true;
   String _moneda = 'CUP';
 
+  /// Servicios de la entidad que ya tienen `cobro_adelantado = true`.
+  ///
+  /// Solo alimenta el aviso previo a apagar el interruptor maestro: apagarlo no
+  /// desmarca nada, así que el admin tiene que saber cuántos servicios quedan
+  /// «listos» para volver a ofrecerse cuando lo reactive (P2-7). Si la 67 no
+  /// está aplicada o falla la lectura, queda en 0 y no bloquea nada.
+  int _serviciosMarcados = 0;
+
   bool _cargando = true;
   bool _guardando = false;
   String? _errorCarga;
@@ -91,6 +99,15 @@ class _CobroConfigScreenState extends State<CobroConfigScreen> {
 
     try {
       final config = await CobroService.configGet(widget.idEntidad);
+      // El contador es accesorio: solo sirve para el aviso de apagado. Se lee
+      // aparte y a prueba de fallos (sin migración 67 la columna no existe) para
+      // que no pueda tumbar la pantalla de configuración.
+      var marcados = 0;
+      try {
+        marcados = await CobroService.serviciosMarcados(widget.idEntidad);
+      } catch (_) {
+        marcados = 0;
+      }
       if (!mounted) return;
       setState(() {
         _activo = config.activo;
@@ -102,6 +119,7 @@ class _CobroConfigScreenState extends State<CobroConfigScreen> {
         _soporte.text = config.soporteWhatsapp ?? '';
         _instrucciones.text = config.instrucciones ?? '';
         _horas.text = '${config.horasVigencia}';
+        _serviciosMarcados = marcados;
         _cargando = false;
       });
     } catch (e) {
@@ -164,6 +182,64 @@ class _CobroConfigScreenState extends State<CobroConfigScreen> {
         ],
       ),
     );
+  }
+
+  /// Cambia el interruptor maestro.
+  ///
+  /// Al **apagar** con servicios ya marcados se pide confirmación: apagar el
+  /// maestro no toca `app_dat_servicios.cobro_adelantado`, así que esos
+  /// servicios siguen marcados y volverían a cobrar en cuanto se reactive el
+  /// interruptor. El admin tiene que enterarse al apagarlo, no al reactivarlo
+  /// por sorpresa (P2-7). Encender no necesita aviso.
+  Future<void> _cambiarActivo(bool v) async {
+    if (v || _serviciosMarcados == 0) {
+      setState(() => _activo = v);
+      return;
+    }
+
+    final apagar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.info_outline, color: AppTheme.warning),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Tienes servicios marcados',
+                style: TextStyle(fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          _serviciosMarcados == 1
+              ? 'Tienes 1 servicio marcado con pago por adelantado. Seguirá '
+                    'marcado, pero dejará de ofrecerse hasta que reactives el '
+                    'cobro por adelantado.'
+              : 'Tienes $_serviciosMarcados servicios marcados con pago por '
+                    'adelantado. Seguirán marcados, pero dejarán de ofrecerse '
+                    'hasta que reactives el cobro por adelantado.',
+          style: const TextStyle(fontSize: 13.5, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.error,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Apagar'),
+          ),
+        ],
+      ),
+    );
+    if (apagar == true && mounted) setState(() => _activo = false);
   }
 
   Future<void> _guardar() async {
@@ -323,16 +399,22 @@ class _CobroConfigScreenState extends State<CobroConfigScreen> {
           const SizedBox(height: 10),
           SwitchListTile(
             value: _activo,
-            onChanged: _guardando ? null : (v) => setState(() => _activo = v),
+            onChanged: _guardando ? null : _cambiarActivo,
             contentPadding: EdgeInsets.zero,
             activeThumbColor: AppTheme.primary,
             title: const Text(
               'Cobrar por adelantado',
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
             ),
+            // Ojo con esta copia: activar el maestro solo *habilita* el cobro
+            // (aporta el número de proveedor, el WhatsApp, la moneda y el plazo).
+            // Desde la migración 67 el pago es además **por servicio**, así que
+            // prometer que «la ficha de cada servicio mostrará Pagar por
+            // adelantado» era falso: sin marcar el servicio no se ofrece (Q4).
             subtitle: const Text(
-              'Si lo activas, la ficha de cada servicio mostrará «Pagar por '
-              'adelantado» con tu número de proveedor.',
+              'Al activarlo habilitas el cobro para tu entidad: después tienes '
+              'que marcarlo en cada servicio que lo ofrezca, en '
+              'Catálogo → servicio → «Pago por adelantado en línea».',
               style: TextStyle(fontSize: 12, height: 1.35),
             ),
           ),

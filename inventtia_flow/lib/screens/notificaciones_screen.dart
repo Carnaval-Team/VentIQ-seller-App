@@ -5,6 +5,40 @@ import '../config/app_theme.dart';
 import '../models/notificacion.dart';
 import '../providers/notificacion_provider.dart';
 import '../utils/notificacion_orden.dart';
+import '../utils/shell_navegacion.dart';
+
+/// ¿Tocar este aviso debe llevar a la pestaña «Reservas»?
+///
+/// El circuito del **pago por adelantado** (migración 62) avisa al cliente con
+/// `tipo = 'pago'`: «Pago verificado» («Tu reserva está confirmada»), «Pago
+/// rechazado», «Pago caducado»… El dato que el cliente quiere ver —el chip de
+/// `flow.agenda.pago_estado` en su reserva— solo existe en la lista de reservas,
+/// así que un aviso que únicamente se marcara como leído dejaba al usuario sin el
+/// destino que el propio aviso anuncia.
+///
+/// Las cancelaciones (migración 61) también dejan la reserva en un estado que se
+/// consulta ahí, incluida la cancelación automática por pago no verificado.
+bool _llevaAReservas(Notificacion n) => n.tipo == 'pago' || n.esCancelacion;
+
+/// Marca el aviso como leído y, si toca, lleva al usuario a «Reservas».
+///
+/// El marcado va **primero** y no se espera para navegar: la navegación cierra
+/// esta ruta (`popUntil` de [ShellNavegacion]) y el `Future` del provider sigue
+/// vivo porque no depende del `context`.
+Future<void> _alTocarAviso(
+  BuildContext context,
+  NotificacionProvider prov,
+  Notificacion notif,
+) async {
+  final marcado = prov.marcarLeida(notif.id);
+  // Sin shell detrás (test o vista previa montada sola) no hay a dónde ir.
+  if (_llevaAReservas(notif) && ShellNavegacion.disponible) {
+    // Índices del shell del cliente; `HomeShell` los traduce a la pestaña de
+    // Reservas de la vista que toque (vendedor/admin) y recarga la lista.
+    ShellNavegacion.irAPestana(context, ShellNavegacion.reservas);
+  }
+  await marcado;
+}
 
 class NotificacionesScreen extends StatelessWidget {
   const NotificacionesScreen({super.key});
@@ -47,7 +81,7 @@ class NotificacionesScreen extends StatelessWidget {
                             final notif = (fila as _FilaNotificacion).notif;
                             return _NotificacionCard(
                               notif: notif,
-                              onTap: () => prov.marcarLeida(notif.id),
+                              onTap: () => _alTocarAviso(context, prov, notif),
                             );
                           },
                         ),

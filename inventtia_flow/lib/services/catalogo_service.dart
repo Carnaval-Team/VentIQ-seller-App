@@ -197,15 +197,27 @@ class CatalogoService {
   /// Va por PostgREST, como [setServicioActivo]: la política de UPDATE de
   /// `app_dat_servicios` valida la pertenencia a la entidad. El interruptor
   /// maestro sigue siendo el de la entidad (`flow.cobro_config`).
+  ///
+  /// Devuelve las filas tocadas (`select('id')`) a propósito: un update que la
+  /// RLS deja en **0 filas** no lanza en PostgREST, y ese no-op silencioso es
+  /// justo el síntoma de «lo activo, guardo y sigue apagado». Si no se actualizó
+  /// nada, se lanza para que la pantalla lo diga en vez de fingir que guardó.
   static Future<void> setCobroAdelantado({
     required int id,
     required bool activo,
   }) async {
-    await _supabase
+    final res = await _supabase
         .schema(_schema)
         .from('app_dat_servicios')
         .update({'cobro_adelantado': activo})
-        .eq('id', id);
+        .eq('id', id)
+        .select('id');
+    if (res.isEmpty) {
+      throw Exception(
+        'el servidor no actualizó el pago por adelantado '
+        '(servicio inexistente o sin permiso)',
+      );
+    }
   }
 
   static Future<void> deleteServicio(int id) async {
@@ -449,6 +461,38 @@ class CatalogoService {
         .from('local_servicio')
         .delete()
         .eq('id', id);
+  }
+
+  /// `campos_adicionales` y `permite_tercero` **tal cual están en la base**.
+  ///
+  /// Existe porque `admin_guardar_datos_servicio` **sobrescribe** los tres
+  /// campos que recibe (`campos_adicionales`, `permite_tercero` y
+  /// `config_precio`). Quien guarda desde un sitio que solo edita precios —la
+  /// pestaña «Precios» de `LocalServicioAdminScreen`— tiene que devolver los
+  /// datos adicionales sin tocarlos; si los regenerara desde el modelo
+  /// ([Servicio.fromJson] → [CampoAdicional.toJson]) perdería cualquier clave
+  /// del jsonb que el modelo no conozca. Se leen crudos y se devuelven igual.
+  static Future<({List<Map<String, dynamic>> campos, bool permiteTercero})>
+  getDatosServicioBrutos(int id) async {
+    final res = await _supabase
+        .schema(_schema)
+        .from('app_dat_servicios')
+        .select('campos_adicionales, permite_tercero')
+        .eq('id', id)
+        .single();
+
+    final crudo = res['campos_adicionales'];
+    final campos = crudo is List
+        ? crudo
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList()
+        : <Map<String, dynamic>>[];
+
+    return (
+      campos: campos,
+      permiteTercero: (res['permite_tercero'] as bool?) ?? false,
+    );
   }
 
   /// Guarda los datos adicionales (campos configurables) y el flag de terceros

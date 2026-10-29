@@ -10,24 +10,32 @@ import '../../services/plan_config_service.dart';
 import '../../services/plan_servicio_service.dart';
 import '../../services/recurso_service.dart';
 import '../../tutorial/tutorial_anchor.dart';
+import '../../widgets/switch_cobro_adelantado.dart';
 import 'admin_reserva_transporte_sheet.dart';
 import 'config_plan_mensual_screen.dart';
 import 'config_recursos_screen.dart';
 import 'gestion_servicios_screen.dart';
 import 'planificacion_sheets.dart';
+import 'precios_servicio_tab.dart';
 import 'promociones_screen.dart';
 
 /// Pestañas de [LocalServicioAdminScreen].
-enum PestanaLocalServicio { calendario, configuracion, promociones }
+///
+/// El orden es el de la barra: «Precios» va **antes** de «Promociones».
+enum PestanaLocalServicio { calendario, configuracion, precios, promociones }
 
 /// Nivel 3 de «Locales y servicios»: todo lo de UN servicio dentro de UN local.
 ///
 /// Reúne lo que antes estaba repartido entre la tarjeta plegable de
-/// Planificación y el detalle del servicio, en tres pestañas para que ninguna
+/// Planificación y el detalle del servicio, en cuatro pestañas para que ninguna
 /// quede cargada:
 ///  · Calendario: planificar días y reservar capacidad.
 ///  · Configuración: publicación, reserva directa, capacidades, recursos y
 ///    turnos y el plan mensual.
+///  · Precios: el bloque de precios del servicio (monedas, precio base,
+///    cálculo automático con la tasa del día y reglas por dato adicional) para
+///    cambiarlo sin abrir «Editar servicio». Son los MISMOS precios: viven en
+///    `app_dat_servicios.config_precio` y afectan a todos los locales.
 ///  · Promociones del par local-servicio.
 ///
 /// Devuelve `true` al salir si cambió algo que la lista de origen pinta
@@ -77,6 +85,13 @@ class _LocalServicioAdminScreenState extends State<LocalServicioAdminScreen> {
     super.initState();
     _ls = widget.localServicio;
     _cargarPlanes();
+    // El par con el que se entra viene, en el camino normal, de
+    // `cliente_obtener_servicios` —un payload pensado para el CLIENTE que NO
+    // incluye `cobro_adelantado` (ver migración 67)—. Si se usara tal cual, el
+    // interruptor de pago por adelantado saldría apagado sobre un servicio que
+    // sí cobra y, al guardar, lo apagaría. Se relee el par con el join del
+    // admin (`getLocalServicio`) en cuanto se abre la pantalla.
+    _recargarLs();
   }
 
   void _marcarCambio() => _huboCambios = true;
@@ -340,7 +355,46 @@ class _LocalServicioAdminScreenState extends State<LocalServicioAdminScreen> {
     );
     if (actualizado == null || !mounted) return;
     _marcarCambio();
-    setState(() => _ls = _ls.copyWith(servicio: actualizado));
+    setState(() => _ls = _ls.copyWith(servicio: _conservandoTipo(actualizado)));
+  }
+
+  /// Devuelve [nuevo] con el tipo de actividad que ya teníamos cuando el
+  /// servicio sigue apuntando a la misma hoja de la taxonomía.
+  ///
+  /// El formulario devuelve el servicio desde `CatalogoService.getServicio`, que
+  /// NO trae el join de `nom_tipo_actividad_servicio`: `tipoActividad` llega
+  /// `null`. Si se reemplazara el par tal cual, `esTransporteOmnibus` pasaría a
+  /// `false` y la pestaña «Precios» dejaría de ofrecer el precio de ida y
+  /// vuelta (y la reserva abriría la hoja equivocada). Si la categoría cambió
+  /// no se adivina: se deja como venga.
+  Servicio _conservandoTipo(Servicio nuevo) {
+    final anterior = _ls.servicio;
+    if (anterior == null ||
+        anterior.tipoActividad == null ||
+        anterior.idTipoActividad != nuevo.idTipoActividad) {
+      return nuevo;
+    }
+    return Servicio(
+      id: nuevo.id,
+      nombre: nuevo.nombre,
+      descripcion: nuevo.descripcion,
+      foto: nuevo.foto,
+      createdAt: nuevo.createdAt,
+      camposAdicionales: nuevo.camposAdicionales,
+      permiteTercero: nuevo.permiteTercero,
+      configPrecio: nuevo.configPrecio,
+      idTipoActividad: nuevo.idTipoActividad,
+      // `nuevo` viene de `getServicio` (sin join): si trae el código se
+      // respeta; si no, se usa el que ya teníamos, que es justo el dato que
+      // este helper existe para no perder.
+      tipoActividad: nuevo.tipoActividad ?? anterior.tipoActividad,
+      tipoActividadNombre:
+          nuevo.tipoActividadNombre ?? anterior.tipoActividadNombre,
+      idPadreTipoActividad:
+          nuevo.idPadreTipoActividad ?? anterior.idPadreTipoActividad,
+      activo: nuevo.activo,
+      cobroAdelantado: nuevo.cobroAdelantado,
+    );
   }
 
   Future<void> _desvincular() async {
@@ -455,6 +509,11 @@ class _LocalServicioAdminScreenState extends State<LocalServicioAdminScreen> {
             // TabBar (primario / gris) las pestañas no se leían. Blanco para la
             // seleccionada y blanco atenuado para las demás.
             bottom: TabBar(
+              // Cuatro pestañas con icono y texto no caben en un móvil sin
+              // recortar etiquetas («Configuración» es la más larga): se usa el
+              // mismo patrón que la bandeja de pagos, que ya tiene cuatro.
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
               labelColor: Colors.white,
               unselectedLabelColor: Colors.white.withValues(alpha: 0.78),
               indicatorColor: Colors.white,
@@ -468,6 +527,7 @@ class _LocalServicioAdminScreenState extends State<LocalServicioAdminScreen> {
               tabs: const [
                 Tab(icon: Icon(Icons.calendar_month_outlined), text: 'Calendario'),
                 Tab(icon: Icon(Icons.tune), text: 'Configuración'),
+                Tab(icon: Icon(Icons.attach_money), text: 'Precios'),
                 Tab(icon: Icon(Icons.local_offer_outlined), text: 'Promociones'),
               ],
             ),
@@ -476,6 +536,21 @@ class _LocalServicioAdminScreenState extends State<LocalServicioAdminScreen> {
             children: [
               _centrado(_buildCalendario()),
               _centrado(_buildConfiguracion()),
+              _centrado(
+                PreciosServicioTab(
+                  idEntidad: widget.entidadId,
+                  servicio: _ls.servicio,
+                  nombreLocal: _nombreLocal,
+                  esTransporteOmnibus: _ls.esTransporteOmnibus,
+                  // Los precios son del servicio: al guardarlos hay que releer
+                  // el par para que Calendario/Configuración no sigan pintando
+                  // el precio viejo, y avisar a la lista de origen.
+                  onGuardado: () {
+                    _marcarCambio();
+                    _recargarLs();
+                  },
+                ),
+              ),
               _centrado(
                 PromocionesScreen(
                   idLocalServicio: _ls.id,
@@ -602,6 +677,15 @@ class _LocalServicioAdminScreenState extends State<LocalServicioAdminScreen> {
                   'modo simple solo defines turnos.',
             ),
             _EntradaGlosario(
+              icono: Icons.payments_outlined,
+              titulo: 'Pago por adelantado',
+              texto: 'El cliente paga con Transfermóvil antes de la cita. '
+                  'Necesita DOS cosas: que la entidad lo tenga activado (con su '
+                  'cuenta y WhatsApp de verificación, en «Mi suscripción») y que '
+                  'este servicio esté marcado. Si falta una, el cliente no ve la '
+                  'opción.',
+            ),
+            _EntradaGlosario(
               icono: Icons.event_repeat,
               titulo: 'Plan mensual',
               texto: 'La capacidad de cada día de la semana. Al generar el mes '
@@ -668,6 +752,30 @@ class _LocalServicioAdminScreenState extends State<LocalServicioAdminScreen> {
           ],
         ),
         const SizedBox(height: 16),
+        // Cobro: se pide aquí (a petición del negocio) además de en la pestaña
+        // «Precios» y en el formulario del servicio, porque el mismo ajuste se
+        // busca en los dos sitios según lo que el admin esté tocando.
+        if (_ls.servicio != null) ...[
+          _Seccion(
+            titulo: 'Cobro',
+            children: [
+              SwitchCobroAdelantado(
+                idServicio: _ls.servicio!.id,
+                idEntidad: widget.entidadId,
+                // Valor fresco del par releído (`getLocalServicio`), no el del
+                // payload del cliente, que no trae `cobro_adelantado`.
+                valorInicial: _ls.servicio!.cobroAdelantado,
+                onGuardado: (_) {
+                  _marcarCambio();
+                  // El par pinta el estado en las demás pestañas y en el
+                  // formulario: hay que releerlo para que no quede el viejo.
+                  _recargarLs();
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+        ],
         _Seccion(
           titulo: 'Capacidad',
           children: [

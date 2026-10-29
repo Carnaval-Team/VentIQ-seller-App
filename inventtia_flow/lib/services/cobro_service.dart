@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/cobro.dart';
@@ -125,6 +126,28 @@ class CobroService {
     return CobroConfig.fromJson(_mapa(data));
   }
 
+  /// Cuántos servicios de la entidad siguen **marcados** con pago por
+  /// adelantado (`app_dat_servicios.cobro_adelantado = true`).
+  ///
+  /// Es el número que la pantalla necesita para avisar antes de apagar el
+  /// interruptor maestro: apagarlo **no** desmarca ningún servicio —cada uno
+  /// conserva su columna—, solo deja de ofrecerlos; al reactivarlo volverían a
+  /// cobrar. Sin este dato el admin apagaba a ciegas (P2-7).
+  ///
+  /// Va por PostgREST y no por RPC a propósito: la RLS `servicios_select_all` es
+  /// `using(true)`, así que basta con filtrar por entidad, sin migración nueva.
+  /// Si la migración 67 no está aplicada la columna no existe y PostgREST falla:
+  /// el llamador lo trata como «no se sabe» y nunca bloquea el guardado.
+  static Future<int> serviciosMarcados(int idEntidad) async {
+    final res = await Supabase.instance.client
+        .schema(_schema)
+        .from('app_dat_servicios')
+        .select('id')
+        .eq('id_entidad', idEntidad)
+        .eq('cobro_adelantado', true);
+    return res.length;
+  }
+
   /// Bandeja de pagos de la entidad (`flow.admin_listar_pagos_reserva`).
   ///
   /// [estado] filtra por un estado exacto (`creado`, `reportado`, `verificado`,
@@ -217,6 +240,57 @@ class CobroService {
     final res = await query.order('id', ascending: false).limit(1);
     if (res.isEmpty) return null;
     return (res.first['id'] as num?)?.toInt();
+  }
+
+  /// Reserva **activa** más reciente del usuario en un local-servicio que aún
+  /// admite pago por adelantado (o `null` si no tiene ninguna).
+  ///
+  /// Es lo que decide si la ficha del servicio puede ofrecer «Pagar por
+  /// adelantado»: antes el botón se pintaba siempre que el servicio aceptara
+  /// cobro, y al pulsarlo salía «Primero reserva un turno», un callejón sin
+  /// salida. Con esto el botón solo aparece cuando hay algo que pagar y, al
+  /// pulsarlo, se va **directo** al pago (no a un aviso).
+  ///
+  /// Devuelve también `pago_estado` para poder **reanudar** un intento vivo
+  /// (`pendiente`/`reportado`) en vez de crear otro, que el servidor rechazaría.
+  /// Se excluyen las que ya están `verificado`: esas no tienen nada que pagar.
+  ///
+  /// Va por PostgREST (no hay RPC para esto): la RLS de `agenda` deja al dueño
+  /// ver sus reservas y las que hizo para un tercero (`reservado_por`).
+  static Future<({int id, String? pagoEstado})?> reservaPendienteDePago({
+    required int idLocalServicio,
+  }) async {
+    final uuid = AuthService.currentUserId;
+    if (uuid == null) return null;
+
+    try {
+      final res = await Supabase.instance.client
+          .schema(_schema)
+          .from('agenda')
+          .select('id, pago_estado, nom_estado_agenda(nombre)')
+          .eq('id_local_servicio', idLocalServicio)
+          .or('uuid_usuario.eq.$uuid,reservado_por.eq.$uuid')
+          .order('id', ascending: false)
+          // Un puñado basta: la más nueva activa es la que interesa.
+          .limit(8);
+
+      for (final fila in res) {
+        final estado =
+            (fila['nom_estado_agenda'] as Map?)?['nombre'] as String?;
+        if (estado != 'Reservado') continue;
+        final pagoEstado = fila['pago_estado'] as String?;
+        if (pagoEstado == 'verificado') continue;
+        final id = (fila['id'] as num?)?.toInt();
+        if (id == null) continue;
+        return (id: id, pagoEstado: pagoEstado);
+      }
+      return null;
+    } catch (e) {
+      // Sin red o sin permiso de lectura: se trata como «no hay nada que pagar»
+      // y la ficha no ofrece el botón (mejor eso que un botón que falla).
+      debugPrint('[flow] CobroService.reservaPendienteDePago ERROR: $e');
+      return null;
+    }
   }
 
   // ── Interno ──────────────────────────────────────────────────────────────

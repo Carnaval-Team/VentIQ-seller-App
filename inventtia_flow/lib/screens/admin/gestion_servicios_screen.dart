@@ -1,32 +1,22 @@
-import 'dart:async';
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:provider/provider.dart';
 import '../../config/app_theme.dart';
 import '../../models/campo_adicional.dart';
-import '../../models/cobro.dart';
-import '../../models/config_precio.dart';
 import '../../models/entidad.dart';
-import '../../models/precio_config.dart';
 import '../../models/servicio.dart';
-import '../../models/tasa_cambio.dart';
-import '../../providers/auth_provider.dart';
 import '../../services/auth_service.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/cobro_service.dart';
 import '../../services/imagen_service.dart';
 import '../../services/precio_config_service.dart';
-import '../../services/tasa_cambio_service.dart';
 import '../../services/tipo_actividad_service.dart';
 import '../../tutorial/tutorial_anchor.dart';
-import '../../utils/conversion_precio.dart';
 import '../../utils/foto_obligatoria.dart';
-import '../../utils/parse_monto.dart';
 import '../../widgets/campo_foto_obligatoria.dart';
 import '../../widgets/opciones_list_editor.dart';
+import '../../widgets/precios_servicio_editor.dart';
 import 'precio_config_screen.dart';
 import 'servicio_detail_screen.dart';
 
@@ -239,17 +229,40 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
   bool _permiteTercero = false;
 
   /// [67] ¿Este servicio se puede pagar por adelantado?
+  ///
+  /// OJO: el `Servicio` con el que se abre el formulario **no siempre trae este
+  /// dato**. El listado del local usa `cliente_obtener_servicios`, un payload de
+  /// cliente que no incluye `cobro_adelantado` (migración 67), así que el modelo
+  /// lo deja en `false`. Si se guardara sin más, editar cualquier cosa apagaría
+  /// el cobro sin avisar. Por eso `_reconciliarCobro()` relee la fila admin al
+  /// abrir, y `_submit` no escribe si el valor no es de fiar.
   bool _cobroAdelantado = false;
 
+  /// El admin tocó el interruptor en ESTA edición: su valor manda sobre la
+  /// relectura (que puede llegar después y no debe pisarlo).
+  bool _cobroTocado = false;
+
+  /// El valor se leyó de la fila real (`app_dat_servicios`): es de fiar y se
+  /// puede escribir tal cual.
+  bool _cobroCargado = false;
+
   /// ¿La entidad tiene activo el cobro por adelantado? `null` = todavía no se
-  /// sabe (mientras se lee la configuración). Manda sobre el switch: sin el
-  /// interruptor de la entidad, el del servicio no puede encenderse.
+  /// sabe (mientras se lee la configuración).
+  ///
+  /// Ya **no** bloquea el switch del servicio: solo decide qué subtítulo se
+  /// muestra, porque el flag de este servicio se guarda siempre y un servicio
+  /// marcado con el maestro apagado queda a la espera (P1-3).
   bool? _entidadCobra;
   late List<_CampoEditable> _campos;
-  List<String> _monedasHabilitadas = ['USD'];
-  String _monedaDefault = 'USD';
-  final Map<String, TextEditingController> _precioBaseCtrls = {};
-  final List<_ReglaPrecioEditable> _reglasPrecio = [];
+
+  /// Estado y lógica del bloque de precios, en el editor compartido.
+  ///
+  /// Aquí vivía una copia local del bloque (monedas, precios base, cálculo
+  /// automático con la tasa del día y reglas por dato adicional); ahora es la
+  /// única fuente de verdad, compartida con la pestaña «Precios». Se crea en
+  /// `initState` porque necesita `_campos` ya montados.
+  late final PreciosServicioControlador _precios;
+
   /// Taxonomía de dos niveles (migración 47): categorías y sus subcategorías.
   /// Se lee una vez y se resuelve en memoria; si la migración no está aplicada
   /// llega plana (todo raíces) y el formulario sigue funcionando con un solo
@@ -265,51 +278,6 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
   int? _idSubcategoria;
 
   bool _cargandoTiposActividad = true;
-  bool _aplicaPrecioIdaVueltaTodos = false;
-
-  // ── Precios automáticos por tasa de cambio (punto 4) ─────────────────────
-  /// Hay un cartel de extracción abierto (y el cálculo en curso).
-  bool _calculandoPrecios = false;
-
-  /// Contexto del diálogo de extracción, para poder cerrarlo sin tocar el resto
-  /// de la pila de navegación (debajo vive la hoja modal del formulario).
-  BuildContext? _cartelCtx;
-
-  /// Configuración de redondeo de la entidad (y su moneda preferida, que solo se
-  /// usa para **proponerla** al crear un servicio nuevo).
-  PrecioConfig _precioConfig = const PrecioConfig();
-
-  /// La configuración ya se leyó (o falló): el cálculo automático no se dispara
-  /// antes, para no usar valores por defecto que el admin no eligió.
-  bool _configCargada = false;
-
-  /// Tasa con la que se calcularon los precios que hay ahora en el formulario.
-  TasasDia? _tasasUsadas;
-
-  /// Se está extrayendo la tasa: banner discreto dentro del formulario (el
-  /// diálogo modal se reserva para el botón de recalcular a mano).
-  bool _extrayendoTasa = false;
-
-  /// Último valor YA calculado, por origen: «base|CUP» → 17000,
-  /// «regla:0|USD» → 18.
-  ///
-  /// Es un mapa y no una única firma global (que es lo que había): con una sola
-  /// firma, el cálculo de una moneda **bloqueaba** el de otra si coincidía el
-  /// patrón, y por eso editar CUP después de haber editado USD no recalculaba
-  /// nada. Ahora cada origen se compara consigo mismo.
-  final Map<String, double> _ultimoCalculado = {};
-
-  /// Monedas cuyo precio lo puso el cálculo automático: se pintan **en verde y
-  /// con su icono**. Al editar ese campo a mano deja de estar marcado, porque el
-  /// valor ya no lo calculó la app.
-  final Set<String> _calculadas = {};
-
-  /// El aviso de «no hay tasa» se da una vez por formulario: si no, escribir
-  /// tres cifras seguidas sin red lanzaría tres avisos seguidos.
-  bool _avisoTasaMostrado = false;
-
-  /// Debounce del cálculo automático mientras el admin escribe.
-  Timer? _debounceAuto;
 
   /// Código de la hoja elegida, para las reglas que dependen de él (transporte
   /// en ómnibus). Se apoya en la taxonomía y, si no está, en el código que trajo
@@ -337,25 +305,16 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
     _campos = (widget.servicio?.camposAdicionales ?? [])
         .map(_CampoEditable.fromModel)
         .toList();
-    final cfg = widget.servicio?.configPrecio ?? ConfigPrecio();
-    _monedasHabilitadas = cfg.monedas.isEmpty ? ['USD'] : [...cfg.monedas];
-    _monedaDefault = cfg.monedaDefault;
-    _aplicaPrecioIdaVueltaTodos = cfg.aplicaPrecioIdaVueltaTodos;
-    if (!_monedasHabilitadas.contains(_monedaDefault)) {
-      _monedaDefault = _monedasHabilitadas.first;
-    }
-    for (final m in _monedasHabilitadas) {
-      _precioBaseCtrls[m] = TextEditingController(
-        text: _fmtPrecio(cfg.preciosBase[m]),
-      );
-    }
-    _reglasPrecio.addAll(
-      cfg.reglas.map(
-        (r) => _ReglaPrecioEditable.fromModel(r, monedas: _monedasHabilitadas),
-      ),
+    // El editor compartido arranca con lo guardado en el servicio (o con sus
+    // valores por defecto) y con los campos seleccionables ya resueltos.
+    _precios = PreciosServicioControlador(
+      configInicial: widget.servicio?.configPrecio,
+      camposSelect: _camposSelectParaPrecio(),
+      proponerMonedaOrigen: widget.servicio == null,
     );
     _cargarPrecioConfig();
     _cargarCobroEntidad();
+    _reconciliarCobro();
     _cargarTiposActividad();
   }
 
@@ -406,114 +365,12 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
     }
   }
 
-  /// Texto inicial de un precio ya guardado.
-  ///
-  /// Se limita a [Redondeo.maxDecimales]: un valor viejo con 3 decimales
-  /// (`18.375`) se releería como **18375** al guardar, porque `parseMonto`
-  /// interpreta tres dígitos tras el separador como millares.
-  String _fmtPrecio(double? v) {
-    if (v == null || v == 0) return '';
-    return Redondeo.texto(v, Redondeo.maxDecimales);
-  }
-
-  // ── Precios automáticos (punto 4) ────────────────────────────────────────
-
-  /// Moneda de origen efectiva: la que dice la configuración de la entidad si
-  /// está habilitada en este servicio; si no, la moneda por defecto del
-  /// servicio. El botón y el disparo automático siempre usan esta.
-  /// Moneda **base** del servicio: la que elige el desplegable «Moneda por
-  /// defecto». Es la que el admin escribe y de la que sale todo lo demás.
-  ///
-  /// OJO: antes mandaba `precio_config.moneda_origen` (la preferencia de la
-  /// entidad) y por eso, al elegir MLC en el desplegable, el sello BASE seguía
-  /// en USD. Esa preferencia ahora solo se usa para **proponerla** al crear un
-  /// servicio nuevo (`_cargarPrecioConfig`).
-  String get _origenEfectivo {
-    if (_monedasHabilitadas.contains(_monedaDefault)) return _monedaDefault;
-    return _monedasHabilitadas.isNotEmpty
-        ? _monedasHabilitadas.first
-        : _monedaDefault;
-  }
-
-  /// Monedas habilitadas con la **base primero**: es la que el admin escribe y
-  /// de la que sale todo lo demás, así que va arriba del bloque de precios.
-  List<String> get _monedasOrdenadas => [
-    _origenEfectivo,
-    ..._monedasHabilitadas.where((m) => m != _origenEfectivo),
-  ];
-
-  /// Decoración de un campo de precio base.
-  ///
-  /// Dos señales distintas, para que no se confundan:
-  ///  * **moneda base** → etiqueta con el sello «BASE» y borde/fondo de marca;
-  ///  * **precio calculado** → borde y fondo **verdes** con un icono dentro del
-  ///    cuadro. Al editarlo a mano deja de estar verde, porque ya no lo calculó
-  ///    la app.
-  InputDecoration _decoracionPrecio(String m) {
-    final esBase = m == _origenEfectivo;
-    final calculada = _calculadas.contains(m);
-    final color = calculada
-        ? AppTheme.success
-        : (esBase ? AppTheme.primary : null);
-
-    return InputDecoration(
-      label: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text('Precio base (${MonedasApp.simbolo(m)})'),
-          if (esBase) ...[
-            const SizedBox(width: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-              decoration: BoxDecoration(
-                color: AppTheme.primary.withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: const Text(
-                'BASE',
-                style: TextStyle(
-                  fontSize: 8.5,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.6,
-                  color: AppTheme.primary,
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-      isDense: true,
-      // `null` deja el relleno del tema; solo se tiñe cuando hay color.
-      fillColor: color?.withValues(alpha: 0.07),
-      border: const OutlineInputBorder(),
-      enabledBorder: color == null
-          ? null
-          : OutlineInputBorder(
-              borderSide: BorderSide(color: color, width: 1.5),
-            ),
-      focusedBorder: color == null
-          ? null
-          : OutlineInputBorder(
-              borderSide: BorderSide(color: color, width: 1.8),
-            ),
-      suffixIcon: calculada
-          ? const Tooltip(
-              message: 'Calculado con la tasa del día',
-              child: Icon(
-                Icons.auto_awesome,
-                size: 16,
-                color: AppTheme.success,
-              ),
-            )
-          : null,
-    );
-  }
-
   /// [67] Lee si la **entidad** tiene activo el cobro por adelantado.
   ///
   /// Es el interruptor maestro: aporta la cuenta que cobra (número de proveedor,
-  /// WhatsApp de verificación, moneda y plazo). Sin él, el switch del servicio
-  /// no puede encenderse, así que se muestra deshabilitado con la explicación.
+  /// WhatsApp de verificación, moneda y plazo). Sin él el servicio no se ofrece,
+  /// por eso se avisa en el subtítulo; el switch se deja usable de todos modos
+  /// para poder marcar y, sobre todo, **desmarcar** un servicio (P1-3).
   Future<void> _cargarCobroEntidad() async {
     bool cobra;
     try {
@@ -528,384 +385,59 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
     setState(() => _entidadCobra = cobra);
   }
 
+  /// Corrige el interruptor de pago por adelantado con la fila **real**.
+  ///
+  /// El `Servicio` que recibe el formulario no siempre trae `cobro_adelantado`:
+  /// el camino `local → servicio → ⋮ editar` arrastra el payload de
+  /// `cliente_obtener_servicios`, que no incluye esa columna (migración 67), y
+  /// `Servicio.fromJson` la deja en `false`. Sin esta relectura, abrir el
+  /// formulario enseñaría el switch apagado y guardar lo apagaría de verdad.
+  ///
+  /// Es una lectura de UNA fila (`CatalogoService.getServicio`, que sí trae la
+  /// columna). Si falla, `_cobroCargado` sigue en `false` y `_submit` se
+  /// abstiene de escribir: mejor no tocar el flag que apagarlo a ciegas.
+  Future<void> _reconciliarCobro() async {
+    final id = widget.servicio?.id;
+    if (id == null) {
+      // Alta: no hay nada guardado que corregir; el valor del formulario manda.
+      _cobroCargado = true;
+      return;
+    }
+    try {
+      final fresco = await CatalogoService.getServicio(id);
+      if (!mounted) return;
+      setState(() {
+        _cobroCargado = true;
+        // Si el admin ya tocó el switch, su elección manda.
+        if (!_cobroTocado) _cobroAdelantado = fresco.cobroAdelantado;
+      });
+    } catch (_) {
+      // Sin red o sin permiso de lectura: se deja el valor que vino y no se
+      // escribirá (ver `_submit`).
+    }
+  }
+
   /// Lee la configuración de precios de la entidad (redondeo y moneda
-  /// **preferida**). Si la migración 60 no está aplicada se usan los valores por
-  /// defecto: el formulario nunca se bloquea por esto.
+  /// **preferida**) y se la pasa al editor compartido. Si la migración 60 no está
+  /// aplicada se usan los valores por defecto: el formulario nunca se bloquea por
+  /// esto.
+  ///
+  /// La propuesta de moneda base (solo al crear) y el disparo del cálculo
+  /// automático que quedó pendiente los hace ya el controlador.
   Future<void> _cargarPrecioConfig() async {
     final config = await PrecioConfigService.getSeguro(widget.idEntidad);
     if (!mounted) return;
-    setState(() {
-      _precioConfig = config;
-      // La moneda preferida de la entidad solo PROPONE la base, y solo cuando el
-      // servicio es nuevo: en uno que ya existe manda lo que el admin guardó en
-      // «Moneda por defecto» (y lo que elija después en el desplegable).
-      if (widget.servicio == null &&
-          _monedasHabilitadas.contains(config.monedaOrigen)) {
-        _monedaDefault = config.monedaOrigen;
-      }
-      _configCargada = true;
-    });
-    // Si el admin ya había escrito un precio mientras se leía la configuración,
-    // ahora que se conoce la moneda base y el redondeo se calcula.
-    _programarCalculoAutomatico(_origenEfectivo);
-  }
-
-  /// Lee un precio escrito a mano. `null` si no hay número o no es positivo:
-  /// en esta app `0` significa «sin precio».
-  double? _precioEscrito(TextEditingController? ctrl) {
-    final valor = parseMonto(ctrl?.text ?? '');
-    if (valor == null || valor <= 0) return null;
-    return valor;
-  }
-
-  /// De dónde sale el precio que se convierte: el de la moneda de origen o, si
-  /// está vacío, el de la primera moneda habilitada con precio.
-  ({String moneda, double valor})? _baseParaCalcular(String origen) {
-    final propio = _precioEscrito(_precioBaseCtrls[origen]);
-    if (propio != null) return (moneda: origen, valor: propio);
-    for (final m in _monedasHabilitadas) {
-      final valor = _precioEscrito(_precioBaseCtrls[m]);
-      if (valor != null) return (moneda: m, valor: valor);
-    }
-    return null;
-  }
-
-  void _snack(String mensaje, {Color? color}) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(mensaje),
-          backgroundColor: color ?? AppTheme.warning,
-        ),
-      );
-  }
-
-  /// Cartel no descartable con el aviso obligatorio mientras se pide la tasa.
-  ///
-  /// El `await` de un frame garantiza que el diálogo ya está construido (y su
-  /// contexto guardado) antes de que empiece la petición: así el cierre siempre
-  /// encuentra la ruta correcta y nunca se lleva por delante la hoja modal.
-  Future<void> _mostrarCartelExtraccion() async {
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      useRootNavigator: true,
-      builder: (ctx) {
-        _cartelCtx = ctx;
-        return const PopScope(
-          canPop: false,
-          child: AlertDialog(
-            content: Row(
-              children: [
-                SizedBox(
-                  height: 22,
-                  width: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2.5),
-                ),
-                SizedBox(width: 16),
-                Expanded(
-                  child: Text('Extrayendo los precios automáticamente...'),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-    await WidgetsBinding.instance.endOfFrame;
-  }
-
-  void _cerrarCartelExtraccion() {
-    final ctx = _cartelCtx;
-    _cartelCtx = null;
-    if (ctx == null || !ctx.mounted) return;
-    Navigator.of(ctx).pop();
-  }
-
-  /// Calcula el resto de monedas (precio base y reglas por opción) con la tasa
-  /// del día, tomando como base el precio de la moneda de origen.
-  ///
-  /// Sin tasa **no se toca ningún precio**: se avisa y el admin sigue como
-  /// estaba.
-  Future<void> _calcularRestoDesdeOrigen({bool avisar = true}) async {
-    if (_calculandoPrecios) return;
-    if (_monedasHabilitadas.length < 2) {
-      if (avisar) {
-        _snack('Habilita más de una moneda para calcular el resto.');
-      }
-      return;
-    }
-
-    setState(() => _calculandoPrecios = true);
-    await _mostrarCartelExtraccion();
-
-    TasasDia? tasas;
-    try {
-      tasas = await TasaCambioService.obtener();
-    } finally {
-      _cerrarCartelExtraccion();
-      if (mounted) setState(() => _calculandoPrecios = false);
-    }
-    if (!mounted) return;
-
-    if (tasas == null) {
-      _snack(
-        'No se pudo obtener la tasa de cambio. Los precios no se han '
-        'modificado.',
-        color: AppTheme.error,
-      );
-      return;
-    }
-
-    _escribirPreciosCalculados(tasas);
-  }
-
-  /// Vuelca los precios convertidos en los controladores, formateados con los
-  /// decimales configurados. Se redondea y se usa `toStringAsFixed` porque
-  /// `parseMonto` lee tres decimales como millares (`18.375` → 18375).
-  void _escribirPreciosCalculados(
-    TasasDia tasas, {
-    String? origen,
-    bool avisar = true,
-  }) {
-    final base = _baseParaCalcular(origen ?? _origenEfectivo);
-    if (base == null) {
-      _snack(
-        'Escribe primero un precio en $_origenEfectivo (o en cualquier '
-        'moneda) para calcular el resto.',
-      );
-      return;
-    }
-
-    String formatear(String moneda, double valor) =>
-        Redondeo.texto(valor, _precioConfig.decimalesDe(moneda));
-
-    setState(() {
-      // Precio base. Se marca lo que ESCRIBE el cálculo: esas monedas salen en
-      // verde con su icono. La moneda desde la que se calculó conserva lo que
-      // tecleó el admin, así que no se marca.
-      _calculadas.clear();
-      final convertidos = convertirVarios(
-        precios: {base.moneda: base.valor},
-        origen: base.moneda,
-        monedas: _monedasHabilitadas,
-        tasas: tasas,
-        decimalesDe: _precioConfig.decimalesDe,
-      );
-      for (final entrada in convertidos.entries) {
-        if (entrada.key == base.moneda) continue;
-        final valor = entrada.value;
-        if (valor == null) continue; // sin tasa para esa moneda: no se toca
-        _precioBaseCtrls[entrada.key]?.text = formatear(entrada.key, valor);
-        _calculadas.add(entrada.key);
-      }
-
-      // Reglas de precio por opción: se convierten las que ya tienen precio en
-      // la moneda de origen.
-      for (final regla in _reglasPrecio) {
-        regla.syncMonedas(_monedasHabilitadas);
-        regla.calculadas.clear();
-        for (final opcion in regla.preciosPorOpcion.entries) {
-          final ctrls = opcion.value;
-          final precioBase = _precioEscrito(ctrls[base.moneda]);
-          if (precioBase == null) continue;
-          for (final m in _monedasHabilitadas) {
-            if (m == base.moneda) continue;
-            final valor = convertirPrecio(
-              valor: precioBase,
-              origen: base.moneda,
-              destino: m,
-              tasas: tasas,
-              decimales: _precioConfig.decimalesDe(m),
-            );
-            if (valor == null) continue;
-            ctrls[m]?.text = formatear(m, valor);
-            regla.calculadas.add('${opcion.key}|$m');
-          }
-        }
-      }
-
-      _tasasUsadas = tasas;
-    });
-
-    // El aviso solo lo pide el botón: al teclear sería un SnackBar por pausa.
-    if (avisar) {
-      _snack(
-        'Precios calculados con la tasa del ${tasas.fechaTexto}.',
-        color: AppTheme.success,
-      );
-    }
-  }
-
-  /// Programa el cálculo automático mientras el admin escribe (debounce de
-  /// 700 ms).
-  ///
-  /// **No** es «solo la primera vez»: cada vez que cambia un precio se
-  /// recalculan las demás monedas, que es lo que se espera al teclear. El botón
-  /// «Calcular desde …» queda para forzar el refresco de la tasa.
-  void _programarCalculoAutomatico(
-    String moneda, {
-    _ReglaPrecioEditable? regla,
-  }) {
-    _debounceAuto?.cancel();
-    _debounceAuto = Timer(const Duration(milliseconds: 700), () {
-      _debounceAuto = null;
-      if (!mounted) return;
-      _calcularAutomatico(moneda, regla: regla);
-    });
-  }
-
-  /// Cálculo disparado por el tecleo: sin diálogo y sin avisos repetidos.
-  ///
-  /// Si ya hay una tasa de hoy en memoria no se llama a la red (instantáneo);
-  /// si no, se extrae mostrando el banner discreto del formulario.
-  Future<void> _calcularAutomatico(
-    String moneda, {
-    _ReglaPrecioEditable? regla,
-  }) async {
-    if (!mounted || _calculandoPrecios) return;
-    if (!_precioConfig.autoActivo) return;
-    // Si el admin empezó a escribir antes de que llegara la config de la
-    // entidad, el cálculo se reprograma al cargarla (ver `_cargarPrecioConfig`).
-    if (!_configCargada) return;
-    if (_monedasHabilitadas.length < 2) return;
-
-    // Se calcula desde la moneda que el admin acaba de tocar (da igual cuál sea
-    // la «de origen» de la entidad): así escribir en CUP también rellena USD.
-    final origen = _monedasHabilitadas.contains(moneda)
-        ? moneda
-        : _origenEfectivo;
-
-    final valor = regla == null
-        ? _precioEscrito(_precioBaseCtrls[origen])
-        : _primerPrecioDeRegla(regla, origen);
-    if (valor == null || valor <= 0) return;
-
-    final firma = '${regla == null ? 'base' : 'regla:${_reglasPrecio.indexOf(regla)}'}|$origen';
-    if (_ultimoCalculado[firma] == valor) return;
-    _ultimoCalculado[firma] = valor;
-
-    var tasas = _tasasUsadas;
-    if (tasas == null || !tasas.vigente) {
-      setState(() => _extrayendoTasa = true);
-      try {
-        tasas = await TasaCambioService.obtener();
-      } finally {
-        if (mounted) setState(() => _extrayendoTasa = false);
-      }
-      if (!mounted) return;
-    }
-
-    if (tasas == null) {
-      _avisarSinTasaUnaVez();
-      return;
-    }
-
-    if (regla != null) {
-      _convertirRegla(regla, origen, tasas);
-    } else {
-      _escribirPreciosCalculados(tasas, origen: origen, avisar: false);
-    }
-  }
-
-  /// Traduce «no hay tasa» una sola vez por formulario.
-  void _avisarSinTasaUnaVez() {
-    if (_avisoTasaMostrado) return;
-    _avisoTasaMostrado = true;
-    _snack(
-      'No se pudo obtener la tasa de cambio. Los precios no se han modificado.',
-      color: AppTheme.error,
-    );
-  }
-
-  /// Primer precio escrito en la moneda [moneda] dentro de una regla.
-  double? _primerPrecioDeRegla(_ReglaPrecioEditable regla, String moneda) {
-    for (final ctrls in regla.preciosPorOpcion.values) {
-      final valor = _precioEscrito(ctrls[moneda]);
-      if (valor != null && valor > 0) return valor;
-    }
-    return null;
-  }
-
-  /// Convierte **una** regla desde [origen] (la casilla que se acaba de
-  /// teclear), sin tocar el precio base ni las demás reglas.
-  void _convertirRegla(
-    _ReglaPrecioEditable regla,
-    String origen,
-    TasasDia tasas,
-  ) {
-    setState(() {
-      regla.syncMonedas(_monedasHabilitadas);
-      regla.calculadas.clear();
-      for (final opcion in regla.preciosPorOpcion.entries) {
-        final ctrls = opcion.value;
-        final base = _precioEscrito(ctrls[origen]);
-        if (base == null) continue;
-        for (final m in _monedasHabilitadas) {
-          if (m == origen) continue;
-          final valor = convertirPrecio(
-            valor: base,
-            origen: origen,
-            destino: m,
-            tasas: tasas,
-            decimales: _precioConfig.decimalesDe(m),
-          );
-          if (valor == null) continue;
-          ctrls[m]?.text = Redondeo.texto(valor, _precioConfig.decimalesDe(m));
-          regla.calculadas.add('${opcion.key}|$m');
-        }
-      }
-      _tasasUsadas = tasas;
-    });
-  }
-
-  void _syncPrecioCtrls() {
-    for (final m in List<String>.from(_precioBaseCtrls.keys)) {
-      if (!_monedasHabilitadas.contains(m)) {
-        _precioBaseCtrls.remove(m)?.dispose();
-      }
-    }
-    for (final m in _monedasHabilitadas) {
-      _precioBaseCtrls.putIfAbsent(m, () => TextEditingController());
-    }
-    for (final r in _reglasPrecio) {
-      r.syncMonedas(_monedasHabilitadas);
-    }
-  }
-
-  void _toggleMoneda(String m, bool on) {
-    setState(() {
-      if (on) {
-        if (!_monedasHabilitadas.contains(m)) {
-          _monedasHabilitadas.add(m);
-        }
-      } else if (_monedasHabilitadas.length > 1) {
-        _monedasHabilitadas.remove(m);
-        if (_monedaDefault == m) _monedaDefault = _monedasHabilitadas.first;
-      }
-      _syncPrecioCtrls();
-    });
-    // Al habilitar una moneda, su precio se rellena solo con la tasa del día
-    // (si ya hay un precio escrito y el cálculo automático está activo).
-    if (on) _programarCalculoAutomatico(_origenEfectivo);
+    _precios.actualizarConfigEntidad(config);
   }
 
   @override
   void dispose() {
-    _debounceAuto?.cancel();
     _nombreCtrl.dispose();
     _descCtrl.dispose();
     for (final c in _campos) {
       c.dispose();
     }
-    for (final c in _precioBaseCtrls.values) {
-      c.dispose();
-    }
-    for (final r in _reglasPrecio) {
-      r.dispose();
-    }
+    _precios.dispose();
     super.dispose();
   }
 
@@ -1002,75 +534,31 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
 
   String? _campoError;
 
-  Map<String, dynamic>? _configPrecioToJson(
-    Map<_CampoEditable, String> claves,
-  ) {
-    final base = <String, double>{};
-    for (final m in _monedasHabilitadas) {
-      final t = _precioBaseCtrls[m]?.text.trim() ?? '';
-      if (t.isNotEmpty) {
-        // `parseMonto` entiende es-CU y en-US: "1.500" → 1500 (antes se
-        // guardaba como 1,5) y "1,50" → 1,5.
-        final v = parseMonto(t);
-        if (v == null) {
-          _campoError = 'Precio base inválido para $m';
-          return null;
-        }
-        base[m] = v;
+  /// Campos seleccionables que pueden llevar reglas de precio, con su clave
+  /// **final** (la misma que acaba guardada en `campos_adicionales`).
+  ///
+  /// Recalcula las claves únicas con la MISMA lógica de la pasada 1 de
+  /// `_camposToJson` (slug + sufijo `_2`, `_3`…) pero **sin** validar ni tocar
+  /// `_campoError`: se llama desde `initState`, desde `build` y desde los
+  /// callbacks de los datos adicionales, donde no toca avisar de nada.
+  List<CampoSelectPrecio> _camposSelectParaPrecio() {
+    final claves = <_CampoEditable, String>{};
+    final usadas = <String>{};
+    for (final c in _campos) {
+      final etiqueta = c.etiquetaCtrl.text.trim();
+      if (etiqueta.isEmpty) continue;
+      var clave = CampoAdicional.slug(etiqueta);
+      final base = clave;
+      var n = 2;
+      while (usadas.contains(clave)) {
+        clave = '${base}_$n';
+        n++;
       }
+      usadas.add(clave);
+      claves[c] = clave;
     }
 
-    final reglasOut = <Map<String, dynamic>>[];
-    for (final r in _reglasPrecio) {
-      if (r.siClave == null || r.siClave!.isEmpty) continue;
-
-      final preciosOpcion = <String, Map<String, double>>{};
-      for (final opcion in r.preciosPorOpcion.keys) {
-        final pmap = <String, double>{};
-        for (final m in _monedasHabilitadas) {
-          final t = r.preciosPorOpcion[opcion]?[m]?.text.trim() ?? '';
-          if (t.isEmpty) continue;
-          // Mismo parseo que el precio base: admite "1.500" y "1,50".
-          final v = parseMonto(t);
-          if (v == null) {
-            _campoError = 'Precio inválido para "$opcion"';
-            return null;
-          }
-          pmap[m] = v;
-        }
-        if (pmap.isNotEmpty) preciosOpcion[opcion] = pmap;
-      }
-      if (preciosOpcion.isEmpty) continue;
-
-      String? claveFinal;
-      for (final e in claves.entries) {
-        if (CampoAdicional.slug(e.key.etiquetaCtrl.text.trim()) == r.siClave ||
-            e.value == r.siClave) {
-          claveFinal = e.value;
-          break;
-        }
-      }
-      reglasOut.add({
-        'si_clave': claveFinal ?? r.siClave,
-        'precios_opcion': preciosOpcion,
-      });
-    }
-
-    return ConfigPrecio(
-      monedaDefault: _monedaDefault,
-      monedas: _monedasHabilitadas,
-      preciosBase: base,
-      reglas: reglasOut.map((e) => ReglaPrecio.fromJson(e)).toList(),
-      aplicaPrecioIdaVueltaTodos: _aplicaPrecioIdaVueltaTodos,
-    ).toJson();
-  }
-
-  List<({String slug, String clave, String etiqueta, List<String> opciones})>
-  _camposSelectParaPrecio(Map<_CampoEditable, String> claves) {
-    final out =
-        <
-          ({String slug, String clave, String etiqueta, List<String> opciones})
-        >[];
+    final out = <CampoSelectPrecio>[];
     for (final e in claves.entries) {
       final c = e.key;
       if (c.tipo != TipoCampo.select) continue;
@@ -1156,27 +644,14 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
       );
       return;
     }
-    final claves = <_CampoEditable, String>{};
-    final usadas = <String>{};
-    for (final c in _campos) {
-      final etiqueta = c.etiquetaCtrl.text.trim();
-      if (etiqueta.isEmpty) continue;
-      var clave = CampoAdicional.slug(etiqueta);
-      final base = clave;
-      var n = 2;
-      while (usadas.contains(clave)) {
-        clave = '${base}_$n';
-        n++;
-      }
-      usadas.add(clave);
-      claves[c] = clave;
-    }
-    final configPrecio = _configPrecioToJson(claves);
+    // El editor compartido valida y arma el `config_precio` con las claves
+    // finales de los campos seleccionables (el slug se resuelve a `clave`).
+    final configPrecio = _precios.construir();
     if (configPrecio == null) {
       setState(() {});
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(_campoError ?? 'Revisa la configuración de precio'),
+          content: Text(_precios.error ?? 'Revisa la configuración de precio'),
           backgroundColor: AppTheme.error,
         ),
       );
@@ -1253,14 +728,22 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
         idServicio: idServicio,
         campos: campos,
         permiteTercero: _permiteTercero,
-        configPrecio: configPrecio,
+        configPrecio: configPrecio.toJson(),
       );
       // [67] Interruptor de pago por adelantado de ESTE servicio. Va aparte
       // porque la RPC de arriba no lo toca (es una columna del servicio, no de
       // los datos adicionales) y así sigue valiendo con la 67 sin aplicar.
-      if (_entidadCobra == true || !_cobroAdelantado) {
-        // Solo se escribe si tiene sentido: no se enciende un servicio cuando la
-        // entidad no cobra (quedaría sin efecto y confundiría al admin).
+      //
+      // [P1-3] Se escribe el valor del formulario sin atajo por `_entidadCobra`:
+      // antes, con el maestro apagado y el servicio en `true`, no se escribía
+      // nada y ese `true` sobrevivía escondido; al reactivar el maestro el
+      // servicio volvía a cobrar en silencio.
+      //
+      // Pero SOLO si el valor es de fiar (`_cobroCargado` tras releer la fila, o
+      // `_cobroTocado` porque el admin lo cambió). Escribir a ciegas el `false`
+      // con el que llega el payload del cliente apagaría el cobro al editar
+      // cualquier otra cosa del servicio.
+      if (_cobroCargado || _cobroTocado) {
         await CatalogoService.setCobroAdelantado(
           id: idServicio,
           activo: _cobroAdelantado,
@@ -1326,13 +809,19 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
   }
 
   void _agregarCampo() {
-    setState(() => _campos.add(_CampoEditable.nuevo()));
+    setState(() {
+      _campos.add(_CampoEditable.nuevo());
+      // Los campos seleccionables del editor de precios van con los datos
+      // adicionales: al añadir uno hay que refrescar su lista.
+      _precios.actualizarCamposSelect(_camposSelectParaPrecio());
+    });
   }
 
   void _quitarCampo(int i) {
     setState(() {
       _campos[i].dispose();
       _campos.removeAt(i);
+      _precios.actualizarCamposSelect(_camposSelectParaPrecio());
     });
   }
 
@@ -1528,19 +1017,28 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 value: _cobroAdelantado,
-                // Sin el cobro activo en la entidad, encenderlo aquí no serviría
-                // de nada: se explica en vez de dejar un switch que no hace nada.
-                onChanged: _entidadCobra == true
-                    ? (v) => setState(() => _cobroAdelantado = v)
-                    : null,
+                // [P1-3] Siempre habilitado, también con el maestro apagado. Si
+                // se bloqueara, un servicio que ya tenía `true` no se podría
+                // apagar desde aquí: el flag sobreviviría escondido y se
+                // reactivaría solo al volver a activar el maestro. El subtítulo
+                // explica el estado real en vez de esconder el control.
+                //
+                // `_cobroTocado`: la elección del admin manda sobre la relectura
+                // de `_reconciliarCobro`, que puede llegar después.
+                onChanged: (v) => setState(() {
+                  _cobroAdelantado = v;
+                  _cobroTocado = true;
+                }),
                 secondary: _entidadCobra == false
-                    ? const Icon(Icons.lock_outline, size: 20)
+                    ? const Icon(Icons.info_outline, size: 20)
                     : null,
                 title: const Text('Pago por adelantado en línea'),
                 subtitle: Text(
                   _entidadCobra == false
-                      ? 'Primero actívalo para tu entidad en «Mi suscripción → '
-                            'Cobro por adelantado».'
+                      ? 'La entidad tiene el pago por adelantado apagado: este '
+                            'servicio quedará marcado pero no se ofrecerá hasta '
+                            'que lo actives en «Mi suscripción → Cobro por '
+                            'adelantado».'
                       : 'El cliente podrá pagar este servicio con Transfermóvil '
                             'antes de la cita.',
                   style: const TextStyle(fontSize: 12),
@@ -1548,349 +1046,16 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
               ),
               const Divider(),
 
-              // ── Precio del servicio ───────────────────────
-              TutorialAnchor(
-                id: 'admin_precio',
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text(
-                      'Precio del servicio',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Monedas disponibles',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppTheme.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      children: [
-                        for (final m in MonedasApp.todas)
-                          FilterChip(
-                            label: Text(
-                              MonedasApp.etiqueta(m),
-                              style: const TextStyle(fontSize: 11),
-                            ),
-                            selected: _monedasHabilitadas.contains(m),
-                            onSelected: (v) => _toggleMoneda(m, v),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    DropdownButtonFormField<String>(
-                      value: _monedaDefault,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Moneda por defecto',
-                        isDense: true,
-                        border: OutlineInputBorder(),
-                      ),
-                      items: _monedasHabilitadas
-                          .map(
-                            (m) => DropdownMenuItem(
-                              value: m,
-                              child: Text(MonedasApp.etiqueta(m)),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (v) {
-                        if (v == null) return;
-                        setState(() => _monedaDefault = v);
-                        // Al cambiar la moneda base, el resto se recalcula desde
-                        // ella de inmediato (antes había que tocar el campo de
-                        // USD para que pasara algo).
-                        _programarCalculoAutomatico(v);
-                      },
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Esta es la moneda base: es la que escribes y de la que se '
-                      'calculan las demás.',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: AppTheme.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    // Punto 4: con un solo precio, la app calcula el resto con
-                    // la tasa del día. El ancla es la del paso del tutorial.
-                    TutorialAnchor(
-                      id: 'admin_precio_auto',
-                      child: Row(
-                        children: [
-                          const Expanded(
-                            child: Text(
-                              'Precio base',
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          TextButton.icon(
-                            onPressed: _calculandoPrecios
-                                ? null
-                                : () => _calcularRestoDesdeOrigen(),
-                            icon: const Icon(Icons.calculate_outlined, size: 16),
-                            label: Text(
-                              'Calcular desde $_origenEfectivo',
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                            style: TextButton.styleFrom(
-                              visualDensity: VisualDensity.compact,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    // Banner discreto: el cálculo automático se dispara al
-                    // teclear, así que no puede abrir el diálogo modal cada vez.
-                    if (_extrayendoTasa)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Row(
-                          children: [
-                            const SizedBox(
-                              height: 14,
-                              width: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                            const SizedBox(width: 8),
-                            const Expanded(
-                              child: Text(
-                                'Extrayendo los precios automáticamente...',
-                                style: TextStyle(
-                                  fontSize: 11.5,
-                                  color: AppTheme.textSecondary,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    if (_precioConfig.autoActivo && _monedasHabilitadas.length < 2)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Text(
-                          'Habilita otra moneda y el resto se calculará solo con '
-                          'la tasa del día.',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: AppTheme.textSecondary,
-                          ),
-                        ),
-                      ),
-                    // La moneda base va SIEMPRE primera y, al cambiarla en el
-                    // desplegable, la lista se reordena con animación: se ve
-                    // moverse en vez de cambiar de golpe.
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 240),
-                      switchInCurve: Curves.easeOutCubic,
-                      switchOutCurve: Curves.easeInCubic,
-                      transitionBuilder: (child, animation) => FadeTransition(
-                        opacity: animation,
-                        child: SlideTransition(
-                          position: Tween<Offset>(
-                            begin: const Offset(0, -0.08),
-                            end: Offset.zero,
-                          ).animate(animation),
-                          child: child,
-                        ),
-                      ),
-                      child: Column(
-                        // La clave depende de la base: al cambiarla, Flutter ve
-                        // otro hijo y anima el cambio de orden.
-                        key: ValueKey('precios-base-$_origenEfectivo'),
-                        children: [
-                          for (final m in _monedasOrdenadas)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 6),
-                              child: TextField(
-                                controller: _precioBaseCtrls[m],
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
-                                decoration: _decoracionPrecio(m),
-                                // Cálculo automático: se dispara en CUALQUIERA
-                                // de las monedas (la que el admin esté
-                                // escribiendo, incluida la base) y recalcula el
-                                // resto, sin pulsar nada.
-                                onChanged: (_) {
-                                  // Escrito a mano ⇒ este campo deja de ser
-                                  // «calculado» y pierde el verde.
-                                  if (_calculadas.remove(m)) setState(() {});
-                                  if (_precioConfig.autoActivo) {
-                                    _programarCalculoAutomatico(m);
-                                  }
-                                },
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    if (_tasasUsadas != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.auto_awesome,
-                              size: 14,
-                              color: AppTheme.primary,
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                'Precios calculados con la tasa del '
-                                '${_tasasUsadas!.fechaTexto}. Revísalos antes '
-                                'de guardar: puedes cambiarlos a mano.',
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: AppTheme.textSecondary,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              if (_esTransporteOmnibus) ...[
-                const SizedBox(height: 8),
-                CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  value: _aplicaPrecioIdaVueltaTodos,
-                  onChanged: (v) =>
-                      setState(() => _aplicaPrecioIdaVueltaTodos = v ?? false),
-                  title: const Text(
-                    'Aplica precio de Ida y vuelta para todos los pasajes',
-                    style: TextStyle(fontSize: 13.5),
-                  ),
-                  subtitle: const Text(
-                    'Si está desactivado (recomendado), el precio del turno '
-                    'combinado solo aplica cuando ida y vuelta son el mismo día. '
-                    'En fechas distintas se cobran ida + vuelta por separado.',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                  controlAffinity: ListTileControlAffinity.leading,
-                ),
-              ],
-              const SizedBox(height: 8),
-              TutorialAnchor(
-                id: 'admin_reglas_precio',
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            'Reglas de precio por dato adicional',
-                            style: TextStyle(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        TextButton.icon(
-                          onPressed: () {
-                            setState(
-                              () => _reglasPrecio.add(
-                                _ReglaPrecioEditable.nueva(_monedasHabilitadas),
-                              ),
-                            );
-                          },
-                          icon: const Icon(Icons.add, size: 16),
-                          label: const Text('Regla'),
-                        ),
-                      ],
-                    ),
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 6),
-                      child: Text(
-                        'Configura un precio distinto para cada opción del campo '
-                        'seleccionable. Si dos reglas coinciden, se aplica la primera.',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AppTheme.textSecondary,
-                        ),
-                      ),
-                    ),
-                    Builder(
-                      builder: (context) {
-                        final claves = <_CampoEditable, String>{};
-                        final usadas = <String>{};
-                        for (final c in _campos) {
-                          final etq = c.etiquetaCtrl.text.trim();
-                          if (etq.isEmpty) continue;
-                          var clave = CampoAdicional.slug(etq);
-                          final base = clave;
-                          var n = 2;
-                          while (usadas.contains(clave)) {
-                            clave = '${base}_$n';
-                            n++;
-                          }
-                          usadas.add(clave);
-                          claves[c] = clave;
-                        }
-                        final selects = _camposSelectParaPrecio(claves);
-                        if (selects.isEmpty && _reglasPrecio.isEmpty) {
-                          return const Padding(
-                            padding: EdgeInsets.only(bottom: 8),
-                            child: Text(
-                              'Agrega campos tipo seleccionable para definir reglas.',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: AppTheme.textSecondary,
-                              ),
-                            ),
-                          );
-                        }
-                        return Column(
-                          children: [
-                            for (var i = 0; i < _reglasPrecio.length; i++)
-                              _ReglaPrecioTile(
-                                regla: _reglasPrecio[i],
-                                camposSelect: selects,
-                                monedas: _monedasHabilitadas,
-                                onChanged: () => setState(() {}),
-                                // Al teclear el precio de una opción, sus demás
-                                // monedas se calculan con la tasa del día.
-                                onPrecioCambiado: (moneda) =>
-                                    _programarCalculoAutomatico(
-                                      moneda,
-                                      regla: _reglasPrecio[i],
-                                    ),
-                                onRemove: () {
-                                  setState(() {
-                                    _reglasPrecio[i].dispose();
-                                    _reglasPrecio.removeAt(i);
-                                  });
-                                },
-                              ),
-                          ],
-                        );
-                      },
-                    ),
-                  ],
-                ),
+              // -- Precio del servicio (editor compartido) --
+              // La UI y la logica viven en PreciosServicioEditor: el formulario
+              // de alta/edicion y la pestana de precios usan el MISMO editor.
+              // Aqui solo se engancha el controlador del formulario y se piden
+              // los anchors del tutorial (admin_precio, admin_precio_auto y
+              // admin_reglas_precio).
+              PreciosServicioEditor(
+                controlador: _precios,
+                esTransporteOmnibus: _esTransporteOmnibus,
+                conAnchorsTutorial: true,
               ),
               const Divider(),
 
@@ -1935,7 +1100,14 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
                         key: ValueKey(_campos[i]),
                         campo: _campos[i],
                         todosCampos: _campos,
-                        onChanged: () => setState(() {}),
+                        // Un cambio en el campo (etiqueta, tipo, opciones…)
+                        // cambia las claves finales que usan las reglas de
+                        // precio: el editor compartido se resincroniza aquí.
+                        onChanged: () => setState(() {
+                          _precios.actualizarCamposSelect(
+                            _camposSelectParaPrecio(),
+                          );
+                        }),
                         onRemove: () => _quitarCampo(i),
                       ),
                     if (_campoError != null)
@@ -1978,275 +1150,6 @@ class ServicioFormSheetState extends State<ServicioFormSheet> {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// Regla editable: un campo select con precio por cada opción y moneda.
-class _ReglaPrecioEditable {
-  String? siClave;
-
-  /// opción → moneda → controlador
-  final Map<String, Map<String, TextEditingController>> preciosPorOpcion = {};
-
-  /// Claves `'opcion|moneda'` cuyo precio escribió el cálculo automático: esos
-  /// campos se pintan en verde con su icono. Se limpia al recalcular y al
-  /// editar el campo a mano.
-  final Set<String> calculadas = {};
-
-  _ReglaPrecioEditable({this.siClave});
-
-  factory _ReglaPrecioEditable.nueva(List<String> monedas) =>
-      _ReglaPrecioEditable();
-
-  factory _ReglaPrecioEditable.fromModel(
-    ReglaPrecio r, {
-    required List<String> monedas,
-    List<String>? opcionesCampo,
-  }) {
-    final editable = _ReglaPrecioEditable(siClave: r.siClave);
-    final opciones = opcionesCampo ?? r.preciosOpcion.keys.toList();
-    editable.syncCampo(opciones, monedas);
-    for (final opcion in r.preciosOpcion.entries) {
-      for (final precio in opcion.value.entries) {
-        final ctrl = editable.preciosPorOpcion[opcion.key]?[precio.key];
-        if (ctrl == null) continue;
-        final v = precio.value;
-        // Mismo motivo que `_fmtPrecio`: nunca `v.toString()` (3 decimales se
-        // releen como millares).
-        ctrl.text = v == 0 ? '' : Redondeo.texto(v, Redondeo.maxDecimales);
-      }
-    }
-    return editable;
-  }
-
-  void syncCampo(List<String> opciones, List<String> monedas) {
-    for (final o in List<String>.from(preciosPorOpcion.keys)) {
-      if (!opciones.contains(o)) {
-        for (final c in preciosPorOpcion[o]!.values) {
-          c.dispose();
-        }
-        preciosPorOpcion.remove(o);
-        calculadas.removeWhere((k) => k.startsWith('$o|'));
-      }
-    }
-    for (final o in opciones) {
-      preciosPorOpcion.putIfAbsent(o, () => {});
-      final map = preciosPorOpcion[o]!;
-      for (final m in List<String>.from(map.keys)) {
-        if (!monedas.contains(m)) map.remove(m)?.dispose();
-      }
-      for (final m in monedas) {
-        map.putIfAbsent(m, () => TextEditingController());
-      }
-    }
-  }
-
-  void syncMonedas(List<String> monedas) {
-    syncCampo(preciosPorOpcion.keys.toList(), monedas);
-  }
-
-  void dispose() {
-    for (final map in preciosPorOpcion.values) {
-      for (final c in map.values) {
-        c.dispose();
-      }
-    }
-    preciosPorOpcion.clear();
-  }
-}
-
-class _ReglaPrecioTile extends StatefulWidget {
-  final _ReglaPrecioEditable regla;
-  final List<
-    ({String slug, String clave, String etiqueta, List<String> opciones})
-  >
-  camposSelect;
-  final List<String> monedas;
-  final VoidCallback onChanged;
-  final VoidCallback onRemove;
-
-  /// Se llama al teclear un precio de la regla, con la moneda tocada: así el
-  /// cálculo automático también rellena las demás monedas de esa regla.
-  final ValueChanged<String>? onPrecioCambiado;
-
-  const _ReglaPrecioTile({
-    required this.regla,
-    required this.camposSelect,
-    required this.monedas,
-    required this.onChanged,
-    required this.onRemove,
-    this.onPrecioCambiado,
-  });
-
-  @override
-  State<_ReglaPrecioTile> createState() => _ReglaPrecioTileState();
-}
-
-class _ReglaPrecioTileState extends State<_ReglaPrecioTile> {
-  ({String slug, String clave, String etiqueta, List<String> opciones})?
-  _campoActual() {
-    for (final c in widget.camposSelect) {
-      if (c.slug == widget.regla.siClave || c.clave == widget.regla.siClave) {
-        return c;
-      }
-    }
-    return null;
-  }
-
-  void _syncOpciones() {
-    final campo = _campoActual();
-    widget.regla.syncCampo(campo?.opciones ?? [], widget.monedas);
-  }
-
-  /// Igual que en el precio base: si el precio de esta opción lo puso el cálculo
-  /// automático, el cuadro sale en verde con el icono dentro.
-  InputDecoration _decoracionPrecio(String opcion, String m) {
-    final calculada = widget.regla.calculadas.contains('$opcion|$m');
-    return InputDecoration(
-      labelText: 'Precio (${MonedasApp.simbolo(m)})',
-      isDense: true,
-      fillColor: calculada ? AppTheme.success.withValues(alpha: 0.07) : null,
-      border: const OutlineInputBorder(),
-      enabledBorder: calculada
-          ? const OutlineInputBorder(
-              borderSide: BorderSide(color: AppTheme.success, width: 1.5),
-            )
-          : null,
-      focusedBorder: calculada
-          ? const OutlineInputBorder(
-              borderSide: BorderSide(color: AppTheme.success, width: 1.8),
-            )
-          : null,
-      suffixIcon: calculada
-          ? const Tooltip(
-              message: 'Calculado con la tasa del día',
-              child: Icon(
-                Icons.auto_awesome,
-                size: 16,
-                color: AppTheme.success,
-              ),
-            )
-          : null,
-    );
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _syncOpciones();
-  }
-
-  @override
-  void didUpdateWidget(covariant _ReglaPrecioTile oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _syncOpciones();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final campoActual = _campoActual();
-    final opcionesDisp = campoActual?.opciones ?? const <String>[];
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  value:
-                      widget.camposSelect.any(
-                        (c) => c.slug == widget.regla.siClave,
-                      )
-                      ? widget.regla.siClave
-                      : (widget.camposSelect.any(
-                              (c) => c.clave == widget.regla.siClave,
-                            )
-                            ? widget.camposSelect
-                                  .firstWhere(
-                                    (c) => c.clave == widget.regla.siClave,
-                                  )
-                                  .slug
-                            : null),
-                  isDense: true,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Campo',
-                    isDense: true,
-                    border: OutlineInputBorder(),
-                  ),
-                  items: widget.camposSelect
-                      .map(
-                        (c) => DropdownMenuItem(
-                          value: c.slug,
-                          child: Text(
-                            c.etiqueta,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (v) {
-                    widget.regla.siClave = v;
-                    _syncOpciones();
-                    widget.onChanged();
-                  },
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.close, size: 18, color: AppTheme.error),
-                onPressed: widget.onRemove,
-              ),
-            ],
-          ),
-          if (opcionesDisp.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(top: 8),
-              child: Text(
-                'Selecciona un campo con opciones definidas.',
-                style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
-              ),
-            )
-          else
-            for (final opcion in opcionesDisp) ...[
-              const Divider(height: 16),
-              Text(
-                opcion,
-                style: const TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 6),
-              for (final m in widget.monedas)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: TextField(
-                    controller: widget.regla.preciosPorOpcion[opcion]?[m],
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    decoration: _decoracionPrecio(opcion, m),
-                    onChanged: (_) {
-                      // Escrito a mano ⇒ deja de estar «calculado».
-                      widget.regla.calculadas.remove('$opcion|$m');
-                      widget.onChanged();
-                      widget.onPrecioCambiado?.call(m);
-                    },
-                  ),
-                ),
-            ],
-        ],
       ),
     );
   }
