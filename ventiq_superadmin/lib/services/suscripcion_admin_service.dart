@@ -149,12 +149,23 @@ class SuscripcionAdminService {
 
   // ── Planes ───────────────────────────────────────────────────────────────
 
+  /// Todos los planes, activos e inactivos, con sus campos de catálogo.
+  ///
+  /// Desde la migración `72_planes_limites_privados.sql` cada plan trae además
+  /// `id_entidad`, `entidad_denominacion`, `modalidad` y `etiqueta`, y `limites`
+  /// con las claves `entidades`, `locales`, `servicios_por_local`,
+  /// `servicios_catalogo` y `usuarios`. No se tipa aquí a propósito: la pantalla
+  /// lee el mapa con helpers tolerantes (ver `planes_ui.dart`), así que un
+  /// servidor sin la migración sigue funcionando con los campos que sí manda.
   static Future<List<Map<String, dynamic>>> planes() async {
     final data = await _rpc('admin_planes_listar');
     return _listaDeMapas(data);
   }
 
-  /// Crea (`id` nulo) o actualiza un plan. Los campos nulos se conservan.
+  /// Crea (`id` nulo) o actualiza un plan. Devuelve el id.
+  ///
+  /// Es el envoltorio de [guardarPlanDetallado] que conserva la firma antigua
+  /// (`Future<int>`) para las pantallas que solo necesitan el id.
   static Future<int> guardarPlan({
     int? id,
     String? codigo,
@@ -163,24 +174,144 @@ class SuscripcionAdminService {
     int? duracionDias,
     double? precio,
     String? moneda,
+    Map<String, dynamic>? limites,
     int? orden,
     bool? activo,
+    String? modalidad,
+    int? idEntidad,
+    String? etiqueta,
   }) async {
-    final data = await _rpc(
-      'admin_plan_guardar',
-      params: {
-        'p_id': id,
-        'p_codigo': codigo,
-        'p_nombre': nombre,
-        'p_descripcion': descripcion,
-        'p_duracion_dias': duracionDias,
-        'p_precio': precio,
-        'p_moneda': moneda,
-        'p_orden': orden,
-        'p_activo': activo,
-      },
+    final data = await guardarPlanDetallado(
+      id: id,
+      codigo: codigo,
+      nombre: nombre,
+      descripcion: descripcion,
+      duracionDias: duracionDias,
+      precio: precio,
+      moneda: moneda,
+      limites: limites,
+      orden: orden,
+      activo: activo,
+      modalidad: modalidad,
+      idEntidad: idEntidad,
+      etiqueta: etiqueta,
     );
-    return (_mapaDe(data)['id'] as num?)?.toInt() ?? 0;
+    return (data['id'] as num?)?.toInt() ?? 0;
+  }
+
+  /// Crea (`id` nulo) o actualiza un plan y devuelve el `data` completo del RPC.
+  ///
+  /// Semántica del servidor (migración 72), importante para no cambiar campos
+  /// sin querer:
+  /// - [limites]: objeto jsonb con **solo** claves `> 0` (`entidades`,
+  ///   `locales`, `servicios_por_local`, `servicios_catalogo`, `usuarios`).
+  ///   `{}` **borra** los límites; `null` **conserva** los actuales.
+  /// - [modalidad]: `pago` | `contacto`; `null` conserva.
+  /// - [idEntidad]: entidad dueña del plan privado. `0` = plan **público**
+  ///   (el RPC traduce 0 a `id_entidad = NULL`); `null` **conserva** el valor
+  ///   actual, cosa que necesita el toggle de activar/desactivar para no
+  ///   publicar sin querer un plan privado.
+  /// - [etiqueta]: cinta de la tarjeta; cadena vacía la **quita**, `null`
+  ///   conserva.
+  ///
+  /// El `data` devuelto incluye además:
+  /// - `codigo`: el generado por el servidor cuando se crea un plan privado sin
+  ///   código (`privado_<idEntidad>_<n>`).
+  /// - `aviso`: texto cuando el plan queda activo de pago con precio 0 (no
+  ///   bloquea; el editor lo muestra al superadmin).
+  ///
+  /// Tolerancia al despliegue: los parámetros nuevos llegan con la migración
+  /// 72. Si el servidor todavía expone la firma vieja (10 argumentos), PostgREST
+  /// responde `PGRST202` / `42883` y se reintenta **solo** con los campos
+  /// antiguos para que el panel no se quede sin poder guardar planes mientras se
+  /// pega la migración. En ese caso los campos nuevos se descartan (no hay dónde
+  /// guardarlos) y la pantalla los sigue mostrando igual.
+  static Future<Map<String, dynamic>> guardarPlanDetallado({
+    int? id,
+    String? codigo,
+    String? nombre,
+    String? descripcion,
+    int? duracionDias,
+    double? precio,
+    String? moneda,
+    Map<String, dynamic>? limites,
+    int? orden,
+    bool? activo,
+    String? modalidad,
+    int? idEntidad,
+    String? etiqueta,
+  }) async {
+    final limitesLimpios = limites == null ? null : _limitesLimpios(limites);
+    // `p_limites` ya existe en la firma antigua: se conserva incluso al
+    // reintentar contra un servidor sin la migración 72.
+    final basico = <String, dynamic>{
+      'p_id': id,
+      'p_codigo': codigo,
+      'p_nombre': nombre,
+      'p_descripcion': descripcion,
+      'p_duracion_dias': duracionDias,
+      'p_precio': precio,
+      'p_moneda': moneda,
+      'p_limites': limitesLimpios,
+      'p_orden': orden,
+      'p_activo': activo,
+    };
+    final completo = <String, dynamic>{
+      ...basico,
+      'p_modalidad':
+          (modalidad == null || modalidad.trim().isEmpty)
+              ? null
+              : modalidad.trim(),
+      'p_id_entidad': idEntidad,
+      // Cadena vacía = quitar la cinta (null conservaría la anterior). La
+      // pantalla pinta la cinta solo si el texto tiene contenido.
+      'p_etiqueta': etiqueta?.trim(),
+    };
+
+    try {
+      return _mapaDe(await _rpc('admin_plan_guardar', params: completo));
+    } on PostgrestException catch (e) {
+      if (!_funcionNoDesplegada(e)) rethrow;
+      return _mapaDe(await _rpc('admin_plan_guardar', params: basico));
+    }
+  }
+
+  /// Deja solo los límites válidos del contrato: `> 0` y claves conocidas.
+  ///
+  /// Se filtra también en el cliente para que un campo con 0 o con basura no
+  /// viaje como "límite 0" y termine bloqueando la creación de recursos.
+  static Map<String, int> _limitesLimpios(Map<String, dynamic> limites) {
+    const claves = <String>{
+      'entidades',
+      'locales',
+      'servicios_por_local',
+      'servicios_catalogo',
+      'usuarios',
+    };
+    final salida = <String, int>{};
+    limites.forEach((clave, valor) {
+      if (!claves.contains(clave)) return;
+      final n =
+          valor is num
+              ? valor.toInt()
+              : (valor is String ? int.tryParse(valor.trim()) : null);
+      if (n != null && n > 0) salida[clave] = n;
+    });
+    return salida;
+  }
+
+  /// ¿El error es "esa función con esa firma no existe"?
+  ///
+  /// PostgREST devuelve `PGRST202` cuando no encuentra la función con los
+  /// argumentos enviados (esquema viejo); Postgres devuelve `42883` para
+  /// `undefined_function`. Ambos se tratan igual: reintentar sin los parámetros
+  /// nuevos.
+  static bool _funcionNoDesplegada(PostgrestException e) {
+    if (e.code == 'PGRST202' || e.code == '42883') return true;
+    final mensaje = e.message.toLowerCase();
+    return mensaje.contains('could not find the function') ||
+        mensaje.contains('no existe la función') ||
+        mensaje.contains('schema cache');
   }
 
   /// Borra el plan si nadie lo usó; si tiene historia, el servidor lo desactiva

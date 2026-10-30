@@ -38,6 +38,40 @@ class RespuestaSuscripcion<T> {
       : (error ?? 'No se pudo completar la operación');
 }
 
+/// Token con el que el servidor marca los bloqueos por **límite del plan**.
+///
+/// Los triggers `BEFORE INSERT` de la migración 72 (entidades, locales,
+/// servicios, pares local-servicio y usuarios) lanzan
+/// `raise exception ... message = 'ERR_LIMITE_PLAN: Tu plan ...'`. PostgREST
+/// devuelve ese texto dentro del volcado del error, así que la app lo busca
+/// literalmente y lo sustituye por un aviso accionable.
+const String tokenLimitePlan = 'ERR_LIMITE_PLAN:';
+
+/// Error de límite del plan, ya en español y **sin** el token del servidor.
+///
+/// Es una excepción propia a propósito: quien llama puede distinguirla de un
+/// fallo de red o de permisos (`e is LimitePlanException`) y ofrecer, si el
+/// flujo lo permite, un acceso directo a "Mi suscripción". El mensaje ya viene
+/// redactado y `toString()` no antepone `Exception: `, así que las pantallas que
+/// pintan `'$e'` lo muestran tal cual.
+class LimitePlanException implements Exception {
+  const LimitePlanException(this.mensaje, {required this.recurso});
+
+  /// Texto listo para el usuario: qué no se pudo crear y qué hacer.
+  final String mensaje;
+
+  /// Recurso que bloqueó la operación (`locales`, `usuarios`…), por si la UI
+  /// quiere reaccionar distinto en cada caso.
+  final String recurso;
+
+  /// Acción propuesta. La pantalla de suscripción vive en la ruta
+  /// `/mi-suscripcion`; la navegación la decide quien captura la excepción.
+  static const String sugerencia = 'Mejora tu plan en Mi suscripción.';
+
+  @override
+  String toString() => mensaje;
+}
+
 /// Acceso a los RPC de suscripciones del schema `flow`.
 ///
 /// Todas las funciones son `security definer` y deciden la autorización con
@@ -171,6 +205,84 @@ class SuscripcionService {
     if (digitos.startsWith('53')) return digitos;
     if (digitos.length == 8) return '53$digitos';
     return digitos;
+  }
+
+  /// `true` si el error viene de un trigger de límite del plan.
+  ///
+  /// Útil para las pantallas que quieran distinguir este caso de un fallo de red
+  /// o de permisos, p. ej. para ofrecer un botón "Ver planes".
+  static bool esErrorDeLimitePlan(Object error) =>
+      error.toString().contains(tokenLimitePlan);
+
+  /// Convierte un error de Postgres/PostgREST de límite del plan en una
+  /// [LimitePlanException] con un mensaje limpio y accionable.
+  ///
+  /// Devuelve `null` si el error **no** es de límite: quien llama debe relanzar
+  /// entonces el original sin tocarlo, para no perder el diagnóstico real.
+  ///
+  /// [recurso] es la clave del contrato (`locales`, `servicios_catalogo`,
+  /// `usuarios`…) y decide la frase ("crear más locales", "añadir más
+  /// usuarios"). Si el servidor manda su propio detalle ("Tu plan Inicio permite
+  /// 2 locales y ya usas 2") se conserva, pero se recorta la sugerencia del
+  /// trigger para no repetirla con la de la app.
+  static LimitePlanException? traducirLimitePlan(
+    Object error, {
+    required String recurso,
+  }) {
+    final texto = error.toString();
+    final indice = texto.indexOf(tokenLimitePlan);
+    if (indice < 0) return null;
+
+    var detalle = texto.substring(indice + tokenLimitePlan.length);
+
+    // PostgREST añade metadatos después del mensaje del trigger (", code:
+    // P0001, details: ..."), y el propio trigger termina proponiendo una mejora
+    // de plan. Se cortan los dos para que el aviso final no acabe en un volcado
+    // técnico ni repita la sugerencia.
+    for (final corte in const <String>[
+      '\n',
+      ', code:',
+      ', details:',
+      ', hint:',
+      'Mejora tu plan',
+      'Actualiza tu plan',
+      'Contacta con ventas',
+      'Contacta a ventas',
+    ]) {
+      final i = detalle.indexOf(corte);
+      if (i >= 0) detalle = detalle.substring(0, i);
+    }
+    detalle = detalle.trim();
+    // El cierre del `PostgrestException(...)` no es parte del mensaje.
+    if (detalle.endsWith(')')) {
+      detalle = detalle.substring(0, detalle.length - 1).trimRight();
+    }
+
+    final frase = _accionDeLimite(recurso);
+    final buffer = StringBuffer('Tu plan actual no permite $frase.');
+    if (detalle.isNotEmpty) buffer.write(' $detalle');
+    buffer.write(' ${LimitePlanException.sugerencia}');
+
+    return LimitePlanException(buffer.toString(), recurso: recurso);
+  }
+
+  /// Frase que acompaña al recurso bloqueado, para que el aviso diga qué se
+  /// estaba intentando hacer y no un genérico "límite alcanzado".
+  static String _accionDeLimite(String recurso) {
+    switch (recurso) {
+      case 'entidades':
+        return 'crear más entidades';
+      case 'locales':
+        return 'crear más locales';
+      case 'servicios_catalogo':
+        return 'crear más servicios';
+      case 'servicios_por_local':
+        return 'añadir más servicios a este local';
+      case 'usuarios':
+        return 'añadir más usuarios';
+      default:
+        return 'realizar esta operación';
+    }
   }
 
   /// Llamada genérica a un RPC que devuelve `{ ok, data | error }`.

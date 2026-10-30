@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_theme.dart';
 import '../../models/entidad.dart';
+import '../../models/suscripcion.dart';
 import '../../providers/entidad_provider.dart';
+import '../../providers/suscripcion_provider.dart';
 import '../../services/auth_service.dart';
 import '../../tutorial/tutorial_anchor.dart';
 import '../../tutorial/tutorial_flujos.dart';
 import '../../tutorial/tutorial_navegacion.dart';
 import '../../widgets/dashboard_entidad.dart';
 import '../../widgets/notificaciones_bell.dart';
+import 'cobros_screen.dart';
 import 'config_categorias_screen.dart';
 import 'entidad_detail_screen.dart';
 import 'gestion_servicios_screen.dart';
@@ -78,18 +81,21 @@ class GestionScreen extends StatelessWidget {
             onChanged: entidadProv.seleccionarEntidad,
           ),
         ),
-        // Los cuatro accesos se reparten a los dos lados: con el selector de
-        // entidad ocupando el título, apilarlos todos a la derecha los dejaba
+        // Los accesos se reparten a los dos lados: con el selector de entidad
+        // ocupando el título, apilarlos todos a la derecha los dejaba
         // amontonados y sin aire entre ellos en pantallas estrechas.
         // A la IZQUIERDA van los dos de "contexto" (la configuración de la
-        // entidad y repasar el tutorial); a la DERECHA, los dos de "acción"
-        // (avisos y crear una entidad nueva).
+        // entidad y repasar el tutorial); a la DERECHA los de "acción" (la
+        // suscripción, los avisos y crear una entidad nueva).
         // `leadingWidth` tiene que dar para dos `IconButton` (48 cada uno): el
         // slot por defecto son 56 y el segundo icono se saldría.
         leadingWidth: 104,
         leading: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // La ruedita vuelve a abrir directamente la ficha de la entidad: el
+            // cobro por adelantado ya no cuelga de aquí, tiene su propio cuadro
+            // en el grid de módulos.
             IconButton(
               icon: const Icon(Icons.settings_outlined),
               tooltip: 'Configurar entidad',
@@ -110,6 +116,13 @@ class GestionScreen extends StatelessWidget {
           ],
         ),
         actions: [
+          // La suscripción es del negocio, no de la entidad seleccionada, pero
+          // vive aquí porque es donde el admin mira su operación. El badge solo
+          // se enciende cuando de verdad toca avisar (ver `_BotonSuscripcion`).
+          _BotonSuscripcion(
+            estado: context.watch<SuscripcionProvider>().estado,
+          ),
+          const SizedBox(width: 4),
           // El admin solo llegaba a sus avisos por Perfil: la campana es su
           // acceso directo (misma pantalla `/notificaciones` que el cliente).
           const NotificacionesBell(color: Colors.white),
@@ -160,6 +173,82 @@ class GestionScreen extends StatelessWidget {
       builder: (_) => _NuevaEntidadInlineSheet(ownerUuid: ownerUuid),
     );
   }
+}
+
+/// Días de antelación con los que el badge de suscripción empieza a avisar.
+///
+/// El aviso de impago no depende de esto: ese se enciende siempre. Este umbral
+/// solo decide cuándo un plan que todavía funciona empieza a recordar que se
+/// acaba.
+const int _diasAvisoSuscripcion = 7;
+
+/// Icono de suscripción del AppBar, con badge que solo se enciende si toca.
+///
+/// El icono se pinta **siempre**: si el módulo de suscripciones todavía no está
+/// desplegado, la pantalla que abre lo explica. Lo que no aparece nunca de más es
+/// el badge: sin estado cargado (o con el esquema pendiente) no hay aviso.
+class _BotonSuscripcion extends StatelessWidget {
+  const _BotonSuscripcion({required this.estado});
+
+  /// Estado de la suscripción de la entidad seleccionada. `null` mientras el
+  /// provider no ha cargado o si la migración no está aplicada.
+  final EstadoSuscripcionEntidad? estado;
+
+  @override
+  Widget build(BuildContext context) {
+    final aviso = _avisoSuscripcion(estado);
+
+    return TutorialAnchor(
+      id: 'admin_suscripcion_appbar',
+      child: IconButton(
+        icon: Badge(
+          isLabelVisible: aviso != null,
+          label: Text(aviso?.texto ?? ''),
+          backgroundColor: aviso?.color ?? AppTheme.error,
+          child: const Icon(Icons.workspace_premium_outlined),
+        ),
+        tooltip: _tooltipSuscripcion(estado),
+        onPressed: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const MiSuscripcionScreen()),
+        ),
+      ),
+    );
+  }
+}
+
+/// Aviso del badge: rojo con «!» si hay impago; ámbar con los días restantes si
+/// quedan [_diasAvisoSuscripcion] o menos. `null` = sin badge.
+///
+/// `mostrarAvisoImpago` es exactamente `estado.esImpago` (el modelo lo deriva del
+/// enum); se usa el getter del modelo para no encadenar dos saltos.
+({String texto, Color color})? _avisoSuscripcion(
+  EstadoSuscripcionEntidad? estado,
+) {
+  if (estado == null) return null;
+  if (estado.mostrarAvisoImpago) {
+    return (texto: '!', color: AppTheme.error);
+  }
+  final dias = estado.diasRestantes;
+  if (dias == null || dias > _diasAvisoSuscripcion) return null;
+  // Un saldo negativo (gracia agotada y el cron todavía sin pasar) se pinta como
+  // «0»: un «-2» en un badge no se lee como una cuenta atrás.
+  return (texto: '${dias < 0 ? 0 : dias}', color: AppTheme.warning);
+}
+
+/// Tooltip del icono: explica el estado cuando hay algo que explicar.
+String _tooltipSuscripcion(EstadoSuscripcionEntidad? estado) {
+  if (estado == null) return 'Tu suscripción';
+  if (estado.mostrarAvisoImpago) {
+    return 'Tu suscripción: tienes un pago pendiente';
+  }
+  final dias = estado.diasRestantes;
+  if (dias != null && dias <= _diasAvisoSuscripcion) {
+    if (dias <= 0) return 'Tu suscripción vence hoy';
+    if (dias == 1) return 'Tu suscripción vence en 1 día';
+    return 'Tu suscripción vence en $dias días';
+  }
+  return 'Tu suscripción';
 }
 
 /// Acceso «Ver la app como cliente», encima del tablero del admin.
@@ -466,19 +555,23 @@ class _GestionBody extends StatelessWidget {
                     ),
                   ),
                 ),
-                // Suscripción y cobros: tu plan, el cobro por adelantado de los
-                // servicios (número de proveedor + WhatsApp de verificación) y
-                // la bandeja de pagos por verificar. Todo en «Mi suscripción»,
-                // que es la pantalla que ya reúne las tres cosas.
-                _ModuloCard(
-                  icon: Icons.workspace_premium_outlined,
-                  title: 'Suscripción y cobros',
-                  subtitle: 'Tu plan y el pago por adelantado',
-                  color: const Color(0xFF00A36C),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const MiSuscripcionScreen(),
+                // Cobros por adelantado de los servicios: aquí está el acceso a
+                // la pantalla dedicada, con la configuración (número de
+                // proveedor + WhatsApp de verificación) y la bandeja de pagos
+                // por verificar. La suscripción del negocio ya no se mezcla con
+                // esto: se entra por el icono del AppBar.
+                TutorialAnchor(
+                  id: 'admin_cobro_tile',
+                  child: _ModuloCard(
+                    icon: Icons.point_of_sale_outlined,
+                    title: 'Pagos de Reserva',
+                    subtitle: 'Verifica los pagos',
+                    color: const Color(0xFF00A36C),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => CobrosScreen(entidad: entidad),
+                      ),
                     ),
                   ),
                 ),

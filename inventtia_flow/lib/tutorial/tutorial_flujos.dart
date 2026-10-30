@@ -302,6 +302,40 @@ class TutorialFlujos {
           opcional: true,
           destino: TutorialDestino.reservas,
         ),
+        // La suscripción se movió a la cabecera: su icono lleva a «Mi
+        // suscripción» y enciende un badge cuando quedan pocos días. El cobro por
+        // adelantado, en cambio, tiene su propio cuadrito en el home y se
+        // configura y se verifica en una pantalla dedicada.
+        TutorialPaso(
+          id: 'admin_suscripcion_appbar',
+          titulo: 'Tu suscripción, a la vista',
+          mensaje: 'Desde este icono entras a tu suscripción. El aviso se enciende '
+              'solo cuando quedan pocos días, con el número de días que te quedan.',
+          destino: TutorialDestino.gestion,
+        ),
+        TutorialPaso(
+          id: 'admin_mi_suscripcion',
+          titulo: 'Renueva sin cortes',
+          mensaje: 'Aquí pagas el plan con Transfermóvil y reportas el pago: el '
+              'superadmin lo verifica y se te acreditan los días.',
+          destino: TutorialDestino.suscripcion,
+        ),
+        TutorialPaso(
+          id: 'admin_cobro_tile',
+          titulo: 'Pagos por adelantado',
+          mensaje: 'Este cuadrito reúne el cobro por adelantado de tus servicios: '
+              'el número de proveedor con el que cobras y los pagos que te faltan '
+              'por verificar.',
+          destino: TutorialDestino.gestion,
+        ),
+        TutorialPaso(
+          id: 'admin_cobro_pagos',
+          titulo: 'Verifica los pagos',
+          mensaje: 'Cuando un cliente pague, su reserva aparecerá en «Pagos por '
+              'verificar»: confirma el pago y quedará pagada. El cobro se activa '
+              'desde «Configurar el cobro».',
+          destino: TutorialDestino.cobros,
+        ),
         TutorialPaso(
           id: 'admin_categorias',
           titulo: 'Categorías',

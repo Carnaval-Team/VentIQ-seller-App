@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/entidad.dart';
+import 'suscripcion_service.dart';
 
 class EntidadService {
   static final SupabaseClient _supabase = Supabase.instance.client;
@@ -83,19 +84,31 @@ class EntidadService {
     required String ownerUuid,
     int horasAnticipacionCancelacion = 0,
   }) async {
-    final res = await _supabase
-        .schema(_schema)
-        .from('entidad')
-        .insert({
-          'denominacion': denominacion,
-          'direccion': direccion,
-          'telefono': telefono,
-          'owner_uuid': ownerUuid,
-          'horas_anticipacion_cancelacion': horasAnticipacionCancelacion,
-        })
-        .select()
-        .single();
-    return Entidad.fromJson(res);
+    try {
+      final res = await _supabase
+          .schema(_schema)
+          .from('entidad')
+          .insert({
+            'denominacion': denominacion,
+            'direccion': direccion,
+            'telefono': telefono,
+            'owner_uuid': ownerUuid,
+            'horas_anticipacion_cancelacion': horasAnticipacionCancelacion,
+          })
+          .select()
+          .single();
+      return Entidad.fromJson(res);
+    } catch (e) {
+      // Trigger `trg_limite_entidades`: el plan no permite más entidades para
+      // este owner. Se traduce a un aviso accionable; si el error no es de
+      // límite, se relanza intacto.
+      final limite = SuscripcionService.traducirLimitePlan(
+        e,
+        recurso: 'entidades',
+      );
+      if (limite != null) throw limite;
+      rethrow;
+    }
   }
 
   static Future<Entidad> updateEntidad({
@@ -141,17 +154,28 @@ class EntidadService {
     required String uuidUsuario,
     required String asignadoPor,
   }) async {
-    final res = await _supabase
-        .schema(_schema)
-        .from('entidad_admin')
-        .insert({
-          'id_entidad': idEntidad,
-          'uuid_usuario': uuidUsuario,
-          'asignado_por': asignadoPor,
-        })
-        .select()
-        .single();
-    return EntidadAdmin.fromJson(res);
+    try {
+      final res = await _supabase
+          .schema(_schema)
+          .from('entidad_admin')
+          .insert({
+            'id_entidad': idEntidad,
+            'uuid_usuario': uuidUsuario,
+            'asignado_por': asignadoPor,
+          })
+          .select()
+          .single();
+      return EntidadAdmin.fromJson(res);
+    } catch (e) {
+      // El plan también limita los usuarios de la entidad: asignar un admin
+      // puede quedar bloqueado por el trigger.
+      final limite = SuscripcionService.traducirLimitePlan(
+        e,
+        recurso: 'usuarios',
+      );
+      if (limite != null) throw limite;
+      rethrow;
+    }
   }
 
   static Future<void> removeAdmin(int idEntidadAdmin) async {
@@ -189,17 +213,28 @@ class EntidadService {
     required String uuidUsuario,
     required String asignadoPor,
   }) async {
-    final res = await _supabase
-        .schema(_schema)
-        .from('entidad_vendedor')
-        .insert({
-          'id_entidad': idEntidad,
-          'uuid_usuario': uuidUsuario,
-          'asignado_por': asignadoPor,
-        })
-        .select()
-        .single();
-    return EntidadVendedor.fromJson(res);
+    try {
+      final res = await _supabase
+          .schema(_schema)
+          .from('entidad_vendedor')
+          .insert({
+            'id_entidad': idEntidad,
+            'uuid_usuario': uuidUsuario,
+            'asignado_por': asignadoPor,
+          })
+          .select()
+          .single();
+      return EntidadVendedor.fromJson(res);
+    } catch (e) {
+      // Igual que [addAdmin]: el límite de usuarios cubre también a los
+      // vendedores de la entidad.
+      final limite = SuscripcionService.traducirLimitePlan(
+        e,
+        recurso: 'usuarios',
+      );
+      if (limite != null) throw limite;
+      rethrow;
+    }
   }
 
   static Future<void> removeVendedor(int idEntidadVendedor) async {

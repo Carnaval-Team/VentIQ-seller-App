@@ -2,15 +2,17 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../config/app_theme.dart';
+import '../models/version_app.dart';
 import '../providers/auth_provider.dart';
 import '../providers/entidad_provider.dart';
 import '../providers/modo_vista_provider.dart';
 import '../services/auth_service.dart';
+import '../widgets/aviso_actualizacion.dart';
 import '../widgets/notificaciones_bell.dart';
 import '../services/update_service.dart';
 import 'favoritos_screen.dart';
+import 'novedades_screen.dart';
 import 'perfil_setup_screen.dart';
 import 'admin/entidad_detail_screen.dart';
 import 'admin/locales_servicios_screen.dart';
@@ -258,7 +260,8 @@ class PerfilScreenState extends State<PerfilScreen> {
                         // Entrada al modo cliente: la ofrece el shell (que además
                         // deja la pestaña en Inicio) y solo cuando NO se está ya
                         // en él.
-                        if (widget.onVerComoCliente != null && !comoCliente) ...[
+                        if (widget.onVerComoCliente != null &&
+                            !comoCliente) ...[
                           _ActionTile(
                             icon: Icons.remove_red_eye_outlined,
                             title: 'Ver la app como cliente',
@@ -272,7 +275,8 @@ class PerfilScreenState extends State<PerfilScreen> {
                         // Solo para clientes —o para el admin que está viendo la
                         // app como cliente—: un admin no navega el catálogo.
                         if (veComoCliente ||
-                            (!entidadProv.isAdmin && !entidadProv.isVendedor)) ...[
+                            (!entidadProv.isAdmin &&
+                                !entidadProv.isVendedor)) ...[
                           _ActionTile(
                             icon: Icons.favorite_border_rounded,
                             title: 'Favoritos',
@@ -1077,8 +1081,8 @@ class _AppVersionSection extends StatefulWidget {
 }
 
 class _AppVersionSectionState extends State<_AppVersionSection> {
-  String _version = '...';
-  int _build = 0;
+  /// Versión realmente instalada (`package_info_plus`), no la del asset.
+  VersionApp? _instalada;
   bool _checking = false;
 
   @override
@@ -1089,33 +1093,44 @@ class _AppVersionSectionState extends State<_AppVersionSection> {
 
   Future<void> _loadVersion() async {
     try {
-      final info = await UpdateService.getCurrentVersionInfo();
-      if (mounted) {
-        setState(() {
-          _version = info['current_version'] ?? '1.0.0';
-          _build = info['build'] ?? 1;
-        });
-      }
+      final instalada = await UpdateService.appInstalada();
+      if (mounted) setState(() => _instalada = instalada);
     } catch (_) {}
   }
 
   Future<void> _checkUpdates() async {
     setState(() => _checking = true);
     try {
-      final updateInfo = await UpdateService.checkForUpdates();
+      final aviso = await UpdateService.avisoActual();
       if (!mounted) return;
-      setState(() => _checking = false);
-      if (updateInfo['hay_actualizacion'] == true) {
-        _showUpdateDialog(updateInfo);
-      } else {
+      setState(() {
+        _checking = false;
+        _instalada = aviso.instalada;
+      });
+
+      if (!aviso.hayActualizacion) {
+        final sinRed = aviso.error != null;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('La aplicación está actualizada'),
-            backgroundColor: AppTheme.primary,
-            duration: Duration(seconds: 2),
+          SnackBar(
+            content: Text(
+              sinRed
+                  ? 'No se pudo comprobar: revisa tu conexión'
+                  : 'La aplicación está actualizada',
+            ),
+            backgroundColor: sinRed ? AppTheme.warning : AppTheme.primary,
+            duration: const Duration(seconds: 2),
           ),
         );
+        return;
       }
+
+      // El historial se abre encima del diálogo, que sigue abierto (importante
+      // cuando la actualización es obligatoria).
+      await mostrarDialogoActualizacion(
+        context,
+        aviso,
+        alVerHistorial: _abrirNovedades,
+      );
     } catch (e) {
       if (mounted) {
         setState(() => _checking = false);
@@ -1129,194 +1144,142 @@ class _AppVersionSectionState extends State<_AppVersionSection> {
     }
   }
 
-  void _showUpdateDialog(Map<String, dynamic> updateInfo) {
-    final bool isObligatory = updateInfo['obligatoria'] ?? false;
-    final String newVersion = updateInfo['version_disponible'] ?? '';
-    showDialog(
-      context: context,
-      barrierDismissible: !isObligatory,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Icon(
-              isObligatory ? Icons.warning_amber_rounded : Icons.system_update,
-              color: isObligatory ? Colors.orange : AppTheme.primary,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                isObligatory
-                    ? 'Actualización obligatoria'
-                    : 'Nueva versión disponible',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-                maxLines: 2,
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _VersionRow(
-              label: 'Versión disponible',
-              value: newVersion,
-              highlight: true,
-            ),
-            const SizedBox(height: 6),
-            _VersionRow(label: 'Versión actual', value: _version),
-            const SizedBox(height: 16),
-            Text(
-              isObligatory
-                  ? 'Esta actualización es obligatoria para continuar usando la aplicación.'
-                  : 'Se recomienda actualizar para obtener las últimas mejoras.',
-              style: TextStyle(
-                color: isObligatory
-                    ? Colors.orange.shade800
-                    : AppTheme.textSecondary,
-                fontSize: 13,
-                fontWeight: isObligatory ? FontWeight.w500 : FontWeight.normal,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          if (!isObligatory)
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Más tarde'),
-            ),
-          ElevatedButton.icon(
-            icon: const Icon(Icons.download_rounded, size: 18),
-            label: const Text('Descargar'),
-            onPressed: () async {
-              final url = Uri.parse(UpdateService.downloadUrl);
-              bool ok = false;
-              try {
-                ok = await launchUrl(url, mode: LaunchMode.externalApplication);
-              } catch (_) {}
-              if (!ok) {
-                try {
-                  ok = await launchUrl(url);
-                } catch (_) {}
-              }
-              if (ok && mounted) Navigator.of(ctx).pop();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: isObligatory ? Colors.orange : AppTheme.primary,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+  Future<void> _abrirNovedades() async {
+    if (!mounted) return;
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const NovedadesScreen()));
   }
 
   @override
   Widget build(BuildContext context) {
+    final instalada = _instalada;
+
     return _SoftCard(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: AppTheme.primary.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.info_outline,
-              color: AppTheme.primary,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Versión de la app',
-                  style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  'v$_version (build $_build)',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.textPrimary,
-                  ),
+                child: const Icon(
+                  Icons.info_outline,
+                  color: AppTheme.primary,
+                  size: 20,
                 ),
-              ],
-            ),
-          ),
-          _checking
-              ? const SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppTheme.primary,
-                  ),
-                )
-              : TextButton(
-                  onPressed: _checkUpdates,
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Versión de la app',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textSecondary,
+                      ),
                     ),
-                    foregroundColor: AppTheme.primary,
-                  ),
-                  child: const Text(
-                    'Verificar',
-                    style: TextStyle(fontSize: 13),
-                  ),
+                    const SizedBox(height: 2),
+                    Text(
+                      instalada?.etiquetaVersion ?? '...',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                  ],
                 ),
+              ),
+              _checking
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppTheme.primary,
+                      ),
+                    )
+                  : TextButton(
+                      onPressed: _checkUpdates,
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        foregroundColor: AppTheme.primary,
+                      ),
+                      child: const Text(
+                        'Verificar',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                    ),
+            ],
+          ),
+          const Divider(height: 24, color: AppTheme.border),
+          // Entrada al historial completo de cambios.
+          InkWell(
+            onTap: _abrirNovedades,
+            borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.campaign_outlined,
+                      size: 18,
+                      color: AppTheme.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Novedades',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.textPrimary,
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Historial de cambios de GoReserva',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    color: AppTheme.textSecondary,
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
-    );
-  }
-}
-
-class _VersionRow extends StatelessWidget {
-  final String label;
-  final String value;
-  final bool highlight;
-  const _VersionRow({
-    required this.label,
-    required this.value,
-    this.highlight = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Text(
-          '$label: ',
-          style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
-        ),
-        Flexible(
-          child: Text(
-            value,
-            style: TextStyle(
-              fontSize: highlight ? 15 : 13,
-              fontWeight: highlight ? FontWeight.bold : FontWeight.w500,
-              color: highlight ? AppTheme.primary : AppTheme.textPrimary,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

@@ -287,6 +287,17 @@ class AppDrawer extends StatelessWidget {
                 ),
                 _buildMenuSection(
                   context,
+                  title: 'Aplicaciones',
+                  items: [
+                    _DrawerItem(
+                      icon: Icons.system_update_alt,
+                      title: 'Versiones de las apps',
+                      route: '/versiones',
+                    ),
+                  ],
+                ),
+                _buildMenuSection(
+                  context,
                   title: 'Sistema',
                   items: [
                     _DrawerItem(
@@ -469,7 +480,8 @@ class AppDrawer extends StatelessWidget {
                 item.route == '/flow-suscripciones' ||
                 item.route == '/flow-planes' ||
                 item.route == '/flow-config' ||
-                item.route == '/flow-categorias') {
+                item.route == '/flow-categorias' ||
+                item.route == '/versiones') {
               Navigator.of(context).pushReplacementNamed(item.route);
             } else {
               // Para rutas que aún no están implementadas
@@ -530,10 +542,9 @@ class AppDrawer extends StatelessWidget {
                 await authService.logout();
 
                 if (context.mounted) {
-                  Navigator.of(context).pushNamedAndRemoveUntil(
-                    '/login',
-                    (route) => false,
-                  );
+                  Navigator.of(
+                    context,
+                  ).pushNamedAndRemoveUntil('/login', (route) => false);
                 }
               },
               style: ElevatedButton.styleFrom(

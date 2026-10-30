@@ -7,11 +7,9 @@ import '../../config/app_theme.dart';
 import '../../models/suscripcion.dart';
 import '../../providers/suscripcion_provider.dart';
 import '../../services/auth_service.dart';
-import '../../services/cobro_service.dart';
 import '../../services/imagen_service.dart';
 import '../../services/suscripcion_service.dart';
-import 'cobro_config_screen.dart';
-import 'pagos_reserva_screen.dart';
+import '../../tutorial/tutorial_anchor.dart';
 
 /// Pantalla "Mi suscripción": estado, planes, pago por Transfermóvil e historial.
 ///
@@ -51,11 +49,6 @@ class _MiSuscripcionScreenState extends State<MiSuscripcionScreen>
   /// generen dos pagos de la misma suscripción.
   bool _pagoEnCurso = false;
 
-  /// Pagos **por adelantado de reservas** esperando verificación. Se usa como
-  /// contador de la entrada a la bandeja; `0` si no se pudo cargar (migración 62
-  /// pendiente o sin permisos), en cuyo caso el acceso sigue visible sin número.
-  int _pagosPorVerificar = 0;
-
   @override
   void initState() {
     super.initState();
@@ -65,10 +58,6 @@ class _MiSuscripcionScreenState extends State<MiSuscripcionScreen>
       // Forzado: al entrar aquí el usuario quiere el dato de ahora, no el de la
       // carga inicial del shell.
       await context.read<SuscripcionProvider>().recargar();
-      if (!mounted) return;
-      // Después de recargar: así `idEntidad` ya está resuelto para el contador
-      // de pagos por verificar.
-      await _cargarPagosPorVerificar();
     });
   }
 
@@ -133,158 +122,29 @@ class _MiSuscripcionScreenState extends State<MiSuscripcionScreen>
     await _abrirTransfermovil();
   }
 
-  // ── Cobro por adelantado de los servicios (migración 62) ─────────────────
-  //
-  // El pago por adelantado del SERVICIO (no de la suscripción) se configura y se
-  // gestiona desde aquí porque es donde el admin ya entra a ver qué tiene que
-  // pagar. La bandeja también se enlaza desde Reservas (lo hace el frente de
-  // cancelación); esta pantalla solo añade la entrada.
-
-  /// Cuenta los pagos de reservas esperando verificación (badge de la bandeja).
+  /// Modalidad `contacto`: el plan **no** se paga dentro de la app, se contrata
+  /// hablando con ventas.
   ///
-  /// Es solo un contador: si falla (migración 62 sin aplicar, sin permisos, sin
-  /// red) se queda en 0 y el acceso sigue estando.
-  Future<void> _cargarPagosPorVerificar() async {
-    final idEntidad = context.read<SuscripcionProvider>().idEntidad;
-    if (idEntidad == null) return;
-    try {
-      final pagos = await CobroService.listarPagos(idEntidad: idEntidad);
-      if (!mounted) return;
-      setState(() {
-        _pagosPorVerificar = pagos
-            .where(
-              (p) => p.pago.estado == 'creado' || p.pago.estado == 'reportado',
-            )
-            .length;
-      });
-    } catch (_) {
-      // Silencio deliberado: es un contador, no un dato funcional.
+  /// Se reutiliza el helper de WhatsApp del servicio (y con él el número de
+  /// soporte de respaldo) para que no haya dos maneras de abrir `wa.me`. El
+  /// mensaje lo redacta la app porque el servidor no tiene RPC para esto: es un
+  /// simple "me interesa este plan", no un aviso de pago.
+  Future<void> _contactarVentas(PlanSuscripcion plan) async {
+    final mensaje = StringBuffer(
+      'Hola, me interesa el plan ${plan.nombre} de GoReserva.',
+    );
+    final denominacion = plan.entidadDenominacion?.trim();
+    if (denominacion != null && denominacion.isNotEmpty) {
+      mensaje.write(' Soy de $denominacion.');
     }
-  }
+    if (plan.esPrivado) {
+      mensaje.write(' Es un plan privado de mi entidad.');
+    }
+    mensaje.write(' ¿Me pueden contar cómo contratarlo?');
 
-  Future<void> _abrirConfigCobro(int idEntidad) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => CobroConfigScreen(idEntidad: idEntidad),
-      ),
-    );
-    if (mounted) await _cargarPagosPorVerificar();
-  }
-
-  Future<void> _abrirBandejaPagos(int idEntidad) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => PagosReservaScreen(idEntidad: idEntidad),
-      ),
-    );
-    if (mounted) await _cargarPagosPorVerificar();
-  }
-
-  /// Entrada al cobro por adelantado: configuración del admin y bandeja.
-  Widget _seccionCobro(int idEntidad) {
-    final pendientes = _pagosPorVerificar;
-    final subtituloPendientes = pendientes == 0
-        ? 'No hay pagos esperando verificación.'
-        : pendientes == 1
-        ? '1 pago espera tu verificación.'
-        : '$pendientes pagos esperan tu verificación.';
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const _TituloSeccion(
-          titulo: 'Cobro por adelantado de tus servicios',
-          subtitulo:
-              'Cobra la reserva antes de la cita con Transfermóvil y verifica '
-              'los pagos desde aquí.',
-        ),
-        const SizedBox(height: 8),
-        Container(
-          decoration: BoxDecoration(
-            color: AppTheme.cardBg,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppTheme.border),
-          ),
-          child: Column(
-            children: [
-              ListTile(
-                leading: const Icon(
-                  Icons.point_of_sale_outlined,
-                  color: AppTheme.primary,
-                ),
-                title: const Text(
-                  'Configurar el cobro',
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.textPrimary,
-                  ),
-                ),
-                subtitle: const Text(
-                  'Número de proveedor, WhatsApp de verificación, moneda y '
-                  'plazo.',
-                  style: TextStyle(fontSize: 12, height: 1.3),
-                ),
-                trailing: const Icon(
-                  Icons.chevron_right,
-                  color: AppTheme.textSecondary,
-                ),
-                onTap: () => _abrirConfigCobro(idEntidad),
-              ),
-              const Divider(height: 1, indent: 12, endIndent: 12),
-              ListTile(
-                leading: const Icon(
-                  Icons.receipt_long_outlined,
-                  color: AppTheme.primary,
-                ),
-                title: const Text(
-                  'Pagos por verificar',
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.textPrimary,
-                  ),
-                ),
-                subtitle: Text(
-                  subtituloPendientes,
-                  style: const TextStyle(fontSize: 12, height: 1.3),
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (pendientes > 0)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppTheme.warning,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          '$pendientes',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                    const SizedBox(width: 4),
-                    const Icon(
-                      Icons.chevron_right,
-                      color: AppTheme.textSecondary,
-                    ),
-                  ],
-                ),
-                onTap: () => _abrirBandejaPagos(idEntidad),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
+    // Si el servidor no manda el WhatsApp de ventas, `urlWhatsapp` cae al número
+    // de soporte por defecto; nunca se deja al usuario con un enlace vacío.
+    await _escribirSoporte(plan.contactoWhatsapp ?? '', mensaje.toString());
   }
 
   /// Lanza Transfermóvil con el deep link del intent.
@@ -363,9 +223,24 @@ class _MiSuscripcionScreenState extends State<MiSuscripcionScreen>
               ),
               const SizedBox(height: 14),
               _DatoCopiable(
-                etiqueta: 'Importe',
-                valor: '${intent.importe} ${intent.intent.moneda}',
+                // El importe es SIEMPRE el que manda el servidor: con la
+                // migración 74 ya viene en CUP al cambio del día.
+                etiqueta: intent.cobraEnCup
+                    ? 'Importe a transferir (CUP)'
+                    : 'Importe a transferir',
+                valor: intent.importeEtiqueta,
               ),
+              if (intent.equivalenciaPlanEtiqueta != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    intent.equivalenciaPlanEtiqueta!,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                ),
               _DatoCopiable(
                 etiqueta: 'Número del comercio',
                 valor: intent.numeroProveedor,
@@ -587,7 +462,14 @@ class _MiSuscripcionScreenState extends State<MiSuscripcionScreen>
     return Scaffold(
       backgroundColor: AppTheme.surface,
       appBar: AppBar(
-        title: const Text('Mi suscripción'),
+        // Ancla del tutorial `admin_mi_suscripcion`: el paso «Renueva sin cortes»
+        // resalta esta cabecera. Va en el título y no en la sección de planes
+        // porque la lista de planes se sustituye por la tarjeta de pago pendiente
+        // cuando hay un pago reportado, y el paso se quedaría sin objetivo.
+        title: const TutorialAnchor(
+          id: 'admin_mi_suscripcion',
+          child: Text('Mi suscripción'),
+        ),
         backgroundColor: AppTheme.primary,
         foregroundColor: Colors.white,
         actions: [
@@ -721,15 +603,15 @@ class _MiSuscripcionScreenState extends State<MiSuscripcionScreen>
             )
           else
             ...provider.planes.map(
-              (p) => _TarjetaPlan(plan: p, onPagar: () => _elegirPlan(p)),
+              (p) => _TarjetaPlan(
+                plan: p,
+                onPagar: () => _elegirPlan(p),
+                onContactar: () => _contactarVentas(p),
+              ),
             ),
         ],
 
         const SizedBox(height: 22),
-        if (provider.idEntidad != null) ...[
-          _seccionCobro(provider.idEntidad!),
-          const SizedBox(height: 22),
-        ],
         const _TituloSeccion(titulo: 'Historial'),
         const SizedBox(height: 8),
         _Historial(
@@ -1155,8 +1037,13 @@ class _TarjetaPagoEnCurso extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           _DatoCopiable(
-            etiqueta: 'Importe',
-            valor: '${intent.importe} ${intent.intent.moneda}',
+            // El que se transfiere es el importe del servidor. Con la migración
+            // 74 el intent nace en CUP al cambio del día, aunque el plan esté
+            // tarifado en USD/EUR/MLC.
+            etiqueta: intent.cobraEnCup
+                ? 'Importe a transferir (CUP)'
+                : 'Importe a transferir',
+            valor: intent.importeEtiqueta,
           ),
           _DatoCopiable(
             etiqueta: 'Número del comercio',
@@ -1166,6 +1053,8 @@ class _TarjetaPagoEnCurso extends StatelessWidget {
             etiqueta: 'Id de transacción',
             valor: intent.idTransaccion,
           ),
+          if (intent.cobraEnCup)
+            _AvisoCobroCup(equivalencia: intent.equivalenciaPlanEtiqueta),
           const SizedBox(height: 12),
           const Text(
             'Paso 1: abre Transfermóvil y paga el importe.\n'
@@ -1314,13 +1203,18 @@ class _TarjetaIntentGuardado extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           _DatoCopiable(
-            etiqueta: 'Importe',
-            valor: '${intent.monto.toStringAsFixed(2)} ${intent.moneda}',
+            // Un intento guardado en el servidor ya nace con la moneda del
+            // cobro: desde la 74, CUP al cambio del día.
+            etiqueta: intent.moneda.toUpperCase() == 'CUP'
+                ? 'Importe a transferir (CUP)'
+                : 'Importe a transferir',
+            valor: intent.montoEtiqueta,
           ),
           _DatoCopiable(
             etiqueta: 'Id de transacción',
             valor: intent.idTransaccion,
           ),
+          if (intent.moneda.toUpperCase() == 'CUP') const _AvisoCobroCup(),
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
@@ -1363,25 +1257,73 @@ class _TarjetaIntentGuardado extends StatelessWidget {
   }
 }
 
+/// Tarjeta de un plan comprable.
+///
+/// La tarjeta cambia según el contrato de la migración 72:
+///
+///   * `etiqueta` → cinta comercial ("Más popular").
+///   * `es_privado` → chip "Plan privado" y, si llega, la entidad dueña.
+///   * `modalidad == 'contacto'` → no hay precio ni pago: el botón es
+///     "Contactar con ventas" y abre WhatsApp.
+///   * `limites` → lista de características legibles ("2 locales", "3 usuarios").
+///
+/// Si el servidor todavía no manda nada de eso, la tarjeta se ve igual que antes.
 class _TarjetaPlan extends StatelessWidget {
-  const _TarjetaPlan({required this.plan, required this.onPagar});
+  const _TarjetaPlan({
+    required this.plan,
+    required this.onPagar,
+    required this.onContactar,
+  });
 
   final PlanSuscripcion plan;
   final VoidCallback onPagar;
+  final VoidCallback onContactar;
 
   @override
   Widget build(BuildContext context) {
+    final destacado = plan.etiqueta;
+    final privado = plan.esPrivado;
+    final denominacion = plan.entidadDenominacion?.trim();
+    final porContacto = plan.esPorContacto;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
       decoration: BoxDecoration(
         color: AppTheme.cardBg,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppTheme.border),
+        border: Border.all(
+          color: destacado != null
+              ? AppTheme.primary.withValues(alpha: 0.5)
+              : AppTheme.border,
+          width: destacado != null ? 1.6 : 1,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (destacado != null || privado) ...[
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                if (destacado != null)
+                  _ChipPlan(
+                    texto: destacado,
+                    icono: Icons.local_fire_department_outlined,
+                    color: AppTheme.primary,
+                    relleno: true,
+                  ),
+                if (privado)
+                  const _ChipPlan(
+                    texto: 'Plan privado',
+                    icono: Icons.lock_outline,
+                    color: AppTheme.exploracionIndigo,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1405,32 +1347,107 @@ class _TarjetaPlan extends StatelessWidget {
                         color: AppTheme.textSecondary,
                       ),
                     ),
+                    if (privado &&
+                        denominacion != null &&
+                        denominacion.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Exclusivo para $denominacion',
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: AppTheme.textSecondary,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
+              const SizedBox(width: 10),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(
-                    plan.precioEtiqueta,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: AppTheme.primary,
-                    ),
-                  ),
-                  if (plan.precioPorMesEtiqueta != null)
+                  if (porContacto)
+                    const Text(
+                      'A convenir',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.primary,
+                      ),
+                    )
+                  else ...[
                     Text(
-                      '${plan.precioPorMesEtiqueta}/mes',
+                      plan.precioEtiqueta,
                       style: const TextStyle(
-                        fontSize: 11,
-                        color: AppTheme.textSecondary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.primary,
                       ),
                     ),
+                    if (plan.precioPorMesEtiqueta != null)
+                      Text(
+                        '${plan.precioPorMesEtiqueta}/mes',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                  ],
                 ],
               ),
             ],
           ),
+          // Equivalencia en CUP: solo cuando el plan NO está tarifado en CUP y
+          // el servidor mandó la conversión con la tasa cacheada. La app no
+          // calcula nada; si `precio_cup` no llega, este bloque no se pinta.
+          if (!porContacto && plan.mostrarPrecioCup) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppTheme.surface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.swap_horiz,
+                    size: 15,
+                    color: AppTheme.textSecondary,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '≈ ${plan.precioCupEtiqueta} al cambio de hoy',
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        const Text(
+                          'El cobro con Transfermóvil se hace en CUP.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: AppTheme.textSecondary,
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (plan.descripcion != null &&
               plan.descripcion!.trim().isNotEmpty) ...[
             const SizedBox(height: 8),
@@ -1444,15 +1461,114 @@ class _TarjetaPlan extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: onPagar,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primary,
-                foregroundColor: Colors.white,
+          // Características derivadas de `limites`. Si el plan no limita nada,
+          // la lista trae una sola línea: "Sin límite".
+          ...plan.caracteristicas.map(
+            (c) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.check_circle_outline,
+                    size: 15,
+                    color: AppTheme.success,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      c,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: AppTheme.textPrimary,
+                        height: 1.25,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              child: const Text('Pagar con Transfermóvil'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (porContacto)
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: onContactar,
+                icon: const Icon(Icons.chat, size: 18),
+                label: const Text('Contactar con ventas'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF25D366),
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            )
+          else
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: onPagar,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Pagar con Transfermóvil'),
+              ),
+            ),
+          if (porContacto) ...[
+            const SizedBox(height: 6),
+            const Text(
+              'Te atendemos por WhatsApp para ajustar el plan a tu negocio, sin '
+              'pago dentro de la app.',
+              style: TextStyle(
+                fontSize: 11.5,
+                color: AppTheme.textSecondary,
+                fontStyle: FontStyle.italic,
+                height: 1.3,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Cinta/chip pequeño de la tarjeta de plan (etiqueta comercial o "Plan
+/// privado"). [relleno] pinta el fondo más marcado para la etiqueta destacada.
+class _ChipPlan extends StatelessWidget {
+  const _ChipPlan({
+    required this.texto,
+    required this.icono,
+    required this.color,
+    this.relleno = false,
+  });
+
+  final String texto;
+  final IconData icono;
+  final Color color;
+  final bool relleno;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: relleno ? 0.14 : 0.08),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icono, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(
+            texto,
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+              color: color,
+              letterSpacing: 0.2,
             ),
           ),
         ],
@@ -1694,6 +1810,67 @@ class _DatoCopiable extends StatelessWidget {
             child: const Padding(
               padding: EdgeInsets.all(4),
               child: Icon(Icons.copy, size: 16, color: AppTheme.textSecondary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Aviso del paso de pago: el importe que se transfiere se cobra en **CUP al
+/// cambio del día** y, si el plan estaba tarifado en otra moneda, de dónde sale
+/// la cifra.
+///
+/// Todo el texto se arma con datos que manda el servidor (importe y moneda del
+/// intent y, cuando llega, `monto_plan`/`moneda_plan`): aquí no se convierte
+/// nada. Si el servidor no trae la equivalencia, solo se pinta la nota.
+class _AvisoCobroCup extends StatelessWidget {
+  const _AvisoCobroCup({this.equivalencia});
+
+  /// "Plan Plus · 30 USD ≈ 25350 CUP", ya armado por el modelo. `null` si el
+  /// servidor no mandó `monto_plan`/`moneda_plan`.
+  final String? equivalencia;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppTheme.primary.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppTheme.primary.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline, size: 15, color: AppTheme.primary),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (equivalencia != null) ...[
+                  Text(
+                    equivalencia!,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                ],
+                const Text(
+                  'El cobro con Transfermóvil se hace en CUP al cambio del día.',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppTheme.textSecondary,
+                    height: 1.3,
+                  ),
+                ),
+              ],
             ),
           ),
         ],

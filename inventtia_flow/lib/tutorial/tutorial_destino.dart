@@ -39,6 +39,15 @@ enum TutorialDestino {
   /// Módulo de categorías.
   categorias,
 
+  /// Pantalla dedicada de cobro por adelantado (configuración del cobro y
+  /// pagos por verificar). Se abre desde el cuadrito «Pagos por adelantado» del
+  /// home del admin, no desde «Mi suscripción».
+  cobros,
+
+  /// Pantalla «Mi suscripción» (planes, pago del plan e historial). Se abre
+  /// desde el icono de suscripción de la cabecera de Gestión.
+  suscripcion,
+
   // ── Destinos del CLIENTE que no son pestañas del shell ──────────────────
   // Los resuelve `TutorialNavegacion.irACliente`, que empuja las pantallas de
   // «Exploración rápida» con `ExploracionNavegacion` (la misma fuente que usan

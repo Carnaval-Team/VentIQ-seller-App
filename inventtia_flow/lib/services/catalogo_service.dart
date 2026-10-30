@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/servicio.dart';
+import 'suscripcion_service.dart';
 import 'tipo_actividad_service.dart';
 
 /// Centinela para distinguir "no toques este campo" de "ponlo a `null`".
@@ -137,20 +138,32 @@ class CatalogoService {
     int? idTipoActividad,
     bool activo = true,
   }) async {
-    final res = await _supabase
-        .schema(_schema)
-        .from('app_dat_servicios')
-        .insert({
-          'nombre': nombre,
-          'descripcion': descripcion,
-          'foto': foto,
-          'id_entidad': idEntidad,
-          'activo': activo,
-          if (idTipoActividad != null) 'id_tipo_actividad': idTipoActividad,
-        })
-        .select()
-        .single();
-    return Servicio.fromJson(res);
+    try {
+      final res = await _supabase
+          .schema(_schema)
+          .from('app_dat_servicios')
+          .insert({
+            'nombre': nombre,
+            'descripcion': descripcion,
+            'foto': foto,
+            'id_entidad': idEntidad,
+            'activo': activo,
+            if (idTipoActividad != null) 'id_tipo_actividad': idTipoActividad,
+          })
+          .select()
+          .single();
+      return Servicio.fromJson(res);
+    } catch (e) {
+      // El trigger `trg_limite_servicios` bloquea el INSERT cuando el plan no
+      // permite más servicios de catálogo. Se traduce a un aviso accionable; si
+      // el error no es de límite, se relanza intacto.
+      final limite = SuscripcionService.traducirLimitePlan(
+        e,
+        recurso: 'servicios_catalogo',
+      );
+      if (limite != null) throw limite;
+      rethrow;
+    }
   }
 
   static Future<Servicio> updateServicio({
@@ -161,20 +174,31 @@ class CatalogoService {
     int? idTipoActividad,
     bool? activo,
   }) async {
-    final res = await _supabase
-        .schema(_schema)
-        .from('app_dat_servicios')
-        .update({
-          'nombre': nombre,
-          'descripcion': descripcion,
-          if (foto != null) 'foto': foto,
-          if (activo != null) 'activo': activo,
-          if (idTipoActividad != null) 'id_tipo_actividad': idTipoActividad,
-        })
-        .eq('id', id)
-        .select()
-        .single();
-    return Servicio.fromJson(res);
+    try {
+      final res = await _supabase
+          .schema(_schema)
+          .from('app_dat_servicios')
+          .update({
+            'nombre': nombre,
+            'descripcion': descripcion,
+            if (foto != null) 'foto': foto,
+            if (activo != null) 'activo': activo,
+            if (idTipoActividad != null) 'id_tipo_actividad': idTipoActividad,
+          })
+          .eq('id', id)
+          .select()
+          .single();
+      return Servicio.fromJson(res);
+    } catch (e) {
+      // Ver [updateLocal]: los triggers son BEFORE INSERT, pero la traducción se
+      // mantiene por si el límite acaba aplicándose también al editar.
+      final limite = SuscripcionService.traducirLimitePlan(
+        e,
+        recurso: 'servicios_catalogo',
+      );
+      if (limite != null) throw limite;
+      rethrow;
+    }
   }
 
   /// Activa/desactiva un servicio sin tocar el resto de sus campos.
@@ -267,24 +291,31 @@ class CatalogoService {
     required int idEntidad,
     bool activo = true,
   }) async {
-    final res = await _supabase
-        .schema(_schema)
-        .from('app_dat_locales')
-        .insert({
-          'nombre': nombre,
-          'descripcion': descripcion,
-          'direccion': direccion,
-          'horario_atencion': horarioAtencion,
-          'horario_detalle': horarioDetalle,
-          'pais': pais,
-          'provincia': provincia,
-          'foto': foto,
-          'id_entidad': idEntidad,
-          'activo': activo,
-        })
-        .select()
-        .single();
-    return Local.fromJson(res);
+    try {
+      final res = await _supabase
+          .schema(_schema)
+          .from('app_dat_locales')
+          .insert({
+            'nombre': nombre,
+            'descripcion': descripcion,
+            'direccion': direccion,
+            'horario_atencion': horarioAtencion,
+            'horario_detalle': horarioDetalle,
+            'pais': pais,
+            'provincia': provincia,
+            'foto': foto,
+            'id_entidad': idEntidad,
+            'activo': activo,
+          })
+          .select()
+          .single();
+      return Local.fromJson(res);
+    } catch (e) {
+      // Trigger `trg_limite_locales`: el plan no permite más locales.
+      final limite = SuscripcionService.traducirLimitePlan(e, recurso: 'locales');
+      if (limite != null) throw limite;
+      rethrow;
+    }
   }
 
   static Future<Local> updateLocal({
@@ -302,25 +333,34 @@ class CatalogoService {
     /// texto libre); un mapa = guárdalo.
     Object? horarioDetalle = _noCambiar,
   }) async {
-    final res = await _supabase
-        .schema(_schema)
-        .from('app_dat_locales')
-        .update({
-          'nombre': nombre,
-          'descripcion': descripcion,
-          'direccion': direccion,
-          'horario_atencion': horarioAtencion,
-          'pais': pais,
-          'provincia': provincia,
-          if (foto != null) 'foto': foto,
-          if (activo != null) 'activo': activo,
-          if (!identical(horarioDetalle, _noCambiar))
-            'horario_detalle': horarioDetalle,
-        })
-        .eq('id', id)
-        .select()
-        .single();
-    return Local.fromJson(res);
+    try {
+      final res = await _supabase
+          .schema(_schema)
+          .from('app_dat_locales')
+          .update({
+            'nombre': nombre,
+            'descripcion': descripcion,
+            'direccion': direccion,
+            'horario_atencion': horarioAtencion,
+            'pais': pais,
+            'provincia': provincia,
+            if (foto != null) 'foto': foto,
+            if (activo != null) 'activo': activo,
+            if (!identical(horarioDetalle, _noCambiar))
+              'horario_detalle': horarioDetalle,
+          })
+          .eq('id', id)
+          .select()
+          .single();
+      return Local.fromJson(res);
+    } catch (e) {
+      // Hoy los triggers de la 72 son BEFORE INSERT, así que editar no bloquea.
+      // Se deja igualmente la traducción: si el servidor algún día limita el
+      // UPDATE, el admin verá el mismo aviso claro que al crear.
+      final limite = SuscripcionService.traducirLimitePlan(e, recurso: 'locales');
+      if (limite != null) throw limite;
+      rethrow;
+    }
   }
 
   /// Activa/desactiva un local sin tocar el resto de sus campos. Al desactivarlo
@@ -416,19 +456,30 @@ class CatalogoService {
     int cantidadDefault = 1,
     int cantidadMaxCapacidad = 1,
   }) async {
-    final res = await _supabase
-        .schema(_schema)
-        .from('local_servicio')
-        .insert({
-          'id_local': idLocal,
-          'id_servicio': idServicio,
-          'permite_reserva_directa': permiteReservaDirecta,
-          'cantidad_default': cantidadDefault,
-          'cantidad_max_capacidad': cantidadMaxCapacidad,
-        })
-        .select('*, app_dat_locales(*), app_dat_servicios(*)')
-        .single();
-    return LocalServicio.fromJson(res);
+    try {
+      final res = await _supabase
+          .schema(_schema)
+          .from('local_servicio')
+          .insert({
+            'id_local': idLocal,
+            'id_servicio': idServicio,
+            'permite_reserva_directa': permiteReservaDirecta,
+            'cantidad_default': cantidadDefault,
+            'cantidad_max_capacidad': cantidadMaxCapacidad,
+          })
+          .select('*, app_dat_locales(*), app_dat_servicios(*)')
+          .single();
+      return LocalServicio.fromJson(res);
+    } catch (e) {
+      // Trigger `trg_limite_local_servicio`: el plan no permite más servicios
+      // asociados a este local.
+      final limite = SuscripcionService.traducirLimitePlan(
+        e,
+        recurso: 'servicios_por_local',
+      );
+      if (limite != null) throw limite;
+      rethrow;
+    }
   }
 
   static Future<LocalServicio> updateLocalServicio({
@@ -438,21 +489,30 @@ class CatalogoService {
     int? cantidadMaxCapacidad,
     bool? activo,
   }) async {
-    final res = await _supabase
-        .schema(_schema)
-        .from('local_servicio')
-        .update({
-          if (permiteReservaDirecta != null)
-            'permite_reserva_directa': permiteReservaDirecta,
-          if (cantidadDefault != null) 'cantidad_default': cantidadDefault,
-          if (cantidadMaxCapacidad != null)
-            'cantidad_max_capacidad': cantidadMaxCapacidad,
-          if (activo != null) 'activo': activo,
-        })
-        .eq('id', id)
-        .select('*, app_dat_locales(*), app_dat_servicios(*)')
-        .single();
-    return LocalServicio.fromJson(res);
+    try {
+      final res = await _supabase
+          .schema(_schema)
+          .from('local_servicio')
+          .update({
+            if (permiteReservaDirecta != null)
+              'permite_reserva_directa': permiteReservaDirecta,
+            if (cantidadDefault != null) 'cantidad_default': cantidadDefault,
+            if (cantidadMaxCapacidad != null)
+              'cantidad_max_capacidad': cantidadMaxCapacidad,
+            if (activo != null) 'activo': activo,
+          })
+          .eq('id', id)
+          .select('*, app_dat_locales(*), app_dat_servicios(*)')
+          .single();
+      return LocalServicio.fromJson(res);
+    } catch (e) {
+      final limite = SuscripcionService.traducirLimitePlan(
+        e,
+        recurso: 'servicios_por_local',
+      );
+      if (limite != null) throw limite;
+      rethrow;
+    }
   }
 
   static Future<void> deleteLocalServicio(int id) async {
