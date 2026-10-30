@@ -1,8 +1,12 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import '../models/product.dart';
+import '../services/order_service.dart';
+import '../models/order.dart' show OrderItem;
+import '../utils/desarme_bulto_local.dart';
 import '../widgets/cocina_chip.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
@@ -1314,7 +1318,7 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                                 ? '(elaborado)'
                                 : widget.product.esServicio
                                 ? '(servicio)'
-                                : widget.product.stockLabel(),
+                                : _stockLabelConReservas(widget.product),
                             style: TextStyle(
                               fontSize: 13,
                               color:
@@ -1613,7 +1617,7 @@ class _ProductCardState extends State<_ProductCard>
                                       ? '(elaborado)'
                                       : widget.product.esServicio
                                       ? '(servicio)'
-                                      : widget.product.stockLabel(),
+                                      : _stockLabelConReservas(widget.product),
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
@@ -1758,3 +1762,43 @@ class _PropertyIcon extends StatelessWidget {
     );
   }
 }
+
+/// Stock visible en la tarjeta descontando lo ya reservado en la orden.
+///
+/// Mismo pozo que en el detalle: las l�neas del carrito consumen unidades
+/// base del producto, as� que el total convertible baja aunque el f�sico
+/// siga igual. Solo afecta la etiqueta; el l�mite real lo impone el detalle.
+String _stockLabelConReservas(Product product) {
+  final items = OrderService().currentOrder?.items ?? <OrderItem>[];
+  final reservadoBase = items
+      .where((i) => i.producto.id == product.id)
+      .fold<double>(0, (s, i) => s + i.cantidad * (i.presentacionFactor ?? 1));
+  if (reservadoBase <= 0) return product.stockLabel();
+
+  final mixto = product.stockMixto;
+  if (mixto == null || mixto.isEmpty) return product.stockLabel();
+
+  final disponibles = DesarmeBultoLocal.disponiblesDesdeDesglose(mixto);
+  var baseTotal = 0.0;
+  for (final f in mixto) {
+    final cant = (f['cantidad'] as num?)?.toDouble() ?? 0;
+    final factor = (f['factor_rel'] as num?)?.toDouble();
+    baseTotal += cant * (factor == null || factor <= 0 ? 1 : factor);
+  }
+  final libre = math.max(0.0, baseTotal - reservadoBase);
+  if (libre <= 0) return 'Agotado';
+
+  final partes = <String>[];
+  for (final f in mixto) {
+    final id = (f['id_presentacion'] as num?)?.toInt();
+    final factor = (f['factor_rel'] as num?)?.toDouble() ?? 1;
+    final nombre = f['nombre']?.toString() ?? 'Presentaci�n';
+    final disp = id != null ? (disponibles[id] ?? 0) : 0.0;
+    final neta = (disponibles.isNotEmpty ? libre / factor : 0.0);
+    partes.add('$nombre: ${_fmtDisponible(neta > disp ? neta : disp)}');
+  }
+  return 'Stock: ${_fmtDisponible(libre)} base\n${partes.join(' � ')}';
+}
+
+String _fmtDisponible(double v) =>
+    v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);

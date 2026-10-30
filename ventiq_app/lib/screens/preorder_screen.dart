@@ -49,6 +49,51 @@ class _PreorderScreenState extends State<PreorderScreen> {
   double _fractionStep = 0.5;
   bool _isShowSkuEnabled = false;
   bool _isCheckingInventory = false;
+  bool _procesandoOrden = false;
+
+  /// Caché por envío de orden: el chequeo de stock, la verificación de
+  /// ingredientes y la descomposición pedían las mismas recetas y rutas al
+  /// servidor hasta 3 veces por elaborado. Se limpia al iniciar cada envío
+  /// para no arrastrar stock viejo entre órdenes.
+  final Map<String, Future<List<Map<String, dynamic>>>> _ingredientesCache = {};
+  final Map<int, Future<int?>> _almacenVentaCache = {};
+  final Map<int, Future<bool>> _esElaboradoCache = {};
+
+  void _limpiarCacheEnvio() {
+    _ingredientesCache.clear();
+    _almacenVentaCache.clear();
+    _esElaboradoCache.clear();
+  }
+
+  Future<int?> _almacenVentaCached(int idProducto) => _almacenVentaCache
+      .putIfAbsent(idProducto, () => _resolverAlmacenDeVenta(idProducto));
+
+  Future<List<Map<String, dynamic>>> _ingredientesCached(
+    int idProducto, {
+    int? idAlmacen,
+  }) => _ingredientesCache.putIfAbsent(
+    '$idProducto|${idAlmacen ?? ''}',
+    () => _productDetailService.getProductIngredients(
+      idProducto,
+      idAlmacen: idAlmacen,
+    ),
+  );
+
+  /// Solo la receta (ids y cantidades), sin importar el almacén medido:
+  /// reutiliza cualquier consulta ya hecha para ese producto.
+  Future<List<Map<String, dynamic>>> _recetaCached(int idProducto) {
+    final prefijo = '$idProducto|';
+    for (final entry in _ingredientesCache.entries) {
+      if (entry.key.startsWith(prefijo)) return entry.value;
+    }
+    return _ingredientesCached(idProducto);
+  }
+
+  Future<bool> _esElaboradoCached(int idProducto) => _esElaboradoCache
+      .putIfAbsent(
+        idProducto,
+        () => _productDetailService.isProductElaborated(idProducto),
+      );
 
   @override
   void initState() {
@@ -614,7 +659,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 flex: 2,
                 child: ElevatedButton(
                   onPressed:
-                      (_elaboratingProducts || _isCheckingInventory)
+                      (_procesandoOrden ||
+                              _elaboratingProducts ||
+                              _isCheckingInventory)
                           ? null
                           : _finalizeOrder,
                   style: ElevatedButton.styleFrom(
@@ -626,7 +673,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
                     ),
                   ),
                   child:
-                      _isCheckingInventory
+                      (_procesandoOrden || _isCheckingInventory)
                           ? Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
@@ -845,7 +892,20 @@ class _PreorderScreenState extends State<PreorderScreen> {
     );
   }
 
-  void _finalizeOrder() async {
+  /// Un solo estado para todo el envío (chequeo → config → elaborados →
+  /// checkout/registro): el botón queda deshabilitado de punta a punta en vez
+  /// de habilitarse y deshabilitarse entre pasos, y se ignoran dobles toques.
+  Future<void> _finalizeOrder() async {
+    if (_procesandoOrden) return;
+    setState(() => _procesandoOrden = true);
+    try {
+      await _finalizeOrderInner();
+    } finally {
+      if (mounted) setState(() => _procesandoOrden = false);
+    }
+  }
+
+  Future<void> _finalizeOrderInner() async {
     final currentOrder = _orderService.currentOrder;
     if (currentOrder == null || currentOrder.items.isEmpty) {
       AppSnackBar.showPersistent(
@@ -917,6 +977,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
     final useOfflinePath = isOfflineModeEnabled || stayFullyOffline;
 
     // Deshabilitar botón y mostrar indicador de carga mientras se verifica inventario
+    _limpiarCacheEnvio();
     setState(() {
       _isCheckingInventory = true;
     });
@@ -1234,11 +1295,25 @@ class _PreorderScreenState extends State<PreorderScreen> {
       final prod = d['producto'] is Map
           ? Map<String, dynamic>.from(d['producto'] as Map)
           : null;
-      final crudas = (prod?['presentaciones'] as List?)
+      var crudas = (prod?['presentaciones'] as List?)
           ?.whereType<Map>()
           .map((e) => Map<String, dynamic>.from(e))
           .toList();
-      if (crudas == null || crudas.isEmpty) return null;
+      // get_detalle_producto no siempre anida las presentaciones: consultar
+      // la tabla directamente, igual que hace ProductDetailService.
+      if (crudas == null || crudas.isEmpty) {
+        final presRows = await supabase
+            .from('app_dat_producto_presentacion')
+            .select(
+              'id, cantidad, es_base, presentacion:app_nom_presentacion(id, denominacion, sku_codigo)',
+            )
+            .eq('id_producto', idProducto);
+        crudas = presRows
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+      if (crudas.isEmpty) return null;
 
       final cadena = PresentacionCadenaLocal.resolverDesdeCrudas(crudas);
       if (cadena.isEmpty) return null;
@@ -1294,7 +1369,52 @@ class _PreorderScreenState extends State<PreorderScreen> {
         await _userPreferencesService.isOfflineModeEnabled() ||
         await _userPreferencesService.shouldStayFullyOffline();
 
-    for (final item in items) {
+    // Pozo compartido por producto: cada línea procesada reserva sus
+    // unidades base, así "1 Caja + 5 Latas" compiten por el mismo stock
+    // y no pasan sueltas si juntas sobreven-nden.
+    final reservadoBasePorProducto = <int, double>{};
+    final conteoPorProducto = <int, int>{};
+    for (final i in items) {
+      conteoPorProducto[i.producto.id] =
+          (conteoPorProducto[i.producto.id] ?? 0) + 1;
+    }
+    final productosMultilinea = {
+      for (final e in conteoPorProducto.entries) if (e.value > 1) e.key,
+    };
+
+    // Online: todas las consultas de red se lanzan EN PARALELO antes de
+    // evaluar. La evaluación sigue siendo secuencial (el pozo compartido
+    // depende del orden de las líneas), pero ya no espera N viajes en serie.
+    final stockFilaFutures = <int, Future<List<Map<String, dynamic>>>>{};
+    if (!isOfflineMode) {
+      final pendientes = <Future<Object?>>[];
+      for (var idx = 0; idx < items.length; idx++) {
+        final item = items[idx];
+        if (item.producto.esElaborado || item.producto.esServicio) {
+          final soloServicio =
+              item.producto.esServicio && !item.producto.esElaborado;
+          pendientes.add(
+            (soloServicio
+                    ? Future<int?>.value(null)
+                    : _almacenVentaCached(item.producto.id))
+                .then(
+                  (alm) =>
+                      _ingredientesCached(item.producto.id, idAlmacen: alm),
+                ),
+          );
+        } else if (item.inventoryData?['stock_movido'] != true) {
+          final f = _consultarStockFila(item);
+          stockFilaFutures[idx] = f;
+          pendientes.add(f);
+        }
+      }
+      // Los errores se re-lanzan al esperar cada futuro dentro del bucle
+      // (mismo manejo de red que antes); aquí solo se espera a que terminen.
+      await Future.wait(pendientes).catchError((_) => <Object?>[]);
+    }
+
+    for (var idx = 0; idx < items.length; idx++) {
+      final item = items[idx];
       try {
         final isElaboradoOrServicio =
             item.producto.esElaborado || item.producto.esServicio;
@@ -1388,12 +1508,11 @@ class _PreorderScreenState extends State<PreorderScreen> {
             final idAlmacenVenta =
                 (item.producto.esServicio && !item.producto.esElaborado)
                 ? null
-                : await _resolverAlmacenDeVenta(item.producto.id);
-            final ingredientes = await _productDetailService
-                .getProductIngredients(
-                  item.producto.id,
-                  idAlmacen: idAlmacenVenta,
-                );
+                : await _almacenVentaCached(item.producto.id);
+            final ingredientes = await _ingredientesCached(
+              item.producto.id,
+              idAlmacen: idAlmacenVenta,
+            );
 
             if (ingredientes.isEmpty) {
               print(
@@ -1491,21 +1610,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
               );
             }
           } else {
-            var query = supabase
-                .from('app_dat_inventario_productos')
-                .select('cantidad_final, id_ubicacion')
-                .eq('id_producto', idProducto);
-
-            if (idUbicacion != null)
-              query = query.eq('id_ubicacion', idUbicacion);
-            // NOTA: NO filtramos por id_variante. Los items provenientes de la vista de
-            // mesa pueden traer id_variante=1 (ID secuencial generado en el cliente, no
-            // un id real de DB). En el inventario real `id_variante` es null para estos
-            // productos, así que filtrar por ese valor sintético devuelve 0 filas.
-            if (idPresentacion != null)
-              query = query.eq('id_presentacion', idPresentacion);
-
-            final response = await query.order('id', ascending: false).limit(1);
+            final response =
+                await (stockFilaFutures[idx] ?? _consultarStockFila(item));
 
             if (response.isNotEmpty) {
               stockActual =
@@ -1518,6 +1624,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
             }
           }
 
+          List<PresentacionLocal>? cadenaEvaluada;
           if (stockActual < item.cantidad) {
             // Desarme de bultos: el saldo propio de la presentación no alcanza,
             // pero el total convertible (abriendo empaques mayores) sí.
@@ -1533,13 +1640,15 @@ class _PreorderScreenState extends State<PreorderScreen> {
               try {
                 final datos = await _cadenaYStocksOffline(item.producto.id);
                 if (datos != null) {
-                  final eval = DesarmeBultoLocal.evaluar(
+                  cadenaEvaluada = datos.cadena;
+                  cubreConDesarme = _cubreConPozoCompartido(
                     cadena: datos.cadena,
                     stocks: datos.stocks,
-                    idPresentacionPedida: idPresentacion ?? 0,
+                    idPresentacionPedida: idPresentacion,
                     cantidadPedida: item.cantidad,
+                    reservadoBase:
+                        reservadoBasePorProducto[item.producto.id] ?? 0,
                   );
-                  cubreConDesarme = eval.requiereDesarme || eval.alcanza;
                   desarmeEvaluado = true;
                 }
               } catch (e) {
@@ -1547,7 +1656,11 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   '⚠️ Evaluación local de desarme falló para ${item.nombre}: $e',
                 );
               }
-            } else if (idProducto != null && idUbicacionResuelta != null) {
+            } else if (idUbicacionResuelta != null &&
+                // El preview evalúa UNA línea contra la BD sin saber qué
+                // otras líneas de la orden ya reservaron stock. Con varias
+                // líneas del mismo producto manda el pozo local.
+                !productosMultilinea.contains(idProducto)) {
               try {
                 final preview = await supabase.rpc(
                   'fn_preview_rebalanceo',
@@ -1564,7 +1677,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 final estrategia = preview is Map
                     ? preview['estrategia']?.toString()
                     : null;
-                cubreConDesarme = estrategia == 'abrir';
+                // 'abrir' = desarmar bultos; 'empaquetar' = juntar unidades
+                // en la presentación pedida (vender Caja teniendo Latas).
+                cubreConDesarme =
+                    estrategia == 'abrir' || estrategia == 'empaquetar';
                 desarmeEvaluado = true;
                 if (cubreConDesarme) {
                   print(
@@ -1587,13 +1703,15 @@ class _PreorderScreenState extends State<PreorderScreen> {
               try {
                 final datos = await _cadenaYStocksOnline(idProducto);
                 if (datos != null) {
-                  final eval = DesarmeBultoLocal.evaluar(
+                  cadenaEvaluada = datos.cadena;
+                  cubreConDesarme = _cubreConPozoCompartido(
                     cadena: datos.cadena,
                     stocks: datos.stocks,
-                    idPresentacionPedida: idPresentacion ?? 0,
+                    idPresentacionPedida: idPresentacion,
                     cantidadPedida: item.cantidad,
+                    reservadoBase:
+                        reservadoBasePorProducto[item.producto.id] ?? 0,
                   );
-                  cubreConDesarme = eval.requiereDesarme || eval.alcanza;
                 }
               } catch (e) {
                 print(
@@ -1617,6 +1735,23 @@ class _PreorderScreenState extends State<PreorderScreen> {
               });
             }
           }
+
+          // Esta línea ya comprometió unidades base del pozo del producto
+          // para las siguientes líneas de la orden (todas las
+          // presentaciones comparten el mismo stock convertible).
+          var factorRes = item.presentacionFactor ?? 1.0;
+          final c = cadenaEvaluada;
+          if (c != null && idPresentacion != null) {
+            for (final p in c) {
+              if (p.idPresentacion == idPresentacion) {
+                factorRes = p.factorRel;
+                break;
+              }
+            }
+          }
+          reservadoBasePorProducto[idProducto] =
+              (reservadoBasePorProducto[idProducto] ?? 0) +
+              item.cantidad * factorRes;
         }
       } catch (e) {
         print('⚠️ Error verificando stock para ${item.nombre}: $e');
@@ -1627,6 +1762,59 @@ class _PreorderScreenState extends State<PreorderScreen> {
     }
 
     return problems;
+  }
+
+  /// Última fila de inventario (saldo propio) de la línea: producto +
+  /// ubicación + presentación, mayor `id`. Misma resolución que la venta.
+  Future<List<Map<String, dynamic>>> _consultarStockFila(OrderItem item) async {
+    final idUbicacion = item.inventoryData?['id_ubicacion'] as int?;
+    final idPresentacion = item.inventoryData?['id_presentacion'] as int?;
+    var query = Supabase.instance.client
+        .from('app_dat_inventario_productos')
+        .select('cantidad_final, id_ubicacion')
+        .eq('id_producto', item.producto.id);
+
+    if (idUbicacion != null) query = query.eq('id_ubicacion', idUbicacion);
+    // NOTA: NO filtramos por id_variante. Los items provenientes de la vista de
+    // mesa pueden traer id_variante=1 (ID secuencial generado en el cliente, no
+    // un id real de DB). En el inventario real `id_variante` es null para estos
+    // productos, así que filtrar por ese valor sintético devuelve 0 filas.
+    if (idPresentacion != null) {
+      query = query.eq('id_presentacion', idPresentacion);
+    }
+
+    final response = await query.order('id', ascending: false).limit(1);
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  /// true si la cantidad pedida entra en el pozo compartido del producto:
+  /// todo el stock convertible (todas las presentaciones en unidades base)
+  /// menos lo ya reservado por líneas previas de esta orden.
+  ///
+  /// Sin cadena o con presentación desconocida cae al evaluador de desarme
+  /// clásico para no bloquear de más.
+  bool _cubreConPozoCompartido({
+    required List<PresentacionLocal> cadena,
+    required Map<int, double> stocks,
+    required int? idPresentacionPedida,
+    required double cantidadPedida,
+    required double reservadoBase,
+  }) {
+    if (idPresentacionPedida != null) {
+      final disp = DesarmeBultoLocal.disponiblesPorPresentacion(
+        cadena: cadena,
+        stocks: stocks,
+        reservadoBase: reservadoBase,
+      )[idPresentacionPedida];
+      if (disp != null) return cantidadPedida <= disp.disponible;
+    }
+    final eval = DesarmeBultoLocal.evaluar(
+      cadena: cadena,
+      stocks: stocks,
+      idPresentacionPedida: idPresentacionPedida ?? 0,
+      cantidadPedida: cantidadPedida,
+    );
+    return eval.requiereDesarme || eval.alcanza;
   }
 
   /// Unidad/presentación que se muestra en los carteles de ingredientes.
@@ -2191,12 +2379,13 @@ class _PreorderScreenState extends State<PreorderScreen> {
       });
 
       // Verificar si hay productos elaborados en la orden
+      // El flag ya viene en el producto (catálogo/sync): antes se hacía un
+      // SELECT a app_dat_producto por cada item de la orden.
       final productosElaborados = <Map<String, dynamic>>[];
       for (final item in order.items) {
         final productId = item.producto.id;
-        final isElaborated = await _productDetailService.isProductElaborated(
-          productId,
-        );
+        final isElaborated =
+            item.producto.esElaborado || item.producto.esServicio;
         if (isElaborated) {
           productosElaborados.add({
             'id_producto': productId,
@@ -2336,6 +2525,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   'cantidad': item.cantidad,
                   'nombre': item.nombre,
                   'precio_unitario': item.precioUnitario,
+                  'es_elaborado':
+                      item.producto.esElaborado || item.producto.esServicio,
                 };
               })
               .where((producto) => producto['id_producto'] != 0)
@@ -2456,9 +2647,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
       debugPrint('🔄 Cantidad original: $cantidadOriginal');
       debugPrint('🔄 Nombre producto: ${producto['nombre']}');
 
-      final isElaborated = await _productDetailService.isProductElaborated(
-        productId,
-      );
+      final isElaborated =
+          producto['es_elaborado'] as bool? ??
+          await _esElaboradoCached(productId);
       debugPrint(
         '🔄 Resultado isElaborated para producto $productId: $isElaborated',
       );
@@ -2516,9 +2707,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
   ) async {
     debugPrint('🔄 Descomponiendo producto $productId con cantidad $quantity');
 
-    final ingredients = await _productDetailService.getProductIngredients(
-      productId,
-    );
+    final ingredients = await _recetaCached(productId);
 
     if (ingredients.isEmpty) {
       debugPrint(
@@ -2534,9 +2723,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
           (ingredient['cantidad_necesaria'] as num).toDouble();
       final totalQuantity = cantidadNecesaria * quantity;
 
-      final isElaborated = await _productDetailService.isProductElaborated(
-        ingredientId,
-      );
+      final isElaborated = await _esElaboradoCached(ingredientId);
 
       if (isElaborated) {
         await _decomposeRecursively(
@@ -2828,9 +3015,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
         final cantidadProducto = (producto['cantidad'] as num).toDouble();
         final nombreProducto = producto['nombre'] as String;
 
-        final ingredientes = await _productDetailService.getProductIngredients(
+        final ingredientes = await _ingredientesCached(
           productId,
-          idAlmacen: await _resolverAlmacenDeVenta(productId),
+          idAlmacen: await _almacenVentaCached(productId),
         );
 
         for (final ingrediente in ingredientes) {

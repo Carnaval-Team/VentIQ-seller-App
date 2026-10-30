@@ -29,19 +29,23 @@ class AppBottomNavigation extends StatelessWidget {
     final cuentaService = MesaCuentaService();
     final cuentaActiva = flujoMesa ? cuentaService.activeCuentaId : null;
 
-    // El contador de la preorden local no aplica en el flujo de mesa: los items de
-    // la cuenta están en BD y contarlos aquí obligaría a una consulta en cada
-    // rebuild de la barra. Se usa el punto de "hay cuenta abierta" en su lugar.
-    final currentOrderItemCount =
-        flujoMesa ? 0 : orderService.currentOrderItemCount;
-
     final etiqueta = flujoMesa
         ? (cuentaActiva != null
             ? (cuentaService.activeMesaNumero ?? 'Cuenta')
             : 'Mesas')
         : 'Preorden';
 
-    return Container(
+    return AnimatedBuilder(
+      animation: orderService,
+      builder: (context, _) {
+        // El contador de la preorden local no aplica en el flujo de mesa: los
+        // items de la cuenta están en BD y contarlos aquí obligaría a una
+        // consulta en cada rebuild de la barra. Se usa el punto de "hay
+        // cuenta abierta" en su lugar.
+        final currentOrderItemCount =
+            flujoMesa ? 0 : orderService.currentOrderItemCount;
+
+        return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [
@@ -100,6 +104,8 @@ class AppBottomNavigation extends StatelessWidget {
           ),
         ],
       ),
+        );
+      },
     );
   }
 

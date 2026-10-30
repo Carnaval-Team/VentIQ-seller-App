@@ -924,6 +924,11 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
         // Group variants by warehouse location
         _groupVariantsByLocation(detailedProduct.variantes);
 
+        // Presentaciones sin fila de inventario: puede que
+        // _loadPresentations ya haya terminado (carrera) o que los
+        // detalles hayan reemplazado el objeto producto. Es idempotente.
+        _agregarVariantesPresentacionesSinStock();
+
         for (var variant in detailedProduct.variantes) {
           variantQuantities[variant] = 0;
         }
@@ -1150,6 +1155,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
           _selectedPresentation = null;
           _selectedPresentationsByProduct[productKey] = null;
         }
+        _agregarVariantesPresentacionesSinStock();
       });
     } catch (e, stackTrace) {
       print('❌ Error cargando presentaciones: $e');
@@ -1525,13 +1531,34 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     if (idPres == null || stocks == null || _cadenaPresentaciones().isEmpty) {
       return base;
     }
-    final maxServible = DesarmeBultoLocal.maximoServible(
-      cadena: _cadenaPresentaciones(),
-      stocks: stocks,
-      idPresentacionPedida: idPres,
-      saldoPropio: stocks[idPres] ?? 0,
+    final maxServible = math.max(
+      0.0,
+      (_disponibilidadPorPresentacion()[idPres]?.disponible ?? 0) -
+          reservadoExtra,
     );
     return math.max(base, maxServible);
+  }
+
+  /// Cantidad extra ya seleccionada en esta pantalla (variantQuantities),
+  /// expresada en unidades base. Las líneas del carrito se descuentan dentro
+  /// de `_disponibilidadPorPresentacion`; esto cubre lo que el vendedor está
+  /// marcando ahora mismo y aún no agregó a la orden.
+  double get reservadoExtra {
+    var total = 0.0;
+    final cadena = _cadenaPresentaciones();
+    for (final e in variantQuantities.entries) {
+      final idPres =
+          (e.key.inventoryMetadata?['id_presentacion'] as num?)?.toInt();
+      var factor = 1.0;
+      for (final p in cadena) {
+        if (p.idPresentacion == idPres) {
+          factor = p.factorRel;
+          break;
+        }
+      }
+      total += e.value * factor;
+    }
+    return total;
   }
 
   /// ¿No hay stock ni directo ni desarmando bultos?
@@ -1566,11 +1593,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     if (idPresVariante == null || stocks == null || cadena.isEmpty) {
       return propio;
     }
-    final maxServible = DesarmeBultoLocal.maximoServible(
-      cadena: cadena,
-      stocks: stocks,
-      idPresentacionPedida: idPresVariante,
-      saldoPropio: stocks[idPresVariante] ?? 0,
+    final maxServible = math.max(
+      0.0,
+      (_disponibilidadPorPresentacion()[idPresVariante]?.disponible ?? 0) -
+          reservadoExtra,
     );
     return math.max(propio, maxServible);
   }
@@ -2283,7 +2309,14 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                         if (!currentProduct.esElaborado &&
                             !currentProduct.esServicio) ...[
                           Text(
-                            'Stock: ${variant.cantidadReal}',
+                            () {
+                              final idPres = (variant.inventoryMetadata?['id_presentacion'] as num?)?.toInt();
+                              final d = idPres == null ? null : _disponibilidadPorPresentacion()[idPres];
+                              if (d != null && d.disponible > variant.cantidadReal) {
+                                return 'Stock: ${variant.cantidadReal} · ${FormatoPresentacion.cantidad(d.disponible)} disp · desarma';
+                              }
+                              return 'Stock: ${variant.cantidadReal}';
+                            }(),
                             style: TextStyle(
                               fontSize: 10,
                               color: Colors.grey[600],
@@ -2492,8 +2525,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
             ),
           ],
           const SizedBox(height: 12),
-          // Fila de presentación
-          _buildPresentationSelector(currentProduct, variant),
+          // Sin combobox de presentación: en productos con variantes el
+          // nombre de la tarjeta ya incluye la presentación y el selector
+          // quedaba bloqueado (información duplicada de solo lectura).
           if (_isCurrentPresentationFractional(variant)) ...[
             const SizedBox(height: 8),
             _buildFractionStepSelector(),
@@ -2807,7 +2841,16 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                               const SizedBox(width: 4),
                             ],
                             Text(
-                              '${presentation.presentacion.denominacion} (${presentation.cantidad})',
+                              '${presentation.presentacion.denominacion} (${presentation.cantidad})'
+                              '${() {
+                                final d = _disponibilidadPorPresentacion()[presentation.id];
+                                if (d == null) return '';
+                                var tag = ' · ${FormatoPresentacion.cantidad(d.disponible)} disp';
+                                if (d.stockPropio <= 0 && d.disponible > 0) {
+                                  tag += ' · desarma';
+                                }
+                                return tag;
+                              }()}',
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight:
@@ -3453,6 +3496,134 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       }
     }
     return out;
+  }
+
+  /// Unidades base ya reservadas por ESTE producto en la orden actual.
+  ///
+  /// "Consumo acumulado en base": las líneas del carrito que comparten pozo
+  /// de stock (mismo producto, cualquier presentación) se suman en unidades
+  /// base y se descuentan del total convertible, evitando sobreventa entre
+  /// presentaciones (1 Bulto + 5 Unidades compiten por el mismo stock).
+  ///
+  /// `item.cantidad` está en SU presentación; `item.idPresentacion` es la
+  /// fila de `app_dat_producto_presentacion` y su factor se resuelve en la
+  /// cadena local. Items sin presentación cuentan como unidad base.
+  double _reservadoBaseEnCarrito() {
+    final items = OrderService().currentOrder?.items;
+    if (items == null || items.isEmpty) return 0;
+    final cadena = _cadenaPresentaciones();
+    var total = 0.0;
+    for (final item in items) {
+      if (item.producto.id != currentProduct.id) continue;
+      final idPres = item.idPresentacion ??
+          (item.inventoryData?['id_presentacion'] as num?)?.toInt();
+      var factor = 1.0;
+      if (idPres != null) {
+        for (final p in cadena) {
+          if (p.idPresentacion == idPres) {
+            factor = p.factorRel;
+            break;
+          }
+        }
+        // No está en la cadena: usar el factor congelado del item si existe.
+        if (factor == 1.0) factor = item.presentacionFactor ?? 1.0;
+      }
+      total += item.cantidad * factor;
+    }
+    return total;
+  }
+
+  /// Disponibilidad neta por presentación: stock + convertible - reservas.
+  Map<int, DisponibilidadPresentacion> _disponibilidadPorPresentacion() {
+    final cadena = _cadenaPresentaciones();
+    final stocks = _stocksPorPresentacionLocal();
+    if (cadena.isEmpty || stocks == null) return const {};
+    return DesarmeBultoLocal.disponiblesPorPresentacion(
+      cadena: cadena,
+      stocks: stocks,
+      reservadoBase: _reservadoBaseEnCarrito(),
+    );
+  }
+
+  /// Presentaciones configuradas que no tienen fila de inventario.
+  ///
+  /// El listado de variantes nace de las filas de
+  /// `app_dat_inventario_productos`, así que una presentación jamás recibida
+  /// no aparece. Si el producto usa presentaciones COMO variantes (ninguna
+  /// fila trae `id_variante` real), se crea una variante sintética con
+  /// cantidad 0 para que sea seleccionable y se sirva por desarme.
+  void _agregarVariantesPresentacionesSinStock() {
+    if (_productPresentations.isEmpty) return;
+    final variantes = currentProduct.variantes;
+    if (variantes.isEmpty) return;
+
+    // El inventario guarda filas por pareja variante×presentación. Una
+    // presentación sin fila no aparece: se crea una variante sintética por
+    // cada id_variante que no la tenga, clonando la fila existente de esa
+    // variante (misma ubicación/precio, cantidad 0 → se sirve por desarme).
+    final porVariante = <int?, List<ProductVariant>>{};
+    for (final v in variantes) {
+      final idVar = (v.inventoryMetadata?['id_variante'] as num?)?.toInt();
+      porVariante.putIfAbsent(idVar, () => []).add(v);
+    }
+
+    var nextId = variantes.fold<int>(0, (m, v) => math.max(m, v.id)) + 1;
+    var agregadas = 0;
+
+    for (final entry in porVariante.entries) {
+      final filas = entry.value;
+      final conFila = filas
+          .map(
+            (v) =>
+                (v.inventoryMetadata?['id_presentacion'] as num?)?.toInt(),
+          )
+          .whereType<int>()
+          .toSet();
+      final plantilla = filas.first;
+
+      for (final pres in _productPresentations) {
+        if (conFila.contains(pres.id)) continue;
+        final meta = Map<String, dynamic>.from(
+          plantilla.inventoryMetadata ?? {},
+        );
+        meta['id_presentacion'] = pres.id;
+        meta['cantidad_disponible'] = 0.0;
+        meta['presentacion_nombre'] = pres.presentacion.denominacion;
+        meta['presentacion_sin_stock'] = true;
+        // El nombre de la fila real es "<atributos> - <presentación>": se
+        // conserva la parte de atributos y se cambia la presentación.
+        var nombreBase = plantilla.nombre;
+        final presPlantilla =
+            plantilla.inventoryMetadata?['presentacion_nombre']?.toString();
+        if (presPlantilla != null &&
+            nombreBase.endsWith(' - $presPlantilla')) {
+          nombreBase =
+              nombreBase.substring(0, nombreBase.length - presPlantilla.length - 3);
+        }
+        final nombreFinal = nombreBase == plantilla.nombre
+            ? pres.presentacion.denominacion
+            : '$nombreBase - ${pres.presentacion.denominacion}';
+        final sintetica = ProductVariant(
+          id: nextId++,
+          nombre: nombreFinal,
+            precio: plantilla.precio,
+            cantidad: 0,
+            descripcion:
+                'Sin stock propio: se sirve desarmando otras presentaciones',
+            inventoryMetadata: meta,
+        );
+        variantes.add(sintetica);
+        variantQuantities.putIfAbsent(sintetica, () => 0);
+        agregadas++;
+      }
+    }
+    if (agregadas > 0) {
+      debugPrint(
+        '📦 $agregadas presentaciones sin stock expuestas como variantes '
+        '(se sirven por desarme)',
+      );
+      _groupVariantsByLocation(variantes);
+    }
   }
 
   /// Aviso offline: no alcanza el stock ni desarmando bultos.

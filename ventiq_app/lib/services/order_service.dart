@@ -14,7 +14,7 @@ import 'store_config_service.dart';
 import 'turno_service.dart'; // Import TurnoService
 import 'connectivity_service.dart';
 
-class OrderService {
+class OrderService extends ChangeNotifier {
   static final OrderService _instance = OrderService._internal();
   factory OrderService() => _instance;
   OrderService._internal();
@@ -284,6 +284,7 @@ class OrderService {
 
     // Guardar automáticamente en persistencia
     _savePersistentPreorder();
+    notifyListeners();
   }
 
   // Actualizar cantidad de un item
@@ -304,6 +305,7 @@ class OrderService {
 
       // Guardar automáticamente en persistencia
       _savePersistentPreorder();
+      notifyListeners();
     }
   }
 
@@ -825,6 +827,7 @@ class OrderService {
 
       // Guardar automáticamente en persistencia
       _savePersistentPreorder();
+      notifyListeners();
     }
   }
 
@@ -940,6 +943,7 @@ class OrderService {
   // Cancelar orden actual
   void cancelCurrentOrder() {
     _currentOrder = null;
+    notifyListeners();
     // En venta de mostrador el contexto de mesa no es nuestro: cancelar el
     // carrito local no debe borrarle al mesero la cuenta que tenía abierta.
     if (!SalesModeService.mostradorActivo) {
@@ -1567,9 +1571,15 @@ class OrderService {
           };
         }
       } else {
+        // 55P03 = lock_timeout: otra caja está vendiendo el mismo producto en
+        // la misma ubicación. La venta se revirtió completa; se puede reintentar.
+        final isLockTimeout = response?['sqlstate'] == '55P03';
         return {
           'success': false,
-          'error': response?['message'] ?? 'Error en el registro de venta',
+          'error': isLockTimeout
+              ? 'Otra caja está registrando una venta del mismo producto. '
+                  'Intenta de nuevo en unos segundos.'
+              : response?['message'] ?? 'Error en el registro de venta',
         };
       }
     } catch (e) {
@@ -2834,6 +2844,7 @@ class OrderService {
       print('❌ Error cargando preorden desde persistencia: $e');
       _currentOrder = null;
     }
+    notifyListeners();
   }
 
   /// Limpiar preorden persistente

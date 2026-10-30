@@ -68,6 +68,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
   bool _allowSellerMakeOrderModifications = false;
   double _usdRate = 0.0;
   bool _isLoadingUsdRate = false;
+
+  /// Líneas temporales USD→CUP para resolver la tasa vigente en la fecha de
+  /// cada orden (la tasa actual solo es fallback si no hay historial).
+  ({List<Map<String, dynamic>> storeRates, List<Map<String, dynamic>> globalRates})?
+  _usdTimelines;
   bool _isOfflineMode = false;
   bool _solicitarImagenOperacion = false;
   bool _isShowSkuEnabled = false;
@@ -129,8 +134,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
     try {
       final rate = await CurrencyService.getUsdRate();
+      final timelines = await CurrencyService.loadUsdToCupRateTimelines();
       setState(() {
         _usdRate = rate;
+        _usdTimelines = timelines;
         _isLoadingUsdRate = false;
       });
     } catch (e) {
@@ -140,6 +147,21 @@ class _OrdersScreenState extends State<OrdersScreen> {
         _isLoadingUsdRate = false;
       });
     }
+  }
+
+  /// Tasa USD→CUP aplicable a una orden: la vigente en su fecha de creación.
+  /// Usa la tasa actual solo si no hay historial (offline sin timelines).
+  double _orderFallbackRate(Order order) {
+    final timelines = _usdTimelines;
+    final fecha = order.fechaCreacion;
+    if (timelines != null) {
+      final historical = CurrencyService.resolveUsdToCupRateAt(
+        fecha,
+        timelines,
+      );
+      if (historical != null && historical > 0) return historical;
+    }
+    return _usdRate;
   }
 
   Future<void> _loadDiscountPermission() async {
@@ -1329,13 +1351,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       PriceUtils.paymentDisplayCurrency(cardPayments);
                   final cardRate = PriceUtils.paymentUsdRate(
                         cardPayments,
-                        fallbackRate: _usdRate,
+                        fallbackRate: _orderFallbackRate(order),
                       ) ??
-                      _usdRate;
+                      _orderFallbackRate(order);
                   final primaryTotalLabel = PriceUtils.formatCupAmountForPayments(
                     displayTotal,
                     cardPayments,
-                    fallbackRate: _usdRate,
+                    fallbackRate: _orderFallbackRate(order),
                   );
                   final showSecondary = cardRate > 0;
                   final secondaryLabel =
@@ -1376,7 +1398,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       if (hasDiscount) ...[
                         const SizedBox(height: 4),
                         Text(
-                          '$label · Ahorras ${PriceUtils.formatCupAmountForPayments(saved, cardPayments, fallbackRate: _usdRate)} (Antes ${PriceUtils.formatCupAmountForPayments(originalTotal, cardPayments, fallbackRate: _usdRate)})',
+                          '$label · Ahorras ${PriceUtils.formatCupAmountForPayments(saved, cardPayments, fallbackRate: _orderFallbackRate(order))} (Antes ${PriceUtils.formatCupAmountForPayments(originalTotal, cardPayments, fallbackRate: _orderFallbackRate(order))})',
                           style: const TextStyle(
                             fontSize: 12,
                             color: Color(0xFF10B981),
@@ -1641,14 +1663,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 final detailUsdRate =
                     PriceUtils.paymentUsdRate(
                       detailPayments,
-                      fallbackRate: _usdRate,
+                      fallbackRate: _orderFallbackRate(order),
                     ) ??
-                    _usdRate;
+                    _orderFallbackRate(order);
                 String formatDetailAmount(double cupAmount) =>
                     PriceUtils.formatCupAmountForPayments(
                       cupAmount,
                       detailPayments,
-                      fallbackRate: _usdRate,
+                      fallbackRate: _orderFallbackRate(order),
                     );
 
                 return Scaffold(
@@ -3688,15 +3710,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
     final totalPaidCup = PriceUtils.paymentTotalCup(
       payments,
-      fallbackRate: _usdRate,
+      fallbackRate: _orderFallbackRate(order),
     );
     final usdPaid = PriceUtils.paymentTotalUsd(payments);
     final primaryCurrency = PriceUtils.paymentDisplayCurrency(payments);
     final historicalRate = PriceUtils.paymentUsdRate(
       payments,
-      fallbackRate: _usdRate,
+      fallbackRate: _orderFallbackRate(order),
     );
-    final effectiveRate = historicalRate ?? _usdRate;
+    final effectiveRate = historicalRate ?? _orderFallbackRate(order);
     final primaryTotal = primaryCurrency == 'USD'
         ? usdPaid
         : totalPaidCup;
